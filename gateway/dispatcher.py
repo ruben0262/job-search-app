@@ -43,8 +43,9 @@ class _Item:
 
 
 class Dispatcher:
-    def __init__(self, tei: TEIClient) -> None:
+    def __init__(self, tei: TEIClient, verifier=None) -> None:
         self._tei = tei
+        self._verifier = verifier   # supplies the backend's real per-call batch limit (verify.py)
         self._queue: asyncio.PriorityQueue[_Item] = asyncio.PriorityQueue(
             maxsize=max(1, CONFIG.max_queue))
         self._seq = itertools.count()        # tie-breaker → FIFO within a priority level
@@ -72,20 +73,29 @@ class Dispatcher:
                 f"dispatch queue full ({CONFIG.max_queue} items) — retry with backoff") from exc
         return await fut
 
+    async def _submit(self, priority: int, texts: list[str], chunk: int) -> list[list[float]]:
+        """Split into chunks, dispatch each at `priority`, reassemble in the caller's order.
+
+        Chunking is not optional on either lane: TEI refuses any single call over its
+        --max-client-batch-size, so an unchunked request from a caller embedding a whole page of
+        postings would 413 rather than embed. It also lets score items slip in *between* a
+        training request's chunks instead of queueing behind the whole thing.
+        """
+        if not texts:
+            return []
+        if self._verifier is not None:
+            chunk = self._verifier.effective_batch(chunk)
+        parts = [texts[i:i + chunk] for i in range(0, len(texts), chunk)]
+        results = await asyncio.gather(*(self._enqueue(priority, p) for p in parts))
+        return [vec for part_vecs in results for vec in part_vecs]
+
     async def submit_score(self, texts: list[str]) -> list[list[float]]:
         """Fast lane — forwarded ahead of any queued bulk work."""
-        if not texts:
-            return []
-        return await self._enqueue(SCORE, texts)
+        return await self._submit(SCORE, texts, CONFIG.chunk_score)
 
     async def submit_bulk(self, texts: list[str]) -> list[list[float]]:
-        """Bulk lane — split into chunks so score items can slip in between them; reassembled
-        in original order."""
-        if not texts:
-            return []
-        chunks = [texts[i:i + CONFIG.bulk_chunk] for i in range(0, len(texts), CONFIG.bulk_chunk)]
-        results = await asyncio.gather(*(self._enqueue(BULK, c) for c in chunks))
-        return [vec for chunk_vecs in results for vec in chunk_vecs]
+        """Bulk lane — finer chunks so the fast lane can interleave."""
+        return await self._submit(BULK, texts, CONFIG.chunk_bulk)
 
     async def _worker(self) -> None:
         while True:

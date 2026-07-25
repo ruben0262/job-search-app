@@ -35,9 +35,9 @@ _verifier: Verifier | None = None
 async def lifespan(app: FastAPI):
     global _tei, _dispatcher, _verifier
     _tei = TEIClient()
-    _dispatcher = Dispatcher(_tei)
-    _dispatcher.start()
     _verifier = Verifier(_tei)
+    _dispatcher = Dispatcher(_tei, _verifier)
+    _dispatcher.start()
     _verifier.start()
     yield
     if _verifier:

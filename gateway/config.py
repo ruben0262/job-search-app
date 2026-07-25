@@ -22,12 +22,28 @@ class Config:
     normalize: bool = _bool("EMBEDDER_NORMALIZE", True)
 
     tei_url: str = os.environ.get("TEI_URL", "http://tei:80").rstrip("/")
-    bulk_chunk: int = int(os.environ.get("EMBEDDER_BULK_CHUNK", "64"))
+    # HARD cap on texts per TEI call. TEI rejects a request over its own --max-client-batch-size
+    # (default 32), so this MUST be <= that flag or every oversized batch 413s. Single source of
+    # truth: docker-compose passes the same env to both sides, and verify.py asserts agreement
+    # against the live backend at startup.
+    tei_batch: int = int(os.environ.get("TEI_MAX_CLIENT_BATCH", "32"))
+    bulk_chunk: int = int(os.environ.get("EMBEDDER_BULK_CHUNK", "32"))
     tei_concurrency: int = int(os.environ.get("EMBEDDER_TEI_CONCURRENCY", "2"))
     max_texts: int = int(os.environ.get("EMBEDDER_MAX_TEXTS", "4096"))
     max_queue: int = int(os.environ.get("EMBEDDER_MAX_QUEUE", "256"))
 
     auth_token: str = os.environ.get("EMBEDDER_AUTH_TOKEN", "").strip()
+
+    @property
+    def chunk_bulk(self) -> int:
+        """Bulk lane chunk, never above what TEI will accept in one call."""
+        return max(1, min(self.bulk_chunk, self.tei_batch))
+
+    @property
+    def chunk_score(self) -> int:
+        """Fast lane chunk. Same TEI ceiling — a caller scoring 100 postings in one POST must not
+        be forwarded as one oversized batch."""
+        return max(1, self.tei_batch)
 
     @property
     def version(self) -> str:

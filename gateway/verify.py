@@ -41,6 +41,9 @@ class Verifier:
         self._task: asyncio.Task | None = None
         self.state: str = PENDING
         self.detail: str = "not probed yet"
+        # What TEI will actually accept in one call. Config can only ever LOWER the batch, never
+        # raise it past the backend's own --max-client-batch-size (which TEI enforces with a 413).
+        self.backend_max_batch: int | None = None
 
     @property
     def verified(self) -> bool:
@@ -71,6 +74,16 @@ class Verifier:
 
         served_model = str(info.get("model_id", "")).strip()
         served_dim = len(vectors[0]) if vectors else -1
+
+        # Capacity, not correctness: a batch over the backend's limit is a 413, not a wrong vector,
+        # so this clamps rather than refuses. Left unclamped it would break only the BULK lane —
+        # training fails while scoring looks fine, the worst kind of thing to debug later.
+        limit = info.get("max_client_batch_size")
+        if isinstance(limit, int) and limit > 0:
+            self.backend_max_batch = limit
+            if limit < CONFIG.tei_batch:
+                log.warning("backend max_client_batch_size=%d is below TEI_MAX_CLIENT_BATCH=%d — "
+                            "clamping outgoing batches to %d", limit, CONFIG.tei_batch, limit)
         problems = []
         if served_model != CONFIG.model:
             problems.append(f"model: configured {CONFIG.model!r}, backend serves {served_model!r}")
@@ -90,5 +103,12 @@ class Verifier:
         self.detail = f"backend confirmed: model={served_model} dim={served_dim}"
         log.info(self.detail)
 
+    def effective_batch(self, want: int) -> int:
+        """`want` texts per TEI call, lowered to whatever the backend actually accepts."""
+        if self.backend_max_batch:
+            return max(1, min(want, self.backend_max_batch))
+        return max(1, want)
+
     def info(self) -> dict:
-        return {"verified": self.verified, "verify_state": self.state, "verify_detail": self.detail}
+        return {"verified": self.verified, "verify_state": self.state, "verify_detail": self.detail,
+                "backend_max_batch": self.backend_max_batch}

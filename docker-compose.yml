@@ -17,6 +17,9 @@ services:
       - "--model-id=${EMBEDDER_MODEL:-BAAI/bge-small-en-v1.5}"
       - "--max-batch-tokens=${TEI_MAX_BATCH_TOKENS:-16384}"
       - "--max-concurrent-requests=${TEI_MAX_CONCURRENT_REQUESTS:-512}"
+      # TEI 413s any single call above this. Same env feeds the gateway's chunk size so the two
+      # cannot drift apart; the gateway also clamps to whatever /info reports at startup.
+      - "--max-client-batch-size=${TEI_MAX_CLIENT_BATCH:-32}"
       - "--auto-truncate"                    # clip over-long inputs instead of erroring
     volumes:
       - tei-cache:/data                      # cache downloaded weights (not re-pulled each boot)

@@ -348,6 +348,11 @@ lane), `train.py` (bulk lane), and `docker-compose.yml` (attached to `embedder-n
   embed endpoints — on a mismatch.
 - **§4c "bound the queue"** — the dispatch queue is bounded (`EMBEDDER_MAX_QUEUE`, default 256) and
   sheds load with 503 rather than growing memory while callers time out anyway.
+- **Per-call batch ceiling** (found on first VPS boot). TEI 413s any single call above its
+  `--max-client-batch-size` (default **32**), while the gateway was forwarding bulk chunks of 64 and
+  never chunked the fast lane at all — so every training embed and any multi-posting score request
+  would have failed. One env (`TEI_MAX_CLIENT_BATCH`) now feeds both TEI's flag and the gateway's
+  chunk ceiling, both lanes chunk, and the gateway clamps to whatever `/info` actually reports.
 - **§14 coverage** — §14.2 (`test_version_assert`), §14.6 (`test_fail_closed`), §14.8
   (`test_priority_lane`), §14.5 harness (`scripts/load_rss.py`), plus a docker-free gateway-logic
   suite (`test_gateway_contract`: mismatch refusal, fail-closed, bulk ordering, caps, auth).

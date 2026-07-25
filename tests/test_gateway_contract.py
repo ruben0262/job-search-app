@@ -25,18 +25,23 @@ class _StubTEI:
     """Stands in for TEIClient. `model`/`dim` are what the *backend* claims to serve."""
 
     def __init__(self, model: str = CONFIG.model, dim: int = CONFIG.dim,
-                 reachable: bool = True, delay: float = 0.0) -> None:
+                 reachable: bool = True, delay: float = 0.0, max_batch: int = 32) -> None:
         self.model, self.dim, self.reachable, self.delay = model, dim, reachable, delay
+        self.max_batch = max_batch
         self.calls: list[list[str]] = []
 
     async def info(self) -> dict:
         if not self.reachable:
             raise ConnectionError("stub backend down")
-        return {"model_id": self.model}
+        return {"model_id": self.model, "max_client_batch_size": self.max_batch}
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
         if not self.reachable:
             raise ConnectionError("stub backend down")
+        # TEI answers 413 above its --max-client-batch-size; the stub is strict about it so an
+        # unchunked lane fails here instead of on the box.
+        if len(texts) > self.max_batch:
+            raise ValueError(f"batch size {len(texts)} > max_client_batch_size {self.max_batch}")
         if self.delay:
             await asyncio.sleep(self.delay)
         self.calls.append(list(texts))
@@ -115,19 +120,39 @@ def test_oversized_request_rejected(monkeypatch) -> None:
         assert r.status_code == 413
 
 
-def test_bulk_preserves_input_order_across_chunks(monkeypatch) -> None:
-    """Bulk is split into chunks for the fast lane to interleave; results must reassemble in the
-    caller's original order or every row's label is attached to the wrong vector."""
+@pytest.mark.parametrize("path,chunk", [("/embed/bulk", CONFIG.chunk_bulk),
+                                        ("/embed", CONFIG.chunk_score)])
+def test_lanes_preserve_input_order_across_chunks(monkeypatch, path: str, chunk: int) -> None:
+    """Both lanes split into chunks; results must reassemble in the caller's original order or
+    every row's label ends up attached to the wrong vector."""
     stub = _StubTEI()
-    n = CONFIG.bulk_chunk * 2 + 3
+    n = chunk * 2 + 3
     with _client(stub, monkeypatch) as c:
         _wait_verified(c, True)
-        vectors = c.post("/embed/bulk", json={"texts": [str(i) for i in range(n)]}).json()["vectors"]
+        r = c.post(path, json={"texts": [str(i) for i in range(n)]})
+        assert r.status_code == 200, r.text
+        vectors = r.json()["vectors"]
     assert len(vectors) == n
     # The stub encodes each text's position WITHIN its chunk into the vector, so the expected
     # sequence is per-chunk indices concatenated — any reordering/reassembly bug breaks this.
-    expected = [float(i % CONFIG.bulk_chunk) for i in range(n)]
-    assert [v[0] for v in vectors] == expected
+    assert [v[0] for v in vectors] == [float(i % chunk) for i in range(n)]
+    assert max(len(call) for call in stub.calls) <= stub.max_batch
+
+
+def test_chunks_clamp_to_backend_batch_limit(monkeypatch) -> None:
+    """A backend stricter than our config must LOWER the batch, not 413 every request. The gateway
+    reads the real limit from /info and clamps; otherwise this breaks only the bulk lane, i.e.
+    training silently fails while scoring looks fine."""
+    stub = _StubTEI(max_batch=4)
+    n = 30
+    with _client(stub, monkeypatch) as c:
+        health = _wait_verified(c, True)
+        assert health["backend_max_batch"] == 4
+        for path in ("/embed", "/embed/bulk"):
+            r = c.post(path, json={"texts": [str(i) for i in range(n)]})
+            assert r.status_code == 200, r.text
+            assert len(r.json()["vectors"]) == n
+    assert max(len(call) for call in stub.calls) <= 4
 
 
 def test_empty_texts_rejected(monkeypatch) -> None:
