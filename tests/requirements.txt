@@ -1,0 +1,13 @@
+# Test-only deps. The gateway image does NOT need these.
+#   pip install -r tests/requirements.txt
+pytest>=8.0
+httpx>=0.28
+# test_gateway_contract.py runs the gateway in-process against a stubbed TEI (no docker needed).
+# Left unpinned deliberately: gateway/requirements.txt pins the versions that ship in the image
+# (built on python:3.12-slim); a test machine on a newer interpreter must be free to resolve its
+# own wheels rather than fail building an old pydantic-core from source.
+fastapi>=0.115
+pydantic>=2.10
+# Optional — only test_parity.py needs it (compares TEI against the old in-process path).
+# Heavy (onnxruntime + model download); install deliberately, not by default:
+#   pip install fastembed numpy

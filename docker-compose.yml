@@ -1,0 +1,52 @@
+# job-search-embedder — shared embedding service.
+#
+#   docker network create embedder-net      # once, if not already present
+#   docker compose up -d --build
+#
+# Consumer stacks (job-search, andras-job-search, …) join `embedder-net` as an EXTERNAL network
+# and reach the gateway at http://embedder-gateway:8080 — no host ports are published here
+# (PLAN network decision: shared Docker network only, auth off). To expose remotely later, add a
+# reverse proxy + TLS and set EMBEDDER_AUTH_TOKEN first.
+
+services:
+  # HuggingFace Text Embeddings Inference — does the model loading + dynamic (token) batching
+  # + length bucketing. One resident copy of the model for everyone. CPU image.
+  tei:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9
+    command:
+      - "--model-id=${EMBEDDER_MODEL:-BAAI/bge-small-en-v1.5}"
+      - "--max-batch-tokens=${TEI_MAX_BATCH_TOKENS:-16384}"
+      - "--max-concurrent-requests=${TEI_MAX_CONCURRENT_REQUESTS:-512}"
+      - "--auto-truncate"                    # clip over-long inputs instead of erroring
+    volumes:
+      - tei-cache:/data                      # cache downloaded weights (not re-pulled each boot)
+    env_file: [.env]
+    networks: [embedder-net]
+    restart: always
+    # The <2GB target lives here (PLAN §12). mem_limit is a CEILING — bge-small + bounded
+    # max-batch-tokens should sit well under it; VERIFY peak RSS on the box before trusting it.
+    mem_limit: 2g
+    cpus: 1.5
+    # ports: ["8081:80"]                     # uncomment ONLY for local debugging of TEI directly
+
+  # Thin gateway: two priority lanes (fast /embed vs bulk /embed/bulk), our /health+version
+  # contract, optional bearer auth. Owns no model — forwards to tei.
+  embedder-gateway:
+    build:
+      context: .
+      dockerfile: gateway/Dockerfile
+    command: ["uvicorn", "gateway.app:app", "--host", "0.0.0.0", "--port", "8080"]
+    env_file: [.env]
+    depends_on: [tei]
+    networks: [embedder-net]
+    restart: always
+    mem_limit: 256m
+    cpus: 0.5
+    # ports: ["8080:8080"]                   # uncomment ONLY behind a TLS proxy + EMBEDDER_AUTH_TOKEN
+
+networks:
+  embedder-net:
+    name: embedder-net                       # consumer stacks reference this as `external: true`
+
+volumes:
+  tei-cache:
