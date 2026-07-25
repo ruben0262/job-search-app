@@ -64,17 +64,18 @@ class _Sampler(threading.Thread):
         super().__init__(daemon=True)
         self.container, self.interval = container, interval
         self.samples: list[float] = []
-        self._stop = threading.Event()
+        # NOT `_stop`: threading.Thread already defines a private _stop() and join() calls it.
+        self._stopped = threading.Event()
 
     def run(self) -> None:
-        while not self._stop.is_set():
+        while not self._stopped.is_set():
             mb = _rss_mb(self.container)
             if mb is not None:
                 self.samples.append(mb)
-            self._stop.wait(self.interval)
+            self._stopped.wait(self.interval)
 
     def stop(self) -> None:
-        self._stop.set()
+        self._stopped.set()
         self.join(timeout=30)
 
 
@@ -109,7 +110,8 @@ def main() -> int:
     for t in threads:
         t.start()
 
-    print(f"cold-start bulk embed: {args.corpus} texts ...")
+    print(f"cold-start bulk embed: {args.corpus} texts (single request, silent for minutes on "
+          f"CPU) — {args.callers} scoring callers running alongside ...", flush=True)
     t0 = time.perf_counter()
     try:
         _post(args.url, "/embed/bulk", [_JD * 3 + str(i) for i in range(args.corpus)],
@@ -127,9 +129,11 @@ def main() -> int:
     peak = max(sampler.samples) if sampler.samples else None
     print(f"\nbulk cold-start   : {bulk_s:.1f}s for {args.corpus} texts")
     if score_latencies:
+        # quantiles() needs >= 2 points; a short run can produce fewer.
+        p95 = (statistics.quantiles(score_latencies, n=20)[-1] if len(score_latencies) > 1
+               else score_latencies[0])
         print(f"score latency     : median {statistics.median(score_latencies):.3f}s  "
-              f"p95 {statistics.quantiles(score_latencies, n=20)[-1]:.3f}s  "
-              f"max {max(score_latencies):.3f}s  (n={len(score_latencies)})")
+              f"p95 {p95:.3f}s  max {max(score_latencies):.3f}s  (n={len(score_latencies)})")
     print(f"errors            : {len(errors)}" + (f"  first={errors[0]}" if errors else ""))
     if peak is None:
         print(f"peak RSS          : UNKNOWN — no docker stats for container {args.container!r}")
