@@ -302,10 +302,26 @@ batches are bounded). onnxruntime is thread-safe; the dynamic-batching queue mer
 callers.
 
 **<2GB is driven by batch size, not caller count** — micro-batches cap the working set. Achievable **only
-if**: (1) shared model is **bge-small** (bge-base ~2× likely breaks it); (2) **embedder-only image**;
-(3) **bounded `max_batch_tokens`** so training streams as micro-batches. **Measure peak RSS on the box —
-do not promise it.** Today's ~1.9GB is the whole scorer-service container; an embedder-only TEI with
-bge-small + micro-batching should land ~1–1.5GB, but onnxruntime's arena is the real floor.
+if**: (1) shared model is **bge-small**; (2) **embedder-only image**; (3) **bounded `max_batch_tokens`**
+so training streams as micro-batches. **Measure peak RSS on the box — do not promise it.**
+
+### Measured on the VPS, 2026-07-25 (bge-small, chunk 8, 3 concurrent scorers + a 2000-text cold train)
+
+| Metric | Result |
+|---|---|
+| **Peak RSS (tei container)** | **282 MB** vs a 2048 MB budget |
+| Bulk cold-start throughput | 2000 texts in 303s (~6.6 texts/s, 1 bulk worker) |
+| Score latency, idle | 0.08s |
+| Score latency under a full cold-train flood | median 1.50s, p95 2.81s, max 4.90s (n=512) |
+| Errors | 0 |
+
+**The RAM fear was wrong by ~7×.** The ~1.9GB figure in §1/§9 was the whole `scorer-service`
+container (fastembed + onnxruntime + sklearn + FastAPI + numpy); an embedder-only TEI is a fraction of
+it. Consequences: (a) the <2GB budget is not a binding constraint and should stop being cited as one;
+(b) **it no longer justifies choosing bge-small over bge-base** (§10) — bge-base at ~2× is still far
+inside budget, so that choice is now purely a fit-quality question, to be settled by the A/B, not by
+memory; (c) the real scarce resource is **CPU**, not RAM — throughput and score latency under load are
+what to tune, and the levers are worker pools and chunk size (§4c), not the token cap.
 
 ## 13. Version-pinning correctness constraint (must-do)
 
@@ -374,8 +390,15 @@ lane), `train.py` (bulk lane), and `docker-compose.yml` (attached to `embedder-n
   correction to §4c's claim that a gateway priority queue approximates Triton's `priority_levels`:
   it does so only if the high-priority lane has reserved capacity.
 
-**Still open:** never run on the box — parity (§14.1), peak RSS (§14.5), and lane latency (§14.8) are
-all unmeasured; andras-job-search is still on in-process `fastembed` with no `embedder-net` wiring.
+**Verified on the VPS 2026-07-25:** stack boots, `/health` backend-verified, §14.2 / §14.6 / §14.7
+pass, §14.5 peak RSS **282 MB** (numbers in §12), §14.8 passes at a 2s budget after the two-pool fix.
+
+**Still open:** **§14.1 parity has never actually run** (it skips unless `fastembed` is installed) —
+it is the gate that decides whether existing classifiers keep working or must be retrained, so no
+consumer should be switched over before it does. `EMBEDDER_MAX_QUEUE` raised to 2048 because one
+2000-text retrain alone enqueues 250 chunks and the old bound of 256 would have 503'd a second
+tenant's concurrent retrain. andras-job-search is still on in-process `fastembed` with no
+`embedder-net` wiring.
 Key decisions unchanged: standardise on bge-small pending a quality A/B (§10, andras already
 retrained); default to VPS training via the shared embedder (§11); hold <2GB with bge-small +
 embedder-only + micro-batching, verified on the box (§12); enforce version pinning (§13); pass the
