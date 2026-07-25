@@ -32,9 +32,13 @@ EMBEDDER_URL=http://localhost:8080 pytest tests/test_parity.py -v
 python3 scripts/load_rss.py --url http://localhost:8080   # §14.5, exits 1 over budget
 ```
 
-The gateway's port is not published by default (network-only, PLAN §6). For local testing either
-uncomment `ports:` on `embedder-gateway` in `docker-compose.yml`, or run the tests from a container
-attached to `embedder-net` with `EMBEDDER_URL=http://embedder-gateway:8080`.
+The gateway publishes `127.0.0.1:8080` — loopback only, so it is reachable from the host running
+the tests but not from the network. Consumer containers do not use that port; they reach the
+gateway by service name over `embedder-net`.
+
+If `EMBEDDER_URL` is set but nothing is listening, the integration tests fail immediately with one
+line saying so (see `conftest.py`) rather than nine httpx tracebacks. They **fail** rather than
+skip on purpose — a silent skip is how §14.1 parity went unrun while the suite looked green.
 
 ## Tunables the integration tests read
 

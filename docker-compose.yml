@@ -49,7 +49,15 @@ services:
     restart: always
     mem_limit: 256m
     cpus: 0.5
-    # ports: ["8080:8080"]                   # uncomment ONLY behind a TLS proxy + EMBEDDER_AUTH_TOKEN
+    # Bound to LOOPBACK ONLY. This is not a public port: 127.0.0.1 is unreachable from the network,
+    # so the only callers are processes already on this host (the test suite, scripts/load_rss.py,
+    # curl /health). Consumer containers do NOT use this — they reach the gateway by service name
+    # over embedder-net. Published by default so the §14 gates are runnable without editing this
+    # file, which is otherwise a step people forget in both directions.
+    #
+    # To expose beyond this host, "0.0.0.0:8080" is NOT sufficient — set EMBEDDER_AUTH_TOKEN and
+    # put TLS in front first. An un-authed embedding endpoint is a CPU-DoS magnet.
+    ports: ["127.0.0.1:8080:8080"]
 
 networks:
   embedder-net:

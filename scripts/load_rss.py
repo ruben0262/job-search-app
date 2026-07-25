@@ -127,7 +127,8 @@ def main() -> int:
     sampler.stop()
 
     peak = max(sampler.samples) if sampler.samples else None
-    print(f"\nbulk cold-start   : {bulk_s:.1f}s for {args.corpus} texts")
+    bulk_desc = f"{bulk_s:.1f}s" if bulk_s == bulk_s else "FAILED"   # NaN != NaN
+    print(f"\nbulk cold-start   : {bulk_desc} for {args.corpus} texts")
     if score_latencies:
         # quantiles() needs >= 2 points; a short run can produce fewer.
         p95 = (statistics.quantiles(score_latencies, n=20)[-1] if len(score_latencies) > 1
@@ -137,13 +138,25 @@ def main() -> int:
     print(f"errors            : {len(errors)}" + (f"  first={errors[0]}" if errors else ""))
     if peak is None:
         print(f"peak RSS          : UNKNOWN — no docker stats for container {args.container!r}")
+    else:
+        print(f"peak RSS ({args.container:<8}): {peak:.0f} MB   budget {args.budget_mb:.0f} MB")
+
+    # Report the verdict LAST and only once, so a run with failed requests can never print OK.
+    # An RSS number from a run whose embeds failed is not a measurement of anything.
+    if errors:
+        print(f"\nFAIL — {len(errors)} request(s) failed; the RSS figure above is meaningless "
+              f"because the load never ran.\n  Is the gateway up and published?  "
+              f"docker compose ps  /  docker compose logs embedder-gateway")
         return 1
-    print(f"peak RSS ({args.container:<8}): {peak:.0f} MB   budget {args.budget_mb:.0f} MB")
+    if peak is None:
+        print(f"\nFAIL — could not read RSS. Is the container named {args.container!r}? "
+              "Check `docker compose ps`, and that your user is in the `docker` group.")
+        return 1
     if peak > args.budget_mb:
-        print("FAIL — over budget. Lower TEI_MAX_BATCH_TOKENS / EMBEDDER_BULK_CHUNK (PLAN §12).")
+        print("\nFAIL — over budget. Lower TEI_MAX_BATCH_TOKENS / EMBEDDER_BULK_CHUNK (PLAN §12).")
         return 1
-    print("OK")
-    return 0 if not errors else 1
+    print("\nOK")
+    return 0
 
 
 if __name__ == "__main__":

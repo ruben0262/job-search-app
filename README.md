@@ -42,10 +42,8 @@ space.
 
 ```bash
 cp .env.example .env            # defaults to BAAI/bge-base-en-v1.5 (768d)
-docker network create embedder-net   # once
 docker compose up -d --build
-# smoke test (publish the gateway port first, or curl from another container on embedder-net):
-#   curl http://localhost:8080/health
+curl -s http://127.0.0.1:8080/health   # loopback-only port, published for host-side testing
 ```
 
 ## VPS bring-up order (PLAN §14 gates)
@@ -65,6 +63,10 @@ pass is how you get *silently wrong scores* rather than a visible outage.
 5. `pytest tests/test_priority_lane.py -v` — set `SCORE_LATENCY_BUDGET_S` from what step 4 showed.
 6. Only then set `EMBEDDER_URL` on **one** consumer (job-search) and watch it. Unsetting it reverts
    to in-process `fastembed` with no code change — that is the rollback.
+
+Leave the loopback `ports:` mapping in place throughout. It is not a public port and you need it
+for steps 1-5; removing it only breaks the gates. Real exposure requires `EMBEDDER_AUTH_TOKEN` and
+TLS, which is a separate decision.
 
 ## Consumer wiring
 
