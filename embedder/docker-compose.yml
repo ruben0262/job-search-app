@@ -8,6 +8,12 @@
 # (PLAN network decision: shared Docker network only, auth off). To expose remotely later, add a
 # reverse proxy + TLS and set EMBEDDER_AUTH_TOKEN first.
 
+# Pinned so the project name does NOT follow the directory. This file moved from the repo root
+# into embedder/ ; without this, compose would derive the project name "embedder", create a fresh
+# (empty) tei-cache volume, re-download the model, and rename every container — breaking anything
+# that references job-search-app-tei-1 (e.g. scripts/load_rss.py --container).
+name: job-search-app
+
 services:
   # HuggingFace Text Embeddings Inference — does the model loading + dynamic (token) batching
   # + length bucketing. One resident copy of the model for everyone. CPU image.
