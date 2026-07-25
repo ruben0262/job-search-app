@@ -220,11 +220,8 @@ whatever text string it's given into a vector.
 
 ## 8. Open questions / next steps before implementation
 
-1. Confirm which embedding model(s) need serving — if `andras-job-search` later switches to
-   `bge-small` for the RAM/CPU savings discussed separately, does this service need to support
-   BOTH `bge-base` and `bge-small` simultaneously (multi-model serving), or just standardize on
-   one? (Multi-model support is a real feature of TEI and most serving frameworks, so this is not
-   a blocker either way — just needs a decision.)
+1. ~~Which embedding model(s) need serving — one or multi-model?~~ **Settled (§10, 2026-07-25):**
+   one model, **bge-base (768d)**, every tenant retrains onto it. No multi-model serving.
 2. Decide the batching window size and max batch size empirically once real traffic patterns are
    known (start with TEI's sane defaults, tune from there).
 3. Decide where this service actually runs — same VPS as `andras-job-search`, or its own
@@ -272,12 +269,26 @@ retrain is mandatory, and the cache cold-embeds once on the new model).
 
 | Shared model | RAM | Quality | Who retrains | Fits <2GB? |
 |---|---|---|---|---|
-| **bge-small (384d)** | lower | good, CPU-fast | andras retrains down | **yes** |
-| **bge-base (768d)** | ~2× | better | job-search retrains up | **likely no** |
+| **bge-small (384d)** | 282 MB *(measured)* | good, CPU-fast | andras retrains down | yes |
+| **bge-base (768d)** | ~2× → still far under | better | job-search retrains up | **yes** |
 
-**Recommendation:** given the <2GB target (§12), standardise on **bge-small (384d)** unless a fit-quality
-A/B proves bge-base materially better. Cross-instance decision (§6). *(Update 2026-07-25: andras has been
-retrained onto the shared model; parity results pending.)*
+### DECIDED 2026-07-25: standardise on **bge-base (768d)**
+
+The original recommendation was bge-small, and its stated reason was the <2GB budget. Measurement
+killed that reason: bge-small peaked at **282 MB** (§12), so bge-base at roughly twice that is still
+an order of magnitude inside the ceiling. The 1.9GB figure that drove the whole "small or bust"
+instinct was the *whole scorer-service container*, never the embedder alone.
+
+With RAM off the table the decision is purely fit quality, and bge-base is the stronger model — so it
+wins by default rather than needing an A/B to justify it. **The cost is CPU, not memory:** bge-base is
+~3× the compute per text, so expect the §12 throughput and score-latency numbers to degrade roughly
+proportionally, and re-tune `cpus` / worker pools from a fresh measurement rather than assuming the
+bge-small numbers carry over.
+
+**Every attached classifier retrains** — both tenants, since job-search was on small (384d) and andras
+had already been retrained onto small. Vectors from a 384d space are not convertible to 768d; there is
+no migration path that skips retraining. The embed cache is keyed per model, so each tenant
+cold-embeds its corpus once on the new model. Cross-instance decision (§6).
 
 ## 11. Training placement — VPS-via-shared-embedder (default) vs local-and-upload (fallback)
 
@@ -302,8 +313,8 @@ batches are bounded). onnxruntime is thread-safe; the dynamic-batching queue mer
 callers.
 
 **<2GB is driven by batch size, not caller count** — micro-batches cap the working set. Achievable **only
-if**: (1) shared model is **bge-small**; (2) **embedder-only image**; (3) **bounded `max_batch_tokens`**
-so training streams as micro-batches. **Measure peak RSS on the box — do not promise it.**
+if**: (1) an **embedder-only image**; (2) **bounded `max_batch_tokens`** so training streams as
+micro-batches. **Measure peak RSS on the box — do not promise it.**
 
 ### Measured on the VPS, 2026-07-25 (bge-small, chunk 8, 3 concurrent scorers + a 2000-text cold train)
 
@@ -314,6 +325,10 @@ so training streams as micro-batches. **Measure peak RSS on the box — do not p
 | Score latency, idle | 0.08s |
 | Score latency under a full cold-train flood | median 1.50s, p95 2.81s, max 4.90s (n=512) |
 | Errors | 0 |
+
+*(These are **bge-small** numbers, taken before the §10 switch to bge-base. bge-base is ~3× the
+compute per text, so re-run `scripts/load_rss.py` on base and replace this table — do not carry these
+figures forward.)*
 
 **The RAM fear was wrong by ~7×.** The ~1.9GB figure in §1/§9 was the whole `scorer-service`
 container (fastembed + onnxruntime + sklearn + FastAPI + numpy); an embedder-only TEI is a fraction of
@@ -356,7 +371,8 @@ Nothing switches until these pass (skeleton stubs live in `tests/`):
 
 ## 15. Status
 
-Skeleton built (TEI + thin FastAPI gateway with two priority lanes, network-only, bge-small pinned).
+Skeleton built (TEI + thin FastAPI gateway with two priority lanes, network-only, **bge-base pinned**
+as of 2026-07-25 — see §10).
 **Consumer side wired in job-search** behind `EMBEDDER_URL` (unset = in-process fastembed, unchanged
 default): `scorer/embedder_client.py` (client + `assert_compatible` + fast/bulk lanes), `score.py` (fast
 lane), `train.py` (bulk lane), and `docker-compose.yml` (attached to `embedder-net`).
@@ -399,7 +415,6 @@ consumer should be switched over before it does. `EMBEDDER_MAX_QUEUE` raised to 
 2000-text retrain alone enqueues 250 chunks and the old bound of 256 would have 503'd a second
 tenant's concurrent retrain. andras-job-search is still on in-process `fastembed` with no
 `embedder-net` wiring.
-Key decisions unchanged: standardise on bge-small pending a quality A/B (§10, andras already
-retrained); default to VPS training via the shared embedder (§11); hold <2GB with bge-small +
-embedder-only + micro-batching, verified on the box (§12); enforce version pinning (§13); pass the
-test plan (§14) before any switch.
+Key decisions: **standardise on bge-base (768d)** — both tenants retrain (§10); default to VPS
+training via the shared embedder (§11); RAM is a non-issue, CPU is the constraint (§12); enforce
+version pinning (§13); pass the test plan (§14) before any switch.

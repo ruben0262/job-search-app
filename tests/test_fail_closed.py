@@ -39,7 +39,7 @@ def test_health_raises_when_embedder_down(dead_client) -> None:
 def test_assert_compatible_refuses_when_embedder_down(dead_client) -> None:
     """Startup guard must refuse, not shrug — an unreachable embedder is not a compatible one."""
     with pytest.raises((EmbedderError, httpx.HTTPError)):
-        dead_client.assert_compatible("BAAI/bge-small-en-v1.5", 384)
+        dead_client.assert_compatible("BAAI/bge-base-en-v1.5", 768)
 
 
 def test_embed_raises_rather_than_returning_empty(dead_client) -> None:

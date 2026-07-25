@@ -41,7 +41,7 @@ space.
 ## Run
 
 ```bash
-cp .env.example .env            # defaults to BAAI/bge-small-en-v1.5 (384d)
+cp .env.example .env            # defaults to BAAI/bge-base-en-v1.5 (768d)
 docker network create embedder-net   # once
 docker compose up -d --build
 # smoke test (publish the gateway port first, or curl from another container on embedder-net):
@@ -90,9 +90,10 @@ refuses to score instead of scoring wrong (PLAN §13).
 
 ## ⚠ Two things to settle before trusting it (PLAN)
 
-1. **Model standardisation (§10).** job-search runs `bge-small` (384d), andras runs `bge-base`
-   (768d) — different vector spaces. Pick ONE (default here: `bge-small`); the off-model tenant
-   **retrains** its classifier onto it.
+1. **Model standardisation (§10) — decided: `bge-base` (768d).** RAM was the only argument for
+   `bge-small` and measurement disproved it (282 MB peak, §12), so the choice comes down to fit
+   quality. **Both tenants retrain**: job-search was on 384d, andras had already been moved to 384d,
+   and there is no conversion between vector spaces. Budget ~3× the bge-small embed time.
 2. **Parity vs retrain (§14.1 / `tests/test_parity.py`).** TEI's pooling/normalisation may not match
    the old in-process `fastembed` bit-for-bit. Either configure TEI to match, or (cleaner) adopt TEI
    as the single source of truth and **retrain all classifiers on TEI vectors** — which the §10

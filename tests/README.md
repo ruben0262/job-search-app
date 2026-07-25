@@ -42,6 +42,6 @@ attached to `embedder-net` with `EMBEDDER_URL=http://embedder-gateway:8080`.
 |---|---|---|
 | `EMBEDDER_URL` | *(unset → skip)* | all integration tests |
 | `EMBEDDER_TOKEN` | *(none)* | all, when auth is on |
-| `EMBEDDER_MODEL` | `BAAI/bge-small-en-v1.5` | `test_parity.py` (which model to load locally) |
+| `EMBEDDER_MODEL` | `BAAI/bge-base-en-v1.5` | `test_parity.py` (which model to load locally) |
 | `SCORE_LATENCY_BUDGET_S` | `5.0` | `test_priority_lane.py` — set from real box numbers |
 | `FLOOD_TEXTS` / `FLOOD_WORKERS` | `512` / `2` | `test_priority_lane.py` |

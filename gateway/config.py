@@ -17,8 +17,8 @@ def _bool(name: str, default: bool) -> bool:
 
 @dataclass(frozen=True)
 class Config:
-    model: str = os.environ.get("EMBEDDER_MODEL", "BAAI/bge-small-en-v1.5")
-    dim: int = int(os.environ.get("EMBEDDER_DIM", "384"))
+    model: str = os.environ.get("EMBEDDER_MODEL", "BAAI/bge-base-en-v1.5")
+    dim: int = int(os.environ.get("EMBEDDER_DIM", "768"))
     normalize: bool = _bool("EMBEDDER_NORMALIZE", True)
 
     tei_url: str = os.environ.get("TEI_URL", "http://tei:80").rstrip("/")

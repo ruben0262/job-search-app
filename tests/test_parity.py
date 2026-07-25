@@ -18,7 +18,7 @@ import httpx
 import pytest
 
 URL = os.environ.get("EMBEDDER_URL")
-MODEL = os.environ.get("EMBEDDER_MODEL", "BAAI/bge-small-en-v1.5")
+MODEL = os.environ.get("EMBEDDER_MODEL", "BAAI/bge-base-en-v1.5")
 
 pytestmark = pytest.mark.skipif(not URL, reason="EMBEDDER_URL not set (no running stack)")
 
