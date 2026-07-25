@@ -155,6 +155,45 @@ def test_chunks_clamp_to_backend_batch_limit(monkeypatch) -> None:
     assert max(len(call) for call in stub.calls) <= 4
 
 
+def test_score_lane_not_blocked_by_inflight_bulk(monkeypatch) -> None:
+    """The §14.8 regression, reproduced without docker.
+
+    A shared worker pool let a score request sit behind an in-flight bulk call — priority orders
+    the queue but cannot recall a busy worker. With a reserved score pool, a score request must
+    return in about ONE backend call, not after the whole bulk run drains.
+    """
+    import threading
+    import time
+
+    call_s = 0.25
+    stub = _StubTEI(delay=call_s, max_batch=8)
+    chunks = 12
+    with _client(stub, monkeypatch) as c:
+        _wait_verified(c, True)
+        corpus = [str(i) for i in range(chunks * CONFIG.chunk_bulk)]
+        done = threading.Event()
+
+        def flood() -> None:
+            c.post("/embed/bulk", json={"texts": corpus})
+            done.set()
+
+        t = threading.Thread(target=flood, daemon=True)
+        t.start()
+        time.sleep(call_s * 2)                      # bulk is definitely mid-call by now
+        t0 = time.perf_counter()
+        r = c.post("/embed", json={"texts": ["a score request while training floods"]})
+        elapsed = time.perf_counter() - t0
+        assert r.status_code == 200, r.text
+        t.join(timeout=120)
+
+    assert done.is_set(), "bulk request never completed"
+    # Generous bound: the point is 'one call, not the whole flood' (which would be ~chunks*call_s).
+    assert elapsed < call_s * 4, (
+        f"score waited {elapsed:.2f}s while bulk held the backend "
+        f"(one call is {call_s}s, the full flood ~{chunks * call_s:.1f}s) — the score lane is "
+        "sharing workers with bulk again (PLAN §14.8)")
+
+
 def test_empty_texts_rejected(monkeypatch) -> None:
     stub = _StubTEI()
     with _client(stub, monkeypatch) as c:

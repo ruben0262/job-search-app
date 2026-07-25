@@ -115,11 +115,17 @@ Dispatch fires when **either** a preferred size is reached **or** the delay expi
 | **On-arrival scoring** (user waiting) | **low latency** | small, dispatch fast | **tiny** (~5–10 ms) |
 | **Training** (bulk, offline, cache-fed) | **throughput** | large, saturate CPU | **larger** (~50–100 ms / fill to token cap) |
 
-**Solution — two priority lanes on one instance:** a high-priority **score** lane (tiny delay, small
-batch, bypasses a training flood) and a bulk **train** lane (fat batches, yields to score). Callers tag
-the lane. This is Triton's `priority_levels`; with TEI it is approximated by a small priority queue in a
-gateway in front of it (the skeleton's `gateway/dispatcher.py`). Prefer one instance + a priority queue
-over two TEI containers, which would double RAM and fight the <2GB budget.
+**Solution — two lanes on one instance:** a high-priority **score** lane (tiny delay, small batch,
+bypasses a training flood) and a bulk **train** lane (yields to score). Callers tag the lane. This is
+Triton's `priority_levels`; with TEI it is approximated in a gateway in front of it
+(`gateway/dispatcher.py`). Prefer one instance + a gateway over two TEI containers, which would double
+RAM and fight the <2GB budget.
+
+⚠ **Ordering alone does not deliver this** (measured, §15): a priority queue picks who goes *next*, but
+a score request still waits out whatever bulk call is already in flight. The fast lane needs **reserved
+workers**, and bulk chunks small enough that the backend frees up quickly — on a CPU backend whose
+internal batch caps at 8, "fat batches" for the bulk lane is actively wrong: it buys no throughput and
+only lengthens the block.
 
 ### Padding / length bucketing (free speed, no accuracy cost)
 
@@ -357,6 +363,16 @@ lane), `train.py` (bulk lane), and `docker-compose.yml` (attached to `embedder-n
   (`test_priority_lane`), §14.5 harness (`scripts/load_rss.py`), plus a docker-free gateway-logic
   suite (`test_gateway_contract`: mismatch refusal, fail-closed, bulk ordering, caps, auth).
   §14.3/§14.4 belong consumer-side (they need a classifier + its cache); map in `tests/README.md`.
+
+- **§14.8 lane starvation — the priority queue was not sufficient** (measured on the VPS: score
+  latency 0.08s idle → **8-15s** under a bulk flood, budget 5s). Priority decides who is picked up
+  *next*; it cannot recall a worker already blocked inside a multi-second TEI call, so with a shared
+  pool a score item sat at the head of the queue and waited anyway (head-of-line blocking). Fixed
+  with **separate worker pools per lane** (`EMBEDDER_SCORE_WORKERS=2`, `EMBEDDER_BULK_WORKERS=1`)
+  plus a bulk chunk of **8** — TEI's CPU backend caps its internal batch at 8, so larger chunks buy
+  no inference speed and only widen the window in which the backend is unavailable. This is the
+  correction to §4c's claim that a gateway priority queue approximates Triton's `priority_levels`:
+  it does so only if the high-priority lane has reserved capacity.
 
 **Still open:** never run on the box — parity (§14.1), peak RSS (§14.5), and lane latency (§14.8) are
 all unmeasured; andras-job-search is still on in-process `fastembed` with no `embedder-net` wiring.

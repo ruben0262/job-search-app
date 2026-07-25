@@ -27,8 +27,15 @@ class Config:
     # truth: docker-compose passes the same env to both sides, and verify.py asserts agreement
     # against the live backend at startup.
     tei_batch: int = int(os.environ.get("TEI_MAX_CLIENT_BATCH", "32"))
-    bulk_chunk: int = int(os.environ.get("EMBEDDER_BULK_CHUNK", "32"))
-    tei_concurrency: int = int(os.environ.get("EMBEDDER_TEI_CONCURRENCY", "2"))
+    # Bulk chunk. Default 8 = the ONNX CPU backend's own max batch: TEI splits anything larger into
+    # 8s internally, so a bigger chunk buys NO inference speed and only makes a worker (and TEI's
+    # queue head) block ~N/8x longer — which is what starves the score lane.
+    bulk_chunk: int = int(os.environ.get("EMBEDDER_BULK_CHUNK", "8"))
+    # Separate worker pools per lane. A shared pool cannot protect the fast lane: priority orders
+    # the QUEUE, but a score request still waits for an in-flight bulk call to return. Reserving
+    # workers is what actually makes the fast lane fast (PLAN §4c/§14.8).
+    score_workers: int = int(os.environ.get("EMBEDDER_SCORE_WORKERS", "2"))
+    bulk_workers: int = int(os.environ.get("EMBEDDER_BULK_WORKERS", "1"))
     max_texts: int = int(os.environ.get("EMBEDDER_MAX_TEXTS", "4096"))
     max_queue: int = int(os.environ.get("EMBEDDER_MAX_QUEUE", "256"))
 

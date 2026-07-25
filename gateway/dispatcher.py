@@ -1,44 +1,48 @@
-"""Two-lane priority dispatch in front of TEI (PLAN §4b).
+"""Two-lane dispatch in front of TEI (PLAN §4b/§4c).
 
-The problem: on-arrival scoring (a user waiting) and bulk training embeds share ONE TEI
-backend. A big training flood must not make a score request wait. Solution: a priority queue
-where score items (priority 0) are pulled before bulk items (priority 1), and bulk requests
-are split into bounded chunks so score items can interleave *between* a training request's
-chunks instead of queueing behind the whole thing.
+The problem: on-arrival scoring (a user waiting) and bulk training embeds share ONE TEI backend.
+A training flood must not make a score request wait.
 
-TEI still does the real token-batching internally; this layer only controls ORDER and caps how
-much bulk work is in flight, so the fast lane always has a way through.
+A single priority queue is NOT enough, and the first VPS run proved it — score latency went from
+0.08s idle to 8-15s under a bulk flood. Priority decides who is picked up NEXT; it cannot recall a
+worker already blocked inside a multi-second TEI call. With every worker busy on bulk chunks, a
+score item sits at the front of the queue and waits anyway (classic head-of-line blocking).
 
-The queue is BOUNDED (`EMBEDDER_MAX_QUEUE`, PLAN §4c "bound the queue"): past that depth the
-gateway sheds load with a 503 rather than growing memory without limit while every caller times
-out anyway. Backpressure is the honest signal — an unbounded queue just converts a throughput
-problem into an OOM.
+So the lanes get SEPARATE worker pools:
+  - score workers serve /embed only, and are therefore always free to dispatch immediately,
+  - bulk workers serve /embed/bulk, deliberately few (default 1) so a flood cannot fill TEI's own
+    internal queue and push score requests behind a wall of queued batches.
 
-TODO(tune): the chunk size, worker count, queue bound, and (later) an explicit max-queue-delay
-window are empirical — set from load tests on the real box (PLAN §12/§14.8), not guessed here.
+Chunk size is the other half. TEI's CPU backend caps its internal batch at 8, so forwarding more
+than that per call buys no inference speed — it only lengthens the window during which a worker,
+and TEI's queue head, is unavailable. Hence a small bulk chunk by default.
+
+Both queues are BOUNDED (`EMBEDDER_MAX_QUEUE`): past that depth the gateway sheds load with a 503
+rather than growing memory while every caller times out anyway. An unbounded queue just converts a
+throughput problem into an OOM.
+
+TODO(tune): chunk size, pool sizes, and the queue bound are empirical — set them from
+`scripts/load_rss.py` + `tests/test_priority_lane.py` on the real box (PLAN §12/§14.8).
 """
 from __future__ import annotations
 
 import asyncio
-import itertools
 from dataclasses import dataclass, field
 
 from .config import CONFIG
 from .tei_client import TEIClient
 
-SCORE = 0   # high-priority lane
-BULK = 1    # bulk/training lane
+SCORE = "score"
+BULK = "bulk"
 
 
 class QueueFull(RuntimeError):
-    """Dispatch queue at its bound — shed load instead of growing memory (PLAN §4c)."""
+    """A lane's queue is at its bound — shed load instead of growing memory (PLAN §4c)."""
 
 
-@dataclass(order=True)
+@dataclass
 class _Item:
-    priority: int
-    seq: int
-    texts: list[str] = field(compare=False)
+    texts: list[str]
     future: asyncio.Future = field(compare=False)
 
 
@@ -46,14 +50,17 @@ class Dispatcher:
     def __init__(self, tei: TEIClient, verifier=None) -> None:
         self._tei = tei
         self._verifier = verifier   # supplies the backend's real per-call batch limit (verify.py)
-        self._queue: asyncio.PriorityQueue[_Item] = asyncio.PriorityQueue(
-            maxsize=max(1, CONFIG.max_queue))
-        self._seq = itertools.count()        # tie-breaker → FIFO within a priority level
+        bound = max(1, CONFIG.max_queue)
+        self._queues: dict[str, asyncio.Queue[_Item]] = {
+            SCORE: asyncio.Queue(maxsize=bound),
+            BULK: asyncio.Queue(maxsize=bound),
+        }
         self._workers: list[asyncio.Task] = []
 
     def start(self) -> None:
-        self._workers = [asyncio.create_task(self._worker())
-                         for _ in range(max(1, CONFIG.tei_concurrency))]
+        pools = ((SCORE, max(1, CONFIG.score_workers)), (BULK, max(1, CONFIG.bulk_workers)))
+        self._workers = [asyncio.create_task(self._worker(lane))
+                         for lane, count in pools for _ in range(count)]
 
     async def stop(self) -> None:
         for w in self._workers:
@@ -62,44 +69,47 @@ class Dispatcher:
 
     @property
     def depth(self) -> int:
-        return self._queue.qsize()
+        return sum(q.qsize() for q in self._queues.values())
 
-    async def _enqueue(self, priority: int, texts: list[str]) -> list[list[float]]:
+    def depths(self) -> dict[str, int]:
+        return {lane: q.qsize() for lane, q in self._queues.items()}
+
+    async def _enqueue(self, lane: str, texts: list[str]) -> list[list[float]]:
         fut: asyncio.Future = asyncio.get_running_loop().create_future()
         try:
-            self._queue.put_nowait(_Item(priority, next(self._seq), texts, fut))
+            self._queues[lane].put_nowait(_Item(texts, fut))
         except asyncio.QueueFull as exc:
             raise QueueFull(
-                f"dispatch queue full ({CONFIG.max_queue} items) — retry with backoff") from exc
+                f"{lane} queue full ({CONFIG.max_queue} chunks) — retry with backoff") from exc
         return await fut
 
-    async def _submit(self, priority: int, texts: list[str], chunk: int) -> list[list[float]]:
-        """Split into chunks, dispatch each at `priority`, reassemble in the caller's order.
+    async def _submit(self, lane: str, texts: list[str], chunk: int) -> list[list[float]]:
+        """Split into chunks, dispatch them on `lane`, reassemble in the caller's order.
 
         Chunking is not optional on either lane: TEI refuses any single call over its
-        --max-client-batch-size, so an unchunked request from a caller embedding a whole page of
-        postings would 413 rather than embed. It also lets score items slip in *between* a
-        training request's chunks instead of queueing behind the whole thing.
+        --max-client-batch-size, so an unchunked request from a caller embedding a page of postings
+        would 413 rather than embed.
         """
         if not texts:
             return []
         if self._verifier is not None:
             chunk = self._verifier.effective_batch(chunk)
         parts = [texts[i:i + chunk] for i in range(0, len(texts), chunk)]
-        results = await asyncio.gather(*(self._enqueue(priority, p) for p in parts))
+        results = await asyncio.gather(*(self._enqueue(lane, p) for p in parts))
         return [vec for part_vecs in results for vec in part_vecs]
 
     async def submit_score(self, texts: list[str]) -> list[list[float]]:
-        """Fast lane — forwarded ahead of any queued bulk work."""
+        """Fast lane — its own workers, so it never waits on an in-flight bulk call."""
         return await self._submit(SCORE, texts, CONFIG.chunk_score)
 
     async def submit_bulk(self, texts: list[str]) -> list[list[float]]:
-        """Bulk lane — finer chunks so the fast lane can interleave."""
+        """Bulk lane — few workers, fine chunks, so it yields the backend to the fast lane."""
         return await self._submit(BULK, texts, CONFIG.chunk_bulk)
 
-    async def _worker(self) -> None:
+    async def _worker(self, lane: str) -> None:
+        queue = self._queues[lane]
         while True:
-            item = await self._queue.get()
+            item = await queue.get()
             try:
                 vectors = await self._tei.embed(item.texts)
                 if not item.future.done():
@@ -108,4 +118,4 @@ class Dispatcher:
                 if not item.future.done():
                     item.future.set_exception(exc)
             finally:
-                self._queue.task_done()
+                queue.task_done()

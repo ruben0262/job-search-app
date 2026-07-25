@@ -98,6 +98,7 @@ async def health() -> dict:
                                                  "verify_detail": "gateway not started"}
     return {"ok": tei_ok and verify["verified"], "tei_ok": tei_ok,
             "queue_depth": _dispatcher.depth if _dispatcher else -1,
+            "queue_depths": _dispatcher.depths() if _dispatcher else {},
             **verify, **CONFIG.info()}
 
 
