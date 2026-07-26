@@ -3,8 +3,11 @@
 One resident copy of a BGE model serves every tenant's scoring **and** training over HTTP, instead
 of each stack loading its own ~1.5GB copy. Full design in [`docs/PLAN.md`](docs/PLAN.md).
 
-All commands below run from this directory (`embedder/`). The compose project name is pinned to
-`job-search-app`, so container and volume names do not depend on where the repo is checked out.
+All commands below run from this directory (`services/embedder/`). The compose project name is
+pinned to `job-search-app`, so container and volume names depend on neither where the repo is
+checked out nor where in the tree this directory sits — which is what made the
+`embedder/` → `services/embedder/` relocation a source-tree move rather than a redeploy
+(`docs/saas/CODE_STRUCTURE.md` §6).
 
 **Status: deployed and serving.** bge-base (768d) on the VPS; `job-search` is migrated and its
 scorer-service runs with no model resident (~1.9GB → ~165MB). Gates §14.2/.5/.6/.7/.8 pass on the
@@ -85,7 +88,7 @@ services:
 
 Then in the consumer's scorer, replace the in-process `TextEmbedding(...)` with the
 [`examples/client.py`](examples/client.py) `EmbedderClient` — `embed_score(...)` on the serving path
-([`scorer/score.py:80`](../job-search/scorer/score.py) equivalent) and `embed_bulk(...)` in the
+([`scorer/score.py:80`](../../../job-search/scorer/score.py) equivalent) and `embed_bulk(...)` in the
 trainer's `_embed`. **Call `assert_compatible(model, dim)` at startup** so a vector-space mismatch
 refuses to score instead of scoring wrong (PLAN §13).
 

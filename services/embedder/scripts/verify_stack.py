@@ -12,7 +12,7 @@ Answers the question "is this really working?" with evidence rather than a green
 
 Run on the VPS, stdlib only, no venv needed:
 
-    python3 embedder/scripts/verify_stack.py
+    python3 services/embedder/scripts/verify_stack.py
 
 Add --failure-drill to also prove fail-closed + self-recovery. That one STOPS the embedder
 briefly, so every tenant loses scoring for ~30s; it is opt-in for that reason.

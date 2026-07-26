@@ -27,7 +27,7 @@ behaviour becomes multi-tenant. Nothing here is green-field.
 
 | Doc | Status |
 |---|---|
-| [EMBEDDER_SHARING_PLAN.md](EMBEDDER_SHARING_PLAN.md) | **Historical.** (The service moves to `services/embedder/` in Phase 1 — `CODE_STRUCTURE.md` §6.) Superseded by [`embedder/docs/PLAN.md`](../../embedder/docs/PLAN.md), which is the maintained plan with measured numbers and the decisions the VPS run reversed. The service is built and deployed in [`embedder/`](../../embedder/) |
+| [EMBEDDER_SHARING_PLAN.md](EMBEDDER_SHARING_PLAN.md) | **Historical.** Superseded by [`services/embedder/docs/PLAN.md`](../../services/embedder/docs/PLAN.md), which is the maintained plan with measured numbers and the decisions the VPS run reversed. The service is built and deployed in [`services/embedder/`](../../services/embedder/) (relocated there in Phase 1 step 0a — `CODE_STRUCTURE.md` §6) |
 | [MODEL_SELECTION_RESEARCH.md](MODEL_SELECTION_RESEARCH.md) | **Current.** Model/pricing ladder for scoring vs writing. Unchanged by the multi-tenant design |
 | [CLAUDE_API_BACKEND_PLAN.md](CLAUDE_API_BACKEND_PLAN.md) | **Current** for the API-backend mechanics |
 | [POOLED_CLAUDE_ACCOUNT_PLAN.md](POOLED_CLAUDE_ACCOUNT_PLAN.md) | **Deferred.** Assumes the platform resells Claude access via a prepaid wallet. Current design is bring-your-own-credential (decision D2). Revisit only if BYOK proves too much onboarding friction — the ledger design in §2 is good and worth keeping on the shelf |

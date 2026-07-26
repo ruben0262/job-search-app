@@ -3,7 +3,7 @@
 **Status:** design, 2026-07-26. The bar set in the brief: test behaviour not implementation, no
 brittle or flaky tests, and only tests that genuinely matter (6–7/10 importance and up).
 
-**Reference:** `embedder/tests/` already works this way — `test_batch_invariance`, `test_fail_closed`,
+**Reference:** `services/embedder/tests/` already works this way — `test_batch_invariance`, `test_fail_closed`,
 `test_parity`, `test_priority_lane`, `test_version_assert`. Each asserts a *property a caller depends
 on*, not an internal call sequence. Generalise that style; do not invent a new one.
 
@@ -26,7 +26,7 @@ notice**. Ranked by that, not by code coverage.
 | **T8** | **Embedding computed once** — embed the same job text for two users; assert the embedder backend was called once and both got identical vectors | **7** | The whole scaling argument (`HARVESTER_PLAN.md` §7). A cache regression is invisible until the CPU bill |
 | **T9** | **Config validation** — out-of-range values rejected with a field-named error; a zero-match config is flagged before save | **7** | Primary onboarding failure mode |
 | **T10** | **Cold start produces a usable feed** — new user + seeded corpus → Stage 0 feed non-empty immediately; after labelling + train, a personal model serves scores | **7** | The churn-critical path, end to end |
-| **T11** | **Fail-closed on version mismatch** — scorer refuses to score when the embedder reports a different `(model, dim, version)` than the trained artifact | **8** | Already proven in `embedder/tests/test_version_assert.py`; extend to the per-user scorer. Scoring against the wrong vector space is silent garbage |
+| **T11** | **Fail-closed on version mismatch** — scorer refuses to score when the embedder reports a different `(model, dim, version)` than the trained artifact | **8** | Already proven in `services/embedder/tests/test_version_assert.py`; extend to the per-user scorer. Scoring against the wrong vector space is silent garbage |
 | **T12** | **Account deletion leaves no orphans** — delete a user; assert zero rows in every per-user table and that corpus rows are intact | **7** | GDPR + the "no user data in corpus" invariant |
 | **T13** | **Proxy is never cross-used** — user A's credential is used only for A's fetches; a user with no healthy credential sees zero `source='linkedin'` rows in their feed | **8** | The whole basis of decision D3. A regression here silently reintroduces free-riding and provider-ToS exposure |
 

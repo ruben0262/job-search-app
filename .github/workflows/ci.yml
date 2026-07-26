@@ -37,9 +37,9 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - run: pip install -r embedder/tests/requirements.txt
+      - run: pip install -r services/embedder/tests/requirements.txt
       # EMBEDDER_URL is deliberately unset: the integration tier (health shape, batch invariance,
       # priority lane, parity) needs a running TEI backend and stays a VPS-side gate. What runs
       # here is the tier that needs nothing — the gateway against a stubbed TEI, and fail-closed
       # behaviour when the backend is dead.
-      - run: pytest embedder/tests -v
+      - run: pytest services/embedder/tests -v

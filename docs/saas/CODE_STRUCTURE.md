@@ -186,10 +186,12 @@ Carry over the reference instance's split: always-on services start with a bare 
 sit behind `profiles: ["tools"]` so a no-arg `up` cannot accidentally launch a trainer beside the
 scorer and load a second model into RAM. That exact mistake is why the profile split exists.
 
-## 6. Relocating the embedder safely
+## 6. Relocating the embedder safely — ✅ done
 
-`embedder/` is **built, tested, and deployed** — gateway, dispatcher, compose file, seven test
-modules. It moves to `services/embedder/` so the tree has no exceptions (decided 2026-07-26).
+`embedder/` was **built, tested, and deployed** — gateway, dispatcher, compose file, seven test
+modules. It moved to `services/embedder/` so the tree has no exceptions (decided 2026-07-26,
+executed in Phase 1 step 0a). The checklist below is kept as the record of how, and as the pattern
+for the next thing that has to move while it is running.
 
 **This is a source-tree move, not a service migration.** The running container, its image, and its URL
 do not change; only the paths the build reads from. That is what makes it safe — but only if it is
@@ -200,14 +202,33 @@ done deliberately:
 2. **Its own commit.** Nothing else in the same change, so a bisect lands on it cleanly.
 3. **Tests green before and after.** The seven modules under `tests/` are the proof the move was
    inert; run them either side and compare.
-4. **Update all four path surfaces together** — `docker-compose.yml` build context, the Dockerfile's
-   `COPY` paths, test imports, and `scripts/`. A missed one fails at build, which is the good case;
-   the bad case is a stale image that still works until it is rebuilt.
+4. **Update every path surface together.** A missed one fails at build, which is the good case; the
+   bad case is a stale image that still works until it is rebuilt.
 5. **`docs/PLAN.md` moves with it** and stays the maintained plan (the copy in `docs/saas/` is
    historical).
 
 The deployed instance keeps serving throughout — redeploy only once tests are green on the new
 layout.
+
+### What the surfaces actually were (recorded after the fact)
+
+The pre-move guess above was that the build itself would need edits. It did not, and the reason is
+worth keeping, because it is the property to preserve in the next service that moves:
+
+| Surface | Changed? | Why |
+|---|---|---|
+| `docker-compose.yml` build context (`context: .`) | **no** | Relative to the compose file, which moved with it |
+| Dockerfile `COPY gateway /app/gateway` | **no** | Relative to the build context |
+| Test imports (`conftest.py` `sys.path` insert) | **no** | Computed from `__file__`, i.e. parent-of-`tests/` |
+| Compose project name | **no** | Pinned `name: job-search-app` — the whole point of pinning it |
+| `scripts/verify_stack.py` usage docstring | yes | Hardcoded `python3 embedder/scripts/…` |
+| READMEs, `docs/PLAN.md` header, `docs/saas/*` cross-links | yes | Prose paths and relative markdown links |
+| `.github/workflows/ci.yml` test paths | yes | Added in the preceding commit |
+| `pyproject.toml` import-linter contract | yes | `services.embedder` added to the independence contract |
+| **New** `services/embedder/__init__.py` | added | So `services.embedder` is a module import-linter can hold to the contract. Deliberately empty otherwise: the image copies `gateway/` to `/app/gateway` and runs `gateway.app:app`, so in-container the package is `gateway`, not `services.embedder.gateway`. Both resolve because everything under `gateway/` uses **relative** imports — that is the property that made this move free, and it should be kept |
+
+**Everything relative moved for free; only things that hardcoded a path from the repo root needed
+editing.** Write new services that way and relocating them stays a `git mv`.
 
 **What does not change:** the gateway's two-lane dispatcher, its fail-closed version verification, and
 the `(model, dim, version)` assert its callers depend on. Those are the parts other services rely on,

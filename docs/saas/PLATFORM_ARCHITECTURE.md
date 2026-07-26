@@ -95,7 +95,7 @@ a hard requirement (regular updates), and it constrains the contracts between th
 | `web` | none (static) | |
 | `api` | users cannot log in / edit config; pipeline keeps running | |
 | `harvester` | new jobs stop arriving; existing feeds unaffected | de-personalised `pipeline/` |
-| `embedder` | scoring + training pause, fail **closed** (never scores against a wrong vector space) | built; `embedder/` |
+| `embedder` | scoring + training pause, fail **closed** (never scores against a wrong vector space) | built; `services/embedder/` |
 | `scorer` | new jobs queue unscored, drain on restart | must hold N user models (§7) |
 | `trainer` | retrains queue up | concurrency 1 |
 | `notifier` | deliveries queue up, `next_run_at` re-armed | one bot token per user |
