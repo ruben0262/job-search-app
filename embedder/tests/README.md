@@ -36,6 +36,11 @@ The gateway publishes `127.0.0.1:8080` — loopback only, so it is reachable fro
 the tests but not from the network. Consumer containers do not use that port; they reach the
 gateway by service name over `embedder-net`.
 
+That mapping is optional and only exists for host-side tooling. **These tests and
+`scripts/load_rss.py` need it**; `scripts/verify_stack.py` does not (it falls back to `docker exec`
+on the gateway container). If you comment the `ports:` line out, re-add it before running the gates
+or every integration test fails with one "gateway not reachable" line.
+
 If `EMBEDDER_URL` is set but nothing is listening, the integration tests fail immediately with one
 line saying so (see `conftest.py`) rather than nine httpx tracebacks. They **fail** rather than
 skip on purpose — a silent skip is how §14.1 parity went unrun while the suite looked green.

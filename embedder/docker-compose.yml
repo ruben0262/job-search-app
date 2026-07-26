@@ -55,14 +55,16 @@ services:
     restart: always
     mem_limit: 256m
     cpus: 0.5
-    # Bound to LOOPBACK ONLY. This is not a public port: 127.0.0.1 is unreachable from the network,
-    # so the only callers are processes already on this host (the test suite, scripts/load_rss.py,
-    # curl /health). Consumer containers do NOT use this — they reach the gateway by service name
-    # over embedder-net. Published by default so the §14 gates are runnable without editing this
-    # file, which is otherwise a step people forget in both directions.
+    # OPTIONAL, and loopback-only. No consumer uses this — tenants reach the gateway by service
+    # name over embedder-net. It exists purely so host-side tooling can talk to the gateway:
     #
-    # To expose beyond this host, "0.0.0.0:8080" is NOT sufficient — set EMBEDDER_AUTH_TOKEN and
-    # put TLS in front first. An un-authed embedding endpoint is a CPU-DoS magnet.
+    #   needs it : pytest tests/ (EMBEDDER_URL), scripts/load_rss.py, curl /health
+    #   does not : scripts/verify_stack.py — falls back to `docker exec` on this container
+    #
+    # Comment it out if you prefer nothing bound on the host; day-to-day verification still works.
+    # 127.0.0.1 is not reachable from the network, so leaving it published exposes nothing beyond
+    # processes already on this box. To expose it FURTHER, "0.0.0.0:8080" is not sufficient: set
+    # EMBEDDER_AUTH_TOKEN and put TLS in front. An un-authed embedding endpoint is a CPU-DoS magnet.
     ports: ["127.0.0.1:8080:8080"]
 
 networks:

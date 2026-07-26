@@ -56,6 +56,26 @@ def get_json(url: str, timeout: float = 15.0) -> dict:
         return json.loads(r.read())
 
 
+def gateway_health(url: str, container: str) -> tuple[dict, str]:
+    """Read the gateway's /health, via the host port if published, else from inside the network.
+
+    The host port is a convenience for tooling, not part of how the service is consumed — tenants
+    reach the gateway by service name over embedder-net. So this falls back to exec'ing into the
+    gateway container, which means the port can stay closed without blinding the checks. Returns
+    (health, how) so the output says which path answered.
+    """
+    try:
+        return get_json(f"{url}/health"), f"host {url}"
+    except (urllib.error.URLError, OSError, ValueError):
+        pass
+    rc, out = docker("exec", container, "python", "-c",
+                     "import httpx;print(httpx.get('http://localhost:8080/health',"
+                     "timeout=15).text)")
+    if rc != 0:
+        raise RuntimeError(f"host port unreachable and `docker exec {container}` failed: {out}")
+    return json.loads(out.strip().splitlines()[-1]), f"container {container}"
+
+
 def docker(*args: str, timeout: float = 60.0) -> tuple[int, str]:
     p = subprocess.run(["docker", *args], capture_output=True, text=True, timeout=timeout)
     return p.returncode, (p.stdout or p.stderr).strip()
@@ -105,14 +125,14 @@ def rss_mb(container: str) -> float | None:
     return None
 
 
-def check_embedder(url: str) -> dict | None:
+def check_embedder(url: str, container: str) -> dict | None:
     print("\n-- embedder ---------------------------------------------")
     try:
-        h = get_json(f"{url}/health")
-    except (urllib.error.URLError, OSError, ValueError) as exc:
-        record(FAIL, "embedder reachable", f"{url}: {exc}")
+        h, how = gateway_health(url, container)
+    except Exception as exc:                                    # noqa: BLE001
+        record(FAIL, "embedder reachable", str(exc)[:300])
         return None
-    record(PASS, "embedder reachable", f"{url}")
+    record(PASS, "embedder reachable", f"via {how}")
     if not h.get("verified"):
         record(FAIL, "vector space confirmed against live backend",
                f"state={h.get('verify_state')} {h.get('verify_detail')}")
@@ -174,7 +194,8 @@ def check_tenant(name: str, container: str, embedder: dict, max_rss_mb: float) -
         record(PASS, f"{name}: no model resident", f"{mb:.0f} MB")
 
 
-def failure_drill(url: str, tenants: list[tuple[str, str]], compose_dir: str) -> None:
+def failure_drill(url: str, gateway: str, tenants: list[tuple[str, str]],
+                  compose_dir: str) -> None:
     print("\n-- failure drill (embedder stopped) ---------------------")
     stopped = subprocess.run(["docker", "compose", "stop"], cwd=compose_dir,
                              capture_output=True, text=True)
@@ -205,7 +226,7 @@ def failure_drill(url: str, tenants: list[tuple[str, str]], compose_dir: str) ->
     deadline = time.time() + 120
     while time.time() < deadline:
         try:
-            if get_json(f"{url}/health").get("ok"):
+            if gateway_health(url, gateway)[0].get("ok"):
                 break
         except Exception:                                       # noqa: BLE001
             pass
@@ -226,7 +247,9 @@ def failure_drill(url: str, tenants: list[tuple[str, str]], compose_dir: str) ->
 
 def main() -> int:
     p = argparse.ArgumentParser()
-    p.add_argument("--url", default="http://127.0.0.1:8080")
+    p.add_argument("--url", default="http://127.0.0.1:8080",
+                   help="host port if published; falls back to --gateway-container when closed")
+    p.add_argument("--gateway-container", default="job-search-app-embedder-gateway-1")
     p.add_argument("--tenant", action="append", default=None,
                    metavar="NAME=CONTAINER", help="repeatable; defaults to job-search + andras")
     p.add_argument("--max-rss-mb", type=float, default=1000.0,
@@ -244,14 +267,14 @@ def main() -> int:
         name, container = spec.split("=", 1)
         tenants.append((name, container))
 
-    embedder = check_embedder(args.url)
+    embedder = check_embedder(args.url, args.gateway_container)
     if embedder is None:
         print("\nembedder is not serving — nothing downstream can pass. Stopping here.")
         return 1
     for name, container in tenants:
         check_tenant(name, container, embedder, args.max_rss_mb)
     if args.failure_drill:
-        failure_drill(args.url, tenants, args.compose_dir)
+        failure_drill(args.url, args.gateway_container, tenants, args.compose_dir)
 
     failed = [r for r in _results if r[0] == FAIL]
     print("\n" + "=" * 58)
