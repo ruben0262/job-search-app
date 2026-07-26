@@ -40,14 +40,18 @@ Also fold in from `GAPS_REVIEW.md` — cheap now, expensive later:
 The unglamorous half. Nothing user-facing ships here, and skipping ahead of it means building the
 product twice.
 
-0a. **Lay out the repo per `CODE_STRUCTURE.md`** and wire `import-linter` into CI on the first
-   commit. Boundaries are trivial to establish now and painful to retrofit once eight services
-   import each other. Includes relocating `embedder/` → `services/embedder/` as its own commit,
-   with its seven test modules green either side (`CODE_STRUCTURE.md` §6) — the cheapest moment to
-   move it is before anything depends on it.
-0b. **Capacity check on the live VPS** (`PLATFORM_ARCHITECTURE.md` §11) — RAM, `docker stats` for
-   both existing stacks, free disk. Cheap, and it either confirms D4 or changes it before any
-   schema exists.
+0a. ✅ **Done 2026-07-26.** Repo laid out per `CODE_STRUCTURE.md`, `import-linter` wired into CI on
+   the first commit, `embedder/` → `services/embedder/` as its own commit with 15 passed / 9
+   skipped identical either side. Boundaries are trivial to establish now and painful to retrofit
+   once eight services import each other, which is why this went first.
+0b. ✅ **Done 2026-07-26 — D4 confirmed, verdict comfortable** (`PLATFORM_ARCHITECTURE.md` §11):
+   23 GiB RAM with 22 GiB available, 8 vCPU, 382 GB free disk, ~337 MiB currently resident. Roughly
+   3× headroom. **But the headroom is partly an artifact of what is *not* on the box:** neither
+   single-tenant stack nor the deployed embedder runs there, so the D6 parallel-run arithmetic that
+   made §11 tight has not actually been paid yet. Three follow-ups fall out of it and belong in
+   this phase — stand the embedder up on the target box, note that there is no swap (a spike
+   OOM-kills rather than degrades, and `docgen` runs Chrome), and install Postgres with its backup
+   and restore drill before any schema.
 1. **Postgres schema**: `users`, `user_config`, `user_secrets`, `corpus`, `user_job_state`,
    `user_labels`, `jobs` (queue), `models`.
 2. **T2 dedup regression suite written against today's SQLite behaviour** — before touching anything.

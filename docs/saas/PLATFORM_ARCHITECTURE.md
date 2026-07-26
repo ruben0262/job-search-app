@@ -355,3 +355,43 @@ decision most worth keeping.
 off-box destination, the KEK backed up separately from the database (`OPERATIONS_PLAN.md` §7 — the
 trap that fails silently in both directions), and a restore drill completed before the first invited
 user. None of that is optional now that no provider is doing it.
+
+### Measured 2026-07-26 — verdict: **comfortable** ✅
+
+Phase 1 step 0b, run against the target box (`169.58.16.241`, Ubuntu 24.04.4, kernel 6.8.0-134):
+
+| | Measured |
+|---|---|
+| RAM | **23 GiB total**, 1.1 GiB used, **22 GiB available** |
+| Swap | **none** — see the caveat below |
+| CPU | 8 vCPU (AMD EPYC), load average 0.12 / 0.03 / 0.01 |
+| Disk | 387 GB, 4.7 GB used (2%), **382 GB free** |
+| Resident containers | `morioh-api` 136 MiB · `morioh-worker` 183 MiB · `cloudflared` 18 MiB — **~337 MiB total** |
+| Docker footprint | images 956 MB · build cache 1.37 GB (508 MB reclaimable) |
+
+Against the projection table above (~7–8 GB at full parallel run, plus the 0.87 GB steady-state
+corpus from §4), that is roughly **3× headroom on RAM and 100× on disk**. D4 is confirmed; the
+"tight" and "insufficient" branches are not triggered.
+
+**Four things the measurement changed or surfaced, all worth carrying forward:**
+
+1. **The box is not what §11 assumed, and this is why it is comfortable.** Neither single-tenant
+   stack (`job-search`, `andras-job-search`) nor the deployed embedder is on this machine — it runs
+   only an unrelated `morioh` project. The ~3.8 GB of two resident `scorer-service` processes that
+   made the D6 arithmetic tight is **not** on this box. If those stacks are later migrated here,
+   **re-run this check first**; the headroom above is not headroom for them.
+2. **The platform's embedder has to be brought up here.** `services/embedder` is deployed, but
+   elsewhere. Phase 1 needs either a deployment on this box or a decision to reach the existing one
+   across hosts — which would put an embedder network hop outside `embedder-net` and needs
+   `EMBEDDER_AUTH_TOKEN` + TLS before it is acceptable (`services/embedder/README.md`).
+3. **There is no swap.** With 22 GiB free that is fine for steady state, and it is arguably the
+   right choice for latency. But it means a spike does not degrade, it **OOM-kills** — and `docgen`
+   spawning Chrome is exactly the spiky workload that finds that edge. The 2026-07-24 incident was
+   a memory crunch. Cheap insurance: keep per-service `mem_limit`s set so the kernel's victim
+   selection is a decision rather than a coincidence.
+4. **Postgres is not installed** — no `psql`, no `pg_dump`, no `postgresql` service or container.
+   It is a Phase 1 step 1 prerequisite, and so are the backup, WAL archiving, and restore drill
+   that §7 of `OPERATIONS_PLAN.md` makes non-optional under self-management.
+
+Timezone reports `Europe/Berlin`, which is an indicator and not a location; D8's residency question
+is deferred rather than answered.
