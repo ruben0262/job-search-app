@@ -1,0 +1,152 @@
+# Roadmap — simple version shipped fast, then improved
+
+**Status:** design, 2026-07-26. The brief: plan a simple version, implement, test, get it to users
+ASAP, improve later. This orders the work so that each phase ends with something usable and nothing
+is built before the thing it depends on.
+
+---
+
+## Phase 0 — decided 2026-07-26 ✅
+
+- **D1 Postgres for everything.** One datastore; FK cascade; JSONB for config.
+- **D2 Both Claude credential types**, user chooses. API first and preselected; OAuth is a second
+  adapter behind the same interface, built after — not alongside.
+- **D3 (revised) Every user brings their own proxy, strictly per-user, never pooled.** The LinkedIn
+  tier runs per-user on their own credential; everything proxy-free stays shared
+  (`HARVESTER_PLAN.md` §5).
+
+- **D4 (revised) Everything on the existing $20 Contabo VPS, self-managed Postgres.** Backups, PITR,
+  and restore drills stay yours — `OPERATIONS_PLAN.md` §7 is full scope. Needs the capacity check in
+  `PLATFORM_ARCHITECTURE.md` §11 before Phase 1 locks the layout.
+- **D8 EU data residency**, explicitly — Postgres and backups both.
+- **D9 Generated documents stay ephemeral** (G8 closed): built, delivered, discarded.
+- **D5 Invite-only at launch.** Legal review becomes a milestone, not a blocker, and the near-zero
+  abuse surface is what makes the v1 quota design sufficient.
+- **D6 Parallel copies, decommission only when proven.** Single-tenant stacks keep running; Ruben and
+  Andras *also* get platform accounts, so the two can be compared on the same person.
+- **D7 Cloudflare Pages + subdomain of `rubenlekli.com`**, API via a Cloudflare Tunnel so the VPS
+  needs no open inbound ports.
+
+One follow-up, not blocking Phase 1: verify Anthropic's terms on subscription credentials in a hosted
+service (gates offering OAuth beyond the invited cohort).
+
+Also fold in from `GAPS_REVIEW.md` — cheap now, expensive later:
+- **G5 Alembic migrations** from the first table.
+- **G7 `users.timezone`** (IANA) and `TIMESTAMPTZ` everywhere; per-day counters reset at the user's
+  local midnight.
+
+## Phase 1 — the shared core (largest, least visible)
+
+The unglamorous half. Nothing user-facing ships here, and skipping ahead of it means building the
+product twice.
+
+0a. **Lay out the repo per `CODE_STRUCTURE.md`** and wire `import-linter` into CI on the first
+   commit. Boundaries are trivial to establish now and painful to retrofit once eight services
+   import each other. Includes relocating `embedder/` → `services/embedder/` as its own commit,
+   with its seven test modules green either side (`CODE_STRUCTURE.md` §6) — the cheapest moment to
+   move it is before anything depends on it.
+0b. **Capacity check on the live VPS** (`PLATFORM_ARCHITECTURE.md` §11) — RAM, `docker stats` for
+   both existing stacks, free disk. Cheap, and it either confirms D4 or changes it before any
+   schema exists.
+1. **Postgres schema**: `users`, `user_config`, `user_secrets`, `corpus`, `user_job_state`,
+   `user_labels`, `jobs` (queue), `models`.
+2. **T2 dedup regression suite written against today's SQLite behaviour** — before touching anything.
+3. **Port `pipeline/lib/store.py` → Postgres corpus repository.** The largest single task (578 lines,
+   and the dedup semantics are load-bearing). T2 stays green throughout.
+3b. **Port the other stores too** — `ats_tokens`, `ats_etags` (**replacing its file lock**),
+   `applied`, `labels`, `feedback`. Easy to forget and easy to underestimate: `ats_etags` is what
+   makes ATS polling near-free, and `applied` is the record a user would be angriest to lose. Full
+   table: `PLATFORM_ARCHITECTURE.md` §4.
+4. **De-personalise the harvester**: config from a union of user configs, query-set builder, fan-out
+   budget, round-robin selection, plus the **per-user LinkedIn loop** on the user's own proxy
+   credential and its visibility gate (`HARVESTER_PLAN.md` §5).
+5. **Persist embedding vectors on corpus rows**; route harvest embedding through `/embed/bulk`.
+6. **T1 tenant isolation** as soon as the first per-user table exists.
+
+**Exit criteria:** the shared harvester fills a Postgres corpus with embeddings, on a schedule, with
+T1 + T2 green, and Ruben's account runs on it **alongside** his single-tenant stack (decision D6 —
+parallel, not cutover). Compare the two feeds on the same person; decommission nothing yet. **Do not
+onboard anyone else until this is true** — being your own first user is the cheapest bug-finding
+available.
+
+## Phase 2 — the per-user tail
+
+Now it becomes a product.
+
+0. **Profile capture** (`PROFILE_CAPTURE_PLAN.md`) — Managed Agents session, confirmation,
+   deterministic render. Blocks step 1: the rubric renderer has no input without it.
+1. **Per-user rubric rendering** + `profile_version` (`COLD_START_PLAN.md` §3, `PROFILE_CAPTURE_PLAN.md`
+   §6.1). Flagged as the largest hidden task; give it real time.
+1b. **Per-user feature extractor** (`PROFILE_CAPTURE_PLAN.md` §6.3) and the single
+   `profile_generation` counter that keeps labels and model artifacts in step (§6.4). Same
+   workstream as the rubric — do not schedule them apart.
+2. **Multi-tenant scorer** with an LRU of user models and `model_version` hot-swap.
+3. **Scheduler** — the four-lane Postgres queue, with T5/T6/T7 in the same commit.
+4. **Trainer** — concurrency 1, CPU-fenced, debounced.
+5. **Notifier** — per-user bot tokens, per-user intervals, delivery dedup.
+6. **Secrets module** + T4, same commit.
+
+**Exit criteria:** two accounts (Ruben + Andras) run side by side on one stack, each with their own
+model, feed, and schedule. This is the real proof, and it replaces the two separate deployments that
+prompted this whole design.
+
+## Phase 3 — self-service
+
+In onboarding order, which is also dependency order:
+
+1. **Signup, email confirmation, login** (ported per `AUTH_REUSE.md`) + **transactional email**, which
+   is now load-bearing rather than optional (`OPERATIONS_PLAN.md` §6).
+2. **`plans` table with the single `free` row**; quotas resolved from it, not from code constants.
+3. **Credential entry, validated at save** — before capture, since capture spends the user's key.
+4. **Profile capture** (`PROFILE_CAPTURE_PLAN.md`): Managed Agents session, confirmation form,
+   deterministic render. Manual-entry fallback in the same commit — capture must never hard-block.
+5. **Config form** generated from the shared schema, with the live match count.
+6. **Telegram connect** with automatic chat-ID capture.
+7. **Cold-start pipeline**: pool selection → labelling → first train, with visible stage progression.
+8. **Dashboard**: feed stats, model status, quota usage, and the **health banners** from
+   `OPERATIONS_PLAN.md` §4b.
+
+**Exit criteria:** a non-technical person signs up unaided and gets a working feed. Test this with a
+real person who has not seen the product, and watch without helping.
+
+## Phase 4 — first cohort (invite-only, decision D5)
+
+- **Operations first** (`OPERATIONS_PLAN.md`): monitoring, alerts, admin view, transactional email,
+  backup with a **completed restore drill**. Onboarding people before this means their failures are
+  invisible to everyone including them.
+- **Measure capture cost first** (`PLATFORM_ARCHITECTURE.md` §10.10) — it is the first spend a
+  user sees, on a free plan, on their own key.
+- Onboard 3–5 **invited** users. Quotas on from day one.
+- Andras gets a platform account alongside his existing stack (D6); still decommission nothing.
+- Watch: harvest budget consumption, proxy GB, trainer queue depth, embedder queue depth, Postgres
+  size vs the projection in `PLATFORM_ARCHITECTURE.md` §4.
+- Legal review before signup opens beyond invites — with D5, this is a milestone, not a blocker.
+- **Decommission the single-tenant stacks only once the platform demonstrably matches them.**
+
+## Deliberately deferred
+
+Do not build these before Phase 4, regardless of how appealing they look mid-build.
+
+| Item | Why later |
+|---|---|
+| Query subsumption in the harvester | Result caps make it unsafe; exact dedup captures most of the win (`HARVESTER_PLAN.md` §2) |
+| Redis | Postgres `SKIP LOCKED` is sufficient below ~100 users |
+| pgvector | Nothing does similarity *search* yet |
+| Non-Claude labelling models | Needs a relabel A/B per `MODEL_SELECTION_RESEARCH.md` §8; the ladder is Haiku+batch+cache first |
+| Billing / payments | Business decision, not a technical blocker |
+| Shared bootstrap model trained on all users' labels | Consent surface; launch with operator-only labels (`COLD_START_PLAN.md` §2) |
+| Postgres row-level security | Second layer; get the repository layer right first |
+
+## Sequencing risks
+
+1. **The `store.py` port is the critical path** and the easiest to underestimate. Dedup semantics are
+   tuned (canonical folding, location-aware content keys) and quietly load-bearing. T2 first is not
+   optional.
+2. **The per-user rubric AND feature extractor are one workstream, not two tasks.** Together they
+   gate every user's scoring quality, they inherit the generation prompts' change-control rules, and
+   splitting them risks labels and model artifacts drifting out of step (`PROFILE_CAPTURE_PLAN.md`
+   §6.4).
+4. **Managed Agents is beta and sits on the onboarding path.** Pin the beta header; expect one
+   contract change during the build.
+3. **Being your own first user (Phase 1 exit) is the cheapest bug-finding available.** Resist
+   onboarding a second person early.
