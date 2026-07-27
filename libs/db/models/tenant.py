@@ -162,7 +162,9 @@ class UserModel(Base):
 
     embedder_model: Mapped[str] = mapped_column(String(128))
     embedder_dim: Mapped[int] = mapped_column(Integer)
-    embedder_version: Mapped[str] = mapped_column(String(32))
+    # Text for the same reason as corpus.embedding_version: the composite version string is longer
+    # than 32 characters for the model actually in production.
+    embedder_version: Mapped[str] = mapped_column(Text)
 
     # Training-set size, holdout metrics, label mix. Diagnostic, and what the dashboard's "model
     # status" panel reads.

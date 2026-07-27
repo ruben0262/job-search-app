@@ -35,7 +35,7 @@ mock-call-count assertions, HTML rendering details, anything asserting a specifi
 
 ### Status — audited 2026-07-27
 
-Honest against the specification above, not against what feels done. **213 tests passing.**
+Honest against the specification above, not against what feels done. **247 tests passing.**
 
 | ID | Status | Where | Note |
 |---|---|---|---|
@@ -46,7 +46,7 @@ Honest against the specification above, not against what feels done. **213 tests
 | T5 | ❌ not built | — | Needs `libs/queue`. Phase 2 |
 | T6 | 🟡 partial | `tests/test_schema.py` | Duplicate collapse is proven at the database level (partial unique index). Fairness and starvation need the queue |
 | T7 | ❌ not built | — | Needs the notify lane. Phase 2 |
-| T8 | ❌ not built | — | Phase 1 step 5 |
+| **T8** | ✅ done | `tests/test_embedding.py` | 14 tests. One posting, two users, one embed - asserted through a counting stub. Also covers the mid-flight text change, the bulk-vs-fast lane, and refusing a short vector list rather than misaligning it |
 | **T9** | ✅ done | `tests/test_config_schema.py` | 34 tests, including the seam where a *validated* config drives the harvester |
 | T10 | ❌ not built | — | Phase 3 |
 | T11 | 🟡 partial | `services/embedder/tests/test_version_assert.py` | Proven at the embedder boundary; extending it to the per-user scorer waits on Phase 2 |

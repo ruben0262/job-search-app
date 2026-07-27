@@ -101,7 +101,11 @@ class CorpusJob(Base):
     # discipline the embedder already enforces at its own boundary (PLATFORM_ARCHITECTURE.md §5).
     embedding_model: Mapped[str | None] = mapped_column(String(128))
     embedding_dim: Mapped[int | None] = mapped_column(Integer)
-    embedding_version: Mapped[str | None] = mapped_column(String(32))
+    # Text, not String(32). The embedder's version is a COMPOSITE of everything that defines the
+    # vector space - "BAAI/bge-base-en-v1.5|dim=768|norm=1" is already 36 characters, so the
+    # original bound would have failed on the very first real embed. Its length is a function of the
+    # model name, which is not ours to bound.
+    embedding_version: Mapped[str | None] = mapped_column(Text)
 
     posted_at: Mapped[timestamptz | None]
     first_seen_at: Mapped[timestamptz] = mapped_column(server_default=func.now())

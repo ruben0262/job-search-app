@@ -16,6 +16,42 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ## 2026-07-27
 
+### Step 5 - embed once, for everyone, ever (T8)
+
+`libs/contracts/embedder.py` and `services/harvester/embedding.py`. A vector is a deterministic
+function of the text, so embedding the same posting for fifty users is fifty times the CPU for
+byte-identical output. Putting it once on the shared corpus row is the whole scaling argument.
+
+**A regression here is invisible until the CPU bill** - nothing errors, feeds populate, scores look
+reasonable. So T8 asserts the backend call count through a counting stub rather than trusting the
+structure.
+
+**A real schema bug, and it would have failed on the very first production embed.**
+`corpus.embedding_version` was `String(32)`. The live embedder's actual version string is
+`BAAI/bge-base-en-v1.5|dim=768|norm=1` - **36 characters**. Every embed would have failed with a
+string-truncation error. It surfaced only because the test used the real format rather than a short
+placeholder, which is an argument for fixtures that look like production. `models.embedder_version`
+had the same bound and the same bug. Both are `Text` now: the version is a composite of everything
+defining the vector space, and its length is a function of the model name, which is not ours to
+bound. Migration `6f4ca35c9cb4`.
+
+Three properties the tests pin, each silent if lost:
+
+- **Compatibility is asserted before anything is written.** A vector from the wrong model is not a
+  worse vector, it is a meaningless one, and nothing downstream catches it - the dimensions match
+  and the numbers look like numbers.
+- **The digest is re-checked at write time.** A cold-start batch takes minutes while `refresh.py`
+  mutates descriptions; a vector whose `text_sha256` no longer matches is refused and the row is
+  picked up next pass.
+- **The bulk lane is used, not the fast lane.** They are separate worker pools, not a priority flag,
+  because a score request otherwise waits behind an in-flight bulk call - measured at 0.08s idle
+  versus 8-15s with a shared pool.
+
+Also refused rather than guessed: a short vector list (fewer vectors than texts means the mapping is
+unknown, and guessing attaches one job's vector to another job's text), and a gateway 503.
+
+247 tests passing. **Phase 1 is complete.**
+
 ### Step 4c - the source adapters, ported as a scripted transformation
 
 ~3,500 lines lifted from `pipeline/sources/`, plus `libs/corpus/filters/timefilter.py`. Done by

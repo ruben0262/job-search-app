@@ -107,7 +107,11 @@ product twice.
    verified owner. Both are covered by tests now.
    HTTP-client factory, which is what keeps "this user's credential, for this user's fetch only"
    auditable rather than hopeful.
-5. **Persist embedding vectors on corpus rows**; route harvest embedding through `/embed/bulk`.
+5. ✅ **Done 2026-07-27. Embedding vectors persist on corpus rows**, routed through `/embed/bulk`.
+   T8 closed: one posting is embedded once regardless of how many users want it, asserted through a
+   counting stub rather than assumed. Found and fixed a schema bug that would have failed on the
+   first real embed - `embedding_version` was `String(32)` and the live version string is 36
+   characters.
 6. ✅ **Done 2026-07-27. T1 tenant isolation** — landed with 3b's per-user repository rather than
    later, per its own "as soon as the first per-user table exists" instruction. Two users,
    overlapping jobs, every read path returns only the caller's rows: applied log, labels, scores.
