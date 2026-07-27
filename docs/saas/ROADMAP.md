@@ -58,13 +58,21 @@ product twice.
 1. ✅ **Done 2026-07-27. Postgres schema**: `users`, `user_config`, `user_secrets`, `corpus`,
    `user_job_state`, `user_labels`, `jobs` (queue), `models`. Alembic from the first table (G5),
    `TIMESTAMPTZ` throughout (G7), applied and drift-checked against the live database.
-2. **T2 dedup regression suite written against today's SQLite behaviour** — before touching anything.
-3. ✅ **Done 2026-07-27. Ported `pipeline/lib/store.py` → Postgres corpus repository.** Split in two:
-   the dedup key functions (step 2, T2-pinned) and the storage layer (`libs/corpus/repository.py`).
-   The port surfaced a schema error: `canonical_url` had been made unique and NOT NULL, and the
-   reference keys on `url` with both derived keys indexed-and-nullable. Migration `fe23e709fd46`.
-   *(original note: 578 lines,
-   and the dedup semantics are load-bearing). T2 stays green throughout.
+2. ✅ **Done 2026-07-27. T2 dedup regression suite**, written against today's behaviour before
+   anything was touched. 66 tests: golden cases whose expected values were produced by *executing*
+   the reference (not by reading its rules), the same rules restated as intent, and a differential
+   fuzz of 40,000 seeded random inputs with **0 divergences**.
+3. ✅ **Done 2026-07-27. Ported `pipeline/lib/store.py` → Postgres corpus repository.** The task was
+   flagged here as the critical path — 578 lines, dedup semantics load-bearing — and splitting it in
+   two is what made it tractable: the dedup **key functions** (pure, pinned by T2 in step 2) and the
+   **storage layer** (`libs/corpus/repository.py`, 14 behaviour tests). T2 stayed green throughout,
+   which was the entire point of writing it first.
+
+   The port surfaced a schema error in step 1's migration: `corpus.canonical_url` had been made
+   unique and `NOT NULL`. The reference keys `all_links` on **`url`** and leaves both derived keys
+   *indexed but not unique and nullable* — dedup is a query performed **before** insert, not a
+   constraint, and the key functions return `None` for input they cannot use. Corrected in migration
+   `fe23e709fd46`.
 3b. **Port the other stores too** — `ats_tokens`, `ats_etags` (**replacing its file lock**),
    `applied`, `labels`, `feedback`. Easy to forget and easy to underestimate: `ats_etags` is what
    makes ATS polling near-free, and `applied` is the record a user would be angriest to lose. Full
