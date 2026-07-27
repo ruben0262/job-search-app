@@ -185,10 +185,13 @@ def test_the_refresh_cookie_is_scoped_to_the_refresh_path(client):
     _, response = _logged_in(http, session, mailer)
     assert response.status_code == 200
 
-    cookies = "; ".join(response.headers.get_list("set-cookie"))
+    # Compared case-insensitively throughout: cookie attribute names are case-insensitive per
+    # RFC 6265 and this client hands them back lowercased, so matching on capitalisation would be
+    # asserting on the client's formatting rather than on the policy.
+    cookies = "; ".join(response.headers.get_list("set-cookie")).lower()
     assert "refresh_token=" in cookies
-    assert "Path=/auth/refresh" in cookies
-    assert "SameSite=strict" in cookies.lower()
+    assert "path=/auth/refresh" in cookies
+    assert "samesite=strict" in cookies
 
 
 def test_both_cookies_are_httponly_and_secure(client):
@@ -197,8 +200,8 @@ def test_both_cookies_are_httponly_and_secure(client):
     http, session, mailer = client
     _, response = _logged_in(http, session, mailer)
     for header in response.headers.get_list("set-cookie"):
-        assert "HttpOnly" in header
-        assert "Secure" in header
+        assert "httponly" in header.lower()
+        assert "secure" in header.lower()
 
 
 # ── sessions ──────────────────────────────────────────────────────────────────────────────────
@@ -228,8 +231,8 @@ def test_a_replayed_refresh_token_ends_the_session_and_clears_the_cookies(client
 
     replay = http.post("/auth/refresh", cookies={"refresh_token": stolen})
     assert replay.status_code == 401
-    assert any("refresh_token=" in h and "Max-Age=0" in h
-               for h in replay.headers.get_list("set-cookie"))
+    cleared = [h.lower() for h in replay.headers.get_list("set-cookie")]
+    assert any("refresh_token=" in h and "max-age=0" in h for h in cleared)
 
 
 def test_logout_ends_the_session(client):
