@@ -16,6 +16,40 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ## 2026-07-27
 
+### G11 and G12 closed, and a hole found in the drift check
+
+**G11 (account lifecycle) was brought forward out of Phase 3**, because its stated cost is a Phase 1
+one: "dormant users consume harvest budget and run their own LinkedIn tier against their own proxy
+indefinitely". The harvest fold being built next is exactly what has to exclude them.
+
+**Implemented against the product rather than against the sentence.** G11 defines dormant as "no
+login in N days". Delivery is Telegram — a user who reads their feed every morning and applies to
+things may never open the web app again after onboarding, so login-only would pause the feeds of the
+most engaged users and tell nobody. `last_active_at` is bumped by login **or** any Telegram action.
+30 days, reversible instantly, and `suspended` is deliberately not reversed by activity: dormancy is
+a cost control, suspension is a decision.
+
+**G12 (artifact growth)** — `prune_model_artifacts` keeps current plus one previous. It returns the
+paths rather than deleting files: the repository owns rows, not the filesystem, and splitting it
+means a rolled-back transaction cannot leave rows and files disagreeing about which versions exist.
+
+**The find that matters: Alembic autogenerate does not detect `CHECK` constraint changes, and
+neither does the CI drift check, because it is built on autogenerate.** Adding `dormant` to
+`USER_STATUSES` produced a migration that added the column, left the constraint listing the old four
+values, and passed the drift check — while every write of the new status failed with an integrity
+error. Recorded in `libs/db/README.md` alongside the other silent failure mode (a model not imported
+by `models/__init__.py`), because neither is discoverable from a green build.
+
+A second, smaller trap in the same fix: `op.drop_constraint` takes the **logical** name
+(`status_valid`), not the rendered one — the naming convention expands it, so passing the rendered
+name produces `ck_users_ck_users_status_valid`.
+
+**G9 (cost visibility) stays open** and is genuinely Phase 3: it meters Claude spend, and nothing
+calls Claude yet. The one part worth taking early — integer units rather than floats for anything
+billed — is already the precedent (`proxy_credentials.mb_used_today` is `Numeric`, not `Float`).
+
+255 tests passing.
+
 ### Step 5 - embed once, for everyone, ever (T8)
 
 `libs/contracts/embedder.py` and `services/harvester/embedding.py`. A vector is a deterministic

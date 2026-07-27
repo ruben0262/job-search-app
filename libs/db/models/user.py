@@ -49,7 +49,15 @@ from libs.db.base import Base, timestamptz
 
 # Account lifecycle (GAPS_REVIEW G11, TENANT_SAFETY.md §5). `pending_verification` until the email is
 # confirmed — nothing before that point may touch a paid resource or consume harvest budget.
-USER_STATUSES = ("pending_verification", "active", "suspended", "deleted")
+#
+# `dormant` is what stops an abandoned account scraping LinkedIn on a paid proxy indefinitely. It is
+# reversible on any activity and is NOT a punishment: only `suspended` is.
+USER_STATUSES = ("pending_verification", "active", "dormant", "suspended", "deleted")
+
+# No engagement for this long → dormant. Long enough to cover a holiday or a hiring pause, short
+# enough that an abandoned account is not consuming harvest budget and someone's proxy bandwidth for
+# months.
+DORMANT_AFTER_DAYS = 30
 
 # G6: the likeliest real-world delivery failure is the user blocking the bot or revoking the token.
 # Telegram answers 403 and retrying is pointless, so it becomes a terminal state that stops enqueuing
@@ -69,6 +77,15 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(32), default="pending_verification")
     email_verified_at: Mapped[timestamptz | None]
+
+    # **Engagement, not login** — a deliberate departure from G11's "no login in N days".
+    #
+    # Delivery is Telegram, so a user who reads their feed every morning and applies to things may
+    # never open the web app again after onboarding. Marking them dormant on login alone would pause
+    # the feed of the most engaged users and tell nobody — precisely the silent failure class
+    # OPERATIONS_PLAN.md §4 exists to prevent. Bumped by login *or* any Telegram action: applying,
+    # skipping, dismissing, building a CV.
+    last_active_at: Mapped[timestamptz | None]
 
     # IANA name, validated against the tz database (G7). Not an offset: offsets do not survive DST,
     # and "resets at midnight your time" has to keep meaning the same thing in November.

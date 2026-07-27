@@ -60,7 +60,29 @@ column, deploy code, backfill, drop later — so old and new code can both run a
 database during a rollout.
 
 ⚠ **A model not imported by [`models/__init__.py`](models/__init__.py) is invisible to autogenerate.**
-It produces no migration, no table, and no error. That is this setup's one silent failure mode.
+It produces no migration, no table, and no error.
+
+⚠ **Autogenerate does not detect `CHECK` constraint changes** — and neither does the CI drift check,
+because it is built on autogenerate. Adding a value to a `*_STATUSES` tuple produces a migration that
+looks complete and leaves the constraint listing the old values, so every write of the new value
+fails with an integrity error while the pipeline stays green. Hit once, adding `dormant`
+(migration `82e1ca386c02`).
+
+**When you change a `CHECK` constraint, hand-write it into the migration:**
+
+```python
+op.drop_constraint("status_valid", "users", type_="check")
+op.create_check_constraint(
+    "status_valid", "users",
+    "status IN ('pending_verification', 'active', 'dormant', 'suspended', 'deleted')")
+```
+
+Pass the **logical** name (`status_valid`), not the rendered one (`ck_users_status_valid`) — the
+naming convention in [`base.py`](base.py) expands it, and passing the rendered name gets it prefixed
+a second time into `ck_users_ck_users_status_valid`.
+
+Those two are this setup's silent failure modes. Both are recorded here because neither is
+discoverable from a green build.
 
 ## Tests
 

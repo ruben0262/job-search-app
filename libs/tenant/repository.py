@@ -26,8 +26,9 @@ from __future__ import annotations
 import uuid as _uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -41,8 +42,10 @@ from libs.db.models import (
     UserConfig,
     UserJobState,
     UserLabel,
+    UserModel,
     UserSecret,
 )
+from libs.db.models.user import DORMANT_AFTER_DAYS
 
 # The reference's SCORER_FEEDBACK_WEIGHT default. A user's explicit decision is worth more than the
 # LLM's guess at their taste, and this is the number that says how much more.
@@ -51,6 +54,10 @@ FEEDBACK_WEIGHT = 5.0
 # The reference maps its two explicit verdicts onto scores at these points, so a feedback row sits
 # unambiguously above/below the keep threshold when blended with LLM labels.
 APPLIED_SCORE, SKIPPED_SCORE = 90, 10
+
+# Current plus one previous (GAPS_REVIEW G12). The previous one is the rollback when a retrain
+# produces a worse model - the trainer writes a `.bak` for the same reason.
+KEEP_MODEL_VERSIONS = 2
 
 
 @dataclass(frozen=True)
@@ -184,6 +191,54 @@ class TenantRepository:
                 set_={"config": config, "schema_version": schema_version,
                       "updated_at": func.now()}))
 
+    def touch_activity(self, user_id: _uuid.UUID) -> None:
+        """Record engagement. Call from login **and from every Telegram action**.
+
+        Applying, skipping, dismissing, and building a CV all count — for a Telegram-delivered
+        product they are stronger evidence of a live user than a login is (GAPS_REVIEW G11).
+        """
+        self._s.execute(
+            update(User).where(User.id == user_id).values(last_active_at=func.now()))
+
+    def mark_dormant(self, *, after_days: int = DORMANT_AFTER_DAYS) -> list[_uuid.UUID]:
+        """Pause accounts with no engagement for `after_days`. Returns who was paused.
+
+        **This is a cost control, not a punishment.** A dormant account stops consuming harvest
+        budget and stops running its own LinkedIn tier against its own paid proxy — which, left
+        unchecked, an abandoned account does indefinitely (G11).
+
+        Reversal is automatic: any activity restores the account, because `reactivate` is called from
+        the same paths that bump `last_active_at`. Nobody has to notice and nobody has to ask.
+
+        Accounts that have never been active are measured from `created_at`, so a signup that never
+        completed onboarding is eventually paused too.
+        """
+        cutoff = datetime.now(UTC) - timedelta(days=after_days)
+        rows = self._s.scalars(
+            select(User.id).where(
+                User.status == "active",
+                func.coalesce(User.last_active_at, User.created_at) < cutoff))
+        paused = list(rows)
+        if paused:
+            self._s.execute(
+                update(User).where(User.id.in_(paused))
+                .values(status="dormant", active=False))
+        return paused
+
+    def reactivate(self, user_id: _uuid.UUID) -> bool:
+        """Bring a dormant account back. Returns True if it had been dormant.
+
+        Only `dormant` is reversed here. A `suspended` account is suspended for a reason and must
+        not be un-suspended by the user simply doing something.
+        """
+        user = self._s.get(User, user_id)
+        if user is None or user.status != "dormant":
+            return False
+        user.status = "active"
+        user.active = True
+        user.last_active_at = func.now()
+        return True
+
     def active_configs(self) -> dict[_uuid.UUID, dict]:
         """Every active user's config, for the harvester's query-set fold.
 
@@ -233,6 +288,33 @@ class TenantRepository:
         if lane is not None:
             stmt = stmt.where(QueueJob.lane == lane)
         return list(self._s.scalars(stmt.order_by(QueueJob.run_after)))
+
+    # ── model artifacts ──────────────────────────────────────────────────────────────────────
+
+    def prune_model_artifacts(self, user_id: _uuid.UUID, *,
+                              keep: int = KEEP_MODEL_VERSIONS) -> list[str]:
+        """Keep the current artifact and one previous; return the paths of the rest (G12).
+
+        A classifier over 768-dim vectors is a few MB, so this is trivial at 50 users — and
+        unbounded if old versions accumulate, which is exactly the kind of growth nobody notices
+        until a disk alert.
+
+        **Returns paths rather than deleting files.** The repository owns rows, not the filesystem;
+        the trainer deletes what this hands back, in the same step that writes the new artifact.
+        Splitting it that way means a database rollback cannot leave the rows and the files
+        disagreeing about which versions exist.
+
+        One previous is kept deliberately rather than only the current: it is the rollback if a
+        retrain produces a worse model, and the trainer already writes a `.bak` for the same reason.
+        """
+        rows = list(self._s.scalars(
+            select(UserModel)
+            .where(UserModel.user_id == user_id)
+            .order_by(UserModel.version.desc())))
+        doomed = rows[keep:]
+        for row in doomed:
+            self._s.delete(row)
+        return [row.path for row in doomed]
 
     # ── the LinkedIn visibility gate ─────────────────────────────────────────────────────────
 

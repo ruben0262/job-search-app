@@ -343,3 +343,149 @@ def test_one_users_queue_is_never_visible_to_another(ctx):
     assert [j.payload["who"] for j in t.pending_jobs(alice.id)] == ["alice"]
     assert {j.payload["who"] for j in t.pending_jobs(bob.id)} == {"bob"}
     assert len(t.pending_jobs(bob.id)) == 2
+
+
+# ── G11: account lifecycle ────────────────────────────────────────────────────────────────────
+
+def test_an_engaged_telegram_user_is_never_marked_dormant(ctx):
+    """**The reason G11's "no login in N days" was not implemented as written.**
+
+    Delivery is Telegram. A user who reads their feed every morning and applies to things may never
+    open the web app again after onboarding. Pausing them would stop the feed of the most engaged
+    users and tell nobody.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    t, _, s = ctx
+    engaged = _user(s)
+    engaged.status, engaged.active = "active", True
+    # Logged in long ago, but acted through Telegram yesterday.
+    engaged.last_active_at = datetime.now(UTC) - timedelta(days=1)
+    s.flush()
+
+    assert engaged.id not in t.mark_dormant(after_days=30)
+    s.flush()
+    assert engaged.status == "active"
+
+
+def test_an_abandoned_account_stops_consuming_budget(ctx):
+    """The cost G11 exists to stop: an abandoned account scraping LinkedIn on a paid proxy, and
+    consuming harvest budget, indefinitely."""
+    from datetime import UTC, datetime, timedelta
+
+    t, _, s = ctx
+    abandoned = _user(s)
+    abandoned.status, abandoned.active = "active", True
+    abandoned.last_active_at = datetime.now(UTC) - timedelta(days=45)
+    t.save_config(abandoned.id, {"keywords": ["python"]})
+    s.flush()
+
+    assert abandoned.id in t.mark_dormant(after_days=30)
+    s.flush()
+    assert abandoned.status == "dormant"
+    assert abandoned.active is False
+    assert abandoned.id not in t.active_configs(), "a dormant user must leave the harvest fold"
+
+
+def test_a_signup_that_never_engaged_is_measured_from_creation(ctx):
+    """Otherwise a null `last_active_at` means "never dormant" and the account runs forever."""
+    from datetime import UTC, datetime, timedelta
+
+    t, _, s = ctx
+    never = _user(s)
+    never.status, never.active = "active", True
+    never.last_active_at = None
+    never.created_at = datetime.now(UTC) - timedelta(days=60)
+    s.flush()
+
+    assert never.id in t.mark_dormant(after_days=30)
+
+
+def test_any_activity_brings_a_dormant_account_straight_back(ctx):
+    """Reversal must be automatic. Requiring a support ticket to resume a feed is a product that
+    punishes people for going on holiday."""
+    t, _, s = ctx
+    user = _user(s)
+    user.status, user.active = "dormant", False
+    s.flush()
+
+    assert t.reactivate(user.id) is True
+    s.flush()
+    assert user.status == "active"
+    assert user.active is True
+    assert user.last_active_at is not None
+
+
+def test_reactivation_never_un_suspends_a_suspended_account(ctx):
+    """`dormant` is a cost control; `suspended` is a decision. Activity must not undo a decision."""
+    t, _, s = ctx
+    suspended = _user(s)
+    suspended.status, suspended.active = "suspended", False
+    s.flush()
+
+    assert t.reactivate(suspended.id) is False
+    s.flush()
+    assert suspended.status == "suspended"
+
+
+def test_touching_activity_defers_dormancy(ctx):
+    from datetime import UTC, datetime, timedelta
+
+    t, _, s = ctx
+    user = _user(s)
+    user.status, user.active = "active", True
+    user.last_active_at = datetime.now(UTC) - timedelta(days=45)
+    s.flush()
+
+    t.touch_activity(user.id)
+    s.flush()
+    assert t.mark_dormant(after_days=30) == []
+
+
+# ── G12: model artifact growth ────────────────────────────────────────────────────────────────
+
+def test_old_model_artifacts_are_pruned_to_current_plus_one(ctx):
+    """Unbounded otherwise — a few MB per version is trivial until it is not, and nobody notices
+    that kind of growth until a disk alert."""
+    from libs.db.models import UserModel
+
+    t, _, s = ctx
+    user = _user(s)
+    common = {"feature_schema_version": 1, "profile_generation": 0,
+              "embedder_model": "BAAI/bge-base-en-v1.5", "embedder_dim": 768,
+              "embedder_version": "BAAI/bge-base-en-v1.5|dim=768|norm=1"}
+    for v in range(1, 6):
+        s.add(UserModel(user_id=user.id, version=v, path=f"/models/{user.id}/v{v}.joblib",
+                        is_active=(v == 5), **common))
+    s.flush()
+
+    doomed = t.prune_model_artifacts(user.id)
+    s.flush()
+
+    assert sorted(doomed) == sorted(
+        [f"/models/{user.id}/v{v}.joblib" for v in (1, 2, 3)])
+    surviving = sorted(m.version for m in s.scalars(
+        select(UserModel).where(UserModel.user_id == user.id)))
+    assert surviving == [4, 5], "current plus one previous — the previous one is the rollback"
+
+
+def test_pruning_one_users_artifacts_never_touches_anothers(ctx):
+    """T1 again, on a path that deletes rows rather than reading them."""
+    from libs.db.models import UserModel
+
+    t, _, s = ctx
+    alice, bob = _user(s), _user(s)
+    common = {"feature_schema_version": 1, "profile_generation": 0,
+              "embedder_model": "m", "embedder_dim": 768, "embedder_version": "v"}
+    for user in (alice, bob):
+        for v in range(1, 5):
+            s.add(UserModel(user_id=user.id, version=v, path=f"/models/{user.id}/v{v}.joblib",
+                            **common))
+    s.flush()
+
+    t.prune_model_artifacts(alice.id)
+    s.flush()
+
+    bobs = sorted(m.version for m in s.scalars(
+        select(UserModel).where(UserModel.user_id == bob.id)))
+    assert bobs == [1, 2, 3, 4], "another user's artifacts were deleted"

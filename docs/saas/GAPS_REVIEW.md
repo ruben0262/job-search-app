@@ -238,9 +238,9 @@ it no longer represents. Key on `text_sha256`.
 | G7 timezones | 📌 folded into plan | `ROADMAP.md` Phase 0/1 | Phase 1 |
 | G6 Telegram failure | 📌 folded into plan | `SCHEDULER_PLAN.md` §6 + `OPERATIONS_PLAN.md` §4 | Phase 2 |
 | G8 document lifecycle | ✅ **closed by D9** | Ephemeral, as today | — |
-| G9 cost visibility | 🟡 open | — | Phase 3 |
-| G11 lifecycle states | 🟡 open | — | Phase 3 |
-| G12 artifact growth | 🟢 open | — | Phase 2 |
+| G9 cost visibility | 🟡 open | — | Phase 3 — needs Claude integration; nothing to meter yet |
+| G11 lifecycle states | ✅ **closed 2026-07-27** | `libs/db/models/user.py`, `libs/tenant` | Brought forward from Phase 3: its stated cost is a Phase 1 concern |
+| G12 artifact growth | ✅ **closed 2026-07-27** | `TenantRepository.prune_model_artifacts` | Trainer calls it when it writes; the rows are pruned, the trainer deletes the files |
 | **G13 features.py is personal** | ✅ designed | `PROFILE_CAPTURE_PLAN.md` §6.3–6.4 | Phase 2 |
 | **G14 non-corpus stores** | ✅ designed | `PLATFORM_ARCHITECTURE.md` §4 | Phase 1 |
 | **G15 LinkedIn governor** | ✅ designed | `HARVESTER_PLAN.md` §5.2b | Phase 1 |
@@ -260,6 +260,18 @@ Designed and *built* are different things. This tracks the second, for the gaps 
 | **G14 non-corpus stores** | ✅ **closed** | `ats_tokens`, `ats_etags`, applied, labels, feedback all ported. The `ats_etags` file lock is gone — replaced by row-level upsert, with an interleaved-write test |
 | **G15 LinkedIn governor** | 🟡 **policy + fetch layer built, loop deferred** | Concurrency ceiling, jitter and kill switch in `services/harvester/governor.py`; the visibility gate enforced; and `services/harvester/fetch.py` now makes D3 structural — one client factory, per-user leases, LinkedIn-only routing, `trust_env=False`, metered bytes, quarantine on consecutive failures. The loop that calls it is an ordinary queue job and waits on `libs/queue` (Phase 2) |
 | **G16 embedding cache key** | ✅ **closed** | Vectors key on `text_sha256`, and `set_embedding()` refuses a vector whose digest no longer matches — the race where bulk embedding outlives its text. Routing harvest through `/embed/bulk` is step 5 |
+
+**G11 was brought forward out of Phase 3.** Its stated rationale — "dormant users consume harvest
+budget and, under D3, run their own LinkedIn tier against their own proxy indefinitely" — is a
+Phase 1 cost, not a Phase 3 one, and the harvest fold being built now is exactly what has to exclude
+them.
+
+**One deliberate departure from the gap as written.** G11 defines dormant as "no login in N days".
+Delivery is Telegram, so a user who reads their feed every morning and applies to things may never
+open the web app again after onboarding — login-only would pause the feeds of the *most* engaged
+users and tell nobody, which is the silent-failure class `OPERATIONS_PLAN.md` §4 exists to prevent.
+Implemented as `last_active_at`, bumped by login **or** any Telegram action. Threshold 30 days,
+reversible instantly on any activity, and `suspended` is explicitly not reversed by it.
 
 Two findings from building them, both recorded in `CHANGELOG.md`:
 
