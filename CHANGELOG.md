@@ -56,21 +56,29 @@ Gate results, run in order per `services/embedder/README.md`:
 | 5 — priority lane under a training flood | ✅ included in gate 2 |
 | 4 — peak RSS vs the 2 GB budget | ✅ **832 MB peak** against 2048 MB, 0 errors |
 
-Gate 4's full numbers, since they set a knob rather than just passing:
+Gate 4 also showed `cpus: 1.5` on the TEI container was the binding constraint — a ceiling tuned for
+the box that shared CPU with two single-tenant stacks, leaving ~6.5 of 8 vCPU idle here. Raised to
+**4** and re-measured rather than assumed:
 
-```
-bulk cold-start : 589.1s for 2000 texts
-score latency   : median 3.795s  p95 4.862s  max 9.101s  (n=504)
-peak RSS        : 832 MB / 2048 MB budget
-```
+| | cpus 1.5 | cpus 4 | |
+|---|---|---|---|
+| Bulk cold start (2,000 texts) | 589.1 s | **296.7 s** | 1.99× faster |
+| Score latency, median | 3.795 s | **1.586 s** | 2.39× faster |
+| p95 | 4.862 s | **2.603 s** | 1.87× |
+| max | 9.101 s | **5.158 s** | 1.76× |
+| Peak RSS | 832 MB | **810 MB** | ↓ |
+| Errors | 0 | 0 | |
 
-**`cpus: 1.5` on the TEI container is now the binding constraint, and it was tuned for a different
-box.** That ceiling made sense on the machine sharing CPU with two single-tenant stacks; here it
-leaves ~6.5 of 8 vCPU idle. The gate passes either way, and the latency is tolerable — scoring is
-not user-facing in real time (notifications batch on 15+ minute intervals) and vectors are computed
-once and shared, so only the first user pays the cold start. Flagged rather than changed: raising it
-is a measurement, not an assumption, and it should be re-measured once the other services actually
-compete for the box.
+**2.67× the CPU bought 2× the throughput.** Sub-linear, because TEI's CPU backend caps its internal
+batch at 8 regardless of how many cores it has. Extrapolating, 4 → 6 would likely return under 1.3×
+for 50% more contention — so **4 is the landing spot and going further is not worth it**. That
+conclusion is the reason to record the numbers rather than just the change.
+
+Peak RSS went *down* slightly, which is consistent: more CPU means less queuing, so fewer texts are
+resident at once.
+
+⚠ **Re-measure once the other services compete for the box.** This number is tuned to a machine that
+is currently almost empty — precisely the condition that stops being true.
 
 The single skip is `test_parity` (TEI vectors vs in-process `fastembed`). **That gate is moot for the
 platform** and was skipped deliberately: parity exists to decide *match-or-retrain* for classifiers
