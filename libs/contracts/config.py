@@ -41,7 +41,18 @@ CONFIG_SCHEMA_VERSION = 1
 #
 # At Phase 3 this becomes a row in `plans.limits` rather than a constant, so a paid tier is an
 # INSERT rather than a migration plus an audit of every hardcoded limit. The seam is the same.
-MAX_KEYWORDS_PER_USER = 5
+#
+# **Raised 5 -> 25 on 2026-07-27, after measuring against a real config rather than a planned one.**
+# The reference instance's owner searches 23 distinct terms; a cap of 5 would have dropped 18 of
+# them and made the platform demonstrably worse than the stack it replaces, failing the D6
+# comparison by construction. 5 was a planning number that had never met a user.
+#
+# The volume is fine, and the reason is the selection algorithm rather than the cap: 23 terms x 2
+# regions x 3 sources is ~138 queries against a 60-per-cycle budget, and round-robin serves every
+# user's first term before anyone's second, so one heavy user is covered across ~3 cycles (45
+# minutes) without crowding anybody out. The cap's real job is fairness between users, and
+# round-robin already provides that - the cap is a backstop against absurdity, not the mechanism.
+MAX_KEYWORDS_PER_USER = 25
 
 
 class RemotePolicy(StrEnum):
@@ -70,6 +81,15 @@ class Location(StrEnum):
 
     `REMOTE_*` are not places but delivery regions, which is exactly how the sources treat them.
     """
+
+    # Region-level targets. Added 2026-07-27: the first real config searched "European Union",
+    # "United Kingdom" and "Europe", and the vocabulary had none of them. They are NOT the same as
+    # the REMOTE_* values below - "United Kingdom" means jobs located in the UK, including hybrid
+    # and onsite, while REMOTE_UK means remote work for a UK-region employer. Collapsing them would
+    # have silently narrowed what an existing user sees.
+    EUROPEAN_UNION = "european_union"
+    UNITED_KINGDOM = "united_kingdom"
+    EUROPE = "europe"
 
     REMOTE_WORLDWIDE = "remote_worldwide"
     REMOTE_EU = "remote_eu"
