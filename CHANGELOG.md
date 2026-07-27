@@ -14,6 +14,37 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-07-27 (night, Phase 3 opens)
+
+### Phase 3 step 1a — auth primitives
+
+`libs/auth`. `AUTH_REUSE.md` option B: port the **design**, not the Go code. FlowSolutions'
+`internal/auth` is ~3,900 lines against MongoDB, and lifting it would reintroduce a second language
+and a second datastore against D1. The value is the fifteen decisions in §3 — each easy to get
+subtly wrong, each already settled in production — so those are copied verbatim while the primitives
+come from maintained libraries.
+
+- **argon2id** at the production parameters (`time=1, memory=64 MiB, threads=4, keylen=64,
+  salt=32`).
+- **Tokens stored as SHA-256 hashes only.** The plaintext exists in the email and nowhere else, so a
+  dump does not let anyone verify an address or reset a password. Reissuing revokes the previous
+  link, and a verification token cannot be redeemed as a reset — that would turn "can receive email"
+  into "can take the account" without the user asking for a reset.
+- **Refresh sessions hashed at rest and rotated on every use.** A replayed *rotated* token revokes
+  the whole family: either the client is buggy or the token was stolen, and in the second case both
+  holders should end up with nothing rather than one silently keeping access.
+
+**Two of `AUTH_REUSE.md` §4 honoured:** the 8-character password minimum is raised to 12 (this
+platform holds live Claude keys and proxy credentials), and the v1 hashing path is not ported at
+all. The breached-password check is left as a documented seam — adding a network call to signup
+without a timeout and a fail-open decision would make registration depend on a third party being up.
+
+**One bug CI caught:** `rotate_session` treated a *revoked* token as a replay, so logging out on a
+laptop and then having the browser retry with the stale cookie revoked every other device. Closing a
+tab should not log you out of your phone. Only a rotated token is a replay.
+
+Migration `e5f1c0a7b284` adds `user_sessions` and `auth_tokens`. 451 tests.
+
 ## 2026-07-27 (night, later)
 
 ### Two accounts on one stack — the D6 comparison is live
