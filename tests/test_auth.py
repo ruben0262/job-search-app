@@ -183,7 +183,9 @@ def test_logging_out_one_device_leaves_the_others(ctx):
     assert revoke_session(ctx, laptop.refresh_token) is True
     ctx.flush()
 
-    with pytest.raises(SessionExpired):
+    # "logged out", not "replayed": a stale cookie after an ordinary logout is not evidence of
+    # theft, and treating it as such would end the phone's session too.
+    with pytest.raises(SessionExpired, match="logged out"):
         rotate_session(ctx, laptop.refresh_token)
     assert rotate_session(ctx, phone.refresh_token) is not None
 

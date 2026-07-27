@@ -57,14 +57,23 @@ def rotate_session(session: Session, refresh_token: str, *,
     a replayed refresh token: either the client is buggy or the token was stolen, and in the second
     case the thief and the user are now both holding invalid credentials rather than one of them
     silently keeping access.
+
+    A *revoked* token is different and must not trigger it. That is an ordinary logout followed by a
+    stale cookie, and treating it as theft would log a user out of every device for closing a tab.
     """
     row = session.scalar(select(UserSession).where(UserSession.refresh_hash == _hash(refresh_token)))
     if row is None:
         raise SessionExpired("unknown refresh token")
 
-    if row.rotated_at is not None or row.revoked_at is not None:
+    if row.rotated_at is not None:
+        # Only a *rotated* token counts as a replay. It was exchanged for a successor, so a second
+        # presentation means two parties hold it.
         revoke_all(session, row.user_id)
         raise SessionExpired("refresh token replayed — every session for this user was revoked")
+    if row.revoked_at is not None:
+        # An explicit logout, then a stale cookie. Ordinary, and not evidence of anything: treating
+        # it as a replay would log the user out of every other device for closing a tab.
+        raise SessionExpired("session was logged out")
     if row.expires_at <= datetime.now(UTC):
         raise SessionExpired("refresh token expired")
 
