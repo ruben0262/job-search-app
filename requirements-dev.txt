@@ -21,3 +21,6 @@ psycopg[binary]>=3.2
 # copy in services/harvester/requirements.txt. It went undeclared for one commit and CI caught it -
 # locally it was present only as a transitive dependency of the embedder's test deps.
 httpx>=0.28
+# Several adapters parse RSS/XML from third-party job boards. Stdlib ElementTree is documented as
+# vulnerable to entity-expansion bombs, and the harvester shares a box with Postgres.
+defusedxml>=0.7

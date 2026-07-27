@@ -16,6 +16,51 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ## 2026-07-27
 
+### Step 4c - the source adapters, ported as a scripted transformation
+
+~3,500 lines lifted from `pipeline/sources/`, plus `libs/corpus/filters/timefilter.py`. Done by
+`services/harvester/sources/port_from_reference.py`, which is committed alongside them: the
+transformation is the interesting part of the port, and re-deriving it later from a diff would be
+far harder than reading it. Retyping the adapters by hand would have introduced transcription errors
+into code whose correctness depends on details no test here can check - a JSON path, a date format,
+a pagination parameter.
+
+**4c was not a pure lift, and the reason matters.** Every adapter built its own `httpx.Client` - 17
+call sites. Harmless single-tenant, because none of those boards need a proxy. Here it would have
+broken the invariant `fetch.py` exists to hold **and** restored `trust_env=True` on all 17, so an
+ambient `HTTP_PROXY` could route the whole shared harvest through one user's credential. There is
+now a test asserting no module under `services/harvester` constructs a client directly.
+
+**Two real bugs found during the port:**
+
+1. **The transformation silently dropped RemoteOK's custom User-Agent.** The reference sets one with
+   the comment "RemoteOK blocks the generic Mozilla UA; a slightly more specific one works" - and
+   my regex matched `headers=ua` and discarded it. The source would have returned nothing, with the
+   explanation sitting two lines above. Caught by ruff flagging the now-unused variable, which is
+   luck rather than design, so the rule is narrow now: only `headers=_UA`, the platform default the
+   factory already supplies, may be dropped.
+2. **`gather_linkedin` took its proxy from a config dict.** Correct with one tenant, wrong with
+   many: a credential arriving as a dictionary key has no verified owner. It now requires a
+   `ProxyLease`, keyword-only and mandatory. jobspy opens its own connections and cannot be routed
+   through `make_client`, so this is the one place a proxy URL reaches a third-party library - which
+   is exactly why the type carries its owner.
+
+**One deliberate behaviour change: XML parsing now uses `defusedxml`.** Several adapters parse
+RSS/XML from third-party boards with stdlib ElementTree, which the stdlib's own security docs flag
+as vulnerable to entity-expansion bombs. Single-tenant on a laptop that is a shrug; here the
+harvester shares a box with Postgres, and a hostile or merely broken feed exhausting memory takes
+the platform down for everyone.
+
+The registry now records **which tier a source belongs to**, so the shared loop cannot be handed the
+proxied one - the same guarantee `make_shared_client()` gives at the HTTP layer, stated twice
+because it is what D3 rests on. LinkedIn is the only per-user source, and a test asserts it.
+
+Adapter style findings are ignored per-file with reasons, as for the embedder: restyling lifted code
+would destroy the diffability that justifies a scripted port. **F841 stays on** - it is what caught
+the User-Agent regression.
+
+233 tests passing.
+
 ### Step 4b - the fetch layer, where D3 stops being a policy and becomes structure
 
 `services/harvester/fetch.py` and `proxy_usage.py`. Decision D3 says a user's proxy credential is

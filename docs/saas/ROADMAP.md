@@ -95,8 +95,16 @@ product twice.
    quarantine on consecutive failures. T13 is closed by it. `make_client()` is the only HTTP-client
    factory, which is what keeps "this user's credential, for this user's fetch only" auditable rather
    than hopeful.
-4c. **Lift `pipeline/sources/*`** — the ~3,551-line adapter port. Mechanical, but needs live
-   endpoints to verify, so it is its own step.
+4c. ✅ **Done 2026-07-27. Lifted `pipeline/sources/*`** as a scripted transformation
+   (`services/harvester/sources/port_from_reference.py`, committed alongside the output). Not a pure
+   lift: all 17 `httpx.Client` constructions became `make_shared_client`, XML parsing moved to
+   `defusedxml`, and `gather_linkedin` now requires a `ProxyLease` rather than reading a proxy from
+   a config dict. The registry records each source's tier so the shared loop cannot be handed the
+   proxied one.
+
+   Two bugs found in the doing: the transformation silently dropped RemoteOK's custom User-Agent
+   (the header that exists because RemoteOK blocks the generic one), and LinkedIn's proxy had no
+   verified owner. Both are covered by tests now.
    HTTP-client factory, which is what keeps "this user's credential, for this user's fetch only"
    auditable rather than hopeful.
 5. **Persist embedding vectors on corpus rows**; route harvest embedding through `/embed/bulk`.

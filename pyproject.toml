@@ -82,6 +82,35 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
+# The ported source adapters. ~3,500 lines lifted from the reference instance by
+# services/harvester/sources/port_from_reference.py, and deliberately kept diffable against it:
+# restyling them to satisfy a linter added years later would destroy the one property that makes
+# the port reviewable. The substantive changes (one client factory, defusedxml, per-user lease)
+# were made explicitly and are listed in that script.
+#
+# Note what is NOT ignored here: F841 stays on, and it is what caught the port silently dropping
+# RemoteOK's custom User-Agent.
+"services/harvester/sources/*.py" = [
+    "BLE001",   # a bare `except` per adapter IS the contract: a source must never raise
+    "E501",     # long lines in lifted parsing code
+    "PLC0415",  # local imports keeping optional source dependencies optional
+    "E741",     # single-letter loop variables in the original
+    "C408",     # dict() calls in the original
+    "S110",     # try/except/pass around best-effort field extraction
+    "SIM105",   # ditto, contextlib.suppress would be a rewrite
+    "UP017", "UP035", "UP037",  # older typing idioms; changing them is a rewrite, not a port
+    "RUF001",   # unicode in job titles and board names
+    "PLR0917",  # long positional signatures in the original
+    "F401",     # imports the adapters keep for re-export
+    "I001",     # import order as the original had it
+]
+# The module-level connection pool. Deliberate: ATS polling opens hundreds of boards per cycle and
+# connection reuse is the dominant per-request cost, so one pool is reused across them.
+"services/harvester/sources/ats.py" = [
+    "BLE001", "E501", "PLC0415", "E741", "C408", "S110", "SIM105",
+    "UP017", "UP035", "UP037", "RUF001", "PLR0917", "F401", "I001",
+    "PLW0603",
+]
 # Tests. Each of these is the idiom, not an oversight.
 "tests/*" = [
     "E402",     # imports after pytest.importorskip — which must run first, that is its whole job

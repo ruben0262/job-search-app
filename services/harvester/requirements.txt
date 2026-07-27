@@ -4,7 +4,10 @@
 # docgen is the only one carrying Chrome. Keeping them separate is what lets api and notifier stay
 # small and fast to rebuild, which matters because they are what gets restarted most.
 
-httpx>=0.28            # the fetch layer; per-host transport mounts are load-bearing for D3
+httpx>=0.28
+# Several adapters parse RSS/XML from third-party job boards. Stdlib ElementTree is documented as
+# vulnerable to entity-expansion bombs, and the harvester shares a box with Postgres.
+defusedxml>=0.7            # the fetch layer; per-host transport mounts are load-bearing for D3
 SQLAlchemy>=2.0
 psycopg[binary]>=3.2
 pydantic>=2.10         # libs/contracts config schema
