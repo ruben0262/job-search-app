@@ -20,6 +20,7 @@ pytest.importorskip("sqlalchemy")
 pytest.importorskip("numpy")
 pytest.importorskip("pydantic")
 
+import numpy as np
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
@@ -42,7 +43,12 @@ PROFILE = {
 
 
 class StubEstimator:
-    """Returns a fixed score, and records the input width it was handed."""
+    """Returns a fixed score, and records the input width it was handed.
+
+    `predict_proba` returns a real ndarray, not a list of lists: the serve path slices it as
+    `[:, 1]`, exactly as it would a scikit-learn estimator's output, and a list would pass a
+    unit test while failing on the shape the code actually uses.
+    """
 
     def __init__(self, value: float = 77.0):
         self.value = value
@@ -50,11 +56,11 @@ class StubEstimator:
 
     def predict(self, matrix):
         self.seen_width = matrix.shape[1]
-        return [self.value] * matrix.shape[0]
+        return np.array([self.value] * matrix.shape[0])
 
     def predict_proba(self, matrix):
         self.seen_width = matrix.shape[1]
-        return [[1 - self.value / 100, self.value / 100]] * matrix.shape[0]
+        return np.array([[1 - self.value / 100, self.value / 100]] * matrix.shape[0])
 
 
 @pytest.fixture()
