@@ -9,3 +9,22 @@ whole platform at once.
 Prompt text is data, not code. It lives in ``libs`` so trainer, scorer, docgen, and capture all
 read the same bytes rather than each shipping a copy that drifts.
 """
+from __future__ import annotations
+
+from functools import lru_cache
+from pathlib import Path
+
+_HERE = Path(__file__).parent
+
+LABEL_TEMPLATE = "label_template.md"
+
+
+@lru_cache(maxsize=8)
+def load(name: str) -> str:
+    """Read a prompt file. Cached, because the template is read once per rubric render.
+
+    Newlines are normalised on read: the template is data whose *bytes* determine every user's
+    ``profile_version``, and a checkout on Windows must not produce different hashes from one on
+    Linux. That would look like every user's labels spontaneously invalidating on a deploy.
+    """
+    return (_HERE / name).read_text(encoding="utf-8").replace("\r\n", "\n")

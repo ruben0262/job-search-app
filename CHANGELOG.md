@@ -14,6 +14,49 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-07-27 (evening)
+
+### Phase 2 step 2 — rubric render and the per-user feature extractor
+
+`libs/prompts/label_template.md` (SACRED), `libs/scoring/rubric.py`, `libs/scoring/features.py`.
+Both derived from the same confirmed profile, both landed together because they invalidate together.
+
+- **The template is platform-owned; the profile fills two blocks.** Decision procedure, score
+  anchors, calibration examples, and output contract stay identical for every user — otherwise a
+  template change could not be A/B measured across the platform. Calibration examples are phrased
+  *relative to the candidate* ("a role in their FIRST target area, 2+ core overlaps → 93"), which is
+  the option `PROFILE_CAPTURE_PLAN.md` §6.1 preferred because it keeps rendering deterministic.
+- **`profile_version = sha256(rubric_md)[:8]`**, and `rubric_relevant_digest` hashes only the fields
+  the rubric actually reads — so editing a phone number does not relabel a user's whole history (§7).
+- **`save_profile` renders and stores the rubric itself.** A user with a profile and no rubric, or a
+  rubric whose generation does not match, is a scoring corruption nothing reports. One write path.
+- **The feature extractor is the third personal artifact** (§6.3). The reference's `_CORE_TOKENS`
+  and off-stack list are one candidate's stack; here they are built from `users.profile`.
+  `FEATURE_NAMES` order stays global and append-only — if the column order varied per user, no model
+  artifact would be portable.
+
+**Three real bugs the tests caught, all silent:**
+
+1. `.NET` extracted as `net`, which then failed to match ".NET" at all — the leading dot sits inside
+   the boundary lookbehind. A whole category of stack invisible to the model.
+2. `\bc#\b` can never match: `\b` after `#` requires a following word character. Lookarounds over
+   the actual token alphabet instead.
+3. A term appearing in both the strengths and the NOT-list. The NOT-list now wins — a stale strength
+   entry must not quietly cancel a gate the user reviewed.
+
+Also fixed: `remote_policy: "any"` was rendering "mandatory relocation is a dealbreaker", inventing
+a gate the user never asked for.
+
+Region locks are per user too: the reference hardcoded "US-only is a gate" because its one user
+could not work there. A user with US work rights no longer gets the flag.
+
+32 tests. Migration `d8b3e5a91c47` adds `users.rubric_md` (separate revision — `c41a9f77d3b2` has
+already been applied, and a migration is a record of what ran, not a file to revise).
+
+**Gap:** `"1-3 years"` reads as 1, not 3 — the regex takes the lower bound. Carried from the
+reference deliberately and now documented in a test, because changing it would shift the meaning of
+a column every existing model was fit against.
+
 ## 2026-07-27 (later still)
 
 ### Phase 2 step 1 — profile capture, with manual entry in the same commit

@@ -25,9 +25,9 @@ for a service's session, no knowing which container it runs in.
 | [`tenant/`](tenant/) | ✅ **built** | Per-user repository: job state, applied log, labels, feedback. **T1 green** |
 | [`contracts/`](contracts/) | ✅ **built** | `UserConfigSchema` (server validation + JSON Schema for the form) and the embedder client contract. **T9 green** |
 | [`secrets/`](secrets/) | ✅ **built** | Envelope encryption (KEK/DEK), credential store, log redaction. **T4 green** |
-| [`scoring/`](scoring/) | empty | `features.py` + rubric rendering. Phase 2 |
+| [`scoring/`](scoring/) | ✅ **built** | Rubric render + `profile_version`, and the per-user feature extractor |
 | [`queue/`](queue/) | empty | Four-lane job queue: claim, retry, dead-letter. Phase 2 |
-| [`prompts/`](prompts/) | empty | SACRED generation prompts + templates. Phase 2 |
+| [`prompts/`](prompts/) | partial | `label_template.md` (SACRED) + the loader. Generation prompts land with docgen |
 
 Empty packages are not placeholders for their own sake — each `__init__.py` records why the package
 exists and which constraints it carries, so the tree is navigable before it is populated, and so the

@@ -115,6 +115,11 @@ class User(Base):
     profile: Mapped[dict | None] = mapped_column(JSONB)
     profile_schema_version: Mapped[int] = mapped_column(SmallInteger, default=1)
 
+    # The rendered rubric. Stored rather than re-rendered on demand because `profile_version` is its
+    # hash: keeping the exact bytes that produced the version is what makes a label's scope
+    # auditable after a template change (PROFILE_CAPTURE_PLAN.md §6.1).
+    rubric_md: Mapped[str | None] = mapped_column(Text)
+
     # Managed Agents agent objects are created with the *user's* API key, so they live in that
     # user's Anthropic workspace — one per user, not one per platform. Stored so re-capture reuses
     # it: "create the agent once" still holds, it is just once per user

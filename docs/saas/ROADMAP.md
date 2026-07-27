@@ -152,11 +152,13 @@ LinkedIn loop already needs and currently has nowhere real to live.
    file output. Manual entry landed in the same commit. `users.profile` refuses an unconfirmed
    profile, so the confirmation click is enforced at the write rather than by convention.
    **Outstanding:** the confirmation *form* itself is Phase 3 (no web layer yet).
-2. **Per-user rubric rendering** + `profile_version` (`COLD_START_PLAN.md` §3, `PROFILE_CAPTURE_PLAN.md`
-   §6.1). Flagged as the largest hidden task; give it real time.
-2b. **Per-user feature extractor** (`PROFILE_CAPTURE_PLAN.md` §6.3) and the single
-   `profile_generation` counter that keeps labels and model artifacts in step (§6.4). Same
-   workstream as the rubric — do not schedule them apart.
+2. ✅ **Done 2026-07-27. Per-user rubric rendering** + `profile_version`, **and the per-user feature
+   extractor** — one workstream, as the plan insisted. `libs/prompts/label_template.md` is SACRED and
+   platform-owned (calibration examples phrased relative to the candidate, so rendering stays
+   deterministic); `libs/scoring/rubric.py` renders and hashes; `libs/scoring/features.py` builds the
+   core / NOT-list / region-lock token sets per user with `FEATURE_NAMES` order global and
+   append-only. `save_profile` renders the rubric in the same write that bumps `profile_generation`,
+   so a profile without a matching rubric cannot exist.
 3. **Multi-tenant scorer** with an LRU of user models and `model_version` hot-swap.
 4. **Scheduler** — the four-lane Postgres queue, with T5/T6/T7 in the same commit.
 5. **Trainer** — concurrency 1, CPU-fenced, debounced.

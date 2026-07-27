@@ -33,7 +33,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from libs.contracts.config import CONFIG_SCHEMA_VERSION
-from libs.contracts.profile import PROFILE_SCHEMA_VERSION
+from libs.contracts.profile import PROFILE_SCHEMA_VERSION, ProfileSchema
 from libs.corpus.repository import CorpusRepository
 from libs.db.models import (
     CorpusJob,
@@ -47,6 +47,7 @@ from libs.db.models import (
     UserSecret,
 )
 from libs.db.models.user import DORMANT_AFTER_DAYS
+from libs.scoring.rubric import profile_version, render_rubric
 
 # The reference's SCORER_FEEDBACK_WEIGHT default. A user's explicit decision is worth more than the
 # LLM's guess at their taste, and this is the number that says how much more.
@@ -196,11 +197,12 @@ class TenantRepository:
 
     def save_profile(self, user_id: _uuid.UUID, profile: dict, *,
                      schema_version: int = PROFILE_SCHEMA_VERSION) -> int:
-        """Store a **confirmed** profile and bump `profile_generation`. Returns the new generation.
+        """Store a **confirmed** profile, render its rubric, bump `profile_generation`.
 
-        The bump is the point. Every downstream artifact — rubric, feature extractor, labels, model
-        — is built against a generation, so anything built against an older one is stale by
-        definition rather than by someone remembering (`PROFILE_CAPTURE_PLAN.md` §6.4).
+        Returns the new generation. All three happen here rather than in the caller, because a user
+        with a profile and no rubric — or a rubric whose generation does not match — is a scoring
+        corruption that nothing reports. One write path means it cannot be half-done
+        (`PROFILE_CAPTURE_PLAN.md` §6.4).
 
         Refuses an unconfirmed profile. That is the prompt-injection boundary: an uploaded CV is
         untrusted text, and nothing an agent wrote may reach a hard gate without a human click (§5).
@@ -210,8 +212,12 @@ class TenantRepository:
         user = self._s.get(User, user_id)
         if user is None:
             raise ValueError(f"no such user: {user_id}")
+
+        rubric = render_rubric(ProfileSchema.model_validate(profile))
         user.profile = profile
         user.profile_schema_version = schema_version
+        user.rubric_md = rubric
+        user.profile_version = profile_version(rubric)
         user.profile_generation += 1
         return user.profile_generation
 
