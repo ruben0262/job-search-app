@@ -213,6 +213,29 @@ def test_punctuation_heavy_technologies_still_match(skill, text):
     assert job_features(spec, "Engineer", text)[FEATURE_NAMES.index("core_stack_count")] > 0
 
 
+@pytest.mark.parametrize("skill,text", [
+    ("full-stack", "Full Stack Developer"),
+    ("full stack", "full-stack engineer"),
+    ("machine learning", "applied machine-learning team"),
+])
+def test_a_hyphen_and_a_space_are_the_same_thing(skill, text):
+    """A profile saying "full-stack" must match a posting saying "full stack". Without it the
+    hyphenated spelling matches nothing and the feature silently reads 0 — found while transcribing
+    a real profile, where "full-stack" is exactly how the person writes it."""
+    spec = feature_spec(_profile(skills={"domains": [skill]}, experience=[], projects=[],
+                                 not_list=[]))
+    assert job_features(spec, "", text)[FEATURE_NAMES.index("core_stack_count")] > 0
+
+
+def test_a_fragment_of_a_compound_does_not_become_its_own_token():
+    """"Spring Boot" split into words yields "boot", which then fires on "bootstrap" — turning one
+    NOT-list entry into a gate on unrelated postings."""
+    spec = feature_spec(_profile(not_list=["Spring Boot"], skills={}, experience=[], projects=[]))
+    off = FEATURE_NAMES.index("offstack_count")
+    assert job_features(spec, "Engineer", "We use Bootstrap and a bootcamp pipeline.")[off] == 0
+    assert job_features(spec, "Engineer", "Spring Boot microservices")[off] > 0
+
+
 def test_noise_words_in_a_not_list_entry_do_not_become_tokens():
     """"enterprise Java at depth" must not match on "at". A token that fires on every posting turns
     a hard gate into noise."""

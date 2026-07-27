@@ -52,6 +52,11 @@ _NOISE = frozenset({
     "depth", "professional", "experience", "work", "working", "level", "years", "year",
     "core", "primary", "pure", "only", "any", "not", "some", "roles", "role", "development",
     "engineer", "engineering", "developer",
+    # Words that are only meaningful inside a compound. Splitting "Spring Boot" into its words
+    # yields "boot", which then fires on "bootstrap" and "bootcamp"; "full-stack" yields "stack",
+    # which fires on "tech stack" in every posting ever written. The compound itself is kept.
+    "boot", "stack", "system", "systems", "service", "services", "design", "analysis", "tools",
+    "cloud", "data", "web", "software", "engine",
 })
 
 # Splits a free-text phrase into candidate terms. A leading dot is part of the term, not
@@ -193,8 +198,13 @@ def _compile(term: str) -> re.Pattern[str]:
 
     `\\b` is defined against word characters, so `\\bc#\\b` never matches — the boundary after `#`
     requires a following word character. Lookarounds over the actual token alphabet do work.
+
+    Spaces and hyphens are interchangeable in the text being matched: a profile saying "full-stack"
+    must match a posting saying "full stack", and vice versa. Without it the hyphenated spelling
+    silently matches nothing — invisible, because the feature simply reads 0.
     """
-    body = re.escape(term).replace(r"\ ", r"[\s-]+")
+    parts = [re.escape(p) for p in re.split(r"[\s-]+", term) if p]
+    body = r"[\s-]+".join(parts) or re.escape(term)
     return re.compile(rf"(?<![a-z0-9+#.]){body}(?![a-z0-9+#])", re.I)
 
 
