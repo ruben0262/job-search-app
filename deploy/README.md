@@ -57,6 +57,40 @@ single-tenant stacks. That predates the platform and must not be disturbed by it
 relocation was a source-tree move, not a service migration (`CODE_STRUCTURE.md` §6). Folding it in
 here to tidy the tree would be a service migration wearing a refactor's clothes.
 
+## Scheduling the harvest
+
+The shared cycle is a **one-shot command**, not a daemon with a sleep:
+
+```bash
+docker compose -f deploy/compose.yml run --rm --no-deps harvester   # one cycle
+python -m services.harvester --dry-run                              # plan queries, fetch nothing
+```
+
+Driven by [`harvester.timer`](harvester.timer) every 15 minutes. Exit codes are the interface:
+
+| Code | Meaning |
+|---|---|
+| 0 | A cycle ran — or another cycle held the lock and this tick skipped |
+| 1 | The cycle raised |
+| 2 | Configuration missing (no `EMBEDDER_URL`, no `DATABASE_URL`) |
+
+**A skipped tick is not a failure.** With a 15-minute timer and an occasionally slow cycle,
+treating overlap as an error would page somebody about the system working correctly. Overlap is
+prevented by a Postgres advisory lock inside the cycle rather than by systemd, so it works the same
+way when Phase 2 moves this into the queue.
+
+⚠ **`Persistent=false` in the timer, deliberately.** Catching up missed runs after downtime would
+fire several cycles back to back, each spending the full fan-out budget against sources that are
+already grey-area. A missed harvest is simply a harvest that did not happen — the next one finds the
+same jobs.
+
+**Why universal rather than per-user:** there is no such thing as harvesting *for* one user when the
+corpus is shared. One fetch serves everyone, so a per-user harvest interval would mean N cycles
+fetching identical bytes. What users choose is how often they are **told**
+(`users.notify_interval_min`, 15–1440) and how often their own paid LinkedIn tier runs
+(`users.linkedin_interval_min`, floored at 60). Universal where the cost is shared, per-user where
+it is personal.
+
 ## Rules
 
 - **Pin `name:`** in every compose file so the project name does not follow the directory. Moving

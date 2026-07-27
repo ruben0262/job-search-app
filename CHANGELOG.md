@@ -16,6 +16,48 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ## 2026-07-27
 
+### The harvest cycle - one-shot, locked, timer-driven
+
+`services/harvester/cycle.py` and `__main__.py`. The last Phase 1 piece: the loop that runs the
+components in order - demand -> budget -> sources -> dedup -> upsert -> embed.
+
+**A one-shot command rather than a daemon with a sleep**, which was the open question. Four reasons,
+in order of weight:
+
+1. **Restart safety comes free.** A crashed one-shot is a run that did not happen and the next tick
+   starts clean. A long-lived loop that dies stops harvesting *silently* until somebody notices -
+   the failure class `OPERATIONS_PLAN.md` §4 exists to prevent.
+2. **It composes with Phase 2 instead of being replaced.** `run_cycle` becomes the body of a queue
+   worker; an internal timer would be thrown away.
+3. **It is testable.** `TEST_STRATEGY.md` §2.1 forbids `sleep` in tests, which rules out testing a
+   loop containing one.
+4. **Each run is its own log line and its own exit code.**
+
+The cost is overlap: a timer can fire while the previous run is still going. Handled with a Postgres
+advisory lock **inside the cycle** rather than in systemd, so it behaves identically when Phase 2
+moves this into the queue. `pg_try_advisory_lock`, not the blocking form - a tick that arrives late
+should skip, not queue behind its predecessor and turn one slow cycle into a backlog all doing the
+same work while each spends the full fan-out budget.
+
+**A skipped tick exits 0.** With a 15-minute timer and an occasionally slower cycle, treating
+overlap as failure would page somebody about the system working correctly.
+
+`Persistent=false` on the timer, deliberately: catching up missed runs after downtime would fire
+several cycles back to back against sources that are already grey-area. A missed harvest is simply a
+harvest that did not happen.
+
+**Universal cadence, and that is not a simplification.** There is no such thing as harvesting *for*
+one user when the corpus is shared - one fetch serves everyone, so a per-user harvest interval would
+mean N cycles fetching identical bytes, which is the design this architecture rejected. What users
+choose is how often they are *told* (`notify_interval_min`) and how often their own paid LinkedIn
+tier runs (`linkedin_interval_min`). Universal where the cost is shared, per-user where it is
+personal.
+
+Fails closed on a missing `EMBEDDER_URL` (exit 2) rather than harvesting rows nothing can embed -
+they would sit unembedded and unscoreable while the cycle reported success.
+
+265 tests passing.
+
 ### G11 and G12 closed, and a hole found in the drift check
 
 **G11 (account lifecycle) was brought forward out of Phase 3**, because its stated cost is a Phase 1

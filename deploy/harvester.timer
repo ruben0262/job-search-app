@@ -1,0 +1,22 @@
+# Shared harvest, every 15 minutes. Install alongside harvester.service:
+#
+#   sudo cp deploy/harvester.{service,timer} /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now harvester.timer
+#   systemctl list-timers harvester.timer
+#
+# A timer rather than a daemon with a sleep: a crashed one-shot is a run that did not happen, and
+# the next tick starts clean. A long-lived loop that dies stops harvesting silently.
+[Unit]
+Description=job-search-app shared harvest cycle
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=15min
+# Do NOT set Persistent=true. Catching up missed runs after downtime would fire several cycles back
+# to back, each spending the full fan-out budget against sources that are already grey-area. A
+# missed harvest is simply a harvest that did not happen; the next one picks up the same jobs.
+Persistent=false
+Unit=harvester.service
+
+[Install]
+WantedBy=timers.target

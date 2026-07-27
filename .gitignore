@@ -7,3 +7,7 @@ venv/
 .import_linter_cache/
 .ruff_cache/
 node_modules/
+
+# Scratch file used to hold a DB password during local verification. Never commit.
+.pwenc*
+*.tmp
