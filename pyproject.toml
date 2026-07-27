@@ -126,6 +126,10 @@ ignore = [
     "PLC0415",  # imports inside a test, to keep an optional dependency optional
 ]
 "services/embedder/tests/*" = ["E402", "S106", "PLC0415", "B905", "PLW2901"]
+# FastAPI's dependency-injection idiom IS `Depends()` in an argument default. B008 exists to catch a
+# mutable default evaluated once; here that evaluation is the mechanism, and writing it any other
+# way would mean not using the framework.
+"services/api/*.py" = ["B008"]
 # Lazy module-level singletons behind an accessor. Deliberate: the engine must not be constructed at
 # import time, or importing anything would require DATABASE_URL to be set.
 "libs/db/session.py" = ["PLW0603"]

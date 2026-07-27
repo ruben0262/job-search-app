@@ -38,3 +38,8 @@ joblib>=1.4
 # primitive comes from a maintained library rather than being hand-rolled - that is the whole
 # argument for porting the design instead of the Go code.
 argon2-cffi>=23.1
+# services/api. FastAPI and PyJWT are here because the auth endpoint tests exercise the real
+# app rather than a stand-in - a cookie policy asserted against a mock proves nothing.
+fastapi>=0.115
+pydantic[email]>=2.10
+PyJWT>=2.9

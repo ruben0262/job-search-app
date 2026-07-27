@@ -1,0 +1,12 @@
+# services/api — signup, verification, login, session refresh.
+#
+# No numpy, no sklearn, no scraping stack: the API reads and writes rows and sends email. Keeping
+# it that light is what makes it fast to rebuild and safe to run at the front of the request path.
+fastapi>=0.115
+uvicorn[standard]>=0.32
+pydantic[email]>=2.10
+PyJWT>=2.9
+argon2-cffi>=23.1
+SQLAlchemy>=2.0
+psycopg[binary]>=3.2
+cryptography>=44.0       # libs/secrets: the credential store the account page writes through

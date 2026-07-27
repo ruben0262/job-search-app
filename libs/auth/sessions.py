@@ -81,6 +81,12 @@ def rotate_session(session: Session, refresh_token: str, *,
     return issue_session(session, row.user_id, user_agent=user_agent, ip=ip)
 
 
+def session_owner(session: Session, refresh_token: str) -> _uuid.UUID | None:
+    """Who this refresh token belongs to, or `None`. For "log me out everywhere"."""
+    return session.scalar(
+        select(UserSession.user_id).where(UserSession.refresh_hash == _hash(refresh_token)))
+
+
 def revoke_session(session: Session, refresh_token: str) -> bool:
     """Log out one device. Returns whether anything was revoked."""
     row = session.scalar(select(UserSession).where(UserSession.refresh_hash == _hash(refresh_token)))

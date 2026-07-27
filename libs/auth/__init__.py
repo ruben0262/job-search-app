@@ -25,6 +25,7 @@ from libs.auth.sessions import (
     revoke_all,
     revoke_session,
     rotate_session,
+    session_owner,
 )
 from libs.auth.tokens import (
     VERIFICATION_TTL,
@@ -49,5 +50,6 @@ __all__ = [
     "revoke_all",
     "revoke_session",
     "rotate_session",
+    "session_owner",
     "verify_password",
 ]
