@@ -63,7 +63,10 @@ def client():
 
 
 def _email() -> str:
-    return f"{uuid.uuid4()}@example.test"
+    # `example.com` rather than the `.test` the other suites use: `.test` is a reserved special-use
+    # domain and `email_validator` rejects it, which is the validator doing its job. The rest of the
+    # tree writes User rows directly and never passes an address through validation.
+    return f"{uuid.uuid4()}@example.com"
 
 
 def _signup(http, email: str, password: str = PASSWORD):
