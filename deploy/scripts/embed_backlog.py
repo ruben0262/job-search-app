@@ -49,9 +49,15 @@ def main(argv: list[str] | None = None) -> int:
     total = 0
     for pass_number in range(1, args.batches + 1):
         with session_scope() as session:
-            result = embed_all_pending(CorpusRepository(session), client, expected=expected)
+            # One batch per pass, so one commit per batch. `embed_all_pending` otherwise runs up to
+            # 50 batches inside a single transaction and commits at the end — which is right for the
+            # harvester (a cycle is atomic) and wrong here: at roughly two minutes per batch of 64,
+            # a backlog of a few thousand rows is hours of work that a dropped SSH session or a
+            # restart would throw away entirely. Learned the expensive way.
+            result = embed_all_pending(CorpusRepository(session), client,
+                                       expected=expected, max_batches=1)
         total += result.embedded
-        print(f"pass {pass_number}: embedded {result.embedded} (running total {total})")
+        print(f"pass {pass_number}: embedded {result.embedded} (running total {total})", flush=True)
         if result.embedded == 0:
             print("nothing left to embed")
             break
