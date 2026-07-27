@@ -115,9 +115,13 @@ def _workplace_lines(constraints: Constraints) -> list[str]:
     onsite = ", ".join(constraints.onsite_locations) if constraints.onsite_locations else None
 
     if policy == "any":
-        # No location clause at all. A user who accepts on-site anywhere has no relocation
-        # dealbreaker, and appending one would invent a gate they never asked for.
-        line = "- Workplace policy: remote, hybrid, or on-site all acceptable."
+        # Workplace *mode* and acceptable *region* are independent, and conflating them loses a real
+        # constraint: a candidate can be happy with on-site, hybrid or remote and still only be able
+        # to take it in four countries. So the mode clause says "all acceptable" and the region
+        # clause is emitted from `onsite_locations` either way.
+        line = "- Workplace policy: remote, hybrid, and on-site are all equally acceptable"
+        line += (f". On-site work is acceptable in {onsite}, and nowhere else without relocation "
+                 f"or visa support." if onsite else ".")
     else:
         line = ("- Workplace policy: FULLY REMOTE only. Hybrid and on-site are dealbreakers"
                 if policy == "remote_only"
@@ -139,10 +143,13 @@ def _hard_gates(constraints: Constraints) -> str:
              "   - unpaid / equity-only"]
 
     policy = constraints.remote_policy or "remote_or_hybrid"
-    if policy != "any":
-        onsite = ", ".join(constraints.onsite_locations)
-        gates.append(f"   - on-site-only outside {onsite}, or mandatory relocation" if onsite
-                     else "   - on-site-only, or mandatory relocation")
+    onsite = ", ".join(constraints.onsite_locations)
+    if onsite:
+        # Named regions mean anywhere else is gated, whatever the workplace mode. This holds even
+        # for `any`: "I will work on-site" is not "I will work on-site anywhere on earth".
+        gates.append(f"   - on-site-only outside {onsite}, with no relocation or visa support")
+    elif policy != "any":
+        gates.append("   - on-site-only, or mandatory relocation")
     if policy == "remote_only":
         gates.append("   - hybrid or any required office attendance")
     gates.append("   - remote but restricted to a region they cannot legally work in "

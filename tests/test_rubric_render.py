@@ -121,6 +121,17 @@ def test_remote_only_hard_gates_hybrid():
     assert "relocation" not in anywhere
 
 
+def test_named_regions_gate_location_even_when_every_workplace_mode_is_accepted():
+    """Mode and region are independent constraints, and conflating them loses a real one: a
+    candidate can be happy with on-site, hybrid or remote and still only be able to take it in four
+    countries. Found while transcribing the second account's rubric, where exactly that is true."""
+    rubric = render_rubric(_profile(constraints={
+        "remote_policy": "any", "onsite_locations": ["UK", "Ireland", "Hungary"],
+        "languages": ["English"]}))
+    assert "on-site-only outside UK, Ireland, Hungary" in rubric
+    assert "all equally acceptable" in rubric
+
+
 def test_the_language_gate_names_the_users_languages():
     rubric = render_rubric(_profile())
     assert "JD language is not one of: English, Hungarian" in rubric
