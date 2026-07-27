@@ -25,6 +25,7 @@ import uuid as _uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -183,8 +184,11 @@ def login(body: LoginRequest, request: Request, response: Response,
     return {"status": "ok"}
 
 
-@router.post("/refresh")
-def refresh(request: Request, response: Response, db: Session = Depends(get_db)) -> dict:
+# `response_model=None` because the handler returns either a dict or a Response, and FastAPI
+# cannot build a response model from that union.
+@router.post("/refresh", response_model=None)
+def refresh(request: Request, response: Response,
+            db: Session = Depends(get_db)) -> dict | JSONResponse:
     """Rotate the refresh token and mint a new access token."""
     presented = request.cookies.get(REFRESH_COOKIE)
     if not presented:
@@ -195,10 +199,14 @@ def refresh(request: Request, response: Response, db: Session = Depends(get_db))
                                  user_agent=request.headers.get("user-agent"),
                                  ip=_client_ip(request))
     except SessionExpired as exc:
-        # Cookies are cleared on every failure, including a replay: the client is holding something
-        # that will never work again, and leaving it in place means it retries forever.
-        _clear_session_cookies(response)
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+        # Returned, not raised. Raising `HTTPException` discards the injected `Response`, so the
+        # clear-cookie headers set on it never reach the client — and the client goes on presenting
+        # a token that will never work again, forever. Caught by CI: the 401 arrived with no
+        # `Set-Cookie` at all.
+        failure = JSONResponse(status_code=status.HTTP_401_UNAUTHORIZED,
+                               content={"detail": str(exc)})
+        _clear_session_cookies(failure)
+        return failure
 
     user_id = db.scalar(select(User.id).where(User.id == _owner(db, rotated.session_id)))
     _set_session_cookies(response, issue_access_token(user_id, rotated.session_id),
