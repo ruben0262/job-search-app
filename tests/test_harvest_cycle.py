@@ -254,3 +254,57 @@ def test_the_lock_is_released_after_a_cycle(ctx):
         with harvest_lock(other) as held:
             assert held, "the lock was not released"
         other.close()
+
+
+# ── de-personalised source config ─────────────────────────────────────────────────────────────
+
+def test_source_filters_come_from_the_union_of_users_not_one_person(ctx):
+    """**The de-personalisation.** The reference pre-filters feed sources on Ruben's keywords.
+
+    Filtering a *shared* corpus on one person's terms would silently deny every other user the jobs
+    they asked for — and they would never know, because the rows would simply never arrive.
+    """
+    from services.harvester.source_config import build_source_configs, union_keywords
+
+    s = ctx
+    _active_user(s, keywords=["golang"])
+    _active_user(s, keywords=["rust", "Golang"])
+    s.flush()
+
+    configs = TenantRepository(s).active_configs()
+    assert union_keywords(configs) == ["golang", "rust"], "deduplicated, lowercased, sorted"
+
+    built = build_source_configs(configs, env={})
+    assert built["remotive"]["keywords"] == ["golang", "rust"]
+
+
+def test_a_dormant_users_keywords_leave_the_filter(ctx):
+    """Their terms should stop widening the harvest the moment they stop costing anything."""
+    from services.harvester.source_config import build_source_configs
+
+    s = ctx
+    _active_user(s, keywords=["stillhere"])
+    leaving = _active_user(s, keywords=["goneaway"])
+    leaving.status, leaving.active = "dormant", False
+    s.flush()
+
+    built = build_source_configs(TenantRepository(s).active_configs(), env={})
+    assert built["remotive"]["keywords"] == ["stillhere"]
+
+
+def test_with_no_users_at_all_sources_stay_enabled_and_unfiltered(ctx):
+    """Cold start. The platform harvests broadly before anybody has configured anything, which is
+    what makes a new user's first feed non-empty on day one rather than in week three."""
+    from services.harvester.source_config import build_source_configs
+
+    built = build_source_configs({}, env={})
+    assert built, "sources must still run"
+    assert "keywords" not in built["remotive"], "unfiltered rather than filtered to nothing"
+
+
+def test_key_gated_sources_stay_off_without_their_credential(ctx):
+    """A source that 401s every cycle is a failure count that means nothing and drowns real ones."""
+    from services.harvester.source_config import build_source_configs
+
+    assert "jooble" not in build_source_configs({}, env={})
+    assert "jooble" in build_source_configs({}, env={"JOOBLE_API_KEY": "x"})

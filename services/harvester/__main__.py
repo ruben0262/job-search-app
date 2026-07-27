@@ -27,7 +27,9 @@ import sys
 
 from libs.contracts.embedder import EmbedderClient, EmbedderVersion
 from libs.db.session import session_scope
+from libs.tenant.repository import TenantRepository
 from services.harvester.cycle import run_cycle
+from services.harvester.source_config import build_source_configs
 
 logger = logging.getLogger("harvester")
 
@@ -77,10 +79,17 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         with session_scope() as session:
+            # Source pre-filters are derived from the union of ACTIVE users' configs, never from
+            # one person's keywords - the corpus is shared, so filtering it to one user would
+            # silently deny everyone else the jobs they asked for.
+            source_configs = build_source_configs(TenantRepository(session).active_configs())
+            logger.info("harvest: %d sources enabled", len(source_configs))
+
             embedder = None if args.dry_run else EmbedderClient(base_url=embedder_url)
             try:
                 report, deferred = run_cycle(
-                    session, embedder=embedder, expected_embedder=_expected_embedder(), **kwargs)
+                    session, embedder=embedder, expected_embedder=_expected_embedder(),
+                    source_configs=source_configs, **kwargs)
             finally:
                 if embedder is not None:
                     embedder.close()
