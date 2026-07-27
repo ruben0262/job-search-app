@@ -1,0 +1,309 @@
+{
+  "_source": "job-search/pipeline/lib/store.py",
+  "_generated_by": "tests/golden/generate_dedup_golden.py",
+  "_note": "Expected values are the reference implementation's ACTUAL output, not a transcription of its rules. Do not hand-edit; do not regenerate to make a failing test pass.",
+  "canonical_url": [
+    {
+      "url": "https://job-boards.greenhouse.io/acme/jobs/123",
+      "expected": "boards.greenhouse.io/acme/jobs/123"
+    },
+    {
+      "url": "https://boards.greenhouse.io/acme/jobs/123",
+      "expected": "boards.greenhouse.io/acme/jobs/123"
+    },
+    {
+      "url": "https://JOB-BOARDS.greenhouse.io/Acme/jobs/123",
+      "expected": "boards.greenhouse.io/acme/jobs/123"
+    },
+    {
+      "url": "https://www.lever.co/acme/abc-123",
+      "expected": "lever.co/acme/abc-123"
+    },
+    {
+      "url": "https://lever.co/acme/abc-123",
+      "expected": "lever.co/acme/abc-123"
+    },
+    {
+      "url": "https://boards.greenhouse.io/acme/jobs/123?gh_src=abcd",
+      "expected": "boards.greenhouse.io/acme/jobs/123"
+    },
+    {
+      "url": "https://boards.greenhouse.io/acme/jobs/123?utm_source=x&utm_campaign=y",
+      "expected": "boards.greenhouse.io/acme/jobs/123"
+    },
+    {
+      "url": "https://boards.greenhouse.io/acme/jobs/123#apply",
+      "expected": "boards.greenhouse.io/acme/jobs/123"
+    },
+    {
+      "url": "https://boards.greenhouse.io/acme/jobs/123/",
+      "expected": "boards.greenhouse.io/acme/jobs/123"
+    },
+    {
+      "url": "https://boards.greenhouse.io/acme/jobs/123//",
+      "expected": "boards.greenhouse.io/acme/jobs/123"
+    },
+    {
+      "url": "https://BOARDS.greenhouse.io/ACME/Jobs/123",
+      "expected": "boards.greenhouse.io/acme/jobs/123"
+    },
+    {
+      "url": "http://boards.greenhouse.io/acme/jobs/123",
+      "expected": "boards.greenhouse.io/acme/jobs/123"
+    },
+    {
+      "url": "https://www.linkedin.com/jobs/view/4012345678/?trackingId=abc%3D",
+      "expected": "linkedin.com/jobs/view/4012345678"
+    },
+    {
+      "url": "https://jobs.ashbyhq.com/acme/9f8e7d6c-1234-4321-abcd-000000000000",
+      "expected": "jobs.ashbyhq.com/acme/9f8e7d6c-1234-4321-abcd-000000000000"
+    },
+    {
+      "url": "https://acme.workday.com/en-US/careers/job/Remote/Engineer_R-123",
+      "expected": "acme.workday.com/en-us/careers/job/remote/engineer_r-123"
+    },
+    {
+      "url": "",
+      "expected": null
+    },
+    {
+      "url": "   ",
+      "expected": null
+    },
+    {
+      "url": "not-a-url",
+      "expected": null
+    },
+    {
+      "url": "/relative/path",
+      "expected": null
+    },
+    {
+      "url": "https://",
+      "expected": null
+    },
+    {
+      "url": "ftp://boards.greenhouse.io/acme/jobs/123",
+      "expected": "boards.greenhouse.io/acme/jobs/123"
+    }
+  ],
+  "content_key": [
+    {
+      "title": "Senior Backend Engineer",
+      "company": "Acme",
+      "location": "",
+      "expected": "acme|senior backend engineer"
+    },
+    {
+      "title": "Senior Backend Engineer (Remote)",
+      "company": "Acme",
+      "location": "",
+      "expected": "acme|senior backend engineer"
+    },
+    {
+      "title": "Senior Backend Engineer (m/f/d)",
+      "company": "Acme",
+      "location": "",
+      "expected": "acme|senior backend engineer"
+    },
+    {
+      "title": "Senior Backend Engineer (EU)",
+      "company": "Acme",
+      "location": "",
+      "expected": "acme|senior backend engineer"
+    },
+    {
+      "title": "Remote Senior Backend Engineer",
+      "company": "Acme",
+      "location": "",
+      "expected": "acme|senior backend engineer"
+    },
+    {
+      "title": "Fully Remote Senior Backend Engineer",
+      "company": "Acme",
+      "location": "",
+      "expected": "acme|senior backend engineer"
+    },
+    {
+      "title": "Senior Backend Engineer - Hybrid",
+      "company": "Acme",
+      "location": "",
+      "expected": "acme|senior backend engineer"
+    },
+    {
+      "title": "Engineer",
+      "company": "Acme Inc",
+      "location": "",
+      "expected": "acme|engineer"
+    },
+    {
+      "title": "Engineer",
+      "company": "Acme Inc.",
+      "location": "",
+      "expected": "acme|engineer"
+    },
+    {
+      "title": "Engineer",
+      "company": "Acme Ltd",
+      "location": "",
+      "expected": "acme|engineer"
+    },
+    {
+      "title": "Engineer",
+      "company": "Acme GmbH",
+      "location": "",
+      "expected": "acme|engineer"
+    },
+    {
+      "title": "Engineer",
+      "company": "Acme Kft.",
+      "location": "",
+      "expected": "acme|engineer"
+    },
+    {
+      "title": "Engineer",
+      "company": "Acme Holdings Limited",
+      "location": "",
+      "expected": "acme holdings|engineer"
+    },
+    {
+      "title": "Engineer",
+      "company": "Co",
+      "location": "",
+      "expected": "co|engineer"
+    },
+    {
+      "title": "Engineer",
+      "company": "AB",
+      "location": "",
+      "expected": "ab|engineer"
+    },
+    {
+      "title": "Backend Engineer",
+      "company": "Acme",
+      "location": "London",
+      "expected": "acme|backend engineer|london"
+    },
+    {
+      "title": "Backend Engineer",
+      "company": "Acme",
+      "location": "Berlin",
+      "expected": "acme|backend engineer|berlin"
+    },
+    {
+      "title": "Backend Engineer",
+      "company": "Acme",
+      "location": "London, UK",
+      "expected": "acme|backend engineer|london uk"
+    },
+    {
+      "title": "Backend Engineer",
+      "company": "Acme",
+      "location": "Remote",
+      "expected": "acme|backend engineer"
+    },
+    {
+      "title": "Backend Engineer",
+      "company": "Acme",
+      "location": "Remote - EMEA",
+      "expected": "acme|backend engineer|emea"
+    },
+    {
+      "title": "Backend Engineer",
+      "company": "Acme",
+      "location": "Fully Remote",
+      "expected": "acme|backend engineer"
+    },
+    {
+      "title": "Backend Engineer",
+      "company": "Acme",
+      "location": "Hybrid - Budapest",
+      "expected": "acme|backend engineer|budapest"
+    },
+    {
+      "title": "Backend Engineer",
+      "company": "Acme",
+      "location": "On-site",
+      "expected": "acme|backend engineer"
+    },
+    {
+      "title": "Backend Engineer",
+      "company": "Acme",
+      "location": "Budapest (Hybrid)",
+      "expected": "acme|backend engineer|budapest"
+    },
+    {
+      "title": "",
+      "company": "Acme",
+      "location": "London",
+      "expected": null
+    },
+    {
+      "title": "Engineer",
+      "company": "",
+      "location": "London",
+      "expected": null
+    },
+    {
+      "title": "",
+      "company": "",
+      "location": "",
+      "expected": null
+    },
+    {
+      "title": "(Remote)",
+      "company": "Acme",
+      "location": "",
+      "expected": null
+    },
+    {
+      "title": "!!!",
+      "company": "Acme",
+      "location": "",
+      "expected": null
+    },
+    {
+      "title": "Remote",
+      "company": "Acme",
+      "location": "",
+      "expected": null
+    },
+    {
+      "title": "  Senior   Backend  Engineer  ",
+      "company": "  Acme  ",
+      "location": "  London  ",
+      "expected": "acme|senior backend engineer|london"
+    },
+    {
+      "title": "Senior/Backend Engineer",
+      "company": "Acme",
+      "location": "",
+      "expected": "acme|senior backend engineer"
+    },
+    {
+      "title": "Senior-Backend-Engineer",
+      "company": "Acme",
+      "location": "",
+      "expected": "acme|senior backend engineer"
+    },
+    {
+      "title": "SENIOR BACKEND ENGINEER",
+      "company": "ACME",
+      "location": "LONDON",
+      "expected": "acme|senior backend engineer|london"
+    },
+    {
+      "title": "Ingénieur Backend",
+      "company": "Acmé",
+      "location": "Zürich",
+      "expected": "acm|ing nieur backend|z rich"
+    },
+    {
+      "title": "バックエンドエンジニア",
+      "company": "Acme",
+      "location": "",
+      "expected": null
+    }
+  ]
+}
