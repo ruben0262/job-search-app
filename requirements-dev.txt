@@ -31,3 +31,6 @@ cryptography>=44.0
 # libs/scoring's feature matrix and the scorer's serve path. The trainer/scorer images pin
 # their own; this is what lets the root suite exercise them.
 numpy>=2.0
+# The trainer serialises its artifact with joblib. Only joblib, not scikit-learn: the fit
+# itself is injected in the tests, so CI needs the writer and not the estimator.
+joblib>=1.4
