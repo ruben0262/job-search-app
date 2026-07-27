@@ -17,6 +17,7 @@ from __future__ import annotations
 from libs.db.base import Base
 from libs.db.models.ats import AtsEtag, AtsToken
 from libs.db.models.corpus import CorpusJob
+from libs.db.models.proxy import PROXY_STATUSES, ProxyCredential
 from libs.db.models.queue import CLAIM_TIMEOUT_MIN, JOB_STATES, LANES, MAX_ATTEMPTS, QueueJob
 from libs.db.models.tenant import LABEL_SOURCES, UserJobState, UserLabel, UserModel
 from libs.db.models.user import (
@@ -34,6 +35,7 @@ __all__ = [
     "LABEL_SOURCES",
     "LANES",
     "MAX_ATTEMPTS",
+    "PROXY_STATUSES",
     "SECRET_KINDS",
     "TELEGRAM_STATUSES",
     "USER_STATUSES",
@@ -41,6 +43,7 @@ __all__ = [
     "AtsToken",
     "Base",
     "CorpusJob",
+    "ProxyCredential",
     "QueueJob",
     "User",
     "UserConfig",

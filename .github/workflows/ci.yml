@@ -27,6 +27,10 @@ jobs:
       # Contracts live in pyproject.toml: services may not import each other, libs may not import
       # services. Failing here is the point — a violation is cheap to fix the day it is written.
       - run: lint-imports --verbose
+      # Added 2026-07-27, after noticing ruff had only ever been run by hand — which means it was
+      # only ever run on the files someone remembered to name. Rules are pinned explicitly in
+      # pyproject.toml so a ruff release cannot fail an unrelated commit.
+      - run: ruff check .
 
   schema:
     name: migrations + schema invariants

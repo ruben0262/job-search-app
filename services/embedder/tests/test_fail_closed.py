@@ -11,7 +11,6 @@ import socket
 
 import httpx
 import pytest
-
 from examples.client import EmbedderClient, EmbedderError
 
 

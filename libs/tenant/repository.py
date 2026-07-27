@@ -32,7 +32,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from libs.corpus.repository import CorpusRepository
-from libs.db.models import CorpusJob, UserJobState, UserLabel
+from libs.db.models import CorpusJob, ProxyCredential, UserJobState, UserLabel
 
 # The reference's SCORER_FEEDBACK_WEIGHT default. A user's explicit decision is worth more than the
 # LLM's guess at their taste, and this is the number that says how much more.
@@ -139,6 +139,48 @@ class TenantRepository:
             select(func.count())
             .select_from(UserJobState)
             .where(UserJobState.user_id == user_id, UserJobState.applied_at.is_not(None))) or 0
+
+    # ── the LinkedIn visibility gate ─────────────────────────────────────────────────────────
+
+    def linkedin_visible(self, user_id: _uuid.UUID) -> bool:
+        """Whether this user may see `source='linkedin'` rows.
+
+        **This is what makes free-riding impossible by construction** (`HARVESTER_PLAN.md` §5.2).
+        LinkedIn rows land in the shared corpus so dedup and embed-once keep working, but the tier
+        costs real proxy bandwidth paid by whoever fetched it. Without a gate, a user with no
+        credential would read results other people paid for.
+
+        One predicate on a column the corpus already records — no per-row provenance, no
+        partitioning, no duplicated storage.
+
+        A user without a credential still gets the ~2/3 of sources that cost nothing, which is a
+        genuinely useful product on its own and a clear reason to add one.
+        """
+        status = self._s.scalar(
+            select(ProxyCredential.status).where(ProxyCredential.user_id == user_id))
+        return status == "healthy"
+
+    def visible_feed(self, user_id: _uuid.UUID, *, limit: int = 50,
+                     min_score: float | None = None) -> list[CorpusJob]:
+        """This user's feed, with the gate applied.
+
+        Ordering is by score, then recency. The gate is a `WHERE` clause rather than a
+        post-filter on purpose: filtering after the `LIMIT` would silently return short pages to
+        exactly the users who have no credential.
+        """
+        stmt = (
+            select(CorpusJob)
+            .join(UserJobState, UserJobState.job_id == CorpusJob.id)
+            .where(UserJobState.user_id == user_id, UserJobState.notified_at.is_(None)))
+
+        if not self.linkedin_visible(user_id):
+            stmt = stmt.where(CorpusJob.source != "linkedin")
+        if min_score is not None:
+            stmt = stmt.where(UserJobState.score >= min_score)
+
+        return list(self._s.scalars(
+            stmt.order_by(UserJobState.score.desc().nullslast(), CorpusJob.first_seen_at.desc())
+            .limit(limit)))
 
     # ── labels and feedback ──────────────────────────────────────────────────────────────────
 

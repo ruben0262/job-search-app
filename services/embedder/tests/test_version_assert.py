@@ -14,7 +14,6 @@ from __future__ import annotations
 import os
 
 import pytest
-
 from examples.client import EmbedderClient, IncompatibleEmbedder
 
 URL = os.environ.get("EMBEDDER_URL")

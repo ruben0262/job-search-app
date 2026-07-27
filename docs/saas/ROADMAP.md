@@ -82,9 +82,17 @@ product twice.
    resolved Apply URL (`processed.app_canonical`). Without it a LinkedIn posting and the Greenhouse
    row its Apply button resolves to are two rows in every feed. Added as a fourth layer, checked in
    both directions. Migration `fccd4d3a84ff`.
-4. **De-personalise the harvester**: config from a union of user configs, query-set builder, fan-out
-   budget, round-robin selection, plus the **per-user LinkedIn loop** on the user's own proxy
-   credential and its visibility gate (`HARVESTER_PLAN.md` §5).
+4a. ✅ **Done 2026-07-27.** **The harvester's governor, before the harvester.** Bounded config schema
+   (`libs/contracts/config.py`), query-set folding, fan-out budget with round-robin selection
+   (`services/harvester/query_set.py`), `proxy_credentials`, the LinkedIn visibility gate, and the
+   tier's global controls (`services/harvester/governor.py`). Built before the scraper deliberately:
+   the budget is what stops an unbounded harvest.
+
+   Execution of the per-user LinkedIn loop is **not** wired - it is an ordinary queue job and
+   `libs/queue` is Phase 2. Nothing half-built runs.
+4b. **Lift `pipeline/sources/*` and the fetch layer** - the I/O half. `make_client()` stays the only
+   HTTP-client factory, which is what keeps "this user's credential, for this user's fetch only"
+   auditable rather than hopeful.
 5. **Persist embedding vectors on corpus rows**; route harvest embedding through `/embed/bulk`.
 6. ✅ **Done 2026-07-27. T1 tenant isolation** — landed with 3b's per-user repository rather than
    later, per its own "as soon as the first per-user table exists" instruction. Two users,

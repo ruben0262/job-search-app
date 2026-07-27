@@ -96,10 +96,8 @@ class AtsRepository:
 
     def etags(self, ats: str) -> dict[str, str]:
         """Every known ETag for this ATS as `{token: etag}` — the shape the poll loop expects."""
-        return {
-            token: etag for token, etag in
-            self._s.execute(select(AtsEtag.token, AtsEtag.etag).where(AtsEtag.ats == ats))
-        }
+        return dict(
+            self._s.execute(select(AtsEtag.token, AtsEtag.etag).where(AtsEtag.ats == ats)).all())
 
     def set_etag(self, ats: str, token: str, etag: str) -> None:
         """Record a validator. Called on `200` (new ETag) and on `304` (the same one, still valid).

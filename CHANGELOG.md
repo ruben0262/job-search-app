@@ -16,6 +16,61 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ## 2026-07-27
 
+### Step 4a - the harvester's governor, before the harvester
+
+Phase 1 step 4, split: the deterministic half now, the source adapters as 4b. Same fault line that
+made step 3 tractable - build the part whose correctness is provable without a network first, and in
+this case build the thing that *limits* scraping before the thing that scrapes.
+
+- **`libs/contracts/config.py`** - the bounded user config. Invalid states are unrepresentable
+  rather than validated away: controlled vocabularies, 1-5 keywords, bounded salary and recency.
+  Locations are a picklist and that is not only a UI choice - harvest dedup folds on a normalised
+  location, so free text would multiply the query set with spellings of the same place.
+- **`services/harvester/query_set.py`** - QueryKey normalisation, folding, fan-out budget,
+  round-robin selection.
+- **`services/harvester/governor.py`** - the LinkedIn tier's global controls.
+- **`proxy_credentials`** table, and the visibility gate in `libs/tenant`.
+
+**A bug the tests caught in my own implementation.** `HARVESTER_PLAN.md` section 2 specifies the age
+bucket as *"rounded up to the coarsest bucket any requesting user asked for"*, so a 24h user and a
+72h user share one 72h fetch. I had bucketed each user's value independently and folded on it, which
+*fragments* demand instead of merging it - two fetches whose results are strict subsets of one
+another, exactly the duplicate work the budget exists to prevent. Age is now resolved per group
+after folding.
+
+Three more failures in that run were bugs in the tests, not the code: I had given every user
+identical keywords, so folding correctly collapsed them and the scenarios I meant to build never
+existed.
+
+**Round-robin is the load-bearing choice in selection.** Ordering by demand would serve popular
+terms repeatedly and starve anyone with an unusual search - precisely the user for whom this product
+is most valuable. Deferred queries are served first next cycle so an unlucky query does not stay
+unlucky.
+
+**The visibility gate makes free-riding impossible by construction.** LinkedIn rows live in the
+shared corpus so dedup and embed-once still work, but a user sees them only while their own proxy
+credential is healthy. Applied as a `WHERE` clause, not a post-filter - filtering after `LIMIT`
+would hand short pages to exactly the users who have no credential.
+
+**The per-user tier still needs a global governor** (section 5.2b). Per-user proxies give IP
+diversity and handle ban risk; they do nothing about the platform issuing hundreds of concurrent
+requests, or a herd forming when users share an interval. Hence a concurrency ceiling, jitter
+applied per scheduling decision (not once at signup, or a restart re-converges everyone), and a
+kill switch - the alternative during an incident is editing 50 users' configs while LinkedIn blocks.
+
+Execution is deliberately not wired: the per-user loop is an ordinary queue job, and `libs/queue` is
+Phase 2. Nothing half-built runs.
+
+### CI now lints
+
+`ruff check .` added as a step, after noticing ruff had only ever been run by hand - which means it
+had only ever run on the files someone remembered to name. Rules are selected explicitly rather than
+inherited from ruff's defaults, which change between releases. `services/embedder` carries per-file
+ignores with reasons: its findings are deliberate choices in deployed, gate-tested code, and one
+flagged line (`bulk_s == bulk_s`) is an intentional NaN check that a "fix" would have broken.
+
+Migration `2f362ab1e0c5`. 140 tests passing.
+
 ### Step 3b — the remaining stores, plus a dedup layer step 3 had missed
 
 **The important part is the gap, not the port.** Reading the reference's `processed` table for 3b

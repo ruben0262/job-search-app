@@ -14,5 +14,6 @@ ruff>=0.8
 # to generate migrations. Services still pin their own runtime copies; these are the versions CI and
 # local development resolve against.
 SQLAlchemy>=2.0
+pydantic>=2.10        # libs/contracts: one model behind server validation and the form
 alembic>=1.13
 psycopg[binary]>=3.2

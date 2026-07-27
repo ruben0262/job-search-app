@@ -16,7 +16,6 @@ import asyncio
 
 import pytest
 from fastapi.testclient import TestClient
-
 from gateway import app as app_module
 from gateway.config import CONFIG
 

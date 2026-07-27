@@ -60,4 +60,51 @@ pythonpath = ["."]
 
 [tool.ruff]
 target-version = "py312"
-line-length = 100
+# 110 rather than the more usual 100. The docstrings here carry the *reasoning* behind decisions —
+# that is the repo's stated convention — and hard-wrapping prose tighter makes it worse to read and
+# worse to edit, which is how explanatory comments start rotting. Code rarely approaches this.
+line-length = 110
+# Alembic writes these; they are a record of what was applied, not source to be restyled. Editing a
+# migration after it has run anywhere is its own hazard, so they are simply out of scope.
+extend-exclude = ["libs/db/migrations/versions"]
+
+# Selected explicitly rather than relying on defaults. Ruff's default set changes between releases,
+# and a lint job whose rules shift under it produces failures nobody asked for on unrelated commits.
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "RUF", "PL", "S", "BLE"]
+ignore = [
+    "PLR0913",  # many arguments — repository methods legitimately take several keyword-only args
+    "PLR2004",  # magic values in tests are the point of the test
+    "S101",     # assert: pytest's entire idiom
+    # The docstrings in this repo are prose and use en-dashes and arrows deliberately. These rules
+    # exist to catch homoglyph attacks in identifiers, which is not what a "—" in a sentence is.
+    "RUF002", "RUF003",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests. Each of these is the idiom, not an oversight.
+"tests/*" = [
+    "E402",     # imports after pytest.importorskip — which must run first, that is its whole job
+    "S106",     # "hardcoded password" in fixtures: placeholder strings, never real credentials
+    "S311",     # random: the differential fuzz is seeded and deliberately not cryptographic
+    "PLC0415",  # imports inside a test, to keep an optional dependency optional
+]
+"services/embedder/tests/*" = ["E402", "S106", "PLC0415", "B905", "PLW2901"]
+# Lazy module-level singletons behind an accessor. Deliberate: the engine must not be constructed at
+# import time, or importing anything would require DATABASE_URL to be set.
+"libs/db/session.py" = ["PLW0603"]
+"services/embedder/gateway/app.py" = ["PLW0603"]
+# services/embedder is built, deployed, and gate-tested. These findings are all deliberate choices
+# in that code, and "fixing" them to satisfy a linter added long afterwards would be changing
+# working behaviour for style — exactly what CODE_STRUCTURE.md §6 says not to do to this service.
+"services/embedder/gateway/dispatcher.py" = ["BLE001"]   # one bare except IS the intent: any
+"services/embedder/gateway/verify.py" = ["BLE001"]       #   failure to verify must fail closed
+"services/embedder/scripts/*" = [
+    "PLR0124",  # `bulk_s == bulk_s` is an intentional NaN check; the comment says so
+    "PLW1510",  # subprocess.run without check=: the exit code is inspected explicitly instead
+    "S110",     # try/except/pass around best-effort cleanup of a lock file
+    "S603", "S607",  # subprocess with a literal argv, no shell — this is the safe form
+    "S310",     # urllib on literal http URLs the operator typed; no user input reaches these
+    "PLC0415",  # a local import, to keep these runnable with stdlib only on a bare VPS
+    "PLR0912", "PLR0915",  # long linear report functions: a checklist reads better unsplit
+]
