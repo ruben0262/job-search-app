@@ -93,12 +93,16 @@ def _labelled(s, user, n: int, *, generation: int = 1, version: str = VERSION) -
     s.flush()
 
 
-def _fit(data):
-    class Estimator:
-        def predict(self, matrix):
-            return [70.0] * matrix.shape[0]
+class StubEstimator:
+    """Module level, not nested in `_fit`: the artifact is pickled, and a class defined inside a
+    function has no importable path for pickle to record."""
 
-    return {"model": Estimator(), "task": "regress"}
+    def predict(self, matrix):
+        return [70.0] * matrix.shape[0]
+
+
+def _fit(data):
+    return {"model": StubEstimator(), "task": "regress"}
 
 
 # ── the training set ──────────────────────────────────────────────────────────────────────────
