@@ -9,3 +9,10 @@
 import-linter>=2.0        # enforces the boundary contracts in pyproject.toml — `lint-imports`
 pytest>=8.0
 ruff>=0.8
+
+# libs/db is imported by nearly every service, so its dependencies are needed to run the tests and
+# to generate migrations. Services still pin their own runtime copies; these are the versions CI and
+# local development resolve against.
+SQLAlchemy>=2.0
+alembic>=1.13
+psycopg[binary]>=3.2

@@ -28,6 +28,48 @@ jobs:
       # services. Failing here is the point — a violation is cheap to fix the day it is written.
       - run: lint-imports --verbose
 
+  schema:
+    name: migrations + schema invariants
+    runs-on: ubuntu-latest
+    services:
+      # A real Postgres, not SQLite. The schema depends on things SQLite does not have — partial
+      # unique indexes, JSONB, TIMESTAMPTZ, ON DELETE RESTRICT — so testing against a stand-in would
+      # prove nothing about what actually runs.
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: jobsearch
+          POSTGRES_USER: jobsearch
+          POSTGRES_PASSWORD: ci
+        options: >-
+          --health-cmd "pg_isready -U jobsearch" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+        ports: ["5432:5432"]
+    env:
+      DATABASE_URL: postgresql+psycopg://jobsearch:ci@127.0.0.1:5432/jobsearch
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      # Migrations run as their own step here for the same reason they do in production: this also
+      # proves `alembic upgrade head` works from an empty database, every time.
+      - run: alembic upgrade head
+      # Autogenerate against the just-migrated database must produce nothing. A non-empty diff means
+      # someone changed a model without writing the migration, which is only otherwise discovered
+      # when a deploy fails.
+      - name: models and migrations agree
+        run: |
+          alembic revision --autogenerate -m drift-check
+          if grep -qE "^\s+op\." libs/db/migrations/versions/*drift-check*.py; then
+            echo "::error::models drifted from migrations — run alembic revision --autogenerate"
+            cat libs/db/migrations/versions/*drift-check*.py
+            exit 1
+          fi
+      - run: pytest tests/ -v
+
   embedder-tests:
     name: embedder (no live stack)
     runs-on: ubuntu-latest

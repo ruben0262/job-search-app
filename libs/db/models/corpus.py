@@ -1,0 +1,106 @@
+"""The shared job corpus — the one table that is not per-user, and must never become per-user.
+
+Public job postings only. No column here may ever hold anything belonging to a user: that single
+rule is what makes account deletion one cascading statement (PLATFORM_ARCHITECTURE.md §8) and what
+keeps the storage projection true (0.87 GB steady state, against 44 GB for per-user copies at 50
+users, §4). It is worth defending in review, because the pressure to denormalise "just one score"
+onto a corpus row will come.
+
+**Retention is tiered, and that is what makes the steady state steady.** A row keeps its description
+and vector for ``CORPUS_HOT_DAYS`` (90). After that, if no user has acted on it, both are dropped and
+the ~258-byte dedup key is kept forever. Rows any user applied to, built a CV for, or labelled are
+``pinned`` and never trimmed.
+
+**The vector is keyed on a content hash, not on the row id.** ``refresh.py`` in the reference
+instance re-fetches and mutates descriptions on live postings, so a vector keyed by job id silently
+goes stale against text it no longer represents — and a stale vector does not error, it just scores
+wrong. ``text_sha256`` is compared before trusting ``embedding``; a mismatch means re-embed.
+"""
+from __future__ import annotations
+
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    CheckConstraint,
+    Index,
+    Integer,
+    SmallInteger,
+    String,
+    Text,
+    func,
+    text,
+)
+from sqlalchemy.orm import Mapped, mapped_column
+
+from libs.db.base import Base, timestamptz
+
+
+class CorpusJob(Base):
+    __tablename__ = "corpus"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+
+    # --- dedup: the load-bearing part (port of pipeline/lib/store.py) ---
+    # Three keys, narrowing. `url` is what a source gave us; `canonical_url` folds tracking params
+    # and host variants; `content_key` catches the same posting re-listed under a different URL, and
+    # is location-aware because the same title+company in two cities is two jobs, not one.
+    # These semantics are tuned and quietly load-bearing — T2 pins them before the port begins.
+    url: Mapped[str] = mapped_column(Text)
+    canonical_url: Mapped[str] = mapped_column(Text, unique=True)
+    content_key: Mapped[str] = mapped_column(String(64))
+
+    # `source` is the whole of the LinkedIn visibility gate. Rows scraped on one user's proxy
+    # credential still land here so dedup and embed-once keep working, but a user sees them only
+    # while they hold a healthy credential — one filter predicate, no data partitioning, no
+    # per-row provenance (PLATFORM_ARCHITECTURE.md §6).
+    source: Mapped[str] = mapped_column(String(48))
+
+    title: Mapped[str] = mapped_column(Text)
+    company: Mapped[str | None] = mapped_column(Text)
+    location: Mapped[str | None] = mapped_column(Text)
+    is_remote: Mapped[bool | None] = mapped_column(Boolean)
+
+    # Nullable because a row exists from the moment it is discovered, and the description is fetched
+    # in a later step — and because trimming sets it back to NULL after CORPUS_HOT_DAYS.
+    description: Mapped[str | None] = mapped_column(Text)
+    description_fetched_at: Mapped[timestamptz | None]
+
+    # --- embedding: computed once, for everyone, ever ---
+    # bytea rather than pgvector: nothing does similarity *search* yet. The vector is read whole and
+    # multiplied by a user's classifier, so a blob is sufficient and avoids an extension dependency.
+    # Revisit if search is ever wanted.
+    embedding: Mapped[bytes | None]
+    text_sha256: Mapped[str | None] = mapped_column(String(64))
+    # The embedder's version contract, stored per row. A scorer whose artifact was trained against a
+    # different (model, dim, version) must fail closed rather than score across vector spaces — the
+    # discipline the embedder already enforces at its own boundary (PLATFORM_ARCHITECTURE.md §5).
+    embedding_model: Mapped[str | None] = mapped_column(String(128))
+    embedding_dim: Mapped[int | None] = mapped_column(Integer)
+    embedding_version: Mapped[str | None] = mapped_column(String(32))
+
+    posted_at: Mapped[timestamptz | None]
+    first_seen_at: Mapped[timestamptz] = mapped_column(server_default=func.now())
+    last_seen_at: Mapped[timestamptz] = mapped_column(server_default=func.now())
+
+    # Set when any user acts on the row (applied, built a CV, labelled). Pinned rows survive
+    # trimming forever — losing the text under a label would leave the label meaningless.
+    pinned: Mapped[bool] = mapped_column(Boolean, default=False)
+    trimmed_at: Mapped[timestamptz | None]
+
+    schema_version: Mapped[int] = mapped_column(SmallInteger, default=1)
+
+    __table_args__ = (
+        # Dedup lookup is the hot path on every harvest cycle, for every candidate row.
+        Index("ix_corpus_content_key", "content_key"),
+        # The per-user match pass: "recent rows from sources this user can see".
+        Index("ix_corpus_source_first_seen", "source", "first_seen_at"),
+        # Finds rows still awaiting an embedding, without scanning the whole corpus.
+        Index("ix_corpus_unembedded", "id",
+              postgresql_where=text("embedding IS NULL AND description IS NOT NULL")),
+        # Drives the retention sweep.
+        Index("ix_corpus_trim_candidates", "first_seen_at",
+              postgresql_where=text("pinned = false AND trimmed_at IS NULL")),
+        CheckConstraint(
+            "(embedding IS NULL) OR (text_sha256 IS NOT NULL AND embedding_dim IS NOT NULL)",
+            name="embedding_has_provenance"),
+    )
