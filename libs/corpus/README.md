@@ -8,12 +8,47 @@ personal, and cheap to compute. This package is the shared half of that split.
 | Piece | State | Notes |
 |---|---|---|
 | [`keys.py`](keys.py) — `canonical_url`, `content_key` | ✅ **ported, parity-proven** | Faithful port of `job-search/pipeline/lib/store.py` |
-| Corpus repository (SQLite → Postgres) | not started | Phase 1 step 3. The storage half |
+| [`repository.py`](repository.py) — `CorpusRepository` | ✅ **ported** | Dedup, ingest, embedding, retention. 14 behaviour tests |
 | `filters/` — langfilter, workfilter, timefilter, salary | not started | Pure functions, lifted from `pipeline/lib/` |
-| Retention sweep (`CORPUS_HOT_DAYS`) | not started | Nulls description + vector after 90 days; pinned rows never trimmed |
+| Other stores (`ats_tokens`, `ats_etags`, `applied`, `labels`, `feedback`) | not started | Phase 1 step 3b |
 
-The `corpus` **table** already exists — see [`libs/db`](../db/). What is missing here is the
-repository layer over it.
+## What the repository does, and what it deliberately does not
+
+**Shared, and the type signature says so.** Nothing in `CorpusRepository` takes a `user_id` — the
+corpus holds public postings and no user data may ever land on a row. Per-user reads live in a
+separate repository whose methods take `user_id` as a required first argument, so a tenant-scoped
+query that forgets its tenant does not construct (`TENANT_SAFETY.md` §1.3).
+
+**One access mode: indexed queries.** The reference exposes two — a materialised `.load()` mirroring
+the whole table into memory, and a live `.connect()`. The materialised mode is an artifact of the
+JSON store that preceded SQLite, kept only so existing callers survived that migration. Carrying it
+to Postgres would mean an O(history) memory pattern in a multi-tenant service. Dropped.
+
+**Two invariants worth knowing:**
+
+- `add()` uses `ON CONFLICT DO NOTHING`, the port of `INSERT OR IGNORE`. **`first_seen_at` is never
+  overwritten** — a source re-listing an old posting every cycle would otherwise keep it permanently
+  fresh and permanently un-trimmable.
+- **A vector can never outlive its text.** Changing a description clears the embedding, and
+  `set_embedding()` refuses a vector whose `text_sha256` no longer matches. That is a real race:
+  bulk embedding a cold-start batch takes minutes while `refresh.py` runs concurrently, and the
+  `(model, dim, version)` assert downstream cannot catch it — the vector space is right, the
+  *content* is wrong.
+
+## A schema correction the port surfaced
+
+The first schema draft made `canonical_url` **unique and NOT NULL**. Both were wrong, and the port
+is what exposed it:
+
+- The reference keys `all_links` on **`url`** (its primary key); `canonical` and `content_key` are
+  *indexed, not unique*. Dedup is a query performed **before** insert, not a constraint. A unique
+  canonical looks tighter but turns a case the reference tolerates into a crash mid-harvest.
+- Both derived keys must be **nullable**, because `canonical_url()` and `content_key()` return
+  `None` for input they cannot use. `NOT NULL` would make such a job impossible to store — silently
+  dropping real postings rather than admitting them undeduplicated, which is the wrong direction to
+  fail.
+
+Corrected in migration `fe23e709fd46`.
 
 ## Why the port was split in two
 

@@ -16,6 +16,53 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ## 2026-07-27
 
+### Corpus repository — the storage half of the `store.py` port (Phase 1 step 3)
+
+`libs/corpus/repository.py`, 14 behaviour tests, T2 green throughout. Dedup (url → canonical →
+content_key, narrowing), ingest, description/embedding lifecycle, and the retention sweep.
+
+**A schema correction the port surfaced.** The first draft made `corpus.canonical_url` unique and
+`NOT NULL`. Both wrong, and only writing the repository exposed it:
+
+- The reference keys `all_links` on **`url`** — `canonical` and `content_key` are *indexed, not
+  unique*. Dedup is a query performed **before** insert, not a constraint. Making canonical unique
+  looks tighter but converts a case the reference tolerates into a crash mid-harvest.
+- Both derived keys must be **nullable**, because the key functions return `None` for input they
+  cannot use. `NOT NULL` would make such a job impossible to store at all — silently dropping real
+  postings rather than admitting them undeduplicated, which is the wrong direction to fail.
+
+Migration `fe23e709fd46`, applied to the live database.
+
+Two invariants the tests pin, both silent if broken: `first_seen_at` is never overwritten on
+re-discovery (or a re-listed posting stays permanently fresh and un-trimmable), and a vector can
+never outlive its text — changing a description clears the embedding, and `set_embedding()` refuses
+a vector whose digest no longer matches. That last one is a real race, since bulk embedding takes
+minutes while `refresh.py` runs concurrently, and the `(model, dim, version)` assert cannot catch it:
+the vector space is right, the content is wrong.
+
+Decided while building it: `CorpusRepository` takes no `user_id` at all (shared by construction,
+per-user repositories are separate classes), and the reference's materialised `.load()` mode is
+dropped — it was an artifact of the JSON store that preceded SQLite, and would mean an O(history)
+memory pattern in a multi-tenant service.
+
+### CI — three bugs that made the pipeline report success without checking
+
+Verified every job by running it the way the workflow does, against a scratch database. Two of the
+three made a check pass while checking nothing:
+
+1. **pytest could not import `libs/` in CI.** The workflow calls the `pytest` console script; only
+   `python -m pytest` puts the working directory on `sys.path`. Every test importing `libs.*` would
+   have failed at collection in CI while passing locally — the worst split, because local green is
+   exactly what gets checked before pushing. Fixed with `pythonpath = ["."]`.
+2. **The drift check could never fail.** It globbed `*drift-check*.py`, which Alembic never writes —
+   `file_template` slugifies the hyphen to `drift_check`. grep errored, the `if` read false, pass.
+3. **The first rewrite still passed when Alembic itself failed** — a failed `generated=$(ls …)`
+   assignment did not abort under `set -e`.
+
+Proved the fix rather than assuming it: injected a canary column into the corpus model, confirmed
+the check fails, reverted, confirmed green. A drift check that cannot fail is worse than none,
+because it is also reassuring.
+
 ### T2 — the dedup regression suite, and the pure-function half of the `store.py` port
 
 Phase 1 step 2. `libs/corpus/keys.py` is a faithful port of `canonical_url` and `content_key` from

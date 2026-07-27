@@ -45,9 +45,22 @@ class CorpusJob(Base):
     # and host variants; `content_key` catches the same posting re-listed under a different URL, and
     # is location-aware because the same title+company in two cities is two jobs, not one.
     # These semantics are tuned and quietly load-bearing — T2 pins them before the port begins.
-    url: Mapped[str] = mapped_column(Text)
-    canonical_url: Mapped[str] = mapped_column(Text, unique=True)
-    content_key: Mapped[str] = mapped_column(String(64))
+    #
+    # The shape mirrors the reference's `all_links` deliberately, and two details matter:
+    #
+    # 1. **`url` is the identity** (it is the PRIMARY KEY there). `canonical_url` and `content_key`
+    #    are *indexed, not unique*. Dedup is a query performed BEFORE insert, not a constraint.
+    #    Making canonical unique looks tighter but changes behaviour: the reference tolerates two
+    #    rows sharing a canonical, and a constraint would turn that tolerated case into a crash in
+    #    the middle of a harvest cycle.
+    # 2. **Both derived keys are nullable**, because `canonical_url()` and `content_key()` return
+    #    None for input they cannot use — a relative URL, a posting with no company. That is the
+    #    "no opinion, fail open" contract from libs/corpus/keys.py. NOT NULL here would make such a
+    #    job impossible to store at all, silently dropping real postings rather than admitting them
+    #    undeduplicated, which is the wrong direction to fail.
+    url: Mapped[str] = mapped_column(Text, unique=True)
+    canonical_url: Mapped[str | None] = mapped_column(Text)
+    content_key: Mapped[str | None] = mapped_column(String(64))
 
     # `source` is the whole of the LinkedIn visibility gate. Rows scraped on one user's proxy
     # credential still land here so dedup and embed-once keep working, but a user sees them only
@@ -90,7 +103,10 @@ class CorpusJob(Base):
     schema_version: Mapped[int] = mapped_column(SmallInteger, default=1)
 
     __table_args__ = (
-        # Dedup lookup is the hot path on every harvest cycle, for every candidate row.
+        # Dedup lookup is the hot path on every harvest cycle, for every candidate row: each
+        # candidate is checked url → canonical → content_key, so all three need an index and only
+        # `url` needs to be unique.
+        Index("ix_corpus_canonical_url", "canonical_url"),
         Index("ix_corpus_content_key", "content_key"),
         # The per-user match pass: "recent rows from sources this user can see".
         Index("ix_corpus_source_first_seen", "source", "first_seen_at"),

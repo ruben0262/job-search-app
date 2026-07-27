@@ -59,7 +59,11 @@ product twice.
    `user_job_state`, `user_labels`, `jobs` (queue), `models`. Alembic from the first table (G5),
    `TIMESTAMPTZ` throughout (G7), applied and drift-checked against the live database.
 2. **T2 dedup regression suite written against today's SQLite behaviour** — before touching anything.
-3. **Port `pipeline/lib/store.py` → Postgres corpus repository.** The largest single task (578 lines,
+3. ✅ **Done 2026-07-27. Ported `pipeline/lib/store.py` → Postgres corpus repository.** Split in two:
+   the dedup key functions (step 2, T2-pinned) and the storage layer (`libs/corpus/repository.py`).
+   The port surfaced a schema error: `canonical_url` had been made unique and NOT NULL, and the
+   reference keys on `url` with both derived keys indexed-and-nullable. Migration `fe23e709fd46`.
+   *(original note: 578 lines,
    and the dedup semantics are load-bearing). T2 stays green throughout.
 3b. **Port the other stores too** — `ats_tokens`, `ats_etags` (**replacing its file lock**),
    `applied`, `labels`, `feedback`. Easy to forget and easy to underestimate: `ats_etags` is what
