@@ -31,6 +31,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--batches", type=int, default=20,
                         help="how many passes to run before exiting; re-run to continue")
     parser.add_argument("--url", default=os.environ.get("EMBEDDER_URL"))
+    parser.add_argument("--batch-size", type=int, default=64,
+                        help="texts per bulk call; smaller means more frequent commits")
+    parser.add_argument("--timeout", type=float, default=900.0,
+                        help="seconds to wait for one bulk call")
     args = parser.parse_args(argv)
 
     logging.basicConfig(level="INFO", format="%(asctime)s %(levelname)s %(message)s")
@@ -38,7 +42,10 @@ def main(argv: list[str] | None = None) -> int:
         print("EMBEDDER_URL is not set", file=sys.stderr)
         return 2
 
-    client = EmbedderClient(args.url)
+    # The client's 120 s default is sized for the harvester's small batches. A backfill batch of
+    # 200 texts on a 4-CPU TEI takes several minutes, and the read timeout kills the pass mid-flight
+    # — which is how the first attempt at this backfill died.
+    client = EmbedderClient(args.url, timeout=args.timeout)
     # Built exactly as services/harvester/__main__ builds it, so a backfill cannot write vectors
     # the harvester would have refused.
     expected = EmbedderVersion(
@@ -54,8 +61,8 @@ def main(argv: list[str] | None = None) -> int:
             # harvester (a cycle is atomic) and wrong here: at roughly two minutes per batch of 64,
             # a backlog of a few thousand rows is hours of work that a dropped SSH session or a
             # restart would throw away entirely. Learned the expensive way.
-            result = embed_all_pending(CorpusRepository(session), client,
-                                       expected=expected, max_batches=1)
+            result = embed_all_pending(CorpusRepository(session), client, expected=expected,
+                                       max_batches=1, batch_size=args.batch_size)
         total += result.embedded
         print(f"pass {pass_number}: embedded {result.embedded} (running total {total})", flush=True)
         if result.embedded == 0:
