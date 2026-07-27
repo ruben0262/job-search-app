@@ -73,7 +73,13 @@ def claim(session: Session, lane: str, worker: str) -> QueueJob | None:
             RETURNING id
         """),  # noqa: S608 - `order` is built from a fixed literal, never from caller input
         {"lane": lane, "worker": worker}).scalar()
-    return session.get(QueueJob, row) if row is not None else None
+    if row is None:
+        return None
+    # `populate_existing` because the claim was a raw UPDATE: without it, a session that has seen
+    # this row before returns the identity-mapped copy, whose `attempts` and `state` predate the
+    # claim. A worker loop is exactly that kind of long-lived session, so it would decide against a
+    # retry count that never moves — and a job that always kills its worker would retry forever.
+    return session.get(QueueJob, row, populate_existing=True)
 
 
 def complete(session: Session, job: QueueJob) -> None:

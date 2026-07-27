@@ -177,9 +177,10 @@ def test_a_repeatedly_failing_job_dead_letters_rather_than_retrying_forever(ctx)
     states = []
     for _ in range(5):
         job = claim(ctx, "notify", "w")
-        states.append(fail(ctx, job, "upstream 500"))
+        # `retry_in_min=0` so the retry is immediately claimable — the backoff is not what this test
+        # is about, and waiting for it would mean sleeping.
+        states.append(fail(ctx, job, "upstream 500", retry_in_min=0))
         ctx.flush()
-        ctx.execute(text("UPDATE jobs SET run_after = now() WHERE id = :i"), {"i": job.id})
 
     assert states == ["ready", "ready", "ready", "ready", "dead"]
     assert claim(ctx, "notify", "w") is None
