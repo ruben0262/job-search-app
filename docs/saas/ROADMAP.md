@@ -117,6 +117,11 @@ product twice.
    overlapping jobs, every read path returns only the caller's rows: applied log, labels, scores.
    Release blocker, now green.
 
+**Exit status 2026-07-27:** the shared harvester fills a Postgres corpus with embeddings — proven on
+the live box: 193 links, 185 new, 179 embedded, 0 failures, and idempotent on a second run (193
+duplicates, 0 new). T1 and T2 are green. **Still outstanding for full exit:** the 15-minute schedule
+installed, and Ruben's account configured and compared against his single-tenant stack.
+
 **Exit criteria:** the shared harvester fills a Postgres corpus with embeddings, on a schedule, with
 T1 + T2 green, and Ruben's account runs on it **alongside** his single-tenant stack (decision D6 —
 parallel, not cutover). Compare the two feeds on the same person; decommission nothing yet. **Do not

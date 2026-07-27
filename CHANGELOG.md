@@ -16,6 +16,43 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ## 2026-07-27
 
+### Phase 1 exit — the harvester runs against live sources
+
+The cycle deployed and run on the platform box. **193 links, 185 new, 179 embedded, 0 source
+failures**, and a second cycle immediately after found **193 links, 193 duplicates, 0 new** — dedup
+holds across runs.
+
+Corpus state after: 193 rows, 187 with text, **187 embedded**, 5 sources contributing. Vectors are
+exactly 3,072 bytes (768 x float32) carrying `BAAI/bge-base-en-v1.5|dim=768|norm=1` — the 36-char
+version string that would not fit the original `String(32)`.
+
+**Three bugs, all found by the first contact with real data.** Every one was silent.
+
+1. **Three sources made no HTTP request at all.** `remotive`, `himalayas` and `arbeitnow` iterate
+   `cfg["queries"]` and return `[]` when it is absent. No request, no log, and the cycle reported
+   success — because an adapter returning `[]` is the registry's contract. The same property that
+   stops one dead source sinking a run also hides a misconfigured one.
+2. **The recency window was 24h, not 72h.** The adapters default internally to 24 while the config
+   schema's own default is 72, so the first cycle fetched a much narrower slice than intended — 8
+   links where there should have been ~190.
+3. **`content_key` was `String(64)`.** It is a readable composite (`company|title|location`), not a
+   hash, so its length is a function of a job title somebody else wrote. A German posting produced
+   85 characters and every ingest died. Third instance of the same mistake this session, after
+   `embedding_version` and `models.embedder_model` — bounding a string whose length is not ours to
+   bound. Every remaining `String(n)` column was audited; the rest are hashes, enums, or
+   RFC-bounded.
+
+**A fourth bug hid the third.** The advisory-lock release ran in a `finally` on an already-aborted
+transaction, raised `InFailedSqlTransaction`, and propagated *instead of* the `DataError` that
+caused it — so the log showed a lock problem and hid a schema one. Cleanup must never mask the
+failure that caused it.
+
+**Two sources return zero, and that is correct.** `weworkremotely`'s feed has 25 items whose newest
+is 26 days old; `remotive` returns 36 jobs, all outside the window. The 72-hour filter is doing its
+job. Recorded so nobody "fixes" it into admitting stale postings.
+
+275 tests passing. **Phase 1 is functionally complete.**
+
 ### The harvest cycle - one-shot, locked, timer-driven
 
 `services/harvester/cycle.py` and `__main__.py`. The last Phase 1 piece: the loop that runs the
