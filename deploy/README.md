@@ -2,19 +2,46 @@
 
 ```
 deploy/
-├── compose.yml            the platform stack (not yet written — Phase 1)
+├── compose.yml            the platform stack — Postgres so far
+├── .env.example           copy to .env; compose refuses to start without it
 ├── docker/                Dockerfile.<service>, one per container
 └── scripts/               operational one-shots run on the VPS
 ```
 
-## Why this is not one compose file yet
+## Bring it up
+
+```bash
+cd deploy
+cp .env.example .env
+printf 'POSTGRES_PASSWORD=%s\n' "$(openssl rand -base64 32)" > .env
+chmod 600 .env
+docker compose up -d
+docker compose ps                       # postgres must read (healthy)
+```
+
+Then, so `psql` and `pg_dump` stop prompting (libpq silently ignores a `.pgpass` whose permissions
+are looser than 600, and gives no hint that is why):
+
+```bash
+echo "127.0.0.1:5432:jobsearch:jobsearch:$(grep POSTGRES_PASSWORD deploy/.env | cut -d= -f2-)" > ~/.pgpass
+chmod 600 ~/.pgpass
+```
+
+Quickest shell into the database, no password at all — the official image trusts local socket
+connections inside the container:
+
+```bash
+docker exec -it job-search-platform-postgres-1 psql -U jobsearch jobsearch
+```
+
+## Why the embedder is not in this file
 
 `services/embedder/` keeps its **own** `docker-compose.yml` and is deployed today, serving the two
 single-tenant stacks. That predates the platform and must not be disturbed by it — the embedder
-relocation was a source-tree move, not a service migration (`CODE_STRUCTURE.md` §6). The platform's
-`compose.yml` lands in Phase 1 alongside the first services that need it.
+relocation was a source-tree move, not a service migration (`CODE_STRUCTURE.md` §6). Folding it in
+here to tidy the tree would be a service migration wearing a refactor's clothes.
 
-## Rules for when it does exist
+## Rules
 
 - **Pin `name:`** in every compose file so the project name does not follow the directory. Moving
   a folder must never orphan a volume or rename a container. (`README.md` — conventions.)
