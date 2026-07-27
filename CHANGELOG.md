@@ -54,7 +54,23 @@ Gate results, run in order per `services/embedder/README.md`:
 | 1 — backend-verified health | ✅ `verified: true` in ~45 s, `model=BAAI/bge-base-en-v1.5 dim=768` |
 | 2 — full suite against the live stack | ✅ **23 passed, 1 skipped** (up from 15/9 with no stack) |
 | 5 — priority lane under a training flood | ✅ included in gate 2 |
-| 4 — peak RSS vs the 2 GB budget | ✅ 832 MiB resident after a 2,000-text cold-start bulk |
+| 4 — peak RSS vs the 2 GB budget | ✅ **832 MB peak** against 2048 MB, 0 errors |
+
+Gate 4's full numbers, since they set a knob rather than just passing:
+
+```
+bulk cold-start : 589.1s for 2000 texts
+score latency   : median 3.795s  p95 4.862s  max 9.101s  (n=504)
+peak RSS        : 832 MB / 2048 MB budget
+```
+
+**`cpus: 1.5` on the TEI container is now the binding constraint, and it was tuned for a different
+box.** That ceiling made sense on the machine sharing CPU with two single-tenant stacks; here it
+leaves ~6.5 of 8 vCPU idle. The gate passes either way, and the latency is tolerable — scoring is
+not user-facing in real time (notifications batch on 15+ minute intervals) and vectors are computed
+once and shared, so only the first user pays the cold start. Flagged rather than changed: raising it
+is a measurement, not an assumption, and it should be re-measured once the other services actually
+compete for the box.
 
 The single skip is `test_parity` (TEI vectors vs in-process `fastembed`). **That gate is moot for the
 platform** and was skipped deliberately: parity exists to decide *match-or-retrain* for classifiers
