@@ -8,6 +8,10 @@ The loop itself is uninteresting on purpose — claim, run, commit — but two d
    transaction breaks this, so handlers are given the session and must not commit.
 2. **A failed handler rolls back its effect but must still record the failure.** The failure is
    written in a fresh transaction, because the one the handler poisoned cannot be used for anything.
+   The subtlety: the rollback also undoes the *claim*, since the claim ran in that same transaction.
+   Left alone, `attempts` returns to its pre-claim value and a permanently failing job retries
+   forever — the exact thing dead-lettering exists to stop. So the claim's increment is captured
+   before the handler runs and re-applied when the failure is recorded.
 """
 from __future__ import annotations
 
@@ -63,6 +67,9 @@ def run_once(session: Session, lane: str, worker: str,
 
     stats.claimed += 1
     job_id = job.id
+    # Captured now, because `session.rollback()` below undoes the claim along with the handler's
+    # work, and the retry budget must not be rolled back with it.
+    attempts = job.attempts
     try:
         handler(session, job)
         complete(session, job)
@@ -73,13 +80,13 @@ def run_once(session: Session, lane: str, worker: str,
         # Bound to a local first: Python unbinds the `except` name at the end of the block, so a
         # closure over it is a latent NameError the moment this is refactored.
         reason = str(exc)
-        _record(session, job_id, lambda s, j: terminate(s, j, reason))
+        _record(session, job_id, attempts, lambda s, j: terminate(s, j, reason))
         stats.dead += 1
         logger.warning("%s job %s: terminal — %s", lane, job_id, exc)
     except Exception as exc:
         session.rollback()
         message = f"{type(exc).__name__}: {exc}"
-        state = _record(session, job_id, lambda s, j: fail(s, j, message))
+        state = _record(session, job_id, attempts, lambda s, j: fail(s, j, message))
         stats.failed += 1
         stats.dead += state == "dead"
         stats.errors[type(exc).__name__] = stats.errors.get(type(exc).__name__, 0) + 1
@@ -120,11 +127,18 @@ def run_worker(session_factory: Callable[[], Session], lane: str, worker: str,
     return stats
 
 
-def _record(session: Session, job_id: int, write: Callable[[Session, QueueJob], object]) -> object:
-    """Write a failure in a clean transaction — the handler's is unusable after a rollback."""
-    job = session.get(QueueJob, job_id)
+def _record(session: Session, job_id: int, attempts: int,
+            write: Callable[[Session, QueueJob], object]) -> object:
+    """Write a failure in a clean transaction — the handler's is unusable after a rollback.
+
+    `attempts` is re-applied because the rollback reverted the claim that incremented it. Without
+    this the counter never advances past its pre-claim value, `fail()` never reaches
+    `MAX_ATTEMPTS`, and a job that fails every time is retried forever.
+    """
+    job = session.get(QueueJob, job_id, populate_existing=True)
     if job is None:
         return None
+    job.attempts = attempts
     result = write(session, job)
     session.commit()
     return result

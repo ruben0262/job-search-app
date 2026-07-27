@@ -114,6 +114,11 @@ def test_a_failing_handler_rolls_back_its_effect_and_the_job_retries(stack):
     assert stats.failed == 1
     assert _state(factory, user_id) == "ready"
     with factory() as s:
+        # The rollback that undid the handler's write also undid the claim. If the attempt count
+        # went back with it, a job that fails every time would retry forever.
+        assert s.scalar(text("SELECT attempts FROM jobs WHERE user_id = :u")
+                        .bindparams(u=user_id)) == 1
+    with factory() as s:
         assert s.scalar(text("SELECT timezone FROM users WHERE id = :u")
                         .bindparams(u=user_id)) == "UTC", "the failed write must not survive"
 
