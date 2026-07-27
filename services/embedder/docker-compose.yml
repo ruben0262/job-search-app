@@ -40,7 +40,15 @@ services:
     mem_limit: 2g
     # CPU is the real constraint, not RAM. bge-base is ~3x the compute of small per text, so this
     # is the knob that decides throughput and score latency under a training flood.
-    cpus: 1.5
+    #
+    # Raised 1.5 → 4 on 2026-07-27. The 1.5 ceiling was correct on the box that shared CPU with two
+    # single-tenant stacks; the platform box has 8 vCPU and measured gate 4 at 589s for a 2,000-text
+    # cold start with ~6.5 cores idle. 4 leaves half the box for Postgres, docgen (Chrome, spiky)
+    # and the rest of the services still to be built.
+    #
+    # ⚠ RE-MEASURE THIS once those services actually compete for the box. This number is tuned to a
+    # machine that is currently almost empty, which is exactly the condition that stops being true.
+    cpus: 4
     # ports: ["8081:80"]                     # uncomment ONLY for local debugging of TEI directly
 
   # Thin gateway: two priority lanes (fast /embed vs bulk /embed/bulk), our /health+version
