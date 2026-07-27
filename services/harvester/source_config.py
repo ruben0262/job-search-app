@@ -31,6 +31,17 @@ DEFAULT_ENABLED = (
     "weworkremotely", "workingnomads", "jobicy",
 )
 
+# Board APIs that iterate `cfg["queries"]` and do nothing without it. Getting this list wrong is
+# silent: the adapter makes no request, logs nothing, and returns [] - which is its contract.
+QUERY_TAKING_SOURCES = frozenset({
+    "remotive", "himalayas", "arbeitnow", "hiringcafe", "nofluffjobs", "nofluffjobs_hu",
+    "jooble", "consider", "getro",
+})
+
+# The recency window when no user has asked for one. Matches the config schema's default rather
+# than the adapters' internal 24h, which was fetching a much narrower slice than intended.
+DEFAULT_MAX_AGE_HOURS = 72
+
 # Sources gated on a credential. Enabled only when their key is present, because a source that
 #401s every cycle is noise in the log and a failure count that means nothing.
 KEY_GATED = {
@@ -117,13 +128,37 @@ def build_source_configs(
         if env.get(key):
             active.append(source)
 
+    # The widest window any active user asked for. Everyone else filters down locally, which is the
+    # same "fetch once at the coarsest demand" rule the query-set fold applies to the JobSpy tier.
+    max_age = max(
+        (int(c.get("posted_within_hours") or 0) for c in configs.values()),
+        default=0) or DEFAULT_MAX_AGE_HOURS
+
     out: dict[str, dict] = {}
     for source in active:
         cfg = dict(PLATFORM_DEFAULTS.get(source, {}))
         cfg["enabled"] = True
+        cfg["max_age_hours"] = max_age
         if keywords:
             cfg["keywords"] = keywords
         if locations:
             cfg["location_keywords"] = locations
+        if source in QUERY_TAKING_SOURCES:
+            cfg["queries"] = _queries_for(keywords)
         out[source] = cfg
     return out
+
+
+def _queries_for(keywords: list[str]) -> list[dict]:
+    """Query objects for board APIs that iterate `cfg["queries"]`.
+
+    **Found on the first real cycle.** `remotive`, `himalayas` and `arbeitnow` loop over
+    `cfg.get("queries", [])` and return `[]` when it is absent — so with no queries configured they
+    made no HTTP request at all, logged nothing, and reported success. An adapter returning `[]` is
+    the registry's contract, which is exactly why the silence was total.
+
+    The empty-search fallback is not a placeholder: with no users yet, `{"search": ""}` fetches the
+    board's unfiltered recent feed, which is precisely "harvest broadly, match per user"
+    (`HARVESTER_PLAN.md` §1) and is what gives a brand-new user a non-empty first feed.
+    """
+    return [{"search": term} for term in keywords] or [{"search": ""}]

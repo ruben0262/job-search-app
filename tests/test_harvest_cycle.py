@@ -308,3 +308,59 @@ def test_key_gated_sources_stay_off_without_their_credential(ctx):
 
     assert "jooble" not in build_source_configs({}, env={})
     assert "jooble" in build_source_configs({}, env={"JOOBLE_API_KEY": "x"})
+
+
+def test_query_taking_sources_always_get_a_query(ctx):
+    """**Found on the first real cycle against live sources.**
+
+    `remotive`, `himalayas` and `arbeitnow` loop over `cfg["queries"]` and return `[]` when it is
+    absent — so they made no HTTP request, logged nothing, and the cycle reported success. An
+    adapter returning `[]` is the registry's contract, which is exactly why the silence was total.
+    """
+    from services.harvester.source_config import QUERY_TAKING_SOURCES, build_source_configs
+
+    built = build_source_configs({}, env={})
+    for key in QUERY_TAKING_SOURCES & built.keys():
+        assert built[key].get("queries"), f"{key} would make no request at all"
+
+
+def test_with_no_users_the_query_is_a_broad_feed_read(ctx):
+    """Not a placeholder: an empty search fetches the board's unfiltered recent feed, which is
+    "harvest broadly, match per user" and is what gives a brand-new user a non-empty first feed."""
+    from services.harvester.source_config import build_source_configs
+
+    assert build_source_configs({}, env={})["remotive"]["queries"] == [{"search": ""}]
+
+
+def test_users_keywords_become_the_queries(ctx):
+    from services.harvester.source_config import build_source_configs
+
+    s = ctx
+    _active_user(s, keywords=["golang"])
+    _active_user(s, keywords=["rust"])
+    s.flush()
+
+    built = build_source_configs(TenantRepository(s).active_configs(), env={})
+    assert built["remotive"]["queries"] == [{"search": "golang"}, {"search": "rust"}]
+
+
+def test_the_recency_window_is_the_widest_any_user_asked_for(ctx):
+    """Same rule as the query-set fold: fetch once at the coarsest demand, filter down locally.
+
+    The adapters default to 24h internally, which was fetching a far narrower slice than the config
+    schema's own default of 72.
+    """
+    from services.harvester.source_config import DEFAULT_MAX_AGE_HOURS, build_source_configs
+
+    s = ctx
+    assert build_source_configs({}, env={})["remotive"]["max_age_hours"] == DEFAULT_MAX_AGE_HOURS
+
+    a = _active_user(s)
+    b = _active_user(s)
+    t = TenantRepository(s)
+    t.save_config(a.id, {"keywords": ["x"], "posted_within_hours": 24})
+    t.save_config(b.id, {"keywords": ["y"], "posted_within_hours": 168})
+    s.flush()
+
+    built = build_source_configs(t.active_configs(), env={})
+    assert built["remotive"]["max_age_hours"] == 168
