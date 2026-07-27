@@ -14,6 +14,74 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-07-27 (later)
+
+### Phase 2 step 0 — `libs/secrets`: envelope encryption, and T4 in the same commit
+
+Phase 2's first commit, and **not** the order `ROADMAP.md` lists. The roadmap puts the secrets
+module at step 6, after profile capture — but `PROFILE_CAPTURE_PLAN.md` §4.1 says capture runs on
+the user's own Claude credential, and `TENANT_SAFETY.md` §5's onboarding order is
+`credentials → capture`. Building capture first would mean holding a stranger's live API key with
+no encryption behind it, which is exactly what §2 exists to prevent. Secrets first. It also unblocks
+the proxy credential, which the LinkedIn loop already needs and currently has nowhere real to live.
+
+**The design, three files:**
+
+- `keyring.py` — AES-256-GCM. KEK from `SECRETS_KEK`, per-user DEK wrapped by it, secret sealed by
+  the DEK. Two decisions worth naming:
+  - **Owner and kind are bound in as associated data.** Without it, an attacker with database
+    *write* access (not key access) can copy user A's ciphertext onto user B's row, or relabel a
+    proxy password as a Claude key, and both decrypt silently. With it, both fail closed.
+  - **A wrapped DEK carries the id of the KEK that wrapped it.** Two bytes now; unrecoverable
+    later. Rotation becomes re-wrapping one small column per user — no secret is re-encrypted —
+    and a retired key keeps reading old rows until `users_needing_rewrap()` comes back empty.
+- `store.py` — the database layer. `user_id` required on every method, which here is load-bearing
+  twice: it is also the AAD. `put()` overwrites rather than versions, because versioning keeps a
+  revoked credential decryptable. `purge()` deletes the rows **and** clears the DEK — crypto-
+  shredding, so "destroyed on account deletion" is true across the backups too, not just live.
+- `redaction.py` — two layers, because neither is enough alone. A `Secret` type whose `str`,
+  `repr`, and f-string all render `<secret:claude_api …ab12>`, so the accidental-interpolation path
+  is closed *at the type level*; plus a logging filter as the backstop for values that reach a log
+  through code we do not own.
+
+**Two things that would have been silently wrong:**
+
+1. **A redaction filter on the root logger protects almost nothing.** A logger's filters run only
+   for records logged *on that logger* — a record from `logging.getLogger("services.notifier")`
+   propagates straight to the root's *handlers* without consulting the root's filters. So `install()`
+   attaches to the logger **and to each of its handlers**, and a test logs from a child logger
+   specifically to prove it.
+2. **Tracebacks are formatted after filters run.** Scrubbing `record.msg` alone leaves the
+   credential in the traceback — which is precisely where a failed proxied fetch puts it, since the
+   connection error quotes the URL it dialled, userinfo and all. The filter renders and redacts the
+   traceback itself into `record.exc_text`, which `logging.Formatter` then uses instead of
+   re-rendering.
+
+**T4, same commit** (`tests/test_secrets.py`, 42 tests). The headline assertion is made the way a
+thief would experience it: dump every column of every row belonging to a user and search the lot for
+the plaintext — not "the ciphertext column differs", *nothing*. Plus: a different KEK cannot read
+what this one wrote; no rendering of a `Secret` shows the value; a known secret cannot appear in a
+log line, a child logger's line, an object argument, or a traceback; and the API read path exposes
+`last_4` and timestamps with no field that could ever carry the value.
+
+Test values are shaped like the real thing (`sk-ant-…`, a `\d+:…` bot token, a proxy URL with
+userinfo) because the pattern half of the filter recognises credential shapes — a `hunter2`
+placeholder would pass tests the real value fails.
+
+**Gaps recorded, not closed:**
+
+- **Save-time validation is a seam, not an implementation.** `TENANT_SAFETY.md` §2 wants a real
+  minimal API call before a credential is accepted. `put(..., validated=False)` and
+  `mark_validated()` exist; the callers that make the call arrive with capture (Claude) and the
+  notifier (Telegram). This layer deliberately does no network I/O, so saving a credential cannot
+  be blocked by a third party being down.
+- **Nothing calls `install()` yet.** The harvester's entrypoint gains it when the LinkedIn loop
+  starts decrypting proxy credentials; until then no service holds a plaintext.
+- **`SECRETS_KEK` is not yet set on the platform box.** Documented in `deploy/.env.example`,
+  including why the first rotation is a config change rather than a migration.
+
+317 tests. `SECRETS_KEK` and `cryptography>=44.0` added to the deploy env and dev requirements.
+
 ## 2026-07-27
 
 ### Phase 1 exit — the harvester runs against live sources

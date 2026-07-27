@@ -132,18 +132,33 @@ available.
 
 Now it becomes a product.
 
-0. **Profile capture** (`PROFILE_CAPTURE_PLAN.md`) — Managed Agents session, confirmation,
-   deterministic render. Blocks step 1: the rubric renderer has no input without it.
-1. **Per-user rubric rendering** + `profile_version` (`COLD_START_PLAN.md` §3, `PROFILE_CAPTURE_PLAN.md`
+**Reordered 2026-07-27: the secrets module moved from step 6 to step 0.** As written, this list had
+profile capture first — but `PROFILE_CAPTURE_PLAN.md` §4.1 says capture runs on the user's own
+Claude credential, and `TENANT_SAFETY.md` §5's onboarding order is `credentials → capture`. Building
+capture before the envelope would mean holding a stranger's live API key with nothing behind it,
+which is the exact thing §2 exists to prevent. It also unblocks the proxy credential, which the
+LinkedIn loop already needs and currently has nowhere real to live.
+
+0. ✅ **Done 2026-07-27. Secrets module** + T4, same commit. `libs/secrets`: AES-256-GCM envelope
+   (KEK from the environment → per-user DEK → sealed credential), owner and kind bound in as
+   associated data so a ciphertext cannot be moved between rows, KEK id recorded so rotation is a
+   config change rather than a data migration, and a `Secret` type that will not stringify backed
+   by a logging filter for the paths we do not own. **Open seam:** save-time validation exists as
+   `mark_validated()`; the callers that make the real minimal API call arrive with capture (Claude)
+   and the notifier (Telegram).
+1. **Profile capture** (`PROFILE_CAPTURE_PLAN.md`) — Managed Agents session, confirmation,
+   deterministic render. **Manual-entry fallback in the same commit**, since Managed Agents is a
+   beta surface: a contract change should break one adapter, not the onboarding flow. Blocks
+   step 2: the rubric renderer has no input without it.
+2. **Per-user rubric rendering** + `profile_version` (`COLD_START_PLAN.md` §3, `PROFILE_CAPTURE_PLAN.md`
    §6.1). Flagged as the largest hidden task; give it real time.
-1b. **Per-user feature extractor** (`PROFILE_CAPTURE_PLAN.md` §6.3) and the single
+2b. **Per-user feature extractor** (`PROFILE_CAPTURE_PLAN.md` §6.3) and the single
    `profile_generation` counter that keeps labels and model artifacts in step (§6.4). Same
    workstream as the rubric — do not schedule them apart.
-2. **Multi-tenant scorer** with an LRU of user models and `model_version` hot-swap.
-3. **Scheduler** — the four-lane Postgres queue, with T5/T6/T7 in the same commit.
-4. **Trainer** — concurrency 1, CPU-fenced, debounced.
-5. **Notifier** — per-user bot tokens, per-user intervals, delivery dedup.
-6. **Secrets module** + T4, same commit.
+3. **Multi-tenant scorer** with an LRU of user models and `model_version` hot-swap.
+4. **Scheduler** — the four-lane Postgres queue, with T5/T6/T7 in the same commit.
+5. **Trainer** — concurrency 1, CPU-fenced, debounced.
+6. **Notifier** — per-user bot tokens, per-user intervals, delivery dedup.
 
 **Exit criteria:** two accounts (Ruben + Andras) run side by side on one stack, each with their own
 model, feed, and schedule. This is the real proof, and it replaces the two separate deployments that

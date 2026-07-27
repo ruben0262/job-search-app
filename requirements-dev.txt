@@ -24,3 +24,7 @@ httpx>=0.28
 # Several adapters parse RSS/XML from third-party job boards. Stdlib ElementTree is documented as
 # vulnerable to entity-expansion bombs, and the harvester shares a box with Postgres.
 defusedxml>=0.7
+# libs/secrets: AES-256-GCM for the KEK/DEK envelope. Every service that can hold a user credential
+# needs it at runtime and pins its own copy; it is here because libs/secrets and its T4 tests are
+# imported by the root suite.
+cryptography>=44.0
