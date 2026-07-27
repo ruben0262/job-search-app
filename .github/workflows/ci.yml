@@ -61,13 +61,35 @@ jobs:
       # someone changed a model without writing the migration, which is only otherwise discovered
       # when a deploy fails.
       - name: models and migrations agree
+        # Every failure mode below is checked explicitly, because two earlier versions of this step
+        # reported success while checking nothing:
+        #
+        #   1. It globbed for `*drift-check*.py`, which Alembic never writes — `file_template`
+        #      slugifies the hyphen to `drift_check`. grep errored, `if` read that as false, pass.
+        #   2. Rewritten with `set -e`, a failed `generated=$(ls …)` assignment still did not abort,
+        #      so an Alembic error (e.g. "target database is not up to date") also passed.
+        #
+        # A drift check that cannot fail is worse than none, because it is also reassuring. So:
+        # assert Alembic succeeded, assert a file appeared, and only then inspect it.
         run: |
-          alembic revision --autogenerate -m drift-check
-          if grep -qE "^\s+op\." libs/db/migrations/versions/*drift-check*.py; then
-            echo "::error::models drifted from migrations — run alembic revision --autogenerate"
-            cat libs/db/migrations/versions/*drift-check*.py
+          set -uo pipefail
+          if ! alembic revision --autogenerate -m driftcheck; then
+            echo "::error::alembic autogenerate failed — see output above"
             exit 1
           fi
+          generated=$(ls libs/db/migrations/versions/*driftcheck*.py 2>/dev/null || true)
+          if [ -z "$generated" ]; then
+            echo "::error::autogenerate reported success but wrote no file — check file_template"
+            exit 1
+          fi
+          if grep -qE '^\s+op\.' "$generated"; then
+            echo "::error::models drifted from migrations — run 'alembic revision --autogenerate'"
+            cat "$generated"
+            rm -f "$generated"
+            exit 1
+          fi
+          rm -f "$generated"
+          echo "no drift: models and migrations agree"
       - run: pytest tests/ -v
 
   embedder-tests:

@@ -52,6 +52,12 @@ forbidden_modules = ["services"]
 # collide — inevitable once services/*/tests/ and tests/ both exist.
 addopts = "-ra --import-mode=importlib"
 
+# Required, not cosmetic. `python -m pytest` puts the working directory on sys.path; the bare
+# `pytest` console script does NOT — and CI invokes the console script. Without this, every test
+# importing `libs.*` fails at collection in CI while passing locally, which is the worst possible
+# split because local green is exactly what you check before pushing.
+pythonpath = ["."]
+
 [tool.ruff]
 target-version = "py312"
 line-length = 100
