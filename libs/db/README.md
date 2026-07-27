@@ -75,8 +75,15 @@ DATABASE_URL=... pytest tests/test_schema.py -v      # skips without it
 CI runs them against a real Postgres 17 service, plus a drift check that fails if a model changed
 without a migration.
 
-## Not yet built
+## The repository layer lives elsewhere
 
-The repository layer. It takes `user_id` as a **required** argument, never an optional filter a
-caller may forget — a query that omits the tenant should fail to typecheck rather than quietly
-return another user's rows. The query-level half of T1 arrives with it.
+Deliberately not here — `libs/db` defines the schema, not how it is queried:
+
+- [`libs/corpus`](../corpus/) — shared: corpus dedup/ingest/retention, ATS tokens and ETags. Takes
+  **no `user_id`**, because none of it is per-user.
+- [`libs/tenant`](../tenant/) — per-user: job state, applied log, labels, feedback. **`user_id` is a
+  required argument on every method**, never an optional filter a caller may forget. A query that
+  omits the tenant should fail to construct rather than quietly return another user's rows.
+
+The boundary is visible in the import path, which is the point. **T1 is green** over the tenant
+repository: two users, overlapping jobs, every read path returns only the caller's rows.
