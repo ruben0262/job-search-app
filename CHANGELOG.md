@@ -14,6 +14,55 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-07-27 (night)
+
+### Phase 2 steps 4-6 — queue, trainer, notifier, and the workers that run them
+
+`libs/queue`, `services/trainer`, `services/notifier`. The last of Phase 2's components, plus the
+wiring that makes them run rather than merely exist.
+
+**Queue** (T5/T6/T7). `SKIP LOCKED` claim, attempts incremented at claim, per-lane visibility
+timeouts swept back to `ready`, bounded attempts to a dead letter, and immediate termination for
+conditions that will never succeed. Fairness is round-robin by last completion on `train` and
+`label` only — `notify` and `docgen` are naturally spread, and paying for the subquery where it
+changes nothing is just latency. The notify dispatcher advances `next_run_at` at **enqueue**, which
+is the fix for the most likely silent failure on the platform: a feed that stops forever because one
+delivery errored.
+
+**Trainer.** Training set scoped by `profile_generation`; a mixture of embedder versions refused
+outright; unembedded rows dropped rather than zero-filled. The artifact is written temp-then-renamed,
+and the `models` row, the `is_active` flip, and the `model_version` bump are one transaction.
+
+**Notifier.** `notified_at` marked in the transaction the caller commits with the job — that is what
+makes at-least-once delivery safe. A revoked bot is terminal, not a retry. Over the daily cap items
+are deferred, not dropped. The token is decrypted inside `SecretStore.use` and scrubbed from
+anything logged in that window.
+
+**Three bugs CI caught that local green could not**, all of them the kind that stays silent:
+
+1. **`claim()` returned the identity-mapped copy of the row.** A long-lived worker session would
+   read `attempts` and `state` as they were *before* its own claim, so a job that always kills its
+   worker would retry forever. Fixed with `populate_existing`.
+2. **A handler failure rolled back the claim along with the handler's work.** `attempts` went back to
+   its pre-claim value, `fail()` never reached `MAX_ATTEMPTS`, and dead-lettering existed only on
+   paper. The increment is now captured before the handler runs and re-applied when the failure is
+   recorded.
+3. **The corpus CHECK requires `text_sha256` alongside a vector** — a vector whose source text is
+   unrecorded cannot be verified as current. Fourteen trainer tests failed on the constraint rather
+   than on anything they were testing, which is the schema doing its job.
+
+**Workers.** `run_worker` claims, runs, and commits once, so the handler's effect and the job's
+completion land together or neither does. Handlers are given the session and must not commit. SIGTERM
+stops at the next job boundary. `services/trainer` sets the BLAS thread caps before numpy is imported
+— queue concurrency of 1 does not stop one fit saturating every core.
+
+432 tests.
+
+**Phase 2's exit criteria are not met, and will not be until Phase 3.** Every component is built and
+tested, but "two accounts running side by side, each with their own model, feed, and schedule" needs
+two real accounts — and an account needs credential entry and profile confirmation, both of which are
+web-layer work. What exists now is the machinery underneath that, complete and wired.
+
 ## 2026-07-27 (evening, later)
 
 ### Phase 2 step 3 — the multi-tenant scorer

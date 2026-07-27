@@ -26,7 +26,7 @@ for a service's session, no knowing which container it runs in.
 | [`contracts/`](contracts/) | ✅ **built** | `UserConfigSchema` (server validation + JSON Schema for the form) and the embedder client contract. **T9 green** |
 | [`secrets/`](secrets/) | ✅ **built** | Envelope encryption (KEK/DEK), credential store, log redaction. **T4 green** |
 | [`scoring/`](scoring/) | ✅ **built** | Rubric render + `profile_version`, and the per-user feature extractor |
-| [`queue/`](queue/) | empty | Four-lane job queue: claim, retry, dead-letter. Phase 2 |
+| [`queue/`](queue/) | ✅ **built** | Four-lane claim protocol + the worker loop. **T5/T6/T7 green** |
 | [`prompts/`](prompts/) | partial | `label_template.md` (SACRED) + the loader. Generation prompts land with docgen |
 
 Empty packages are not placeholders for their own sake — each `__init__.py` records why the package

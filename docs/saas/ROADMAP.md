@@ -164,9 +164,21 @@ LinkedIn loop already needs and currently has nowhere real to live.
    fail-closed refusals (missing artifact row, `profile_generation` mismatch, feature-schema
    mismatch, corpus vector from a different embedder). Scores from the corpus vector, never
    re-embedding.
-4. **Scheduler** — the four-lane Postgres queue, with T5/T6/T7 in the same commit.
-5. **Trainer** — concurrency 1, CPU-fenced, debounced.
-6. **Notifier** — per-user bot tokens, per-user intervals, delivery dedup.
+4. ✅ **Done 2026-07-27. Scheduler** — `libs/queue`: `SKIP LOCKED` claim, per-lane visibility
+   timeouts, dead letters, round-robin fairness on `train`/`label`, and a dispatcher that advances
+   `next_run_at` at enqueue so a failed delivery cannot stall a feed. T5/T6/T7 in the same commit.
+   Plus `libs/queue/worker.py` and the per-lane entrypoints, so the lanes actually run.
+5. ✅ **Done 2026-07-27. Trainer** — generation-scoped training set, one embedder version per fit,
+   atomic artifact write, and `models` row + `model_version` bump in one transaction. BLAS thread
+   caps set before numpy imports; queue concurrency of 1 alone does not fence the CPU.
+6. ✅ **Done 2026-07-27. Notifier** — per-user bot token decrypted for the length of one call,
+   per-user intervals, delivery dedup in the committing transaction, revoked bot terminal not
+   retried, daily cap defers rather than drops.
+
+**Exit status 2026-07-27:** every Phase 2 component is built, tested, and wired to a worker. The exit
+criteria are **not** met and cannot be until Phase 3: "two accounts side by side" needs two real
+accounts, and an account needs credential entry and profile confirmation — both web-layer work. What
+exists is the machinery underneath.
 
 **Exit criteria:** two accounts (Ruben + Andras) run side by side on one stack, each with their own
 model, feed, and schedule. This is the real proof, and it replaces the two separate deployments that
