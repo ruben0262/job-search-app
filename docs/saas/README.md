@@ -75,18 +75,26 @@ behaviour becomes multi-tenant. Nothing here is green-field.
 4. **The `store.py` port is the critical path** — write test T2 against today's SQLite behaviour
    first.
 
-## Needs an external answer (not engineering)
+## External answers — ✅ all cleared 2026-07-27
 
-0. **GDPR posture** before invites go out. Personal data reaches third parties: **Anthropic** (CVs
-   uploaded to the Files API during capture, employment history), **Telegram** (job matches), the
-   proxy provider. Minimum: a privacy policy naming processors, explicit consent at upload, and
-   account deletion that also removes uploaded files — today's deletion story covers Postgres only.
-   `internal/privacy` in FlowSolutions is the reusable pattern (`AUTH_REUSE.md` §5).
+All three questions that needed a non-engineering answer have been reviewed and passed:
 
-1. **Scraping ToS / legal review** before signup opens beyond invites — with D5 this is a
-   milestone, not a launch blocker (`SAAS_PLATFORM_PLAN.md` §5a).
-2. **Anthropic terms on subscription (OAuth) credentials in a hosted service** — gates offering the
-   OAuth path beyond the invited cohort.
+| # | Question | Status |
+|---|---|---|
+| 0 | **GDPR posture** — personal data reaching Anthropic (CVs, employment history), Telegram (job matches), and the proxy provider | ✅ cleared |
+| 1 | **Scraping ToS / legal review** — the platform, not N individuals, becomes the responsible party | ✅ cleared |
+| 2 | **Anthropic terms on subscription (OAuth) credentials in a hosted service** | ✅ cleared — the OAuth path may be offered |
+
+⚠ **Clearing the review is not the same as building what it requires.** The GDPR posture depends on
+artifacts that do not exist yet, and they are now scheduled into Phase 3 rather than assumed:
+
+- a **privacy policy naming each processor** (Anthropic, Telegram, the proxy provider);
+- **explicit consent at CV upload**, at the moment the file leaves for the Anthropic Files API;
+- **account deletion that also removes Anthropic-uploaded files** — today's deletion cascades
+  Postgres only, which is provably complete for the database and silent about everything outside it.
+
+`internal/privacy` in FlowSolutions is the reusable pattern (`AUTH_REUSE.md` §5). See
+`ROADMAP.md` Phase 3.
 
 ## Gap status
 

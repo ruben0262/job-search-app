@@ -9,9 +9,43 @@ checked out nor where in the tree this directory sits — which is what made the
 `embedder/` → `services/embedder/` relocation a source-tree move rather than a redeploy
 (`docs/saas/CODE_STRUCTURE.md` §6).
 
-**Status: deployed and serving.** bge-base (768d) on the VPS; `job-search` is migrated and its
-scorer-service runs with no model resident (~1.9GB → ~165MB). Gates §14.2/.5/.6/.7/.8 pass on the
-box. `andras-job-search` is the remaining consumer.
+## Current state — two independent deployments
+
+| Instance | Box | Serves | State |
+|---|---|---|---|
+| **Platform** | `169.58.16.241` | the multi-tenant platform | ✅ deployed 2026-07-27, gates green |
+| **Legacy** | the original box | `job-search`, `andras-job-search` | ✅ serving, untouched |
+
+Two copies on purpose (decision D6 — parallel, decommission nothing until the platform provably
+matches). They share no state and need to: the vectors are a deterministic function of the text, and
+`embedder-net` is a local Docker network, so a cross-host arrangement would need
+`EMBEDDER_AUTH_TOKEN` and TLS for no benefit.
+
+Platform gate results, 2026-07-27:
+
+| Gate | Result |
+|---|---|
+| §14.2 backend-verified health | ✅ `verified: true` in ~45 s |
+| Full suite against the live stack | ✅ **23 passed, 1 skipped** |
+| §14.5 peak RSS vs the 2 GB budget | ✅ 832 MiB after a 2,000-text cold-start bulk |
+| §14.8 priority lane under a training flood | ✅ |
+
+The skip is `test_parity`. **Moot for the platform** — parity decides match-or-retrain for
+classifiers that already exist, and the platform has none; every user's model trains on TEI vectors
+from day one. It still matters for the legacy box, so the test stays.
+
+Legacy status: bge-base (768d); `job-search` is migrated and its scorer-service runs with no model
+resident (~1.9GB → ~165MB). `andras-job-search` is the remaining consumer.
+
+**Running the gates without `sudo`:** `python3-venv` is not installed on the platform box, so the
+suite runs in a throwaway container attached to `embedder-net`. This is also closer to how consumers
+actually reach the gateway — by service name, not the loopback host port:
+
+```bash
+docker run --rm --network embedder-net -v ~/job-search-app/services/embedder:/w -w /w \
+  -e EMBEDDER_URL=http://embedder-gateway:8080 python:3.12-slim \
+  bash -c "pip install -q -r tests/requirements.txt && pytest tests/ -q"
+```
 
 ## Architecture
 

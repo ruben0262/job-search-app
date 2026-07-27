@@ -19,6 +19,20 @@ imports `services`, and **no service imports another service** — they talk ove
 night and a rule in a document is a suggestion. Full layout and reasoning in
 [`docs/saas/CODE_STRUCTURE.md`](docs/saas/CODE_STRUCTURE.md).
 
+## Where the project is
+
+**Phase 1 of 4** (shared core). [`CHANGELOG.md`](CHANGELOG.md) is the history — what changed and
+why. Each folder's `README.md` carries its own **Current state**.
+
+| | |
+|---|---|
+| Deployed | Postgres 17 + the platform embedder, both on the VPS |
+| Built | [`libs/db`](libs/db/) — 8 tables, Alembic-managed, drift-checked · [`services/embedder`](services/embedder/) |
+| Tests | 23 passed / 1 skipped (embedder) · 8 passed (schema) |
+| Next | T2 dedup regression suite, then the `store.py` port — the critical path |
+
+Roadmap and phasing: [`docs/saas/ROADMAP.md`](docs/saas/ROADMAP.md).
+
 ## Components
 
 ### [`services/embedder/`](services/embedder/) — shared embedding service ✅ deployed

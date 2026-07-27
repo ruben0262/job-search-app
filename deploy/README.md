@@ -1,5 +1,21 @@
 # deploy — compose stack, per-service Dockerfiles, operational scripts
 
+## Current state
+
+Running on the platform VPS (`169.58.16.241`, 23 GiB RAM, 8 vCPU, 382 GB free):
+
+| Container | Stack | State |
+|---|---|---|
+| `job-search-platform-postgres-1` | `deploy/compose.yml` | ✅ healthy, schema applied |
+| `job-search-app-tei-1` | `services/embedder/docker-compose.yml` | ✅ ~832 MiB / 2 GB budget |
+| `job-search-app-embedder-gateway-1` | same | ✅ `verified: true` |
+
+Two compose projects on purpose — the embedder keeps its own, see below. Nothing else is deployed
+yet; `api`, `harvester`, `scorer`, `trainer`, `notifier`, `docgen`, `capture` are unbuilt.
+
+**Not yet done:** off-box backups (deferred until the platform runs end to end) and the restore
+drill. Both are required before the first invited user, not before then.
+
 ```
 deploy/
 ├── compose.yml            the platform stack — Postgres so far

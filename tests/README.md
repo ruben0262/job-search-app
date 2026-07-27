@@ -5,6 +5,31 @@ that service (`services/embedder/tests/` is the existing example and the model t
 
 Full specification, including the anti-flake rules and the write-order: `docs/saas/TEST_STRATEGY.md`.
 
+## Current state
+
+| Suite | Where | Count | Needs |
+|---|---|---|---|
+| Schema invariants (seed of **T1**) | [`test_schema.py`](test_schema.py) | 8 passing | live Postgres via `DATABASE_URL` |
+| Embedder — gateway contract, fail-closed | `services/embedder/tests/` | 15 passing | nothing |
+| Embedder — health, version assert, batch invariance, priority lane | `services/embedder/tests/` | 8 passing | live stack via `EMBEDDER_URL` |
+| Embedder — parity vs in-process `fastembed` | `services/embedder/tests/test_parity.py` | skipped | `fastembed` installed |
+
+**23 passed / 1 skipped** against the deployed embedder on the platform VPS; **8 passed** for the
+schema against the live database. The parity skip is deliberate — it decides *match-or-retrain* for
+classifiers that already exist, and the platform has none.
+
+Run everything:
+
+```bash
+pip install -r ../requirements-dev.txt
+DATABASE_URL=postgresql+psycopg://jobsearch:<pw>@127.0.0.1:5432/jobsearch pytest tests/ -v
+EMBEDDER_URL=http://127.0.0.1:8080 pytest services/embedder/tests/ -v
+```
+
+Both suites **skip cleanly** when their environment variable is unset, so a bare `pytest` works
+anywhere. They **fail loudly** when the variable is set but the target is unreachable — a silent skip
+is how a parity gate went unrun for days while looking green.
+
 ## The ones that belong here
 
 | Test | What it protects | Written when |

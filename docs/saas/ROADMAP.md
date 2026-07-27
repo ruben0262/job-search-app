@@ -52,8 +52,12 @@ product twice.
    this phase — stand the embedder up on the target box, note that there is no swap (a spike
    OOM-kills rather than degrades, and `docgen` runs Chrome), and install Postgres with its backup
    and restore drill before any schema.
-1. **Postgres schema**: `users`, `user_config`, `user_secrets`, `corpus`, `user_job_state`,
-   `user_labels`, `jobs` (queue), `models`.
+0c. ✅ **Done 2026-07-27.** Platform Postgres 17 deployed (`deploy/compose.yml`) and the platform's
+   own embedder brought up on the same box — gates 1, 2, 4, 5 green (23 passed / 1 skipped, 832 MiB
+   against the 2 GB budget). The legacy embedder on the other machine is untouched, per D6.
+1. ✅ **Done 2026-07-27. Postgres schema**: `users`, `user_config`, `user_secrets`, `corpus`,
+   `user_job_state`, `user_labels`, `jobs` (queue), `models`. Alembic from the first table (G5),
+   `TIMESTAMPTZ` throughout (G7), applied and drift-checked against the live database.
 2. **T2 dedup regression suite written against today's SQLite behaviour** — before touching anything.
 3. **Port `pipeline/lib/store.py` → Postgres corpus repository.** The largest single task (578 lines,
    and the dedup semantics are load-bearing). T2 stays green throughout.
@@ -109,6 +113,16 @@ In onboarding order, which is also dependency order:
 7. **Cold-start pipeline**: pool selection → labelling → first train, with visible stage progression.
 8. **Dashboard**: feed stats, model status, quota usage, and the **health banners** from
    `OPERATIONS_PLAN.md` §4b.
+9. **The GDPR obligations the cleared legal review depends on** (added 2026-07-27). The review
+   passed; these are the artifacts that make it true in the product, and none exist yet:
+   - **Privacy policy naming each processor** — Anthropic, Telegram, the proxy provider. Linked
+     from signup, not buried.
+   - **Explicit consent at CV upload**, taken at the moment the file leaves for the Anthropic Files
+     API rather than as a blanket checkbox at signup. Same commit as profile capture (step 4).
+   - **Deletion that reaches outside Postgres.** The cascade is provably complete for the database
+     and silent about everything else; account deletion must also delete files uploaded to the
+     Anthropic Files API. Build it with capture, not after — an orphaned upload nobody knows about
+     is the hardest kind to find later.
 
 **Exit criteria:** a non-technical person signs up unaided and gets a working feed. Test this with a
 real person who has not seen the product, and watch without helping.
