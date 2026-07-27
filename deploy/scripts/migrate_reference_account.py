@@ -49,6 +49,7 @@ LOCATION_MAP = {
     "european union": Location.EUROPEAN_UNION,
     "europe": Location.EUROPE,
     "united kingdom": Location.UNITED_KINGDOM,
+    "ireland": Location.IRELAND,
     "budapest": Location.BUDAPEST,
     "budapest, hungary": Location.BUDAPEST,
 }

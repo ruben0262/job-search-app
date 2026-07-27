@@ -90,6 +90,10 @@ class Location(StrEnum):
     EUROPEAN_UNION = "european_union"
     UNITED_KINGDOM = "united_kingdom"
     EUROPE = "europe"
+    # Added 2026-07-27 for the second migrated account. Not the same as DUBLIN, for exactly the
+    # reason UNITED_KINGDOM is not LONDON: a country-level search returns roles the city one never
+    # sees, and folding them would silently narrow what that user is shown.
+    IRELAND = "ireland"
 
     REMOTE_WORLDWIDE = "remote_worldwide"
     REMOTE_EU = "remote_eu"
