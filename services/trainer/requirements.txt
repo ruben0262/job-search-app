@@ -1,0 +1,11 @@
+# services/trainer — fits one user's classifier, CPU-fenced at concurrency 1.
+#
+# Same numpy 2.x + sklearn world as the scorer, and deliberately not the harvester's (JobSpy pulls
+# numpy 1.x transitively). Pin OMP_NUM_THREADS in the container too: queue concurrency of 1 does not
+# stop BLAS spawning a thread per core (SCHEDULER_PLAN.md §2).
+numpy>=2.0
+scikit-learn>=1.5
+joblib>=1.4
+SQLAlchemy>=2.0
+psycopg[binary]>=3.2
+pydantic>=2.10
