@@ -17,3 +17,7 @@ SQLAlchemy>=2.0
 pydantic>=2.10        # libs/contracts: one model behind server validation and the form
 alembic>=1.13
 psycopg[binary]>=3.2
+# services/harvester's fetch layer. Declared here because tests import it; the service pins its own
+# copy in services/harvester/requirements.txt. It went undeclared for one commit and CI caught it -
+# locally it was present only as a transitive dependency of the embedder's test deps.
+httpx>=0.28

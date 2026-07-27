@@ -15,10 +15,8 @@ from __future__ import annotations
 
 import uuid
 
-import pytest
-
-pytest.importorskip("httpx")
 import httpx
+import pytest
 
 from services.harvester.fetch import (
     PROXIED_HOSTS,
