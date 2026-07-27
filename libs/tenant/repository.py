@@ -33,6 +33,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from libs.contracts.config import CONFIG_SCHEMA_VERSION
+from libs.contracts.profile import PROFILE_SCHEMA_VERSION
 from libs.corpus.repository import CorpusRepository
 from libs.db.models import (
     CorpusJob,
@@ -190,6 +191,39 @@ class TenantRepository:
                 index_elements=[UserConfig.user_id],
                 set_={"config": config, "schema_version": schema_version,
                       "updated_at": func.now()}))
+
+    # ── captured profile ─────────────────────────────────────────────────────────────────────
+
+    def save_profile(self, user_id: _uuid.UUID, profile: dict, *,
+                     schema_version: int = PROFILE_SCHEMA_VERSION) -> int:
+        """Store a **confirmed** profile and bump `profile_generation`. Returns the new generation.
+
+        The bump is the point. Every downstream artifact — rubric, feature extractor, labels, model
+        — is built against a generation, so anything built against an older one is stale by
+        definition rather than by someone remembering (`PROFILE_CAPTURE_PLAN.md` §6.4).
+
+        Refuses an unconfirmed profile. That is the prompt-injection boundary: an uploaded CV is
+        untrusted text, and nothing an agent wrote may reach a hard gate without a human click (§5).
+        """
+        if not profile.get("confirmed"):
+            raise ValueError("refusing to store an unconfirmed profile — see PROFILE_CAPTURE_PLAN §5")
+        user = self._s.get(User, user_id)
+        if user is None:
+            raise ValueError(f"no such user: {user_id}")
+        user.profile = profile
+        user.profile_schema_version = schema_version
+        user.profile_generation += 1
+        return user.profile_generation
+
+    def profile(self, user_id: _uuid.UUID) -> dict | None:
+        user = self._s.get(User, user_id)
+        return user.profile if user is not None else None
+
+    def remember_capture_agent(self, user_id: _uuid.UUID, agent_id: str) -> None:
+        """Agent objects live in the *user's* Anthropic workspace, so reuse is per user, not global."""
+        user = self._s.get(User, user_id)
+        if user is not None:
+            user.capture_agent_id = agent_id
 
     def touch_activity(self, user_id: _uuid.UUID) -> None:
         """Record engagement. Call from login **and from every Telegram action**.

@@ -14,6 +14,41 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-07-27 (later still)
+
+### Phase 2 step 1 — profile capture, with manual entry in the same commit
+
+`services/capture` + `libs/contracts/profile.py`. The Managed Agents interview that turns a signup
+into a tenant, and the fallback for when it does not.
+
+- **One narrow protocol** (`CaptureClient`, eight methods) with the SDK confined to
+  `AnthropicCaptureClient`. Managed Agents is beta and sits on the onboarding critical path; a
+  contract change should break one adapter, not onboarding. Tests drive the protocol with a fake.
+- **Containment is configuration** (`PROFILE_CAPTURE_PLAN.md` §3): deny-by-default toolset (`bash`,
+  `edit`, `web_search`, `web_fetch` off), no egress at all, read-only document mounts, and `write`
+  approval-gated so the backend rejects any path outside the outputs directory. An uploaded CV is
+  untrusted text; none of this is left to the prompt.
+- **`users.profile` refuses an unconfirmed profile.** The confirmation click is the injection
+  boundary, so it is enforced at the write rather than by convention. Saving bumps
+  `profile_generation`, which is what makes everything built against an older one stale by
+  definition (§6.4).
+
+**Two subtleties that would have silently broken stream-first ordering:**
+
+1. `stream_events` is **not** a generator in the adapter. A generator body does not run until the
+   first `next()`, so `stream_events(...)` then `send_event(kickoff)` would have opened the SSE
+   connection *after* the kickoff — undoing the ordering the caller carefully arranged. It opens
+   eagerly and iterates lazily.
+2. The session is created **without** `initial_events`, deviating from the plan's snippet. A session
+   created with them starts running immediately, which has the same effect.
+
+34 tests, no network. Migration `c41a9f77d3b2` adds `users.profile`, `profile_schema_version`,
+`capture_agent_id`.
+
+**Gaps:** the confirmation *form* is Phase 3 (no web layer yet) — `save_profile` enforces the
+boundary the form will satisfy. Capture cost is still unmeasured, and it is the first money a user
+spends, on their own key.
+
 ## 2026-07-27 (later)
 
 ### Phase 2 step 0 — `libs/secrets`: envelope encryption, and T4 in the same commit

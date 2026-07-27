@@ -109,6 +109,19 @@ class User(Base):
     profile_version: Mapped[str | None] = mapped_column(String(64))
     profile_generation: Mapped[int] = mapped_column(Integer, default=0)
 
+    # The confirmed capture output (`libs.contracts.profile.ProfileSchema`), and the single source
+    # of truth for every rendered artifact (PROFILE_CAPTURE_PLAN.md §5). JSONB rather than columns
+    # for the same reason as `user_config`: read once per render, never in a hot predicate.
+    profile: Mapped[dict | None] = mapped_column(JSONB)
+    profile_schema_version: Mapped[int] = mapped_column(SmallInteger, default=1)
+
+    # Managed Agents agent objects are created with the *user's* API key, so they live in that
+    # user's Anthropic workspace — one per user, not one per platform. Stored so re-capture reuses
+    # it: "create the agent once" still holds, it is just once per user
+    # (PROFILE_CAPTURE_PLAN.md §4.1). Anthropic ids are opaque; Text avoids bounding a string
+    # whose length is not ours to bound.
+    capture_agent_id: Mapped[str | None] = mapped_column(Text)
+
     # Per-user DEK, wrapped by the KEK. The KEK itself lives in the environment and must never reach
     # the database or its backups — that separation is the entire reason a stolen dump is useless,
     # and it is the thing most often implemented and then quietly defeated by backing up the env file

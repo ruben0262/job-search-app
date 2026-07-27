@@ -1,0 +1,10 @@
+# services/capture — the Managed Agents onboarding interview.
+#
+# The SDK is imported only inside AnthropicCaptureClient, so the rest of the service (and its
+# tests) run without it. That is deliberate: Managed Agents is beta, and a beta dependency should
+# not be able to break the tests that prove the orchestration is correct.
+anthropic>=0.92          # beta.agents / beta.sessions / scope_id file listing
+pydantic>=2.10           # libs/contracts: the profile schema
+SQLAlchemy>=2.0
+psycopg[binary]>=3.2
+cryptography>=44.0       # libs/secrets: capture runs on the user's own decrypted credential

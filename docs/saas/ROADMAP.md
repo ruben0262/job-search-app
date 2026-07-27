@@ -146,10 +146,12 @@ LinkedIn loop already needs and currently has nowhere real to live.
    by a logging filter for the paths we do not own. **Open seam:** save-time validation exists as
    `mark_validated()`; the callers that make the real minimal API call arrive with capture (Claude)
    and the notifier (Telegram).
-1. **Profile capture** (`PROFILE_CAPTURE_PLAN.md`) — Managed Agents session, confirmation,
-   deterministic render. **Manual-entry fallback in the same commit**, since Managed Agents is a
-   beta surface: a contract change should break one adapter, not the onboarding flow. Blocks
-   step 2: the rubric renderer has no input without it.
+1. ✅ **Done 2026-07-27. Profile capture** (`PROFILE_CAPTURE_PLAN.md`) — `services/capture`: one
+   eight-method `CaptureClient` protocol with the beta SDK confined to a single adapter,
+   deny-by-default toolset and egress, approval-gated writes, turn and event caps, schema-validated
+   file output. Manual entry landed in the same commit. `users.profile` refuses an unconfirmed
+   profile, so the confirmation click is enforced at the write rather than by convention.
+   **Outstanding:** the confirmation *form* itself is Phase 3 (no web layer yet).
 2. **Per-user rubric rendering** + `profile_version` (`COLD_START_PLAN.md` §3, `PROFILE_CAPTURE_PLAN.md`
    §6.1). Flagged as the largest hidden task; give it real time.
 2b. **Per-user feature extractor** (`PROFILE_CAPTURE_PLAN.md` §6.3) and the single
