@@ -211,9 +211,11 @@ In onboarding order, which is also dependency order:
 1a. ✅ **Done 2026-07-27. Auth primitives** — `libs/auth`: argon2id at FlowSolutions' production
    parameters, email tokens stored as hashes only, refresh sessions hashed and rotated with
    family revocation on replay. Password minimum raised 8 → 12 per `AUTH_REUSE.md` §4.
-1b. **The `api` service** — signup, email confirmation, login, refresh, logout, and the cookie
-   policy from §3. Plus **transactional email**, which is load-bearing rather than optional
-   (`OPERATIONS_PLAN.md` §6).
+1b. ✅ **Done 2026-07-27. The `api` service** — signup, email confirmation, login, refresh, logout,
+   the §3 cookie policy (refresh cookie scoped to its own path), no account-existence oracle in
+   either the response or the timing, and a process-local rate limiter carrying §4.1's caveat
+   intact. **Transactional email** is Gmail SMTP with an app password; the ~500/day cap is fine for
+   an invited cohort and must be revisited before self-serve.
 2. **`plans` table with the single `free` row**; quotas resolved from it, not from code constants.
 3. **Credential entry, validated at save** — before capture, since capture spends the user's key.
 4. **Profile capture** (`PROFILE_CAPTURE_PLAN.md`): Managed Agents session, confirmation form,

@@ -14,6 +14,40 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-07-27 (night, Phase 3 step 1b)
+
+### The `api` service — signup, verification, login, refresh, logout
+
+FastAPI, one transaction per request, cookie policy copied verbatim from `AUTH_REUSE.md` §3.
+
+- **The refresh cookie is scoped to `/auth/refresh`**, not `/`. The detail most implementations
+  miss: scoped that way the long-lived credential is absent from every ordinary request, so an XSS
+  on any other route cannot reach it. `HttpOnly` and `Secure` on both cookies unconditionally.
+- **No account-existence oracle.** Signup and login answer identically whether or not the address
+  has an account, and login verifies a throwaway argon2 hash when the user does not exist so the
+  *timing* does not reveal it either.
+- **Verification does not log the user in.** A link travels through email and can be forwarded;
+  proving control of an address should not hand out a session.
+- **A failed verification email does not fail the signup.** The account exists and another link can
+  be requested. Making registration depend on Gmail being reachable would be worse.
+
+**Mail is Gmail SMTP with an app password.** One sending account needs no per-user consent and the
+OAuth refresh dance buys nothing at this scale. The tradeoff is recorded rather than buried: Gmail
+caps a normal account near 500 recipients a day — ample for an invited cohort, to be revisited
+before self-serve, and the failure mode is silent rejection rather than an error at send time.
+
+**One real bug, caught by CI:** raising `HTTPException` discards the injected `Response`, so a
+failed refresh returned 401 with **no `Set-Cookie` at all** — a client holding a replayed or expired
+token would have kept presenting it forever, since nothing ever told it to stop. The failure path
+returns a `JSONResponse` with the cookies deleted on it instead.
+
+Two test-fixture lessons worth keeping: `example.test` is a reserved special-use domain and
+`email_validator` correctly rejects it (the rest of the tree writes `User` rows directly and never
+passes an address through validation), and cookie attributes are case-insensitive — asserting on
+capitalisation tests the client's formatting, not the policy.
+
+469 tests.
+
 ## 2026-07-27 (night, Phase 2 closes)
 
 ### Two accounts, two models, two feeds — on one stack

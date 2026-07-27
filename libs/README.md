@@ -21,6 +21,7 @@ for a service's session, no knowing which container it runs in.
 | Package | State | What it is |
 |---|---|---|
 | [`auth/`](auth/) | ✅ **built** | argon2id, hashed email tokens, rotating refresh sessions (`AUTH_REUSE.md` design port) |
+| [`mail/`](mail/) | ✅ **built** | Gmail SMTP sender + plain-text templates; prints instead of sending when unconfigured |
 | [`db/`](db/) | ✅ **built** | SQLAlchemy models + Alembic migrations. 11 tables, 3 revisions, applied to the live database |
 | [`corpus/`](corpus/) | ✅ **built** | Dedup keys (T2-pinned), corpus repository, ATS token/ETag state |
 | [`tenant/`](tenant/) | ✅ **built** | Per-user repository: job state, applied log, labels, feedback. **T1 green** |
