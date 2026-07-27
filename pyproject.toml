@@ -120,6 +120,7 @@ ignore = [
 # Tests. Each of these is the idiom, not an oversight.
 "tests/*" = [
     "E402",     # imports after pytest.importorskip — which must run first, that is its whole job
+    "S105",     # ditto for a local named `password`: the auth tests need one to hash
     "S106",     # "hardcoded password" in fixtures: placeholder strings, never real credentials
     "S311",     # random: the differential fuzz is seeded and deliberately not cryptographic
     "PLC0415",  # imports inside a test, to keep an optional dependency optional
