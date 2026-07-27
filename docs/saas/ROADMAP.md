@@ -159,7 +159,11 @@ LinkedIn loop already needs and currently has nowhere real to live.
    core / NOT-list / region-lock token sets per user with `FEATURE_NAMES` order global and
    append-only. `save_profile` renders the rubric in the same write that bumps `profile_generation`,
    so a profile without a matching rubric cannot exist.
-3. **Multi-tenant scorer** with an LRU of user models and `model_version` hot-swap.
+3. ✅ **Done 2026-07-27. Multi-tenant scorer** — `services/scorer`: LRU of per-user models,
+   reloaded when `users.model_version` moves rather than by restarting a container, and four
+   fail-closed refusals (missing artifact row, `profile_generation` mismatch, feature-schema
+   mismatch, corpus vector from a different embedder). Scores from the corpus vector, never
+   re-embedding.
 4. **Scheduler** — the four-lane Postgres queue, with T5/T6/T7 in the same commit.
 5. **Trainer** — concurrency 1, CPU-fenced, debounced.
 6. **Notifier** — per-user bot tokens, per-user intervals, delivery dedup.

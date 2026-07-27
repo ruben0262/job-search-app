@@ -1,0 +1,11 @@
+# services/scorer — serves per-user fit scores from cached artifacts.
+#
+# numpy 2.x + scikit-learn, matching the reference instance's scorer environment. Deliberately its
+# own image: the harvester pins numpy 1.x transitively through JobSpy, and the two must never share
+# a process (CODE_STRUCTURE.md §5).
+numpy>=2.0
+scikit-learn>=1.5
+joblib>=1.4
+SQLAlchemy>=2.0
+psycopg[binary]>=3.2
+pydantic>=2.10

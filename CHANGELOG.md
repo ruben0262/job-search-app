@@ -14,6 +14,32 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-07-27 (evening, later)
+
+### Phase 2 step 3 — the multi-tenant scorer
+
+`services/scorer`: an LRU of per-user models that reloads on `users.model_version` instead of on a
+container restart, plus the serve path.
+
+- **Hot-swap is a version comparison on every score**, not a timer. A timer means a window where a
+  just-retrained model is not yet serving and nothing says so. The check is one indexed read —
+  deliberately cheaper than the reload it prevents.
+- **Nothing is embedded at score time.** The corpus row already carries its vector, so N users over
+  one posting is N predictions rather than N embeddings. That is the economic argument for the
+  shared corpus, and it only holds if this path never falls back to embedding.
+- **Four fail-closed refusals**, each of which is otherwise a silent wrong answer rather than a
+  crash: no artifact row for the version the user is on (interrupted trainer — serving the previous
+  version would answer with a model the dashboard calls superseded), a `profile_generation`
+  mismatch (the feature columns still line up; the weights were fit against other semantics), a
+  `FEATURE_SCHEMA_VERSION` mismatch, and a corpus vector from a different embedder. The embedder
+  check is on the **version string before the dimension** — two models can share a width and mean
+  entirely different things.
+- The cached-then-invalidated case is the subtle one: a model that was current when cached, with the
+  profile edited afterwards. `model_version` never moves, so only the generation check catches it.
+
+24 tests, all against a live Postgres with a stub estimator — what is worth testing is which model
+is served to whom and when it is refused, not whether scikit-learn multiplies correctly.
+
 ## 2026-07-27 (evening)
 
 ### Phase 2 step 2 — rubric render and the per-user feature extractor

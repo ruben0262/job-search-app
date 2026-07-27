@@ -28,3 +28,6 @@ defusedxml>=0.7
 # needs it at runtime and pins its own copy; it is here because libs/secrets and its T4 tests are
 # imported by the root suite.
 cryptography>=44.0
+# libs/scoring's feature matrix and the scorer's serve path. The trainer/scorer images pin
+# their own; this is what lets the root suite exercise them.
+numpy>=2.0
