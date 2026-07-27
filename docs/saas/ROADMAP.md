@@ -180,9 +180,25 @@ LinkedIn loop already needs and currently has nowhere real to live.
 verbatim from their single-tenant instances, both folded into one shared harvest with the fan-out
 budget split 30/30 by round-robin. 311 corpus rows, 305 embedded, on the 15-minute timer.
 
-The criterion's remaining third — *each with their own model and feed* — closes in Phase 3, not here:
-a model needs labels, labels need a rubric, a rubric needs a confirmed profile, and a profile needs
-the user's own Claude credential. Credential entry and capture are Phase 3 steps 3 and 4.
+**The remaining third closed the same day.** Both instances' labelled history was imported into the
+shared corpus (only each reference's newest rubric — older ones answer a different question), both
+accounts got a confirmed profile and rendered rubric, and both were retrained on platform features
+rather than importing artifacts fit against the old hardcoded token lists.
+
+```
+                    Ruben              Andras
+labels @ gen 1      2,529              945
+model               v1, servable       v1, servable
+scored              3,892              3,892
+high band           345                64
+overlap of top-100 feeds: 0
+```
+
+Zero overlap on the same corpus is the proof the shared design works: one posting stored,
+deduplicated and embedded once, ranked disjointly by two per-user models.
+
+**Phase 2 is complete.** What remains for these two accounts is credentials — a login password and a
+Telegram bot token each — which only their owners can supply. Everything those gate is built.
 
 **Exit criteria:** two accounts (Ruben + Andras) run side by side on one stack, each with their own
 model, feed, and schedule. This is the real proof, and it replaces the two separate deployments that

@@ -14,6 +14,68 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-07-27 (night, Phase 2 closes)
+
+### Two accounts, two models, two feeds — on one stack
+
+The remaining third of Phase 2's exit criteria. Both single-tenant instances' labelled history is
+now in the shared corpus, and both accounts have their own confirmed profile, rubric, model, and
+feed.
+
+```
+lekliruben@gmail.com          andraslekli@gmail.com
+  23 hard gates                 15 hard gates
+  2,529 labels @ gen 1          945 labels @ gen 1
+  model v1, servable            model v1, servable
+  55 core / 24 off-stack        52 core / 26 off-stack
+  3,892 scored                  3,892 scored
+  345 high, 804 review          64 high, 207 review
+
+corpus: 3,896 rows, 3,892 embedded
+overlap of the two top-100 feeds: 0
+```
+
+**Zero overlap is the result worth keeping.** Same corpus, same embeddings, same feature columns —
+and the two models rank them disjointly, because the token lists behind `core_stack_count` and
+`offstack_count` come from each person's own profile. That is §6.3's whole argument, demonstrated
+on real data rather than asserted.
+
+**Retrained rather than imported.** The existing `.joblib` artifacts were fit against each
+instance's *hardcoded* token lists; the platform derives them from the profile, so the weights would
+have been attached to features that no longer mean the same thing — precisely what the scorer's
+fail-closed check refuses. Same labels, same embedder, same feature definitions at train and serve
+time. Comparing the platform against the old instances is now an outcome comparison, which is what
+D6 wanted.
+
+**Only labels at each reference's newest rubric were imported** — 3,310 of Ruben's 4,283, 947 of
+947 for Andras. The rest were written under older rubrics and answer a different question. Ruben's
+3,310 then collapsed to 2,529 distinct corpus rows: 781 labelled URLs deduplicated onto postings
+already present, which is the four-layer dedup doing exactly what the shared corpus exists for.
+
+**Three bugs found by doing this, all silent, all fixed:**
+
+1. **A hyphenated skill never matched its spaced spelling.** A profile saying `full-stack` matched
+   nothing in a posting titled "Full Stack Developer" — the feature simply read 0. Found by diffing
+   platform-derived tokens against the reference's hardcoded list on eight real postings; only 4 of
+   8 agreed before the fix.
+2. **Splitting a compound produced fragments that fire on unrelated text.** `Spring Boot` yielded
+   the token `boot`, which matches *bootstrap* and *bootcamp* — one NOT-list entry becoming a gate
+   on jobs it has nothing to do with.
+3. **`remote_policy: "any"` dropped the location gate entirely.** Andras accepts on-site, hybrid and
+   remote, but only in four countries. Workplace *mode* and acceptable *region* are independent, and
+   conflating them would have shown him roles requiring relocation anywhere on earth.
+
+Two operational lessons, both paid for: the embed backfill commits per batch now (a whole pass is
+hours of work a dropped session throws away), and it sizes its own client timeout (the 120 s default
+is for the harvester's small batches, not a 200-text backfill).
+
+New scripts: `set_profile`, `migrate_reference_history`, `embed_backlog`, `train_user`,
+`score_user`, `show_accounts`, `set_password`.
+
+**What is left is credentials, not code.** Neither account has a login password or a Telegram bot
+token — both are values only their owner can supply, via `set_password.py` (prompts, no echo) and
+the credential step. Everything they gate is built and proven.
+
 ## 2026-07-27 (night, Phase 3 opens)
 
 ### Phase 3 step 1a — auth primitives
