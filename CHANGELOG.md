@@ -14,6 +14,50 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-07-27 (night, later)
+
+### Two accounts on one stack — the D6 comparison is live
+
+`andraslekli@gmail.com` migrated from `andras-job-search` the same way the first account was: config
+copied verbatim, nothing in the reference touched. 15 search terms, 5 locations.
+
+Both accounts now drive one shared harvest:
+
+```
+active accounts: 2
+  7533bb9c…  23 terms  [european_union, united_kingdom, budapest, europe]
+  d620f6f3…  15 terms  [united_kingdom, ireland, european_union, budapest, europe]
+
+folded query set: 334 distinct queries, 0 wanted by more than one account
+budget: 60 planned per cycle, 274 deferred
+  each account: exactly 30 of the 60 planned
+```
+
+**The 30/30 split is round-robin fairness working in production**, not a coincidence — a FIFO queue
+would have given the first account all 60 and the second nothing until its terms aged in.
+
+**Zero shared queries, and that is the honest result.** A software engineer and a mechanical
+engineer have no search terms in common, so the query fold saves nothing here. The saving that does
+apply is the corpus: one posting is stored, deduplicated, and embedded once regardless of how many
+accounts it reaches. 311 rows, 305 embedded, harvested on the 15-minute timer.
+
+`Location.IRELAND` added — not the same as `DUBLIN`, for the reason `UNITED_KINGDOM` is not
+`LONDON`: a country-level search returns roles the city one never sees.
+
+Migrations `c41a9f77d3b2` and `d8b3e5a91c47` applied to the live database, which was still on
+`b072fd4c1edb`.
+
+**What Phase 2's exit criteria still need.** "Two accounts, each with their own model, feed, and
+schedule" is two-thirds done: both accounts exist, both harvest, both are budgeted fairly. Neither
+has a *model*, because a model needs labels, labels need a rubric, and a rubric needs a confirmed
+profile — and a profile needs the user's own Claude credential to capture. Credential entry and
+profile confirmation are Phase 3's first steps, so the criterion closes there rather than here.
+
+Deliberately **not** done: fabricating profiles by parsing each reference instance's rubric prose
+into structured fields. That is precisely the thing `PROFILE_CAPTURE_PLAN.md` §1 says cannot be done
+reliably — a wrong NOT-list entry becomes a hard gate that silently suppresses good jobs — and doing
+it to tick a box would put two real people on rubrics nobody confirmed.
+
 ## 2026-07-27 (night)
 
 ### Phase 2 steps 4-6 — queue, trainer, notifier, and the workers that run them

@@ -175,10 +175,14 @@ LinkedIn loop already needs and currently has nowhere real to live.
    per-user intervals, delivery dedup in the committing transaction, revoked bot terminal not
    retried, daily cap defers rather than drops.
 
-**Exit status 2026-07-27:** every Phase 2 component is built, tested, and wired to a worker. The exit
-criteria are **not** met and cannot be until Phase 3: "two accounts side by side" needs two real
-accounts, and an account needs credential entry and profile confirmation — both web-layer work. What
-exists is the machinery underneath.
+**Exit status 2026-07-27:** every Phase 2 component is built, tested, and wired to a worker, and
+**two real accounts now run side by side on one stack** — Ruben's and Andras's, both migrated
+verbatim from their single-tenant instances, both folded into one shared harvest with the fan-out
+budget split 30/30 by round-robin. 311 corpus rows, 305 embedded, on the 15-minute timer.
+
+The criterion's remaining third — *each with their own model and feed* — closes in Phase 3, not here:
+a model needs labels, labels need a rubric, a rubric needs a confirmed profile, and a profile needs
+the user's own Claude credential. Credential entry and capture are Phase 3 steps 3 and 4.
 
 **Exit criteria:** two accounts (Ruben + Andras) run side by side on one stack, each with their own
 model, feed, and schedule. This is the real proof, and it replaces the two separate deployments that
