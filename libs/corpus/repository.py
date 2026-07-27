@@ -76,12 +76,16 @@ class CorpusRepository:
 
     # ── dedup ────────────────────────────────────────────────────────────────────────────────
 
-    def find_duplicate(self, url: str, title: str = "", company: str = "",
-                       location: str = "") -> DuplicateMatch | None:
-        """The three-layer check, narrowing, in the order the harvest loop applies it.
+    def find_duplicate(self, url: str, title: str = "", company: str = "", location: str = "",
+                       application_url: str | None = None) -> DuplicateMatch | None:
+        """The four-layer check, narrowing, in the order the harvest loop applies it.
 
         Returns `None` when the job is new — including when its keys are unusable, which is the
         fail-open case and deliberately indistinguishable from "genuinely new" to the caller.
+
+        `application_url` is the resolved external Apply target, known only after description fetch
+        for aggregator sources. Passing it enables the layer that the whole canonical scheme exists
+        for — see `_apply_url_match`.
         """
         exact = self._s.scalar(select(CorpusJob.id).where(CorpusJob.url == url).limit(1))
         if exact is not None:
@@ -94,6 +98,10 @@ class CorpusRepository:
             if hit is not None:
                 return DuplicateMatch(hit, "canonical_url")
 
+        hit = self._apply_url_match(canon, application_url)
+        if hit is not None:
+            return hit
+
         key = content_key(title, company, location)
         if key is not None:
             hit = self._s.scalar(
@@ -102,6 +110,56 @@ class CorpusRepository:
                 return DuplicateMatch(hit, "content_key")
 
         return None
+
+    def _apply_url_match(self, canon: str | None,
+                         application_url: str | None) -> DuplicateMatch | None:
+        """Match through the resolved Apply target. **This is the layer canonicalisation is for.**
+
+        The same job arrives as `linkedin.com/jobs/view/…` from the LinkedIn scrape and as
+        `boards.greenhouse.io/…` from the direct ATS poll. Nothing about those two URLs is
+        comparable, and the content key only helps when title and company both normalise
+        identically — which aggregators frequently break by decorating titles or abbreviating
+        company names. Resolving LinkedIn's Apply button to its external target makes them
+        comparable, and the reference matches on `canonical = ? OR app_canonical = ?` for exactly
+        this reason.
+
+        Both directions matter, so both are checked:
+
+        - the candidate's **apply target** may equal a stored row's own URL (LinkedIn arrives
+          second, the Greenhouse row is already there);
+        - the candidate's **own URL** may equal a stored row's apply target (the ATS poll arrives
+          second, having been beaten by a LinkedIn listing that resolved to it).
+        """
+        app_canon = canonical_url(application_url or "")
+
+        if app_canon is not None:
+            hit = self._s.scalar(
+                select(CorpusJob.id)
+                .where((CorpusJob.canonical_url == app_canon)
+                       | (CorpusJob.application_canonical_url == app_canon))
+                .limit(1))
+            if hit is not None:
+                return DuplicateMatch(hit, "application_url")
+
+        if canon is not None:
+            hit = self._s.scalar(
+                select(CorpusJob.id)
+                .where(CorpusJob.application_canonical_url == canon).limit(1))
+            if hit is not None:
+                return DuplicateMatch(hit, "application_url")
+
+        return None
+
+    def set_application_url(self, job_id: int, application_url: str) -> None:
+        """Record the resolved Apply target, discovered during description fetch.
+
+        Stored with its canonical form alongside so the dedup query stays an indexed lookup rather
+        than a function call per row.
+        """
+        self._s.execute(
+            update(CorpusJob).where(CorpusJob.id == job_id)
+            .values(application_url=application_url,
+                    application_canonical_url=canonical_url(application_url)))
 
     def seen_url(self, url: str) -> bool:
         return self._s.scalar(select(CorpusJob.id).where(CorpusJob.url == url).limit(1)) is not None

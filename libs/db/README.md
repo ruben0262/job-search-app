@@ -5,7 +5,7 @@ per-user tail, credentials, and the four-lane job queue in one database.
 
 ## Current state
 
-✅ **Built and applied.** Eight tables, one Alembic revision, live on the platform VPS. Verified by
+✅ **Built and applied.** Eleven tables, three Alembic revisions, live on the platform VPS. Verified by
 re-running autogenerate against the migrated database and getting **0 operations** — models and
 database agree exactly.
 
@@ -19,6 +19,8 @@ database agree exactly.
 | `user_labels` | per-user | Training labels, referencing `job_id` — never copying job text |
 | `models` | per-user | Trained artifact metadata; at most one active per user |
 | `jobs` | per-user | The four-lane work queue |
+| `ats_tokens` | **shared** | Harvested company board tokens; dead ones retained, not deleted |
+| `ats_etags` | **shared** | Conditional-poll validators. Row-per-board, replacing the reference file lock |
 
 ## The rules this schema encodes
 

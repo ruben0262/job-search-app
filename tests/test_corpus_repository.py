@@ -156,6 +156,82 @@ def test_a_genuinely_new_job_is_not_a_duplicate(repo):
     assert r.find_duplicate(_u(), "Staff Platform Engineer", f"New{uuid.uuid4().hex[:8]}") is None
 
 
+# ── the apply-URL layer: what canonicalisation actually exists for ────────────────────────────
+# The same job arrives as linkedin.com/jobs/view/… from the LinkedIn scrape and as
+# boards.greenhouse.io/… from the direct ATS poll. Nothing about those URLs is comparable, and the
+# content key only helps when title AND company both normalise identically — which aggregators
+# routinely break by decorating titles or abbreviating company names. Resolving LinkedIn's Apply
+# button to its external target is what makes them comparable.
+
+def test_a_linkedin_listing_resolving_to_a_known_ats_url_is_a_duplicate(repo):
+    """LinkedIn arrives second; the Greenhouse row is already in the corpus."""
+    r, s = repo
+    token = uuid.uuid4().hex
+    r.add(url=_u(token), source="greenhouse", title="Backend Engineer",
+          company=f"Acme{uuid.uuid4().hex[:8]}")
+    s.flush()
+
+    hit = r.find_duplicate(
+        "https://www.linkedin.com/jobs/view/4012345678/",
+        title="Backend Engineer (Remote) - Growing Startup",   # decorated: content key will differ
+        company="Acme Technologies International",             # abbreviated differently
+        application_url=_u(token) + "?gh_src=linkedin")
+    assert hit is not None
+    assert hit.matched_on == "application_url"
+
+
+def test_an_ats_row_arriving_after_the_linkedin_one_is_a_duplicate(repo):
+    """The other direction: the ATS poll arrives second, beaten by a LinkedIn listing.
+
+    Checking only one direction would leave half the collisions undetected, which is worse than
+    checking neither — it looks like it works.
+    """
+    r, s = repo
+    token = uuid.uuid4().hex
+    ats_url = _u(token)
+
+    linkedin_id = r.add(url="https://www.linkedin.com/jobs/view/" + uuid.uuid4().hex,
+                        source="linkedin", title="Backend Engineer (Remote)",
+                        company="Acme Technologies International")
+    s.flush()
+    r.set_application_url(linkedin_id, ats_url)
+    s.flush()
+
+    hit = r.find_duplicate(ats_url, title="Backend Engineer",
+                           company=f"Acme{uuid.uuid4().hex[:8]}")
+    assert hit is not None
+    assert hit.matched_on == "application_url"
+    assert hit.job_id == linkedin_id
+
+
+def test_the_apply_url_layer_ignores_tracking_noise(repo):
+    """It compares canonical forms, so `?gh_src=linkedin` is not a different apply target."""
+    r, s = repo
+    token = uuid.uuid4().hex
+    job_id = r.add(url=_u(token), source="greenhouse", title="Backend Engineer",
+                   company=f"Acme{uuid.uuid4().hex[:8]}")
+    s.flush()
+
+    hit = r.find_duplicate("https://www.linkedin.com/jobs/view/9999/",
+                           title="Unrelated Title", company=f"Other{uuid.uuid4().hex[:8]}",
+                           application_url=_u(token) + "?utm_source=x#apply")
+    assert hit is not None and hit.job_id == job_id
+
+
+def test_an_unresolvable_apply_url_does_not_match_anything(repo):
+    """Fail open, same contract as the other layers."""
+    r, s = repo
+    r.add(url=_u(), source="greenhouse", title="Backend Engineer",
+          company=f"Acme{uuid.uuid4().hex[:8]}")
+    s.flush()
+
+    assert r.find_duplicate(_u(), "Totally Different Role",
+                            f"Other{uuid.uuid4().hex[:8]}", application_url="") is None
+    assert r.find_duplicate(_u(), "Totally Different Role",
+                            f"Other{uuid.uuid4().hex[:8]}",
+                            application_url="not-a-url") is None
+
+
 # ── description and embedding ────────────────────────────────────────────────────────────────
 
 def test_changing_the_description_invalidates_the_vector(repo):

@@ -62,6 +62,18 @@ class CorpusJob(Base):
     canonical_url: Mapped[str | None] = mapped_column(Text)
     content_key: Mapped[str | None] = mapped_column(String(64))
 
+    # The resolved external "Apply" target, and its canonical form. This is a FOURTH dedup layer and
+    # it is the one the whole canonical scheme was built for: the same job arrives as
+    # linkedin.com/jobs/view/… from the LinkedIn scrape and boards.greenhouse.io/… from the direct
+    # ATS poll, and nothing about those two URLs is comparable. Resolving LinkedIn's Apply button to
+    # its external target makes them comparable — the reference indexes exactly this as
+    # `processed.app_canonical` and matches on `canonical = ? OR app_canonical = ?`.
+    #
+    # Nullable because most rows never need it: an ATS row IS its own apply target, and resolution
+    # only happens for aggregator sources during description fetch.
+    application_url: Mapped[str | None] = mapped_column(Text)
+    application_canonical_url: Mapped[str | None] = mapped_column(Text)
+
     # `source` is the whole of the LinkedIn visibility gate. Rows scraped on one user's proxy
     # credential still land here so dedup and embed-once keep working, but a user sees them only
     # while they hold a healthy credential — one filter predicate, no data partitioning, no
@@ -108,6 +120,9 @@ class CorpusJob(Base):
         # `url` needs to be unique.
         Index("ix_corpus_canonical_url", "canonical_url"),
         Index("ix_corpus_content_key", "content_key"),
+        # The apply-URL layer is queried against BOTH columns (a candidate's own canonical may match
+        # another row's apply target and vice versa), so both need to be indexed.
+        Index("ix_corpus_application_canonical_url", "application_canonical_url"),
         # The per-user match pass: "recent rows from sources this user can see".
         Index("ix_corpus_source_first_seen", "source", "first_seen_at"),
         # Finds rows still awaiting an embedding, without scanning the whole corpus.

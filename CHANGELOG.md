@@ -16,6 +16,56 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ## 2026-07-27
 
+### Step 3b — the remaining stores, plus a dedup layer step 3 had missed
+
+**The important part is the gap, not the port.** Reading the reference's `processed` table for 3b
+showed it indexes `app_canonical` and matches on `canonical = ? OR app_canonical = ?` — the resolved
+**Apply URL**. Step 3's `find_duplicate` only compared `corpus.canonical_url`, so a LinkedIn posting
+whose Apply button resolves to a Greenhouse board would have landed as a **second row** alongside the
+one the ATS poll found directly. That is the precise case canonicalisation exists for, and it was
+missing.
+
+Fixed: `corpus.application_url` + `application_canonical_url`, and a fourth dedup layer checked in
+**both directions** — the candidate's apply target against stored rows' own URLs, and the
+candidate's own URL against stored rows' apply targets. Checking one direction only would leave half
+the collisions undetected while looking like it worked.
+
+The stores themselves:
+
+| Reference | Here |
+|---|---|
+| `ats_tokens.json` | `ats_tokens` table, lowercased, dead boards retained not deleted |
+| `ats_etags.json` + `.lock` | `ats_etags` table, **row-level upsert, no lock** |
+| `applied.jsonl` | `user_job_state.applied_at` / `.cover_built` |
+| `labels.jsonl` | `user_labels`, `source='llm'` |
+| `feedback.jsonl` | `user_labels`, `source='feedback'`, `weight=5` |
+
+**`ats_etags` is the one place the port is a fix rather than a translation.** The reference guards a
+whole-map JSON rewrite with a file spinlock whose `_acquire_lock()` returns `False` on timeout and
+lets the caller proceed anyway — so a contended write silently drops another writer's keys, and even
+holding the lock the whole-map replace lets two ATS gathers clobber each other. Row-level upsert on
+`(ats, token)` removes both by construction. Proven by an interleaved-write test, not asserted.
+
+**Feedback turned out not to be a separate store** — it is a label with a different provenance and
+weight. The reference keeps it apart and blends it at train time by duplicating rows five times so
+the weighting survives sklearn Pipelines; recording `source` and `weight` on the row makes the blend
+a query instead.
+
+New package **`libs/tenant/`**, a deliberate addition to `CODE_STRUCTURE.md` §2's list. That list
+predates the repository layer and has no home for per-user data access: `libs/corpus` documents
+itself as the shared half, `libs/db` is where the schema lives. Putting tenant-scoped queries in
+either would make the shared/per-user boundary invisible at the call site. Now it is visible in the
+import path — `libs.corpus` takes no `user_id` at all, `libs.tenant` cannot be used without one.
+
+**T1 landed** (`TEST_STRATEGY.md`, release blocker): two users, overlapping jobs, every read path
+returns only the caller's rows — applied log, labels, and scores.
+
+Also caught in review: `cover_built` was generated as `NOT NULL` with no server default, which fails
+against any table that already has rows. It would have worked today only because the table is empty,
+which is not a migration strategy. Added `server_default`.
+
+Migration `fccd4d3a84ff`, applied to the live database (11 tables). 109 tests passing.
+
 ### Corpus repository — the storage half of the `store.py` port (Phase 1 step 3)
 
 `libs/corpus/repository.py`, 14 behaviour tests, T2 green throughout. Dedup (url → canonical →

@@ -69,7 +69,20 @@ class UserJobState(Base):
     notified_at: Mapped[timestamptz | None]
     # The durable "what I applied to" record. Small, but it is the row a user would be angriest to
     # lose (PLATFORM_ARCHITECTURE.md §4), which is why it is relational rather than a JSONL file.
+    #
+    # `applied_at` is set by the FIRST build and never moved, matching the reference: a later cover
+    # build supersedes the row but must not rewrite the date the user actually applied.
+    #
+    # Note what is deliberately NOT here: title, company, description, score. The reference's
+    # applied.jsonl copies all of them onto every row, which is most of why a label row costs
+    # 2,937 bytes there. Here the row references `job_id` and the corpus is `pin()`ned on apply, so
+    # the JD survives retention without being duplicated per user (§4).
     applied_at: Mapped[timestamptz | None]
+    # server_default, not just a Python-side default. A NOT NULL column added without one cannot be
+    # applied to a table that already has rows, and "the table happens to be empty today" is not a
+    # migration strategy — it is how the next one fails in production (CODE_STRUCTURE.md §5,
+    # additive-first).
+    cover_built: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     dismissed_at: Mapped[timestamptz | None]
 
     created_at: Mapped[timestamptz] = mapped_column(server_default=func.now())

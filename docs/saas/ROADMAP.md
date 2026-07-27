@@ -73,15 +73,23 @@ product twice.
    *indexed but not unique and nullable* — dedup is a query performed **before** insert, not a
    constraint, and the key functions return `None` for input they cannot use. Corrected in migration
    `fe23e709fd46`.
-3b. **Port the other stores too** — `ats_tokens`, `ats_etags` (**replacing its file lock**),
-   `applied`, `labels`, `feedback`. Easy to forget and easy to underestimate: `ats_etags` is what
-   makes ATS polling near-free, and `applied` is the record a user would be angriest to lose. Full
-   table: `PLATFORM_ARCHITECTURE.md` §4.
+3b. ✅ **Done 2026-07-27. Ported the other stores** — `ats_tokens`, `ats_etags` (**file lock
+   replaced by row-level upsert**), `applied`, `labels`, `feedback`. `feedback` turned out not to be
+   a separate store at all: it is a label with `source='feedback'` and weight 5, so the train-time
+   row-duplication blend becomes a query.
+
+   Reading the reference for this step also exposed a **dedup layer missing from step 3**: the
+   resolved Apply URL (`processed.app_canonical`). Without it a LinkedIn posting and the Greenhouse
+   row its Apply button resolves to are two rows in every feed. Added as a fourth layer, checked in
+   both directions. Migration `fccd4d3a84ff`.
 4. **De-personalise the harvester**: config from a union of user configs, query-set builder, fan-out
    budget, round-robin selection, plus the **per-user LinkedIn loop** on the user's own proxy
    credential and its visibility gate (`HARVESTER_PLAN.md` §5).
 5. **Persist embedding vectors on corpus rows**; route harvest embedding through `/embed/bulk`.
-6. **T1 tenant isolation** as soon as the first per-user table exists.
+6. ✅ **Done 2026-07-27. T1 tenant isolation** — landed with 3b's per-user repository rather than
+   later, per its own "as soon as the first per-user table exists" instruction. Two users,
+   overlapping jobs, every read path returns only the caller's rows: applied log, labels, scores.
+   Release blocker, now green.
 
 **Exit criteria:** the shared harvester fills a Postgres corpus with embeddings, on a schedule, with
 T1 + T2 green, and Ruben's account runs on it **alongside** his single-tenant stack (decision D6 —

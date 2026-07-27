@@ -9,8 +9,9 @@ personal, and cheap to compute. This package is the shared half of that split.
 |---|---|---|
 | [`keys.py`](keys.py) — `canonical_url`, `content_key` | ✅ **ported, parity-proven** | Faithful port of `job-search/pipeline/lib/store.py` |
 | [`repository.py`](repository.py) — `CorpusRepository` | ✅ **ported** | Dedup, ingest, embedding, retention. 14 behaviour tests |
+| [`ats.py`](ats.py) — `AtsRepository` | ✅ **ported** | Company tokens + ETag cache. The file lock is gone. 10 tests |
 | `filters/` — langfilter, workfilter, timefilter, salary | not started | Pure functions, lifted from `pipeline/lib/` |
-| Other stores (`ats_tokens`, `ats_etags`, `applied`, `labels`, `feedback`) | not started | Phase 1 step 3b |
+| Per-user stores (`applied`, `labels`, `feedback`) | ✅ **ported** | Live in [`libs/tenant`](../tenant/) — they are not corpus |
 
 ## What the repository does, and what it deliberately does not
 
@@ -75,12 +76,15 @@ a red test green is the one move that defeats the entire suite.
 
 ## The rules, and why each exists
 
-**Two dedup layers, because one is not enough.** The same job arrives as
+**Four dedup layers, because fewer is not enough.** The same job arrives as
 `linkedin.com/jobs/view/…` from the LinkedIn scrape and `boards.greenhouse.io/…` from the direct-ATS
 poll. URL equality cannot see that.
 
 - `canonical_url` — host lowercased and `www.`-stripped, the two Greenhouse hostnames folded,
   query/fragment/trailing slash dropped. Catches tracking noise and host variants.
+- **apply URL** — the resolved external Apply target. This is the layer the whole canonical scheme
+  exists for: a LinkedIn listing and the Greenhouse row its Apply button points at are the same job,
+  and nothing else can see that. Checked in **both** directions, since either side may arrive first.
 - `content_key` — normalised company + title + **location**. Catches the same role reposted across
   boards when no apply URL is resolvable.
 

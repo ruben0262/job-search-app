@@ -15,6 +15,7 @@ The split by file is by ownership, not by convenience:
 from __future__ import annotations
 
 from libs.db.base import Base
+from libs.db.models.ats import AtsEtag, AtsToken
 from libs.db.models.corpus import CorpusJob
 from libs.db.models.queue import CLAIM_TIMEOUT_MIN, JOB_STATES, LANES, MAX_ATTEMPTS, QueueJob
 from libs.db.models.tenant import LABEL_SOURCES, UserJobState, UserLabel, UserModel
@@ -36,6 +37,8 @@ __all__ = [
     "SECRET_KINDS",
     "TELEGRAM_STATUSES",
     "USER_STATUSES",
+    "AtsEtag",
+    "AtsToken",
     "Base",
     "CorpusJob",
     "QueueJob",

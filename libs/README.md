@@ -20,8 +20,9 @@ for a service's session, no knowing which container it runs in.
 
 | Package | State | What it is |
 |---|---|---|
-| [`db/`](db/) | ✅ **built** | SQLAlchemy models + Alembic migrations. 8 tables, applied to the live database |
-| [`corpus/`](corpus/) | empty | Dedup: canonical URL, content key, link normalisation. **Next up** — the `store.py` port, Phase 1 step 3 |
+| [`db/`](db/) | ✅ **built** | SQLAlchemy models + Alembic migrations. 11 tables, 3 revisions, applied to the live database |
+| [`corpus/`](corpus/) | ✅ **built** | Dedup keys (T2-pinned), corpus repository, ATS token/ETag state |
+| [`tenant/`](tenant/) | ✅ **built** | Per-user repository: job state, applied log, labels, feedback. **T1 green** |
 | [`contracts/`](contracts/) | empty | Pydantic models shared between services + JSON Schema export |
 | [`scoring/`](scoring/) | empty | `features.py` + rubric rendering. Phase 2 |
 | [`queue/`](queue/) | empty | Four-lane job queue: claim, retry, dead-letter. Phase 2 |
