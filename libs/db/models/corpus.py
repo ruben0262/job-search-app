@@ -60,7 +60,12 @@ class CorpusJob(Base):
     #    undeduplicated, which is the wrong direction to fail.
     url: Mapped[str] = mapped_column(Text, unique=True)
     canonical_url: Mapped[str | None] = mapped_column(Text)
-    content_key: Mapped[str | None] = mapped_column(String(64))
+    # Text, not String(64). `content_key` is a READABLE COMPOSITE - "company|title|location" - not
+    # a hash, and its length is a function of a job title somebody else wrote. A German posting
+    # ("osnatruck nutzfahrzeugservice|mitarbeiter buchhaltung in voll oder teilzeit|osnabruck")
+    # blew the bound on the first real harvest cycle. Same mistake as embedding_version: bounding
+    # something whose length is not ours to bound.
+    content_key: Mapped[str | None] = mapped_column(Text)
 
     # The resolved external "Apply" target, and its canonical form. This is a FOURTH dedup layer and
     # it is the one the whole canonical scheme was built for: the same job arrives as
@@ -99,7 +104,7 @@ class CorpusJob(Base):
     # The embedder's version contract, stored per row. A scorer whose artifact was trained against a
     # different (model, dim, version) must fail closed rather than score across vector spaces — the
     # discipline the embedder already enforces at its own boundary (PLATFORM_ARCHITECTURE.md §5).
-    embedding_model: Mapped[str | None] = mapped_column(String(128))
+    embedding_model: Mapped[str | None] = mapped_column(Text)
     embedding_dim: Mapped[int | None] = mapped_column(Integer)
     # Text, not String(32). The embedder's version is a COMPOSITE of everything that defines the
     # vector space - "BAAI/bge-base-en-v1.5|dim=768|norm=1" is already 36 characters, so the

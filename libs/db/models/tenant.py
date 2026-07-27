@@ -160,7 +160,8 @@ class UserModel(Base):
     feature_schema_version: Mapped[int] = mapped_column(Integer)
     profile_generation: Mapped[int] = mapped_column(Integer)
 
-    embedder_model: Mapped[str] = mapped_column(String(128))
+    # Text: a HuggingFace model id is third-party-derived and its length is not ours to bound.
+    embedder_model: Mapped[str] = mapped_column(Text)
     embedder_dim: Mapped[int] = mapped_column(Integer)
     # Text for the same reason as corpus.embedding_version: the composite version string is longer
     # than 32 characters for the model actually in production.

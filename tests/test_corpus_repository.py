@@ -353,3 +353,33 @@ def test_a_job_a_user_acted_on_is_never_trimmed(repo):
     s.expire_all()
 
     assert s.get(CorpusJob, job_id).description is not None
+
+
+def test_a_long_real_world_content_key_is_storable(repo):
+    """**Regression from the first real harvest cycle.**
+
+    `content_key` is a readable composite — "company|title|location" — not a hash, so its length is
+    a function of a job title somebody else wrote. This exact German posting blew a `String(64)`
+    bound on the first live run. German compound nouns are not an edge case; they are Tuesday.
+    """
+    r, s = repo
+    job_id = r.add(
+        url="https://www.arbeitnow.com/jobs/companies/osnatruck-nutzfahrzeugservice-gmbh/"
+            "mitarbeiter-buchhaltung-in-voll-oder-teilzeit-osnabruck-435649",
+        source="arbeitnow",
+        title="Mitarbeiter Buchhaltung (m/w/d) in Voll- oder Teilzeit",
+        company="OsnaTruck Nutzfahrzeugservice GmbH",
+        location="Osnabrück")
+    s.flush()
+
+    job = s.get(CorpusJob, job_id)
+    assert job.content_key and len(job.content_key) > 64
+
+
+def test_a_very_long_title_does_not_break_ingest(repo):
+    """No bound at all is the right answer here: any bound is a guess about someone else's data."""
+    r, s = repo
+    job_id = r.add(url=f"https://example.test/{uuid.uuid4().hex}", source="board",
+                   title="Senior " * 60 + "Engineer", company="A" * 300, location="B" * 300)
+    s.flush()
+    assert s.get(CorpusJob, job_id).content_key

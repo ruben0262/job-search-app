@@ -102,7 +102,19 @@ def harvest_lock(session: Session, *, key: int = HARVEST_LOCK_KEY):
         yield acquired
     finally:
         if acquired:
-            session.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": key})
+            try:
+                session.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": key})
+            except Exception:
+                # **Never let cleanup mask the failure that caused it.** If the cycle raised, the
+                # transaction is already aborted and this unlock raises
+                # `InFailedSqlTransaction` - which then propagates INSTEAD of the real error, so
+                # the log shows a lock problem and hides a schema one. That happened on the first
+                # real cycle and cost a run to diagnose.
+                #
+                # Swallowing it is safe: the advisory lock is session-scoped, so Postgres releases
+                # it when the connection closes regardless.
+                logger.debug("advisory unlock failed; the connection close will release it",
+                             exc_info=True)
 
 
 def _run_source(source: Source, cfg: dict, repo: AtsRepository) -> list[JobLink]:
