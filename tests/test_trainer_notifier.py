@@ -12,6 +12,7 @@ regression, and whether `httpx` posts correctly, are not this suite's business.
 """
 from __future__ import annotations
 
+import hashlib
 import io
 import logging
 import os
@@ -69,7 +70,10 @@ def _job(s, *, embedded: bool = True, version: str = VERSION) -> CorpusJob:
                     title="Backend Engineer", company="Acme",
                     description="Go, gRPC, Postgres. " * 20)
     if embedded:
+        # `text_sha256` and `embedding_dim` are not optional: the corpus has a CHECK constraint
+        # requiring a vector to carry the provenance that proves which text it was built from.
         job.embedding = struct.pack(f"<{DIM}f", *([0.1] * DIM))
+        job.text_sha256 = hashlib.sha256((job.description or "").encode()).hexdigest()
         job.embedding_model = "BAAI/bge-base-en-v1.5"
         job.embedding_dim = DIM
         job.embedding_version = version
