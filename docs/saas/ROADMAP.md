@@ -90,7 +90,13 @@ product twice.
 
    Execution of the per-user LinkedIn loop is **not** wired - it is an ordinary queue job and
    `libs/queue` is Phase 2. Nothing half-built runs.
-4b. **Lift `pipeline/sources/*` and the fetch layer** - the I/O half. `make_client()` stays the only
+4b. ✅ **Done 2026-07-27. The fetch layer.** `services/harvester/fetch.py` makes D3 structural: one
+   client factory, per-user leases, LinkedIn-only routing, `trust_env=False`, metered bytes, and
+   quarantine on consecutive failures. T13 is closed by it. `make_client()` is the only HTTP-client
+   factory, which is what keeps "this user's credential, for this user's fetch only" auditable rather
+   than hopeful.
+4c. **Lift `pipeline/sources/*`** — the ~3,551-line adapter port. Mechanical, but needs live
+   endpoints to verify, so it is its own step.
    HTTP-client factory, which is what keeps "this user's credential, for this user's fetch only"
    auditable rather than hopeful.
 5. **Persist embedding vectors on corpus rows**; route harvest embedding through `/embed/bulk`.

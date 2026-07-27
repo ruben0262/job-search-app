@@ -16,6 +16,55 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ## 2026-07-27
 
+### Step 4b - the fetch layer, where D3 stops being a policy and becomes structure
+
+`services/harvester/fetch.py` and `proxy_usage.py`. Decision D3 says a user's proxy credential is
+used strictly for their own fetches, never pooled. That is a claim about *every* outbound request the
+harvester makes, so it can only hold if there is exactly one way to make one - `make_client()` is
+that way.
+
+Three departures from the reference, all forced by multi-tenancy:
+
+- **The proxy comes from a lease, never the environment.** The reference reads `PROXY_URL` from env,
+  which is single-tenant by construction. There is no env fallback here on purpose.
+- **A client carries the id of the user it was built for**, so "was this credential used for someone
+  else's fetch" is an assertion rather than a code review.
+- **`PROXY_HOSTS=*` is gone.** Under per-user billing, proxy-everything would spend one user's
+  metered bandwidth on shared ATS fetches that work fine direct.
+
+`make_shared_client()` takes no lease parameter at all, so the shared loop cannot spend anyone's
+bandwidth even by mistake. Structural, not conventional.
+
+**A real bug the tests caught: `trust_env`.** The shared client set no mounts, so httpx defaulted to
+`trust_env=True` and would have honoured an ambient `HTTP_PROXY` - silently routing every user's
+shared traffic through one endpoint. That is the pooling D3 forbids, arriving through an environment
+variable nobody set deliberately, and it would have looked like it was working: jobs arrive, feeds
+populate, and the only symptom is one person's proxy bill. Now `trust_env=False` everywhere, with a
+test that sets the env vars and asserts they cannot leak in.
+
+**A second bug: the daily window.** `roll_daily_window` treated a null `usage_reset_at` as "the day
+has turned" and zeroed the counter, so the first lease of any credential handed back a spent cap.
+Null is initialisation, not a day boundary. Fixed, and the timezone case is now tested in both
+directions - a user east of UTC must reset on *their* midnight and must not reset on UTC's.
+
+### T13 and T1 closed
+
+**T13 is done, both halves.** The visibility half was already proven; the cross-use half - the more
+important one - now is: owner identity on the client, LinkedIn-only routing, redirects out of
+LinkedIn going direct, ambient proxy rejected, metering on every response including failures (the
+proxy bills on the wire, not on success), and quarantine on *consecutive* failures rather than
+cumulative, which would eventually quarantine every healthy user.
+
+**T1 is complete for every read path that exists.** Added config, secrets metadata and queue rows to
+the isolation coverage. Documents remain uncovered because `docgen` does not exist yet - that is
+named in the status table rather than left as an unexplained amber.
+
+Secrets have a metadata-only read path by design: `last_4` and timestamps, never ciphertext. There is
+deliberately no repository method that returns a secret value; the worker that needs a plaintext
+decrypts it in memory for one call and that path does not go through the repository.
+
+213 tests passing.
+
 ### Audit against the specs, and T9
 
 Checked what is built against `TEST_STRATEGY.md` and `GAPS_REVIEW.md` rather than against a feeling

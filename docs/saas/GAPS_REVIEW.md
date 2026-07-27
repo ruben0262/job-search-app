@@ -258,7 +258,7 @@ Designed and *built* are different things. This tracks the second, for the gaps 
 | **G5 migrations** | ✅ **closed** | Alembic from the first table, 4 revisions, no hand-applied DDL. CI proves `upgrade head` from empty and fails on model/migration drift |
 | **G7 timezones** | ✅ **closed** | `users.timezone` (IANA) + `TIMESTAMPTZ` everywhere, asserted against the live schema rather than the models |
 | **G14 non-corpus stores** | ✅ **closed** | `ats_tokens`, `ats_etags`, applied, labels, feedback all ported. The `ats_etags` file lock is gone — replaced by row-level upsert, with an interleaved-write test |
-| **G15 LinkedIn governor** | 🟡 **policy built, execution deferred** | Concurrency ceiling, jitter, and kill switch exist in `services/harvester/governor.py`; the visibility gate is enforced and tested. The per-user loop itself is an ordinary queue job and waits on `libs/queue` (Phase 2) |
+| **G15 LinkedIn governor** | 🟡 **policy + fetch layer built, loop deferred** | Concurrency ceiling, jitter and kill switch in `services/harvester/governor.py`; the visibility gate enforced; and `services/harvester/fetch.py` now makes D3 structural — one client factory, per-user leases, LinkedIn-only routing, `trust_env=False`, metered bytes, quarantine on consecutive failures. The loop that calls it is an ordinary queue job and waits on `libs/queue` (Phase 2) |
 | **G16 embedding cache key** | 🟡 **schema + repository built** | Vectors key on `text_sha256`, and `set_embedding()` refuses a vector whose digest no longer matches — the race where bulk embedding outlives its text. Routing harvest through `/embed/bulk` is step 5 |
 
 Two findings from building them, both recorded in `CHANGELOG.md`:

@@ -31,8 +31,18 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
+from libs.contracts.config import CONFIG_SCHEMA_VERSION
 from libs.corpus.repository import CorpusRepository
-from libs.db.models import CorpusJob, ProxyCredential, UserJobState, UserLabel
+from libs.db.models import (
+    CorpusJob,
+    ProxyCredential,
+    QueueJob,
+    User,
+    UserConfig,
+    UserJobState,
+    UserLabel,
+    UserSecret,
+)
 
 # The reference's SCORER_FEEDBACK_WEIGHT default. A user's explicit decision is worth more than the
 # LLM's guess at their taste, and this is the number that says how much more.
@@ -41,6 +51,16 @@ FEEDBACK_WEIGHT = 5.0
 # The reference maps its two explicit verdicts onto scores at these points, so a feedback row sits
 # unambiguously above/below the keep threshold when blended with LLM labels.
 APPLIED_SCORE, SKIPPED_SCORE = 90, 10
+
+
+@dataclass(frozen=True)
+class SecretMetadata:
+    """What a user may see about their own credential. Deliberately no value field."""
+
+    kind: str
+    last_4: str | None
+    validated_at: object
+    updated_at: object
 
 
 @dataclass(frozen=True)
@@ -139,6 +159,80 @@ class TenantRepository:
             select(func.count())
             .select_from(UserJobState)
             .where(UserJobState.user_id == user_id, UserJobState.applied_at.is_not(None))) or 0
+
+    # ── config ───────────────────────────────────────────────────────────────────────────────
+
+    def get_config(self, user_id: _uuid.UUID) -> dict | None:
+        """This user's config, or `None` if they have not completed one yet."""
+        return self._s.scalar(
+            select(UserConfig.config).where(UserConfig.user_id == user_id))
+
+    def save_config(self, user_id: _uuid.UUID, config: dict, *,
+                    schema_version: int = CONFIG_SCHEMA_VERSION) -> None:
+        """Replace this user's config.
+
+        Validation belongs to `libs.contracts.config` and happens before this is called — the
+        repository stores what it is given. Keeping validation out of the write path means there is
+        exactly one definition of "valid", rather than a second, weaker one here that a caller might
+        satisfy instead.
+        """
+        self._s.execute(
+            pg_insert(UserConfig)
+            .values(user_id=user_id, config=config, schema_version=schema_version)
+            .on_conflict_do_update(
+                index_elements=[UserConfig.user_id],
+                set_={"config": config, "schema_version": schema_version,
+                      "updated_at": func.now()}))
+
+    def active_configs(self) -> dict[_uuid.UUID, dict]:
+        """Every active user's config, for the harvester's query-set fold.
+
+        **The one method here that is legitimately not scoped to a single user** — the shared
+        harvest loop's whole purpose is to serve everyone at once, and the result feeds
+        `build_query_set`, which attributes each query back to the users who wanted it.
+
+        It is still not a tenant leak: configs are *inputs* to a shared fetch, and the rows it
+        returns never reach another user's feed. Named plainly so the exception is visible rather
+        than hidden behind an optional `user_id=None` parameter, which is exactly the shape
+        `TENANT_SAFETY.md` §1.3 warns about.
+        """
+        rows = self._s.execute(
+            select(UserConfig.user_id, UserConfig.config)
+            .join(User, User.id == UserConfig.user_id)
+            .where(User.active.is_(True), User.status == "active"))
+        return dict(rows.all())
+
+    # ── secrets: metadata only, never values ─────────────────────────────────────────────────
+
+    def secret_metadata(self, user_id: _uuid.UUID) -> list[SecretMetadata]:
+        """What the UI may show about this user's credentials. **Never the ciphertext.**
+
+        Secrets are write-only through the API (`TENANT_SAFETY.md` §2): the response carries
+        `last_4` and timestamps so a user can recognise which key they saved, and nothing that could
+        reconstruct it. There is deliberately no repository method that returns `ciphertext` — the
+        worker that needs a plaintext decrypts it in memory for the duration of one call, and that
+        path does not go through here.
+        """
+        rows = self._s.execute(
+            select(UserSecret.kind, UserSecret.last_4, UserSecret.validated_at,
+                   UserSecret.updated_at)
+            .where(UserSecret.user_id == user_id)
+            .order_by(UserSecret.kind))
+        return [SecretMetadata(*r) for r in rows]
+
+    # ── queue ────────────────────────────────────────────────────────────────────────────────
+
+    def pending_jobs(self, user_id: _uuid.UUID, lane: str | None = None) -> list[QueueJob]:
+        """This user's queued work. Read-only; claiming belongs to `libs.queue` (Phase 2).
+
+        Exists now so the dashboard can answer "is anything happening?" and so T1 can prove queue
+        rows are tenant-scoped from the first row rather than once a worker exists.
+        """
+        stmt = select(QueueJob).where(
+            QueueJob.user_id == user_id, QueueJob.state.in_(("ready", "claimed")))
+        if lane is not None:
+            stmt = stmt.where(QueueJob.lane == lane)
+        return list(self._s.scalars(stmt.order_by(QueueJob.run_after)))
 
     # ── the LinkedIn visibility gate ─────────────────────────────────────────────────────────
 

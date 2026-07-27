@@ -155,6 +155,97 @@ def test_training_set_excludes_other_generations_and_thin_descriptions(ctx):
     assert got == [current]
 
 
+# ── config, secrets, queue ────────────────────────────────────────────────────────────────────
+
+def test_config_round_trips_and_records_its_schema_version(ctx):
+    """`schema_version` is what makes a future shape change migratable rather than guesswork."""
+    from libs.contracts.config import CONFIG_SCHEMA_VERSION
+    from libs.db.models import UserConfig
+
+    t, _, s = ctx
+    u = _user(s)
+    t.save_config(u.id, {"keywords": ["python"], "locations": ["london"]})
+    s.flush()
+
+    assert t.get_config(u.id) == {"keywords": ["python"], "locations": ["london"]}
+    assert s.get(UserConfig, u.id).schema_version == CONFIG_SCHEMA_VERSION
+
+    t.save_config(u.id, {"keywords": ["golang"]})
+    s.flush()
+    assert t.get_config(u.id) == {"keywords": ["golang"]}, "save must replace, not accumulate"
+
+
+def test_a_user_without_a_config_reads_as_none_not_as_empty(ctx):
+    """`None` and `{}` mean different things: not onboarded yet, versus onboarded with nothing."""
+    t, _, s = ctx
+    assert t.get_config(_user(s).id) is None
+
+
+def test_only_active_users_configs_reach_the_harvest_fold(ctx):
+    """A suspended or unverified account must not consume harvest budget.
+
+    `TENANT_SAFETY.md` §5: nothing before email verification touches a paid resource, and a signup
+    flood must cost nothing.
+    """
+    t, _, s = ctx
+    active = _user(s)
+    active.active, active.status = True, "active"
+    inactive = _user(s)
+    inactive.active, inactive.status = False, "pending_verification"
+    suspended = _user(s)
+    suspended.active, suspended.status = True, "suspended"
+
+    for u in (active, inactive, suspended):
+        t.save_config(u.id, {"keywords": ["python"]})
+    s.flush()
+
+    configs = t.active_configs()
+    assert active.id in configs
+    assert inactive.id not in configs
+    assert suspended.id not in configs
+
+
+def test_secret_metadata_never_exposes_the_value(ctx):
+    """Secrets are write-only through the API (`TENANT_SAFETY.md` §2).
+
+    The response carries enough to recognise which key was saved and nothing that could reconstruct
+    it. There is deliberately no repository method returning ciphertext.
+    """
+    from libs.db.models import UserSecret
+
+    t, _, s = ctx
+    u = _user(s)
+    s.add(UserSecret(user_id=u.id, kind="claude_api", ciphertext=b"SECRET-CIPHERTEXT",
+                     nonce=b"nonce", last_4="ab12"))
+    s.flush()
+
+    (meta,) = t.secret_metadata(u.id)
+    assert meta.kind == "claude_api"
+    assert meta.last_4 == "ab12"
+
+    rendered = repr(meta) + str(meta)
+    assert "SECRET-CIPHERTEXT" not in rendered
+    assert not hasattr(meta, "ciphertext")
+    assert not hasattr(meta, "nonce")
+
+
+def test_pending_jobs_lists_only_live_queue_rows(ctx):
+    """Done and dead jobs are history, not pending work."""
+    from libs.db.models import QueueJob
+
+    t, _, s = ctx
+    u = _user(s)
+    s.add_all([
+        QueueJob(lane="train", user_id=u.id, dedup_key="retrain", payload={}),
+        QueueJob(lane="notify", user_id=u.id, dedup_key="due", payload={}, state="done"),
+        QueueJob(lane="docgen", user_id=u.id, dedup_key="cv", payload={}, state="dead"),
+    ])
+    s.flush()
+
+    assert [j.lane for j in t.pending_jobs(u.id)] == ["train"]
+    assert t.pending_jobs(u.id, lane="notify") == []
+
+
 # ── T1: tenant isolation. Release blocker. ────────────────────────────────────────────────────
 
 def test_one_users_applied_log_never_contains_anothers(ctx):
@@ -205,3 +296,50 @@ def test_scores_are_per_user_on_the_same_shared_job(ctx):
     assert s.get(UserJobState, (alice.id, shared_job)).score == pytest.approx(0.95)
     assert s.get(UserJobState, (bob.id, shared_job)).score == pytest.approx(0.10)
     assert s.get(UserJobState, (alice.id, shared_job)).scored_model_version == 3
+
+
+def test_one_users_config_is_never_readable_by_another(ctx):
+    """T1: config read path."""
+    t, _, s = ctx
+    alice, bob = _user(s), _user(s)
+    t.save_config(alice.id, {"keywords": ["alice-secret-term"]})
+    t.save_config(bob.id, {"keywords": ["bob-term"]})
+    s.flush()
+
+    assert t.get_config(alice.id) == {"keywords": ["alice-secret-term"]}
+    assert t.get_config(bob.id) == {"keywords": ["bob-term"]}
+
+
+def test_one_users_secrets_are_never_listed_for_another(ctx):
+    """T1: secrets read path. These are strangers' live credentials."""
+    from libs.db.models import UserSecret
+
+    t, _, s = ctx
+    alice, bob = _user(s), _user(s)
+    s.add_all([
+        UserSecret(user_id=alice.id, kind="claude_api", ciphertext=b"a", nonce=b"n", last_4="aaaa"),
+        UserSecret(user_id=bob.id, kind="claude_api", ciphertext=b"b", nonce=b"n", last_4="bbbb"),
+        UserSecret(user_id=bob.id, kind="proxy", ciphertext=b"b2", nonce=b"n", last_4="cccc"),
+    ])
+    s.flush()
+
+    assert [m.last_4 for m in t.secret_metadata(alice.id)] == ["aaaa"]
+    assert sorted(m.last_4 for m in t.secret_metadata(bob.id)) == ["bbbb", "cccc"]
+
+
+def test_one_users_queue_is_never_visible_to_another(ctx):
+    """T1: queue read path. Queue rows carry user_id and payloads can name their work."""
+    from libs.db.models import QueueJob
+
+    t, _, s = ctx
+    alice, bob = _user(s), _user(s)
+    s.add_all([
+        QueueJob(lane="train", user_id=alice.id, dedup_key="retrain", payload={"who": "alice"}),
+        QueueJob(lane="train", user_id=bob.id, dedup_key="retrain", payload={"who": "bob"}),
+        QueueJob(lane="docgen", user_id=bob.id, dedup_key="cv-1", payload={"who": "bob"}),
+    ])
+    s.flush()
+
+    assert [j.payload["who"] for j in t.pending_jobs(alice.id)] == ["alice"]
+    assert {j.payload["who"] for j in t.pending_jobs(bob.id)} == {"bob"}
+    assert len(t.pending_jobs(bob.id)) == 2
