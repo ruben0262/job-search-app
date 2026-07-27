@@ -1,6 +1,6 @@
 # embedder — Design Plan
 
-*Lives at `job-search-app/embedder/docs/PLAN.md`. This is the maintained copy; the one in
+*Lives at `job-search-app/services/embedder/docs/PLAN.md`. This is the maintained copy; the one in
 `job-search/docs/saas/EMBEDDER_SHARING_PLAN.md` is the historical original and is not kept current.*
 
 ## 1. Problem

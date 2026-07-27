@@ -1,0 +1,57 @@
+# Root tooling config.
+#
+# Deliberately NOT a distributable package. Services deploy as container images built from their
+# own requirements.txt (CODE_STRUCTURE.md §5) — there is nothing here to `pip install`. This file
+# exists so the boundary linter, pytest, and ruff have one home instead of four dotfiles.
+#
+# Python 3.12 is the target: it is what the gateway image is built on (python:3.12-slim), and the
+# tree should not depend on a newer interpreter than the thing that actually ships.
+
+# ---------------------------------------------------------------------------------------------
+# The rule that prevents spaghetti (CODE_STRUCTURE.md §1).
+#
+# A rule a linter checks is a rule that survives a late night. A rule in a document is a
+# suggestion. `lint-imports` runs in CI on every push.
+# ---------------------------------------------------------------------------------------------
+[tool.importlinter]
+root_packages = ["libs", "services"]
+
+[[tool.importlinter.contracts]]
+name = "services may not import each other"
+type = "independence"
+# Services talk over HTTP or the queue, never by import. The moment services/notifier imports
+# services/scorer you have one program in eight folders — independently deployable on paper and
+# coupled in practice.
+#
+# Every service in CODE_STRUCTURE.md §2 is listed here from the start, including ones that are
+# still empty packages, so a new service is covered by the contract the moment it has code in it
+# rather than whenever someone remembers to add it.
+modules = [
+    "services.api",
+    "services.harvester",
+    "services.scorer",
+    "services.trainer",
+    "services.notifier",
+    "services.docgen",
+    "services.capture",
+    "services.embedder",
+]
+
+[[tool.importlinter.contracts]]
+name = "libs must not import services"
+type = "forbidden"
+source_modules = ["libs"]
+forbidden_modules = ["services"]
+
+[tool.pytest.ini_options]
+# Left permissive on purpose: each component's tests are runnable from its own directory (the
+# embedder's README documents `pytest tests/` from services/embedder), and cross-service tests
+# live in the root tests/. Naming no `testpaths` keeps both true.
+#
+# importlib import mode so two test files with the same basename in different components cannot
+# collide — inevitable once services/*/tests/ and tests/ both exist.
+addopts = "-ra --import-mode=importlib"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100

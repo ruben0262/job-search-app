@@ -1,0 +1,45 @@
+# CI — boundary contracts and the tests that need no live stack.
+#
+# Wired on the first commit of the platform layout, deliberately: import boundaries are trivial to
+# establish now and painful to retrofit once eight services import each other
+# (CODE_STRUCTURE.md §1, ROADMAP.md Phase 1 step 0a).
+#
+# Python 3.12 matches the gateway image (python:3.12-slim). CI should not be the only place the
+# tree runs on a different interpreter than production.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  boundaries:
+    name: import boundaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      # Contracts live in pyproject.toml: services may not import each other, libs may not import
+      # services. Failing here is the point — a violation is cheap to fix the day it is written.
+      - run: lint-imports --verbose
+
+  embedder-tests:
+    name: embedder (no live stack)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r services/embedder/tests/requirements.txt
+      # EMBEDDER_URL is deliberately unset: the integration tier (health shape, batch invariance,
+      # priority lane, parity) needs a running TEI backend and stays a VPS-side gate. What runs
+      # here is the tier that needs nothing — the gateway against a stubbed TEI, and fail-closed
+      # behaviour when the backend is dead.
+      - run: pytest services/embedder/tests -v

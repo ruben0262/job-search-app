@@ -108,7 +108,11 @@ hold for the parts of this system that would run on the web backend.
 
 Two fundamentally different models, with very different risk profiles:
 
-### Model 1 — Automate what Option B already does (RECOMMENDED for v1)
+> **REJECTED 2026-07-26** — see `PLATFORM_ARCHITECTURE.md` §2. Measured grounds: ~1.9GB scorer
+> RSS per stack, N x proxy GB for identical pages, 44GB vs 0.87GB storage at 50 users, and no
+> cold-start corpus. The adopted design is a shared harvest core with a per-user tail.
+
+### Model 1 — Automate what Option B already does (~~RECOMMENDED for v1~~ REJECTED)
 Keep the current architecture: **one isolated Docker Compose project per user** (exactly
 `FRIENDS_ROLLOUT.md`'s Option B), but have the web app's backend provision it automatically
 instead of a human running `docker compose -p <user> up -d` by hand. Each user's containers,

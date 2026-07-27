@@ -1,0 +1,11 @@
+# Tooling that runs against the whole tree — not shipped in any image.
+#
+# Per-service runtime dependencies stay in services/<name>/requirements.txt (CODE_STRUCTURE.md
+# §5): docgen is the only image with Chrome, trainer/scorer the only ones with scikit-learn, and
+# keeping that split is what makes api and notifier fast to rebuild.
+#
+#   pip install -r requirements-dev.txt
+
+import-linter>=2.0        # enforces the boundary contracts in pyproject.toml — `lint-imports`
+pytest>=8.0
+ruff>=0.8

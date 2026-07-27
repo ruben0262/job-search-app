@@ -4,8 +4,8 @@
 > It was written before any code existed and does not reflect what was built. The maintained plan —
 > with the measured numbers, the decisions that reversed (bge-small → bge-base), and the design
 > corrections the VPS run forced (worker pools, batch ceilings, backend-verified health) — is
-> [`embedder/docs/PLAN.md`](../../embedder/docs/PLAN.md). The service itself lives in
-> [`embedder/`](../../embedder/) and is deployed.
+> [`services/embedder/docs/PLAN.md`](../../services/embedder/docs/PLAN.md). The service itself
+> lives in [`services/embedder/`](../../services/embedder/) and is deployed.
 
 **Origin:** came out of a live incident on the shared VPS (see `andras-job-search/docs/CHANGELOG.md`,
 2026-07-24) — running multiple job-search instances side by side (this instance + a friend's
