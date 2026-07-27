@@ -121,8 +121,11 @@ def test_a_user_with_no_location_still_gets_queries():
 def test_the_per_user_keyword_cap_is_enforced_at_the_fold():
     """The cap is on the user's keywords — the number the form shows them — not on the cross product."""
     user = _uid()
+    # More terms than the cap, derived from it — a literal here would silently stop testing the cap
+    # the moment the cap moved, which is exactly what happened when it went from 5 to 25.
+    over_cap = HARVEST_MAX_QUERIES_PER_USER + 5
     qs = build_query_set(
-        {user: _config([f"term{i}" for i in range(20)], ["london"])}, ["linkedin"])
+        {user: _config([f"term{i}" for i in range(over_cap)], ["london"])}, ["linkedin"])
     assert len(qs) == HARVEST_MAX_QUERIES_PER_USER
 
 

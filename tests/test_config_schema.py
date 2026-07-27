@@ -64,10 +64,14 @@ def test_a_config_with_no_keywords_is_rejected():
 # ── bounds are rejections, never silent clamps ────────────────────────────────────────────────
 
 def test_too_many_keywords_is_rejected_not_truncated():
-    """The cap is 5 (TENANT_SAFETY.md §3). Truncating to 5 would silently drop terms the user chose
-    and leave them wondering why a search they configured never returns anything."""
+    """Truncating would silently drop terms the user chose, leaving them wondering why a search
+    they configured never returns anything.
+
+    Derived from the constant, not a literal. An earlier version hardcoded 6 against a cap of 5, so
+    raising the cap to 25 turned a real assertion into one that passed by accident.
+    """
     with pytest.raises(ValidationError) as exc:
-        UserConfigSchema(keywords=[f"term{i}" for i in range(6)])
+        UserConfigSchema(keywords=[f"term{i}" for i in range(MAX_KEYWORDS_PER_USER + 1)])
     assert "keywords" in str(exc.value)
 
 
