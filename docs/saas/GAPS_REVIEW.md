@@ -248,3 +248,25 @@ it no longer represents. Key on `text_sha256`.
 
 **All blocking gaps are now designed.** The four still open (G8, G9, G11, G12) are small, well
 understood, and belong inside their phase's implementation rather than in a document of their own.
+
+## Implementation status — audited 2026-07-27
+
+Designed and *built* are different things. This tracks the second, for the gaps Phase 1 owns.
+
+| Gap | Built? | Evidence |
+|---|---|---|
+| **G5 migrations** | ✅ **closed** | Alembic from the first table, 4 revisions, no hand-applied DDL. CI proves `upgrade head` from empty and fails on model/migration drift |
+| **G7 timezones** | ✅ **closed** | `users.timezone` (IANA) + `TIMESTAMPTZ` everywhere, asserted against the live schema rather than the models |
+| **G14 non-corpus stores** | ✅ **closed** | `ats_tokens`, `ats_etags`, applied, labels, feedback all ported. The `ats_etags` file lock is gone — replaced by row-level upsert, with an interleaved-write test |
+| **G15 LinkedIn governor** | 🟡 **policy built, execution deferred** | Concurrency ceiling, jitter, and kill switch exist in `services/harvester/governor.py`; the visibility gate is enforced and tested. The per-user loop itself is an ordinary queue job and waits on `libs/queue` (Phase 2) |
+| **G16 embedding cache key** | 🟡 **schema + repository built** | Vectors key on `text_sha256`, and `set_embedding()` refuses a vector whose digest no longer matches — the race where bulk embedding outlives its text. Routing harvest through `/embed/bulk` is step 5 |
+
+Two findings from building them, both recorded in `CHANGELOG.md`:
+
+1. **A dedup layer was missing from the first port.** The reference matches on the resolved *Apply
+   URL* (`processed.app_canonical`) as well as the job URL. Without it, a LinkedIn posting and the
+   Greenhouse row its Apply button resolves to are two rows in every feed. Added as a fourth layer,
+   checked in both directions.
+2. **The per-user keyword cap was written twice** — a literal in the config schema and a constant in
+   the harvester — which is how limits drift apart. Moved into `libs/contracts`, the only package
+   both may import from, since `libs` must never import a service.

@@ -27,10 +27,15 @@ from dataclasses import dataclass
 from typing import NamedTuple
 from uuid import UUID
 
+from libs.contracts.config import MAX_KEYWORDS_PER_USER
+
 # Fan-out budget (HARVESTER_PLAN.md §3). Unbounded, 50 users × 5 terms × 3 sources = 750
 # queries/cycle: a ban, a bandwidth bill, and a 15-minute cycle that takes an hour.
 HARVEST_MAX_QUERIES_PER_CYCLE = 60
-HARVEST_MAX_QUERIES_PER_USER = 5
+
+# Imported, not redefined. The same cap bounds the config form, and a second copy here is how the
+# two drift: raise one and the other silently accepts terms it will never serve.
+HARVEST_MAX_QUERIES_PER_USER = MAX_KEYWORDS_PER_USER
 
 # Coarse buckets, so a user wanting 24h and one wanting 72h share the 72h fetch and the 24h user
 # filters down locally. Fetching each exact hour figure separately would multiply the query set for

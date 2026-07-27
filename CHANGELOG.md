@@ -16,6 +16,46 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ## 2026-07-27
 
+### Audit against the specs, and T9
+
+Checked what is built against `TEST_STRATEGY.md` and `GAPS_REVIEW.md` rather than against a feeling
+that things are on track. Status is now recorded next to each spec — no fourth place tracking state.
+
+**The audit found a real miss: T9 had no tests.** `libs/contracts/config.py` shipped in the previous
+commit and the config schema was never tested, despite T9 scoring 7/10 as "primary onboarding
+failure mode". `TEST_STRATEGY.md` §4's ordering rule exists precisely to stop that; it was followed
+for T2 and T1 and not here. Now 34 tests, including the seam where a *validated* config actually
+drives the harvester — testing the schema and the query-set builder separately would have left the
+join between them unproven, and that join is where a renamed field silently produces zero queries.
+
+**Writing that seam test found a second problem: the per-user keyword cap was defined twice** — a
+literal in the schema and a constant in `services/harvester`. Two definitions of one rule is how
+limits drift: raise one and the other silently accepts terms it will never serve. The first instinct
+was to write a test asserting the two numbers agree; the right fix was to remove the duplication.
+It moved to `libs/contracts`, which is the **only** package both may import from, since `libs` must
+never import a service. At Phase 3 it becomes a row in `plans.limits` and the seam is unchanged.
+
+Honest status carried into the docs:
+
+- **T1 is partial, not done.** Scores, labels, applied, and cascade completeness are covered;
+  config, secrets, queue, and documents are not, because those read paths do not exist yet. It is
+  the release blocker and must be finished before launch.
+- **T13 is half done.** The visibility half is proven — no healthy credential, no LinkedIn rows,
+  per-user on one shared row. The "credential never cross-used" half needs the fetch layer, and is
+  the more important half.
+- **G5, G7, G14 closed. G15 and G16 are policy-and-schema built, execution deferred** to the queue
+  (Phase 2) and step 5 respectively.
+
+Anti-flake compliance re-checked against §2: no `sleep`, no real network, every database test in a
+rolled-back transaction, seeded or injectable RNG wherever anything samples, no wall-clock
+assertions, real Postgres 17 rather than SQLite.
+
+Infrastructure: **4 GB swap is live on the VPS** (`swappiness=10`, persistent in fstab), which
+closes the risk raised when TEI's CPU ceiling was raised on a box where memory contention was an
+OOM-kill rather than a slowdown.
+
+173 tests passing.
+
 ### Step 4a - the harvester's governor, before the harvester
 
 Phase 1 step 4, split: the deterministic half now, the source adapters as 4b. Same fault line that

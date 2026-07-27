@@ -30,6 +30,19 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 # migration can read old rows and know what they meant, instead of guessing.
 CONFIG_SCHEMA_VERSION = 1
 
+# The per-user search-term cap (`TENANT_SAFETY.md` §3, `HARVESTER_PLAN.md` §3).
+#
+# **It lives here, in libs, because two things need it and they cannot share a definition anywhere
+# else.** The form and the server validate against it, and the harvester's fold enforces it when
+# spending the fan-out budget. It was briefly duplicated — a literal here and a constant in
+# `services/harvester` — which is exactly how a rule drifts: raise one and the other silently
+# accepts terms it will never serve. `libs/contracts` is the only home both may import from, since
+# `libs` must never import a service.
+#
+# At Phase 3 this becomes a row in `plans.limits` rather than a constant, so a paid tier is an
+# INSERT rather than a migration plus an audit of every hardcoded limit. The seam is the same.
+MAX_KEYWORDS_PER_USER = 5
+
 
 class RemotePolicy(StrEnum):
     REMOTE_ONLY = "remote_only"
@@ -118,9 +131,9 @@ class UserConfigSchema(BaseModel):
 
     model_config = ConfigDict(extra="forbid", use_enum_values=True)
 
-    # The fan-out budget's per-user hard cap is 5 (HARVESTER_PLAN.md §3). Enforcing it here rather
-    # than only at harvest time means a user is told at the form, not silently under-served later.
-    keywords: list[str] = Field(min_length=1, max_length=5)
+    # Enforced here rather than only at harvest time, so a user is told at the form instead of
+    # being silently under-served later.
+    keywords: list[str] = Field(min_length=1, max_length=MAX_KEYWORDS_PER_USER)
     exclude_keywords: list[str] = Field(default_factory=list, max_length=10)
 
     locations: list[Location] = Field(default_factory=list, max_length=5)
