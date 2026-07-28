@@ -358,6 +358,12 @@ a real person who has not seen the product, and watch without helping.
   The dumps therefore cover a bad migration, a dropped table and an operator mistake, and do not
   cover disk or host loss. Written down rather than left implied, because an accepted risk nobody
   recorded is one somebody later mistakes for an oversight.
+- ✅ **Every service containerised — done 2026-07-28.** `api`, `notifier`, `scorer`, `trainer` and
+  `cloudflared`, behind a `full` compose profile so a bare `up -d` never starts delivery by
+  accident. The API publishes **no port**: the tunnel is the only way in (D7).
+  A **`service-deps` CI matrix** installs each service's requirements alone and imports its
+  entrypoint — written after the same missing-dependency bug shipped three times, and it caught the
+  third within a minute of existing.
 - **Measure capture cost first** (`PLATFORM_ARCHITECTURE.md` §10.10) — it is the first spend a
   user sees, on a free plan, on their own key.
 - Onboard 3–5 **invited** users. Quotas on from day one.

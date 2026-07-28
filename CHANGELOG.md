@@ -16,6 +16,26 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ## 2026-07-28
 
+### Two deployment bugs the containers found, and the drill did not
+
+Both were invisible until something actually ran in a container.
+
+**Artifact paths do not survive leaving the host that wrote them.** `models.path` records an
+absolute path from the process that trained the model — a script on the host — while the reader is
+a container with the artifacts mounted somewhere else. The scorer crash-looped on `FileNotFoundError`
+for a path that was perfectly correct on the machine that produced it. The filename is now the
+identity and `MODEL_DIR` is the location; a stored path that does exist is still used unchanged, so
+host-side scripts keep working.
+
+**The restore drill did not catch this**, and it is worth saying why: it checks that a `models` row
+is servable — the version columns agree — not that the file behind it resolves. On a restore to a
+new host it would have reported a healthy platform that could not score. Worth fixing in the drill.
+
+**`:?` in compose blocks every command, not just the service that needs it.** A required
+`TUNNEL_TOKEN` made `up scorer` fail with a message about cloudflared, twice. The rule now written
+down: `:?` only where absence is *silently* dangerous — a worker that starts without `SECRETS_KEK`
+claims jobs and dead-letters every one — and `:-` where the process fails loudly on its own.
+
 ### A CI job that installs each service alone and imports it
 
 The same bug shipped three times in one day: `httpx` missing from `api`, then `cryptography` and
