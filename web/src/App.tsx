@@ -21,6 +21,7 @@ import { ProcessPage } from "./pages/ProcessPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { SignIn } from "./pages/SignIn";
 import { Verify } from "./pages/Verify";
+import { ThemeToggle } from "./theme";
 
 function useHash(): string {
   const [hash, setHash] = useState(() => window.location.hash.slice(1) || "/");
@@ -106,6 +107,7 @@ function Nav({ current }: { current: string }) {
           {label}
         </a>
       ))}
+      <ThemeToggle />
     </nav>
   );
 }

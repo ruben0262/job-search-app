@@ -4,6 +4,21 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Job search</title>
+    <script>
+      // Before first paint, deliberately. A React effect runs after the first frame, so a
+      // dark-mode viewer would see one white flash on every single load.
+      (function () {
+        try {
+          var choice = localStorage.getItem("theme");
+          if (choice !== "light" && choice !== "dark") {
+            choice = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+          }
+          document.documentElement.setAttribute("data-theme", choice);
+        } catch (e) {
+          /* Private mode, or storage disabled. The CSS media query still gives a sane default. */
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -16,6 +16,25 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ## 2026-07-28
 
+### Monochrome, with a theme toggle
+
+Black, white and grey. Two colours survive — a red for errors, a green for a score — and both mean
+one thing each, which is why they read instantly; a red among six other hues is decoration.
+
+**Light and dark on every page**, including signed-out ones. Three states rather than two: `light`,
+`dark`, and unset, with unset the default so a dark-system viewer gets dark without being asked.
+Pressing the toggle leaves unset permanently — a three-way control is a puzzle in a corner nobody
+wanted to solve.
+
+**The theme attribute is written before first paint** by a snippet in `index.html`. A React effect
+runs after the first frame, so a dark-mode viewer would have seen one white flash on every load —
+the detail that makes the difference between a toggle that feels built in and one that feels bolted
+on. Transitions are colour-only at a single 140 ms duration, and `prefers-reduced-motion` removes
+them.
+
+Andras's four candidate-profile files imported alongside his documents: nine documents, 204,388
+characters.
+
 ### Both reference owners' documents imported
 
 `import_documents.py` — everything the upload form does, for a folder: same extractor, same content

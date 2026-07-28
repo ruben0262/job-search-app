@@ -7,6 +7,7 @@
 import { useEffect, useState } from "react";
 
 import { ApiError, api } from "../api";
+import { ThemeToggle } from "../theme";
 import { Card } from "../ui";
 
 export function Verify({ onDone }: { onDone: () => void }) {
@@ -34,6 +35,7 @@ export function Verify({ onDone }: { onDone: () => void }) {
 
   return (
     <main className="wizard">
+      <ThemeToggle floating />
       <Card title="Email confirmation">
         <p>{message}</p>
         <a href="#/">

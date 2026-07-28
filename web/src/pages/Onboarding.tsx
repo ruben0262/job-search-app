@@ -12,6 +12,7 @@
 import { useState } from "react";
 
 import { api, type OnboardingState } from "../api";
+import { ThemeToggle } from "../theme";
 import { Card, Error, useAction } from "../ui";
 import { ClaudeStep, ProxyStep, TelegramStep } from "./onboarding/Credentials";
 import { ConfigStep } from "./onboarding/ConfigStep";
@@ -43,6 +44,7 @@ export function Onboarding({
 
   return (
     <main className="wizard">
+      <ThemeToggle floating />
       <h1>Set up your account</h1>
       <p className="muted">
         Seven short steps. Nothing here costs anything or calls a model — that comes later, when you

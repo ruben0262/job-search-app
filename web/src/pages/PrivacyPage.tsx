@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 
 import { api, type Consent } from "../api";
 import { Card } from "../ui";
+import { ThemeToggle } from "../theme";
 
 export function PrivacyPage() {
   const [disclosure, setDisclosure] = useState<Consent["disclosure"] | null>(null);
@@ -24,6 +25,7 @@ export function PrivacyPage() {
 
   return (
     <main className="wizard">
+      <ThemeToggle floating />
       <h1>Who sees your data</h1>
       <p className="muted small">Version {disclosure.version}</p>
 

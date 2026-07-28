@@ -21,6 +21,24 @@ npm run build    # tsc --noEmit, then vite build
 | `src/pages/{Dashboard,Feed,Process,Settings,Privacy,Verify}Page.tsx` | after signup |
 | `src/ui.tsx` | the ten components a library would have given us |
 
+## Look
+
+**Black, white, grey.** Two colours exist in the whole palette — a red for errors and a green for a
+score — and both mean exactly one thing, which is why they read instantly. Everything structural is
+a step on one grey ramp. Banners are told apart by a left rule and their words rather than by a
+fill, because three coloured blocks on one page is a traffic light nobody reads.
+
+**Light and dark, with a toggle on every page** including the ones you reach signed out. Three
+states, not two: `light`, `dark`, and *unset* — unset is the default, so somebody whose system is
+dark gets dark without being asked. Pressing the toggle leaves unset permanently; there is no way
+back to "follow the system", because a three-way control is a puzzle in a corner nobody wanted.
+
+**The attribute is set before first paint** by a snippet in `index.html`, not by a React effect. An
+effect runs after the first frame, so a dark-mode viewer would see one white flash on every load.
+
+Transitions are colour-only, 140 ms, one duration for everything — different speeds on one page
+read as jitter — and `prefers-reduced-motion` turns them off entirely.
+
 **No component library and no router.** This is a wizard plus four screens: `react-router` would be
 more configuration than routing, and a component library would be a build-time dependency and a lot
 of generated markup for markup that is already written. Two runtime dependencies, `react` and
