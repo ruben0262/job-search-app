@@ -342,9 +342,14 @@ a real person who has not seen the product, and watch without helping.
   failure this whole section exists to prevent. Admin is `ADMIN_EMAILS`, not a column: granting it
   is a deploy, and a boolean would be one UPDATE away from privilege escalation audited in the
   database it grants access to. Non-admins get **404, not 403**.
-- **Still to do:** transactional email is built (`libs/mail`) but unproven end to end, and backup
-  with a **completed restore drill** has not started. Onboarding people before that means their
-  failures are invisible to everyone including them.
+- ✅ **Backup with a completed restore drill — done 2026-07-28.** Nightly `pg_dump`, verified as it
+  is written, 30-day retention, **and the KEK deliberately outside it** — `backup.service` cannot
+  even read the key, which is the surest way to keep a dump and its key apart.
+  `restore_drill.py` **passed against a real 20 MB backup**: every row count matched, a stored
+  credential decrypted with the separately-held KEK, and both models came back servable. It found a
+  bug doing it, which is the argument for having a drill at all.
+- **Still to do:** transactional email is built (`libs/mail`) but unproven end to end, and off-box
+  storage for the dumps — they are on the same disk as the database they protect.
 - **Measure capture cost first** (`PLATFORM_ARCHITECTURE.md` §10.10) — it is the first spend a
   user sees, on a free plan, on their own key.
 - Onboard 3–5 **invited** users. Quotas on from day one.

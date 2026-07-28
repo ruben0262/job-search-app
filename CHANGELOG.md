@@ -16,6 +16,32 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ## 2026-07-28
 
+### Backups, and a restore drill that passed (Phase 4b)
+
+Postgres is the single point of failure by design, and under D4 it is self-managed — no provider is
+taking backups off anybody's hands. Nightly `pg_dump`, verified as it is written, 30-day retention.
+
+**The KEK is deliberately not in the backup, and `backup.service` cannot read it.** Two silent ways
+to get this catastrophically wrong: the key beside the dump makes the backup a complete credential
+breach in one file; the key nowhere makes a restore a database of undecryptable secrets and every
+user re-enters every credential. The surest way to keep them apart is for the process that writes
+one to be unable to read the other.
+
+A partial dump is deleted rather than left behind — a file that looks like a backup is worse than
+no backup, because somebody will find it and believe it.
+
+**The drill passed against a real 20 MB backup of the live platform.** It checks the three things
+that have to be true afterwards, not just that the file loads: row counts match the live database
+(2 users, 4,287 corpus rows, 3,474 labels), a stored `telegram_bot` credential **decrypts with the
+separately-held KEK**, and 2 of 2 models come back servable. The second is the entire KEK-separation
+design under test, and the only way to learn it works is to try it.
+
+**It found a bug on its first real run**, which is the argument for having a drill rather than a
+procedure. `subprocess` wants a real file descriptor for `stdin`, and `GzipFile.fileno()` returns
+the descriptor of the *compressed* file — so psql was fed raw gzip and failed with
+`invalid byte sequence for encoding "UTF8": 0x8b`, which reads like a corrupt dump rather than a
+mistake in the restore path. A backup nobody has restored is a hope.
+
 ### Monitoring and alerts (Phase 4a)
 
 **Every failure on this platform is silent** (`OPERATIONS_PLAN.md` §1). A stalled queue, a harvester
