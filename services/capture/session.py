@@ -92,7 +92,10 @@ def run_capture(
             client.archive_session(session_id)
         except Exception:
             # Cleanup must never mask the failure that caused it.
-            logger.debug("archiving capture session %s failed", session_id, exc_info=True)
+            # Warning, not debug: a session left running is a container left running on the
+            # user's account, and debug is off in production.
+            logger.warning("could not archive capture session %s; it may still be running",
+                           session_id, exc_info=True)
     return result
 
 

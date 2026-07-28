@@ -43,6 +43,7 @@ from sqlalchemy.orm import Session
 from libs.contracts.embedder import EmbedderClient, EmbedderVersion
 from libs.corpus.ats import AtsRepository
 from libs.corpus.repository import CorpusRepository
+from libs.obs import audit
 from libs.tenant.repository import TenantRepository
 from services.harvester.embedding import embed_all_pending
 from services.harvester.query_set import (
@@ -76,6 +77,8 @@ class CycleReport:
     duplicates: dict[str, int] = field(default_factory=dict)
     new_jobs: int = 0
     embedded: int = 0
+    # Per source, so "the cycle found 200 links" cannot hide "and four of six sources found none".
+    links_by_source: dict[str, int] = field(default_factory=dict)
     source_failures: dict[str, str] = field(default_factory=dict)
     skipped_locked: bool = False
 
@@ -167,6 +170,13 @@ def run_cycle(
             query_set, max_queries=max_queries, carried_over=carried_over)
         report.queries_planned = len(planned)
         report.queries_deferred = len(deferred)
+        if not configs:
+            # A cycle with no active accounts finishes instantly and reports success, which reads
+            # identically to a healthy quiet run. It is not: it means nobody is being served.
+            logger.warning("harvest: no active accounts — this cycle will fetch nothing")
+        elif not planned:
+            logger.warning("harvest: %d account(s) but no queries planned — check their configs",
+                           len(configs))
 
         # 3. Execute the shared tier. The per-user LinkedIn loop is deliberately absent: it runs on
         # its owner's schedule with their credential, and cannot be reached from here.
@@ -185,6 +195,11 @@ def run_cycle(
         "harvest: %d queries (%d deferred), %d links, %d duplicates, %d new, %d embedded",
         report.queries_planned, report.queries_deferred, report.links_found,
         report.duplicates_total, report.new_jobs, report.embedded)
+    audit(logger, "harvest.cycle",
+          queries=report.queries_planned, links=report.links_found,
+          new=report.new_jobs, embedded=report.embedded,
+          failed_sources=len(report.source_failures),
+          empty_sources=sum(1 for n in report.links_by_source.values() if n == 0))
     return report, [q.key for q in deferred]
 
 
@@ -205,6 +220,9 @@ def _gather(source_configs: dict[str, dict], planned: list[PlannedQuery], ats: A
 
     shared = [s for s in sources_for(Tier.SHARED) if source_configs.get(s.key, {}).get("enabled")]
     links: list[JobLink] = []
+    if not shared:
+        # Every source disabled looks exactly like every source finding nothing.
+        logger.warning("harvest: no shared sources are enabled — nothing will be fetched")
 
     def _config_for(source: Source) -> dict:
         cfg = dict(source_configs.get(source.key, {}))
@@ -222,21 +240,40 @@ def _gather(source_configs: dict[str, dict], planned: list[PlannedQuery], ats: A
 
     for source in db_bound:
         try:
-            links.extend(run_source(source, _config_for(source), ats))
+            found = run_source(source, _config_for(source), ats)
         except Exception as exc:                                    # noqa: BLE001
             logger.warning("source %s failed: %s", source.key, exc)
             report.source_failures[source.key] = str(exc)[:200]
+        else:
+            _record_source(report, source, found, links)
 
     if network_only:
         with ThreadPoolExecutor(max_workers=min(OUTER_CONCURRENCY, len(network_only))) as pool:
             futures = {pool.submit(run_source, s, _config_for(s), ats): s for s in network_only}
             for future, source in futures.items():
                 try:
-                    links.extend(future.result())
+                    found = future.result()
                 except Exception as exc:                            # noqa: BLE001
                     logger.warning("source %s failed: %s", source.key, exc)
                     report.source_failures[source.key] = str(exc)[:200]
+                else:
+                    _record_source(report, source, found, links)
     return links
+
+
+def _record_source(report: CycleReport, source: Source, found: list[JobLink],
+                   links: list[JobLink]) -> None:
+    """Collect a source's results, and say so when a source that was asked returns nothing.
+
+    An adapter returning `[]` is the registry's contract for a dead source — which is what stops one
+    broken source sinking a cycle, and is also what hid three sources making no HTTP request at all
+    for a whole day. The contract stays; the silence does not.
+    """
+    links.extend(found)
+    report.links_by_source[source.key] = len(found)
+    if not found:
+        logger.warning("source %s returned nothing — check it was actually asked for something",
+                       source.key)
 
 
 def _ingest(corpus: CorpusRepository, links: Iterable[JobLink], report: CycleReport) -> int:

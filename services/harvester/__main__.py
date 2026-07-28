@@ -27,6 +27,7 @@ import sys
 
 from libs.contracts.embedder import EmbedderClient, EmbedderVersion
 from libs.db.session import session_scope
+from libs.obs import configure
 from libs.tenant.repository import TenantRepository
 from services.harvester.cycle import run_cycle
 from services.harvester.source_config import build_source_configs
@@ -35,9 +36,13 @@ logger = logging.getLogger("harvester")
 
 
 def _configure_logging(verbose: bool) -> None:
-    logging.basicConfig(
-        level=logging.DEBUG if verbose else logging.INFO,
-        format="%(asctime)s %(levelname)-7s %(name)s: %(message)s")
+    """One rotating file plus the console (`libs.obs`).
+
+    A one-shot run under a systemd timer leaves nothing behind unless it is written down: the
+    process exits, the container is removed, and the only evidence a cycle happened at all is the
+    log file.
+    """
+    configure("harvester", level="DEBUG" if verbose else "INFO")
 
 
 def _expected_embedder() -> EmbedderVersion | None:

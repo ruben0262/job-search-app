@@ -17,6 +17,7 @@ for _var in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
 
 from libs.db.models import QueueJob  # noqa: E402
 from libs.db.session import session_scope  # noqa: E402
+from libs.obs import configure  # noqa: E402
 from libs.queue.worker import Terminal, run_worker  # noqa: E402
 from libs.secrets import install  # noqa: E402
 from services.trainer.train import NotEnoughData, should_retrain, train_user  # noqa: E402
@@ -37,8 +38,7 @@ def handle(session, job: QueueJob) -> None:
 
 
 def main() -> int:
-    logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"),
-                        format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    configure("trainer")
     install()
     run_worker(session_scope, "train", os.environ.get("WORKER_NAME", "trainer-1"), handle)
     return 0

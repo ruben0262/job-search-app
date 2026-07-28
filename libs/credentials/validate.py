@@ -11,6 +11,7 @@ to accept an unvalidated credential is the caller's decision rather than an acci
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
 import httpx
@@ -26,6 +27,8 @@ ANTHROPIC_URL = "https://api.anthropic.com/v1/models"
 TELEGRAM_URL = "https://api.telegram.org/bot{token}/{method}"
 
 TIMEOUT = 15.0
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -160,13 +163,18 @@ def telegram_chat_id(token: str, *, client: httpx.Client | None = None) -> str |
     try:
         response = http.get(TELEGRAM_URL.format(token=token, method="getUpdates"))
         if response.status_code != 200:
+            logger.warning("Telegram answered %s to getUpdates; treating the chat id as not "
+                           "yet available", response.status_code)
             return None
         for update in reversed((response.json() or {}).get("result") or []):
             chat = (update.get("message") or update.get("channel_post") or {}).get("chat") or {}
             if chat.get("id") is not None:
                 return str(chat["id"])
         return None
-    except httpx.HTTPError:
+    except httpx.HTTPError as exc:
+        # Without this the user is told to press Start and try again, when in fact Telegram was
+        # unreachable and pressing Start will not help.
+        logger.warning("could not reach Telegram to read the chat id: %s", exc)
         return None
     finally:
         if owned:

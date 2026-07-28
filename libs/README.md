@@ -21,11 +21,14 @@ for a service's session, no knowing which container it runs in.
 | Package | State | What it is |
 |---|---|---|
 | [`auth/`](auth/) | ✅ **built** | argon2id, hashed email tokens, rotating refresh sessions (`AUTH_REUSE.md` design port) |
+| [`obs/`](obs/) | ✅ **built** | One logging configuration for every process: rotating file per service, redaction on every handler |
 | [`mail/`](mail/) | ✅ **built** | Gmail SMTP sender + plain-text templates; prints instead of sending when unconfigured |
 | [`db/`](db/) | ✅ **built** | SQLAlchemy models + Alembic migrations. 11 tables, 3 revisions, applied to the live database |
 | [`corpus/`](corpus/) | ✅ **built** | Dedup keys (T2-pinned), corpus repository, ATS token/ETag state |
 | [`tenant/`](tenant/) | ✅ **built** | Per-user repository: job state, applied log, labels, feedback. **T1 green** |
 | [`contracts/`](contracts/) | ✅ **built** | `UserConfigSchema` (server validation + JSON Schema for the form) and the embedder client contract. **T9 green** |
+| [`credentials/`](credentials/) | ✅ **built** | Validate a credential at save — one cheap call per kind |
+| [`auth/`](auth/) | ✅ **built** | argon2id, hashed email tokens, rotating refresh sessions |
 | [`secrets/`](secrets/) | ✅ **built** | Envelope encryption (KEK/DEK), credential store, log redaction. **T4 green** |
 | [`scoring/`](scoring/) | ✅ **built** | Rubric render + `profile_version`, and the per-user feature extractor |
 | [`queue/`](queue/) | ✅ **built** | Four-lane claim protocol + the worker loop. **T5/T6/T7 green** |

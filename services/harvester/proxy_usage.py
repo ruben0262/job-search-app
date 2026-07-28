@@ -22,6 +22,7 @@ quarantine every healthy user.
 """
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -31,6 +32,8 @@ from sqlalchemy.orm import Session
 
 from libs.db.models import ProxyCredential, User
 from services.harvester.fetch import ProxyCapExceeded, ProxyLease
+
+logger = logging.getLogger(__name__)
 
 # Consecutive failures before a credential is quarantined. Low enough that a genuinely dead
 # credential stops burning the loop's time quickly; high enough that one flaky response does not
@@ -177,6 +180,11 @@ def _tz(session: Session, user_id: UUID) -> ZoneInfo:
     try:
         return ZoneInfo(name)
     except Exception:                                    # noqa: BLE001 - any bad tz falls back
+        # Logged, not swallowed. The fallback is right - a broken timezone must not take the
+        # harvest down - but silently resetting one user's caps at the wrong hour forever is
+        # exactly the kind of failure nobody ever notices.
+        logger.warning("user %s has an unusable timezone %r; daily caps will reset at UTC "
+                       "midnight until it is corrected", user_id, name)
         return ZoneInfo("UTC")
 
 

@@ -11,3 +11,7 @@ node_modules/
 # Scratch file used to hold a DB password during local verification. Never commit.
 .pwenc*
 *.tmp
+
+# Runtime logs. Rotated on disk, never in git - they contain user ids, job urls, and the shape of
+# real traffic. `libs/obs` writes them here by default; LOG_DIR overrides.
+logs/

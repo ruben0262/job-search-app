@@ -8,17 +8,14 @@ development-only exception is how the production path ends up untested.
 """
 from __future__ import annotations
 
-import logging
-import os
-
 from fastapi import FastAPI
 
+from libs.obs import configure
 from libs.secrets import install
 from services.api.auth_routes import router as auth_router
 from services.api.credential_routes import router as credential_router
 
-logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"),
-                    format="%(asctime)s %(levelname)s %(name)s %(message)s")
+configure("api")
 # Before any route can hold a plaintext credential. Attaches to the root logger and its handlers,
 # which is what covers records propagated from every library in the process.
 install()

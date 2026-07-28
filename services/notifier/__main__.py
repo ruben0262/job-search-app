@@ -16,6 +16,7 @@ import httpx
 
 from libs.db.models import QueueJob
 from libs.db.session import session_scope
+from libs.obs import configure
 from libs.queue.queue import dispatch_due_notifications
 from libs.queue.worker import Terminal, run_worker
 from libs.secrets import SecretStore, install
@@ -51,8 +52,7 @@ def handle(session, job: QueueJob) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"),
-                        format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    configure("notifier")
     install()
 
     if "--tick" in (argv if argv is not None else sys.argv[1:]):
