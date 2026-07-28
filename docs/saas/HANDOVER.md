@@ -14,7 +14,7 @@ to re-derive. `ROADMAP.md` is the plan; this is the position.
 | Running | `postgres`, `capture`, `labeller`, `scorer`, `api`, `cloudflared`, embedder (own project) |
 | Built, **not started** | `notifier`, `trainer` — starting the notifier messages real people |
 | Timers | `harvester` (15 min) and `backup` (03:20) enabled; **`health.timer` deliberately disabled** |
-| Tests | 672 passing, CI 10/10 jobs green |
+| Tests | 674 passing, CI 10/10 jobs green |
 
 **Phases 0–4 complete.** Phase 5a (feedback loop) complete. Phase 5b (docgen) partially started.
 
@@ -42,14 +42,14 @@ test asserts no name, address, phone, email or link survives.
 and education. Those become markers filled from `ProfileSchema`, the same deterministic-render job
 as `libs/scoring/rubric.py` — see `libs/templates/README.md` for the marker-to-field table.
 
-The prompts were generalised on 2026-07-28 (`<<NAME>>`, `<<LANGUAGES>>`, `<<WORK_ELIGIBILITY>>`,
-`<<HOME_LOCATION>>`, `<<CONTACT>>`, filled by `libs/scoring/docprompt.py`). **The templates were
-not.** So a docgen worker built today would produce a correct-looking CV with the wrong person's
-details on it.
+The prompts are done (`<<NAME>>`, `<<LANGUAGES>>`, `<<WORK_ELIGIBILITY>>`, `<<HOME_LOCATION>>`,
+`<<CONTACT>>`, filled by `libs/scoring/docprompt.py`). **Until the body is rendered, a docgen worker
+would produce a correctly-formatted CV carrying somebody else's employment history** — which is
+worse than a broken one, because it looks right.
 
-Do the same thing that was done to the prompts: replace the subject, change nothing else. The layout
-is load-bearing — A4 page rules, font paths, the `@page` margin rule that stops Chrome drawing a
-header over the content (`PROFILE_CAPTURE_PLAN.md` §6.5: *buy, do not generate*).
+The layout is load-bearing and must survive: A4 page rules, font paths, the `@page` margin rule that
+stops Chrome drawing a header over the content (`PROFILE_CAPTURE_PLAN.md` §6.5: *buy, do not
+generate*).
 
 `tests/test_prompt_templates.py` already covers the template's identity and the layout rules that
 are load-bearing (`@page`, the header classes) — losing those during a generalisation pass is the
@@ -71,8 +71,6 @@ Port from `d:/Projects/job-search/pipeline/cv_builder.py` (~993 lines).
 Untouched. The backend (`GET /dashboard`) is state-driven and complete; the UI is functional, not
 designed. Same direction as the onboarding pass: black/white/grey, no containers, one idea per
 screen.
-
----
 
 ---
 
