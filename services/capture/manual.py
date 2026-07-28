@@ -14,7 +14,7 @@ so that difference is measurable rather than assumed.
 from __future__ import annotations
 
 from libs.contracts.profile import ProfileSchema
-from services.capture.client import CaptureFailed
+from services.capture.process import CaptureFailed
 
 
 def manual_profile(fields: dict) -> ProfileSchema:

@@ -154,6 +154,13 @@ def confirm(body: ProfileSchema, db: Session = Depends(get_db),
     generation = TenantRepository(db).save_profile(user_id, profile)
     user.profile_draft = None
 
+    # **Queued here, not left to the dashboard.** Confirming has just made every existing label
+    # answer a different question, so the account is at zero usable labels for the new generation
+    # until this runs — and an account that cannot train is not a state to leave someone in because
+    # they did not press a second button. The one-directional coupling of
+    # `ONBOARDING_AND_PROCESSING.md` §4, enforced rather than documented.
+    enqueue(db, "label", user_id, dedup_key="relabel")
+
     audit(logger, "process.confirmed", user=user_id, generation=generation,
           not_list=len(body.not_list))
     return {

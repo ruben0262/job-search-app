@@ -24,9 +24,8 @@ pytest.importorskip("pydantic")
 from pydantic import ValidationError
 
 from libs.contracts.profile import ProfileSchema
-from services.capture.client import CaptureFailed
 from services.capture.manual import capture_or_manual, manual_profile
-from services.capture.process import MAX_TOTAL_CHARS, capture_profile, documents_for
+from services.capture.process import MAX_TOTAL_CHARS, CaptureFailed, capture_profile, documents_for
 from services.capture.prompt import SYSTEM_PROMPT, build_messages
 
 VALID_PROFILE = {

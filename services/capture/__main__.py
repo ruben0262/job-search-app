@@ -19,18 +19,13 @@ from sqlalchemy import func
 
 from libs.db.models import QueueJob, User
 from libs.db.session import session_scope
+from libs.llm import CLAUDE_KINDS, client_for
 from libs.obs import audit, configure
 from libs.queue.worker import Terminal, run_worker
 from libs.secrets import SecretStore, install, redacting
-from services.capture.client import CaptureFailed, client_for
-from services.capture.process import process_user
+from services.capture.process import CaptureFailed, process_user
 
 logger = logging.getLogger(__name__)
-
-# Either satisfies the requirement (D2). Tried in this order only because an API key is the more
-# common case, not because it is preferred.
-CLAUDE_KINDS = ("claude_api", "claude_oauth")
-
 
 def handle(session, job: QueueJob) -> None:
     """Produce a draft profile for one user. Terminal on anything a retry cannot fix."""

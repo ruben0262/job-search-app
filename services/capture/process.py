@@ -21,8 +21,8 @@ from sqlalchemy.orm import Session
 
 from libs.contracts.profile import ProfileSchema
 from libs.db.models import User, UserDocument
+from libs.llm import LlmClient, LlmError
 from libs.obs import audit
-from services.capture.client import CaptureClient, CaptureFailed
 from services.capture.prompt import (
     CAPTURE_MODEL,
     MAX_TOKENS,
@@ -32,6 +32,15 @@ from services.capture.prompt import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class CaptureFailed(LlmError):
+    """Processing could not produce a usable profile. The caller falls back to manual entry.
+
+    A subclass rather than the transport error itself: "the provider was unreachable" and "the
+    profile did not validate" both end in manual entry, but only one of them is worth retrying, and
+    a caller that cannot tell them apart cannot make that choice later.
+    """
 
 # The processing call reads every document a user has. A ceiling exists because the cost is theirs
 # and one runaway upload should not turn a $2 call into a $40 one. Roughly 250k characters ~ 60k
@@ -61,7 +70,7 @@ def documents_for(session: Session, user_id: _uuid.UUID) -> list[tuple[str, str]
     return documents
 
 
-def capture_profile(client: CaptureClient, documents: list[tuple[str, str]], *,
+def capture_profile(client: LlmClient, documents: list[tuple[str, str]], *,
                     full_name: str | None = None) -> ProfileSchema:
     """One call. Returns a validated **draft** — `confirmed` is always false.
 
@@ -91,7 +100,7 @@ def capture_profile(client: CaptureClient, documents: list[tuple[str, str]], *,
         raise CaptureFailed("the profile the model produced did not match the schema") from exc
 
 
-def process_user(session: Session, user_id: _uuid.UUID, client: CaptureClient) -> ProfileSchema:
+def process_user(session: Session, user_id: _uuid.UUID, client: LlmClient) -> ProfileSchema:
     """Read this user's documents, produce a draft, store it. Returns the draft.
 
     Stored on `users.profile_draft` rather than applied: applying it would bump the generation and

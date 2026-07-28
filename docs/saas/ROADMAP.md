@@ -271,9 +271,15 @@ and finishable in one sitting.
    credit, contradicting D2. The output is a **draft** on `users.profile_draft`; confirming it is
    the only path to a live profile, because every `not_list` entry becomes a hard gate. The warning
    names the number of labels it will invalidate rather than asking "are you sure?".
-8. **The relabeller** — the `label` lane worker. Without it a re-process leaves zero usable labels at
-   the new generation and training cannot run at all. The most expensive step on the platform, which
-   is why process→retrain is enforced and retrain→process deliberately is not.
+8. ✅ **Done 2026-07-28. The relabeller** — the `label` lane worker. Without it a re-process leaves
+   zero usable labels at the new generation and training cannot run at all, so the account degrades
+   to *no model* rather than to a stale one. **One queue job is one batch of 50**, because the
+   worker commits the handler's effect and the job's completion together — so the queue job's size
+   is the unit of work a crash can destroy, and at 50 that is one Haiku call rather than four. The
+   worker re-enqueues while stale labels remain, which lets round-robin interleave two users'
+   relabels instead of running one to completion. Confirming a profile queues the first batch
+   rather than leaving it to a second button. The most expensive step on the platform, which is
+   why process→retrain is enforced and retrain→process deliberately is not.
 9. **Cold-start pipeline**: pool selection → labelling → first train, with visible stage
    progression (`COLD_START_PLAN.md`). One wider recency pass here, since the steady-state 24-hour
    window shows a new account almost nothing.

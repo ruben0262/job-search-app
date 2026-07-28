@@ -1,4 +1,4 @@
-"""The seam between processing and Anthropic. One method, deliberately.
+"""The Anthropic adapter: build a client from a user credential, make one call.
 
 Plain Messages, not a Managed Agents session. What that buys, in order of importance:
 
@@ -28,17 +28,22 @@ logger = logging.getLogger(__name__)
 CLAUDE_OAUTH_BETA = "oauth-2025-04-20"
 
 
-class CaptureFailed(RuntimeError):
-    """Processing could not produce a usable profile. The caller falls back to manual entry."""
+# Either satisfies the Claude requirement (D2). Defined here because both callers need the same
+# answer to "which credential kinds count", and two lists is how they stop agreeing.
+CLAUDE_KINDS = ("claude_api", "claude_oauth")
 
 
-class CaptureClient(Protocol):
+class LlmError(RuntimeError):
+    """A call did not produce usable output. Callers decide whether that is fatal."""
+
+
+class LlmClient(Protocol):
     def complete_json(self, *, model: str, system: str, messages: list[dict],
                       schema: dict, max_tokens: int) -> dict: ...
 
 
-class AnthropicCaptureClient:
-    """`CaptureClient` over the real SDK, built from **the user's own credential**.
+class AnthropicClient:
+    """`LlmClient` over the real SDK, built from **the user's own credential**.
 
     Their profile, their spend, no platform cost and no abuse surface. `kind` decides how the
     credential is presented, which is why it is passed rather than sniffed from the token's shape —
@@ -79,11 +84,11 @@ class AnthropicCaptureClient:
         try:
             return json.loads(text)
         except json.JSONDecodeError as exc:
-            # Never log `text`: it is derived from the candidate's own documents.
-            logger.error("processing returned %d chars that did not parse as JSON", len(text))
-            raise CaptureFailed("the model's response was not usable JSON") from exc
+            # Never log `text`: it derives from the user's own documents or from a job posting.
+            logger.error("a response of %d chars did not parse as JSON", len(text))
+            raise LlmError("the model's response was not usable JSON") from exc
 
 
-def client_for(value: str, kind: str) -> CaptureClient:
+def client_for(value: str, kind: str) -> LlmClient:
     """Build a client for whichever Claude credential the user has. Either satisfies D2."""
-    return AnthropicCaptureClient(value, kind)
+    return AnthropicClient(value, kind)

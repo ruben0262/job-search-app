@@ -16,6 +16,52 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ## 2026-07-28
 
+### The relabeller, and one shared Anthropic client (Phase 3 step 8)
+
+`services/labeller` scores jobs against a user's rubric with Haiku, in the `label` lane, on that
+user's own credential. It is what makes editing a profile survivable: a profile change bumps
+`profile_generation`, every label written under the old rubric answers a different question, and
+without this the account has **zero** usable labels and cannot train at all.
+
+Three decisions, each of which had a wrong-looking obvious alternative:
+
+- **One queue job is one batch of 50.** The worker commits the handler's effect and the job's
+  completion together and forbids a handler from committing its own transaction, so a queue job's
+  size *is* the unit of work a crash destroys. At 200 an interrupted worker throws away four Haiku
+  calls the user paid for. The re-enqueue chain also lets round-robin interleave two users'
+  relabels rather than running one to completion.
+- **The continuation clears its own dedup key first.** `enqueue` collapses against any job in
+  `ready` *or* `claimed` with the same key — and the running job holds exactly the key its
+  continuation needs. Left alone the continuation is silently dropped and a four-thousand-job
+  relabel stops after fifty, which looks identical to success.
+- **Scores are matched back by URL, never by position.** A model that reorders its output would
+  otherwise shift every label onto the wrong job: a training set that looks fine and teaches the
+  opposite of what was intended.
+
+Confirming a profile now queues the first batch rather than leaving it to a second button — an
+account that cannot train is not a state to leave somebody in because they missed a click.
+
+**`libs/llm`** — the Anthropic adapter moved out of `services/capture`, because two services now
+call Claude on the user's behalf and services may not import each other. A copy in each is how the
+OAuth header ends up correct in one and missing in the other.
+
+**`libs/queue` now exports its API.** It exported nothing, so `from libs.queue import enqueue` was
+an ImportError that took down every API route — see below.
+
+### Two CI failures, and the checks that would have caught them
+
+Both were pushed without local verification, because the machine has no Postgres: migrations and
+253 DB-backed tests skip silently there, and "300 passed" reads like a green run.
+
+1. **`ck_jobs_ck_jobs_lane_valid` does not exist.** `libs/db/base` sets a naming convention of
+   `ck_%(table_name)s_%(constraint_name)s` and Alembic applies it to whatever the migration passes,
+   so handing it the already-rendered name double-prefixes it. **Catchable with no database:**
+   `alembic upgrade <rev>:head --sql` renders the SQL offline. Now run on every migration.
+2. **Every API route broken at import** by `from libs.queue import enqueue`. Invisible locally
+   because the tests that import the app are the DB-backed ones. `tests/test_entrypoints.py` now
+   imports every deployable entrypoint and asserts each router is registered — no database, no
+   network, and it fails in under two seconds.
+
 ### Process data, without the sandbox (Phase 3 step 7)
 
 `services/capture` is now one plain Messages call on the user's own credential, in its own `process`
