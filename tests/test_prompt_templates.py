@@ -30,6 +30,16 @@ PORTED_NOT_YET_GENERALISED: tuple[str, ...] = ()
 # The reference instance's owner. A generalised prompt reads its subject from the profile.
 _IDENTITY = re.compile(r"\bRuben\b|\bLekli\b", re.IGNORECASE)
 
+# **A name is the easy half.** These are the reference instance's *specifics* — its employers, its
+# tools, its metrics, its entry titles — and they survived the first generalisation pass because
+# they name no person. They are worse than a stray name in one way: "keep the quant tooling
+# (Bloomberg, ByBit API)" is an instruction to surface something a stranger's profile may not
+# contain, and the model will find a way to comply.
+_REFERENCE_SPECIFICS = (
+    "Bloomberg", "ByBit", "Syntagma", "FlowSolutions", "Global Liquidity", "Crypto Screener",
+    "Sharpe", "Sortino", "DSR/PSR", "Lotka", "Lyapunov", "magázás", "Ön/Önök",
+)
+
 
 @pytest.mark.parametrize("name", DOCGEN_TEMPLATES)
 def test_a_wired_prompt_names_nobody(name):
@@ -94,13 +104,33 @@ def test_unstated_work_eligibility_is_never_invented():
 def test_the_language_rule_is_about_the_candidate_not_one_language():
     """The original chose between English and Hungarian because that is what its owner writes. A
     French speaker must get a French CV for a French posting, and an English-only speaker must never
-    get a CV they cannot read."""
+    get a CV they cannot read.
+
+    Case-insensitive, which is not pedantry: the cover letter's rule said "HUNGARIAN" in capitals
+    and passed this test for a day, complete with the Hungarian formal-address grammar under it.
+    """
     from libs.prompts import TAILOR_COVER_TEMPLATE, TAILOR_CV_TEMPLATE, load
 
     for name in (TAILOR_CV_TEMPLATE, TAILOR_COVER_TEMPLATE):
         body = load(name)
-        assert "Hungarian" not in body
+        assert not re.search(r"hungarian", body, re.IGNORECASE), f"{name} names one language"
         assert "<<LANGUAGES>>" in body
+
+
+@pytest.mark.parametrize("name", DOCGEN_TEMPLATES)
+def test_a_wired_prompt_carries_none_of_the_reference_instance_s_specifics(name):
+    """A prompt that names no person can still be about one.
+
+    Left in, these are dead instructions for most users and an active hazard for the rest: told to
+    "keep the quant tooling", a model writing for somebody who has never touched a trading terminal
+    will still find something to put there.
+    """
+    body = load(name)
+
+    for specific in _REFERENCE_SPECIFICS:
+        # Word-bounded: "sharper entries" is style advice and must not read as the Sharpe ratio.
+        assert not re.search(rf"\b{re.escape(specific)}\b", body, re.IGNORECASE), (
+            f"{name} still carries {specific!r} from the reference instance")
 
 
 # ── the CV template ───────────────────────────────────────────────────────────────────────────

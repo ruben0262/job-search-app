@@ -41,27 +41,29 @@ MOST COMMON FAILURES — a cover letter is binned in seconds if it does these. D
 
 THE GOAL
 Qualify the candidate the way a strong interview answer does: by SHOWING, not telling. Two things win
-together — (a) it is ATS-friendly and the concrete work they describes clearly covers the role's real
+together — (a) it is ATS-friendly and the concrete work they describe clearly covers the role's real
 requirements, and (b) a human reads it, understands them, and roots for them. Be genuinely WARM: real
 enthusiasm for the work and the role, an honest voice, someone the reader would want on the team —
 never a cold recital and never cleverness. Give it enough room to feel human without rambling.
 
-LANGUAGE — decide the letter's language from the JOB section FIRST. If the posting is written in
-HUNGARIAN and does not say English applications are also accepted, write the ENTIRE letter in
-that language, naturally and professionally (greeting, body, sign-off). Address the reader FORMALLY throughout
-(magázás — "Ön/Önök" and the matching verb forms), never the informal "te/ti"; open with a formal
-salutation ("Tisztelt Hölgyem/Uram!" or "Tisztelt [Company] Csapata!") and close formally
-("Tisztelettel, <<NAME>>"). Otherwise write it in English. Never mix languages. When the letter
-is not in English, the no-contractions and British-spelling rules below are about English and do not
-apply — write correct, that language instead; the "no em-dashes and no colons" rule still
-applies (that is punctuation, independent of language).
+LANGUAGE — decide the letter's language from the JOB section FIRST. The candidate writes these
+languages fluently: <<LANGUAGES>>. Those are the only languages this letter may be written in.
+If the posting is written in one of them (other than English) and does not say English applications
+are also accepted, write the ENTIRE letter in that language, naturally and professionally (greeting,
+body, sign-off) — as a native professional would, never a word-for-word translation. Use that
+language's FORMAL register throughout, never the familiar one, with its own conventional formal
+salutation and sign-off ("Tisztelettel," "Mit freundlichen Grüßen," "Cordialement," and so on),
+signed <<NAME>>. Otherwise write it in English. Never mix languages. When the letter is not in
+English, the no-contractions and British-spelling rules below are about English and do not apply —
+write that language correctly instead; the "no em-dashes and no colons" rule still applies (that is
+punctuation, independent of language).
 
 STRUCTURE (aim ~200–260 words, small 2–3 sentence paragraphs, easy to skim — warm but not rambling)
 - Opening (2–3 sentences): lead with a concrete, relevant piece of work — the strongest thing the candidate
   has done that matters for this role, or a short grounded anecdote that demonstrates it. SHOW the
   work; do not announce that it matches. Name the company and role naturally. The relevance should
-  be self-evident from what they chooses to show.
-- Body, FIRST paragraph (2–4 sentences): the single most relevant thing they has built for this role,
+  be self-evident from what they choose to show.
+- Body, FIRST paragraph (2–4 sentences): the single most relevant thing they have built for this role,
   shown through what it did and what it achieved (include one concrete number). Let the fit speak
   for itself. Do not restate their requirements or claim the match.
 - Body, SECOND paragraph (2–4 sentences): a different angle that adds something the first did not,
@@ -77,12 +79,12 @@ THE HUMAN TOUCH — this is what's usually missing, so get it right
 - A short anecdote goes a long way: one concrete moment (a production bug they chased down, a tricky
   integration, a performance problem they fixed, why they built a project) earns trust and gets the
   reader reasoning in their favour. One or two sentences, specific and BELIEVABLE. It may be a
-  realistic moment even if it isn't spelled out in the CV — the candidate's experience is extensive, so a
-  plausible incident almost certainly happened — as long as it is fully consistent with their real
+  realistic moment even if it isn't spelled out in the CV — the work they describe is real, so an incident of
+  that kind almost certainly happened — as long as it is fully consistent with their real
   experience, stack and projects (the kind of thing that genuinely occurs in that work, so they could
   speak to it naturally in an interview). Keep it grounded and defensible; never a claim they couldn't
   stand behind.
-- Let the fit EMERGE from what they shows: choose the work whose relevance is obvious for this role,
+- Let the fit EMERGE from what they show: choose the work whose relevance is obvious for this role,
   so the reader connects it themselves. Do not spell out the match or quote their requirements back
   — picking the right thing to show IS the connection.
 - It must feel like a letter written to a person, not a form.
@@ -105,7 +107,7 @@ WRITE LIKE A SHARP HUMAN
   openings. Keep every paragraph to 2–3 short sentences so it stays easy to skim.
 - BRITISH spelling throughout (optimisation, modelling, analyse, behaviour). Never American.
 - HARD FACTS must be true and supported by the candidate's CV: never invent an employer, job title, date,
-  metric, or a technology they hasn't worked with. A short illustrative ANECDOTE may be plausibly
+  metric, or a technology they have not worked with. A short illustrative ANECDOTE may be plausibly
   reconstructed (see THE HUMAN TOUCH) as long as it stays consistent with their real experience and
   is defensible in an interview.
 - Describe AI/LLM work as a tool alongside the candidate's own code (Claude Code, Codex, Copilot), an
@@ -141,7 +143,7 @@ SELF-CHECK — verify before outputting (fix any failures first, then output)
   □ Reads like a professional, genuine, honest human wrote it to a person — not an AI, not a form?
   □ A short, BELIEVABLE anecdote appears where it fits — grounded in their real experience and
     defensible in an interview (plausibly reconstructed is fine; fabricated hard facts are not)?
-  □ Job title + company name in the opening; the role's real needs are covered by what they shows; ATS-friendly?
+  □ Job title + company name in the opening; the role's real needs are covered by what they show; ATS-friendly?
   □ At least one concrete number or measurable outcome?
   □ Close is STRONG and specific — a confident forward line, not filler or a trail-off?
   □ Small 2–3 sentence paragraphs; NO contractions; NO em-dashes (—); British spelling?

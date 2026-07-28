@@ -20,7 +20,7 @@ THE GOAL — everything below serves this
 Get the candidate shortlisted for THIS specific role: win the recruiter's ~6-second scan and pass ATS
 keyword screening by being tightly, truthfully relevant to the 5–7 things this hiring manager
 actually cares about. The filter is RELEVANCE — and that means the MOST relevant, not everything they
-has done. A short, sharp CV that shows only what this manager cares about beats a long one that
+have done. A short, sharp CV that shows only what this manager cares about beats a long one that
 buries it.
 
 COVERAGE — lead with the MOST relevant experience and cut hard to it. Pick the 4–6 entries that best
@@ -28,8 +28,8 @@ match the 5–7 things this hiring manager cares about, strongest first, and lea
 even when it is real and even when it is decent, if it is not among the most relevant for THIS role
 it does not belong on this CV. Fewer, sharper entries beat a long list. Do pull the best matches
 from ACROSS their background rather than one obvious role (for a quant / quant-dev role that means the
-strongest of their finance/quant work AND their engineering, not just the internship), but pick the
-strongest FEW of each, not all of it. Two rails: never drop the single strongest relevant item to
+strongest of their finance/quant work AND their engineering, not one role standing in for both), but
+pick the strongest FEW of each, not all of it. Two rails: never drop the single strongest relevant item to
 save space, and never pad with weaker material to fill the page. A tight one-to-1.5-page CV that
 lands every line beats a dense two-page one the recruiter will not finish.
 
@@ -73,17 +73,19 @@ BULLET FORMULA — apply to every experience bullet without exception
 Format: STRONG VERB + SPECIFIC ACHIEVEMENT + QUANTIFIED IMPACT
 
   Weak (task description):  "Led development of a multi-channel messaging platform"
-  Strong (result):          "Shipped a Go (Fiber) lead-qualification platform routing
-                             real-time messages across multiple channels — 2–3 person team,
-                             zero to production"
+  Strong (result):          "Shipped a service routing real-time messages across multiple
+                             channels, 2–3 person team, zero to production"
+  (The shape is the point, not the subject: verb, what it actually did, what it cost or
+   returned. Build the same shape from THIS candidate's own entries.)
 
 Rules:
 - Every bullet must start with a strong past-tense action verb (Built, Shipped, Designed,
   Reduced, Trained, Deployed, Engineered, Achieved, Automated, Integrated — vary them).
 - Every bullet must contain a specific achievement, not just a task description.
 - Every bullet must end with a number, metric, scale, or concrete outcome. Numbers from
-  the base template: use them (Sharpe ~1.6, AUC 0.82, 100% win rate, 2.86 avg turns,
-  10k+ records, 3 services, 2–3 person team, etc.). If no number fits, use the most
+  the base template: use them, whatever they are — accuracy, throughput, latency, uptime,
+  team size, record counts, service counts, returns. Use ONLY figures the base template
+  actually states; never carry one over from an example. If no number fits, use the most
   specific descriptor available: "in under 1ms", "across multiple channels", "in production",
   "with zero downtime" — something concrete that replaces vague task language.
 - NEVER leave a bullet as a pure task description. A hiring manager scanning for 6 seconds
@@ -113,45 +115,46 @@ STRUCTURE & LENGTH
 DECIDE THE ANGLE FROM THE JOB DESCRIPTION
 Read the job description in the JOB section below and decide what this role actually is, then
 frame the whole CV for it. Judge from the described work, not the title alone, and not from
-which base template you were handed — reshape its emphasis as needed. the candidate's full background
-is available to you; pull in whatever is relevant and leave out the rest.
+which base template you were handed — reshape its emphasis as needed. The candidate's full
+background is available to you; pull in whatever is relevant and leave out the rest.
 
 If it's a DEVELOPER / SOFTWARE-ENGINEERING / AI-engineering / general-tech role (most roles):
 frame everything through the ENGINEERING lens — what was built, the stack, the system-design
-decisions — not the finance/returns angle.
-  - Cut the "Quantitative Research — Global Liquidity & Asset Pricing" entry entirely (pure
-    research, no engineering).
-  - Drop Bloomberg Terminal from certifications, and the ByBit API / DSR-PSR / factor-
-    attribution / walk-forward jargon.
-  - Never write "crypto" — use "digital assets"; rename "Crypto Screener" to "Digital Asset
-    Screener".
-  - Keep at most ONE line of live-trading performance as proof a system shipped; drop the
-    other Sharpe/Sortino/CAGR numbers.
+decisions — not the domain/returns angle.
+  - Cut entries that are pure research or pure domain analysis with no engineering in them.
+  - Drop specialist tooling and in-house jargon that only reads to somebody in that domain
+    (trading terminals and exchange APIs, factor-attribution or bias-correction acronyms,
+    clinical or actuarial shorthand). A term the hiring manager would have to look up is a
+    line they skim past.
+  - Prefer the industry-neutral name for a thing over the insider one where both are true
+    ("digital assets" over "crypto"), and rename an entry title the same way.
+  - Keep at most ONE line of domain performance figures as proof a system shipped; drop the
+    rest of the numbers that only mean something inside that domain.
   - Lead with system design, APIs, real-time data, testing, and production deployment.
 
-If it's a QUANT / RESEARCH / TRADING role: lead with finance and statistical depth —
-methodology, factor research, risk management, strategy development, ML feature engineering
-and bias correction (DSR/PSR). Keep the quant tooling (Bloomberg, ByBit API) and performance
-metrics; they signal credibility. Crypto / on-chain terminology is fine here.
-  - COVERAGE: include the STRONGEST few of their finance / quantitative work (e.g. the backtesting
-    framework plus one trading system) AND the Syntagma internship AND a little of their software
-    engineering — do NOT reduce the CV to just the internship, but do NOT list everything either.
-    Pick the most relevant of each and leave the weaker items out.
-  - For a QUANT-DEV or quant-engineering role specifically, engineering is a HEADLINE too, not an
-    afterthought: give their dev work (FlowSolutions, the automated pipeline, backend/APIs) real
-    space alongside the quant work. For a pure research/analyst quant role, engineering is present
-    but more condensed.
+If it's a QUANT / RESEARCH / TRADING role — or any other SPECIALIST role where the domain is the
+qualification: lead with domain and statistical depth — methodology, research, risk, strategy or
+model development, feature engineering and bias correction. Keep the specialist tooling and the
+performance metrics the base template states; inside the domain they signal credibility rather
+than noise, and the insider terminology is now an advantage.
+  - COVERAGE: include the STRONGEST few of their domain entries AND any employment in that
+    industry AND a little of their software engineering — do NOT reduce the CV to a single
+    entry, and do NOT list everything either. Pick the most relevant of each and leave the
+    weaker items out.
+  - Where the role is a hybrid of the domain and engineering (a quant-dev, a research engineer,
+    an ML engineer), engineering is a HEADLINE too, not an afterthought: give their production
+    work — services, pipelines, backends and APIs — real space alongside the domain work. For a
+    pure research or analyst role, engineering is present but more condensed.
 
 For hybrid / AI roles, lead with whatever the posting values most (often LLM/AI engineering).
-In every case, only keep experience entries that earn their place for THIS specific job: if a
-project (e.g. the quant investing system) has nothing to do with the role, cut it rather than
-pad the CV with it.
+In every case, only keep experience entries that earn their place for THIS specific job: an
+entry with nothing to do with the role gets cut rather than padding the CV, however good it is.
 
-FRAMING THE AI / ML DISCIPLINES (computer vision, reinforcement learning, modelling of natural
-systems / dynamical systems, text & speech processing / signal processing)
-The base template holds these as SEPARATE entries — one per discipline — on purpose: each is a
-distinct body of work the candidate can speak to on its own. Keep them separate when relevant; do NOT
-merge them back into one dense "machine learning" block.
+FRAMING TECHNICAL DISCIPLINES (computer vision, reinforcement learning, modelling and simulation,
+signal or speech processing, NLP — whichever of them this candidate actually has)
+Where the base template holds these as SEPARATE entries — one per discipline — that is on purpose:
+each is a distinct body of work the candidate can speak to on its own. Keep them separate when
+relevant; do NOT merge them back into one dense "machine learning" block.
 - They are WORK, not blanket "research". Only paper-backed strands may be called research; the
   rest are independent technical projects — describe them as work they did, not coursework or a
   study. Never write "studied", "coursework", or "as part of a module".
@@ -159,15 +162,16 @@ merge them back into one dense "machine learning" block.
   about as their own titled entries (e.g. keep Reinforcement Learning and Computer Vision if the
   role wants them). For an unrelated dev role, cut the ones that don't earn their place rather
   than pad — often you keep zero or one.
-- Frame each around the METHODS, mathematical concepts, libraries, and techniques, and the goal
-  each served — the breadth of what they can actually use (transfer learning and CNN fine-tuning,
-  structured / filter pruning; tabular Q-learning and the Bellman equation; RK4 integration,
-  Lyapunov exponents, Lotka-Volterra and agent-based modelling; spectral / Fourier analysis,
-  filtering, linear prediction; sentence embeddings and NLP classification; PyTorch, torchvision,
-  scikit-learn, NumPy, SciPy). Keep it abstract — technique + goal, not a pile of result numbers.
+- Frame each around the METHODS, mathematical concepts, libraries, and techniques the entry
+  itself names, and the goal each served — the breadth of what they can actually use: the
+  architecture and the training method, the algorithm and the theory behind it, the numerical
+  scheme, the analysis, the libraries. Name only what their own entry states, never a technique
+  that merely belongs to the same field. Keep it abstract — technique + goal, not a pile of
+  result numbers.
 Include specific metrics or optimisation detail ONLY when the posting explicitly asks for that
-depth. The "Automated Data Pipeline" entry is the right level of abstraction to match — for a
-technical bullet the concrete anchor is the technique + goal, not necessarily a number.
+depth. The most technical entry already in the base template is the right level of abstraction to
+match — for a technical bullet the concrete anchor is the technique + goal, not necessarily a
+number.
 
 WRITE LIKE A SHARP HUMAN, NOT A CORPORATE TEMPLATE
 THE 6-SECOND TEST: A recruiter scans the profile paragraph for 6 seconds and decides
@@ -273,8 +277,8 @@ Do not output the checklist — just verify each item internally and fix any fai
   □ Nothing included just to fill space — every line earns its relevance to THIS role?
   □ SHARP COVERAGE: AT MOST 5 experience entries and ~11 bullets total, only the MOST relevant, with
     weaker or less-relevant material left out even if truthful? The single strongest relevant items
-    are present (for a quant / quant-dev role, the best of their finance AND engineering, not just the
-    internship), but it is NOT an exhaustive list?
+    are present (for a hybrid role, the best of the domain work AND the engineering, not one
+    standing in for both), but it is NOT an exhaustive list?
   □ KEYWORD SURVIVAL: does every critical posting keyword the candidate genuinely has still appear somewhere
     visible (a competency bullet or the profile) even after cutting entries to the cap?
   □ No bullet ends with a tacked-on "— demonstrating/showcasing X" tail (show, don't tell)?
