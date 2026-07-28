@@ -42,6 +42,12 @@ on its own 401 the second would replay a token the first had rotated — and the
 replayed refresh token as theft and revokes the entire session family. Every caller waits on one
 shared promise.
 
+The web CI job turned out to be a **second check for free**: it installs only
+`services/api/requirements.txt` and then imports the app to dump the schema, so a dependency the
+service imports but does not declare fails there. It caught `httpx` on its first run — declared by
+the harvester and notifier, used by `libs/credentials`, and missing from the API's list, which
+would have shown up as the `api` container failing to start on the box.
+
 Known gap, written down rather than glossed: FastAPI types most handlers as a bare `dict`, so the
 generated types cover paths and request bodies but not response *contents*. The response shapes the
 components read are narrow hand-written views at the bottom of `src/api.ts`. Annotating every

@@ -126,6 +126,10 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: web/package-lock.json
+      # Only the API's own declared dependencies, which makes this job a second, free
+      # check: if `services/api/requirements.txt` is missing something the service
+      # imports, the schema dump below fails here rather than the container failing to
+      # start on the box. It caught `httpx` on its first run.
       - run: pip install -r services/api/requirements.txt
       - run: npm ci
         working-directory: web
