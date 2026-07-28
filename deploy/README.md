@@ -51,6 +51,34 @@ line lands in shell history and in `ps` output for every user on the box. So the
 Both take `--stdin`-style piping if you need to script them; `set_password.py` reads the new
 password twice from stdin, `set_credential.py` takes `--stdin`.
 
+### Timers
+
+| Unit | State | Why |
+|---|---|---|
+| `harvester.timer` | enabled | 15-minute shared harvest |
+| `backup.timer` | install below | nightly dump at 03:20 |
+| `health.timer` | **installed, deliberately disabled** | see below |
+
+```bash
+sudo cp deploy/{health,backup}.{service,timer} /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now backup.timer
+systemctl list-timers backup.timer
+```
+
+**Do not enable `health.timer` until the notifier is deployed.** The silent-feed alert is currently
+a true positive — both accounts have matches waiting and have never had a delivery, because nothing
+is running to deliver them. Enabling it now emails every 15 minutes about a condition we created on
+purpose, and an alert that cries wolf is worse than no alert. Enable it in the same change that
+starts delivery.
+
+### Accepted risk: backups are on the box, 2026-07-28
+
+The dumps live in `~/backups`, on the same disk as the database they protect. That covers the
+likely failure — a bad migration, a dropped table, an operator mistake — and does **not** cover disk
+or host loss. Off-box storage is deferred until there is somewhere to put it; recorded here because
+an accepted risk that is not written down is one somebody later mistakes for an oversight.
+
 ### Applied 2026-07-28
 
 Migrations through `f1d84c2e9b07` are on the box, the `capture` and `labeller` workers are up with

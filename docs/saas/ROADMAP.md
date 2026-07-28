@@ -348,8 +348,11 @@ a real person who has not seen the product, and watch without helping.
   `restore_drill.py` **passed against a real 20 MB backup**: every row count matched, a stored
   credential decrypted with the separately-held KEK, and both models came back servable. It found a
   bug doing it, which is the argument for having a drill at all.
-- **Still to do:** transactional email is built (`libs/mail`) but unproven end to end, and off-box
-  storage for the dumps — they are on the same disk as the database they protect.
+- **Still to do:** transactional email is built (`libs/mail`) but unproven end to end.
+  **Off-box backup storage is deferred by decision, 2026-07-28** — there is nowhere to put it yet.
+  The dumps therefore cover a bad migration, a dropped table and an operator mistake, and do not
+  cover disk or host loss. Written down rather than left implied, because an accepted risk nobody
+  recorded is one somebody later mistakes for an oversight.
 - **Measure capture cost first** (`PLATFORM_ARCHITECTURE.md` §10.10) — it is the first spend a
   user sees, on a free plan, on their own key.
 - Onboard 3–5 **invited** users. Quotas on from day one.
