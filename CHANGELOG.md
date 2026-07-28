@@ -16,6 +16,18 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ## 2026-07-28
 
+### Both reference owners' documents imported
+
+`import_documents.py` — everything the upload form does, for a folder: same extractor, same content
+hash, same replace-on-re-upload, and the file itself never stored. Andras's five (a master CV plus
+four long-form context files, 158,975 characters) and Ruben's four candidate-profile files (28,949).
+
+**What was deliberately left out, and why.** Ruben's `documents/` folder is empty — his profile
+content lives in the assistant's skill files — so the import took the four that describe *him* and
+skipped `04-job-evaluation.md` (that is the rubric, already migrated as `rubric_md`), the CV and
+cover-letter templates (templates, not documents about a person), and the `.html` base CVs. Feeding
+template markup to the processing step would produce a profile built partly from HTML.
+
 ### Per-category Telegram channels
 
 A single feed of everything is a feed people stop reading. The reference instance splits it by the

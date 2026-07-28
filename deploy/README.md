@@ -53,10 +53,22 @@ password twice from stdin, `set_credential.py` takes `--stdin`.
 
 ### Applied 2026-07-28
 
-Migrations `c1a6be40d3f2`, `d3f8a1c25b90` and `e5c9b71a4d38` are on the box (`alembic current` →
-`e5c9b71a4d38 (head)`), both accounts have a login password, and the `capture` and `labeller`
-workers are up with zero restarts. **Telegram is still unconfigured for both accounts** — it needs a
-bot token from BotFather, which cannot be generated from here.
+Migrations through `f1d84c2e9b07` are on the box, the `capture` and `labeller` workers are up with
+zero restarts, and both accounts are fully configured:
+
+| | Ruben | Andras |
+|---|---|---|
+| login | set | set |
+| telegram | connected | connected |
+| channels | 3 (`Hun_Job_Stream`, `LinkedIn_Job_Streams`, `Job_Streams`) | 1 (`Engineering Jobs`), all routes pointed at it |
+| documents | 4, 28,949 chars | 5, 158,975 chars |
+
+Andras's single channel is set as all three routes on purpose: `group_by_chat` keys on the resolved
+chat id, so three routes to one chat produce **one** message rather than three.
+
+The imported originals were deleted from the box after extraction. The platform stores document
+*text* and never the file, and staging directory that outlived the import would quietly contradict
+that.
 
 ```
 deploy/
