@@ -402,7 +402,7 @@ cannot act on a match in a way the platform learns from, and they cannot produce
 match is for. The `docgen` lane has existed since Phase 1 with **no worker behind it** — the same
 shape of gap the `score` lane turned out to be.
 
-### 5a — the feedback loop
+### 5a — the feedback loop ✅ **done 2026-07-28**
 
 **This is the half that makes the product get better, and without it the model is frozen at whatever
 Haiku thought.** `user_labels.source = 'feedback'` at weight 5 already exists in the schema and
@@ -419,6 +419,11 @@ nothing writes it.
   must not teach somebody else's model. Carried from the reference instance, which learned this.
 - **Debounced retrain**, per `SCHEDULER_PLAN.md` §5: a burst of twenty taps is one retrain, ten
   minutes after the last.
+
+**Live.** Both accounts' bots are registered against `mahoraga-app.rubenlekli.com`, Telegram reports
+no pending updates and no delivery error, and a request to the endpoint with a wrong secret gets a
+404 from the public internet. The digest changed shape to carry the buttons — see the changelog for
+why that reversed an earlier decision.
 
 ### 5b — docgen
 
