@@ -100,6 +100,35 @@ def capture_profile(client: LlmClient, documents: list[tuple[str, str]], *,
         raise CaptureFailed("the profile the model produced did not match the schema") from exc
 
 
+def with_account_links(draft: ProfileSchema, user: User) -> ProfileSchema:
+    """Carry the links the user typed at signup into the captured profile.
+
+    **The gap this closes made a CV nobody could reply to.** Onboarding asks for a portfolio, a
+    GitHub, a LinkedIn and stores them on `users.links`; capture reads the *documents*, which often
+    carry no contact block at all once a CV has been through a PDF extractor. The renderer builds
+    the CV header from `profile.identity.links`, so the first real build produced a correct,
+    one-page CV with no way to contact the candidate on it. The ATS check said so, which is what it
+    is for.
+
+    Deterministic rather than asked of the model: these are values the user typed, and a capture
+    that "mostly" reproduces a URL is worse than one that does not try.
+
+    **The model's own findings win a collision.** A link it read off the CV is the one the candidate
+    puts on applications; the signup field is the backstop for what is missing.
+    """
+    links = {label: url for label, url in (draft.identity.links or {}).items() if url}
+    for entry in user.links or []:
+        url = (entry.get("url") or "").strip() if isinstance(entry, dict) else ""
+        label = (entry.get("platform") or "").strip() if isinstance(entry, dict) else ""
+        if not url or url in links.values():
+            continue
+        links[label or f"link{len(links) + 1}"] = url
+
+    if links == draft.identity.links:
+        return draft
+    return draft.model_copy(update={"identity": draft.identity.model_copy(update={"links": links})})
+
+
 def process_user(session: Session, user_id: _uuid.UUID, client: LlmClient) -> ProfileSchema:
     """Read this user's documents, produce a draft, store it. Returns the draft.
 
@@ -111,7 +140,7 @@ def process_user(session: Session, user_id: _uuid.UUID, client: LlmClient) -> Pr
         raise CaptureFailed(f"no such user {user_id}")
 
     documents = documents_for(session, user_id)
-    draft = capture_profile(client, documents, full_name=user.full_name)
+    draft = with_account_links(capture_profile(client, documents, full_name=user.full_name), user)
 
     user.profile_draft = draft.model_dump()
     user.capture_source = "capture"

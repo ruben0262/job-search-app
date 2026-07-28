@@ -250,3 +250,45 @@ def test_an_unconfirmed_profile_cannot_be_stored():
         s.close()
         trans.rollback()
         conn.close()
+
+
+# ── the contact details a CV needs ────────────────────────────────────────────────────────────
+
+def test_the_links_typed_at_signup_reach_the_captured_profile():
+    """**A CV nobody can reply to is what this prevents.** Onboarding asks for a portfolio and a
+    GitHub; capture reads documents, which often carry no contact block once a CV has been through
+    a PDF extractor. The first real build produced a correct one-page CV with no contact details on
+    it, and the ATS check reported exactly that."""
+    from libs.contracts.profile import ProfileSchema
+    from services.capture.process import with_account_links
+
+    draft = ProfileSchema.model_validate({"identity": {"name": "Alice Example"}})
+    user = type("U", (), {"links": [{"url": "https://github.com/alice", "platform": "github"},
+                                    {"url": "alice@example.test", "platform": "email"}]})()
+
+    merged = with_account_links(draft, user)
+
+    assert merged.identity.links == {"github": "https://github.com/alice",
+                                     "email": "alice@example.test"}
+
+
+def test_what_the_model_read_off_the_cv_wins_a_collision():
+    """A link on the CV is the one the candidate puts on applications; the signup field is the
+    backstop for what is missing, not an override."""
+    from libs.contracts.profile import ProfileSchema
+    from services.capture.process import with_account_links
+
+    draft = ProfileSchema.model_validate(
+        {"identity": {"name": "A", "links": {"portfolio": "https://alice.dev"}}})
+    user = type("U", (), {"links": [{"url": "https://alice.dev", "platform": "site"}]})()
+
+    assert with_account_links(draft, user).identity.links == {"portfolio": "https://alice.dev"}
+
+
+def test_an_account_with_no_links_leaves_the_profile_alone():
+    from libs.contracts.profile import ProfileSchema
+    from services.capture.process import with_account_links
+
+    draft = ProfileSchema.model_validate({"identity": {"name": "A"}})
+
+    assert with_account_links(draft, type("U", (), {"links": None})()).identity.links == {}
