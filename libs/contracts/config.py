@@ -247,6 +247,11 @@ class UserConfigSchema(BaseModel):
     languages: list[Language] = Field(default_factory=list)
     min_salary: int | None = Field(default=None, ge=0, le=500_000)
     salary_currency: Currency = Currency.EUR
+    # **Not asked at onboarding** (removed from the form 2026-07-28). It is a plan limit rather
+    # than a search preference — putting it in front of a free user implies it is theirs to choose,
+    # when it is the first thing a paid tier will raise. Kept in the schema with its default so
+    # nothing downstream changes and a stored config stays valid; the field becomes a tier setting
+    # when subscriptions exist rather than a question.
     max_notifications_per_day: int = Field(default=20, ge=1, le=100)
 
     @field_validator("seniority", "languages")

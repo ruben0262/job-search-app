@@ -194,18 +194,6 @@ export function ConfigStep({ onDone }: { onDone: () => void }) {
         </select>
       </Field>
 
-      <Field label="How many messages a day, at most?">
-        <input
-          type="number"
-          min={1}
-          max={100}
-          value={config.max_notifications_per_day}
-          onChange={(event) =>
-            setConfig({ ...config, max_notifications_per_day: Number(event.target.value) })
-          }
-        />
-      </Field>
-
       <Error>{save.error}</Error>
       <button type="submit" disabled={save.busy || !section.keywords.length}>
         {save.busy ? "Saving…" : "Save and continue"}
