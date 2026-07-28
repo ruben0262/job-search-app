@@ -1,0 +1,10 @@
+# services/labeller — scores jobs against a user's rubric with Haiku.
+#
+# Identical to capture's, and that is not an accident worth deduplicating: both call Claude on the
+# user's credential through `libs/llm`. A shared base image would couple their rebuild cycles for
+# the sake of one shared line (CODE_STRUCTURE.md §5).
+anthropic>=0.92
+pydantic>=2.10
+SQLAlchemy>=2.0
+psycopg[binary]>=3.2
+cryptography>=44.0       # libs/secrets: it runs on the user's own decrypted credential

@@ -16,6 +16,24 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ## 2026-07-28
 
+### Deploy artifacts for the two credential-spending workers
+
+`capture` (the `process` lane) and `labeller` (the `label` lane) now have Dockerfiles and compose
+services. Separate images despite identical dependency lists: they are separate lanes with separate
+restart cycles, and one worker's dependency bump should not rebuild the other
+(`CODE_STRUCTURE.md` §5).
+
+`SECRETS_KEK` is `:?`-required for both. Neither can do anything without decrypting the user's
+credential, so starting without it would produce a worker that claims jobs, fails every one, and
+dead-letters a user's queue — a failure that reads as a provider outage.
+
+Also corrected `services/capture/requirements.txt`, which still described a Managed Agents client
+three commits after that client was deleted.
+
+**Not applied on the box.** SSH from the build machine is refused, so the three pending migrations
+and the `up -d` for both workers are written down in `deploy/README.md` with the reason each is safe
+to apply late, rather than left as something to remember.
+
 ### The GDPR obligations, as behaviour (Phase 3 step 11) — Phase 3 backend complete
 
 All three are things the product does now rather than things a document claims.

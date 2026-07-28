@@ -10,15 +10,43 @@ Running on the platform VPS (`169.58.16.241`, 23 GiB RAM, 8 vCPU, 382 GB free):
 | `job-search-app-tei-1` | `services/embedder/docker-compose.yml` | ✅ ~832 MiB / 2 GB budget |
 | `job-search-app-embedder-gateway-1` | same | ✅ `verified: true` |
 
-Two compose projects on purpose — the embedder keeps its own, see below. Nothing else is deployed
-yet; `api`, `harvester`, `scorer`, `trainer`, `notifier`, `docgen`, `capture` are unbuilt.
+Two compose projects on purpose — the embedder keeps its own, see below. The harvester runs on a
+15-minute systemd timer. `api`, `scorer`, `trainer`, `notifier` and `docgen` have code but no
+container on the box yet; `capture` and `labeller` have both a Dockerfile and a compose service as
+of 2026-07-28 and are waiting to be brought up.
 
 **Not yet done:** off-box backups (deferred until the platform runs end to end) and the restore
 drill. Both are required before the first invited user, not before then.
 
+### Pending on the box, 2026-07-28
+
+Three migrations are written and CI-verified but **not applied** — SSH access from the build machine
+is currently refused (`Permission denied (publickey)`), so they are queued here rather than run.
+Every one is additive and nullable, so the box running older code against the newer schema is safe;
+nothing breaks by waiting.
+
+```bash
+cd /opt/job-search-app && git pull
+./.venv/bin/alembic upgrade head          # c1a6be40d3f2, d3f8a1c25b90, e5c9b71a4d38
+```
+
+| Revision | What it adds | Why it is safe to apply late |
+|---|---|---|
+| `c1a6be40d3f2` | `users.full_name`, `links`, `onboarding_completed_at` | nullable columns nothing yet reads |
+| `d3f8a1c25b90` | the `process` queue lane, `profile_draft`, `capture_source`, `documents_changed_at`, `processed_at` | widens a CHECK constraint and adds nullable columns |
+| `e5c9b71a4d38` | `users.processing_consent_at`, `processing_consent_version` | nullable, and deliberately **not** backfilled — an existing account has not consented, and defaulting it to "now" would record a consent nobody gave |
+
+Then the two new workers, which need `SECRETS_KEK` set in `deploy/.env` — compose refuses to start
+them without it, on purpose:
+
+```bash
+docker compose -f deploy/compose.yml up -d capture labeller
+docker compose -f deploy/compose.yml logs -f capture labeller
+```
+
 ```
 deploy/
-├── compose.yml            the platform stack — Postgres so far
+├── compose.yml            the platform stack — Postgres, harvester, capture, labeller
 ├── .env.example           copy to .env; compose refuses to start without it
 ├── docker/                Dockerfile.<service>, one per container
 └── scripts/               operational one-shots run on the VPS

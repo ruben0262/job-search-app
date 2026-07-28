@@ -85,6 +85,58 @@ services:
     mem_limit: 1g
     cpus: 2
 
+  # ── the two lanes that spend a user's Claude credential ─────────────────────────────────────
+  #
+  # Long-running workers, not one-shots: they claim from their lane, drain the current job on
+  # SIGTERM, and are restarted rather than scheduled. Both are `restart: always` precisely because
+  # `libs/queue` is built so that a worker killed mid-job costs one retry and never a lost job —
+  # restart safety is a design input here, not an incident (CODE_STRUCTURE.md §5).
+  #
+  # **`SECRETS_KEK` is `:?`-required for both.** Neither can do anything without decrypting the
+  # user's credential, so starting without the key would produce a worker that claims jobs, fails
+  # every one, and dead-letters a user's queue — a failure that looks like a provider outage.
+
+  # `process` lane. One long Opus call per job over a whole document set; concurrency 1 is plenty
+  # because the work is one blocking HTTP request and the cost is the user's, not this box's.
+  capture:
+    build:
+      context: ..
+      dockerfile: deploy/docker/Dockerfile.capture
+    environment:
+      DATABASE_URL: postgresql+psycopg://jobsearch:${POSTGRES_PASSWORD:?}@postgres:5432/jobsearch
+      SECRETS_KEK: ${SECRETS_KEK:?set it in deploy/.env — the workers cannot decrypt without it}
+      LOG_DIR: /var/log/jobsearch
+      WORKER_NAME: capture-1
+    volumes:
+      - ../logs:/var/log/jobsearch
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: always
+    # Small: it holds one document set in memory and waits on the network.
+    mem_limit: 512m
+    cpus: 1
+
+  # `label` lane. One Haiku call per job over 50 postings, then it re-enqueues itself — so this is
+  # the container that runs longest and most often on a new account.
+  labeller:
+    build:
+      context: ..
+      dockerfile: deploy/docker/Dockerfile.labeller
+    environment:
+      DATABASE_URL: postgresql+psycopg://jobsearch:${POSTGRES_PASSWORD:?}@postgres:5432/jobsearch
+      SECRETS_KEK: ${SECRETS_KEK:?set it in deploy/.env — the workers cannot decrypt without it}
+      LOG_DIR: /var/log/jobsearch
+      WORKER_NAME: labeller-1
+    volumes:
+      - ../logs:/var/log/jobsearch
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: always
+    mem_limit: 512m
+    cpus: 1
+
 networks:
   # The embedder has its own compose project and owns this network. External, so this stack joins it
   # rather than trying to create it - which would fail, and rightly.

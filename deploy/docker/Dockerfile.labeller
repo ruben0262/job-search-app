@@ -1,0 +1,25 @@
+# The labeller image. Per-service dependencies, per CODE_STRUCTURE.md §5.
+#
+# Same shape as capture and deliberately a separate image: they are separate lanes with
+# separate restart cycles, and one worker's dependency bump should not rebuild the other.
+#
+# python:3.12-slim to match the rest of the stack, and CI.
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Dependencies first, so a code change does not re-resolve them.
+COPY services/labeller/requirements.txt /app/services/labeller/requirements.txt
+RUN pip install --no-cache-dir -r /app/services/labeller/requirements.txt
+
+# libs/ AND services/labeller/, because the boundary rule is services -> libs. Nothing else is
+# copied: this image has no reason to contain another service's code.
+COPY libs /app/libs
+COPY services/__init__.py /app/services/__init__.py
+COPY services/labeller /app/services/labeller
+
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+
+# A long-running worker: it claims from its lane until told to stop, and drains the current job on
+# SIGTERM rather than dying mid-call. `restart: always` in compose is what makes that safe.
+ENTRYPOINT ["python", "-m", "services.labeller"]
