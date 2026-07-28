@@ -105,8 +105,6 @@ product twice.
    Two bugs found in the doing: the transformation silently dropped RemoteOK's custom User-Agent
    (the header that exists because RemoteOK blocks the generic one), and LinkedIn's proxy had no
    verified owner. Both are covered by tests now.
-   HTTP-client factory, which is what keeps "this user's credential, for this user's fetch only"
-   auditable rather than hopeful.
 5. ✅ **Done 2026-07-27. Embedding vectors persist on corpus rows**, routed through `/embed/bulk`.
    T8 closed: one posting is embedded once regardless of how many users want it, asserted through a
    counting stub rather than assumed. Found and fixed a schema bug that would have failed on the
@@ -117,10 +115,16 @@ product twice.
    overlapping jobs, every read path returns only the caller's rows: applied log, labels, scores.
    Release blocker, now green.
 
-**Exit status 2026-07-27:** the shared harvester fills a Postgres corpus with embeddings — proven on
-the live box: 193 links, 185 new, 179 embedded, 0 failures, and idempotent on a second run (193
-duplicates, 0 new). T1 and T2 are green. **Still outstanding for full exit:** the 15-minute schedule
-installed, and Ruben's account configured and compared against his single-tenant stack.
+**Exit status — complete 2026-07-28.** The shared harvester fills a Postgres corpus with
+embeddings on a 15-minute systemd timer, and both migrated accounts run on it. First proven at
+193 links / 185 new / 179 embedded with 0 failures, and idempotent on a second run (193
+duplicates, 0 new); the corpus now stands at **3,896 rows, 3,892 embedded** after the reference
+instances' labelled history was imported alongside live harvesting. T1 and T2 green.
+
+Every exit condition is met: the schedule is installed and firing, and Ruben's account runs on
+the platform **alongside** his single-tenant stack rather than replacing it (D6) — with Andras's
+beside it, which the criteria did not ask for and which is what made the fairness split
+observable.
 
 **Exit criteria:** the shared harvester fills a Postgres corpus with embeddings, on a schedule, with
 T1 + T2 green, and Ruben's account runs on it **alongside** his single-tenant stack (decision D6 —
@@ -175,15 +179,17 @@ LinkedIn loop already needs and currently has nowhere real to live.
    per-user intervals, delivery dedup in the committing transaction, revoked bot terminal not
    retried, daily cap defers rather than drops.
 
-**Exit status 2026-07-27:** every Phase 2 component is built, tested, and wired to a worker, and
-**two real accounts now run side by side on one stack** — Ruben's and Andras's, both migrated
-verbatim from their single-tenant instances, both folded into one shared harvest with the fan-out
-budget split 30/30 by round-robin. 311 corpus rows, 305 embedded, on the 15-minute timer.
+**Exit status — complete 2026-07-27.** Every component is built, tested, and wired to a worker,
+and **two real accounts run side by side on one stack**: Ruben's and Andras's, migrated verbatim
+from their single-tenant instances and folded into one shared harvest with the fan-out budget
+split 30/30 by round-robin — fairness working in production, where FIFO would have given the
+first account all 60 queries.
 
-**The remaining third closed the same day.** Both instances' labelled history was imported into the
-shared corpus (only each reference's newest rubric — older ones answer a different question), both
-accounts got a confirmed profile and rendered rubric, and both were retrained on platform features
-rather than importing artifacts fit against the old hardcoded token lists.
+Both instances' labelled history was imported into the shared corpus — **only each reference's
+newest rubric**, since a label written under an older one answers a different question — and both
+accounts were **retrained on platform features** rather than importing artifacts fit against the
+old hardcoded token lists. Those artifacts could not have been imported: their weights are
+attached to a different token list, which is exactly the mismatch the scorer refuses.
 
 ```
                     Ruben              Andras
@@ -197,6 +203,13 @@ overlap of top-100 feeds: 0
 Zero overlap on the same corpus is the proof the shared design works: one posting stored,
 deduplicated and embedded once, ranked disjointly by two per-user models.
 
+**Three silent bugs surfaced by doing it on real profiles**, all fixed: a hyphenated skill never
+matched its spaced spelling (`full-stack` matched nothing in "Full Stack Developer", and the
+feature simply read 0); splitting a compound produced fragments that fire on unrelated text
+(`Spring Boot` yielded `boot`, matching *bootstrap*); and `remote_policy: any` dropped the
+location gate entirely, which would have shown a candidate roles requiring relocation anywhere
+on earth.
+
 **Phase 2 is complete.** What remains for these two accounts is credentials — a login password and a
 Telegram bot token each — which only their owners can supply. Everything those gate is built.
 
@@ -207,6 +220,17 @@ prompted this whole design.
 ## Phase 3 — self-service
 
 In onboarding order, which is also dependency order.
+
+**Backend first; the web layer is step 12, last** (decided 2026-07-28). Every step below is built
+as API endpoints with tests, and the React that drives them comes at the end in one piece. Two
+reasons: a form is cheap to write against a settled API and expensive to rewrite against a moving
+one, and an endpoint with a test proves a rule holds — a form only proves it holds when somebody
+clicks in the expected order. Where a step below says "form", read "the endpoints a form will
+call, and the validation behind them".
+
+It stays *inside* Phase 3 rather than becoming a later phase, because this phase's exit criterion
+is a non-technical person signing up unaided — which is not testable without it — and Phase 4
+onboards a cohort who would have nothing to use.
 
 **Reordered 2026-07-28 — see `ONBOARDING_AND_PROCESSING.md`.** Onboarding no longer calls an LLM at
 all: it collects identity, documents, history, credentials and config, and nothing else. Capture
@@ -262,8 +286,13 @@ and finishable in one sitting.
      complete. What remains is to **verify** that — an assertion that account deletion leaves no row
      anywhere — rather than to build a second deletion path.
 
-**Exit criteria:** a non-technical person signs up unaided and gets a working feed. Test this with a
-real person who has not seen the product, and watch without helping.
+12. **The web layer** — React on Cloudflare Pages behind the Tunnel (D7). The seven onboarding
+   pages, the dashboard, and the edit pages, with **every form generated from the shared JSON
+   Schema** rather than hand-written (`CODE_STRUCTURE.md` §8) so a field cannot exist on one side
+   and not the other. Built last, against endpoints that have stopped moving.
+
+**Exit criteria:** a non-technical person signs up unaided and gets a working feed. Test this with
+a real person who has not seen the product, and watch without helping.
 
 
 ## Phase 4 — first cohort (invite-only, decision D5)
