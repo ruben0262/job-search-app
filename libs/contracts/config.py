@@ -28,7 +28,10 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # Current shape version, stored on `user_config.schema_version`. Bump when the shape changes so a
 # migration can read old rows and know what they meant, instead of guessing.
-CONFIG_SCHEMA_VERSION = 1
+# 2 (2026-07-28): the flat keyword list became per-platform sections
+# (`ONBOARDING_AND_PROCESSING.md` §3). A v1 row is readable — `migrate_config` wraps it in a single
+# `all` section — so old rows keep their version until the user next saves.
+CONFIG_SCHEMA_VERSION = 2
 
 # The per-user search-term cap (`TENANT_SAFETY.md` §3, `HARVESTER_PLAN.md` §3).
 #
@@ -53,6 +56,20 @@ CONFIG_SCHEMA_VERSION = 1
 # minutes) without crowding anybody out. The cap's real job is fairness between users, and
 # round-robin already provides that - the cap is a backstop against absurdity, not the mechanism.
 MAX_KEYWORDS_PER_USER = 25
+
+
+class Platform(StrEnum):
+    """Which sources a search section targets.
+
+    Only sources that *take a query* can be named. The ATS and board families are crawled rather
+    than searched — naming one here would silently produce no queries at all, which is exactly the
+    kind of configuration that looks fine and returns nothing.
+    """
+
+    ALL = "all"
+    LINKEDIN = "linkedin"
+    INDEED = "indeed"
+    GOOGLE = "google"
 
 
 class RemotePolicy(StrEnum):
@@ -140,6 +157,74 @@ class Currency(StrEnum):
     DKK = "DKK"
 
 
+def _bounded_terms(terms: list[str]) -> list[str]:
+    """2–40 characters each, whitespace-collapsed, case-insensitively deduplicated.
+
+    Deduplication matters beyond tidiness: two spellings of one term become two entries in the
+    harvest query set and spend the fan-out budget twice for identical results.
+
+    Rejects rather than truncates. A silently dropped keyword is a user wondering why their search
+    does not work.
+    """
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for raw in terms:
+        term = " ".join((raw or "").split())
+        if not 2 <= len(term) <= 40:
+            raise ValueError(
+                f"keyword {raw!r} must be 2-40 characters after trimming (got {len(term)})")
+        if term.lower() in seen:
+            continue
+        seen.add(term.lower())
+        cleaned.append(term)
+    return cleaned
+
+
+def _deduplicate(values: list) -> list:
+    """Order-preserving dedup. The form can emit duplicates; they must not reach the query set."""
+    seen, out = set(), []
+    for value in values:
+        if value not in seen:
+            seen.add(value)
+            out.append(value)
+    return out
+
+
+class SearchSection(BaseModel):
+    """One search, targeted at one platform or at all of them.
+
+    Most users have exactly one section, `platform: all`, and never see the concept. It exists for
+    the case a flat config cannot express: different terms or a different workplace policy on
+    LinkedIn than on the job boards (`ONBOARDING_AND_PROCESSING.md` §3).
+
+    A section names *search* parameters only. Things that are true of the person rather than of a
+    search — seniority, languages, salary floor — stay on the config, because a user is not a
+    different candidate on a different site.
+    """
+
+    model_config = ConfigDict(extra="forbid", use_enum_values=True)
+
+    platform: Platform = Platform.ALL
+    keywords: list[str] = Field(min_length=1, max_length=MAX_KEYWORDS_PER_USER)
+    exclude_keywords: list[str] = Field(default_factory=list, max_length=10)
+    locations: list[Location] = Field(default_factory=list, max_length=5)
+    remote_policy: RemotePolicy = RemotePolicy.REMOTE_OR_HYBRID
+    # 24 hours by default. The harvest runs every 15 minutes, so a wider window mostly re-reads
+    # postings already deduplicated away — but a brand new account needs one wider pass or its first
+    # impression of the product is a blank page, which is what `COLD_START_PLAN.md` covers.
+    posted_within_hours: int = Field(default=24, ge=6, le=168)
+
+    @field_validator("keywords", "exclude_keywords")
+    @classmethod
+    def _clean_terms(cls, terms: list[str]) -> list[str]:
+        return _bounded_terms(terms)
+
+    @field_validator("locations")
+    @classmethod
+    def _clean_locations(cls, values: list) -> list:
+        return _deduplicate(values)
+
+
 class UserConfigSchema(BaseModel):
     """Everything a user can configure about what they want to see.
 
@@ -155,58 +240,59 @@ class UserConfigSchema(BaseModel):
 
     model_config = ConfigDict(extra="forbid", use_enum_values=True)
 
-    # Enforced here rather than only at harvest time, so a user is told at the form instead of
-    # being silently under-served later.
-    keywords: list[str] = Field(min_length=1, max_length=MAX_KEYWORDS_PER_USER)
-    exclude_keywords: list[str] = Field(default_factory=list, max_length=10)
+    sections: list[SearchSection] = Field(min_length=1, max_length=5)
 
-    locations: list[Location] = Field(default_factory=list, max_length=5)
-    remote_policy: RemotePolicy = RemotePolicy.REMOTE_OR_HYBRID
+    # Person-level, not search-level: a candidate is not more senior on one job board than another.
     seniority: list[Seniority] = Field(default_factory=list)
     languages: list[Language] = Field(default_factory=list)
-
     min_salary: int | None = Field(default=None, ge=0, le=500_000)
     salary_currency: Currency = Currency.EUR
-
     max_notifications_per_day: int = Field(default=20, ge=1, le=100)
-    # 6 hours to a week. Below 6 h a cycle would mostly return nothing; beyond a week the postings
-    # are stale enough that applying is usually pointless.
-    posted_within_hours: int = Field(default=72, ge=6, le=168)
 
-    @field_validator("keywords", "exclude_keywords")
+    @field_validator("seniority", "languages")
     @classmethod
-    def _bounded_terms(cls, terms: list[str]) -> list[str]:
-        """2–40 characters each, whitespace-collapsed, case-insensitively deduplicated.
+    def _clean_enums(cls, values: list) -> list:
+        return _deduplicate(values)
 
-        Deduplication matters beyond tidiness: two spellings of one term become two entries in the
-        harvest query set and spend the fan-out budget twice for identical results.
+    @field_validator("sections")
+    @classmethod
+    def _cap_total_keywords(cls, sections: list[SearchSection]) -> list[SearchSection]:
+        """The cap spans every section, not each one.
 
-        Rejects rather than truncates. A silently dropped keyword is a user wondering why their
-        search does not work.
+        Per-section caps would let five sections buy five times the fan-out budget, which is the
+        one thing the cap exists to prevent — and it would do it silently, by making each individual
+        section look compliant.
         """
-        cleaned: list[str] = []
-        seen: set[str] = set()
-        for raw in terms:
-            term = " ".join((raw or "").split())
-            if not 2 <= len(term) <= 40:
-                raise ValueError(
-                    f"keyword {raw!r} must be 2-40 characters after trimming (got {len(term)})")
-            if term.lower() in seen:
-                continue
-            seen.add(term.lower())
-            cleaned.append(term)
-        return cleaned
+        total = sum(len(section.keywords) for section in sections)
+        if total > MAX_KEYWORDS_PER_USER:
+            raise ValueError(
+                f"{total} keywords across {len(sections)} sections exceeds the limit of "
+                f"{MAX_KEYWORDS_PER_USER}")
 
-    @field_validator("locations", "seniority", "languages")
-    @classmethod
-    def _deduplicate(cls, values: list) -> list:
-        """Order-preserving dedup. The form can emit duplicates; they must not reach the query set."""
-        seen, out = set(), []
-        for v in values:
-            if v not in seen:
-                seen.add(v)
-                out.append(v)
-        return out
+        platforms = [section.platform for section in sections]
+        if len(set(platforms)) != len(platforms):
+            # Two sections for one platform is almost always a mistake, and the fold would silently
+            # merge them — so the user would see terms they thought they had separated.
+            raise ValueError("each platform may appear in at most one section")
+        return sections
+
+
+def migrate_config(raw: dict) -> dict:
+    """Read a config of any stored version as the current shape.
+
+    A v1 row is a flat keyword list; it becomes one `all` section carrying exactly what it carried
+    before. Done on read rather than by rewriting every row, so a user's stored config is never
+    changed by a deploy they did not ask for — it upgrades the next time they save.
+    """
+    if "sections" in raw:
+        return raw
+
+    section_fields = ("keywords", "exclude_keywords", "locations", "remote_policy",
+                      "posted_within_hours")
+    section = {key: raw[key] for key in section_fields if key in raw}
+    section["platform"] = Platform.ALL.value
+    rest = {key: value for key, value in raw.items() if key not in section_fields}
+    return {"sections": [section], **rest}
 
 
 def json_schema() -> dict:

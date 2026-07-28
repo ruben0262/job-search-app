@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from typing import NamedTuple
 from uuid import UUID
 
-from libs.contracts.config import MAX_KEYWORDS_PER_USER
+from libs.contracts.config import MAX_KEYWORDS_PER_USER, migrate_config
 
 # Fan-out budget (HARVESTER_PLAN.md §3). Unbounded, 50 users × 5 terms × 3 sources = 750
 # queries/cycle: a ban, a bandwidth bill, and a 15-minute cycle that takes an hour.
@@ -111,10 +111,14 @@ def build_query_set(
 ) -> dict[QueryKey, frozenset[UUID]]:
     """Fold every active user's config into `{QueryKey: users who want it}`.
 
-    Each user contributes at most `HARVEST_MAX_QUERIES_PER_USER` keywords — the same hard cap for
-    everyone (`TENANT_SAFETY.md` §3). The cap is applied to *their keywords*, before the cross
-    product with locations and sources, because that is the number the user chose and the one the
-    form shows them.
+    Each user contributes at most `HARVEST_MAX_QUERIES_PER_USER` keywords **across all their
+    sections** — the same hard cap for everyone (`TENANT_SAFETY.md` §3). Applied to their keywords,
+    before the cross product with locations and sources, because that is the number the user chose
+    and the one the form shows them.
+
+    A section naming a platform contributes queries for that source only
+    (`ONBOARDING_AND_PROCESSING.md` §3); a section with `platform: all` — which is what most users
+    have and never think about — contributes to every source the cycle is running.
 
     A config with no locations still produces queries: `location_norm=""` means "wherever", which is
     what the remote-only case actually wants.
@@ -130,25 +134,43 @@ def build_query_set(
     widest_age: dict[tuple[str, str, str, bool], int] = {}
 
     for user_id, config in user_configs.items():
-        keywords = list(config.get("keywords") or [])[:HARVEST_MAX_QUERIES_PER_USER]
-        locations = list(config.get("locations") or []) or [""]
-        remote_policy = config.get("remote_policy") or "remote_or_hybrid"
-        age = bucket_age_hours(int(config.get("posted_within_hours") or 72))
+        # Read through `migrate_config`, so a stored v1 row (one flat keyword list) folds exactly as
+        # it did before — as a single `all` section. A user's config is not rewritten by a deploy.
+        sections = migrate_config(dict(config)).get("sections") or []
+        budget = HARVEST_MAX_QUERIES_PER_USER
 
-        for keyword in keywords:
-            keyword_norm = normalise_keyword(keyword)
-            if not keyword_norm:
-                continue
-            for location in locations:
-                location_norm = str(location or "").strip().lower()
-                # `remote_only` asks the source to filter server-side; the other policies do not,
-                # because a source's "remote" flag is unreliable enough that excluding on it would
-                # lose real hybrid roles. Those are filtered locally instead.
-                is_remote = remote_policy == "remote_only" or location_norm.startswith("remote")
-                for source in sources:
-                    group = (source, keyword_norm, location_norm, is_remote)
-                    demand[group].add(user_id)
-                    widest_age[group] = max(widest_age.get(group, 0), age)
+        for section in sections:
+            if budget <= 0:
+                break
+            # The cap spans the user's sections rather than each one, matching the schema: five
+            # sections must not buy five times the fan-out budget.
+            keywords = list(section.get("keywords") or [])[:budget]
+            budget -= len(keywords)
+
+            locations = list(section.get("locations") or []) or [""]
+            remote_policy = section.get("remote_policy") or "remote_or_hybrid"
+            age = bucket_age_hours(int(section.get("posted_within_hours") or 24))
+
+            # A section naming a platform emits queries for that source only; `all` emits for every
+            # source the cycle is running. Intersected rather than trusted, so a section naming a
+            # source this cycle is not running produces nothing instead of an invalid query.
+            platform = section.get("platform") or "all"
+            section_sources = sources if platform == "all" else [s for s in sources if s == platform]
+
+            for keyword in keywords:
+                keyword_norm = normalise_keyword(keyword)
+                if not keyword_norm:
+                    continue
+                for location in locations:
+                    location_norm = str(location or "").strip().lower()
+                    # `remote_only` asks the source to filter server-side; the other policies do
+                    # not, because a source's "remote" flag is unreliable enough that excluding on
+                    # it would lose real hybrid roles. Those are filtered locally instead.
+                    is_remote = remote_policy == "remote_only" or location_norm.startswith("remote")
+                    for source in section_sources:
+                        group = (source, keyword_norm, location_norm, is_remote)
+                        demand[group].add(user_id)
+                        widest_age[group] = max(widest_age.get(group, 0), age)
 
     return {
         QueryKey(*group, widest_age[group]): frozenset(users)
