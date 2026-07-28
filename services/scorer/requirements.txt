@@ -9,3 +9,5 @@ joblib>=1.4
 SQLAlchemy>=2.0
 psycopg[binary]>=3.2
 pydantic>=2.10
+cryptography>=44.0       # libs/secrets, reached from libs/obs — every service that logs needs it
+httpx>=0.28              # libs/contracts/embedder — the vector unpack lives beside the client

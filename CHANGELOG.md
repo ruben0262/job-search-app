@@ -16,6 +16,21 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ## 2026-07-28
 
+### A CI job that installs each service alone and imports it
+
+The same bug shipped three times in one day: `httpx` missing from `api`, then `cryptography` and
+`httpx` missing from `scorer` and `trainer`. All are reached *indirectly* — `libs/obs` imports
+`libs/secrets`, which needs cryptography; `services/scorer/serve.py` imports
+`libs/contracts/embedder`, which imports httpx — so a development environment with everything
+installed cannot see the gap, and the failure lands as a container that will not start.
+
+The new `service-deps` matrix installs each service's requirements **alone** and imports its
+entrypoint. It caught the second missing dependency within a minute of being written, on a service
+I had already "fixed".
+
+`harvester` was relying on cryptography arriving transitively through another package. It works
+today and would break on any dependency bump that dropped it — declared explicitly now.
+
 ### The `score` lane — closing the gap between harvest and delivery (Phase 4c)
 
 The harvest cycle stored and embedded; the notify worker delivered what was already scored. **Nothing

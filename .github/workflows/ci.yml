@@ -152,3 +152,37 @@ jobs:
       # compile error here rather than a blank panel in production.
       - run: npm run build
         working-directory: web
+
+  # Each service's declared dependencies are installed **alone**, then its entrypoint is imported.
+  #
+  # This exists because the same bug shipped twice: `httpx` missing from `api`, then `cryptography`
+  # missing from `scorer` and `trainer`. Both are reached indirectly — `libs/obs` imports
+  # `libs/secrets`, which needs cryptography — so a development environment that has everything
+  # installed cannot see the gap, and the failure lands as a container that will not start.
+  #
+  # A matrix rather than one job, because installing them together would defeat the point.
+  service-deps:
+    name: ${{ matrix.service }} starts from its own requirements
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { service: api, module: "services.api.app" }
+          - { service: capture, module: "services.capture.__main__" }
+          - { service: labeller, module: "services.labeller.__main__" }
+          - { service: notifier, module: "services.notifier.__main__" }
+          - { service: scorer, module: "services.scorer.__main__" }
+          - { service: trainer, module: "services.trainer.__main__" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r services/${{ matrix.service }}/requirements.txt
+      # The environment a container would have: nothing set, because a missing variable must fail
+      # loudly at use rather than at import.
+      - run: python -c "import ${{ matrix.module }}"
+        env:
+          ACCESS_TOKEN_SECRET: ci-import-check-${{ matrix.service }}-xxxxxxxxxxxxxxxxxxxx

@@ -236,6 +236,25 @@ services:
     mem_limit: 1g
     cpus: 2
 
+  # The only way in. **The VPS has no open inbound port** — cloudflared makes an outbound connection
+  # to Cloudflare and traffic arrives back down it (D7), so there is nothing on this box to
+  # portscan and no certificate to renew.
+  #
+  # Token-based, matching the tunnel already running on this host for another project: the token
+  # encodes which tunnel this is, and the public hostname to `api:8000` mapping is configured in
+  # the Cloudflare dashboard rather than in a file here. That split is worth knowing when something
+  # is unreachable — half the configuration is not in this repository.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate run
+    profiles: ["full"]
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?create the tunnel in the Cloudflare dashboard and put its token in deploy/.env}
+    depends_on:
+      - api
+    restart: unless-stopped
+    mem_limit: 256m
+
 networks:
   # The embedder has its own compose project and owns this network. External, so this stack joins it
   # rather than trying to create it - which would fail, and rightly.
