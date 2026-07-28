@@ -85,6 +85,14 @@ class User(Base):
     # element — a join table would buy nothing and cost a migration.
     links: Mapped[list | None] = mapped_column(JSONB)
 
+    # Consent to send document text to Anthropic, and which disclosure version was agreed to
+    # (`libs.legal`). Recorded at *process data* rather than at upload: files no longer leave this
+    # server, so nothing crosses a processor boundary until that button is pressed. Asking at
+    # upload would ask about something that has not happened, and make the answer stale by the time
+    # it matters (`ROADMAP.md` Phase 3 step 11).
+    processing_consent_at: Mapped[timestamptz | None]
+    processing_consent_version: Mapped[str | None] = mapped_column(String(16))
+
     # Set once every onboarding page is satisfied (`ONBOARDING_AND_PROCESSING.md` §2).
     #
     # Deliberately **not** the same thing as `active`. Finishing onboarding means the account is

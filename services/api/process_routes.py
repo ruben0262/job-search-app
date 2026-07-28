@@ -26,6 +26,7 @@ from libs.obs import audit
 from libs.onboarding import CLAUDE_KINDS
 from libs.queue import enqueue
 from libs.tenant.repository import TenantRepository
+from services.api.account_routes import has_consented
 from services.api.deps import current_user, get_db
 
 logger = logging.getLogger(__name__)
@@ -109,6 +110,14 @@ def start(db: Session = Depends(get_db), user_id: _uuid.UUID = Depends(current_u
     if not db.scalar(select(UserDocument.id).where(UserDocument.user_id == user_id).limit(1)):
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             detail="upload at least your CV before processing")
+    if not has_consented(db, user_id):
+        # **The only place document text crosses a processor boundary**, so it is the only place
+        # the consent is owed and the only place it is checked. Refused here rather than in the
+        # worker: a job that dies on a consent check is a failure the user cannot see, hours later
+        # (`ROADMAP.md` Phase 3 step 11).
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            detail="processing sends your document text to Anthropic — please agree first")
 
     # One pending run per user, collapsed by the queue's partial unique index rather than by an
     # application check — a double-click must not buy two Opus calls.

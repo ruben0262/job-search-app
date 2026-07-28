@@ -16,6 +16,38 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ## 2026-07-28
 
+### The GDPR obligations, as behaviour (Phase 3 step 11) — Phase 3 backend complete
+
+All three are things the product does now rather than things a document claims.
+
+**`GET /legal/privacy` names each processor** — Anthropic, Telegram, the proxy provider, with what
+each receives, what for, and whose credential pays. Public, because signup links it before anyone
+has an account. Served from `libs/legal` so the policy and the consent screen cannot drift; a test
+asserts they are literally the same object, because the drift would be invisible and a consent
+recorded against a disclosure that no longer describes reality is worse than no consent screen.
+
+**Consent at *process data*, not at upload.** The obligation was written when capture uploaded files
+to Anthropic's Files API and it named upload as the moment. Files no longer leave this server, so
+nothing crosses a processor boundary until that button is pressed — asking at upload would ask about
+something that had not happened and be stale by the time it mattered. `/process` returns 403 without
+it, checked in the request rather than in the worker where the refusal would be invisible for hours.
+
+It is **version-compared**, not merely present: `users.processing_consent_version` records which
+disclosure was agreed to, so naming a new processor makes every stored agreement stale by
+construction. That is the point, not an inconvenience to route around.
+
+**Deletion, proved rather than asserted.** `DELETE /account` requires the password — irreversible,
+and a stolen session cookie must not be enough. The test enumerates every table in the metadata
+carrying a `user_id` column and asserts none survives, so adding an eleventh table and forgetting
+its cascade fails there rather than leaving a stranger's rows behind for a year. The DEK is
+crypto-shredded in the same request: a backup restore that resurrected a deleted user's Claude key
+is the worst outcome a delete request could have.
+
+One bug caught by the tests: `verify_password(stored, password)` was called with its arguments
+reversed, which would have rejected every correct password at the deletion gate.
+
+Migration `e5c9b71a4d38`. **Phase 3 steps 1–11 are done**; step 12, the web layer, is what remains.
+
 ### The dashboard and a stage-aware feed (Phase 3 step 10, backend)
 
 `GET /dashboard` in one call, because the panels are not independent: "you have 3,310 labels" and

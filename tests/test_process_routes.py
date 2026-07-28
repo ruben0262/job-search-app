@@ -13,10 +13,13 @@ from __future__ import annotations
 
 import os
 import uuid
+from datetime import UTC, datetime
 
 import pytest
 
 pytest.importorskip("fastapi")
+
+from libs.legal import DISCLOSURE_VERSION
 
 pytestmark = pytest.mark.skipif(
     not os.environ.get("DATABASE_URL"), reason="DATABASE_URL not set (no live Postgres)")
@@ -48,7 +51,12 @@ def api():
     trans = conn.begin()
     session = Session(bind=conn, join_transaction_mode="create_savepoint")
 
-    user = User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active")
+    # Consent granted: sending document text to Anthropic needs it, and `test_gdpr.py` owns the
+    # test that it is actually required. Without it every test here would 403 on a rule it is not
+    # about.
+    user = User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active",
+                processing_consent_at=datetime.now(UTC),
+                processing_consent_version=DISCLOSURE_VERSION)
     session.add(user)
     session.flush()
     session.add(UserDocument(user_id=user.id, kind="cv", filename="cv.txt", text="Alice",

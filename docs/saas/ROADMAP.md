@@ -301,23 +301,27 @@ and finishable in one sitting.
    correction found by testing: it branches on the stored `onboarding_completed_at`, **not** on
    live completeness — a revoked credential must surface as a banner, not send a working account
    back to the signup wizard where nothing explains what broke.
-11. **The GDPR obligations the cleared legal review depends on** (added 2026-07-27). The review
-   passed; these are the artifacts that make it true in the product, and none exist yet:
-   - **Privacy policy naming each processor** — Anthropic, Telegram, the proxy provider. Linked
-     from signup, not buried.
-   - **Explicit consent before document text is sent to Anthropic.** Reshaped 2026-07-28: the
-     obligation was written when capture uploaded files to the Anthropic Files API, and it named
-     upload as the moment. Files no longer leave the platform — text is extracted server-side — so
-     the moment consent is owed is **process data** (step 7), not upload. Same commit as that step.
-   - **Deletion that reaches outside Postgres.** Largely dissolved by the same change: with no Files
-     API uploads there is nothing outside the database to orphan, and the cascade is provably
-     complete. What remains is to **verify** that — an assertion that account deletion leaves no row
-     anywhere — rather than to build a second deletion path.
+11. ✅ **Done 2026-07-28. The GDPR obligations the cleared legal review depends on.** All three are
+   behaviour now, not claims in a document:
+   - **`GET /legal/privacy` names each processor** — Anthropic, Telegram, the proxy provider, with
+     what each receives and whose credential pays. Public, so signup can link it. Served from
+     `libs/legal` so it cannot drift from the consent screen; a test asserts they are one object.
+   - **Consent before document text reaches Anthropic**, at *process data* rather than at upload —
+     files no longer leave this server, so that is the moment it is owed. `/process` returns 403
+     without it. **Version-compared**, so naming a new processor re-asks everybody by construction
+     rather than by anyone remembering.
+   - **Deletion that reaches everything, proved rather than asserted.** The test enumerates every
+     table in the metadata carrying a `user_id` and asserts none survives — so adding an eleventh
+     table and forgetting its cascade fails there instead of leaving a stranger's rows behind. The
+     DEK is crypto-shredded in the same request, because a backup restore that resurrected a
+     deleted user's Claude key is the worst outcome a delete request could have.
 
 12. **The web layer** — React on Cloudflare Pages behind the Tunnel (D7). The seven onboarding
    pages, the dashboard, and the edit pages, with **every form generated from the shared JSON
    Schema** rather than hand-written (`CODE_STRUCTURE.md` §8) so a field cannot exist on one side
    and not the other. Built last, against endpoints that have stopped moving.
+
+**Backend complete 2026-07-28** — steps 1–11. Step 12, the web layer, is what remains.
 
 **Exit criteria:** a non-technical person signs up unaided and gets a working feed. Test this with
 a real person who has not seen the product, and watch without helping.
