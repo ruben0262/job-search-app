@@ -12,6 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from libs.contracts.config import migrate_config
 from libs.db.session import session_scope
 from libs.tenant.repository import TenantRepository
 from services.harvester.query_set import (
@@ -29,9 +30,15 @@ def main() -> int:
     with session_scope() as session:
         configs = TenantRepository(session).active_configs()
         print(f"active accounts: {len(configs)}")
-        for user_id, config in configs.items():
-            print(f"  {user_id}  {len(config['keywords'])} terms  "
-                  f"locations={config['locations']}")
+        for user_id, raw in configs.items():
+            # Through `migrate_config`, so this reads a stored v1 row and a sectioned v2 one the
+            # same way the harvester does — a report that only understands one shape is a report
+            # that will be wrong exactly when it matters.
+            config = migrate_config(dict(raw))
+            for section in config["sections"]:
+                print(f"  {user_id}  [{section.get('platform', 'all')}] "
+                      f"{len(section.get('keywords') or [])} terms  "
+                      f"locations={section.get('locations') or []}")
 
         query_set = build_query_set(configs, sources=("indeed", "google"))
         shared = sum(1 for users in query_set.values() if len(users) > 1)
