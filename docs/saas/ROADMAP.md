@@ -206,59 +206,65 @@ prompted this whole design.
 
 ## Phase 3 — self-service
 
-In onboarding order, which is also dependency order:
-
-1a. ✅ **Done 2026-07-27. Auth primitives** — `libs/auth`: argon2id at FlowSolutions' production
-   parameters, email tokens stored as hashes only, refresh sessions hashed and rotated with
-   family revocation on replay. Password minimum raised 8 → 12 per `AUTH_REUSE.md` §4.
-1b. ✅ **Done 2026-07-27. The `api` service** — signup, email confirmation, login, refresh, logout,
-   the §3 cookie policy (refresh cookie scoped to its own path), no account-existence oracle in
-   either the response or the timing, and a process-local rate limiter carrying §4.1's caveat
-   intact. **Transactional email** is Gmail SMTP with an app password; the ~500/day cap is fine for
-   an invited cohort and must be revisited before self-serve.
-2. ✅ **Done 2026-07-28. `plans` table with the single `free` row**; quotas resolved from it, not
-   from code constants, with a per-user override for support grants.
-3. ✅ **Done 2026-07-28. Credential entry, validated at save.** Both Claude kinds satisfy the
-   requirement (D2); the Telegram chat id is captured rather than asked for; an unreachable provider
-   stores unvalidated rather than blocking onboarding.
+In onboarding order, which is also dependency order.
 
 **Reordered 2026-07-28 — see `ONBOARDING_AND_PROCESSING.md`.** Onboarding no longer calls an LLM at
-all. It collects identity, documents, history, credentials and config, and nothing else; capture
+all: it collects identity, documents, history, credentials and config, and nothing else. Capture
 becomes a *dashboard action*. That makes onboarding immune to a provider outage, free to the user,
 and finishable in one sitting.
 
-4. **Config schema v2 — sections.** Per-platform search sections with an `all` default, replacing the
-   flat keyword list. Needed by onboarding page 7 and by the dashboard's edit page, and cheaper to
-   change now than once more accounts exist.
-5. **Document upload + server-side text extraction.** What "process data" consumes. Originals are
-   ephemeral (D9) and abandoned signups purge.
-6. **Onboarding flow** — the seven pages, all required, no LLM.
-7. **Process data** — the capture conversation, now plain Messages rather than a Managed Agents
-   session, so OAuth works and there is no beta on the critical path. Confirmation form, then the
-   deterministic render (unchanged).
+1a. ✅ **Done 2026-07-27. Auth primitives** — `libs/auth`: argon2id at FlowSolutions' production
+   parameters, email tokens stored as hashes only, refresh sessions hashed and rotated with family
+   revocation on replay. Password minimum raised 8 → 12 per `AUTH_REUSE.md` §4.
+1b. ✅ **Done 2026-07-27. The `api` service** — signup, email confirmation, login, refresh, logout,
+   the §3 cookie policy (refresh cookie scoped to its own path), no account-existence oracle in
+   either the response or the timing, and a process-local rate limiter carrying §4.1's caveat
+   intact. **Transactional email** is Gmail SMTP with an app password, capped at 400/24h against
+   Gmail's ~500 — fine for an invited cohort, revisit before self-serve.
+2. ✅ **Done 2026-07-28. `plans` table with the single `free` row**; quotas resolved from it rather
+   than from code constants, with a per-user override for support grants. The seam Stripe attaches
+   to later — adding a paid tier is an INSERT.
+3. ✅ **Done 2026-07-28. Credential entry, validated at save.** Both Claude kinds satisfy the
+   requirement (D2); the **Telegram chat id is captured automatically** rather than asked for; an
+   unreachable provider stores the credential unvalidated rather than blocking onboarding.
+4. ✅ **Done 2026-07-28. Config schema v2 — sections.** Per-platform search sections with an `all`
+   default, replacing the flat keyword list. The keyword cap spans sections so five sections cannot
+   buy five times the fan-out budget. Stored v1 rows still read correctly.
+5. ✅ **Done 2026-07-28. Document upload + server-side text extraction.** What "process data"
+   consumes. **Extracted text is stored; the original file never touches disk** — nothing downstream
+   reads a PDF, so keeping strangers' records would be a liability with no consumer.
+6. **Onboarding flow** — the seven pages of `ONBOARDING_AND_PROCESSING.md` §2, all required, no LLM.
+   Includes the **config form generated from the shared schema, with a live match count** so a user
+   sees immediately whether their terms return anything.
+7. **Process data** — the capture conversation. Plain Messages rather than a Managed Agents session,
+   so OAuth works and there is no beta on the critical path. Confirmation form, then the
+   deterministic render of rubric and facts block (unchanged).
 8. **The relabeller** — the `label` lane worker. Without it a re-process leaves zero usable labels at
    the new generation and training cannot run at all. The most expensive step on the platform, which
    is why process→retrain is enforced and retrain→process deliberately is not.
-9. **Dashboard** — state-driven: shows whether data needs processing, jobs need relabelling, or the
-   model needs training, rather than offering buttons and hoping they are pressed in order.
-5. **Config form** generated from the shared schema, with the live match count.
-6. **Telegram connect** with automatic chat-ID capture.
-7. **Cold-start pipeline**: pool selection → labelling → first train, with visible stage progression.
-8. **Dashboard**: feed stats, model status, quota usage, and the **health banners** from
-   `OPERATIONS_PLAN.md` §4b.
-9. **The GDPR obligations the cleared legal review depends on** (added 2026-07-27). The review
+9. **Cold-start pipeline**: pool selection → labelling → first train, with visible stage
+   progression (`COLD_START_PLAN.md`). One wider recency pass here, since the steady-state 24-hour
+   window shows a new account almost nothing.
+10. **Dashboard** — **state-driven**: reads the counters and says whether data needs processing, jobs
+   need relabelling, or the model needs training, rather than offering buttons and hoping they are
+   pressed in the right order. Plus feed stats, model status, quota usage, the **health banners**
+   from `OPERATIONS_PLAN.md` §4b, and an edit page for everything onboarding collected.
+11. **The GDPR obligations the cleared legal review depends on** (added 2026-07-27). The review
    passed; these are the artifacts that make it true in the product, and none exist yet:
    - **Privacy policy naming each processor** — Anthropic, Telegram, the proxy provider. Linked
      from signup, not buried.
-   - **Explicit consent at CV upload**, taken at the moment the file leaves for the Anthropic Files
-     API rather than as a blanket checkbox at signup. Same commit as profile capture (step 4).
-   - **Deletion that reaches outside Postgres.** The cascade is provably complete for the database
-     and silent about everything else; account deletion must also delete files uploaded to the
-     Anthropic Files API. Build it with capture, not after — an orphaned upload nobody knows about
-     is the hardest kind to find later.
+   - **Explicit consent before document text is sent to Anthropic.** Reshaped 2026-07-28: the
+     obligation was written when capture uploaded files to the Anthropic Files API, and it named
+     upload as the moment. Files no longer leave the platform — text is extracted server-side — so
+     the moment consent is owed is **process data** (step 7), not upload. Same commit as that step.
+   - **Deletion that reaches outside Postgres.** Largely dissolved by the same change: with no Files
+     API uploads there is nothing outside the database to orphan, and the cascade is provably
+     complete. What remains is to **verify** that — an assertion that account deletion leaves no row
+     anywhere — rather than to build a second deletion path.
 
 **Exit criteria:** a non-technical person signs up unaided and gets a working feed. Test this with a
 real person who has not seen the product, and watch without helping.
+
 
 ## Phase 4 — first cohort (invite-only, decision D5)
 
