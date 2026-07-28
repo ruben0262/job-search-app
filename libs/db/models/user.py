@@ -219,6 +219,12 @@ class User(Base):
         # selected and there is no reason to carry them in the index.
         Index("ix_users_due", "next_run_at", postgresql_where=text("active")),
         Index("ix_users_linkedin_due", "linkedin_next_run_at", postgresql_where=text("active")),
+        # The webhook path *is* the identity of the account it belongs to, so two accounts sharing
+        # one would attribute a button tap to whichever row the query returned first. Partial,
+        # because most accounts have no webhook registered and NULLs are not the constraint's
+        # business.
+        Index("uq_users_webhook_secret", "telegram_webhook_secret", unique=True,
+              postgresql_where=text("telegram_webhook_secret IS NOT NULL")),
     )
 
 

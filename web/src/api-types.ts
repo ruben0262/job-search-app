@@ -758,6 +758,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/telegram/webhook/{secret}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Webhook
+         * @description One button tap.
+         *
+         *     **Always answers 200 once authenticated**, even when the tap does nothing. Telegram retries a
+         *     non-2xx, and retrying a tap that was already recorded is pointless at best; the response body
+         *     says what happened, for anybody reading a log.
+         */
+        post: operations["webhook_telegram_webhook__secret__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2141,6 +2165,41 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    webhook_telegram_webhook__secret__post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-telegram-bot-api-secret-token"?: string | null;
+            };
+            path: {
+                secret: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

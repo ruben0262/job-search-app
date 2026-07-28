@@ -2115,6 +2115,67 @@
           "process"
         ]
       }
+    },
+    "/telegram/webhook/{secret}": {
+      "post": {
+        "description": "One button tap.\n\n**Always answers 200 once authenticated**, even when the tap does nothing. Telegram retries a\nnon-2xx, and retrying a tap that was already recorded is pointless at best; the response body\nsays what happened, for anybody reading a log.",
+        "operationId": "webhook_telegram_webhook__secret__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "secret",
+            "required": true,
+            "schema": {
+              "title": "Secret",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-telegram-bot-api-secret-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Telegram-Bot-Api-Secret-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Webhook Telegram Webhook  Secret  Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Webhook",
+        "tags": [
+          "telegram"
+        ]
+      }
     }
   }
 }
