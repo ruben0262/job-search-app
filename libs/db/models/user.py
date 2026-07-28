@@ -87,6 +87,13 @@ class User(Base):
     # skipping, dismissing, building a CV.
     last_active_at: Mapped[timestamptz | None]
 
+    # The plan whose limits apply, and per-user grants layered over them. Both live here rather
+    # than in code constants so adding a tier is an INSERT and a support grant is an UPDATE — never
+    # a deploy (TENANT_SAFETY.md §3).
+    plan_id: Mapped[str] = mapped_column(ForeignKey("plans.id"), default="free",
+                                         server_default="free")
+    quota_overrides: Mapped[dict | None] = mapped_column(JSONB)
+
     # IANA name, validated against the tz database (G7). Not an offset: offsets do not survive DST,
     # and "resets at midnight your time" has to keep meaning the same thing in November.
     timezone: Mapped[str] = mapped_column(String(64), default="UTC")

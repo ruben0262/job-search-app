@@ -24,6 +24,7 @@ from libs.db.models.auth import (
     UserSession,
 )
 from libs.db.models.corpus import CorpusJob
+from libs.db.models.plan import FREE_PLAN, Plan
 from libs.db.models.proxy import PROXY_STATUSES, ProxyCredential
 from libs.db.models.queue import CLAIM_TIMEOUT_MIN, JOB_STATES, LANES, MAX_ATTEMPTS, QueueJob
 from libs.db.models.tenant import LABEL_SOURCES, UserJobState, UserLabel, UserModel
@@ -38,6 +39,7 @@ from libs.db.models.user import (
 
 __all__ = [
     "CLAIM_TIMEOUT_MIN",
+    "FREE_PLAN",
     "JOB_STATES",
     "LABEL_SOURCES",
     "LANES",
@@ -54,6 +56,7 @@ __all__ = [
     "Base",
     "CorpusJob",
     "MailSend",
+    "Plan",
     "ProxyCredential",
     "QueueJob",
     "User",
