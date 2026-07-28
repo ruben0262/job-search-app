@@ -18,6 +18,18 @@ _HERE = Path(__file__).parent
 
 LABEL_TEMPLATE = "label_template.md"
 
+# Ported byte-identical from the reference instance 2026-07-28 and **not yet usable**: both still
+# name that instance's owner, 28 times between them. They are copied verbatim on purpose —
+# generalising during a port makes the diff against the original unreviewable, and these are the
+# most heavily tuned prompts in either repository.
+#
+# Generalising them is the same job `label_template.md` already had: replace the identity with
+# placeholders filled from the profile. `tests/test_prompt_templates.py` refuses to let either be
+# wired into docgen until that is done, because the failure otherwise is a user receiving a CV
+# written about somebody else.
+TAILOR_CV_TEMPLATE = "tailor_cv.md"
+TAILOR_COVER_TEMPLATE = "tailor_cover.md"
+
 
 @lru_cache(maxsize=8)
 def load(name: str) -> str:

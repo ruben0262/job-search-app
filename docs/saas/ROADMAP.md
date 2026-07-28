@@ -435,6 +435,17 @@ Generated documents stay **ephemeral** (D9): built, delivered, discarded. The ap
 durable record. That is not only tidiness — it is what keeps strangers' CVs off this disk and the
 GDPR surface small.
 
+**Started 2026-07-28.** `tailor_cv.md` and `tailor_cover.md` are ported byte-identical into
+`libs/prompts` — they are SACRED, and generalising during a copy would make the diff against the
+original unreviewable. **Neither is usable yet:** between them they name the reference instance's
+owner 28 times, exactly as `label_template.md` did before Phase 2 gave it `<<NAME>>`, `<<WHO>>` and
+`<<HARD_GATES>>`. A test refuses to let either be wired into docgen until the same is done, because
+the alternative is a user receiving a CV written about somebody else.
+
+**What remains, in order:** generalise the two prompts; generalise `base_cv_dev.html` and
+`base_cv_quant.html` into 2–3 platform templates filled from the profile (§6.5 — buy, do not
+generate); then the worker, Chrome, and delivery.
+
 **Exit criteria:** a user taps Apply on a job, their model learns from it, and a retrain uses it.
 A user taps Build CV and receives a tailored PDF that names nothing the facts block does not
 support.
