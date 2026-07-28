@@ -216,10 +216,31 @@ In onboarding order, which is also dependency order:
    either the response or the timing, and a process-local rate limiter carrying §4.1's caveat
    intact. **Transactional email** is Gmail SMTP with an app password; the ~500/day cap is fine for
    an invited cohort and must be revisited before self-serve.
-2. **`plans` table with the single `free` row**; quotas resolved from it, not from code constants.
-3. **Credential entry, validated at save** — before capture, since capture spends the user's key.
-4. **Profile capture** (`PROFILE_CAPTURE_PLAN.md`): Managed Agents session, confirmation form,
-   deterministic render. Manual-entry fallback in the same commit — capture must never hard-block.
+2. ✅ **Done 2026-07-28. `plans` table with the single `free` row**; quotas resolved from it, not
+   from code constants, with a per-user override for support grants.
+3. ✅ **Done 2026-07-28. Credential entry, validated at save.** Both Claude kinds satisfy the
+   requirement (D2); the Telegram chat id is captured rather than asked for; an unreachable provider
+   stores unvalidated rather than blocking onboarding.
+
+**Reordered 2026-07-28 — see `ONBOARDING_AND_PROCESSING.md`.** Onboarding no longer calls an LLM at
+all. It collects identity, documents, history, credentials and config, and nothing else; capture
+becomes a *dashboard action*. That makes onboarding immune to a provider outage, free to the user,
+and finishable in one sitting.
+
+4. **Config schema v2 — sections.** Per-platform search sections with an `all` default, replacing the
+   flat keyword list. Needed by onboarding page 7 and by the dashboard's edit page, and cheaper to
+   change now than once more accounts exist.
+5. **Document upload + server-side text extraction.** What "process data" consumes. Originals are
+   ephemeral (D9) and abandoned signups purge.
+6. **Onboarding flow** — the seven pages, all required, no LLM.
+7. **Process data** — the capture conversation, now plain Messages rather than a Managed Agents
+   session, so OAuth works and there is no beta on the critical path. Confirmation form, then the
+   deterministic render (unchanged).
+8. **The relabeller** — the `label` lane worker. Without it a re-process leaves zero usable labels at
+   the new generation and training cannot run at all. The most expensive step on the platform, which
+   is why process→retrain is enforced and retrain→process deliberately is not.
+9. **Dashboard** — state-driven: shows whether data needs processing, jobs need relabelling, or the
+   model needs training, rather than offering buttons and hoping they are pressed in order.
 5. **Config form** generated from the shared schema, with the live match count.
 6. **Telegram connect** with automatic chat-ID capture.
 7. **Cold-start pipeline**: pool selection → labelling → first train, with visible stage progression.
