@@ -156,7 +156,35 @@ def _check(live: str, scratch: str) -> list[str]:
     else:
         print(f"  models       {servable} servable of {total_models} restored")
 
+    # 3b. **And the file behind the row is actually reachable.**
+    #
+    # Added after a real failure: the scorer crash-looped on a `models.path` that was correct on the
+    # host that trained it and meaningless inside a container. Checking only the row would have
+    # reported a healthy restore of a platform that cannot score — the exact reassurance a drill
+    # must never give.
+    failures += _check_artifacts(scratch)
+
     return failures
+
+
+def _check_artifacts(scratch: str) -> list[str]:
+    """Every active artifact resolves to a file that exists, the way the scorer resolves it."""
+    from services.scorer.registry import resolve_artifact
+
+    result = subprocess.run(
+        ["psql", _libpq(scratch), "-tAc", "SELECT path FROM models WHERE is_active"],
+        capture_output=True, text=True, check=False)
+    paths = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    if not paths:
+        print("  artifacts    no active models — nothing to resolve")
+        return []
+
+    missing = [path for path in paths if not Path(resolve_artifact(path)).exists()]
+    if missing:
+        return [f"{len(missing)} of {len(paths)} active artifact(s) do not exist where the scorer "
+                f"would look — a restore of rows without their files scores nothing"]
+    print(f"  artifacts    {len(paths)} active artifact(s) resolve to a real file")
+    return []
 
 
 def _scalar(url: str, sql: str) -> int:
