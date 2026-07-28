@@ -353,34 +353,13 @@ a real person who has not seen the product, and watch without helping.
   `restore_drill.py` **passed against a real 20 MB backup**: every row count matched, a stored
   credential decrypted with the separately-held KEK, and both models came back servable. It found a
   bug doing it, which is the argument for having a drill at all.
-- ⚠️ **Transactional email is not configured — deferred by decision, 2026-07-28.** `libs/mail` is
-  built and tested, but with no `SMTP_*` in `deploy/.env` the API resolves to `ConsoleSender`:
-  signup confirmations and health alerts are *written to a log instead of sent*, and nothing about
-  that looks broken from the outside.
+- ✅ **Transactional email — live 2026-07-28.** Sending as `no-reply@flow-solutions.xyz` through
+  Zoho's **EU** host, the same mailbox the other FlowSolutions services use, so SPF and DKIM for the
+  domain are already correct. Verified by sending a real message, not by configuration alone.
 
-  **The consequence, stated so nobody rediscovers it the hard way:** the two migrated accounts are
-  unaffected — they were created directly and are already verified — but **no new account can
-  complete signup**, because the confirmation link never arrives. Anyone who tries will see a
-  working signup form and then nothing. So this is not a blocker for the current two users and *is*
-  a hard blocker for the invited cohort, and it must be closed before anybody is invited.
-  **Off-box backup storage is deferred by decision, 2026-07-28** — there is nowhere to put it yet.
-  The dumps therefore cover a bad migration, a dropped table and an operator mistake, and do not
-  cover disk or host loss. Written down rather than left implied, because an accepted risk nobody
-  recorded is one somebody later mistakes for an oversight.
-- ✅ **Every service containerised — done 2026-07-28.** `api`, `notifier`, `scorer`, `trainer` and
-  `cloudflared`, behind a `full` compose profile so a bare `up -d` never starts delivery by
-  accident. The API publishes **no port**: the tunnel is the only way in (D7).
-  A **`service-deps` CI matrix** installs each service's requirements alone and imports its
-  entrypoint — written after the same missing-dependency bug shipped three times, and it caught the
-  third within a minute of existing.
-- **Measure capture cost first** (`PLATFORM_ARCHITECTURE.md` §10.10) — it is the first spend a
-  user sees, on a free plan, on their own key.
-- Onboard 3–5 **invited** users. Quotas on from day one.
-- Andras gets a platform account alongside his existing stack (D6); still decommission nothing.
-- Watch: harvest budget consumption, proxy GB, trainer queue depth, embedder queue depth, Postgres
-  size vs the projection in `PLATFORM_ARCHITECTURE.md` §4.
-- Legal review before signup opens beyond invites — with D5, this is a milestone, not a blocker.
-- **Decommission the single-tenant stacks only once the platform demonstrably matches them.**
+  The hour this could have cost, written down: `smtp.zoho.com` answers `535 Authentication Failed`
+  for this account because it is on the EU region — an error indistinguishable from a wrong
+  password. `smtp.zoho.eu` authenticates immediately.
 
 **Exit status 2026-07-28.** Operations is done and proven rather than asserted: monitoring and
 alerts (`libs/ops`), a read-only admin view, and nightly backups whose **restore drill has passed
