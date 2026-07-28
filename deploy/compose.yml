@@ -220,7 +220,8 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://jobsearch:${POSTGRES_PASSWORD:?}@postgres:5432/jobsearch
       SECRETS_KEK: ${SECRETS_KEK:?the API writes the credential store}
-      ACCESS_TOKEN_SECRET: ${ACCESS_TOKEN_SECRET:?set it in deploy/.env — sessions depend on it}
+      # Same rule: the API refuses to start without it, loudly, from its own code.
+      ACCESS_TOKEN_SECRET: ${ACCESS_TOKEN_SECRET:-}
       ADMIN_EMAILS: ${ADMIN_EMAILS:-}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_USER: ${SMTP_USER:-}
@@ -249,7 +250,13 @@ services:
     command: tunnel --no-autoupdate run
     profiles: ["full"]
     environment:
-      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?create the tunnel in the Cloudflare dashboard and put its token in deploy/.env}
+      # `:-` and not `:?`, deliberately. Compose interpolates **every** service in the file on every
+      # command, so a `:?` here makes `up scorer` fail with a message about a tunnel — which it did,
+      # twice, before this comment existed. The rule now: `:?` only where absence is *silently*
+      # dangerous (a worker that starts without `SECRETS_KEK` dead-letters every job it claims), and
+      # `:-` where the process fails loudly on its own. cloudflared exits immediately, saying so,
+      # when handed an empty token.
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
     depends_on:
       - api
     restart: unless-stopped
