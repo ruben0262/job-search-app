@@ -794,6 +794,22 @@ export interface components {
             kind: string;
         };
         /**
+         * Certification
+         * @description A course, licence or accreditation. Its own section on a CV, and a keyword an ATS looks for.
+         *
+         *     `issuer` and `year` are free text and optional for the same reason experience dates are: a CV
+         *     says "Bloomberg (2024)", "AWS, valid to 2027", or nothing at all, and parsing that would reject
+         *     real profiles to gain a precision nothing downstream uses.
+         */
+        Certification: {
+            /** Issuer */
+            issuer?: string | null;
+            /** Name */
+            name: string;
+            /** Year */
+            year?: string | null;
+        };
+        /**
          * Conflict
          * @description Something the interview could not resolve. Surfaces in the form as an explicit either/or.
          */
@@ -967,6 +983,8 @@ export interface components {
         };
         /** ProfileSchema */
         ProfileSchema: {
+            /** Certifications */
+            certifications?: components["schemas"]["Certification"][];
             /**
              * Confirmed
              * @default false

@@ -1,18 +1,28 @@
 <!DOCTYPE html>
 <!--
-  Base CV (software engineering) — the platform's single template.
-  Use for: Python dev, backend, full-stack, Go, JS/TS/React, API, startup roles.
-  Copy to cv/main_<company>.html and tailor for each role.
+  The platform's single CV template. It is DATA, not a document: every marker below is filled
+  from the user's confirmed profile by `libs/templates/cv.py`, and the filled result is what the
+  tailoring prompt (`libs/prompts/tailor_cv.md`) receives as its BASE TEMPLATE and rewrites for
+  one job.
 
-  Compile:
-    powershell -File cv/compile.ps1 cv/main_<company>.html cv/main_<company>.pdf
+  Markers — all of them are filled, and a section whose data is absent is omitted whole. Named
+  here without their comment syntax on purpose: a marker written out in full inside this comment
+  would be filled too, and the CV would carry a second copy of the profile in an HTML comment.
 
-  Tailoring checklist:
-  - Update <title> with company name
-  - Rewrite .profile paragraph for the specific role/stack
-  - Reorder/rewrite Core Competency bullets to front-load matching skills
-  - Adjust experience bullet emphasis for the target stack
-  - Verify PDF is exactly 2 pages after compilation
+    NAME        identity.name
+    CONTACT     identity.location + identity.links
+    PROFILE     the profile paragraph (the tailoring prompt rewrites it per job)
+    SKILLS      skills.*  as Core Competencies
+    EXPERIENCE  experience[]
+    PROJECTS    projects[]
+    EDUCATION   education[]
+    LANGUAGES   constraints.languages
+    CERTIFICATIONS  certifications[]
+
+  The CSS below is load-bearing and hand-tuned: A4 sizing, the `@page` margin rule that stops
+  Chrome drawing its own header over the content, and the `.entry` break rules that keep an entry
+  off a page boundary. The tailoring prompt is told CSS is managed externally and must not emit a
+  <style> block — the pipeline strips this one before sending and restores it after.
 -->
 <html lang="en">
 <head>
@@ -20,31 +30,15 @@
 <title><!--NAME--> – CV</title>
 <style>
 
-/* ---- FONTS ---- */
-@font-face {
-  font-family: 'Lato';
-  src: url('../cover_letters/OpenFonts/fonts/lato/Lato-Lig.ttf');
-  font-weight: 300;
-  font-style: normal;
-}
-@font-face {
-  font-family: 'Lato';
-  src: url('../cover_letters/OpenFonts/fonts/lato/Lato-Reg.ttf');
-  font-weight: 400;
-  font-style: normal;
-}
-@font-face {
-  font-family: 'Lato';
-  src: url('../cover_letters/OpenFonts/fonts/lato/Lato-Bol.ttf');
-  font-weight: 700;
-  font-style: normal;
-}
-@font-face {
-  font-family: 'Lato';
-  src: url('../cover_letters/OpenFonts/fonts/lato/Lato-Bla.ttf');
-  font-weight: 900;
-  font-style: normal;
-}
+/* ---- FONTS ----
+   Resolved by name through fontconfig, not by `@font-face` url(). The reference instance shipped
+   four url()s relative to the document, which meant every build had to rewrite the path depth to
+   match wherever it had written the file — and a wrong depth is silent: Chrome falls back to Arial
+   and produces a correct-looking CV in the wrong typeface.
+
+   `deploy/docker/Dockerfile.docgen` installs `fonts-lato` and FAILS THE BUILD if fontconfig cannot
+   then see it, so the image cannot ship without the font this asks for. Arial is the fallback for
+   a machine with no Lato — a dev box previewing the HTML, never the container that makes PDFs. */
 
 /* ---- PAGE ---- */
 @page {
@@ -185,7 +179,6 @@ a { color: #003399; text-decoration: none; }
 </style>
 </head>
 <body>
-
 <!-- HEADER -->
 <div class="cv-header">
   <div class="cv-name"><!--NAME--></div>
@@ -193,196 +186,20 @@ a { color: #003399; text-decoration: none; }
 </div>
 <hr class="header-rule">
 
-<!-- PROFILE — tailor this paragraph for every role -->
-<p class="profile">Software engineer with a BEng Software Engineering and 5+ years of development experience across Python, Go, JavaScript/TypeScript, and React. Shipped full-stack applications and REST/WebSocket API systems through to live quantitative systems and automated trading infrastructure. Comfortable owning projects independently, iterating fast, and working across the full stack in small teams.</p>
+<!--PROFILE-->
 
-<!-- CORE COMPETENCIES — reorder bullets to match role requirements -->
-<div class="section competencies">
-  <div class="section-title">Core Competencies</div>
-  <ul>
-    <li><strong>Languages &amp; Frameworks:</strong> Python, Go (Golang), JavaScript, TypeScript, React, HTML/CSS; Go Fiber, FastAPI; Playwright (TypeScript); C++, Java, Pine Script; REST APIs, WebSocket, gRPC; SQL, SQLite, MongoDB; Git, Linux, CI/CD</li>
-    <li><strong>Python &amp; Data Engineering:</strong> NumPy, Pandas, scikit-learn, PyTorch, sentence-transformers (BGE embeddings); Optuna; ETL pipelines, time-series processing, custom backtesting frameworks; Bloomberg Terminal, ByBit API</li>
-    <li><strong>Backend &amp; Systems:</strong> Microservices and event-driven architecture; gRPC, REST, WebSocket; Prometheus metrics and observability; OpenAI and Claude API integration; Stripe payment processing; JWT, OAuth2, TOTP/2FA authentication; multi-channel messaging bridges (WhatsApp, Instagram, Messenger, Telegram, Discord)</li>
-    <li><strong>Machine Learning &amp; AI:</strong> Feature engineering, text classification (SVC, BGE embeddings), regression and ensemble modelling; Optuna hyperparameter optimisation; NLP and sentence embeddings; active learning with automated feedback-flywheel retraining; time-series forecasting; statistical modelling (VAR, Granger causality); production LLM integration (Claude, OpenAI)</li>
-    <li><strong>Prompt Engineering &amp; LLM Systems:</strong> Multi-model A/B evaluation (Core/Edge/Stress/Holdout suites), AI-judged output scoring (human-likeness, naturalness, non-bot tone), automated refinement and promotion-gate pipelines; LLM output optimisation across multiple providers</li>
-    <li><strong>Infrastructure &amp; DevOps:</strong> Linux VPS provisioning and hardening (Ubuntu, SSH keys, fail2ban, UFW); Docker and Docker Compose (multi-service containerisation); Cloudflare (DNS, CDN, Workers, Pages, Tunnels, DDoS protection, WAF); cloud infrastructure deployment; CI/CD pipelines; automated testing (Playwright/TypeScript, pytest); residential proxy configuration; Telegram Bot API; Chrome headless PDF generation</li>
-    <li><strong>On-Chain &amp; Blockchain:</strong> On-chain data pipelines, cross-chain arbitrage analysis, stablecoin de-pegging monitoring, Salesforce integration, validator performance analytics</li>
-    <li><strong>Methodologies:</strong> Agile/Scrum; RAD; milestone-driven incremental delivery; TDD (pytest); requirements-first architecture documentation; AI pair programming (Claude, GPT) for design review, debugging, and delivery acceleration</li>
-  </ul>
-</div>
+<!--SKILLS-->
 
-<!-- RESEARCH & EXPERIENCE -->
-<div class="section">
-  <div class="section-title">Experience</div>
+<!--EXPERIENCE-->
 
-  <div class="entry">
-    <div class="entry-head">
-      <span class="entry-title">Developer &mdash; Automated Data Pipeline, ML Classifier &amp; VPS Infrastructure &middot; Python, Docker, scikit-learn</span>
-      <span class="entry-date">May 2026 &ndash; Present</span>
-    </div>
-    <ul>
-      <li>Designed and built a multi-source data collection pipeline (REST APIs, web scraping) with residential proxy rotation for anti-bot bypass; orjson deduplication layer handles 10k+ records across all sources in under 1ms</li>
-      <li>Trained and deployed local ML classifier (scikit-learn SVC + BGE-base sentence embeddings, AUC 0.82) on a labelled training set; automated feedback flywheel (positive/negative labels on outcomes) drives continuous retraining without manual intervention</li>
-      <li>Provisioned and hardened Linux VPS (Ubuntu 24.04): SSH key-only authentication, fail2ban brute-force protection, UFW deny-by-default firewall; containerised full stack with Docker Compose across three services (scraper/processor, ML scorer-service, always-on Telegram bot)</li>
-      <li>Telegram bot (long-polling) for real-time pipeline control, on-demand document delivery, and training-label collection; Chrome headless PDF generation pipeline on Linux; Claude API integration for automated single-shot document generation</li>
-      <li>Built throughout with deliberate AI pair programming across architecture reviews, debugging (VPS, Docker, ML deployment), and knowledge acceleration; a practiced methodology to boost development speed and output quality</li>
-    </ul>
-  </div>
+<!--PROJECTS-->
 
-  <div class="entry">
-    <div class="entry-head">
-      <span class="entry-title">Software &amp; Quantitative Research Intern &mdash; Syntagma Labs &middot; London, UK</span>
-      <span class="entry-date">Jan 2026 &ndash; May 2026</span>
-    </div>
-    <ul>
-      <li>Built and deployed full-stack on-chain data dashboard (Python, MongoDB) tracking market indicators, stablecoin de-pegging events, and real-time blockchain fee dynamics</li>
-      <li>Developed Salesforce crypto wallet plugin fetching live wallet balances and transfer data via REST API integration</li>
-      <li>Designed and built cross-chain arbitrage tracking dashboard analysing price discrepancies across assets and bridges</li>
-      <li>Built Cardano staking monitoring dashboard: validator performance, delegation patterns, yield dynamics</li>
-      <li>Conducted quantitative study of Hyperliquid exchange: profiled top-performer execution strategies from high-resolution order flow data</li>
-    </ul>
-  </div>
+<!--EDUCATION-->
 
-  <div class="entry">
-    <div class="entry-head">
-      <span class="entry-title">Lead Developer &amp; Full-Stack Engineer &mdash; FlowSolutions &middot; Remote</span>
-      <span class="entry-date">Jun 2024 &ndash; Present</span>
-    </div>
-    <ul>
-      <li>Leading development of an AI-powered multi-channel lead qualification platform in Go (Fiber), integrating WhatsApp, Instagram, Messenger, Discord, and Telegram via real-time WebSocket and REST API bridges</li>
-      <li>Owned security layer: designed and implemented JWT authentication, OAuth2 flows, and TOTP/2FA across all platform services</li>
-      <li>Built and maintained end-to-end test infrastructure using Playwright (TypeScript), covering critical user flows and multi-channel integration paths</li>
-      <li>Coordinating a 2&ndash;3 person remote team across backend services: Stripe payment integration, Prometheus metrics and observability, OpenAI API integration, gRPC service communication, MongoDB + SQLite data layer, and multi-channel notification infrastructure</li>
-      <li>Designed and built a prompt engineering evaluation platform: multi-model A/B testing across scenario suites, AI-judged scoring (human-likeness, naturalness, non-bot tone), automated refinement loops and promotion-gate approval workflow to optimise LLM outreach quality at scale</li>
-    </ul>
-  </div>
+<!--LANGUAGES-->
 
-  <div class="entry">
-    <div class="entry-head">
-      <span class="entry-title">Developer &mdash; Crypto Screener &amp; Systematic Trading System &middot; Go, REST/WebSocket, HTML</span>
-      <span class="entry-date">Mar 2024 &ndash; Jun 2025</span>
-    </div>
-    <ul>
-      <li>Built full-stack application in Go with real-time REST/WebSocket API integration, custom quantitative filters, live ranking engine, and automated include/waitlist/exclude classification</li>
-      <li>Live dashboard with strategy automation, real-time metrics, custom scoring, and app notifications; full ownership from architecture through production deployment</li>
-    </ul>
-  </div>
+<!--CERTIFICATIONS-->
 
-  <div class="entry">
-    <div class="entry-head">
-      <span class="entry-title">Quantitative Developer &mdash; Short-Term Trading System, Bollinger Bands Variation &middot; Python, ByBit</span>
-      <span class="entry-date">Jun 2024 &ndash; Jun 2025</span>
-    </div>
-    <ul>
-      <li>Designed and deployed an automated short-term trading system on ByBit implementing a proprietary variation on Bollinger Bands; applied digital signal processing (waveform filtering, frequency analysis, linear prediction) to isolate high-confidence signals from market noise in price time series</li>
-      <li>Quantitative methodology draws on speech processing (DSP, spectral analysis, noise filtering) and dynamical systems theory (equilibrium analysis, stochastic processes) applied to financial time series; pipeline covers signal research, parameter optimisation, backtesting, live deployment, and real-time execution monitoring</li>
-    </ul>
-  </div>
-
-  <div class="entry">
-    <div class="entry-head">
-      <span class="entry-title">Quantitative Developer &mdash; Systematic Investing System, Medium to Long-Term &middot; Python</span>
-      <span class="entry-date">2024 &ndash; Present</span>
-    </div>
-    <ul>
-      <li>Built modular Python backtesting framework: multi-asset and multi-factor portfolio construction (EW, Inverse Vol, Risk Parity, HRP); walk-forward validation with 71 OOS windows; DSR/PSR multiple-testing bias correction; live performance: Sharpe ~1.6, Sortino ~2.3, Max DD &lt;36%</li>
-      <li>Strategy methodology applies natural systems modelling (Lotka-Volterra supply/demand cycle dynamics, stochastic population models for volatility characterisation, differential equation equilibrium analysis for structural price zone identification) and DSP frequency-domain analysis to financial market structure</li>
-    </ul>
-  </div>
-
-  <!-- AI/ML disciplines: kept as SEPARATE entries so each can be surfaced and spoken to on its
-       own for AI/ML/quant roles (tailoring includes only what the role justifies). These are
-       independent WORK, not all "research" — only paper-backed strands are framed as research. -->
-  <div class="entry">
-    <div class="entry-head">
-      <span class="entry-title">ML Engineer &mdash; Computer Vision &amp; Model Compression &middot; Python, PyTorch</span>
-      <span class="entry-date">2024 &ndash; 2025</span>
-    </div>
-    <ul>
-      <li>Built a 7-class aerial land-use classifier (self-captured 210-image satellite dataset) with AlexNet transfer learning; applied structured network pruning via L1 norm, L2 norm, correlation-based, and random filter selection; pruning sensitivity sweep (10&ndash;80%), FLOPs estimation, activation-map visualisation, and a ResNet18 comparison; PyTorch, torchvision, scikit-learn</li>
-    </ul>
-  </div>
-
-  <div class="entry">
-    <div class="entry-head">
-      <span class="entry-title">ML Engineer &mdash; Reinforcement Learning Agent &middot; Python</span>
-      <span class="entry-date">2024 &ndash; 2025</span>
-    </div>
-    <ul>
-      <li>Implemented a tabular Q-learning agent (Bellman equation, &epsilon;-greedy) reaching a 100% win rate on a combinatorial search problem vs ~31% random baseline (2.86 avg turns); systematic sweep across state-history length (1&ndash;7) and exploration rate, with convergence analysis over 10,000 episodes &times; 20 independent runs</li>
-    </ul>
-  </div>
-
-  <div class="entry">
-    <div class="entry-head">
-      <span class="entry-title">Researcher &amp; Developer &mdash; Modelling of Natural Systems &amp; Dynamical Systems &middot; Python</span>
-      <span class="entry-date">2024 &ndash; 2025</span>
-    </div>
-    <ul>
-      <li>Simulated the Duffing oscillator via RK4 numerical integration (O(&delta;t<sup>4</sup>) convergence); detected chaos with Poincar&eacute; sections and Lyapunov exponents (&lambda;&asymp;0.14); built a prey&ndash;predator agent-based model on a 50&times;50 toroidal grid against the Lotka&ndash;Volterra ODE, with a parameter sweep and a critical extinction threshold</li>
-    </ul>
-  </div>
-
-  <div class="entry">
-    <div class="entry-head">
-      <span class="entry-title">Researcher &amp; Developer &mdash; Text &amp; Speech Processing &middot; Python</span>
-      <span class="entry-date">2024 &ndash; 2025</span>
-    </div>
-    <ul>
-      <li>Built NLP text classification with sentence embeddings (BGE, sentence-transformers) and an SVC head plus active-learning retraining; applied digital signal processing from speech (spectral/frequency analysis, filtering, linear prediction) to noisy time-series for feature extraction and denoising</li>
-    </ul>
-  </div>
-
-  <div class="entry">
-    <div class="entry-head">
-      <span class="entry-title">Team Lead &amp; Developer &mdash; IDE &amp; Version Control System for a Semiconductor Manufacturing Client &middot; Sheffield, UK</span>
-      <span class="entry-date">Semester 2, 2024</span>
-    </div>
-    <ul>
-      <li>Led a 6-person team delivering a custom IDE and version control system to a semiconductor manufacturing client across three formal milestones</li>
-      <li>Reverse-engineered the client&rsquo;s undocumented proprietary programming language, with no specification available, to build language-aware editor tooling; shipped GitHub-style version tracking for production use</li>
-      <li>Captured requirements through direct client interviews, secured architecture sign-off before coding, and ran weekly status reviews through to delivery</li>
-    </ul>
-  </div>
-
-</div>
-
-<!-- EDUCATION -->
-<div class="section">
-  <div class="section-title">Education</div>
-
-  <div class="entry">
-    <div class="entry-head">
-      <span class="entry-title">BEng Software Engineering &middot; University of Sheffield &middot; Sheffield, UK</span>
-    </div>
-    <p class="entry-desc">Research: &ldquo;Multi-factor portfolio construction in digital assets, investigating portfolio-level optimisation and weighting methodologies for uncorrelated strategies.&rdquo;</p>
-  </div>
-
-  <div class="entry">
-    <div class="entry-head">
-      <span class="entry-title">High School Diploma &middot; All Saints Catholic School &middot; United Kingdom</span>
-    </div>
-  </div>
-</div>
-
-<!-- LANGUAGES -->
-<div class="section">
-  <div class="section-title">Languages</div>
-  <ul class="plain-list">
-    <li>English (Native), Hungarian (Native)</li>
-  </ul>
-</div>
-
-<!-- CERTIFICATIONS -->
-<div class="section">
-  <div class="section-title">Certifications</div>
-  <ul class="plain-list">
-    <li><strong>Bloomberg Terminal Courses</strong> &mdash; Bloomberg (2024)</li>
-    <li><strong>Pine Script Course</strong> &mdash; TradingView (2023)</li>
-  </ul>
-</div>
-
-<!-- REFERENCES -->
 <div class="section">
   <div class="section-title">References</div>
   <ul class="plain-list">

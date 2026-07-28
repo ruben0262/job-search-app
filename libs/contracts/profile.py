@@ -16,7 +16,12 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # Bumped when the shape changes. `users.profile` rows keep the version they were written with, so a
 # migration can read them rather than guess.
-PROFILE_SCHEMA_VERSION = 1
+#
+# 2 (2026-07-28) added `certifications`. Additive and defaulted, so a version-1 row still validates
+# — the bump records *when* the field appeared, which is what tells a later reader that a v1 profile
+# has no certifications because the schema had nowhere to put them, rather than because the
+# candidate has none.
+PROFILE_SCHEMA_VERSION = 2
 
 
 class _Strict(BaseModel):
@@ -60,6 +65,19 @@ class Project(_Strict):
     metrics: list[str] = Field(default_factory=list, max_length=20)
 
 
+class Certification(_Strict):
+    """A course, licence or accreditation. Its own section on a CV, and a keyword an ATS looks for.
+
+    `issuer` and `year` are free text and optional for the same reason experience dates are: a CV
+    says "Bloomberg (2024)", "AWS, valid to 2027", or nothing at all, and parsing that would reject
+    real profiles to gain a precision nothing downstream uses.
+    """
+
+    name: str = Field(max_length=160)
+    issuer: str | None = Field(default=None, max_length=120)
+    year: str | None = Field(default=None, max_length=32)
+
+
 class Skills(_Strict):
     languages: list[str] = Field(default_factory=list, max_length=40)
     frameworks: list[str] = Field(default_factory=list, max_length=60)
@@ -95,6 +113,7 @@ class ProfileSchema(_Strict):
     education: list[Education] = Field(default_factory=list, max_length=10)
     experience: list[Experience] = Field(default_factory=list, max_length=30)
     projects: list[Project] = Field(default_factory=list, max_length=30)
+    certifications: list[Certification] = Field(default_factory=list, max_length=20)
     skills: Skills = Field(default_factory=Skills)
     targets: Targets = Field(default_factory=Targets)
     constraints: Constraints = Field(default_factory=Constraints)

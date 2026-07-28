@@ -20,6 +20,46 @@
         "title": "Body_upload_documents_post",
         "type": "object"
       },
+      "Certification": {
+        "additionalProperties": false,
+        "description": "A course, licence or accreditation. Its own section on a CV, and a keyword an ATS looks for.\n\n`issuer` and `year` are free text and optional for the same reason experience dates are: a CV\nsays \"Bloomberg (2024)\", \"AWS, valid to 2027\", or nothing at all, and parsing that would reject\nreal profiles to gain a precision nothing downstream uses.",
+        "properties": {
+          "issuer": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issuer"
+          },
+          "name": {
+            "maxLength": 160,
+            "title": "Name",
+            "type": "string"
+          },
+          "year": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "Certification",
+        "type": "object"
+      },
       "Conflict": {
         "additionalProperties": false,
         "description": "Something the interview could not resolve. Surfaces in the form as an explicit either/or.",
@@ -501,6 +541,14 @@
       "ProfileSchema": {
         "additionalProperties": false,
         "properties": {
+          "certifications": {
+            "items": {
+              "$ref": "#/components/schemas/Certification"
+            },
+            "maxItems": 20,
+            "title": "Certifications",
+            "type": "array"
+          },
           "confirmed": {
             "default": false,
             "title": "Confirmed",

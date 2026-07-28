@@ -46,6 +46,7 @@ def render_facts(profile: ProfileSchema) -> str:
         _education(profile),
         _experience(profile),
         _projects(profile),
+        _certifications(profile),
         _skills(profile),
         _rules(profile),
     ]
@@ -110,6 +111,23 @@ def _projects(profile: ProfileSchema) -> str:
         lines.extend(f"- Metric: {metric}" for metric in entry.metrics)
         lines.append("")
     return "\n".join(lines)
+
+
+def _certifications(profile: ProfileSchema) -> str:
+    """What they hold, so a generation can name one — and so it names no others.
+
+    A certification is the most checkable claim on a CV and the most damaging to invent: an employer
+    can verify it with the issuer in a minute. Listing them here is what makes "never invent a
+    certification" enforceable rather than a hope.
+    """
+    if not profile.certifications:
+        return ""
+    lines = ["## Certifications", ""]
+    for entry in profile.certifications:
+        issuer = f" — {entry.issuer}" if entry.issuer else ""
+        year = f" ({entry.year})" if entry.year else ""
+        lines.append(f"- {entry.name}{issuer}{year}")
+    return "\n".join(lines) + "\n"
 
 
 def _skills(profile: ProfileSchema) -> str:
