@@ -16,6 +16,32 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ## 2026-07-28
 
+### Per-category Telegram channels
+
+A single feed of everything is a feed people stop reading. The reference instance splits it by the
+distinction its owner actually makes when scanning — jobs at home, jobs on LinkedIn, everything
+else — and that split is now a platform feature: `users.telegram_routes`, JSONB, every route
+optional (`f1d84c2e9b07`).
+
+**The ordering is the part that is easy to get subtly wrong, so it is ported verbatim and tested.**
+Hungarian jobs win first, *including a LinkedIn job in Budapest* — somebody who wants local roles
+wants them wherever they were posted, and routing that one to the LinkedIn channel hides it in the
+stream they skim least. LinkedIn wins second, as the highest-volume source worth isolating.
+
+**A missing route is a fallback, never a drop.** Anything unrouted goes to the personal chat, so an
+account with no routing table behaves exactly as it did before this existed. Routing is resolved
+per job rather than per digest: deciding once for a batch would put a Budapest job in the LinkedIn
+stream whenever it happened to be batched with one.
+
+One limitation asserted rather than hidden: the Hungarian match is a substring on the location
+string, so "New Budapest Restaurant Group, Chicago" routes to the HU channel. Parsing a free-text
+location properly costs real Budapest jobs whenever the parse disagrees; the bug costs one misfiled
+job in a channel the user reads anyway.
+
+`set_telegram_routes.py` asks Telegram whether the bot can actually see each channel before storing
+it — a channel the bot is not an admin of accepts the configuration and then rejects every
+delivery, which the user experiences as an empty feed.
+
 ### `set_credential.py` — storing a credential before the API is deployed
 
 `/credentials` is the real path and this does not replace it. It exists because the `api` container

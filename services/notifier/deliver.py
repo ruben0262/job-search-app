@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 
 from libs.db.models import CorpusJob, User, UserJobState
 from libs.secrets import SecretStore
+from services.notifier.routing import group_by_chat
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,11 @@ class FeedItem:
     title: str
     company: str | None
     score: float
+    # Carried only so the item can be routed to a channel (`services/notifier/routing.py`). Not
+    # rendered — the digest is already dense, and a source name per line is noise to somebody who
+    # is reading the channel that source routes to.
+    source: str | None = None
+    location: str | None = None
 
 
 def pending_feed(session: Session, user_id: _uuid.UUID, *, cutoff: float,
@@ -68,7 +74,7 @@ def pending_feed(session: Session, user_id: _uuid.UUID, *, cutoff: float,
     """
     rows = session.execute(
         select(UserJobState.job_id, CorpusJob.url, CorpusJob.title, CorpusJob.company,
-               UserJobState.score)
+               UserJobState.score, CorpusJob.source, CorpusJob.location)
         .join(CorpusJob, CorpusJob.id == UserJobState.job_id)
         .where(UserJobState.user_id == user_id,
                UserJobState.notified_at.is_(None),
@@ -124,16 +130,26 @@ def deliver(session: Session, user_id: _uuid.UUID, *,
     if not items:
         return 0
 
+    # One digest per channel. A user who has split their feed gets a Hungarian batch in the HU
+    # channel and a LinkedIn batch in the LinkedIn one; a user who has not gets exactly one message
+    # to their personal chat, which is the same behaviour as before this existed.
+    batches = group_by_chat(items, user.telegram_routes, user.telegram_chat_id)
+
     with store.use(user_id, "telegram_bot") as token:
         if token is None:
             raise BotRevoked(f"user {user_id} has no telegram token stored")
-        try:
-            send(token.reveal(), user.telegram_chat_id, render_digest(items))
-        except Exception as exc:
-            if _is_terminal(exc):
-                user.telegram_status = "broken"
-                raise BotRevoked(str(exc)[:200]) from exc
-            raise
+        for chat_id, batch in batches.items():
+            try:
+                send(token.reveal(), chat_id, render_digest(batch))
+            except Exception as exc:
+                if _is_terminal(exc):
+                    # A revoked token is terminal for every channel, so stopping here is right.
+                    # A single bad *channel* id is not — but Telegram answers 400 for that, which
+                    # `_is_terminal` does not match, so it retries rather than marking the account
+                    # broken.
+                    user.telegram_status = "broken"
+                    raise BotRevoked(str(exc)[:200]) from exc
+                raise
 
     for item in items:
         session.get(UserJobState, (user_id, item.job_id)).notified_at = func.now()

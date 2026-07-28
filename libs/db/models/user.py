@@ -133,6 +133,13 @@ class User(Base):
 
     telegram_status: Mapped[str] = mapped_column(String(32), default="unconfigured")
     telegram_chat_id: Mapped[str | None] = mapped_column(String(64))
+    # Optional per-category channels: `{"hu": ..., "linkedin": ..., "other": ...}`
+    # (`services/notifier/routing.py`). A single feed of everything is a feed people stop reading,
+    # and splitting it by the distinction they actually make when scanning is what keeps each
+    # stream skimmable. **A missing route falls back to `telegram_chat_id`** — a routing table is a
+    # convenience, and losing a job because a channel was not configured would be the feature
+    # taking something away.
+    telegram_routes: Mapped[dict | None] = mapped_column(JSONB)
 
     # --- the three counters that keep scoring honest (see module docstring) ---
     model_version: Mapped[int] = mapped_column(Integer, default=0)
