@@ -12,6 +12,7 @@ behaviour becomes multi-tenant. Nothing here is green-field.
 |---|---|
 | **[PLATFORM_ARCHITECTURE.md](PLATFORM_ARCHITECTURE.md)** | The shared/per-user boundary, container topology, storage sizing, database choice, open decisions. **Start here** |
 | [HARVESTER_PLAN.md](HARVESTER_PLAN.md) | One shared scrape for all users: query-set dedup, fan-out budget, proxy ownership, embed-once |
+| [HANDOVER.md](HANDOVER.md) | **Start here.** Where the platform is now, what is left, and the decisions not to re-litigate |
 | [SCHEDULER_PLAN.md](SCHEDULER_PLAN.md) | One queue, four lanes (notify / train / docgen / label): fairness, restart safety, debounce |
 | [COLD_START_PLAN.md](COLD_START_PLAN.md) | Signup → working feed: three-stage onboarding, per-user rubric, backfill labelling, API vs OAuth |
 | [TENANT_SAFETY.md](TENANT_SAFETY.md) | Isolation, secrets, plan-scoped quotas, bounded config schema, onboarding order, deletion |
