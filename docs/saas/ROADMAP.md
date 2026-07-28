@@ -353,12 +353,16 @@ a real person who has not seen the product, and watch without helping.
   `restore_drill.py` **passed against a real 20 MB backup**: every row count matched, a stored
   credential decrypted with the separately-held KEK, and both models came back servable. It found a
   bug doing it, which is the argument for having a drill at all.
-- ⚠️ **Transactional email is not configured, found 2026-07-28.** `libs/mail` is built and tested,
-  but with no `SMTP_*` in `deploy/.env` the API resolves to `ConsoleSender` — signup confirmations
-  and health alerts are *written to a log instead of sent*, and nothing about that looks broken from
-  the outside. It needs a Gmail app password. **This blocks the first invited user**: an account
-  that never receives its confirmation link cannot finish signing up.
-- **Still to do:** nothing else in operations.
+- ⚠️ **Transactional email is not configured — deferred by decision, 2026-07-28.** `libs/mail` is
+  built and tested, but with no `SMTP_*` in `deploy/.env` the API resolves to `ConsoleSender`:
+  signup confirmations and health alerts are *written to a log instead of sent*, and nothing about
+  that looks broken from the outside.
+
+  **The consequence, stated so nobody rediscovers it the hard way:** the two migrated accounts are
+  unaffected — they were created directly and are already verified — but **no new account can
+  complete signup**, because the confirmation link never arrives. Anyone who tries will see a
+  working signup form and then nothing. So this is not a blocker for the current two users and *is*
+  a hard blocker for the invited cohort, and it must be closed before anybody is invited.
   **Off-box backup storage is deferred by decision, 2026-07-28** — there is nowhere to put it yet.
   The dumps therefore cover a bad migration, a dropped table and an operator mistake, and do not
   cover disk or host loss. Written down rather than left implied, because an accepted risk nobody
@@ -377,6 +381,19 @@ a real person who has not seen the product, and watch without helping.
   size vs the projection in `PLATFORM_ARCHITECTURE.md` §4.
 - Legal review before signup opens beyond invites — with D5, this is a milestone, not a blocker.
 - **Decommission the single-tenant stacks only once the platform demonstrably matches them.**
+
+**Exit status 2026-07-28.** Operations is done and proven rather than asserted: monitoring and
+alerts (`libs/ops`), a read-only admin view, and nightly backups whose **restore drill has passed
+twice** — the second time including that the artifact files behind the model rows actually resolve,
+a check added because the first version would have blessed a restore that could not score.
+
+Every service is containerised and the API is **live at `mahoraga-app.rubenlekli.com`** through the
+tunnel, with port 22 the only thing listening publicly on the box. The `score` lane closed a gap
+that had frozen both feeds silently.
+
+**Not done, and both deliberate:** transactional email (above) and the first invited cohort, which
+depends on it. `notifier` and `trainer` are built and not started — starting the notifier messages
+real people, and that is a decision rather than a deployment step.
 
 ## Deliberately deferred
 
