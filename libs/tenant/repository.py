@@ -228,6 +228,23 @@ class TenantRepository:
         user.profile_generation += 1
         return user.profile_generation
 
+    def refresh_facts(self, user_id: _uuid.UUID) -> bool:
+        """Re-render the facts block from the stored profile. **Does not bump the generation.**
+
+        The facts block is not rubric-relevant: it grounds what is *written* about a person, not
+        what counts as a fit. Changing it cannot make a label wrong, so bumping the generation would
+        invalidate every label and force a retrain for a change that means nothing to either
+        (`PROFILE_CAPTURE_PLAN.md` §7 — only re-version when the rubric-relevant subset changes).
+
+        Used to backfill after a facts-template change, and after adding the block to accounts that
+        predate it.
+        """
+        user = self._s.get(User, user_id)
+        if user is None or not user.profile:
+            return False
+        user.facts_md = render_facts(ProfileSchema.model_validate(user.profile))
+        return True
+
     def profile(self, user_id: _uuid.UUID) -> dict | None:
         user = self._s.get(User, user_id)
         return user.profile if user is not None else None
