@@ -43,6 +43,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--no-validate", action="store_true",
                         help="store without calling the provider — for when they are down, not for "
                              "when you are unsure")
+    parser.add_argument("--chat-id",
+                        help="telegram_bot only: set the chat id explicitly instead of reading it. "
+                             "Needed when the bot already posts to several chats — getUpdates "
+                             "returns whichever spoke last, which may be a channel rather than the "
+                             "person")
     args = parser.parse_args(argv)
 
     configure("tools")
@@ -73,8 +78,9 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.kind == "telegram_bot":
             # The step that confuses people more than the rest of setup put together, so it is read
-            # for them rather than asked for.
-            chat_id = telegram_chat_id(value)
+            # for them rather than asked for — unless it was given, which is the right answer for a
+            # bot that already posts to several chats.
+            chat_id = args.chat_id or telegram_chat_id(value)
             if chat_id:
                 user.telegram_chat_id = chat_id
                 user.telegram_status = "connected"
