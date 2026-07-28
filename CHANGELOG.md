@@ -16,6 +16,36 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ## 2026-07-28
 
+### Onboarding, as endpoints (Phase 3 step 6)
+
+The seven pages of `ONBOARDING_AND_PROCESSING.md` §2 are reachable: identity, history and config in
+`services/api/onboarding_routes.py`, the other four already served by `/documents` and
+`/credentials` and deliberately not duplicated. **No LLM runs behind any of them** — onboarding
+collects, and *process data* is the only thing that spends the user's credential.
+
+Three decisions worth keeping:
+
+- **Completion is derived, never stored** (`libs/onboarding/state.py`). Nothing records "page 4
+  done"; each page's state is computed from the row it writes. A stored flag would leave an account
+  marked finished after the user revokes their bot token from the account page — configured on
+  paper, undeliverable in fact. Revoking now reopens exactly that page.
+- **`/complete` does not set `users.active`.** Finishing onboarding means the account is
+  configured; `active` means the scheduler may dispatch notifications, which is only safe once a
+  model exists to rank with. Conflating them would start a notify loop whose every cycle fails
+  identically, for a reason no user could see. `active` turns on after the first successful train.
+- **History is typed, not uploaded.** Nobody has a long-form "everything I have done" document
+  lying around, so `PUT /onboarding/history` takes text and stores it as a `history` document —
+  one path into processing, whether the words were pasted or extracted from a `.docx`.
+
+`POST /onboarding/config/preview` counts the keywords against the corpus before saving. It is an
+approximation and says so in the response — the real feed comes from each source's own search — but
+it catches the failure it exists for: a misspelled keyword, which otherwise surfaces as an empty
+feed a day later with no explanation.
+
+New columns `users.full_name`, `users.links`, `users.onboarding_completed_at` (`c1a6be40d3f2`). The
+name is not derived from the email: it is what appears at the top of a generated CV, and
+`r.lekli@…` is not a name.
+
 ### The facts block, and a daily cap on outbound mail
 
 **The facts block** (`libs/scoring/facts.py`, `PROFILE_CAPTURE_PLAN.md` §6.2) — the `CLAUDE.md`

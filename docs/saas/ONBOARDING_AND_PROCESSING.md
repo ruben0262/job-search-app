@@ -42,7 +42,7 @@ and the user concludes the product does not work.
 |---|---|---|
 | 1. Identity | Full name as it appears on a CV; links as (URL, platform) pairs | The name is not the account email — it is what a recruiter reads |
 | 2. Documents | CV, cover letters, experience docs, references, achievements, diplomas, LinkedIn export | Text extracted server-side on upload; the originals are ephemeral (D9) |
-| 3. History | One long-form document of everything they have done | Feeds the parts of the profile a CV omits |
+| 3. History | One long-form write-up of everything they have done | **Typed, not uploaded** — nobody has this document already. Stored as a `history` document all the same, so processing has one input path |
 | 4. Telegram | Bot token; **chat id captured automatically** via `getUpdates` | The chat id is the step that confuses people most, so it is never asked for |
 | 5. Claude | API key **or** OAuth token — either satisfies it (D2) | An API key needs credit; the form says so before they paste one |
 | 6. Proxy | Proxy credential for the LinkedIn tier (D3) | Validated by fetching through it, not just by connecting |
@@ -50,6 +50,16 @@ and the user concludes the product does not work.
 
 After page 7 the user reaches the dashboard for the first time. Everything above is editable there;
 onboarding is the only place it is *sequenced*.
+
+**Completion is derived, not recorded** (`libs/onboarding/state.py`). No row says "page 4 done" —
+each page's state is computed from what that page writes. A stored progress flag would be a second
+source of truth, and it goes stale the moment somebody revokes a credential from the account page:
+the account would read as finished while its feed could no longer be delivered. Deriving it means
+revoking a bot token reopens the Telegram page, which is the truth.
+
+**Finishing does not start the notifier.** `users.active` is what lets the scheduler dispatch, and
+it stays false until a model exists to rank with — otherwise every cycle fails identically and
+invisibly. The dashboard's next instruction after onboarding is *process data*, not *wait*.
 
 **Abandoned signups purge.** Documents belonging to an account that never finished are deleted after
 a retention window — D9 makes generated documents ephemeral and the same reasoning applies harder to

@@ -78,6 +78,21 @@ class User(Base):
     status: Mapped[str] = mapped_column(String(32), default="pending_verification")
     email_verified_at: Mapped[timestamptz | None]
 
+    # **Not derived from the email.** This is what appears at the top of a generated CV, and
+    # `r.lekli@…` is not a name (`libs.contracts.onboarding`). Null until onboarding page 1.
+    full_name: Mapped[str | None] = mapped_column(String(120))
+    # (url, platform) pairs. JSONB rather than a table: read whole, written whole, never queried by
+    # element — a join table would buy nothing and cost a migration.
+    links: Mapped[list | None] = mapped_column(JSONB)
+
+    # Set once every onboarding page is satisfied (`ONBOARDING_AND_PROCESSING.md` §2).
+    #
+    # Deliberately **not** the same thing as `active`. Finishing onboarding means the account is
+    # configured; `active` means the scheduler may dispatch notifications, which only becomes true
+    # once a model exists to rank with. Conflating them would start a 60-minute notify loop for an
+    # account whose scorer has nothing to serve, and every cycle would fail identically.
+    onboarding_completed_at: Mapped[timestamptz | None]
+
     # **Engagement, not login** — a deliberate departure from G11's "no login in N days".
     #
     # Delivery is Telegram, so a user who reads their feed every morning and applies to things may

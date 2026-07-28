@@ -257,9 +257,13 @@ and finishable in one sitting.
 5. ✅ **Done 2026-07-28. Document upload + server-side text extraction.** What "process data"
    consumes. **Extracted text is stored; the original file never touches disk** — nothing downstream
    reads a PDF, so keeping strangers' records would be a liability with no consumer.
-6. **Onboarding flow** — the seven pages of `ONBOARDING_AND_PROCESSING.md` §2, all required, no LLM.
-   Includes the **config form generated from the shared schema, with a live match count** so a user
-   sees immediately whether their terms return anything.
+6. ✅ **Done 2026-07-28. Onboarding flow** — the seven pages of `ONBOARDING_AND_PROCESSING.md` §2,
+   all required, no LLM. **Completion is derived from the rows each page writes, never stored**, so
+   revoking a credential later reopens that page rather than leaving an account marked finished and
+   unable to deliver. `/complete` deliberately does not set `users.active`: a notify loop with no
+   trained model to rank with fails every cycle identically. The config form carries a **live match
+   count** — approximate, and it says so, but it catches the misspelled keyword that would
+   otherwise surface as an empty feed a day later.
 7. **Process data** — the capture conversation. Plain Messages rather than a Managed Agents session,
    so OAuth works and there is no beta on the critical path. Confirmation form, then the
    deterministic render of rubric and facts block (unchanged).
