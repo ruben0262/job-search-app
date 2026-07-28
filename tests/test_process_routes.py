@@ -79,10 +79,14 @@ def test_an_account_with_documents_and_no_profile_is_told_to_process(api):
 def test_uploading_a_document_after_processing_reopens_the_action(api):
     """The reason `documents_changed_at` is a timestamp rather than a flag: a flag has to be cleared
     by whoever remembers, and the first thing to go stale would be the one saying what is stale."""
-    from sqlalchemy import func
+    from datetime import UTC, datetime, timedelta
 
     http, session, user = api
-    user.processed_at = func.now()
+    # An explicit past instant rather than `func.now()`. Postgres's `now()` is *transaction* start
+    # time, so the upload below — which happens in this same test transaction — would be stamped
+    # identically and the comparison could never be true. Production has no such problem: the
+    # processing worker and an upload request are always separate transactions.
+    user.processed_at = datetime.now(UTC) - timedelta(hours=1)
     user.profile = dict(DRAFT)
     session.flush()
     assert http.get("/process/state").json()["action"] == "ready"

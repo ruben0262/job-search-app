@@ -48,6 +48,26 @@ OAuth header ends up correct in one and missing in the other.
 **`libs/queue` now exports its API.** It exported nothing, so `from libs.queue import enqueue` was
 an ImportError that took down every API route — see below.
 
+### A local Postgres, and the three things it immediately caught
+
+Docker Desktop plus a throwaway `postgres:16` is now the pre-push check: `alembic upgrade head` and
+all **553** tests, rather than the 300 that run without a database. The first run found three
+things the CI-only loop had been hiding:
+
+- **The suite exhausts Postgres's connection slots.** 69 `create_engine(...)` calls across 22 test
+  files, one per function-scoped fixture, and `QueuePool` returns a connection to the pool rather
+  than to the server on close — so a few hundred tests leave a few hundred idle connections and the
+  run dies at "sorry, too many clients already". It surfaces as unrelated tests failing at *setup*,
+  which reads like flakiness. `tests/conftest.py` defaults engines to `NullPool`, at import time
+  rather than in a fixture: a fixture runs after collection, by which point a module-level
+  `from sqlalchemy import create_engine` has already bound the original.
+- **A test asserted on `record.message % record.args`** — already-formatted, so any log line with no
+  args raised `TypeError` instead of asserting.
+- **`now()` is transaction-start time**, so a test that set `processed_at` and then uploaded a
+  document in the same transaction stamped both identically and could never observe the change it
+  was testing. Production never hits this — the worker and the upload are separate transactions —
+  so the fix is in the test, with the reason written down.
+
 ### Two CI failures, and the checks that would have caught them
 
 Both were pushed without local verification, because the machine has no Postgres: migrations and

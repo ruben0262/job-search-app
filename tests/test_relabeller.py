@@ -150,7 +150,7 @@ def test_a_short_batch_is_not_treated_as_a_full_one(db, caplog):
     scored = score_batch(FakeClient([{"url": jobs[0].url, "score": 80}]), "JOBS:\n<JOBS_JSON>", jobs)
 
     assert len(scored) == 1
-    assert any("returned 1 scores for 3 jobs" in record.message % record.args
+    assert any("returned 1 scores for 3 jobs" in record.getMessage()
                for record in caplog.records if record.levelname == "WARNING")
 
 
