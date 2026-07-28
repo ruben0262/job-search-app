@@ -32,10 +32,15 @@ every 15 minutes about a condition we created deliberately.
 
 ## What is left, in the order it has to happen
 
-### 1. Generalise the base CV templates — **blocks everything else in docgen**
+### 1. Render the CV body from the profile — **blocks everything else in docgen**
 
-`d:/Projects/job-search/cv/base_cv_dev.html` and `base_cv_quant.html`, ~19 KB each, not yet copied
-in. They contain the owner's name, employers, links and contact details.
+**Decided 2026-07-28: one template, `dev`, adapted per job.** `libs/templates/base_cv.html` is in
+the repo with its **identity already removed** — header is `<!--NAME-->` / `<!--CONTACT-->`, and a
+test asserts no name, address, phone, email or link survives.
+
+**What is left is the body.** It still carries the previous owner's profile paragraph, experience
+and education. Those become markers filled from `ProfileSchema`, the same deterministic-render job
+as `libs/scoring/rubric.py` — see `libs/templates/README.md` for the marker-to-field table.
 
 The prompts were generalised on 2026-07-28 (`<<NAME>>`, `<<LANGUAGES>>`, `<<WORK_ELIGIBILITY>>`,
 `<<HOME_LOCATION>>`, `<<CONTACT>>`, filled by `libs/scoring/docprompt.py`). **The templates were
@@ -46,9 +51,9 @@ Do the same thing that was done to the prompts: replace the subject, change noth
 is load-bearing — A4 page rules, font paths, the `@page` margin rule that stops Chrome drawing a
 header over the content (`PROFILE_CAPTURE_PLAN.md` §6.5: *buy, do not generate*).
 
-**Then extend `tests/test_prompt_templates.py` to cover templates, not just prompts.** Its
-`_IDENTITY` regex and `DOCGEN_TEMPLATES` list already exist; templates simply are not in scope yet,
-which is a gap worth closing in the same commit.
+`tests/test_prompt_templates.py` already covers the template's identity and the layout rules that
+are load-bearing (`@page`, the header classes) — losing those during a generalisation pass is the
+silent kind of damage.
 
 ### 2. The docgen worker
 
@@ -68,13 +73,6 @@ designed. Same direction as the onboarding pass: black/white/grey, no containers
 screen.
 
 ---
-
-## Open question, needed before step 1
-
-There are two templates, `dev` and `quant`. §6.5 says keep 2–3 and let the user pick.
-
-**Does the user choose during onboarding, or does the processing step pick from their profile?**
-It decides whether onboarding grows an eighth page. Ask before building either.
 
 ---
 

@@ -12,6 +12,7 @@ stranger's name on a real user's CV.
 """
 from __future__ import annotations
 
+import pathlib
 import re
 
 import pytest
@@ -100,3 +101,24 @@ def test_the_language_rule_is_about_the_candidate_not_one_language():
         body = load(name)
         assert "Hungarian" not in body
         assert "<<LANGUAGES>>" in body
+
+
+# ── the CV template ───────────────────────────────────────────────────────────────────────────
+
+def test_the_cv_template_carries_no_identity():
+    """It is the layout every user's CV is built from. A name, address or link left in it would
+    appear on a document a stranger sends to an employer — and it would look entirely correct."""
+    template = (pathlib.Path("libs/templates/base_cv.html")).read_text(encoding="utf-8")
+
+    assert not _IDENTITY.search(template)
+    for leak in ("@gmail", "+44", "rubenlekli.com", "github.com/ruben"):
+        assert leak not in template, f"{leak} is still in the CV template"
+
+
+def test_the_cv_template_keeps_the_layout_rules_that_are_load_bearing():
+    """A4 sizing and the `@page` margin rule are why the PDF does not get a Chrome header drawn
+    over it. Losing them during a generalisation pass is the silent kind of damage."""
+    template = (pathlib.Path("libs/templates/base_cv.html")).read_text(encoding="utf-8")
+
+    assert "@page" in template
+    assert "cv-header" in template and "cv-contact" in template

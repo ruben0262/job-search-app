@@ -360,8 +360,12 @@ The reference instance has two hand-built, heavily-tuned templates (`base_cv_dev
 prevents Chrome header overlays. Generated-per-user HTML would be unpredictable exactly where
 predictability is the requirement, and every layout bug becomes a per-user bug.
 
-Keep 2–3 platform templates; the user picks a starting point. Per-job tailoring still happens per
-build, as today.
+**Superseded 2026-07-28: one template, not 2–3, and the user does not pick.** `libs/templates/`
+holds a single `base_cv.html` and the per-job tailoring adapts it — which is what the prompt was
+already doing between `dev` and `quant`. A choice the user cannot evaluate is a question that only
+adds an onboarding page; the tailoring reads the posting and reshapes the emphasis either way.
+
+The rest of this section stands: platform-maintained, filled from the profile, never generated.
 
 ## 7. Profile changes
 
