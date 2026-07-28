@@ -66,6 +66,53 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Health
+         * @description Every number, plus the conditions that currently need a person.
+         *
+         *     The alerts are computed here rather than left to the reader, because a page of numbers is
+         *     something an operator scans and an alert list is something they act on — and the whole argument
+         *     of `OPERATIONS_PLAN.md` §1 is that a failure nobody is told about is a failure nobody fixes.
+         */
+        get: operations["health_admin_health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Users
+         * @description The account list, with **no credential material of any kind**.
+         *
+         *     Not even `last_4`. An operator does not need it to answer any question they have, and a support
+         *     view that shows a fragment of a key is a support view that leaks one over somebody's shoulder.
+         */
+        get: operations["users_admin_users_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/login": {
         parameters: {
             query?: never;
@@ -1168,6 +1215,50 @@ export interface operations {
         };
     };
     withdraw_consent_account_consent_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    health_admin_health_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    users_admin_users_get: {
         parameters: {
             query?: never;
             header?: never;

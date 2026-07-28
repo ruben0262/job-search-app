@@ -1042,6 +1042,54 @@
         ]
       }
     },
+    "/admin/health": {
+      "get": {
+        "description": "Every number, plus the conditions that currently need a person.\n\nThe alerts are computed here rather than left to the reader, because a page of numbers is\nsomething an operator scans and an alert list is something they act on \u2014 and the whole argument\nof `OPERATIONS_PLAN.md` \u00a71 is that a failure nobody is told about is a failure nobody fixes.",
+        "operationId": "health_admin_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Health Admin Health Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/users": {
+      "get": {
+        "description": "The account list, with **no credential material of any kind**.\n\nNot even `last_4`. An operator does not need it to answer any question they have, and a support\nview that shows a fragment of a key is a support view that leaks one over somebody's shoulder.",
+        "operationId": "users_admin_users_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Users Admin Users Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Users",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/auth/login": {
       "post": {
         "description": "Exchange a password for a session. Sets both cookies.",

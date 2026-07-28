@@ -16,6 +16,41 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ## 2026-07-28
 
+### Monitoring and alerts (Phase 4a)
+
+**Every failure on this platform is silent** (`OPERATIONS_PLAN.md` §1). A stalled queue, a harvester
+finding nothing, a retention trim that quietly stopped — none of them raise, and each is otherwise
+discovered weeks later by a user asking why their feed went quiet. `libs/ops/health.py` makes them
+numbers, `libs/ops/alerts.py` decides which need a person.
+
+**The design is entirely about not crying wolf.** An alert that fires for a condition nobody acts on
+trains its reader to ignore the next one, and the next one is the outage. So:
+
+- the silent-feed alert requires **matches waiting** as well as no delivery. Without that qualifier
+  it fires constantly for anyone with a narrow config, who is not broken — they simply have nothing
+  this week;
+- a stall is measured against **that lane's** normal wait, not a fixed number: a `notify` job
+  waiting an hour is broken, a `label` job waiting an hour is a queue doing its job;
+- one dead-lettered job pages, because the queue retries five times before giving up — one dead job
+  means five failures nobody saw;
+- there are two severities, not three. A third becomes the one everybody filters out.
+
+Every alert names an action. "Look into it" is not one.
+
+**The exit code is the interface** for `check_health.py`: 0 nothing, 1 warnings, 2 a page. It emails
+too, but a monitoring system whose own failure is silent is exactly what this section exists to
+prevent — so `health.service` sets `SuccessExitStatus=0 1`, which makes a page a unit failure that
+`systemctl --failed` shows even with mail down.
+
+**`GET /admin/health` and `/admin/users`**, read-only. `OPERATIONS_PLAN.md` §5 describes an
+action-capable console; shipping the reading half now makes failures visible before the first
+invited user, and shipping half of the acting half would be worse than none. Admin is
+`ADMIN_EMAILS`, read per request — granting it is a deploy, which is the friction it should have,
+whereas a boolean column is one UPDATE away from privilege escalation audited in the database it
+grants access to. An empty variable means **nobody**, not everybody. Non-admins get 404 rather than
+403: a 403 confirms the endpoint exists and that somebody is worth phishing for access to it. The
+user list carries no credential material at all, not even `last_4`.
+
 ### Monochrome, with a theme toggle
 
 Black, white and grey. Two colours survive — a red for errors, a green for a score — and both mean

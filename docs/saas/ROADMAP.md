@@ -335,9 +335,16 @@ a real person who has not seen the product, and watch without helping.
 
 ## Phase 4 — first cohort (invite-only, decision D5)
 
-- **Operations first** (`OPERATIONS_PLAN.md`): monitoring, alerts, admin view, transactional email,
-  backup with a **completed restore drill**. Onboarding people before this means their failures are
-  invisible to everyone including them.
+- ✅ **Monitoring, alerts and the admin view — done 2026-07-28.** `libs/ops` turns the platform
+  into numbers and decides which need a person; `GET /admin/health` serves them and
+  `deploy/scripts/check_health.py` runs on a 15-minute timer. **The exit code is the interface** —
+  0/1/2 — so a broken mail configuration cannot make the monitoring itself silent, which is the
+  failure this whole section exists to prevent. Admin is `ADMIN_EMAILS`, not a column: granting it
+  is a deploy, and a boolean would be one UPDATE away from privilege escalation audited in the
+  database it grants access to. Non-admins get **404, not 403**.
+- **Still to do:** transactional email is built (`libs/mail`) but unproven end to end, and backup
+  with a **completed restore drill** has not started. Onboarding people before that means their
+  failures are invisible to everyone including them.
 - **Measure capture cost first** (`PLATFORM_ARCHITECTURE.md` §10.10) — it is the first spend a
   user sees, on a free plan, on their own key.
 - Onboard 3–5 **invited** users. Quotas on from day one.

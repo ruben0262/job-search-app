@@ -1,0 +1,25 @@
+# Platform health, every 15 minutes. Install alongside health.service:
+#
+#   sudo cp deploy/health.{service,timer} /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now health.timer
+#   systemctl list-timers health.timer
+#
+# Fifteen minutes because that is the harvest interval: a check that runs less often than the thing
+# it watches can miss a whole cycle's worth of failure, and one that runs more often finds the same
+# unchanged numbers.
+[Unit]
+Description=job-search-app platform health check
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=15min
+# Deliberately offset from the harvester's tick, so a health check does not read the database in
+# the middle of a harvest write and report a queue depth that is an artefact of timing.
+RandomizedDelaySec=90
+# No catch-up. A missed check is a check that did not happen; the next one reads current state, and
+# firing three at once after downtime would send three identical emails.
+Persistent=false
+Unit=health.service
+
+[Install]
+WantedBy=timers.target
