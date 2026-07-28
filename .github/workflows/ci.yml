@@ -136,7 +136,7 @@ jobs:
       # user, weeks later, with nothing pointing back at the commit that caused it.
       - name: the committed API contract is current
         run: |
-          python web/scripts/dump_openapi.py
+          python scripts/dump_openapi.py
           npx openapi-typescript openapi.json -o src/api-types.ts
           if ! git diff --exit-code -- openapi.json src/api-types.ts; then
             echo "::error::the API changed but the generated contract was not regenerated — run 'npm run types' in web/"

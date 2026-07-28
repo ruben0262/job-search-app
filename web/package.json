@@ -6,7 +6,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "types": "python ../scripts/dump_openapi.py && openapi-typescript openapi.json -o src/api-types.ts"
+    "types": "python scripts/dump_openapi.py && openapi-typescript openapi.json -o src/api-types.ts"
   },
   "dependencies": {
     "react": "^19.0.0",
