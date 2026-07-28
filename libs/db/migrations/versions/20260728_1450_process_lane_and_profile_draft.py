@@ -29,10 +29,16 @@ depends_on: str | Sequence[str] | None = None
 _OLD_LANES = "lane IN ('notify', 'train', 'docgen', 'label')"
 _NEW_LANES = "lane IN ('notify', 'train', 'docgen', 'label', 'process')"
 
+# The bare name, not the rendered one. `libs.db.base` sets a naming convention of
+# `ck_%(table_name)s_%(constraint_name)s`, and Alembic applies it to what is passed here — so
+# passing the already-rendered `ck_jobs_lane_valid` asks the database for
+# `ck_jobs_ck_jobs_lane_valid`, which does not exist.
+_CONSTRAINT = "lane_valid"
+
 
 def upgrade() -> None:
-    op.drop_constraint("ck_jobs_lane_valid", "jobs", type_="check")
-    op.create_check_constraint("ck_jobs_lane_valid", "jobs", _NEW_LANES)
+    op.drop_constraint(_CONSTRAINT, "jobs", type_="check")
+    op.create_check_constraint(_CONSTRAINT, "jobs", _NEW_LANES)
 
     op.add_column("users", sa.Column("profile_draft", postgresql.JSONB(astext_type=sa.Text()),
                                      nullable=True))
@@ -51,5 +57,5 @@ def downgrade() -> None:
     # Any `process` job would violate the old constraint. Deleting them is correct: the lane no
     # longer has a worker, so they would sit `ready` forever.
     op.execute("DELETE FROM jobs WHERE lane = 'process'")
-    op.drop_constraint("ck_jobs_lane_valid", "jobs", type_="check")
-    op.create_check_constraint("ck_jobs_lane_valid", "jobs", _OLD_LANES)
+    op.drop_constraint(_CONSTRAINT, "jobs", type_="check")
+    op.create_check_constraint(_CONSTRAINT, "jobs", _OLD_LANES)
