@@ -1,24 +1,24 @@
-"""Profile capture — the sandboxed Managed Agents interview that turns a signup into a tenant.
+"""Process data — the step that turns a stack of documents into a profile.
 
-A user's rubric, facts block, and base CV cannot be typed into a form without losing most of what
-makes scoring work. Capture runs as an **Anthropic-hosted Managed Agents session**: restricted
-toolset, read-only document mounts, deny-by-default egress, approval-gated writes
-(PROFILE_CAPTURE_PLAN.md). It ends in a confirmation step the user actually reads.
+It runs **on the dashboard, after onboarding**, not during it. Onboarding collects; this is the
+first thing that spends the user's Claude credential, so it is a decision they make with the cost in
+front of them rather than something that happens to them mid-signup
+(`ONBOARDING_AND_PROCESSING.md` §1).
 
-**The interview is agentic; the rendering is not.** Everything downstream of confirmation —
-rubric, facts block, feature token lists — is deterministic code in ``libs.scoring``. Keeping that
-line sharp is what makes a profile reproducible and a regression bisectable.
+**The conversation is agentic; the rendering is not.** This package produces one JSON profile.
+Everything downstream of confirmation — rubric, facts block, feature token lists — is deterministic
+code in ``libs.scoring``. Keeping that line sharp is what makes a profile reproducible and a
+regression bisectable.
 
-Three things carried knowingly:
+Three properties worth stating, because each replaced an earlier decision that looked fine:
 
-1. **Managed Agents is beta and sits on the onboarding critical path.** Pin the beta header
-   explicitly rather than tracking latest; expect one contract change during the build.
-2. **Manual entry is always the fallback** and ships in the same commit — capture must never
-   hard-block onboarding.
-3. **Capture cost is unmeasured** and it is the first money a user spends, on a free plan, on
-   their own key. Measure before Phase 4; if it is high, the free plan needs an attempt cap
-   (PLATFORM_ARCHITECTURE.md §10.10).
-
-It spends the user's own credential, which is why an API key is required *before* capture in the
-onboarding order.
+1. **Plain Messages, no sandbox.** Text is extracted server-side at upload, so nothing is uploaded
+   to Anthropic and nothing is mounted. That removed a beta from the critical path and made OAuth
+   viable — Managed Agents authenticates by API key only, which would have silently required every
+   user to buy API credit and broken decision D2.
+2. **The output is a draft.** ``users.profile_draft`` holds it until a human confirms. Applying a
+   profile bumps ``profile_generation`` and invalidates every label the account has; nothing an
+   uploaded CV can influence may do that unreviewed (`PROFILE_CAPTURE_PLAN.md` §5).
+3. **Manual entry is always available.** One call to somebody else's service, on the user's own
+   credit — an outage must not leave an account with no way forward.
 """

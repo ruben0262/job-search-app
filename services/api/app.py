@@ -16,6 +16,7 @@ from services.api.auth_routes import router as auth_router
 from services.api.credential_routes import router as credential_router
 from services.api.document_routes import router as document_router
 from services.api.onboarding_routes import router as onboarding_router
+from services.api.process_routes import router as process_router
 
 configure("api")
 # Before any route can hold a plaintext credential. Attaches to the root logger and its handlers,
@@ -27,6 +28,7 @@ app.include_router(auth_router)
 app.include_router(credential_router)
 app.include_router(document_router)
 app.include_router(onboarding_router)
+app.include_router(process_router)
 
 
 @app.get("/health")

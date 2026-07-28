@@ -264,9 +264,13 @@ and finishable in one sitting.
    trained model to rank with fails every cycle identically. The config form carries a **live match
    count** — approximate, and it says so, but it catches the misspelled keyword that would
    otherwise surface as an empty feed a day later.
-7. **Process data** — the capture conversation. Plain Messages rather than a Managed Agents session,
-   so OAuth works and there is no beta on the critical path. Confirmation form, then the
-   deterministic render of rubric and facts block (unchanged).
+7. ✅ **Done 2026-07-28. Process data** — one plain Messages call on the user's own credential, in
+   its own `process` queue lane. Not a Managed Agents session: text is extracted server-side at
+   upload, so there was nothing left to mount — and dropping the sandbox is what made **OAuth
+   viable**, since Managed Agents is API-key-only and would have silently required every user to buy
+   credit, contradicting D2. The output is a **draft** on `users.profile_draft`; confirming it is
+   the only path to a live profile, because every `not_list` entry becomes a hard gate. The warning
+   names the number of labels it will invalidate rather than asking "are you sure?".
 8. **The relabeller** — the `label` lane worker. Without it a re-process leaves zero usable labels at
    the new generation and training cannot run at all. The most expensive step on the platform, which
    is why process→retrain is enforced and retrain→process deliberately is not.

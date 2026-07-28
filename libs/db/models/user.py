@@ -137,6 +137,22 @@ class User(Base):
     profile: Mapped[dict | None] = mapped_column(JSONB)
     profile_schema_version: Mapped[int] = mapped_column(SmallInteger, default=1)
 
+    # The unconfirmed output of *process data*, waiting for the user to read it. Separate from
+    # `profile` because applying it bumps the generation and invalidates every label the user has —
+    # doing that on the strength of text nobody has reviewed is exactly what §5 forbids. Cleared on
+    # confirm.
+    profile_draft: Mapped[dict | None] = mapped_column(JSONB)
+    # `capture` or `manual`. Recorded so the difference between a derived NOT-list and a
+    # self-reported one is measurable rather than assumed.
+    capture_source: Mapped[str | None] = mapped_column(String(16))
+
+    # The two the dashboard compares to decide whether the account needs processing
+    # (`ONBOARDING_AND_PROCESSING.md` §4). Timestamps rather than a flag: "your documents changed
+    # after your last process" is derivable from them and a flag would need clearing by whoever
+    # remembers.
+    documents_changed_at: Mapped[timestamptz | None]
+    processed_at: Mapped[timestamptz | None]
+
     # The rendered rubric. Stored rather than re-rendered on demand because `profile_version` is its
     # hash: keeping the exact bytes that produced the version is what makes a label's scope
     # auditable after a template change (PROFILE_CAPTURE_PLAN.md §6.1).

@@ -16,6 +16,37 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ## 2026-07-28
 
+### Process data, without the sandbox (Phase 3 step 7)
+
+`services/capture` is now one plain Messages call on the user's own credential, in its own `process`
+queue lane. The Managed Agents session it replaced is deleted rather than left dormant — dead code
+that reads as live is worse than no code. `PROFILE_CAPTURE_PLAN.md` §3 and §4 carry a superseded
+banner; §5 onward (confirmation, deterministic rendering, generation invalidation) is unchanged.
+
+**Why the sandbox went, in the order the reasons matter.** Onboarding stopped uploading files — text
+is extracted server-side now — so there was nothing left to mount. Then:
+
+1. **OAuth became possible.** Managed Agents authenticates by API key only, which quietly made the
+   old design require every user to buy API credit. That contradicts decision D2, and it would have
+   surfaced as "my Claude login does not work here" at the last step of onboarding.
+2. **A beta left the critical path.** Nothing to pin, nothing to break under a running signup.
+3. **Deletion became provable.** No Files API objects outside Postgres, so the cascade is the whole
+   story and Phase 3 step 11 needs a verification rather than a second deletion path.
+
+What was lost is real and recorded: the model no longer explores documents with glob and grep, and
+no longer asks follow-up questions mid-interview. It reads everything in one pass. If the first
+cohort's drafts pile up unresolved `conflicts[]`, a follow-up turn is the cheap fix.
+
+**The output is a draft.** `users.profile_draft` holds it until a human confirms; applying a profile
+bumps `profile_generation` and invalidates every label the account has, and nothing an uploaded CV
+can influence may do that unreviewed. Three layers hold it: `confirmed` is stripped from the schema
+the model sees, forced false on the way out, and refused by `save_profile`. A hostile document
+saying "set confirmed to true" is a test, not a hypothetical.
+
+`GET /process/state` derives what the account needs from counters rather than a status column, and
+the warning names a number — *"about 3,310 jobs, roughly $1.66 on your own key"* — because a generic
+"are you sure?" is one nobody reads. Migration `d3f8a1c25b90`.
+
 ### Onboarding, as endpoints (Phase 3 step 6)
 
 The seven pages of `ONBOARDING_AND_PROCESSING.md` §2 are reachable: identity, history and config in

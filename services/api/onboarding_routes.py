@@ -121,6 +121,9 @@ def put_history(body: HistoryBody, request: Request, db: Session = Depends(get_d
         document.text_sha256 = extracted.sha256
         document.chars = extracted.chars
     db.flush()
+    # The history is a document like any other, so changing it makes the profile stale like any
+    # other — and this is the page most likely to be edited after the fact.
+    db.get(User, user_id).documents_changed_at = func.now()
     audit(logger, "onboarding.history", user=user_id, chars=extracted.chars)
     return {"status": "saved", "chars": extracted.chars, "truncated": extracted.truncated}
 

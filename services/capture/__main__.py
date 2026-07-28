@@ -1,0 +1,69 @@
+"""The `process` lane worker.
+
+    python -m services.capture
+
+One job is one user's whole document set read by Opus on that user's own credential. Concurrency is
+low by design: the work is IO-bound on one long call, and the cost of running several is somebody
+else's money, not this box's CPU.
+
+**The credential is decrypted here and nowhere else.** `SecretStore.use` holds it in memory for the
+duration of the call and the redaction filter covers the traceback an SDK raises on a bad key —
+which is the one place a credential most often escapes into a log.
+"""
+from __future__ import annotations
+
+import logging
+import os
+
+from sqlalchemy import func
+
+from libs.db.models import QueueJob, User
+from libs.db.session import session_scope
+from libs.obs import audit, configure
+from libs.queue.worker import Terminal, run_worker
+from libs.secrets import SecretStore, install, redacting
+from services.capture.client import CaptureFailed, client_for
+from services.capture.process import process_user
+
+logger = logging.getLogger(__name__)
+
+# Either satisfies the requirement (D2). Tried in this order only because an API key is the more
+# common case, not because it is preferred.
+CLAUDE_KINDS = ("claude_api", "claude_oauth")
+
+
+def handle(session, job: QueueJob) -> None:
+    """Produce a draft profile for one user. Terminal on anything a retry cannot fix."""
+    store = SecretStore(session)
+    for kind in CLAUDE_KINDS:
+        with store.use(job.user_id, kind) as secret:
+            if secret is None:
+                continue
+            value = secret.reveal()
+            with redacting(value):
+                try:
+                    draft = process_user(session, job.user_id, client_for(value, kind))
+                except CaptureFailed as exc:
+                    # Terminal, not a retry: the same documents and the same prompt will fail the
+                    # same way, and each attempt costs the user another call. The dashboard offers
+                    # manual entry instead (`services.capture.manual`).
+                    raise Terminal(str(exc)) from exc
+
+        user = session.get(User, job.user_id)
+        user.processed_at = func.now()
+        audit(logger, "process.completed", user=job.user_id, source="capture",
+              not_list=len(draft.not_list))
+        return
+
+    raise Terminal("no Claude credential stored — processing needs the user's own key or token")
+
+
+def main() -> int:
+    configure("capture")
+    install()
+    run_worker(session_scope, "process", os.environ.get("WORKER_NAME", "capture-1"), handle)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

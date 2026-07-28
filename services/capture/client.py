@@ -1,135 +1,89 @@
-"""The narrow seam between capture and the Managed Agents beta.
+"""The seam between processing and Anthropic. One method, deliberately.
 
-Managed Agents is beta and sits on the onboarding critical path. Everything the SDK's shape can
-change is confined to `AnthropicCaptureClient`; `session.py` talks only to this protocol. A contract
-change breaks one adapter rather than the onboarding flow, and the tests drive the protocol with a
-fake instead of the network.
+Plain Messages, not a Managed Agents session. What that buys, in order of importance:
+
+1. **OAuth works.** Managed Agents authenticates by API key only, so the sandboxed design silently
+   required every user to buy API credit — which contradicts decision D2, where a subscription token
+   is meant to be equally sufficient. It would have surfaced as "my Claude login does not work here"
+   at the last step of onboarding.
+2. **No beta on the critical path.** Nothing to pin, nothing to break under a running signup.
+3. **Nothing leaves the platform but text.** No file uploads, no Files API objects to orphan, so
+   account deletion is provably complete rather than needing a second cleanup path
+   (`ROADMAP.md` Phase 3 step 11).
+
+The narrow protocol stays for the reason it always did: the tests drive it with a fake rather than
+the network, and a client change touches one adapter.
 """
 from __future__ import annotations
 
-from collections.abc import Iterator
-from dataclasses import dataclass, field
-from typing import Any, Protocol
+import json
+import logging
+from typing import Protocol
 
-# Pinned rather than tracked to latest: a beta header that moves under a running onboarding flow is
-# a failure nobody sees until a user hits it.
-MANAGED_AGENTS_BETA = "managed-agents-2026-04-01"
-FILES_BETA = "files-api-2025-04-14"
+logger = logging.getLogger(__name__)
+
+# An OAuth token authenticates on `Authorization: Bearer` and needs this beta header; an API key
+# goes on `x-api-key` and does not. Sending one on the other's channel is the single most common way
+# a working credential looks broken (`libs.credentials.validate` carries the same constant).
+CLAUDE_OAUTH_BETA = "oauth-2025-04-20"
 
 
-@dataclass(frozen=True)
-class Event:
-    """One session event, flattened. The adapter owns the SDK's object shape; nothing else sees it."""
-
-    id: str
-    type: str
-    text: str = ""
-    tool_name: str = ""
-    tool_input: dict[str, Any] = field(default_factory=dict)
-    needs_permission: bool = False
-    stop_reason: str = ""
+class CaptureFailed(RuntimeError):
+    """Processing could not produce a usable profile. The caller falls back to manual entry."""
 
 
 class CaptureClient(Protocol):
-    """Everything capture needs from Anthropic. Deliberately eight methods, not the whole SDK."""
-
-    def ensure_environment(self, spec: dict) -> str: ...
-
-    def ensure_agent(self, spec: dict, existing_id: str | None) -> str: ...
-
-    def upload_document(self, filename: str, data: bytes) -> str: ...
-
-    def start_session(self, *, agent_id: str, environment_id: str,
-                      resources: list[dict]) -> str: ...
-
-    def stream_events(self, session_id: str) -> Iterator[Event]: ...
-
-    def send_event(self, session_id: str, event: dict) -> None: ...
-
-    def download_output(self, session_id: str, filename: str) -> bytes | None: ...
-
-    def archive_session(self, session_id: str) -> None: ...
+    def complete_json(self, *, model: str, system: str, messages: list[dict],
+                      schema: dict, max_tokens: int) -> dict: ...
 
 
 class AnthropicCaptureClient:
-    """`CaptureClient` over the real SDK, constructed with **the user's own API key**.
+    """`CaptureClient` over the real SDK, built from **the user's own credential**.
 
-    Their onboarding, their spend, no platform cost and no abuse surface
-    (`PROFILE_CAPTURE_PLAN.md` §4.1). It also means agent objects live in their workspace, which is
-    why `ensure_agent` takes the id we stored for them rather than a platform-wide constant.
+    Their profile, their spend, no platform cost and no abuse surface. `kind` decides how the
+    credential is presented, which is why it is passed rather than sniffed from the token's shape —
+    a prefix check is a guess, and the store already knows the answer.
     """
 
-    def __init__(self, api_key: str):
-        # Imported here, not at module scope, so the orchestration and its tests run without the
-        # beta SDK installed.
-        import anthropic  # noqa: PLC0415
+    def __init__(self, value: str, kind: str = "claude_api"):
+        import anthropic  # noqa: PLC0415 - keeps the SDK off the import path of everything else
 
-        self._client = anthropic.Anthropic(api_key=api_key)
+        if kind == "claude_oauth":
+            self._client = anthropic.Anthropic(
+                auth_token=value, default_headers={"anthropic-beta": CLAUDE_OAUTH_BETA})
+        else:
+            self._client = anthropic.Anthropic(api_key=value)
 
-    def ensure_environment(self, spec: dict) -> str:
-        return self._client.beta.environments.create(**spec).id
+    def complete_json(self, *, model: str, system: str, messages: list[dict],
+                      schema: dict, max_tokens: int) -> dict:
+        """One call, constrained to the schema, returned as a dict.
 
-    def ensure_agent(self, spec: dict, existing_id: str | None) -> str:
-        if existing_id:
-            return existing_id
-        return self._client.beta.agents.create(**spec).id
+        Structured output rather than "reply with JSON and please do not add prose": the failure
+        being prevented is a profile that parses on the happy path and comes back wrapped in a code
+        fence the week the model changes its formatting habits.
 
-    def upload_document(self, filename: str, data: bytes) -> str:
-        return self._client.beta.files.upload(file=(filename, data)).id
-
-    def start_session(self, *, agent_id: str, environment_id: str,
-                      resources: list[dict]) -> str:
-        # Created **without** `initial_events` on purpose. A session created with them starts
-        # running immediately, so a stream opened afterwards misses the opening events. Creating
-        # idle, opening the stream, then sending the kickoff is the only ordering that cannot lose
-        # them (`PROFILE_CAPTURE_PLAN.md` §4.4).
-        return self._client.beta.sessions.create(
-            agent=agent_id, environment_id=environment_id, resources=resources).id
-
-    def stream_events(self, session_id: str) -> Iterator[Event]:
-        """Open the SSE connection **now**, iterate lazily.
-
-        Not a generator, deliberately. A generator body does not run until the first `next()`, so
-        `stream_events(...)` followed by `send_event(kickoff)` would open the connection *after* the
-        kickoff — silently undoing the stream-first ordering the caller carefully arranged.
+        Streamed because the response is a whole profile at a high token ceiling, and a non-streamed
+        request that size is the standard way to meet a request timeout instead of an answer.
         """
-        stream = self._client.beta.sessions.events.stream(session_id=session_id)
-        handle = stream.__enter__()
+        with self._client.messages.stream(
+                model=model,
+                system=system,
+                messages=messages,
+                max_tokens=max_tokens,
+                thinking={"type": "adaptive"},
+                output_config={"format": {"type": "json_schema", "schema": schema}}) as stream:
+            message = stream.get_final_message()
 
-        def _iterate() -> Iterator[Event]:
-            try:
-                for raw in handle:
-                    yield _flatten(raw)
-            finally:
-                stream.__exit__(None, None, None)
-
-        return _iterate()
-
-    def send_event(self, session_id: str, event: dict) -> None:
-        self._client.beta.sessions.events.send(session_id=session_id, events=[event])
-
-    def download_output(self, session_id: str, filename: str) -> bytes | None:
-        # Session-scoped listing needs the Managed Agents beta alongside the Files one; the SDK adds
-        # only the Files header itself.
-        for meta in self._client.beta.files.list(scope_id=session_id, betas=[MANAGED_AGENTS_BETA]):
-            if meta.filename.endswith(filename):
-                return self._client.beta.files.download(meta.id).read()
-        return None
-
-    def archive_session(self, session_id: str) -> None:
-        self._client.beta.sessions.archive(session_id)
+        text = "".join(block.text for block in message.content
+                       if getattr(block, "type", "") == "text")
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError as exc:
+            # Never log `text`: it is derived from the candidate's own documents.
+            logger.error("processing returned %d chars that did not parse as JSON", len(text))
+            raise CaptureFailed("the model's response was not usable JSON") from exc
 
 
-def _flatten(raw) -> Event:
-    text = "".join(
-        block.text for block in getattr(raw, "content", []) or []
-        if getattr(block, "type", "") == "text")
-    stop = getattr(raw, "stop_reason", None)
-    return Event(
-        id=getattr(raw, "id", "") or "",
-        type=raw.type,
-        text=text,
-        tool_name=getattr(raw, "name", "") or "",
-        tool_input=getattr(raw, "input", None) or {},
-        needs_permission=getattr(raw, "evaluated_permission", None) == "ask",
-        stop_reason=getattr(stop, "type", "") if stop is not None else "")
+def client_for(value: str, kind: str) -> CaptureClient:
+    """Build a client for whichever Claude credential the user has. Either satisfies D2."""
+    return AnthropicCaptureClient(value, kind)

@@ -5,6 +5,30 @@
 **Decided 2026-07-26:** capture runs as a **Managed Agents** session (Anthropic hosts the loop and a
 sandboxed container); credentials are collected before capture, on a free plan.
 
+> ### ⚠️ Superseded in part, 2026-07-28 — §3, §4.1–4.5 describe a design that no longer ships
+>
+> **The sandbox is gone. Capture is one plain Messages call** (`services/capture`), built
+> 2026-07-28. §5 onwards — confirmation, deterministic rendering, generation invalidation — is
+> unchanged and still authoritative; it is the *how the interview runs* half that changed.
+>
+> What forced it: onboarding stopped uploading files. Text is extracted server-side at upload
+> (`libs/documents`), so there was nothing left to mount, and three things followed at once —
+>
+> 1. **OAuth became possible.** Managed Agents authenticates by API key only, so §4.1's
+>    "consequence worth stating" was in fact a contradiction of decision D2: a subscription
+>    token is meant to be equally sufficient, and it would have failed at the last step of
+>    onboarding with a message about a beta the user has never heard of.
+> 2. **A beta left the critical path.** Nothing to pin, nothing to break under a running signup.
+> 3. **Deletion became provable.** No Files API objects outside Postgres means no second cleanup
+>    path to keep in step with the cascade (`ROADMAP.md` Phase 3 step 11).
+>
+> What was lost, honestly: the agent no longer *explores* the documents with glob and grep, and
+> no longer asks follow-up questions mid-interview. It reads everything in one pass. §1's
+> argument for an interview over a form still holds — the model still derives the NOT-list,
+> which is the part a form structurally cannot do — but the multi-turn clarification it
+> describes is not there. If the first cohort's profiles show unresolved conflicts piling up in
+> `conflicts[]`, a follow-up turn is the cheap fix, not a return to the sandbox.
+
 ---
 
 ## 1. Why this is not "a signup form"

@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from libs.db.models import UserDocument
+from libs.db.models import User, UserDocument
 from libs.db.models.document import DOCUMENT_KINDS
 from libs.documents import MAX_FILE_BYTES, SUPPORTED, UnsupportedDocument, extract_text
 from libs.obs import audit
@@ -28,6 +28,16 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 # Enough for a CV, a couple of covers, references, diplomas and a history file, with room to spare.
 # A ceiling exists because the processing step reads all of them into one conversation.
 MAX_DOCUMENTS_PER_USER = 25
+
+
+def _documents_changed(db: Session, user_id: _uuid.UUID) -> None:
+    """Mark the document set as changed, which is what makes the dashboard offer a re-process.
+
+    A timestamp compared against `processed_at` rather than a "needs processing" flag: a flag has to
+    be cleared by whoever remembers, and the first thing to go stale would be the one that says
+    whether anything is stale (`ONBOARDING_AND_PROCESSING.md` §4).
+    """
+    db.get(User, user_id).documents_changed_at = func.now()
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -60,6 +70,7 @@ async def upload(request: Request, kind: str = Form(...), file: UploadFile = Fil
                                    UserDocument.text_sha256 == extracted.sha256))
     if stored is not None:
         stored.kind, stored.filename = kind, file.filename or stored.filename
+        _documents_changed(db, user_id)
         audit(logger, "document.replaced", user=user_id, kind=kind, chars=extracted.chars)
         return {"status": "replaced", "id": stored.id, "chars": extracted.chars,
                 "truncated": extracted.truncated}
@@ -78,6 +89,7 @@ async def upload(request: Request, kind: str = Form(...), file: UploadFile = Fil
                             chars=extracted.chars)
     db.add(document)
     db.flush()
+    _documents_changed(db, user_id)
     audit(logger, "document.uploaded", user=user_id, kind=kind, chars=extracted.chars,
           truncated=extracted.truncated)
     return {"status": "stored", "id": document.id, "chars": extracted.chars,
@@ -116,5 +128,6 @@ def delete_document(document_id: int, db: Session = Depends(get_db),
     if document is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="no such document")
     db.delete(document)
+    _documents_changed(db, user_id)
     audit(logger, "document.deleted", user=user_id, kind=document.kind)
     return {"status": "deleted"}
