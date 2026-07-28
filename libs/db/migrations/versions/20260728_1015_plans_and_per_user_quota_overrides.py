@@ -13,7 +13,6 @@ account has a plan, and an account without one would resolve to no limits at all
 """
 from __future__ import annotations
 
-import json
 from collections.abc import Sequence
 
 import sqlalchemy as sa
@@ -49,7 +48,10 @@ def upgrade() -> None:
                   nullable=False),
         sa.PrimaryKeyConstraint('id', name=op.f('pk_plans')),
     )
-    op.bulk_insert(plans, [{"id": "free", "name": "Free", "limits": json.dumps(FREE_LIMITS)}])
+    # The dict, not `json.dumps` of it: the column is JSONB and SQLAlchemy serialises it. Passing a
+    # pre-encoded string stores a JSON *string* whose value happens to be an object, so every read
+    # comes back as 215 characters of text and every quota lookup fails.
+    op.bulk_insert(plans, [{"id": "free", "name": "Free", "limits": FREE_LIMITS}])
 
     op.add_column('users', sa.Column('plan_id', sa.String(length=32), nullable=False,
                                      server_default='free'))
