@@ -1,0 +1,24 @@
+# One dispatcher pass: enqueue a `notify` job for every user whose feed is due, then exit.
+#
+# **This is the half of delivery that is not the worker.** `services/notifier` running as a
+# container claims from the `notify` lane; nothing puts anything *in* that lane. Without this unit
+# the worker sits idle forever and the platform looks like it is delivering — the container is up,
+# it logs no errors, and no user ever hears from it. That failure was live from the moment the
+# notifier was built until 2026-07-28.
+#
+# A one-shot rather than a loop inside the worker: `next_run_at` advances at enqueue, so a pass that
+# crashes is a pass that did not happen and the next one picks up the same users. A sleep loop that
+# dies stops dispatching silently, which is the same failure this unit exists to end.
+[Unit]
+Description=job-search-app notify dispatcher (one-shot)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/ruben/job-search-app
+# --no-deps so a dispatch pass never restarts Postgres underneath the stack, and `run --rm` so this
+# is a separate short-lived container rather than a signal to the long-running worker.
+ExecStart=/usr/bin/docker compose -f deploy/compose.yml --profile full run --rm --no-deps notifier --tick
+# A pass is one UPDATE and one INSERT ... SELECT. A minute means Postgres is in trouble, not this.
+TimeoutStartSec=2min
