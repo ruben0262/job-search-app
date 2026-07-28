@@ -18,31 +18,45 @@ of 2026-07-28 and are waiting to be brought up.
 **Not yet done:** off-box backups (deferred until the platform runs end to end) and the restore
 drill. Both are required before the first invited user, not before then.
 
-### Pending on the box, 2026-07-28
+### Getting onto the box, and running a host-side script
 
-Three migrations are written and CI-verified but **not applied** — SSH access from the build machine
-is currently refused (`Permission denied (publickey)`), so they are queued here rather than run.
-Every one is additive and nullable, so the box running older code against the newer schema is safe;
-nothing breaks by waiting.
-
-```bash
-cd /opt/job-search-app && git pull
-./.venv/bin/alembic upgrade head          # c1a6be40d3f2, d3f8a1c25b90, e5c9b71a4d38
+```
+ssh ruben@169.58.16.241
+cd ~/job-search-app          # NOT /opt — the checkout is in the deploy user's home
 ```
 
-| Revision | What it adds | Why it is safe to apply late |
-|---|---|---|
-| `c1a6be40d3f2` | `users.full_name`, `links`, `onboarding_completed_at` | nullable columns nothing yet reads |
-| `d3f8a1c25b90` | the `process` queue lane, `profile_draft`, `capture_source`, `documents_changed_at`, `processed_at` | widens a CHECK constraint and adds nullable columns |
-| `e5c9b71a4d38` | `users.processing_consent_at`, `processing_consent_version` | nullable, and deliberately **not** backfilled — an existing account has not consented, and defaulting it to "now" would record a consent nobody gave |
-
-Then the two new workers, which need `SECRETS_KEK` set in `deploy/.env` — compose refuses to start
-them without it, on purpose:
+**Host-side scripts need `DATABASE_URL` in the environment, and nothing sets it for you.** The
+containers get it from `compose.yml`; a script run from the shell does not, and the failure is a
+clear `RuntimeError` rather than a silent default — deliberately, because a default here would
+silently point at the wrong database. Source `deploy/.env` and build it:
 
 ```bash
-docker compose -f deploy/compose.yml up -d capture labeller
-docker compose -f deploy/compose.yml logs -f capture labeller
+cd ~/job-search-app
+set -a && . deploy/.env && set +a
+export DATABASE_URL="postgresql+psycopg://jobsearch:${POSTGRES_PASSWORD}@127.0.0.1:5432/jobsearch"
 ```
+
+`127.0.0.1` rather than `postgres`: the compose service name only resolves inside the network, and
+the loopback mapping exists for exactly this.
+
+**Credentials and passwords are prompted for, never passed as arguments** — a value on a command
+line lands in shell history and in `ps` output for every user on the box. So there is no
+`--password` flag, and there is no `--value` flag:
+
+```bash
+./.venv/bin/python deploy/scripts/set_password.py --email you@example.com
+./.venv/bin/python deploy/scripts/set_credential.py --email you@example.com --kind telegram_bot
+```
+
+Both take `--stdin`-style piping if you need to script them; `set_password.py` reads the new
+password twice from stdin, `set_credential.py` takes `--stdin`.
+
+### Applied 2026-07-28
+
+Migrations `c1a6be40d3f2`, `d3f8a1c25b90` and `e5c9b71a4d38` are on the box (`alembic current` →
+`e5c9b71a4d38 (head)`), both accounts have a login password, and the `capture` and `labeller`
+workers are up with zero restarts. **Telegram is still unconfigured for both accounts** — it needs a
+bot token from BotFather, which cannot be generated from here.
 
 ```
 deploy/
