@@ -16,6 +16,131 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ## 2026-07-28
 
+### The overview follows the onboarding pass's rules
+
+Three bordered panels of equal weight, which meant the thing to do next looked exactly like the
+delivery settings — and the whole argument for this page is that the order is **not** guessable:
+processing invalidates every label, relabelling costs real money, training is free. A page that
+presents one next action and then frames it identically to a settings readout has given the
+information back.
+
+Now the state is the headline, the server's explanation is the line under it, the one action is the
+only control on the page, and everything else is quiet text at the bottom. The three numbers stay —
+they are the answer to "is this working" — as figures rather than a table, because a table implies
+rows worth comparing and these are three unrelated facts.
+
+The split between what the server says and what the page says is the same one the wizard uses: the
+server owns the explanation (`next.message`), the client owns the four words above it. Cards remain
+where a page really does hold several unrelated things: the feed, the privacy disclosure, settings.
+
+### docgen: a tap becomes a tailored PDF (Phase 5b)
+
+The `docgen` lane has existed since Phase 1 with **no worker** — the same shape of gap the `score`
+lane turned out to be. "Build CV" taps enqueued correctly and waited. `services/docgen` is the
+worker: one Claude call on the user's own credential, Chrome for the PDF, a Telegram upload, and a
+scratch directory that does not outlive the job.
+
+**Python does the mechanics and the model makes one call**, which is the reference instance's
+measured design: its agentic build re-read the profile, the skills and the template every turn, and
+that loop rather than the writing was most of the cost.
+
+Four things are enforced after generation rather than asked for, because each is a rule the prompt
+already states and the model still breaks:
+
+- **The CSS is re-injected from the template.** Stripped before sending, restored byte-for-byte
+  after — so "the model only changes text" is true rather than requested, and the layout is always
+  the platform's whatever came back.
+- **Em-dashes come out of prose and bullets.** The prompt's most-broken rule; they are the model's
+  default habit and its self-check is aspirational.
+- **Hidden content is stripped, and then the result is scanned.** If anything invisible survives,
+  **the CV is not delivered at all.** Invisible keyword stuffing looks perfect and gets the person
+  filtered out — or blacklisted — by the system it was aimed at, and they would never learn why.
+  Failing closed is the recoverable outcome.
+- **The page count is measured from a real PDF**, not estimated from the markup, and a CV over two
+  pages gets exactly one revision. The instruction says *cut*, never *shrink*: a model told to
+  shorten will otherwise reduce the font, which produces an unreadable CV — and the CSS is restored
+  afterwards anyway, so the attempt is silently undone and the length unchanged.
+
+**Deliver, then record.** A crash between them costs a duplicate delivery; the reverse order costs a
+user who thinks they applied and did not. `applied_at` is set by the first build and never moved,
+and the corpus row is pinned so retention cannot remove the description out from under it — the
+durable half of an ephemeral document (D9).
+
+**The quota is checked at the tap, not in the worker** (`TENANT_SAFETY.md` §3). A limit checked
+halfway through a build has already spent the call it was protecting, and the popup names the limit:
+a button that silently does nothing is how somebody concludes the product is broken. `jobs_today`
+counts enqueued jobs rather than successful builds — a failed build still spent the money.
+
+Two supporting changes: `libs/llm` grew `complete_text`, because a tailored CV **is** an HTML
+document and asking for one inside a JSON string field would have the model escape a few thousand
+characters of markup by hand. And the template's fonts are now resolved by name through fontconfig
+instead of by relative `@font-face` url() — `Dockerfile.docgen` installs `fonts-lato` and fails the
+build if `fc-list` cannot see it afterwards, because the failure it replaces was Chrome silently
+falling back to Arial.
+
+**Built, not deployed.** The image has never been built on the box. 730 passed.
+
+### The two tailoring prompts stop being about one person
+
+**SACRED-prompt change, approved 2026-07-28**, and the approval was for exactly this: remove the
+reference instance's specifics, keep every rule. Both prompts already read `<<NAME>>` and
+`<<LANGUAGES>>`; what remained named no person and was still about one — "cut the Quantitative
+Research — Global Liquidity entry", "keep the quant tooling (Bloomberg, ByBit API)", "rename Crypto
+Screener", a metrics list of one CV's numbers, and a Hungarian formal-address rule in the cover
+letter complete with its grammar.
+
+Dead instructions for most users and an active hazard for the rest: told to keep the quant tooling,
+a model writing for somebody who has never touched a trading terminal will still find something to
+put there. Each became the general rule it was a special case of — cut pure-research entries for an
+engineering role, keep the specialist tooling **the profile states** for a specialist one, use the
+formal register of whichever language the letter is written in.
+
+The guard test grew a second half. It asserted no *name* survived, which the cover letter passed for
+a day while carrying "HUNGARIAN" in capitals — the check was case-sensitive — so it now scans for
+the specifics too, word-bounded, and case-insensitively for the language rule.
+
+Also fixed: the subject-verb agreement the original find-and-replace left behind ("the concrete work
+they describes", "the single most relevant thing they has built"). A prompt written in broken
+English is a prompt whose style rules the model has less reason to respect.
+
+### The CV template is rendered from the profile (Phase 5b)
+
+The prompts were generalised earlier today and **the template was not**, which left the worst of the
+two half-states available: a docgen worker built on top of it would have produced a correct-looking
+CV carrying the reference instance's employment history under a real user's name. The identity was
+already out of the header; this is the body.
+
+`libs/templates/cv.py` fills eight markers from `ProfileSchema` — the same deterministic-render job
+as `rubric.py` and `facts.py`, and for a sharper reason: the rubric decides what a user is shown and
+the facts block grounds a generation, while this ends up as a PDF attached to a real application.
+
+**What it produces is the input to tailoring, not the output.** `tailor_cv.md` receives the rendered
+CV as its BASE TEMPLATE and cuts to the 4–6 entries that earn their place for one job. So the
+renderer's job is completeness and truth; it selects nothing.
+
+Three decisions inside it:
+
+- **A section with no data is omitted whole**, not left as an empty heading. The prompt is told to
+  keep the template's sections, so an empty "Projects" title survives tailoring into the PDF.
+- **`Certifications` became a schema field.** It was cut on the first pass for want of one, and
+  that was wrong in the direction that matters: the section disappearing silently removes a
+  credential the candidate actually holds. `ProfileSchema` version 2 adds `certifications`
+  (name, issuer, year, all free text), capture fills it with no prompt change because the model
+  is handed the schema itself, and the facts block lists them — which is what makes "never
+  invent a certification" enforceable rather than a hope. A certification is the most checkable
+  claim on a CV: an employer can verify it with the issuer in a minute.
+- **`projects[]` got its own section.** The user answered `experience` and `projects` separately;
+  a project presented as employment is the kind of overstatement that ends an interview.
+
+Everything from the profile is HTML-escaped: capture reads uploaded documents, which are untrusted
+text, and the output goes to a headless Chrome. `links` values are only turned into anchors when
+they look like a URL or an email — a phone number in that map was otherwise a header that looked
+right and a dead link in the PDF.
+
+Still open, and now written down where the next change will hit it: the `@font-face` paths point at
+the reference instance's tree. Nothing renders a PDF yet, so the fix belongs in the change that
+builds the docgen image. Chrome would fall back to Arial silently. 694 passed.
+
 ### The feedback loop (Phase 5a)
 
 `user_labels.source = 'feedback'` at `weight = 5` has been in the schema since Phase 2 with nothing

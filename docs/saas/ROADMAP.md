@@ -421,9 +421,18 @@ owner 28 times, exactly as `label_template.md` did before Phase 2 gave it `<<NAM
 `<<HARD_GATES>>`. A test refuses to let either be wired into docgen until the same is done, because
 the alternative is a user receiving a CV written about somebody else.
 
-**What remains, in order:** generalise the two prompts; generalise `base_cv_dev.html` and
-`base_cv_quant.html` into 2–3 platform templates filled from the profile (§6.5 — buy, do not
-generate); then the worker, Chrome, and delivery.
+**Built 2026-07-28, not yet deployed.** One template, `libs/templates/base_cv.html`, filled from
+`ProfileSchema` by `libs/templates/cv.py` (§6.5 — buy, do not generate); both prompts generalised;
+`services/docgen` is the worker — one Claude call, Chrome for the PDF, a Telegram upload, and a
+scratch directory removed in a `finally`.
+
+The mechanical guarantees are in the changelog; the one worth repeating here is that **a CV with
+hidden content is not delivered at all.** Invisible keyword stuffing looks perfect and gets the
+person filtered out by the system it was aimed at.
+
+**What remains:** build the image on the box, start it under the `full` profile, and watch one real
+tap through. Cover letters are deliberately not wired — `tailor_cover.md` is generalised and ready,
+and nothing yet says *when* a posting wants one.
 
 **Exit criteria:** a user taps Apply on a job, their model learns from it, and a retrain uses it.
 A user taps Build CV and receives a tailored PDF that names nothing the facts block does not

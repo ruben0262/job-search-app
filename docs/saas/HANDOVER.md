@@ -13,10 +13,11 @@ to re-derive. `ROADMAP.md` is the plan; this is the position.
 | Box | `ruben@169.58.16.241`, checkout at `~/job-search-app` |
 | Running | `postgres`, `capture`, `labeller`, `scorer`, `api`, `cloudflared`, embedder (own project) |
 | Built, **not started** | `notifier`, `trainer` — starting the notifier messages real people |
+| Built, **not deployed** | `docgen` — the image has never been built on the box |
 | Timers | `harvester` (15 min) and `backup` (03:20) enabled; **`health.timer` deliberately disabled** |
-| Tests | 674 passing, CI 10/10 jobs green |
+| Tests | 730 passing against a throwaway Postgres, CI 10/10 jobs green |
 
-**Phases 0–4 complete.** Phase 5a (feedback loop) complete. Phase 5b (docgen) partially started.
+**Phases 0–4 complete.** Phase 5a (feedback loop) complete. Phase 5b (docgen) built and waiting on a deploy.
 
 Both accounts are fully configured: passwords set, Telegram connected with per-category channel
 routing, documents imported (Ruben 9 / 98,059 chars, Andras 11 / 243,819), models servable, feeds
@@ -32,45 +33,54 @@ every 15 minutes about a condition we created deliberately.
 
 ## What is left, in the order it has to happen
 
-### 1. Render the CV body from the profile — **blocks everything else in docgen**
+**All three of the items below were built on 2026-07-28. What remains is not code:**
 
-**Decided 2026-07-28: one template, `dev`, adapted per job.** `libs/templates/base_cv.html` is in
-the repo with its **identity already removed** — header is `<!--NAME-->` / `<!--CONTACT-->`, and a
-test asserts no name, address, phone, email or link survives.
+1. **Build and start `docgen` on the box**, then watch one real tap through (§1–2).
+2. **Look at the redesigned overview in a browser** against a real account (§3).
+3. **Decide when delivery starts.** `notifier` is built and stopped, and `health.timer` stays off
+   until it runs — both accounts have matches waiting, so the silent-feed alert is a true positive
+   until somebody turns delivery on.
+4. **Cover letters** are the first thing with no design yet: `tailor_cover.md` is generalised and
+   ready, and nothing says *when* a posting wants one. The reference instance read a
+   `cover_letter_required` flag the platform's corpus does not have.
 
-**What is left is the body.** It still carries the previous owner's profile paragraph, experience
-and education. Those become markers filled from `ProfileSchema`, the same deterministic-render job
-as `libs/scoring/rubric.py` — see `libs/templates/README.md` for the marker-to-field table.
+### 1–2. ~~The CV render and the docgen worker~~ — **done 2026-07-28, not deployed**
 
-The prompts are done (`<<NAME>>`, `<<LANGUAGES>>`, `<<WORK_ELIGIBILITY>>`, `<<HOME_LOCATION>>`,
-`<<CONTACT>>`, filled by `libs/scoring/docprompt.py`). **Until the body is rendered, a docgen worker
-would produce a correctly-formatted CV carrying somebody else's employment history** — which is
-worse than a broken one, because it looks right.
+`libs/templates/cv.py` fills the template from `ProfileSchema`; `services/docgen` turns a tap into a
+PDF. Both prompts are generalised — the SACRED change was approved on the day and is in the
+changelog with its reasoning. Cover letters are deliberately not wired: `tailor_cover.md` is ready
+and nothing yet says *when* a posting wants one.
 
-The layout is load-bearing and must survive: A4 page rules, font paths, the `@page` margin rule that
-stops Chrome drawing a header over the content (`PROFILE_CAPTURE_PLAN.md` §6.5: *buy, do not
-generate*).
+**What is left is deployment**, and it is the only thing between a tap and a real PDF:
 
-`tests/test_prompt_templates.py` already covers the template's identity and the layout rules that
-are load-bearing (`@page`, the header classes) — losing those during a generalisation pass is the
-silent kind of damage.
+```bash
+cd ~/job-search-app && git pull
+docker compose -f deploy/compose.yml --profile full up -d --build docgen
+docker compose -f deploy/compose.yml logs -f docgen
+```
 
-### 2. The docgen worker
+Then tap Build CV on a real match and watch one through. Things worth knowing before that first tap:
 
-The `docgen` queue lane has existed since Phase 1 with **no worker** — the same shape of gap the
-`score` lane turned out to be. "Build CV" taps from Telegram already enqueue correctly and wait.
+- **The image build fails if `fonts-lato` is missing** — deliberately. Chrome falls back to Arial in
+  silence otherwise, which is a correct document in the wrong typeface.
+- **~90–130 s and two Chrome compiles per build** on the user's own Claude credential, capped at 10
+  builds a day by the free plan's `cv_builds_per_day`. The quota is refused at the tap, with a popup
+  naming the limit.
+- **A failed compile retries; everything else dead-letters.** Chrome running out of memory on a busy
+  box is transient, and `mem_limit: 1500m` is what keeps a bad build from taking the API with it.
+- **Nothing is delivered if the output contains hidden content.** Fail closed, on purpose.
+- The real-Chrome test is skipped unless a browser is present: `CHROME_BIN=… pytest tests/test_docgen.py`
+  runs it, and it is the only check that says the layout survives a real render.
 
-Needs: Chrome in its own image (`CODE_STRUCTURE.md` §5 — the only image with Chrome), ~90–130 s per
-build, PDF delivered to the user's personal chat and never the feed channel, documents **ephemeral**
-(D9: built, delivered, discarded; the applied-log is the durable record).
+### 3. ~~Dashboard redesign~~ — **done 2026-07-28**
 
-Port from `d:/Projects/job-search/pipeline/cv_builder.py` (~993 lines).
+The backend was already state-driven; the UI was three bordered panels of equal weight, so the one
+action worth taking looked exactly like the delivery settings. Now: state as the headline, the
+server's explanation under it, one control, and the numbers as figures underneath
+(`web/src/pages/DashboardPage.tsx`, `.overview` / `.stats` in `styles.css`).
 
-### 3. Dashboard redesign
-
-Untouched. The backend (`GET /dashboard`) is state-driven and complete; the UI is functional, not
-designed. Same direction as the onboarding pass: black/white/grey, no containers, one idea per
-screen.
+**Not looked at in a browser** — `npm run build` typechecks and builds, and nobody has seen it
+rendered against a real account. That is worth five minutes before it counts as finished.
 
 ---
 
