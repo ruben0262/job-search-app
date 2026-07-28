@@ -28,6 +28,13 @@ score — and both mean exactly one thing, which is why they read instantly. Eve
 a step on one grey ramp. Banners are told apart by a left rule and their words rather than by a
 fill, because three coloured blocks on one page is a traffic light nobody reads.
 
+**No containers on the two pages that ask something of you.** The onboarding wizard and the
+overview are title, one line of context, the one thing to do, and then the quiet detail — a box
+drawn around a question competes with the question. The overview was three bordered panels of equal
+weight until 2026-07-28, which made "process your documents" look exactly like the delivery
+settings; the panels remain where a page genuinely holds several unrelated things (the feed, the
+privacy disclosure, the settings forms).
+
 **Light and dark, with a toggle on every page** including the ones you reach signed out. Three
 states, not two: `light`, `dark`, and *unset* — unset is the default, so somebody whose system is
 dark gets dark without being asked. Pressing the toggle leaves unset permanently; there is no way

@@ -513,6 +513,61 @@ button[disabled] {
   font-weight: 600;
 }
 
+/* ── the overview ────────────────────────────────────────────────────────────────────────────
+ *
+ * **The same rules as onboarding: no card, one idea per screen.** It was three bordered panels of
+ * equal weight, which made the thing to do next look exactly like the delivery settings. The state
+ * is the headline, the one action is the only control, and the rest is quiet text underneath.
+ */
+
+.overview {
+  max-width: 34rem;
+  padding-top: 4vh;
+}
+
+.overview h1 {
+  font-size: 1.75rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin: 0 0 0.6rem;
+}
+
+.overview .lede {
+  color: var(--muted);
+  margin: 0 0 1.5rem;
+}
+
+/* Figures, not a table: a table implies rows worth comparing, and these are three unrelated facts.
+   `auto-fit` so three sit in a row on a laptop and stack on a phone without a media query. */
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+  gap: 1.5rem 1rem;
+  margin: 3rem 0 2.5rem;
+}
+
+.stat dt {
+  font-size: 1.75rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  /* Tabular figures so three numbers of different widths still line up under each other. */
+  font-variant-numeric: tabular-nums;
+}
+
+.stat dd {
+  margin: 0.15rem 0 0;
+  color: var(--muted);
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
+/* The things worth knowing and not worth reading twice. */
+.facts {
+  color: var(--muted);
+  font-size: 0.875rem;
+  margin: 0 0 0.4rem;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
