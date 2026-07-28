@@ -1,8 +1,8 @@
-"""The five-lane job queue — claim, retry, dead-letter. Postgres, not Redis.
+"""The six-lane job queue — claim, retry, dead-letter. Postgres, not Redis.
 
-Lanes: ``notify`` / ``train`` / ``docgen`` / ``label`` / ``process`` (SCHEDULER_PLAN.md). One
-queue with lanes rather than five queues, so fairness across users is a single ordering decision
-instead of five independent ones that interact badly.
+Lanes: ``notify`` / ``train`` / ``docgen`` / ``label`` / ``process`` / ``score``
+(SCHEDULER_PLAN.md). One queue with lanes rather than six queues, so fairness across users is a
+single ordering decision instead of six independent ones that interact badly.
 
 **No Redis** (PLATFORM_ARCHITECTURE.md §3). ``SELECT ... FOR UPDATE SKIP LOCKED`` is comfortably
 fast below ~50 users, and — the real argument — it is transactional with the data the jobs operate

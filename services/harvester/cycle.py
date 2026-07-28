@@ -37,13 +37,15 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from libs.contracts.embedder import EmbedderClient, EmbedderVersion
 from libs.corpus.ats import AtsRepository
 from libs.corpus.repository import CorpusRepository
+from libs.db.models import User
 from libs.obs import audit
+from libs.queue import enqueue
 from libs.tenant.repository import TenantRepository
 from services.harvester.embedding import embed_all_pending
 from services.harvester.query_set import (
@@ -80,6 +82,9 @@ class CycleReport:
     # Per source, so "the cycle found 200 links" cannot hide "and four of six sources found none".
     links_by_source: dict[str, int] = field(default_factory=dict)
     source_failures: dict[str, str] = field(default_factory=dict)
+    # How many accounts were asked to catch up their scores. Zero with active users is
+    # a broken enqueue, which would otherwise present as feeds that quietly stop moving.
+    scoring_enqueued: int = 0
     skipped_locked: bool = False
 
     @property
@@ -191,6 +196,17 @@ def run_cycle(
             result = embed_all_pending(corpus, embedder, expected=expected_embedder)
             report.embedded = result.embedded
 
+        # 7. Ask the `score` lane to catch each account up.
+        #
+        # **Enqueued rather than done here.** Scoring needs a per-user model and the scorer's
+        # fail-closed version checks, and doing it inline would couple harvesting to scoring: a
+        # slow model load would delay the next harvest, and one account's mismatched artifact would
+        # stall everybody's. Enqueued unconditionally — the worker decides whether there is
+        # anything to score, and an account with no model yet ends its job quietly.
+        #
+        # Collapsed on `dedup_key`, so a cycle that finds nothing new does not pile up work.
+        report.scoring_enqueued = _enqueue_scoring(session)
+
     logger.info(
         "harvest: %d queries (%d deferred), %d links, %d duplicates, %d new, %d embedded",
         report.queries_planned, report.queries_deferred, report.links_found,
@@ -198,6 +214,7 @@ def run_cycle(
     audit(logger, "harvest.cycle",
           queries=report.queries_planned, links=report.links_found,
           new=report.new_jobs, embedded=report.embedded,
+          scoring_enqueued=report.scoring_enqueued,
           failed_sources=len(report.source_failures),
           empty_sources=sum(1 for n in report.links_by_source.values() if n == 0))
     return report, [q.key for q in deferred]
@@ -312,3 +329,17 @@ def _ingest(corpus: CorpusRepository, links: Iterable[JobLink], report: CycleRep
         if link.application_url:
             corpus.set_application_url(job_id, link.application_url)
     return new_jobs
+
+
+def _enqueue_scoring(session) -> int:
+    """One `score` job per active user. Returns how many were newly queued.
+
+    Every active account, not only those whose config matched something this cycle: a corpus row is
+    shared, so a job harvested for one user is a job the others have not scored either. The dedup
+    key collapses a repeat, so a cycle that finds nothing new costs one INSERT that does nothing.
+    """
+    queued = 0
+    for user_id in session.scalars(select(User.id).where(User.active)):
+        if enqueue(session, "score", user_id, dedup_key="score") is not None:
+            queued += 1
+    return queued

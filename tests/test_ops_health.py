@@ -196,8 +196,11 @@ def test_health_reads_a_live_database_without_scanning_it():
 
         state = platform_health(session)
 
-        assert {row.lane for row in state.lanes} == {"notify", "train", "docgen", "label",
-                                                     "process"}
+        # Every lane, including the empty ones: a lane missing because it had no rows is
+        # indistinguishable from a lane whose worker died.
+        from libs.db.models.queue import LANES
+
+        assert {row.lane for row in state.lanes} == set(LANES)
         assert next(row for row in state.lanes if row.lane == "label").dead == 1
         assert state.postgres_bytes > 0
         assert any(row.email == account.email for row in state.users)

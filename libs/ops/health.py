@@ -28,7 +28,8 @@ from libs.db.models.queue import LANES
 # What a lane's oldest waiting job is *expected* to be, in minutes. Exceeded by 4x is a stall
 # (`OPERATIONS_PLAN.md` §4). These are the lane's normal latency, not its timeout: `notify` runs on
 # a 60-second dispatcher, `label` and `train` are queued bursts that legitimately wait.
-EXPECTED_WAIT_MIN = {"notify": 5, "train": 30, "docgen": 10, "label": 60, "process": 15}
+EXPECTED_WAIT_MIN = {"notify": 5, "train": 30, "docgen": 10, "label": 60, "process": 15,
+                     "score": 10}
 
 # The steady-state corpus projection from `PLATFORM_ARCHITECTURE.md` §4, in rows. Growth past 1.5x
 # means the 90-day retention trim is not running — a slow, silent failure that shows up as a full

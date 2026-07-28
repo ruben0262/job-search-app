@@ -137,6 +137,105 @@ services:
     mem_limit: 512m
     cpus: 1
 
+  # ── the rest of the platform ────────────────────────────────────────────────────────────────
+  #
+  # All under the `full` profile, so a bare `docker compose up -d` still brings up only Postgres
+  # and the two credential workers. Starting delivery is a decision — it messages real people —
+  # rather than something that happens because somebody typed `up`.
+  #
+  #     docker compose -f deploy/compose.yml --profile full up -d
+
+  # `score` lane. Free to run: CPU only, no credential, no provider. Turns a harvested row into a
+  # score, which nothing else does — without it every feed is frozen at its last manual run.
+  scorer:
+    build:
+      context: ..
+      dockerfile: deploy/docker/Dockerfile.scorer
+    profiles: ["full"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://jobsearch:${POSTGRES_PASSWORD:?}@postgres:5432/jobsearch
+      MODEL_DIR: /var/lib/jobsearch/models
+      LOG_DIR: /var/log/jobsearch
+      WORKER_NAME: scorer-1
+    volumes:
+      - ../logs:/var/log/jobsearch
+      - models:/var/lib/jobsearch/models
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: always
+    mem_limit: 2g
+    cpus: 2
+
+  # `train` lane. Concurrency 1 and CPU-fenced in the image as well as here: one fit can saturate
+  # every core through BLAS threading, and the thread caps only take effect before numpy imports.
+  trainer:
+    build:
+      context: ..
+      dockerfile: deploy/docker/Dockerfile.trainer
+    profiles: ["full"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://jobsearch:${POSTGRES_PASSWORD:?}@postgres:5432/jobsearch
+      MODEL_DIR: /var/lib/jobsearch/models
+      LOG_DIR: /var/log/jobsearch
+      WORKER_NAME: trainer-1
+    volumes:
+      - ../logs:/var/log/jobsearch
+      - models:/var/lib/jobsearch/models
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: always
+    mem_limit: 3g
+    cpus: 2
+
+  # `notify` lane. **This is the one that messages real people**, which is why the whole group is
+  # behind a profile rather than started by default.
+  notifier:
+    build:
+      context: ..
+      dockerfile: deploy/docker/Dockerfile.notifier
+    profiles: ["full"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://jobsearch:${POSTGRES_PASSWORD:?}@postgres:5432/jobsearch
+      SECRETS_KEK: ${SECRETS_KEK:?the notifier decrypts each user's bot token}
+      LOG_DIR: /var/log/jobsearch
+      WORKER_NAME: notifier-1
+    volumes:
+      - ../logs:/var/log/jobsearch
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: always
+    mem_limit: 512m
+    cpus: 1
+
+  # The web API. **No published port**: it is reached through the Cloudflare Tunnel (D7), so the
+  # VPS needs no open inbound port and there is nothing on the internet to portscan.
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/docker/Dockerfile.api
+    profiles: ["full"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://jobsearch:${POSTGRES_PASSWORD:?}@postgres:5432/jobsearch
+      SECRETS_KEK: ${SECRETS_KEK:?the API writes the credential store}
+      ACCESS_TOKEN_SECRET: ${ACCESS_TOKEN_SECRET:?set it in deploy/.env — sessions depend on it}
+      ADMIN_EMAILS: ${ADMIN_EMAILS:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      LOG_DIR: /var/log/jobsearch
+    volumes:
+      - ../logs:/var/log/jobsearch
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: always
+    mem_limit: 1g
+    cpus: 2
+
 networks:
   # The embedder has its own compose project and owns this network. External, so this stack joins it
   # rather than trying to create it - which would fail, and rightly.
@@ -145,3 +244,6 @@ networks:
 
 volumes:
   pgdata:
+  # Model artifacts. A named volume rather than a bind mount: the trainer writes them and the
+  # scorer reads them, and neither should depend on a host path existing.
+  models:

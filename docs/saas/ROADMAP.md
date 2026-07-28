@@ -335,32 +335,11 @@ a real person who has not seen the product, and watch without helping.
 
 ## Phase 4 — first cohort (invite-only, decision D5)
 
-> ### ⚠️ Open blocker found 2026-07-28: nothing scores newly harvested rows
->
-> The harvest cycle stores and embeds. The `notify` worker delivers whatever is already scored. **No
-> component scores a corpus row**, so every account's feed is frozen at whatever
-> `deploy/scripts/score_user.py` last produced by hand — 398 rows per account already, growing at
-> roughly the harvest rate.
->
-> Worse than it looks: once the scored backlog is delivered, `pending_matches` falls to zero and the
-> silent-feed alert **goes quiet**, because from the outside a feed with nothing to send is
-> indistinguishable from a feed with nothing new. The monitoring cannot catch this one.
->
-> `SCHEDULER_PLAN.md` §5 reads as though scoring happens inside the notify job, but the notifier
-> cannot call it: `services.notifier` importing `services.scorer` breaks the independence contract,
-> and that contract is load-bearing. Two ways out, and the choice is a real one:
->
-> 1. **A `score` lane** — `services/scorer` gains a worker, enqueued per user per harvest cycle.
->    Consistent with every other expensive per-user operation, costs a migration and a container,
->    and gets round-robin fairness for free.
-> 2. **Move scoring into `libs/scoring`** — the notify worker scores what is new before selecting a
->    digest. No new lane, no new container, and scoring happens exactly when its output is needed.
->    Against it: model loading and artifact-version checks move into `libs`, which is where the
->    fail-closed logic lives least comfortably.
->
-> Option 1 is the recommendation. It is more moving parts and it keeps the scorer's fail-closed
-> checks in one deployable that owns them.
-
+- ✅ **The `score` lane — added 2026-07-28**, closing a gap that would have frozen every feed.
+  Nothing turned a harvested row into a score; the harvest cycle now enqueues one job per active
+  account and `services/scorer` drains it. A lane rather than a call from the notifier because the
+  scorer's fail-closed checks belong in the deployable that owns them. A missing model ends the job
+  quietly — that is the normal state of a new signup, not a failure.
 - ✅ **Monitoring, alerts and the admin view — done 2026-07-28.** `libs/ops` turns the platform
   into numbers and decides which need a person; `GET /admin/health` serves them and
   `deploy/scripts/check_health.py` runs on a 15-minute timer. **The exit code is the interface** —

@@ -16,6 +16,35 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ## 2026-07-28
 
+### The `score` lane — closing the gap between harvest and delivery (Phase 4c)
+
+The harvest cycle stored and embedded; the notify worker delivered what was already scored. **Nothing
+turned a corpus row into a score.** Both live accounts were 398 rows behind and growing at the
+harvest rate, and the monitoring could not have caught it: once the scored backlog is delivered,
+`pending_matches` falls to zero and the silent-feed alert goes quiet, because from outside a feed
+with nothing to send looks exactly like a feed with nothing new.
+
+**A lane rather than a call from the notifier**, because `services.notifier` may not import
+`services.scorer` — and here that contract is load-bearing rather than ceremonial: the scorer's
+fail-closed version checks belong in the one deployable that owns them. A lane also inherits
+round-robin fairness, so one account's backlog cannot starve another's.
+
+**A missing model is not a failure.** The harvest cycle enqueues for every active account and a new
+signup has no artifact until its first train; dead-lettering those would fill the queue with red for
+the one state every account passes through. The worker logs it at info and the next cycle asks again.
+
+The rest is the same shape as the other lanes: one queue job is one batch, the continuation clears
+its own dedup key before re-enqueueing, and `scored_model_version` makes a re-run cheap while a
+retrain correctly invalidates everything at once.
+
+**Deploy artifacts for the remaining four services** — `api`, `notifier`, `scorer`, `trainer` —
+behind a `full` compose profile, so a bare `up -d` still starts only Postgres and the two credential
+workers. Starting delivery messages real people, and that should be a decision rather than something
+that happens because somebody typed `up`. The API publishes **no port**: it is reached through the
+Cloudflare Tunnel (D7), so the VPS needs no open inbound port at all.
+
+Migration `a7e3f9c14b62`. 638 passed against a real Postgres.
+
 ### Backups, and a restore drill that passed (Phase 4b)
 
 Postgres is the single point of failure by design, and under D4 it is self-managed — no provider is

@@ -1,4 +1,4 @@
-"""The five-lane work queue. One table, one claim protocol, one worker pool per lane.
+"""The six-lane work queue. One table, one claim protocol, one worker pool per lane.
 
 Training, notification delivery, document generation, and backfill labelling are **the same problem**
 — bounded work items, per-user fairness, must not starve each other, must survive a restart — so they
@@ -46,7 +46,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from libs.db.base import Base, timestamptz
 
-LANES = ("notify", "train", "docgen", "label", "process")
+LANES = ("notify", "train", "docgen", "label", "process", "score")
 JOB_STATES = ("ready", "claimed", "done", "dead")
 
 # Per-lane visibility timeout (SCHEDULER_PLAN.md §4). A sweeper returns `claimed` rows older than
@@ -55,7 +55,10 @@ JOB_STATES = ("ready", "claimed", "done", "dead")
 # and a crash stalls that user for the duration.
 # `process` is generous because it is one long Opus call over a whole document set, and a
 # sweeper that reclaims it early would charge the user twice for the same profile.
-CLAIM_TIMEOUT_MIN = {"notify": 2, "train": 30, "docgen": 10, "label": 30, "process": 20}
+# `score` is short: one batch of 500 rows through an already-loaded model. A long timeout
+# here would leave a crashed worker's batch unclaimable for no reason.
+CLAIM_TIMEOUT_MIN = {"notify": 2, "train": 30, "docgen": 10, "label": 30, "process": 20,
+                     "score": 5}
 
 # A permanently broken job must never retry forever. On the 5th failure the state becomes `dead` and
 # an admin alert fires — visible, rather than quietly consuming a worker slot in perpetuity.
