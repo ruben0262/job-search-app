@@ -120,6 +120,12 @@ class User(Base):
     # auditable after a template change (PROFILE_CAPTURE_PLAN.md §6.1).
     rubric_md: Mapped[str | None] = mapped_column(Text)
 
+    # The generation-grounding block (PROFILE_CAPTURE_PLAN.md §6.2). The single-tenant instance has
+    # CLAUDE.md, auto-loaded by the CLI on every call; a hosted service has no CLI, so the
+    # equivalent is assembled here and injected explicitly. Stored rather than re-rendered per call
+    # so a generated document can name the exact bytes that grounded it.
+    facts_md: Mapped[str | None] = mapped_column(Text)
+
     # Managed Agents agent objects are created with the *user's* API key, so they live in that
     # user's Anthropic workspace — one per user, not one per platform. Stored so re-capture reuses
     # it: "create the agent once" still holds, it is just once per user

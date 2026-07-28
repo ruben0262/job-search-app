@@ -16,7 +16,13 @@ from __future__ import annotations
 
 from libs.db.base import Base
 from libs.db.models.ats import AtsEtag, AtsToken
-from libs.db.models.auth import TOKEN_PURPOSES, AuthToken, UserSession
+from libs.db.models.auth import (
+    MAIL_PURPOSES,
+    TOKEN_PURPOSES,
+    AuthToken,
+    MailSend,
+    UserSession,
+)
 from libs.db.models.corpus import CorpusJob
 from libs.db.models.proxy import PROXY_STATUSES, ProxyCredential
 from libs.db.models.queue import CLAIM_TIMEOUT_MIN, JOB_STATES, LANES, MAX_ATTEMPTS, QueueJob
@@ -35,6 +41,7 @@ __all__ = [
     "JOB_STATES",
     "LABEL_SOURCES",
     "LANES",
+    "MAIL_PURPOSES",
     "MAX_ATTEMPTS",
     "PROXY_STATUSES",
     "SECRET_KINDS",
@@ -46,6 +53,7 @@ __all__ = [
     "AuthToken",
     "Base",
     "CorpusJob",
+    "MailSend",
     "ProxyCredential",
     "QueueJob",
     "User",

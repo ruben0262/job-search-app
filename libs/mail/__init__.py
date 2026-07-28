@@ -10,6 +10,13 @@ caps a normal account at roughly 500 recipients a day, which is ample for an inv
 must be revisited before self-serve signup — the failure mode is silent rejection, not an error at
 send time.
 """
+from libs.mail.quota import (
+    DEFAULT_DAILY_CAP,
+    MailCapReached,
+    daily_cap,
+    send_within_cap,
+    sent_last_24h,
+)
 from libs.mail.sender import (
     ConsoleSender,
     EmailSender,
@@ -20,11 +27,16 @@ from libs.mail.sender import (
 from libs.mail.templates import reset_email, verification_email
 
 __all__ = [
+    "DEFAULT_DAILY_CAP",
     "ConsoleSender",
     "EmailSender",
+    "MailCapReached",
     "MailError",
     "SmtpSender",
+    "daily_cap",
     "reset_email",
+    "send_within_cap",
     "sender_from_env",
+    "sent_last_24h",
     "verification_email",
 ]

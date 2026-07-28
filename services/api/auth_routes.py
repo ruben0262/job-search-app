@@ -47,7 +47,7 @@ from libs.auth import (
 from libs.auth.access import issue_access_token
 from libs.auth.sessions import ACCESS_TTL, REFRESH_TTL, session_owner
 from libs.db.models import User, UserSession
-from libs.mail import EmailSender, MailError, verification_email
+from libs.mail import EmailSender, MailError, send_within_cap, verification_email
 from libs.secrets import redacting
 from services.api.deps import get_db, get_mailer, rate_limit
 
@@ -123,7 +123,7 @@ def signup(body: SignupRequest, request: Request,
     db.flush()
 
     token = issue_token(db, user.id, "verify_email")
-    _send_verification(mailer, email, token)
+    _send_verification(db, mailer, email, token)
     return OPAQUE_SIGNUP
 
 
@@ -239,11 +239,12 @@ def logout_everywhere(request: Request, response: Response,
     return {"status": "ok", "sessions_ended": revoked}
 
 
-def _send_verification(mailer: EmailSender, email: str, token: str) -> None:
-    """Send the link, and treat a delivery failure as recoverable.
+def _send_verification(db: Session, mailer: EmailSender, email: str, token: str) -> None:
+    """Send the link, and treat any delivery failure as recoverable.
 
     The account exists either way and the user can request another link. Making registration depend
-    on Gmail being reachable would turn a provider outage into a closed front door.
+    on Gmail being reachable — or on there being allowance left today — would turn a provider
+    problem into a closed front door.
     """
     url = f"{_base_url()}/auth/verify?token={token}"
     subject, body = verification_email(url)
@@ -251,7 +252,7 @@ def _send_verification(mailer: EmailSender, email: str, token: str) -> None:
     # flight — including a traceback from `smtplib`.
     with redacting(token):
         try:
-            mailer.send(email, subject, body)
+            send_within_cap(db, mailer, email, subject, body, purpose="verify_email")
         except MailError:
             logger.warning("verification email to %s failed; the account still exists", email,
                            exc_info=True)

@@ -253,3 +253,51 @@ def test_logging_out_twice_is_not_an_error(client):
     http.post("/auth/logout")
     session.flush()
     assert http.post("/auth/logout").status_code == 200
+
+
+# ── the sending cap ───────────────────────────────────────────────────────────────────────────
+
+def test_the_daily_cap_stops_sending_without_breaking_signup(client, monkeypatch):
+    """Gmail's own limit fails silently — messages stop arriving and nothing raises. A cap the
+    platform enforces turns that into a refusal it can see.
+
+    Signup still succeeds: the account exists and another link can be requested, and a provider
+    limit must not become a closed front door.
+    """
+    http, session, mailer = client
+    monkeypatch.setenv("MAIL_DAILY_CAP", "1")
+
+    first = _signup(http, _email())
+    session.flush()
+    second = _signup(http, _email())
+    session.flush()
+
+    assert first.status_code == second.status_code == 202
+    assert len(mailer.sent) == 1, "the second send was refused by the cap"
+
+
+def test_the_cap_counts_attempts_not_successes(client, monkeypatch):
+    """A provider outage would otherwise burn the allowance twice — once failing, once retrying —
+    and the provider counts attempts."""
+    from libs.mail import MailError, sent_last_24h
+
+    http, session, mailer = client
+    monkeypatch.setenv("MAIL_DAILY_CAP", "50")
+
+    def failing(to, subject, body):
+        raise MailError("smtp said no")
+
+    monkeypatch.setattr(mailer, "send", failing)
+    before = sent_last_24h(session)
+    assert _signup(http, _email()).status_code == 202
+    session.flush()
+    assert sent_last_24h(session) == before + 1
+
+
+def test_no_recipient_address_is_stored(client):
+    """A cap needs a count, not a mailing list. This table must never become one more place a
+    user's email lives, or one more thing an account deletion has to reach into."""
+    from libs.db.models import MailSend
+
+    columns = set(MailSend.__table__.columns.keys())
+    assert not (columns & {"to_email", "recipient", "email", "address"})

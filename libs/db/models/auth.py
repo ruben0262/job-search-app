@@ -8,7 +8,16 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import CheckConstraint, ForeignKey, Index, String, Text, func, text
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+    func,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from libs.db.base import Base, timestamptz
@@ -66,4 +75,30 @@ class AuthToken(Base):
         CheckConstraint(f"purpose IN {TOKEN_PURPOSES}", name="purpose_valid"),
         # Issuing a token revokes the user's earlier unused ones for the same purpose.
         Index("ix_auth_tokens_outstanding", "user_id", "purpose"),
+    )
+
+
+# What a send was for. Not who it was to — see `libs.mail.quota`.
+MAIL_PURPOSES = ("verify_email", "reset_password", "notice")
+
+
+class MailSend(Base):
+    """One outbound message, counted against the platform's daily allowance.
+
+    **Deliberately carries no recipient address.** A cap needs a count, not a mailing list, and the
+    per-address protection lives in the signup rate limiter. Keeping this table free of addresses
+    means it never becomes one more place a user's email lives, and it never has to be included in
+    an account deletion.
+    """
+
+    __tablename__ = "mail_sends"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    purpose: Mapped[str] = mapped_column(String(32))
+    sent_at: Mapped[timestamptz] = mapped_column(server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint(f"purpose IN {MAIL_PURPOSES}", name="purpose_valid"),
+        # The only read: how many in the last 24 hours.
+        Index("ix_mail_sends_recent", "sent_at"),
     )
