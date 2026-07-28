@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import gzip
 import os
+import shutil
 import subprocess
 import sys
 import uuid
@@ -82,12 +83,22 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     try:
+        # **Copied in, not handed over.** `subprocess` wants a real file descriptor for `stdin`,
+        # and `GzipFile.fileno()` returns the descriptor of the *compressed* file — so passing the
+        # handle directly feeds psql raw gzip bytes. It fails with
+        # `invalid byte sequence for encoding "UTF8": 0x8b`, which reads like a corrupt dump rather
+        # than a mistake in this script. Found by running the drill, which is the argument for
+        # having one.
+        process = subprocess.Popen(["psql", scratch, "-v", "ON_ERROR_STOP=1", "--quiet"],
+                                   stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
+                                   stderr=subprocess.PIPE)
         with gzip.open(dump, "rb") as source:
-            restore = subprocess.run(["psql", scratch, "-v", "ON_ERROR_STOP=1", "--quiet"],
-                                     stdin=source, capture_output=True, text=False, check=False)
-        if restore.returncode != 0:
-            print(f"restore FAILED: {restore.stderr.decode(errors='replace')[-800:]}",
-                  file=sys.stderr)
+            shutil.copyfileobj(source, process.stdin)
+        process.stdin.close()
+        stderr = process.stderr.read()
+        process.stderr.close()
+        if process.wait() != 0:
+            print(f"restore FAILED: {stderr.decode(errors='replace')[-800:]}", file=sys.stderr)
             return 1
 
         failures = _check(live, scratch)
