@@ -70,6 +70,12 @@ services:
       # set yet — but `libs.secrets` refuses to construct without it, so the LinkedIn loop fails
       # loudly rather than silently skipping.
       SECRETS_KEK: ${SECRETS_KEK:-}
+      # Inside the container; bind-mounted to ./logs on the host below. Without the mount a
+      # `compose run --rm` harvest writes its log into a filesystem that is deleted the moment the
+      # cycle exits — which is precisely the run you want to read afterwards.
+      LOG_DIR: /var/log/jobsearch
+    volumes:
+      - ../logs:/var/log/jobsearch
     depends_on:
       postgres:
         condition: service_healthy
