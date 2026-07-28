@@ -292,10 +292,15 @@ and finishable in one sitting.
    needs a relabel or a cold start, then queues the train: a rule that has to hold everywhere is
    safer in one function than re-derived by every caller. A partial cold start still trains at 100
    labels — 280 labels and no model because 20 calls failed is the worst outcome available.
-10. **Dashboard** — **state-driven**: reads the counters and says whether data needs processing, jobs
-   need relabelling, or the model needs training, rather than offering buttons and hoping they are
-   pressed in the right order. Plus feed stats, model status, quota usage, the **health banners**
-   from `OPERATIONS_PLAN.md` §4b, and an edit page for everything onboarding collected.
+10. ✅ **Done 2026-07-28 (backend). Dashboard** — **state-driven**: `GET /dashboard` reads the
+   counters and says whether data needs processing, jobs need relabelling, or the model needs
+   training, rather than offering buttons and hoping they are pressed in the right order. Plus feed
+   stats, model status, quota usage, and the **health banners** from `OPERATIONS_PLAN.md` §4b.
+   `GET /feed` is **stage-aware** and says so: keyword-ranked until a servable model exists, and a
+   feed that silently changed how it ranked would be one nobody could reason about. The one design
+   correction found by testing: it branches on the stored `onboarding_completed_at`, **not** on
+   live completeness — a revoked credential must surface as a banner, not send a working account
+   back to the signup wizard where nothing explains what broke.
 11. **The GDPR obligations the cleared legal review depends on** (added 2026-07-27). The review
    passed; these are the artifacts that make it true in the product, and none exist yet:
    - **Privacy policy naming each processor** — Anthropic, Telegram, the proxy provider. Linked

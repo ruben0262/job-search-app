@@ -16,6 +16,26 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ## 2026-07-28
 
+### The dashboard and a stage-aware feed (Phase 3 step 10, backend)
+
+`GET /dashboard` in one call, because the panels are not independent: "you have 3,310 labels" and
+"your model is stale" contradict each other if they are read a few seconds apart while a worker is
+running. It reports what the account needs *next* rather than offering four actions and hoping they
+are pressed in order — the order is not guessable, and a user who gets it wrong pays for it.
+
+`GET /feed` says which stage ranked it. Before a servable model exists it is keyword matching, and
+presenting that as "your model" would make the product look broken when the real model arrives and
+the ordering changes completely.
+
+**The design correction the tests found.** The dashboard first branched on live onboarding
+completeness, so breaking a Telegram token threw a fully onboarded account back to the signup
+wizard — hiding the only screen that explained what broke. It now branches on the stored
+`onboarding_completed_at`, which is exactly the distinction that column exists for, and regressions
+surface as banners.
+
+A stale model is **named**: "your profile changed after this model was trained, so your jobs need
+relabelling and a retrain". A greyed-out button is not something a person can act on.
+
 ### Cold start: a feed in 30 seconds, a model in 30 minutes (Phase 3 step 9)
 
 **Stage 0 — `libs/scoring/rules.py`.** A score from the config alone: no model, no LLM, no

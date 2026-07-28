@@ -14,6 +14,7 @@ from libs.obs import configure
 from libs.secrets import install
 from services.api.auth_routes import router as auth_router
 from services.api.credential_routes import router as credential_router
+from services.api.dashboard_routes import router as dashboard_router
 from services.api.document_routes import router as document_router
 from services.api.onboarding_routes import router as onboarding_router
 from services.api.process_routes import router as process_router
@@ -29,6 +30,7 @@ app.include_router(credential_router)
 app.include_router(document_router)
 app.include_router(onboarding_router)
 app.include_router(process_router)
+app.include_router(dashboard_router)
 
 
 @app.get("/health")
