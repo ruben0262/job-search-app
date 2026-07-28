@@ -31,14 +31,13 @@ from services.api.deps import current_user, get_db
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/process", tags=["process"])
 
-# Rough per-job relabelling cost, in cents, for the warning text. Haiku over one posting against a
-# rendered rubric — a few hundred input tokens and a very short answer.
+# Per-job relabelling cost in cents, for the warning text. **Measured, not guessed**: the reference
+# instance labels at ~$0.09 per 50 jobs with Haiku (`COLD_START_PLAN.md` §4), i.e. $0.0018/job.
 #
-# **An estimate that is allowed to be wrong, and says so in the response.** Its job is to stop a
-# user pressing a button that quietly bills them for four thousand calls; being out by a factor of
-# two does not change that decision, whereas showing nothing does. Replace it with the measured
-# number from `PLATFORM_ARCHITECTURE.md` §10.10 once the first cohort has produced one.
-RELABEL_CENTS_PER_JOB = 0.05
+# Quoted without the Batch API's 50% discount on purpose — the estimate should be the one the user
+# cannot be disappointed by. It is still called rough in the response, because a rubric twice as
+# long costs more and this number came from one profile.
+RELABEL_CENTS_PER_JOB = 0.18
 
 
 @router.get("/state")

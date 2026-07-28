@@ -44,8 +44,10 @@ the model sees, forced false on the way out, and refused by `save_profile`. A ho
 saying "set confirmed to true" is a test, not a hypothetical.
 
 `GET /process/state` derives what the account needs from counters rather than a status column, and
-the warning names a number — *"about 3,310 jobs, roughly $1.66 on your own key"* — because a generic
-"are you sure?" is one nobody reads. Migration `d3f8a1c25b90`.
+the warning names a number — *"about 3,310 jobs, roughly $5.96 on your own key"* — because a generic
+"are you sure?" is one nobody reads. The per-job figure is the **measured** $0.0018 from
+`COLD_START_PLAN.md` §4 rather than a plausible-looking constant, quoted without the Batch API
+discount so the estimate is one a user cannot be disappointed by. Migration `d3f8a1c25b90`.
 
 ### Onboarding, as endpoints (Phase 3 step 6)
 
