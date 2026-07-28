@@ -14,6 +14,47 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-07-28
+
+### The facts block, and a daily cap on outbound mail
+
+**The facts block** (`libs/scoring/facts.py`, `PROFILE_CAPTURE_PLAN.md` §6.2) — the `CLAUDE.md`
+equivalent for a service with no CLI to auto-load one. The single-tenant instance gets ~434 lines of
+ambient grounding on every generation call; a hosted service gets none, and the 2026-07-15 A/B
+measured what follows: stripped of profile context the model invented an employer and fabricated
+metrics. On a hosted product that lands on a real application under a real person's name.
+
+It is **distinct from the rubric**, and the distinction is the point:
+
+| | Rubric | Facts block |
+|---|---|---|
+| Answers | *is this job a fit* | *what is true about this person* |
+| Read by | the labeller, the scorer | anything that writes on their behalf |
+| Needs | gates, priorities, anchors | evidence, phrasing, exclusions |
+| Changing it | invalidates labels and models | invalidates nothing |
+
+Both render from the same confirmed profile in the same write, so they cannot disagree or lag. That
+last row is why `refresh_facts` exists and deliberately does **not** bump `profile_generation`:
+changing what may be written about someone cannot make a past label wrong, and bumping would force a
+relabel and a retrain for nothing (§7).
+
+**A platform-wide mail cap**, rolling 24 hours, default 400 against Gmail's ~500. The provider's own
+limit fails silently — messages stop arriving, nothing raises at send time, and the first symptom is
+a user saying they never got a link. Attempts are counted rather than successes, because an outage
+would otherwise burn the allowance twice and the provider counts attempts too. **The table stores no
+recipient address**: a cap needs a count, not a mailing list, and per-address protection already
+lives in the signup rate limiter — so it never becomes one more place a user's email lives, or one
+more thing an account deletion has to reach into.
+
+**A gap this surfaced, worth naming.** Both live accounts render a facts block, but with no
+Experience or Projects sections — their profiles were transcribed from each instance's *rubric*,
+which describes strengths in aggregate and names no employer, date, or metric. That is sufficient
+for scoring, which is why both feeds work. It is **not** sufficient for generation: a CV builder
+would have nothing concrete to draw on. Filling it is exactly the job §1 says a form cannot do and
+capture must — read the person's actual CV. Recorded rather than papered over.
+
+Migration `f7c2a4e8d165` adds `users.facts_md` and `mail_sends`. 472 tests.
+
 ## 2026-07-27 (night, Phase 3 step 1b)
 
 ### The `api` service — signup, verification, login, refresh, logout
