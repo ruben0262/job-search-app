@@ -28,6 +28,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
+from pydantic import ValidationError
 from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
@@ -48,7 +49,7 @@ from libs.db.models import (
 )
 from libs.db.models.user import DORMANT_AFTER_DAYS
 from libs.scoring.facts import render_facts
-from libs.scoring.rubric import profile_version, render_rubric
+from libs.scoring.rubric import profile_version, render_rubric, rubric_relevant_digest
 
 # The reference's SCORER_FEEDBACK_WEIGHT default. A user's explicit decision is worth more than the
 # LLM's guess at their taste, and this is the number that says how much more.
@@ -200,11 +201,20 @@ class TenantRepository:
                      schema_version: int = PROFILE_SCHEMA_VERSION) -> int:
         """Store a **confirmed** profile, render its rubric and facts block, bump the generation.
 
-        Returns the new generation. All of it happens here rather than in the caller, because a user
+        Returns the generation. All of it happens here rather than in the caller, because a user
         with a profile and no rubric — or a facts block that lagged a version behind — is a silent
         corruption: the first mis-scores their feed, the second grounds a real application in a
         previous version of the person. One write path means it cannot be half-done
         (`PROFILE_CAPTURE_PLAN.md` §6.2, §6.4).
+
+        **The generation only moves when the rubric-relevant subset does** (§7). It used to move on
+        every save, which made adding a contact detail cost a relabel of the user's entire labelled
+        history on their own credential — thousands of Haiku calls to answer a question that had not
+        changed. `rubric_relevant_digest` existed for exactly this and nothing called it.
+
+        The facts block and the stored profile are rewritten either way: they are not rubric-relevant
+        (`refresh_facts` says why), and a new link belongs on the next CV immediately rather than
+        waiting for a change that happens to re-version.
 
         Refuses an unconfirmed profile. That is the prompt-injection boundary: an uploaded CV is
         untrusted text, and nothing an agent wrote may reach a hard gate without a human click (§5).
@@ -216,6 +226,17 @@ class TenantRepository:
             raise ValueError(f"no such user: {user_id}")
 
         validated = ProfileSchema.model_validate(profile)
+        # Compared before anything is written. A stored profile that no longer validates — one
+        # written under an older schema that has since gained a required field — must not block an
+        # edit, so it is treated as "changed" rather than raising.
+        previous = user.profile
+        try:
+            unchanged = (previous is not None
+                         and rubric_relevant_digest(ProfileSchema.model_validate(previous))
+                         == rubric_relevant_digest(validated))
+        except ValidationError:
+            unchanged = False
+
         rubric = render_rubric(validated)
         user.profile = profile
         user.profile_schema_version = schema_version
@@ -225,7 +246,8 @@ class TenantRepository:
         # application.
         user.facts_md = render_facts(validated)
         user.profile_version = profile_version(rubric)
-        user.profile_generation += 1
+        if not unchanged:
+            user.profile_generation += 1
         return user.profile_generation
 
     def refresh_facts(self, user_id: _uuid.UUID) -> bool:

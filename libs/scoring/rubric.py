@@ -20,7 +20,14 @@ from libs.prompts import LABEL_TEMPLATE, load
 # Which parts of the profile actually change the rubric. Hashed separately so editing a phone
 # number does not re-version a user and trigger a relabel of their whole history
 # (`PROFILE_CAPTURE_PLAN.md` §7).
-RUBRIC_RELEVANT_FIELDS = ("identity", "skills", "targets", "constraints", "not_list", "experience")
+#
+# **`identity.name`, not `identity`.** The rubric substitutes the name and reads nothing else about
+# a person — not their links, not their location, not their eligibility. Hashing the whole object
+# made a contact detail rubric-relevant, so adding an email address would have re-versioned the
+# user and relabelled thousands of jobs on their own credential. That is the precise failure the
+# comment above claims this prevents, so the paths are dotted and resolved rather than trusted.
+RUBRIC_RELEVANT_FIELDS = ("identity.name", "skills", "targets", "constraints", "not_list",
+                          "experience")
 
 
 def render_rubric(profile: ProfileSchema) -> str:
@@ -42,9 +49,23 @@ def rubric_relevant_digest(profile: ProfileSchema) -> str:
     Compared before re-rendering: unchanged means no new `profile_version`, no relabel, no retrain.
     Sorted keys so dict ordering cannot produce two digests for one profile.
     """
-    subset = {f: profile.model_dump()[f] for f in RUBRIC_RELEVANT_FIELDS}
+    dumped = profile.model_dump()
+    subset = {path: _resolve(dumped, path) for path in RUBRIC_RELEVANT_FIELDS}
     return hashlib.sha256(
         json.dumps(subset, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()[:16]
+
+
+def _resolve(dumped: dict, path: str):
+    """`"identity.name"` → the value at that path. Raises rather than defaulting.
+
+    A typo'd path returning `None` would silently drop a field from the digest, and the symptom
+    would be a rubric change that does not re-version the user — labels answering the old question
+    while claiming to answer the new one, which nothing downstream could detect.
+    """
+    value = dumped
+    for key in path.split("."):
+        value = value[key]
+    return value
 
 
 # ── the WHO block ─────────────────────────────────────────────────────────────────────────────

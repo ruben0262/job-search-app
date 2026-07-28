@@ -16,6 +16,33 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ## 2026-07-28
 
+### Delivery is on, and two things the first real build found
+
+The end-to-end path works: a Build CV tap enqueued, `docgen` claimed it, one Haiku call, Chrome, and
+a one-page PDF arrived in the right chat 105 seconds later. `applied_at` set, the corpus row pinned,
+the scratch directory gone. Both timers and the notifier are running.
+
+**The notify dispatcher had no schedule.** `services/notifier` claims from the `notify` lane and
+nothing put anything in it — `--tick` existed and was wired to nothing. Starting the worker would
+have delivered exactly nothing, while looking healthy: container up, no errors, no messages.
+`deploy/notify-dispatch.{service,timer}` now runs a pass every five minutes.
+
+**A profile edit re-versioned the user, and `rubric_relevant_digest` was written to prevent that and
+never called.** `save_profile` bumped `profile_generation` unconditionally, so adding a contact
+detail would have invalidated every label — 3,310 of them on the account that found this — and
+triggered a paid relabel to answer a question that had not changed. The digest is now compared
+before the bump, and the facts block is rewritten either way, because a new link belongs on the next
+CV rather than waiting for a change that happens to re-version.
+
+The digest also hashed the whole `identity` object while the rubric substitutes `identity.name` and
+reads nothing else about a person. So the field it was most likely to be asked about — a link, a
+phone number — was the one it treated as rubric-relevant. The paths are dotted and resolved now, and
+a typo raises rather than silently dropping a field from the hash.
+
+**Found by the same build: an empty `links` map produces a CV nobody can reply to.** The ATS check
+said so — "no email address in the extracted text" — which is exactly the warning it was written
+for, on the first real document it saw.
+
 ### The overview follows the onboarding pass's rules
 
 Three bordered panels of equal weight, which meant the thing to do next looked exactly like the

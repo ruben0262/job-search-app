@@ -226,8 +226,26 @@ def test_an_unconfirmed_profile_cannot_be_stored():
         s.flush()
         assert repo.profile(user.id)["identity"]["name"] == "Alice Example"
 
-        # Every artifact is built against a generation, so re-confirming must invalidate them.
-        assert repo.save_profile(user.id, confirmed) == 2
+        # **Re-confirming an unchanged profile does not move the generation.** It used to, which
+        # meant every save relabelled the user's entire history on their own credential to answer a
+        # question that had not changed (`PROFILE_CAPTURE_PLAN.md` §7).
+        assert repo.save_profile(user.id, confirmed) == 1
+
+        # A contact detail is not rubric-relevant: the rubric substitutes the name and reads nothing
+        # else about the person. Adding an email must not cost a relabel — and it must still reach
+        # the facts block, because the next CV needs it.
+        with_email = manual_profile(
+            VALID_PROFILE | {"confirmed": True}
+            | {"identity": VALID_PROFILE["identity"] | {"links": {"email": "a@example.test"}}}
+        ).model_dump()
+        assert repo.save_profile(user.id, with_email) == 1
+        s.flush()
+        assert "a@example.test" in s.get(User, user.id).facts_md
+
+        # A change the rubric does read still re-versions, or a stale rubric would score the feed.
+        changed = manual_profile(
+            VALID_PROFILE | {"confirmed": True} | {"not_list": ["mobile (iOS/Android)"]}).model_dump()
+        assert repo.save_profile(user.id, changed) == 2
     finally:
         s.close()
         trans.rollback()

@@ -73,6 +73,21 @@ def test_a_change_outside_the_rubric_relevant_subset_does_not_re_version():
     assert rubric_relevant_digest(cosmetic) == rubric_relevant_digest(_profile())
 
 
+def test_a_contact_detail_is_not_rubric_relevant():
+    """The rubric substitutes the name and reads nothing else about the person — not links, not
+    location, not eligibility. Hashing the whole identity object made adding an email address cost
+    a relabel of the user's entire history, which is the failure the subset exists to prevent."""
+    with_links = _profile(identity=PROFILE["identity"] | {"links": {"email": "a@example.test"},
+                                                         "location": "Lisbon, Portugal"})
+    assert rubric_relevant_digest(with_links) == rubric_relevant_digest(_profile())
+
+
+def test_a_new_name_does_re_version():
+    """The name is substituted into the rubric, so its bytes change and the version must follow."""
+    renamed = _profile(identity=PROFILE["identity"] | {"name": "Someone Else"})
+    assert rubric_relevant_digest(renamed) != rubric_relevant_digest(_profile())
+
+
 def test_a_change_inside_the_subset_does_re_version():
     changed = _profile(constraints=PROFILE["constraints"] | {"remote_policy": "remote_only"})
     assert rubric_relevant_digest(changed) != rubric_relevant_digest(_profile())
