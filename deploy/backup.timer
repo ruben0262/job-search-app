@@ -1,0 +1,20 @@
+# Nightly backup at 03:20 local. Install alongside backup.service:
+#
+#   sudo cp deploy/backup.{service,timer} /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now backup.timer
+#
+# 03:20 rather than 03:00: every cron on every box fires on the hour, and a dump competing with
+# whatever else woke up is a dump that takes twice as long for no reason.
+[Unit]
+Description=job-search-app nightly Postgres backup
+
+[Timer]
+OnCalendar=*-*-* 03:20:00
+# Catch up a missed night. Unlike the harvester, running this late costs nothing and skipping it
+# silently is exactly the failure that matters — RPO is 24h, and two missed nights is 48.
+Persistent=true
+RandomizedDelaySec=300
+Unit=backup.service
+
+[Install]
+WantedBy=timers.target

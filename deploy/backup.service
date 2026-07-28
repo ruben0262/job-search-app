@@ -1,0 +1,21 @@
+# Nightly dump, then exit. Invoked by backup.timer.
+#
+# **SECRETS_KEK is deliberately absent from the environment here.** The dump must not contain it and
+# this script has no use for it — a backup beside its key is a credential breach in one file, and
+# the surest way to keep them apart is for the process that writes one to be unable to read the
+# other (OPERATIONS_PLAN.md §7).
+[Unit]
+Description=job-search-app nightly Postgres backup (one-shot)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=ruben
+WorkingDirectory=/home/ruben/job-search-app
+EnvironmentFile=/home/ruben/job-search-app/deploy/.env
+Environment=DATABASE_URL=postgresql+psycopg://jobsearch:${POSTGRES_PASSWORD}@127.0.0.1:5432/jobsearch
+ExecStart=/home/ruben/job-search-app/.venv/bin/python deploy/scripts/backup.py \
+    --out /home/ruben/backups --models /var/lib/jobsearch/models
+# A dump that cannot finish in fifteen minutes at this size is a symptom, not a slow disk.
+TimeoutStartSec=15min
