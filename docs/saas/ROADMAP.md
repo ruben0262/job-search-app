@@ -395,6 +395,45 @@ that had frozen both feeds silently.
 depends on it. `notifier` and `trainer` are built and not started — starting the notifier messages
 real people, and that is a decision rather than a deployment step.
 
+## Phase 5 — the generation and feedback half (added 2026-07-28)
+
+Everything so far *finds and ranks* jobs. Neither half of what a user does with one exists: they
+cannot act on a match in a way the platform learns from, and they cannot produce the document the
+match is for. The `docgen` lane has existed since Phase 1 with **no worker behind it** — the same
+shape of gap the `score` lane turned out to be.
+
+### 5a — the feedback loop
+
+**This is the half that makes the product get better, and without it the model is frozen at whatever
+Haiku thought.** `user_labels.source = 'feedback'` at weight 5 already exists in the schema and
+nothing writes it.
+
+- **Buttons on the digest.** Apply / Skip / Build CV, as inline keyboard callbacks.
+- **A webhook, not polling.** The API is publicly reachable through the tunnel now, so Telegram can
+  post to it — one request per tap instead of a process asking "anything yet?" forever.
+- **Two secrets, because one is not enough.** A per-user path secret so a tap is attributable to an
+  account without trusting the body, and Telegram's own `secret_token` header so a guessed path is
+  still refused. Neither alone is sufficient: the path leaks in logs, and the header does not say
+  *which* user.
+- **Only the account owner's taps count.** A channel has other members; a stranger tapping Apply
+  must not teach somebody else's model. Carried from the reference instance, which learned this.
+- **Debounced retrain**, per `SCHEDULER_PLAN.md` §5: a burst of twenty taps is one retrain, ten
+  minutes after the last.
+
+### 5b — docgen
+
+The CV and cover-letter builder, ported from `pipeline/cv_builder.py` (~993 lines, Chrome for PDF).
+**The only image with Chrome** (`CODE_STRUCTURE.md` §5), slow (~90–130 s), which is exactly why it
+has its own lane and its own container.
+
+Generated documents stay **ephemeral** (D9): built, delivered, discarded. The applied-log is the
+durable record. That is not only tidiness — it is what keeps strangers' CVs off this disk and the
+GDPR surface small.
+
+**Exit criteria:** a user taps Apply on a job, their model learns from it, and a retrain uses it.
+A user taps Build CV and receives a tailored PDF that names nothing the facts block does not
+support.
+
 ## Deliberately deferred
 
 Do not build these before Phase 4, regardless of how appealing they look mid-build.

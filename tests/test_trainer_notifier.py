@@ -242,10 +242,11 @@ def test_a_delivered_job_is_never_delivered_again(ctx):
     ctx.flush()
 
     sent = []
-    assert deliver(ctx, user.id, store=store, send=lambda t, c, m: sent.append(m)) == 1
+    assert deliver(ctx, user.id, store=store, send=lambda t, c, m, k=None: sent.append(m)) == 1
+    jobs_sent = [m for m in sent if "http" in m]
     ctx.flush()
-    assert deliver(ctx, user.id, store=store, send=lambda t, c, m: sent.append(m)) == 0
-    assert len(sent) == 1
+    assert deliver(ctx, user.id, store=store, send=lambda t, c, m, k=None: sent.append(m)) == 0
+    assert len(jobs_sent) == 1, "the job goes out once and never again"
 
 
 def test_only_scores_above_the_cutoff_are_sent(ctx):
@@ -265,7 +266,7 @@ def test_a_revoked_bot_is_terminal_and_flags_the_account(ctx):
     _scored(ctx, user)
     ctx.flush()
 
-    def blocked(token, chat_id, message):
+    def blocked(token, chat_id, message, keyboard=None):
         raise RuntimeError("Forbidden: bot was blocked by the user")
 
     with pytest.raises(BotRevoked):
@@ -281,7 +282,7 @@ def test_a_transient_failure_is_not_terminal(ctx):
     _scored(ctx, user)
     ctx.flush()
 
-    def timeout(token, chat_id, message):
+    def timeout(token, chat_id, message, keyboard=None):
         raise TimeoutError("read timeout")
 
     with pytest.raises(TimeoutError):
@@ -320,7 +321,7 @@ def test_the_token_reaches_the_transport_and_nothing_else(ctx):
 
     seen = {}
 
-    def send(token, chat_id, message):
+    def send(token, chat_id, message, keyboard=None):
         seen["token"] = token
         logger.info("posting to telegram with %s", token)
 

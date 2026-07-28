@@ -16,6 +16,40 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ## 2026-07-28
 
+### The feedback loop (Phase 5a)
+
+`user_labels.source = 'feedback'` at `weight = 5` has been in the schema since Phase 2 with nothing
+writing it. **This is the half that makes the product improve** — everything upstream ranks jobs by
+what a model thought against a rubric, and this records what the person actually did, which is a
+decision rather than an opinion.
+
+**A webhook rather than polling**, now that the API is publicly reachable through the tunnel: one
+request per tap instead of a per-user `getUpdates` loop with its own worker and offset bookkeeping.
+
+**Three things stand between a stranger and somebody else's training data**, and none is redundant:
+
+1. a **per-user path secret** — every user runs their own bot, so the URL is what says whose tap it
+   is; a shared path could only answer that from the request body, which is attacker-supplied;
+2. Telegram's **`secret_token` header**, compared in constant time — a path leaks into proxy logs,
+   browser history and screenshots, and the header is what makes a leaked path insufficient;
+3. **the tapper must be the account owner.** A feed channel has other members. Without this, anyone
+   who joined to browse jobs could teach somebody else's model — not a privacy leak but a slow,
+   invisible corruption of the one thing the product is built on.
+
+**Applied is 90, not 100.** People apply to things they are unsure about; saturating the scale would
+teach the model that every applied job is identical and throw away the ordering that makes a feed
+useful. A second tap does not move `applied_at` — that column is the date somebody actually applied.
+
+**The digest became one message per job, reversing an earlier decision.** Batching avoided a burst
+of notifications, which was a good argument that lost to a better one: a Telegram keyboard attaches
+to *a message*, so a digest structurally cannot carry per-job buttons. Acting on a match is worth
+more than saving nine notifications, and the burst is still bounded by the per-delivery and daily
+caps. The reference instance's watcher sends per-job cards for the same reason.
+
+The notifier renders the keyboard and the API parses the taps, and they may not import each other —
+`callback_data` is the entire contract between them, so a test reads both sides and asserts they
+agree. Migration `b8e2d05f713c`. 657 passed.
+
 ### Two deployment bugs the containers found, and the drill did not
 
 Both were invisible until something actually ran in a container.

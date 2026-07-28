@@ -27,15 +27,18 @@ TELEGRAM_TIMEOUT_SEC = 20.0
 logger = logging.getLogger(__name__)
 
 
-def send(token: str, chat_id: str, message: str) -> None:
-    """One digest to one chat. Raises with Telegram's own description on failure.
+def send(token: str, chat_id: str, message: str, keyboard: dict | None = None) -> None:
+    """One message to one chat, optionally with buttons. Raises with Telegram's own description.
 
     The description matters: `deliver` decides terminal-versus-transient from its text, and a
     generic "HTTP 403" would lose the distinction between a blocked bot and a rate limit.
     """
+    payload = {"chat_id": chat_id, "text": message, "disable_web_page_preview": True}
+    if keyboard:
+        payload["reply_markup"] = keyboard
     response = httpx.post(
         f"https://api.telegram.org/bot{token}/sendMessage",
-        json={"chat_id": chat_id, "text": message, "disable_web_page_preview": True},
+        json=payload,
         timeout=TELEGRAM_TIMEOUT_SEC)
     if response.status_code >= 400:
         raise RuntimeError(response.json().get("description", response.text)[:300])

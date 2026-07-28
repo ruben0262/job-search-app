@@ -140,6 +140,12 @@ class User(Base):
     # convenience, and losing a job because a channel was not configured would be the feature
     # taking something away.
     telegram_routes: Mapped[dict | None] = mapped_column(JSONB)
+    # The path Telegram posts this user's button taps to. **Per user, and random**, because the URL
+    # is what identifies the account: every user runs their own bot, so a single shared webhook
+    # path could not tell whose tap it was without trusting the request body. Paired with
+    # Telegram's own `secret_token` header — the path can leak into a log, and the header cannot
+    # say *which* user (`services/api/telegram_routes.py`).
+    telegram_webhook_secret: Mapped[str | None] = mapped_column(String(64))
 
     # --- the three counters that keep scoring honest (see module docstring) ---
     model_version: Mapped[int] = mapped_column(Integer, default=0)

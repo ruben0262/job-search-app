@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 
 from libs.db.models import CorpusJob, User, UserJobState
 from libs.secrets import SecretStore
+from services.notifier.buttons import keyboard
 from services.notifier.routing import group_by_chat
 
 logger = logging.getLogger(__name__)
@@ -103,13 +104,13 @@ def notifications_today(session: Session, user_id: _uuid.UUID) -> int:
 
 def deliver(session: Session, user_id: _uuid.UUID, *,
             store: SecretStore,
-            send: Callable[[str, str, str], None],
+            send: Callable[..., None],
             cutoff: float = 60.0,
             daily_cap: int = MAX_NOTIFICATIONS_PER_DAY) -> int:
     """Send this user's pending feed. Returns how many items were delivered.
 
-    `send(token, chat_id, text)` is injected so the transport is one replaceable function — the
-    tests drive it, and a Telegram API change touches one place.
+    `send(token, chat_id, text, keyboard=None)` is injected so the transport is one replaceable
+    function — the tests drive it, and a Telegram API change touches one place.
 
     **Marks `notified_at` in the same transaction the caller commits alongside the queue job.** The
     caller commits; this function deliberately does not, so the two cannot be split.
@@ -140,7 +141,12 @@ def deliver(session: Session, user_id: _uuid.UUID, *,
             raise BotRevoked(f"user {user_id} has no telegram token stored")
         for chat_id, batch in batches.items():
             try:
-                send(token.reveal(), chat_id, render_digest(batch))
+                # A header, then one message per job. The header is what makes a burst read as a
+                # delivery rather than as the bot malfunctioning.
+                send(token.reveal(), chat_id,
+                     f"{len(batch)} new match{'es' if len(batch) != 1 else ''}")
+                for item in batch:
+                    send(token.reveal(), chat_id, render_job(item), keyboard(item.job_id))
             except Exception as exc:
                 if _is_terminal(exc):
                     # A revoked token is terminal for every channel, so stopping here is right.
@@ -156,11 +162,22 @@ def deliver(session: Session, user_id: _uuid.UUID, *,
     return len(items)
 
 
-def render_digest(items: list[FeedItem]) -> str:
-    """One message per delivery rather than one per job.
+def render_job(item: FeedItem) -> str:
+    """One job, as its own message, so it can carry its own buttons."""
+    company = f"\n{item.company}" if item.company else ""
+    return f"{int(item.score)}  {item.title}{company}\n{item.url}"
 
-    Ten separate messages is what gets a bot rate-limited and a user annoyed, and the feed reads
-    better as a ranked list than as a burst of notifications.
+
+def render_digest(items: list[FeedItem]) -> str:
+    """The header, and the jobs that carry no buttons of their own.
+
+    **This used to be the whole delivery, and the reasoning changed.** Batching everything into one
+    message avoided a burst of notifications — a good argument, and it lost to a better one: a
+    Telegram keyboard attaches to *a message*, so a digest structurally cannot offer per-job
+    buttons. Acting on a match is worth more than saving nine notifications, and the reference
+    instance's watcher sends per-job cards for exactly this reason.
+
+    The burst is still bounded, by `MAX_ITEMS_PER_DIGEST` and the user's own daily cap.
     """
     lines = [f"{len(items)} new match{'es' if len(items) != 1 else ''}:", ""]
     for item in items:
