@@ -1,6 +1,6 @@
 """The platform-wide sending cap.
 
-Gmail caps a normal account near 500 recipients a day, and **the failure mode is silent rejection**
+Every provider caps a sending account, and **the failure mode is silent rejection**
 — messages stop arriving, nothing raises at send time, and the first symptom is a user saying they
 never got a link. A cap the platform enforces itself turns that into a log line and a refusal we
 can see.
@@ -27,9 +27,11 @@ from libs.mail.sender import EmailSender, MailError
 
 logger = logging.getLogger(__name__)
 
-# Below Gmail's own limit on purpose. The headroom absorbs a burst and leaves room for the provider
+# Below the provider's own limit on purpose — Zoho allows a few hundred a day on a standard
+# mailbox, Gmail nearer 500, and this sits under both. The headroom absorbs a burst and leaves room
+# for the provider
 # counting something slightly differently from us — being refused by our own cap is recoverable,
-# being silently throttled by Gmail is not.
+# being silently throttled by the provider is not. Override with `MAIL_DAILY_CAP`.
 DEFAULT_DAILY_CAP = 400
 WINDOW = timedelta(hours=24)
 

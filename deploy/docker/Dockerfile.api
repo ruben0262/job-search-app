@@ -1,8 +1,23 @@
-# The api image. Per-service dependencies, per CODE_STRUCTURE.md §5.
+# The api image: the JSON API **and** the site it serves.
 #
-# No numpy, no sklearn, no scraping stack: this reads and writes rows, extracts document text, and
-# sends email. Keeping it light is what makes it fast to rebuild and safe at the front of the
-# request path.
+# Two stages. The first builds the SPA with node and is thrown away; the second carries only Python
+# and the compiled assets, so node never reaches the running image.
+#
+# Serving both from one process is a deliberate simplification of D7, which put the frontend on
+# Cloudflare Pages. D7's requirement was no open inbound port and the tunnel already provides that;
+# a second origin would add a CORS policy that stays untested until the day it is wrong. For a 69 kB
+# bundle behind an invite-only beta, one origin and one deploy is the better trade.
+
+FROM node:22-slim AS web
+WORKDIR /web
+# Dependencies first, so a change to a component does not re-resolve them.
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+COPY web/ ./
+# `npm run build` runs `tsc --noEmit` first, so a component reading a field the API does not return
+# fails the image build rather than the page.
+RUN npm run build
+
 FROM python:3.12-slim
 
 WORKDIR /app
@@ -13,12 +28,12 @@ RUN pip install --no-cache-dir -r /app/services/api/requirements.txt
 COPY libs /app/libs
 COPY services/__init__.py /app/services/__init__.py
 COPY services/api /app/services/api
+COPY --from=web /web/dist /app/web
 
-ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 WEB_DIR=/app/web
 
 # One worker. The box has eight cores but Postgres is the bottleneck long before uvicorn is, and a
-# second worker would double the connection pool for an invited cohort that will not notice.
-# Reached through the Cloudflare Tunnel (D7), so it binds inside the compose network only — there is
-# no published port and the VPS needs no open inbound port at all.
+# second worker would double the connection pool for a cohort that will not notice.
+# No published port: reached through the Cloudflare Tunnel (D7), so the VPS needs none open.
 EXPOSE 8000
 ENTRYPOINT ["uvicorn", "services.api.app:app", "--host", "0.0.0.0", "--port", "8000"]

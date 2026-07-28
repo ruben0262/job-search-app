@@ -22,7 +22,12 @@ class EmailSender(Protocol):
 
 
 class SmtpSender:
-    """Gmail SMTP over STARTTLS, authenticated with an app password.
+    """SMTP over STARTTLS, authenticated with a username and password.
+
+    **Provider-agnostic on purpose** — host, port, user and sender all come from the environment.
+    The platform sends as `no-reply@flow-solutions.xyz` through Zoho, matching the other
+    FlowSolutions services; nothing here knows or cares about that, which is what made switching
+    from the originally-planned Gmail a configuration change and not a code change.
 
     The password comes from the environment and is never logged: `libs.secrets`' redaction filter
     covers the process, and `smtplib` puts credentials in its debug output, so debug is left off.

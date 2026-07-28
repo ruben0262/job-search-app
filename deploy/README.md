@@ -2,55 +2,6 @@
 
 ## Current state
 
-Running on the platform VPS (`169.58.16.241`, 23 GiB RAM, 8 vCPU, 382 GB free):
-
-| Container | Stack | State |
-|---|---|---|
-| `job-search-platform-postgres-1` | `deploy/compose.yml` | ✅ healthy, schema applied |
-| `job-search-app-tei-1` | `services/embedder/docker-compose.yml` | ✅ ~832 MiB / 2 GB budget |
-| `job-search-app-embedder-gateway-1` | same | ✅ `verified: true` |
-
-Two compose projects on purpose — the embedder keeps its own, see below. The harvester runs on a
-15-minute systemd timer. `api`, `scorer`, `trainer`, `notifier` and `docgen` have code but no
-container on the box yet; `capture` and `labeller` have both a Dockerfile and a compose service as
-of 2026-07-28 and are waiting to be brought up.
-
-**Not yet done:** off-box backups (deferred until the platform runs end to end) and the restore
-drill. Both are required before the first invited user, not before then.
-
-### Getting onto the box, and running a host-side script
-
-```
-ssh ruben@169.58.16.241
-cd ~/job-search-app          # NOT /opt — the checkout is in the deploy user's home
-```
-
-**Host-side scripts need `DATABASE_URL` in the environment, and nothing sets it for you.** The
-containers get it from `compose.yml`; a script run from the shell does not, and the failure is a
-clear `RuntimeError` rather than a silent default — deliberately, because a default here would
-silently point at the wrong database. Source `deploy/.env` and build it:
-
-```bash
-cd ~/job-search-app
-set -a && . deploy/.env && set +a
-export DATABASE_URL="postgresql+psycopg://jobsearch:${POSTGRES_PASSWORD}@127.0.0.1:5432/jobsearch"
-```
-
-`127.0.0.1` rather than `postgres`: the compose service name only resolves inside the network, and
-the loopback mapping exists for exactly this.
-
-**Credentials and passwords are prompted for, never passed as arguments** — a value on a command
-line lands in shell history and in `ps` output for every user on the box. So there is no
-`--password` flag, and there is no `--value` flag:
-
-```bash
-./.venv/bin/python deploy/scripts/set_password.py --email you@example.com
-./.venv/bin/python deploy/scripts/set_credential.py --email you@example.com --kind telegram_bot
-```
-
-Both take `--stdin`-style piping if you need to script them; `set_password.py` reads the new
-password twice from stdin, `set_credential.py` takes `--stdin`.
-
 ### Live, 2026-07-28
 
 **`https://mahoraga-app.rubenlekli.com`** — the API, through the Cloudflare Tunnel.
@@ -121,44 +72,97 @@ that.
 
 ```
 deploy/
-├── compose.yml            the platform stack — Postgres, harvester, capture, labeller
+├── compose.yml            the platform stack
+├── compose.embedder.yml   the embedder — its own project, see "Running the platform"
 ├── .env.example           copy to .env; compose refuses to start without it
 ├── docker/                Dockerfile.<service>, one per container
 └── scripts/               operational one-shots run on the VPS
 ```
 
-## Bring it up
+## Running the platform
+
+Everything is in this directory now, including the embedder's compose file and every Dockerfile.
+Two compose projects, because the embedder predates the platform and is shared with the two
+single-tenant stacks — disturbing it to tidy the tree would be a service migration dressed up as a
+refactor.
+
+### 1. Configuration
 
 ```bash
-cd deploy
-cp .env.example .env
-printf 'POSTGRES_PASSWORD=%s\n' "$(openssl rand -base64 32)" > .env
-chmod 600 .env
-docker compose up -d
-docker compose ps                       # postgres must read (healthy)
+cd ~/job-search-app
+cp deploy/.env.example deploy/.env      # first time only
+chmod 600 deploy/.env
 ```
 
-Then, so `psql` and `pg_dump` stop prompting (libpq silently ignores a `.pgpass` whose permissions
-are looser than 600, and gives no hint that is why):
+Fill in `POSTGRES_PASSWORD`, `SECRETS_KEK`, `ACCESS_TOKEN_SECRET`, `TUNNEL_TOKEN` and the `SMTP_*`
+block. **`SECRETS_KEK` is the one that cannot be regenerated** — every stored credential is sealed
+with it, and losing it means every user re-enters every secret.
+
+### 2. The embedder, first
+
+Nothing can be scored without it, and it owns the network the other stack joins.
 
 ```bash
-echo "127.0.0.1:5432:jobsearch:jobsearch:$(grep POSTGRES_PASSWORD deploy/.env | cut -d= -f2-)" > ~/.pgpass
-chmod 600 ~/.pgpass
+docker compose -f deploy/compose.embedder.yml up -d --build
+curl -s localhost:8080/health          # expect verified: true
 ```
 
-Quickest shell into the database, no password at all — the official image trusts local socket
-connections inside the container:
+### 3. The platform
 
 ```bash
-docker exec -it job-search-platform-postgres-1 psql -U jobsearch jobsearch
+# Postgres and the two credential workers — the default, and safe to run any time.
+docker compose -f deploy/compose.yml up -d
+
+# Schema. Host-side, so it needs DATABASE_URL in the environment (see below).
+./.venv/bin/alembic upgrade head
+
+# Everything else: the API, the site, the tunnel, and the scoring/training/delivery workers.
+docker compose -f deploy/compose.yml --profile full up -d --build
 ```
 
-## Why the embedder is not in this file
+**The `full` profile is deliberate.** `notifier` sends messages to real people, so bringing the
+platform up must not start delivery as a side effect of typing `up`. Start it on its own when you
+mean to:
 
-`services/embedder/` keeps its **own** `docker-compose.yml` and is deployed today, serving the two
-single-tenant stacks. That predates the platform and must not be disturbed by it — the embedder
-relocation was a source-tree move, not a service migration (`CODE_STRUCTURE.md` §6). Folding it in
-here to tidy the tree would be a service migration wearing a refactor's clothes.
+```bash
+docker compose -f deploy/compose.yml --profile full up -d notifier
+```
+
+### 4. Check it
+
+```bash
+curl -s https://mahoraga-app.rubenlekli.com/health          # {"status":"ok"}
+./.venv/bin/python deploy/scripts/check_health.py           # exit 0 / 1 / 2
+./.venv/bin/python deploy/scripts/show_accounts.py
+```
+
+### Host-side scripts need `DATABASE_URL`
+
+Nothing sets it for you. The containers get it from `compose.yml`; a shell does not, and the failure
+is a clear `RuntimeError` rather than a silent default pointing at the wrong database.
+
+```bash
+cd ~/job-search-app
+set -a && . deploy/.env && set +a
+export DATABASE_URL="postgresql+psycopg://jobsearch:${POSTGRES_PASSWORD}@127.0.0.1:5432/jobsearch"
+```
+
+`127.0.0.1` rather than `postgres`: the compose service name only resolves inside the network, and
+the loopback mapping exists for exactly this.
+
+### What runs where
+
+| Service | Profile | What it does |
+|---|---|---|
+| `postgres` | default | everything: corpus, per-user tail, credentials, queue |
+| `capture` | default | `process` lane — documents to a draft profile |
+| `labeller` | default | `label` lane — relabel and cold start |
+| `scorer` | `full` | `score` lane — corpus rows to per-user scores |
+| `trainer` | `full` | `train` lane — fits a user's model |
+| `notifier` | `full` | `notify` lane — **messages real people** |
+| `api` | `full` | the JSON API **and the site**, on one origin |
+| `cloudflared` | `full` | the only way in; no inbound port is open |
+| `harvester` | `tools` | one cycle, invoked by a systemd timer |
 
 ## Scheduling the harvest
 
