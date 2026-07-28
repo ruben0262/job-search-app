@@ -238,9 +238,9 @@ def test_a_single_tap_does_not_trigger_a_retrain(api):
         .where(QueueJob.user_id == user.id, QueueJob.lane == "train")) == 0
 
 
-def test_build_cv_queues_docgen_even_though_the_worker_does_not_exist_yet(api):
-    """The lane exists, so a tap waits in it rather than disappearing. Losing somebody's request
-    because the feature shipped in two halves would be the worst of both."""
+def test_build_cv_queues_a_docgen_job_carrying_the_posting(api):
+    """The tap is the whole contract between the button and the worker: the lane says what to do and
+    the payload says which posting to do it for."""
     from sqlalchemy import select
 
     from libs.db.models import QueueJob
@@ -252,6 +252,31 @@ def test_build_cv_queues_docgen_even_though_the_worker_does_not_exist_yet(api):
     queued = session.scalar(select(QueueJob).where(QueueJob.lane == "docgen"))
     assert queued is not None
     assert queued.payload["job_id"] == job.id
+
+
+def test_a_cv_build_over_the_daily_limit_is_refused_at_the_tap(api):
+    """**The admission point, not the worker.** A quota checked inside the build has already spent
+    the Claude call it was protecting, and the popup has to name the limit — a button that silently
+    does nothing is how somebody concludes the product is broken."""
+    from sqlalchemy import select
+
+    from libs.db.models import QueueJob
+    from libs.tenant.quotas import FREE_LIMITS
+
+    http, session, user, job = api
+    user.quota_overrides = {"cv_builds_per_day": 1}
+    session.flush()
+
+    assert tap(http, job.id, action="bc").json()["status"] == "queued"
+    session.flush()
+
+    second = tap(http, job.id, action="bc").json()
+    assert second["status"] == "over_quota"
+    assert "cv_builds_per_day" in second["answer"] and "resets" in second["answer"]
+
+    assert len(session.scalars(select(QueueJob).where(QueueJob.lane == "docgen")).all()) == 1
+    # The override is what the test drove; the plan's own number is what a user actually gets.
+    assert FREE_LIMITS["cv_builds_per_day"] == 10
 
 
 def test_the_keyboard_carries_three_buttons_within_telegrams_limit(api):

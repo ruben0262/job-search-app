@@ -178,6 +178,25 @@ def dispatch_due_notifications(session: Session) -> int:
     return enqueued
 
 
+def jobs_today(session: Session, lane: str, user_id: _uuid.UUID) -> int:
+    """How many jobs this user has enqueued on `lane` since their own local midnight.
+
+    Counted from the queue rather than from what the work produced, which is the difference between
+    a quota and a scoreboard: a CV build that failed still spent the Claude call, and a limit that
+    only counted successes would let a broken account retry all day on the user's money.
+
+    In `users.timezone`, not UTC, for the same reason the notification cap is: "ten a day, resets at
+    midnight" has to keep meaning the same thing in November and for somebody three zones away.
+    """
+    _check_lane(lane)
+    timezone = session.scalar(select(User.timezone).where(User.id == user_id)) or "UTC"
+    local_midnight = func.date_trunc("day", func.timezone(timezone, func.now()))
+    return session.scalar(
+        select(func.count()).select_from(QueueJob)
+        .where(QueueJob.lane == lane, QueueJob.user_id == user_id,
+               func.timezone(timezone, QueueJob.created_at) >= local_midnight)) or 0
+
+
 def _now_plus(minutes: int):
     """`now() + N minutes`, server-side.
 

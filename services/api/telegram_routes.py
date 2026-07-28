@@ -31,7 +31,8 @@ from sqlalchemy.orm import Session
 from libs.db.models import User
 from libs.feedback import ACTIONS, record
 from libs.obs import audit
-from libs.queue import enqueue
+from libs.queue import enqueue, jobs_today
+from libs.tenant.quotas import QuotaExceeded, quotas_for
 from services.api.deps import get_db
 
 logger = logging.getLogger(__name__)
@@ -98,8 +99,16 @@ async def webhook(secret: str, request: Request, db: Session = Depends(get_db),
         return {"status": "unknown_action"}
 
     if action == "build_cv":
-        # Phase 5b. Enqueued now so a tap is never lost while the worker is being built — the lane
-        # exists, and a queued job waits rather than disappearing.
+        # **The quota is checked here, at the admission point**, never inside the worker
+        # (`TENANT_SAFETY.md` §3): a limit checked halfway through a build has already spent the
+        # Claude call it was protecting. The popup names the limit, because a button that silently
+        # does nothing is how somebody concludes the product is broken.
+        try:
+            quotas_for(db, user.id).check("cv_builds_per_day", jobs_today(db, "docgen", user.id))
+        except QuotaExceeded as exc:
+            audit(logger, "telegram.build_cv_over_quota", user=user.id, job=job_id)
+            return {"status": "over_quota", "answer": str(exc)}
+
         enqueue(db, "docgen", user.id, payload={"job_id": job_id}, dedup_key=f"cv:{job_id}")
         audit(logger, "telegram.build_cv", user=user.id, job=job_id)
         return {"status": "queued", "answer": "Building your CV — it will arrive here shortly."}

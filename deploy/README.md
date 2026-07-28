@@ -18,6 +18,7 @@ arrives back down. There is nothing on this box to portscan.
 | `scorer` | `full` | running — backlog drained, 4,314 rows scored per account |
 | `api`, `cloudflared` | `full` | running — health 200 from the public internet |
 | `notifier`, `trainer` | `full` | **built, not started** — starting the notifier messages real people |
+| `docgen` | `full` | **built, not deployed** — the image has never been built on the box |
 
 ```bash
 docker compose -f deploy/compose.yml --profile full up -d notifier   # when you want delivery on
@@ -160,6 +161,7 @@ the loopback mapping exists for exactly this.
 | `scorer` | `full` | `score` lane — corpus rows to per-user scores |
 | `trainer` | `full` | `train` lane — fits a user's model |
 | `notifier` | `full` | `notify` lane — **messages real people** |
+| `docgen` | `full` | `docgen` lane — tailors a CV and uploads the PDF; **the only image with Chrome** |
 | `api` | `full` | the JSON API **and the site**, on one origin |
 | `cloudflared` | `full` | the only way in; no inbound port is open |
 | `harvester` | `tools` | one cycle, invoked by a systemd timer |

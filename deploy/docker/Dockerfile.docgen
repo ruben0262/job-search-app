@@ -1,0 +1,40 @@
+# The docgen image. **The only image with Chrome** (CODE_STRUCTURE.md §5).
+#
+# ~400MB of browser and a spiky memory profile on a box where a memory crunch has already caused
+# one incident. Keeping it in one image is why the other seven stay small and quick to rebuild, and
+# why a CV build cannot take the API down with it — compose bounds this one's memory on its own.
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Chromium rather than Google Chrome: it is in Debian's own archive, so there is no third-party apt
+# key to trust and no repository that can disappear. `--print-to-pdf` is the only feature used here
+# and the two browsers implement it identically.
+#
+# fonts-lato is NOT optional — `libs/templates/base_cv.html` asks for Lato by name and Chrome falls
+# back to Arial in silence when it is missing, which produces a CV that is correct in every respect
+# except the one anybody would notice. The `fc-list` check is what turns that silent fallback into a
+# build failure here, where somebody is watching.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends chromium fonts-lato fontconfig \
+    && rm -rf /var/lib/apt/lists/* \
+    && fc-cache -f \
+    && fc-list | grep -qi lato
+
+ENV CHROME_BIN=/usr/bin/chromium
+
+# Dependencies first, so a code change does not re-resolve them.
+COPY services/docgen/requirements.txt /app/services/docgen/requirements.txt
+RUN pip install --no-cache-dir -r /app/services/docgen/requirements.txt
+
+# libs/ AND services/docgen/, because the boundary rule is services -> libs. The CV template and the
+# SACRED prompts arrive with libs/, which is what keeps one copy of them on the platform.
+COPY libs /app/libs
+COPY services/__init__.py /app/services/__init__.py
+COPY services/docgen /app/services/docgen
+
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+
+# Generated documents live in a scratch directory for the length of one upload and are removed in a
+# `finally` (D9). Nothing is written to a volume, so a restart cannot leave somebody's CV behind.
+ENTRYPOINT ["python", "-m", "services.docgen"]

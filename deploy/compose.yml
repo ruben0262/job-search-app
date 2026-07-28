@@ -189,6 +189,36 @@ services:
     mem_limit: 3g
     cpus: 2
 
+  # `docgen` lane. **The only container with a browser in it** (CODE_STRUCTURE.md §5): a build is
+  # two Claude calls and two Chrome compiles, ~90–130 s, on the user's own credential.
+  #
+  # `mem_limit` is the point of the isolation, not a formality. Chrome is spiky and this box has
+  # already had one memory incident; bounded here, a bad build dies alone instead of taking the API
+  # with it. It is also why a failed compile RETRIES rather than dead-lettering — the usual cause is
+  # a busy box, and the next attempt succeeds.
+  #
+  # No volumes. Generated documents are ephemeral (D9): a scratch directory inside the container for
+  # the length of one upload, removed in a `finally`, so a restart cannot leave a stranger's CV on
+  # this disk.
+  docgen:
+    build:
+      context: ..
+      dockerfile: deploy/docker/Dockerfile.docgen
+    profiles: ["full"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://jobsearch:${POSTGRES_PASSWORD:?}@postgres:5432/jobsearch
+      SECRETS_KEK: ${SECRETS_KEK:?docgen decrypts the user's Claude credential and bot token}
+      LOG_DIR: /var/log/jobsearch
+      WORKER_NAME: docgen-1
+    volumes:
+      - ../logs:/var/log/jobsearch
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: always
+    mem_limit: 1500m
+    cpus: 2
+
   # `notify` lane. **This is the one that messages real people**, which is why the whole group is
   # behind a profile rather than started by default.
   notifier:

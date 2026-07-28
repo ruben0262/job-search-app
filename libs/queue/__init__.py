@@ -21,6 +21,7 @@ from libs.queue.queue import (
     dispatch_due_notifications,
     enqueue,
     fail,
+    jobs_today,
     sweep_expired,
     terminate,
 )
@@ -34,6 +35,7 @@ __all__ = [
     "dispatch_due_notifications",
     "enqueue",
     "fail",
+    "jobs_today",
     "run_once",
     "run_worker",
     "sweep_expired",

@@ -41,6 +41,9 @@ class LlmClient(Protocol):
     def complete_json(self, *, model: str, system: str, messages: list[dict],
                       schema: dict, max_tokens: int) -> dict: ...
 
+    def complete_text(self, *, model: str, system: str, messages: list[dict],
+                      max_tokens: int, thinking_tokens: int | None = None) -> str: ...
+
 
 class AnthropicClient:
     """`LlmClient` over the real SDK, built from **the user's own credential**.
@@ -79,14 +82,50 @@ class AnthropicClient:
                 output_config={"format": {"type": "json_schema", "schema": schema}}) as stream:
             message = stream.get_final_message()
 
-        text = "".join(block.text for block in message.content
-                       if getattr(block, "type", "") == "text")
+        text = _text_of(message)
         try:
             return json.loads(text)
         except json.JSONDecodeError as exc:
             # Never log `text`: it derives from the user's own documents or from a job posting.
             logger.error("a response of %d chars did not parse as JSON", len(text))
             raise LlmError("the model's response was not usable JSON") from exc
+
+    def complete_text(self, *, model: str, system: str, messages: list[dict],
+                      max_tokens: int, thinking_tokens: int | None = None) -> str:
+        """One call, returned as plain text. What docgen needs, and it cannot use the JSON path.
+
+        A tailored CV **is** an HTML document, and asking for it inside a JSON string field would
+        make the model escape a few thousand characters of markup by hand — a new failure mode for
+        no benefit, since there is nothing to validate the shape of but "did an `<html>` come back",
+        which the caller checks anyway.
+
+        `thinking_tokens` is a budget, not a switch. The reference instance measured disabling
+        thinking at ~8x faster and ~3x cheaper, and also measured what it cost: duplicate bullet
+        openers went from 1 to 5 and the style discipline degraded. Default thinking stays on for
+        documents an employer reads; `0` is the escape hatch, and taking it needs an A/B.
+        """
+        thinking = ({"type": "enabled", "budget_tokens": thinking_tokens}
+                    if thinking_tokens else {"type": "adaptive"})
+        # Streamed for the same reason the JSON path is: a whole HTML document at a high token
+        # ceiling is exactly the request that meets a timeout instead of an answer.
+        with self._client.messages.stream(
+                model=model,
+                system=system,
+                messages=messages,
+                max_tokens=max_tokens,
+                thinking=thinking) as stream:
+            message = stream.get_final_message()
+        return _text_of(message)
+
+
+def _text_of(message) -> str:
+    """Concatenate the text blocks of a response, dropping thinking and tool blocks.
+
+    Shared by both call shapes: a thinking block leaking into a returned document would put the
+    model's reasoning inside somebody's CV.
+    """
+    return "".join(block.text for block in message.content
+                   if getattr(block, "type", "") == "text")
 
 
 def client_for(value: str, kind: str) -> LlmClient:

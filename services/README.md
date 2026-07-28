@@ -15,7 +15,7 @@ requirement, and it constrains the contracts between them.
 | [`scorer/`](scorer/) | empty | New jobs queue unscored, drain on restart |
 | [`trainer/`](trainer/) | empty | Retrains queue up |
 | [`notifier/`](notifier/) | empty | Deliveries queue up, `next_run_at` re-armed |
-| [`docgen/`](docgen/) | empty | CV builds queue up |
+| [`docgen/`](docgen/) | built, not deployed | CV builds queue up |
 | [`capture/`](capture/) | empty | Onboarding capture unavailable; manual entry is the fallback |
 
 Each empty package's `__init__.py` records why it exists and what constraint it carries. They fill in

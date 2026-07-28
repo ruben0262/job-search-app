@@ -20,9 +20,11 @@ import pytest
 ENTRYPOINTS = [
     "services.api.app",
     "services.capture.__main__",
+    "services.docgen.__main__",
     "services.harvester.__main__",
     "services.labeller.__main__",
     "services.notifier.__main__",
+    "services.scorer.__main__",
     "services.trainer.__main__",
 ]
 
