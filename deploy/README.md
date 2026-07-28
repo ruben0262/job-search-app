@@ -51,6 +51,27 @@ line lands in shell history and in `ps` output for every user on the box. So the
 Both take `--stdin`-style piping if you need to script them; `set_password.py` reads the new
 password twice from stdin, `set_credential.py` takes `--stdin`.
 
+### Live, 2026-07-28
+
+**`https://mahoraga-app.rubenlekli.com`** — the API, through the Cloudflare Tunnel.
+
+The security property that buys is worth checking rather than assuming, so it was: the only port
+listening on a public interface is **22**. The API's 8000 is container-internal with no host
+binding, Postgres is loopback-only, and cloudflared makes an outbound connection that traffic
+arrives back down. There is nothing on this box to portscan.
+
+| Container | Profile | State |
+|---|---|---|
+| `postgres` | default | healthy |
+| `capture`, `labeller` | default | running, 0 restarts |
+| `scorer` | `full` | running — backlog drained, 4,314 rows scored per account |
+| `api`, `cloudflared` | `full` | running — health 200 from the public internet |
+| `notifier`, `trainer` | `full` | **built, not started** — starting the notifier messages real people |
+
+```bash
+docker compose -f deploy/compose.yml --profile full up -d notifier   # when you want delivery on
+```
+
 ### Timers
 
 | Unit | State | Why |

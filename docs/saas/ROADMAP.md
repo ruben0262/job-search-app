@@ -353,7 +353,12 @@ a real person who has not seen the product, and watch without helping.
   `restore_drill.py` **passed against a real 20 MB backup**: every row count matched, a stored
   credential decrypted with the separately-held KEK, and both models came back servable. It found a
   bug doing it, which is the argument for having a drill at all.
-- **Still to do:** transactional email is built (`libs/mail`) but unproven end to end.
+- ⚠️ **Transactional email is not configured, found 2026-07-28.** `libs/mail` is built and tested,
+  but with no `SMTP_*` in `deploy/.env` the API resolves to `ConsoleSender` — signup confirmations
+  and health alerts are *written to a log instead of sent*, and nothing about that looks broken from
+  the outside. It needs a Gmail app password. **This blocks the first invited user**: an account
+  that never receives its confirmation link cannot finish signing up.
+- **Still to do:** nothing else in operations.
   **Off-box backup storage is deferred by decision, 2026-07-28** — there is nowhere to put it yet.
   The dumps therefore cover a bad migration, a dropped table and an operator mistake, and do not
   cover disk or host loss. Written down rather than left implied, because an accepted risk nobody
