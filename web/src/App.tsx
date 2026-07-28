@@ -19,6 +19,7 @@ import { Onboarding } from "./pages/Onboarding";
 import { PrivacyPage } from "./pages/PrivacyPage";
 import { ProcessPage } from "./pages/ProcessPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import Landing from "./landing/Landing";
 import { SignIn } from "./pages/SignIn";
 import { Verify } from "./pages/Verify";
 import { ThemeToggle } from "./theme";
@@ -64,7 +65,15 @@ export function App() {
   if (hash.startsWith("/verify")) return <Verify onDone={reload} />;
 
   if (session.state === "loading") return <main className="centered">Loading…</main>;
-  if (session.state === "out") return <SignIn onSignedIn={reload} />;
+
+  if (session.state === "out") {
+    // **The landing page is what a stranger sees**, and the sign-in form is one click away rather
+    // than in front of them. Somebody who has not decided yet should not be asked for a password.
+    if (hash.startsWith("/signin") || hash.startsWith("/signup")) {
+      return <SignIn onSignedIn={reload} initialMode={hash.startsWith("/signup") ? "up" : "in"} />;
+    }
+    return <Landing />;
+  }
 
   const { dashboard } = session;
   if (dashboard.stage === "onboarding") {

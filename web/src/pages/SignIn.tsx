@@ -11,8 +11,14 @@ import { api } from "../api";
 import { Card, Error, Field, useAction } from "../ui";
 import { ThemeToggle } from "../theme";
 
-export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
-  const [mode, setMode] = useState<"in" | "up">("in");
+export function SignIn({
+  onSignedIn,
+  initialMode = "in",
+}: {
+  onSignedIn: () => void;
+  initialMode?: "in" | "up";
+}) {
+  const [mode, setMode] = useState<"in" | "up">(initialMode);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [sent, setSent] = useState(false);
@@ -43,6 +49,9 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
   return (
     <main className="wizard">
       <ThemeToggle floating />
+      <p className="small">
+        <a href="#/">&lsaquo; Back</a>
+      </p>
       <h1>{mode === "in" ? "Sign in" : "Create an account"}</h1>
       <p className="muted">
         Jobs found for you, scored by a model trained on your own judgement.{" "}
