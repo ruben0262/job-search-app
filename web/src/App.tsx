@@ -19,7 +19,6 @@ import { Onboarding } from "./pages/Onboarding";
 import { PrivacyPage } from "./pages/PrivacyPage";
 import { ProcessPage } from "./pages/ProcessPage";
 import { SettingsPage } from "./pages/SettingsPage";
-import Landing from "./landing/Landing";
 import { SignIn } from "./pages/SignIn";
 import { Verify } from "./pages/Verify";
 import { ThemeToggle } from "./theme";
@@ -67,12 +66,10 @@ export function App() {
   if (session.state === "loading") return <main className="centered">Loading…</main>;
 
   if (session.state === "out") {
-    // **The landing page is what a stranger sees**, and the sign-in form is one click away rather
-    // than in front of them. Somebody who has not decided yet should not be asked for a password.
-    if (hash.startsWith("/signin") || hash.startsWith("/signup")) {
-      return <SignIn onSignedIn={reload} initialMode={hash.startsWith("/signup") ? "up" : "in"} />;
-    }
-    return <Landing />;
+    // **The landing page lives in `mahoraga-jobs-web`, not here** (decided 2026-07-28). It is
+    // deployed separately and links to this app; copying it in meant rewriting its copy to suit a
+    // hosted product, which is a change to somebody else's page made in the wrong repository.
+    return <SignIn onSignedIn={reload} initialMode={hash.startsWith("/signup") ? "up" : "in"} />;
   }
 
   const { dashboard } = session;

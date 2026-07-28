@@ -50,9 +50,26 @@ PATTERNS = (
 )
 
 
-def infer_kind(name: str) -> str:
-    lowered = name.lower()
-    return next((kind for fragment, kind in PATTERNS if fragment in lowered), "other")
+def infer_kind(path: Path | str, root: Path | None = None) -> str:
+    """Guess from the **folder first, then the filename**.
+
+    The reference instances put the meaning in the directory — `documents/cv/`,
+    `documents/linkedin/`, `documents/references/` — and the filenames inside are whatever the file
+    was called when it was downloaded. Reading only the name got `Profile (1).pdf` wrong: it is a
+    LinkedIn export sitting in `linkedin/`, and nothing in its name says so.
+    """
+    path = Path(path)
+    parents = ""
+    if root is not None:
+        try:
+            parents = " ".join(part.lower() for part in path.relative_to(root).parts[:-1])
+        except ValueError:
+            parents = ""
+    for haystack in (parents, path.name.lower()):
+        match = next((kind for fragment, kind in PATTERNS if fragment in haystack), None)
+        if match:
+            return match
+    return "other"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -89,7 +106,7 @@ def main(argv: list[str] | None = None) -> int:
 
         imported = skipped = replaced = 0
         for path in files:
-            kind = args.kind or infer_kind(path.name)
+            kind = args.kind or infer_kind(path, root)
             try:
                 extracted = extract_text(path.name, path.read_bytes())
             except UnsupportedDocument as exc:
