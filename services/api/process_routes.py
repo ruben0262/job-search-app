@@ -159,7 +159,7 @@ def confirm(body: ProfileSchema, db: Session = Depends(get_db),
     # until this runs — and an account that cannot train is not a state to leave someone in because
     # they did not press a second button. The one-directional coupling of
     # `ONBOARDING_AND_PROCESSING.md` §4, enforced rather than documented.
-    enqueue(db, "label", user_id, dedup_key="relabel")
+    enqueue(db, "label", user_id, dedup_key="label")
 
     audit(logger, "process.confirmed", user=user_id, generation=generation,
           not_list=len(body.not_list))

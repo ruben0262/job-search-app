@@ -16,6 +16,34 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ## 2026-07-28
 
+### Cold start: a feed in 30 seconds, a model in 30 minutes (Phase 3 step 9)
+
+**Stage 0 — `libs/scoring/rules.py`.** A score from the config alone: no model, no LLM, no
+embedding. It cannot tell a good backend role from a bad one, because nothing has told it what good
+means yet. Its whole job is to be non-empty and not obviously wrong in the seconds after somebody
+saves a config, and that is worth building because the most common thing a person does with an
+empty page is close it.
+
+**Stage 1 is not built, and that is the decision.** A bootstrap model trained on other users'
+labels is a data-use question needing consent; one trained only on the operator's labels is a
+separate artifact to build and version. Stage 0 covers the gap it existed to cover, for free and
+with no consent surface. Recorded rather than omitted.
+
+**Pool selection** (`services/labeller/pool.py`) bands the rules-ranked corpus 40/40/20 and draws by
+**striding through each band, not taking its head**. The head of the high band is 120 near-identical
+jobs — often the same employer and phrasing — which is 120 labels' worth of a user's money for one
+label's worth of information. The pool is re-selected per batch rather than stored once: it costs a
+ranking pass and buys a balanced batch *every time*, so an interrupted cold start leaves a usable
+training set rather than 200 likely-positives.
+
+**The `label` lane has one job kind** and `coldstart.next_batch` decides what it means: stale labels
+are carried forward before new ones are bought, because jobs the user already cared about are
+cheaper per unit of signal. Two job kinds would make every caller re-derive that ordering, and the
+first one to get it wrong spends somebody's money re-buying labels they had. When the labels are in,
+the worker queues the train itself — 300 fresh labels and no model because nobody pressed a third
+button is not a state to leave a person in. A partial run still trains at 100 labels
+(`COLD_START_PLAN.md` §7).
+
 ### The relabeller, and one shared Anthropic client (Phase 3 step 8)
 
 `services/labeller` scores jobs against a user's rubric with Haiku, in the `label` lane, on that

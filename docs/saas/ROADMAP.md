@@ -280,9 +280,18 @@ and finishable in one sitting.
    relabels instead of running one to completion. Confirming a profile queues the first batch
    rather than leaving it to a second button. The most expensive step on the platform, which is
    why process→retrain is enforced and retrain→process deliberately is not.
-9. **Cold-start pipeline**: pool selection → labelling → first train, with visible stage
-   progression (`COLD_START_PLAN.md`). One wider recency pass here, since the steady-state 24-hour
-   window shows a new account almost nothing.
+9. ✅ **Done 2026-07-28. Cold-start pipeline**: pool selection → labelling → first train
+   (`COLD_START_PLAN.md`). **Stage 0 is a rules-only score** from the config alone
+   (`libs/scoring/rules.py`) — free, instant, and crude, but it turns a 30-minute cold start into a
+   30-second first impression, and an empty page is what people close. **Stage 1 is deliberately
+   not built**: a bootstrap model on other users' labels is a consent question, and one on the
+   operator's labels alone is a separate artifact to version for a gap stage 0 already covers.
+   The pool is banded 40/40/20 by that same rules score and drawn by **striding**, because taking
+   the head of the ranking buys 120 near-identical jobs — a lot of money for one job's worth of
+   information. **The `label` lane has one job kind and decides for itself** whether the account
+   needs a relabel or a cold start, then queues the train: a rule that has to hold everywhere is
+   safer in one function than re-derived by every caller. A partial cold start still trains at 100
+   labels — 280 labels and no model because 20 calls failed is the worst outcome available.
 10. **Dashboard** — **state-driven**: reads the counters and says whether data needs processing, jobs
    need relabelling, or the model needs training, rather than offering buttons and hoping they are
    pressed in the right order. Plus feed stats, model status, quota usage, the **health banners**
