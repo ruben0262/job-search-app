@@ -87,6 +87,15 @@ ignore = [
     "E402",     # imports follow the sys.path bootstrap, which has to come first
     "PLC0415",  # a local `import yaml`, so the dependency stays optional for everything else
     "S106",     # "!migrated-no-login" is a sentinel that cannot hash-match, not a password
+    # `pg_dump` / `psql`, invoked by backup.py and restore_drill.py. Both run as the operator, on
+    # the box, against arguments the operator supplied — there is no untrusted input to inject
+    # with, and a caller who can set DATABASE_URL can already run psql directly. Resolving the
+    # absolute path would hardcode a distro layout and break on the next Postgres upgrade.
+    "S603",     # subprocess with a non-literal argument list
+    "S607",     # partial executable path: `pg_dump` and `psql` come from PATH on purpose
+    # One f-string builds `SELECT count(*) FROM <table>` from a hardcoded tuple in the same file.
+    # There is no user input anywhere near it, and an identifier cannot be a bound parameter.
+    "S608",     # SQL built by string formatting
 ]
 # The ported source adapters. ~3,500 lines lifted from the reference instance by
 # services/harvester/sources/port_from_reference.py, and deliberately kept diffable against it:
