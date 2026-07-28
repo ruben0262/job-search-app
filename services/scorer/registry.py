@@ -15,6 +15,7 @@ applies to `(model, dim, version)`.
 from __future__ import annotations
 
 import logging
+import os
 import uuid as _uuid
 from collections import OrderedDict
 from collections.abc import Callable
@@ -66,10 +67,27 @@ class LoadedModel:
     keep_cutoff: int
 
 
+def resolve_artifact(path: str) -> str:
+    """Where the artifact actually is, now, on this host.
+
+    **The stored path is a record of where it was written, not where to find it.** `models.path`
+    holds an absolute path from whichever process trained the model — and that process was a script
+    on the host, while the reader is a container with the artifacts mounted somewhere else
+    entirely. The same mismatch breaks a restore onto a new machine.
+
+    So the *filename* is the identity and `MODEL_DIR` is the location. The stored path is used only
+    when the file is genuinely there, which keeps a hand-placed artifact working.
+    """
+    if os.path.exists(path):
+        return path
+    return os.path.join(os.environ.get("MODEL_DIR", "/var/lib/jobsearch/models"),
+                        os.path.basename(path))
+
+
 def _default_loader(path: str) -> dict:
     import joblib  # noqa: PLC0415 - keeps the registry importable without sklearn/joblib
 
-    return joblib.load(path)
+    return joblib.load(resolve_artifact(path))
 
 
 class ModelRegistry:

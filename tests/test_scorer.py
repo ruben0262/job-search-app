@@ -313,3 +313,33 @@ def test_two_users_score_the_same_posting_through_their_own_feature_spec(ctx):
     registry = _registry(ctx, {"a": _blob(), "b": _blob()})
 
     assert registry.get(gopher.id).features.core != registry.get(javaist.id).features.core
+
+
+# ── artifact location ─────────────────────────────────────────────────────────────────────────
+
+def test_an_artifact_is_found_where_it_lives_now_not_where_it_was_written(monkeypatch, tmp_path):
+    """`models.path` records where the trainer wrote the file. The reader is usually somewhere
+    else — a container with the artifacts mounted at a different point, or a different host after a
+    restore — so the filename is the identity and `MODEL_DIR` is the location.
+
+    This is a real failure, not a hypothetical: the scorer container crash-looped on
+    `FileNotFoundError` for a path that was correct on the host that trained it.
+    """
+    from services.scorer.registry import resolve_artifact
+
+    monkeypatch.setenv("MODEL_DIR", str(tmp_path))
+    artifact = tmp_path / "abc.v1.joblib"
+    artifact.write_bytes(b"x")
+
+    assert resolve_artifact("/somewhere/else/entirely/abc.v1.joblib") == str(artifact)
+
+
+def test_a_path_that_does_exist_is_used_unchanged(monkeypatch, tmp_path):
+    """So a hand-placed artifact, or a host-side script run outside the container, keeps working."""
+    from services.scorer.registry import resolve_artifact
+
+    monkeypatch.setenv("MODEL_DIR", "/var/lib/jobsearch/models")
+    here = tmp_path / "present.joblib"
+    here.write_bytes(b"x")
+
+    assert resolve_artifact(str(here)) == str(here)
