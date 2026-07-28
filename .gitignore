@@ -15,3 +15,10 @@ node_modules/
 # Runtime logs. Rotated on disk, never in git - they contain user ids, job urls, and the shape of
 # real traffic. `libs/obs` writes them here by default; LOG_DIR overrides.
 logs/
+
+# Local account credentials for the two migrated accounts. Plaintext, deliberately outside git.
+# Regenerate rather than recover if lost - set_password.py overwrites.
+accounts.local.txt
+
+# Vite build output. Cloudflare Pages builds it; the repo carries the source.
+web/dist/

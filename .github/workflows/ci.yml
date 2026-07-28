@@ -111,3 +111,40 @@ jobs:
       # here is the tier that needs nothing — the gateway against a stubbed TEI, and fail-closed
       # behaviour when the backend is dead.
       - run: pytest services/embedder/tests -v
+
+  web:
+    name: web (types match the API)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: pip install -r services/api/requirements.txt
+      - run: npm ci
+        working-directory: web
+
+      # The check `web/README.md` promised: the committed schema and types are regenerated and
+      # diffed. An unexpected diff means somebody changed a response shape without meaning to —
+      # which is exactly the change that otherwise surfaces as a runtime `undefined` in front of a
+      # user, weeks later, with nothing pointing back at the commit that caused it.
+      - name: the committed API contract is current
+        run: |
+          python web/scripts/dump_openapi.py
+          npx openapi-typescript openapi.json -o src/api-types.ts
+          if ! git diff --exit-code -- openapi.json src/api-types.ts; then
+            echo "::error::the API changed but the generated contract was not regenerated — run 'npm run types' in web/"
+            exit 1
+          fi
+        working-directory: web
+
+      # tsc runs first inside `build`, so a component reading a field the API does not return is a
+      # compile error here rather than a blank panel in production.
+      - run: npm run build
+        working-directory: web

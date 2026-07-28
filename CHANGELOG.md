@@ -16,6 +16,37 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ## 2026-07-28
 
+### The web layer (Phase 3 step 12) — Phase 3 complete
+
+React + TypeScript on Vite, ready for Cloudflare Pages behind the Tunnel (D7). Seven onboarding
+pages, dashboard, feed, profile confirmation, settings, and the public privacy page.
+
+**`openapi.json` and `src/api-types.ts` are committed, and CI regenerates and diffs them.** That is
+the mechanism `web/README.md` specified in Phase 0 and it earns its keep immediately: changing a
+response shape without regenerating fails the build with the command to fix it, instead of
+surfacing as a runtime `undefined` in front of a user weeks later with nothing pointing at the
+commit that caused it.
+
+**Two runtime dependencies, 69 kB gzipped.** No router — this is a wizard plus four screens, and
+`react-router` would be more configuration than routing. No component library — what one would have
+given us is a hundred lines in `src/ui.tsx`. A hash router rather than history, so Pages serves
+`index.html` for every URL with no rewrite rule to forget.
+
+**Nothing in it re-derives a server rule.** Which onboarding page you are on comes from
+`GET /onboarding/state`; what the account needs next comes from `GET /dashboard`. Those rules live
+once, in `libs/onboarding` and `services/api`. A copy here would be the one that goes stale, and the
+first symptom would be somebody stuck on a page they had already finished.
+
+**One refresh at a time** (`src/api.ts`). A dashboard load fires several requests; if each refreshed
+on its own 401 the second would replay a token the first had rotated — and the server treats a
+replayed refresh token as theft and revokes the entire session family. Every caller waits on one
+shared promise.
+
+Known gap, written down rather than glossed: FastAPI types most handlers as a bare `dict`, so the
+generated types cover paths and request bodies but not response *contents*. The response shapes the
+components read are narrow hand-written views at the bottom of `src/api.ts`. Annotating every
+handler with a response model closes it and is the right fix if that drift ever bites.
+
 ### Deploy artifacts for the two credential-spending workers
 
 `capture` (the `process` lane) and `labeller` (the `label` lane) now have Dockerfiles and compose

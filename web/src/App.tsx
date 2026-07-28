@@ -1,0 +1,111 @@
+/**
+ * Routing, and the one decision the whole app hangs off: where a signed-in user belongs.
+ *
+ * **The server decides, not the client.** `/dashboard` answers `stage: "onboarding"` with the page
+ * list when signup is unfinished, so this file never re-derives "are they done yet" from a pile of
+ * booleans. That rule already exists once, in `libs/onboarding/state.py`, and a second copy here
+ * would be the one that goes stale.
+ *
+ * A hash router rather than a dependency: this is a wizard plus three screens, and `react-router`
+ * would be more configuration than routing. Hash rather than history so Cloudflare Pages serves
+ * `index.html` for every URL without a rewrite rule anyone has to remember.
+ */
+import { useCallback, useEffect, useState } from "react";
+
+import { ApiError, api, type Dashboard } from "./api";
+import { DashboardPage } from "./pages/DashboardPage";
+import { FeedPage } from "./pages/FeedPage";
+import { Onboarding } from "./pages/Onboarding";
+import { PrivacyPage } from "./pages/PrivacyPage";
+import { ProcessPage } from "./pages/ProcessPage";
+import { SettingsPage } from "./pages/SettingsPage";
+import { SignIn } from "./pages/SignIn";
+import { Verify } from "./pages/Verify";
+
+function useHash(): string {
+  const [hash, setHash] = useState(() => window.location.hash.slice(1) || "/");
+  useEffect(() => {
+    const update = () => setHash(window.location.hash.slice(1) || "/");
+    window.addEventListener("hashchange", update);
+    return () => window.removeEventListener("hashchange", update);
+  }, []);
+  return hash;
+}
+
+export function navigate(path: string): void {
+  window.location.hash = path;
+}
+
+type Session = { state: "loading" } | { state: "out" } | { state: "in"; dashboard: Dashboard };
+
+export function App() {
+  const hash = useHash();
+  const [session, setSession] = useState<Session>({ state: "loading" });
+
+  const reload = useCallback(async () => {
+    try {
+      setSession({ state: "in", dashboard: await api.get<Dashboard>("/dashboard") });
+    } catch (error) {
+      // 401 is the ordinary signed-out case — `request` has already tried a refresh. Anything else
+      // is a real failure and must not be disguised as a logout, or an outage looks like a bug in
+      // the user's own session.
+      if (error instanceof ApiError && error.status === 401) setSession({ state: "out" });
+      else throw error;
+    }
+  }, []);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  // Public, and reachable signed out: signup links it before anybody has an account.
+  if (hash.startsWith("/privacy")) return <PrivacyPage />;
+  if (hash.startsWith("/verify")) return <Verify onDone={reload} />;
+
+  if (session.state === "loading") return <main className="centered">Loading…</main>;
+  if (session.state === "out") return <SignIn onSignedIn={reload} />;
+
+  const { dashboard } = session;
+  if (dashboard.stage === "onboarding") {
+    // Deliberately not routable past: a half-configured account produces a bad feed and the user
+    // concludes the product does not work rather than that they skipped a step.
+    return <Onboarding state={dashboard.onboarding} onChanged={reload} />;
+  }
+
+  return (
+    <div className="app">
+      <Nav current={hash} />
+      {hash.startsWith("/feed") ? (
+        <FeedPage />
+      ) : hash.startsWith("/process") ? (
+        <ProcessPage onChanged={reload} />
+      ) : hash.startsWith("/settings") ? (
+        <SettingsPage onSignedOut={reload} />
+      ) : (
+        <DashboardPage dashboard={dashboard} onChanged={reload} />
+      )}
+    </div>
+  );
+}
+
+function Nav({ current }: { current: string }) {
+  const links = [
+    ["/", "Overview"],
+    ["/feed", "Jobs"],
+    ["/process", "Your profile"],
+    ["/settings", "Settings"],
+  ] as const;
+  return (
+    <nav>
+      {links.map(([path, label]) => (
+        <a
+          key={path}
+          href={`#${path}`}
+          className={path === "/" ? (current === "/" ? "on" : "") : current.startsWith(path) ? "on" : ""}
+        >
+          {label}
+        </a>
+      ))}
+    </nav>
+  );
+}

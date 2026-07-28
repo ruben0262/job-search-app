@@ -1,0 +1,2072 @@
+{
+  "components": {
+    "schemas": {
+      "Body_upload_documents_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "file"
+        ],
+        "title": "Body_upload_documents_post",
+        "type": "object"
+      },
+      "Conflict": {
+        "additionalProperties": false,
+        "description": "Something the interview could not resolve. Surfaces in the form as an explicit either/or.",
+        "properties": {
+          "field": {
+            "maxLength": 80,
+            "title": "Field",
+            "type": "string"
+          },
+          "source_a": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Source A",
+            "type": "string"
+          },
+          "source_b": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Source B",
+            "type": "string"
+          },
+          "value_a": {
+            "maxLength": 400,
+            "title": "Value A",
+            "type": "string"
+          },
+          "value_b": {
+            "maxLength": 400,
+            "title": "Value B",
+            "type": "string"
+          }
+        },
+        "required": [
+          "field",
+          "value_a",
+          "value_b"
+        ],
+        "title": "Conflict",
+        "type": "object"
+      },
+      "ConsentBody": {
+        "properties": {
+          "version": {
+            "maxLength": 16,
+            "minLength": 4,
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "title": "ConsentBody",
+        "type": "object"
+      },
+      "Constraints": {
+        "additionalProperties": false,
+        "properties": {
+          "languages": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10,
+            "title": "Languages",
+            "type": "array"
+          },
+          "min_salary": {
+            "anyOf": [
+              {
+                "maximum": 500000.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Salary"
+          },
+          "onsite_locations": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10,
+            "title": "Onsite Locations",
+            "type": "array"
+          },
+          "remote_policy": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remote Policy"
+          }
+        },
+        "title": "Constraints",
+        "type": "object"
+      },
+      "CredentialBody": {
+        "properties": {
+          "allow_unvalidated": {
+            "default": false,
+            "title": "Allow Unvalidated",
+            "type": "boolean"
+          },
+          "value": {
+            "maxLength": 4096,
+            "minLength": 8,
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "title": "CredentialBody",
+        "type": "object"
+      },
+      "Currency": {
+        "enum": [
+          "EUR",
+          "GBP",
+          "USD",
+          "CHF",
+          "HUF",
+          "PLN",
+          "SEK",
+          "DKK"
+        ],
+        "title": "Currency",
+        "type": "string"
+      },
+      "DeleteBody": {
+        "properties": {
+          "password": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "password"
+        ],
+        "title": "DeleteBody",
+        "type": "object"
+      },
+      "Education": {
+        "additionalProperties": false,
+        "properties": {
+          "degree": {
+            "maxLength": 120,
+            "title": "Degree",
+            "type": "string"
+          },
+          "field": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Field"
+          },
+          "institution": {
+            "maxLength": 160,
+            "title": "Institution",
+            "type": "string"
+          },
+          "thesis": {
+            "anyOf": [
+              {
+                "maxLength": 400,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thesis"
+          }
+        },
+        "required": [
+          "degree",
+          "institution"
+        ],
+        "title": "Education",
+        "type": "object"
+      },
+      "Experience": {
+        "additionalProperties": false,
+        "properties": {
+          "bullets": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Bullets",
+            "type": "array"
+          },
+          "end": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End"
+          },
+          "metrics": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Metrics",
+            "type": "array"
+          },
+          "org": {
+            "maxLength": 160,
+            "title": "Org",
+            "type": "string"
+          },
+          "role": {
+            "maxLength": 160,
+            "title": "Role",
+            "type": "string"
+          },
+          "stack": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 40,
+            "title": "Stack",
+            "type": "array"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start"
+          }
+        },
+        "required": [
+          "role",
+          "org"
+        ],
+        "title": "Experience",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HistoryBody": {
+        "properties": {
+          "text": {
+            "maxLength": 400000,
+            "minLength": 200,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "HistoryBody",
+        "type": "object"
+      },
+      "Identity": {
+        "additionalProperties": false,
+        "properties": {
+          "links": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "maxProperties": 10,
+            "title": "Links",
+            "type": "object"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "work_eligibility": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10,
+            "title": "Work Eligibility",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "Identity",
+        "type": "object"
+      },
+      "IdentitySchema": {
+        "additionalProperties": false,
+        "description": "Full name and links. Both are page 1; only the name is required.\n\nLinks are optional because plenty of good candidates have none, and a required field somebody\ncannot satisfy is a wall rather than a prompt.",
+        "properties": {
+          "full_name": {
+            "maxLength": 120,
+            "minLength": 2,
+            "title": "Full Name",
+            "type": "string"
+          },
+          "links": {
+            "items": {
+              "$ref": "#/components/schemas/ProfileLink"
+            },
+            "maxItems": 10,
+            "title": "Links",
+            "type": "array"
+          }
+        },
+        "required": [
+          "full_name"
+        ],
+        "title": "IdentitySchema",
+        "type": "object"
+      },
+      "Language": {
+        "description": "ISO 639-1 codes the platform offers. Also a controlled list, for the same reason.",
+        "enum": [
+          "en",
+          "de",
+          "fr",
+          "es",
+          "nl",
+          "hu",
+          "pl",
+          "pt",
+          "it",
+          "sv",
+          "da"
+        ],
+        "title": "Language",
+        "type": "string"
+      },
+      "LinkPlatform": {
+        "description": "What kind of link it is. `OTHER` is the escape hatch, not a failure.",
+        "enum": [
+          "linkedin",
+          "github",
+          "gitlab",
+          "portfolio",
+          "stackoverflow",
+          "other"
+        ],
+        "title": "LinkPlatform",
+        "type": "string"
+      },
+      "Location": {
+        "description": "Controlled vocabulary. **Adding a value is a deliberate act, not a user typing.**\n\nEvery entry here becomes a distinct axis of the harvest query set, so this list is a direct\ninput to the fan-out budget. Growing it without measuring the cycle cost is how a 15-minute\nharvest becomes an hour (`HARVESTER_PLAN.md` \u00a73).\n\n`REMOTE_*` are not places but delivery regions, which is exactly how the sources treat them.",
+        "enum": [
+          "european_union",
+          "united_kingdom",
+          "europe",
+          "ireland",
+          "remote_worldwide",
+          "remote_eu",
+          "remote_uk",
+          "remote_us",
+          "london",
+          "berlin",
+          "amsterdam",
+          "dublin",
+          "paris",
+          "madrid",
+          "lisbon",
+          "warsaw",
+          "budapest",
+          "zurich",
+          "stockholm",
+          "copenhagen"
+        ],
+        "title": "Location",
+        "type": "string"
+      },
+      "LoginRequest": {
+        "properties": {
+          "email": {
+            "format": "email",
+            "title": "Email",
+            "type": "string"
+          },
+          "password": {
+            "maxLength": 256,
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "LoginRequest",
+        "type": "object"
+      },
+      "Platform": {
+        "description": "Which sources a search section targets.\n\nOnly sources that *take a query* can be named. The ATS and board families are crawled rather\nthan searched \u2014 naming one here would silently produce no queries at all, which is exactly the\nkind of configuration that looks fine and returns nothing.",
+        "enum": [
+          "all",
+          "linkedin",
+          "indeed",
+          "google"
+        ],
+        "title": "Platform",
+        "type": "string"
+      },
+      "ProfileLink": {
+        "additionalProperties": false,
+        "properties": {
+          "platform": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LinkPlatform"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "url": {
+            "maxLength": 500,
+            "minLength": 4,
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "title": "ProfileLink",
+        "type": "object"
+      },
+      "ProfileSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "confirmed": {
+            "default": false,
+            "title": "Confirmed",
+            "type": "boolean"
+          },
+          "conflicts": {
+            "items": {
+              "$ref": "#/components/schemas/Conflict"
+            },
+            "maxItems": 20,
+            "title": "Conflicts",
+            "type": "array"
+          },
+          "constraints": {
+            "$ref": "#/components/schemas/Constraints"
+          },
+          "education": {
+            "items": {
+              "$ref": "#/components/schemas/Education"
+            },
+            "maxItems": 10,
+            "title": "Education",
+            "type": "array"
+          },
+          "exclusions": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Exclusions",
+            "type": "array"
+          },
+          "experience": {
+            "items": {
+              "$ref": "#/components/schemas/Experience"
+            },
+            "maxItems": 30,
+            "title": "Experience",
+            "type": "array"
+          },
+          "identity": {
+            "$ref": "#/components/schemas/Identity"
+          },
+          "not_list": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 30,
+            "title": "Not List",
+            "type": "array"
+          },
+          "projects": {
+            "items": {
+              "$ref": "#/components/schemas/Project"
+            },
+            "maxItems": 30,
+            "title": "Projects",
+            "type": "array"
+          },
+          "skills": {
+            "$ref": "#/components/schemas/Skills"
+          },
+          "targets": {
+            "$ref": "#/components/schemas/Targets"
+          }
+        },
+        "required": [
+          "identity"
+        ],
+        "title": "ProfileSchema",
+        "type": "object"
+      },
+      "Project": {
+        "additionalProperties": false,
+        "properties": {
+          "metrics": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Metrics",
+            "type": "array"
+          },
+          "name": {
+            "maxLength": 160,
+            "title": "Name",
+            "type": "string"
+          },
+          "stack": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 40,
+            "title": "Stack",
+            "type": "array"
+          },
+          "what_built": {
+            "default": "",
+            "maxLength": 1000,
+            "title": "What Built",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "Project",
+        "type": "object"
+      },
+      "RemotePolicy": {
+        "enum": [
+          "remote_only",
+          "remote_or_hybrid",
+          "any"
+        ],
+        "title": "RemotePolicy",
+        "type": "string"
+      },
+      "SearchSection": {
+        "additionalProperties": false,
+        "description": "One search, targeted at one platform or at all of them.\n\nMost users have exactly one section, `platform: all`, and never see the concept. It exists for\nthe case a flat config cannot express: different terms or a different workplace policy on\nLinkedIn than on the job boards (`ONBOARDING_AND_PROCESSING.md` \u00a73).\n\nA section names *search* parameters only. Things that are true of the person rather than of a\nsearch \u2014 seniority, languages, salary floor \u2014 stay on the config, because a user is not a\ndifferent candidate on a different site.",
+        "properties": {
+          "exclude_keywords": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10,
+            "title": "Exclude Keywords",
+            "type": "array"
+          },
+          "keywords": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 25,
+            "minItems": 1,
+            "title": "Keywords",
+            "type": "array"
+          },
+          "locations": {
+            "items": {
+              "$ref": "#/components/schemas/Location"
+            },
+            "maxItems": 5,
+            "title": "Locations",
+            "type": "array"
+          },
+          "platform": {
+            "$ref": "#/components/schemas/Platform",
+            "default": "all"
+          },
+          "posted_within_hours": {
+            "default": 24,
+            "maximum": 168.0,
+            "minimum": 6.0,
+            "title": "Posted Within Hours",
+            "type": "integer"
+          },
+          "remote_policy": {
+            "$ref": "#/components/schemas/RemotePolicy",
+            "default": "remote_or_hybrid"
+          }
+        },
+        "required": [
+          "keywords"
+        ],
+        "title": "SearchSection",
+        "type": "object"
+      },
+      "Seniority": {
+        "enum": [
+          "intern",
+          "junior",
+          "mid",
+          "senior",
+          "staff",
+          "principal",
+          "lead",
+          "manager"
+        ],
+        "title": "Seniority",
+        "type": "string"
+      },
+      "SignupRequest": {
+        "properties": {
+          "email": {
+            "format": "email",
+            "title": "Email",
+            "type": "string"
+          },
+          "password": {
+            "maxLength": 256,
+            "minLength": 12,
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "SignupRequest",
+        "type": "object"
+      },
+      "Skills": {
+        "additionalProperties": false,
+        "properties": {
+          "domains": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 40,
+            "title": "Domains",
+            "type": "array"
+          },
+          "frameworks": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 60,
+            "title": "Frameworks",
+            "type": "array"
+          },
+          "languages": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 40,
+            "title": "Languages",
+            "type": "array"
+          },
+          "tools": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 60,
+            "title": "Tools",
+            "type": "array"
+          }
+        },
+        "title": "Skills",
+        "type": "object"
+      },
+      "Targets": {
+        "additionalProperties": false,
+        "properties": {
+          "company_size": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company Size"
+          },
+          "role_types": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10,
+            "title": "Role Types",
+            "type": "array"
+          },
+          "seniority": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seniority"
+          }
+        },
+        "title": "Targets",
+        "type": "object"
+      },
+      "UserConfigSchema": {
+        "additionalProperties": false,
+        "description": "Everything a user can configure about what they want to see.\n\nBounds come from `TENANT_SAFETY.md` \u00a74 and are enforced here **and** in the database. Two layers\non purpose: the form is the usability layer, the database is the authority, and a write path\nthat bypassed the form must not be able to bypass the bounds.\n\nNote what is *not* here: `notify_interval_min`, `timezone`, and the LinkedIn interval live as\nindexed columns on `users`, because the scheduler's dispatcher reads them every 60 seconds\nacross every active user. The split is by access pattern, and the form writes across both\nwithout caring.",
+        "properties": {
+          "languages": {
+            "items": {
+              "$ref": "#/components/schemas/Language"
+            },
+            "title": "Languages",
+            "type": "array"
+          },
+          "max_notifications_per_day": {
+            "default": 20,
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Max Notifications Per Day",
+            "type": "integer"
+          },
+          "min_salary": {
+            "anyOf": [
+              {
+                "maximum": 500000.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Salary"
+          },
+          "salary_currency": {
+            "$ref": "#/components/schemas/Currency",
+            "default": "EUR"
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/SearchSection"
+            },
+            "maxItems": 5,
+            "minItems": 1,
+            "title": "Sections",
+            "type": "array"
+          },
+          "seniority": {
+            "items": {
+              "$ref": "#/components/schemas/Seniority"
+            },
+            "title": "Seniority",
+            "type": "array"
+          }
+        },
+        "required": [
+          "sections"
+        ],
+        "title": "UserConfigSchema",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "job-search platform",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/account": {
+      "delete": {
+        "description": "Erase the account. Everything cascades from `users`, and the credentials are crypto-shredded.\n\n**Both, deliberately.** The cascade removes the rows; `purge` destroys the user's DEK, so any\nciphertext that survives in a backup taken minutes ago is unreadable rather than merely deleted\n(`TENANT_SAFETY.md` \u00a72). A backup restore that resurrected a stranger's Claude key would be the\nworst possible outcome of a delete request.",
+        "operationId": "delete_account_account_delete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Delete Account Account Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Account",
+        "tags": [
+          "account"
+        ]
+      },
+      "get": {
+        "description": "What the settings page shows. Everything onboarding collected, minus anything secret.",
+        "operationId": "account_account_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Account Account Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Account",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/account/consent": {
+      "delete": {
+        "description": "Withdraw. Processing stops being available; nothing already produced is undone.\n\nSaid plainly rather than implied: a profile already built stays built, and what Anthropic\nalready processed cannot be recalled. Deleting the account is the stronger action and the one\nthat removes what this platform holds.",
+        "operationId": "withdraw_consent_account_consent_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Withdraw Consent Account Consent Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Withdraw Consent",
+        "tags": [
+          "account"
+        ]
+      },
+      "get": {
+        "description": "Whether this account has agreed to the **current** disclosure.\n\nVersion-compared, not merely present. A policy that names a new processor is a new disclosure,\nand an old agreement is not an answer to it \u2014 so adding one re-asks everybody, which is the\npoint rather than a cost to route around.",
+        "operationId": "consent_state_account_consent_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Consent State Account Consent Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Consent State",
+        "tags": [
+          "account"
+        ]
+      },
+      "post": {
+        "operationId": "grant_consent_account_consent_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConsentBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Grant Consent Account Consent Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Grant Consent",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "description": "Exchange a password for a session. Sets both cookies.",
+        "operationId": "login_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Login Auth Login Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Login",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "description": "End this session. Always answers 200 \u2014 logging out twice is not an error.",
+        "operationId": "logout_auth_logout_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Logout Auth Logout Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Logout",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/logout-everywhere": {
+      "post": {
+        "description": "End every session for this user. What a password change and a suspected theft both need.",
+        "operationId": "logout_everywhere_auth_logout_everywhere_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Logout Everywhere Auth Logout Everywhere Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Logout Everywhere",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/refresh": {
+      "post": {
+        "description": "Rotate the refresh token and mint a new access token.",
+        "operationId": "refresh_auth_refresh_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Refresh",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/signup": {
+      "post": {
+        "description": "Create an unverified account and email a link. Always answers the same way.\n\nInvite-only at launch (D5), so an existing address is not an error the caller gets to see \u2014 it\nwould confirm that the address has an account here.",
+        "operationId": "signup_auth_signup_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Signup Auth Signup Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Signup",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/verify": {
+      "post": {
+        "description": "Redeem a verification link. Activates the account.\n\nNothing here logs the user in. Verification proves control of the address; a session should\nstill start from a deliberate login, so a forwarded link cannot hand someone a session.",
+        "operationId": "verify_auth_verify_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Verify Auth Verify Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Verify",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/credentials": {
+      "get": {
+        "description": "What the account page shows: which credentials exist, never what they are.\n\nAlso reports whether onboarding's credential requirement is met, so the front end does not have\nto re-derive the rule from the list and get it subtly wrong.",
+        "operationId": "list_credentials_credentials_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Credentials Credentials Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Credentials",
+        "tags": [
+          "credentials"
+        ]
+      }
+    },
+    "/credentials/telegram/connect": {
+      "post": {
+        "description": "Re-read the chat id after the user has pressed Start. Idempotent.\n\nSeparate from saving the token because the two happen minutes apart: the token is pasted, then\nthe user goes to their phone, then they come back. Asking them to re-paste the token to finish\nconnecting would be gratuitous.",
+        "operationId": "telegram_connect_credentials_telegram_connect_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Telegram Connect Credentials Telegram Connect Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Telegram Connect",
+        "tags": [
+          "credentials"
+        ]
+      }
+    },
+    "/credentials/{kind}": {
+      "delete": {
+        "description": "Revoke one credential. Removing the Telegram token also disconnects delivery.\n\nLeaving `telegram_status` as `connected` with no token would queue notify jobs that can only\nfail \u2014 and each one would look like a delivery problem rather than a missing credential.",
+        "operationId": "delete_credential_credentials__kind__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Delete Credential Credentials  Kind  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Credential",
+        "tags": [
+          "credentials"
+        ]
+      },
+      "put": {
+        "description": "Store or replace one credential. Replaces in place; the previous value is gone.\n\nRotation overwrites rather than versions, because keeping history here would mean keeping a\nrevoked credential decryptable.",
+        "operationId": "put_credential_credentials__kind__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CredentialBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Put Credential Credentials  Kind  Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Credential",
+        "tags": [
+          "credentials"
+        ]
+      }
+    },
+    "/dashboard": {
+      "get": {
+        "description": "Everything the front page shows, in one call.\n\nOne call rather than five, because the panels are not independent: \"you have 3,310 labels\" and\n\"your model is stale\" contradict each other if they are read a few seconds apart while a worker\nis running.",
+        "operationId": "dashboard_dashboard_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Dashboard Dashboard Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Dashboard",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
+    "/documents": {
+      "get": {
+        "description": "What the user has uploaded. Returns metadata and a short preview, never the whole text.\n\nThe full text is only ever read by the processing step. Returning it here would put a person's\ncomplete employment history into a response that the dashboard has no use for.",
+        "operationId": "list_documents_documents_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Documents Documents Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Documents",
+        "tags": [
+          "documents"
+        ]
+      },
+      "post": {
+        "description": "Extract and store one document's text. Re-uploading the same content replaces it.\n\nReplacement rather than a duplicate row because users press the button twice, and two copies of\none CV in the processing conversation is one CV's worth of signal at twice the cost.",
+        "operationId": "upload_documents_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_documents_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Upload Documents Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/documents/{document_id}": {
+      "delete": {
+        "description": "Remove one document. Scoped to the caller, so an id from another account finds nothing.",
+        "operationId": "delete_document_documents__document_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Delete Document Documents  Document Id  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Document",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/feed": {
+      "get": {
+        "description": "The ranked jobs. Personal model if there is a servable one, otherwise the config alone.\n\nThe stage is in the response because a feed that silently changes how it ranks is one nobody can\nreason about \u2014 and a new account's first feed *is* the keyword one, which is worth saying rather\nthan passing off as the model's work.",
+        "operationId": "feed_feed_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Feed Feed Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Feed",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
+    "/health": {
+      "get": {
+        "description": "Liveness only. Deliberately does not touch the database.\n\nA health check that fails when Postgres is briefly unreachable causes the orchestrator to\nrestart a process that was working fine, which is how a blip becomes an outage.",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Health Health Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health"
+      }
+    },
+    "/legal/privacy": {
+      "get": {
+        "description": "Every processor, named. Public \u2014 it is linked from signup, before anyone has an account.\n\nNaming them individually rather than saying \"trusted third parties\" is the entire requirement:\na user deciding whether to upload their employment history is entitled to know it will be read\nby a US company, and which one.",
+        "operationId": "privacy_legal_privacy_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Privacy Legal Privacy Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Privacy",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/onboarding/complete": {
+      "post": {
+        "description": "Finish onboarding, if every page is satisfied. 409 naming what is missing if not.\n\n**This does not set `users.active`.** Completing onboarding means the account is configured;\n`active` means the scheduler may dispatch notifications, and that is only safe once a model\nexists to rank with. Setting it here would start a notify loop for an account whose scorer has\nnothing to serve, and every cycle would fail identically for a reason no user could see.\n\nIdempotent: pressing it twice keeps the original timestamp rather than moving it.",
+        "operationId": "complete_onboarding_complete_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Complete Onboarding Complete Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Complete",
+        "tags": [
+          "onboarding"
+        ]
+      }
+    },
+    "/onboarding/config": {
+      "get": {
+        "description": "The stored config in the *current* shape, plus the schema the form is generated from.\n\nA v1 row is upgraded on read rather than rewritten, so a user's stored config is never changed\nby a deploy they did not ask for \u2014 it upgrades the next time they save.",
+        "operationId": "get_config_onboarding_config_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Config Onboarding Config Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Config",
+        "tags": [
+          "onboarding"
+        ]
+      },
+      "put": {
+        "description": "Validate and store. The server is the authority; the form is a convenience.\n\nSaving does not schedule anything. The harvester picks the config up on its next cycle by\nreading every active user's config \u2014 there is no per-user trigger to forget to fire.",
+        "operationId": "put_config_onboarding_config_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserConfigSchema"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Put Config Onboarding Config Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Config",
+        "tags": [
+          "onboarding"
+        ]
+      }
+    },
+    "/onboarding/config/preview": {
+      "post": {
+        "description": "How many jobs already in the corpus these terms would match, with a few example titles.\n\n**An approximation, and the response says so.** The harvester sends keywords to each source's\nown search, so the real feed is whatever LinkedIn and Indeed return \u2014 not a substring match over\nwhat has been collected so far. What this genuinely catches is the failure it exists for: terms\nthat match *nothing at all*, which is a typo or a phrase nobody puts in a job title, and which\nwould otherwise show up as an empty feed a day later with no explanation.\n\nCounted over `PREVIEW_WINDOW_DAYS` rather than the section's own window, because a correct\nconfig can legitimately return single digits over 24 hours and a user reading that as failure\nwould go and break something that worked.\n\nTakes the config in the request body rather than reading the stored one, so the number updates\nas the user types and does not require saving a config to find out it is empty.",
+        "operationId": "preview_config_onboarding_config_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserConfigSchema"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Preview Config Onboarding Config Preview Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Config",
+        "tags": [
+          "onboarding"
+        ]
+      }
+    },
+    "/onboarding/history": {
+      "get": {
+        "description": "Returned in full, unlike `/documents`, because this is an edit box the user types into.",
+        "operationId": "get_history_onboarding_history_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get History Onboarding History Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get History",
+        "tags": [
+          "onboarding"
+        ]
+      },
+      "put": {
+        "description": "The long-form write-up, typed rather than uploaded.\n\nIt exists as an endpoint because nobody has a \"history document\" lying around \u2014 they write one\nin the box. Stored as a `history` document so there is exactly one path into the processing\nstep: whether the text was pasted or extracted from a `.docx` is not a distinction anything\ndownstream should have to know about.\n\nThe minimum length is a real requirement rather than politeness. This page feeds the parts of\nthe profile a CV omits, and two sentences produce a profile no better than the CV alone.",
+        "operationId": "put_history_onboarding_history_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HistoryBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Put History Onboarding History Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put History",
+        "tags": [
+          "onboarding"
+        ]
+      }
+    },
+    "/onboarding/identity": {
+      "get": {
+        "operationId": "get_identity_onboarding_identity_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Identity Onboarding Identity Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Identity",
+        "tags": [
+          "onboarding"
+        ]
+      },
+      "put": {
+        "description": "Store the name and links. Replaces both \u2014 the form submits the whole page.\n\nEditing the name does **not** bump `profile_generation`. The generation counter scopes labels\nand model artifacts to a rubric, and a name appears nowhere in a rubric; bumping it would\ninvalidate every label a user has for a typo fix (`PROFILE_CAPTURE_PLAN.md` \u00a76.4).",
+        "operationId": "put_identity_onboarding_identity_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdentitySchema"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Put Identity Onboarding Identity Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Identity",
+        "tags": [
+          "onboarding"
+        ]
+      }
+    },
+    "/onboarding/schema": {
+      "get": {
+        "description": "Both JSON Schemas the front end generates its forms from, in one call.\n\nExported from the models the server validates with, so a field cannot exist on one side and not\nthe other (`CODE_STRUCTURE.md` \u00a78).",
+        "operationId": "schemas_onboarding_schema_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Schemas Onboarding Schema Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Schemas",
+        "tags": [
+          "onboarding"
+        ]
+      }
+    },
+    "/onboarding/state": {
+      "get": {
+        "description": "What is done, what is left, and where to send the user next.\n\nDerived from the rows each page writes rather than from a stored progress marker, so deleting a\ncredential later correctly reopens that page instead of leaving an account \"complete\" and\nunable to run (`libs.onboarding.state`).",
+        "operationId": "state_onboarding_state_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response State Onboarding State Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "State",
+        "tags": [
+          "onboarding"
+        ]
+      }
+    },
+    "/process": {
+      "post": {
+        "description": "Queue a processing run. Idempotent while one is pending.\n\nQueued rather than run in the request: it is a single multi-minute Opus call over a whole\ndocument set, and holding an HTTP connection open for it would turn a slow model into a failed\nsignup.",
+        "operationId": "start_process_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Start Process Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Start",
+        "tags": [
+          "process"
+        ]
+      }
+    },
+    "/process/confirm": {
+      "post": {
+        "description": "Apply the profile the user has read and edited. **This is the only path to a live profile.**\n\nThe body is the *edited* draft rather than a bare \"yes\", because the confirmation form is where\na wrong `not_list` entry gets removed \u2014 and that is the entry that would otherwise silently\nsuppress jobs the user wanted for as long as the profile lasts.\n\n`confirmed` is forced here rather than trusted from the request. A client that posted the raw\ndraft back untouched would otherwise confirm on the user's behalf, which is the whole thing this\nstep exists to prevent.",
+        "operationId": "confirm_process_confirm_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileSchema"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Confirm Process Confirm Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm",
+        "tags": [
+          "process"
+        ]
+      }
+    },
+    "/process/draft": {
+      "delete": {
+        "description": "Throw the proposal away. The live profile, if there is one, is untouched.",
+        "operationId": "discard_process_draft_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Discard Process Draft Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Discard",
+        "tags": [
+          "process"
+        ]
+      },
+      "get": {
+        "description": "The proposal, plus the schema the confirmation form is generated from.\n\nReturned whole \u2014 unlike `/documents`, which previews. The user is being asked to agree to every\nline of it, so showing them a summary would make the confirmation meaningless.",
+        "operationId": "draft_process_draft_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Draft Process Draft Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Draft",
+        "tags": [
+          "process"
+        ]
+      }
+    },
+    "/process/state": {
+      "get": {
+        "description": "What the account needs next, and what it will cost.\n\nDerived from the counters that already exist rather than from a status column: a column would\nneed updating by whoever remembers, and the first thing to go stale would be the one that says\nwhether anything is stale.",
+        "operationId": "state_process_state_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response State Process State Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "State",
+        "tags": [
+          "process"
+        ]
+      }
+    }
+  }
+}

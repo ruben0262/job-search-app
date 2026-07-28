@@ -316,12 +316,18 @@ and finishable in one sitting.
      DEK is crypto-shredded in the same request, because a backup restore that resurrected a
      deleted user's Claude key is the worst outcome a delete request could have.
 
-12. **The web layer** — React on Cloudflare Pages behind the Tunnel (D7). The seven onboarding
-   pages, the dashboard, and the edit pages, with **every form generated from the shared JSON
-   Schema** rather than hand-written (`CODE_STRUCTURE.md` §8) so a field cannot exist on one side
-   and not the other. Built last, against endpoints that have stopped moving.
+12. ✅ **Done 2026-07-28. The web layer** — React + TypeScript on Vite, ready for Cloudflare Pages
+   behind the Tunnel (D7). The seven onboarding pages, the dashboard, the feed, the profile
+   confirmation, settings and the public privacy page. **`openapi.json` and the generated types are
+   committed and CI diffs them**, so changing a response shape without regenerating fails the build
+   rather than surfacing as a runtime `undefined` weeks later. Two runtime dependencies and a 69 kB
+   gzipped bundle: no router (a wizard plus four screens does not need one) and no component
+   library. **Nothing in it re-derives a server rule** — which onboarding page you are on and what
+   your account needs next both come from the API, because a second copy of those rules is the one
+   that goes stale.
 
-**Backend complete 2026-07-28** — steps 1–11. Step 12, the web layer, is what remains.
+**Phase 3 complete 2026-07-28** — all twelve steps. What remains before the first invited
+user is Phase 4's operations work, not more product.
 
 **Exit criteria:** a non-technical person signs up unaided and gets a working feed. Test this with
 a real person who has not seen the product, and watch without helping.
