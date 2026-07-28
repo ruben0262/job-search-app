@@ -16,6 +16,19 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ## 2026-07-28
 
+### `set_credential.py` — storing a credential before the API is deployed
+
+`/credentials` is the real path and this does not replace it. It exists because the `api` container
+is not on the box yet, and the two migrated accounts cannot supply a Telegram token without it —
+which meant nothing could be delivered to either.
+
+**The value is prompted for, never taken as an argument.** A credential on a command line is in
+shell history, in `ps` output for every user on the box, and in any tracing that happens to be on.
+`--stdin` covers scripted use without any of the three.
+
+Validated against the provider by default, as the endpoint does, and the Telegram chat id is
+captured automatically — the step that confuses people more than the rest of setup put together.
+
 ### The web layer (Phase 3 step 12) — Phase 3 complete
 
 React + TypeScript on Vite, ready for Cloudflare Pages behind the Tunnel (D7). Seven onboarding
