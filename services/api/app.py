@@ -15,6 +15,7 @@ from fastapi import FastAPI
 
 from libs.secrets import install
 from services.api.auth_routes import router as auth_router
+from services.api.credential_routes import router as credential_router
 
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"),
                     format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -24,6 +25,7 @@ install()
 
 app = FastAPI(title="job-search platform", docs_url=None, redoc_url=None)
 app.include_router(auth_router)
+app.include_router(credential_router)
 
 
 @app.get("/health")

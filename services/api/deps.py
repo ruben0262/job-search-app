@@ -4,13 +4,16 @@ from __future__ import annotations
 import os
 import threading
 import time
+import uuid
 from collections.abc import Iterator
 
-from fastapi import HTTPException, Request, status
+from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
+from libs.auth.access import InvalidAccessToken, read_access_token
 from libs.db.session import session_scope
 from libs.mail import EmailSender, sender_from_env
+from libs.secrets import SecretStore
 
 # Process-local, fixed window, self-sweeping — the shape FlowSolutions uses, carried with its
 # caveat intact (`AUTH_REUSE.md` §4.1): with more than one `api` replica each holds its own bucket,
@@ -30,6 +33,33 @@ def get_db() -> Iterator[Session]:
     """
     with session_scope() as session:
         yield session
+
+
+def get_store(session: Session = Depends(get_db)) -> SecretStore:
+    """The credential store for this request. Constructed per request, not per process.
+
+    `SecretStore` holds a session, and a process-lifetime one would outlive every transaction it was
+    handed. The KEK it reads is process-level and cached by `KeyRing.from_env`.
+    """
+    return SecretStore(session)
+
+
+def current_user(request: Request) -> uuid.UUID:
+    """Who is calling, from the access cookie. 401 if there is no valid one.
+
+    Reads the cookie rather than an `Authorization` header: the browser is the only client, the
+    token is `HttpOnly` so no script can put it in a header anyway, and accepting both would mean
+    two authentication paths to keep in step.
+    """
+    token = request.cookies.get("access_token")
+    if not token:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="not signed in")
+    try:
+        user_id, _session_id = read_access_token(token)
+    except InvalidAccessToken as exc:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED,
+                            detail="your session has expired") from exc
+    return user_id
 
 
 def get_mailer() -> EmailSender:
