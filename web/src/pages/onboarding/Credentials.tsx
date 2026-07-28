@@ -70,7 +70,7 @@ function CredentialForm({
       ) : null}
       {warning ? <p className="small muted">Saved, but we could not check it: {warning}</p> : null}
 
-      <button type="submit" disabled={save.busy || !value}>
+      <button type="submit" className={value ? "advance ready" : "advance"} disabled={save.busy}>
         {save.busy ? "Checking…" : "Save"}
       </button>
     </form>

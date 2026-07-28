@@ -103,6 +103,7 @@ export function DocumentsStep({ onDone }: { onDone: () => void }) {
 
 export function HistoryStep({ onDone }: { onDone: () => void }) {
   const [text, setText] = useState("");
+  const [uploaded, setUploaded] = useState<string | null>(null);
 
   useEffect(() => {
     void api
@@ -116,24 +117,55 @@ export function HistoryStep({ onDone }: { onDone: () => void }) {
     onDone();
   });
 
+  // **Either is accepted, and both end up in the same place.** A file is extracted server-side and
+  // dropped into the box, so somebody who uploaded a document can still read and edit what was
+  // pulled out of it — rather than trusting that something invisible was understood correctly.
+  const upload = useAction(async (file: File) => {
+    const form = new FormData();
+    form.set("kind", "history");
+    form.set("file", file);
+    await api.upload("/documents", form);
+    const stored = await api.get<{ text: string }>("/onboarding/history");
+    setText(stored.text);
+    setUploaded(file.name);
+    onDone();
+  });
+
+  const ready = text.trim().length >= 200;
+
   return (
     <form
       onSubmit={(event) => {
         event.preventDefault();
-        void save.run();
+        if (ready) void save.run();
       }}
     >
       <Field
-        label="Everything you have done"
-        hint="Projects that never made the CV, what you actually did day to day, what you liked and what you would not do again. This is where the parts a CV leaves out come from — the longer the better."
+        label="Write it here"
+        hint="Projects that never made the CV, what you actually did day to day, what you would not do again. This is where the parts a CV leaves out come from."
       >
-        <textarea value={text} onChange={(event) => setText(event.target.value)} />
+        <textarea value={text} autoFocus onChange={(event) => setText(event.target.value)} />
       </Field>
-      <p className="muted small">{text.length.toLocaleString()} characters — 200 is the minimum.</p>
+      <p className="small muted">{text.length.toLocaleString()} characters</p>
 
-      <Error>{save.error}</Error>
-      <button type="submit" disabled={save.busy || text.length < 200}>
-        {save.busy ? "Saving…" : "Save and continue"}
+      <div className="either">or</div>
+
+      <Field label="Upload a document" hint="PDF, Word, or plain text. We read it and show you what we found.">
+        <input
+          type="file"
+          disabled={upload.busy}
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) void upload.run(file);
+            event.target.value = "";
+          }}
+        />
+      </Field>
+      {uploaded ? <p className="small muted">Read from {uploaded}. Edit it above if you like.</p> : null}
+
+      <Error>{save.error ?? upload.error}</Error>
+      <button type="submit" className={ready ? "advance ready" : "advance"} disabled={save.busy}>
+        {save.busy ? "Saving…" : "Continue"}
       </button>
     </form>
   );

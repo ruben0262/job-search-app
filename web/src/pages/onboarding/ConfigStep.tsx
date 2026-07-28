@@ -195,7 +195,9 @@ export function ConfigStep({ onDone }: { onDone: () => void }) {
       </Field>
 
       <Error>{save.error}</Error>
-      <button type="submit" disabled={save.busy || !section.keywords.length}>
+      <button type="submit"
+              className={section.keywords.length ? "advance ready" : "advance"}
+              disabled={save.busy}>
         {save.busy ? "Saving…" : "Save and continue"}
       </button>
     </form>

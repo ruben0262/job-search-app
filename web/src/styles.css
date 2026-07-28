@@ -350,6 +350,114 @@ button[disabled] {
   color: var(--muted);
 }
 
+/* ── onboarding ──────────────────────────────────────────────────────────────────────────────
+ *
+ * **No card, no border, no panel.** A form that is already one question per page does not need a
+ * box drawn around it to say where it starts — the whitespace does that, and a container competes
+ * with the question for attention. Title, optional line of context, the field, and the way forward.
+ */
+
+.step {
+  max-width: 34rem;
+  margin: 0 auto;
+  padding-top: 6vh;
+}
+
+.step h1 {
+  font-size: 1.75rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin: 0 0 1.75rem;
+}
+
+/* One line at most, and often none. A page of explanation is a page nobody reads. */
+.step .lede {
+  color: var(--muted);
+  margin: -1.25rem 0 1.75rem;
+}
+
+/* Plain text, not a button. It is a way back, not a thing to do. */
+.back {
+  display: inline-block;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.9375rem;
+  margin-bottom: 2.5rem;
+}
+
+.back:hover { color: var(--ink); }
+
+/* **Appears when the page is satisfied.** Not disabled-and-greyed: a control that is present but
+   refuses to work invites clicking it to find out why. Fading it in is the answer to "what now". */
+.advance {
+  margin-top: 2rem;
+  opacity: 0;
+  transform: translateY(4px);
+  pointer-events: none;
+  transition: opacity var(--fade) var(--ease), transform var(--fade) var(--ease);
+}
+
+.advance.ready {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+/* A row that can be removed, for links and anything else the user adds more of. */
+.repeat-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.icon-btn {
+  flex: 0 0 auto;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 99px;
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.icon-btn:hover:not([disabled]) {
+  color: var(--ink);
+  border-color: var(--ink);
+  opacity: 1;
+}
+
+/* The add button sits above the first row, on the right, where it reads as "more of these". */
+.repeat-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.45rem;
+}
+
+/* Either-or, for a field that accepts typing or a file. */
+.either {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--muted);
+  font-size: 0.875rem;
+  margin: 1rem 0;
+}
+
+.either::before,
+.either::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
 /* ── the wizard's step list ──────────────────────────────────────────────────────────────── */
 
 .steps {
@@ -362,24 +470,19 @@ button[disabled] {
 }
 
 .steps li {
-  font-size: 0.8125rem;
-  padding: 0.2rem 0.6rem;
-  border: 1px solid var(--line);
-  border-radius: 99px;
-  color: var(--muted);
+  width: 1.75rem;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--line);
+  font-size: 0;
 }
 
 .steps li.done {
-  border-color: var(--line-strong);
-  color: var(--ink-soft);
+  background: var(--line-strong);
   cursor: pointer;
 }
 
-.steps li.on {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-ink);
-}
+.steps li.on { background: var(--ink); }
 
 /* ── the feed ────────────────────────────────────────────────────────────────────────────── */
 
