@@ -23,15 +23,20 @@ from __future__ import annotations
 
 import hmac
 import logging
+from contextlib import contextmanager
 
+import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from libs.corpus import ondemand
+from libs.corpus.ondemand import NotAJobLink
 from libs.db.models import CorpusJob, User
 from libs.feedback import ACTIONS, next_to_rate, record
 from libs.obs import audit
 from libs.queue import enqueue, jobs_today
+from libs.secrets import SecretsError, SecretStore
 from libs.tenant.quotas import QuotaExceeded, quotas_for
 from services.api.deps import get_db
 
@@ -144,16 +149,91 @@ def _command(db: Session, user: User, message: dict) -> dict:
     sticker. Telegram resends whatever is not answered with a 2xx, and a bot that argues with its
     own channel is worse than one that says nothing.
     """
-    command = ((message.get("text") or "").strip().split() or [""])[0].lower()
-    if command.split("@")[0] != "/rate":
+    parts = (message.get("text") or "").strip().split()
+    command = parts[0].split("@")[0].lower() if parts else ""
+    if command not in ("/rate", "/cv", "/cover"):
         return {"status": "ignored"}
 
     # The same ownership check a button tap gets. The bot may sit in a channel, and a member of it
-    # must not be able to train somebody else's model by typing a command.
+    # must not be able to train somebody else's model — or spend its owner's credit — by typing a
+    # command.
     if not _is_owner(user, str((message.get("from") or {}).get("id") or "")):
         audit(logger, "telegram.foreign_command", user=user.id)
         return {"status": "not_yours"}
-    return _rate(db, user)
+
+    if command == "/rate":
+        return _rate(db, user)
+    return _build_from_link(db, user, kind="cover" if command == "/cover" else "cv",
+                            link=parts[1] if len(parts) > 1 else "")
+
+
+@contextmanager
+def _fetching_as(db: Session, user: User):
+    """An HTTP client on this user's own proxy, or an unproxied one if they have no credential.
+
+    Their proxy or nothing — never another user's, and never a shared one. Unproxied still works
+    for most boards; it is LinkedIn specifically that refuses datacenter addresses, so a user
+    without a proxy can still paste a company careers page and get a CV.
+
+    `KeyUnavailable` is caught rather than propagated: the secret store being unreachable means
+    nothing can be decrypted, and refusing the whole command over an *optional* credential would
+    turn a degraded key service into a broken feature.
+    """
+    try:
+        with SecretStore(db).use(user.id, "proxy") as secret:
+            proxy = secret.reveal() if secret is not None else None
+            with httpx.Client(timeout=25, follow_redirects=True, proxy=proxy) as client:
+                yield client
+        return
+    except SecretsError:
+        logger.warning("telegram: no proxy available for %s, fetching unproxied", user.id)
+
+    with httpx.Client(timeout=25, follow_redirects=True) as client:
+        yield client
+
+
+def _build_from_link(db: Session, user: User, *, kind: str, link: str) -> dict:
+    """`/cv <link>` — build a document for a job the harvest never saw.
+
+    The link is resolved into an ordinary corpus row first (`libs.corpus.ondemand`), so the build
+    is the ordinary build: same prompts, same grounding, same record on the applications page. A
+    second code path for pasted jobs would be a second code path nobody exercises.
+
+    The quota is checked here, at the admission point, for the same reason the button checks it:
+    a limit checked inside the worker has already spent the call it was protecting.
+    """
+    if not link:
+        return {"status": "no_link",
+                "message": f"Send it as {kind} followed by the job's link."}
+
+    try:
+        quotas_for(db, user.id).check("cv_builds_per_day", jobs_today(db, "docgen", user.id))
+    except QuotaExceeded as exc:
+        return {"status": "over_quota", "message": str(exc)}
+
+    try:
+        with _fetching_as(db, user) as client:
+            resolved = ondemand.resolve(db, link, client)
+    except NotAJobLink as exc:
+        return {"status": "bad_link", "message": str(exc)}
+
+    # A build is the positive label, whether the job came from the feed or from a paste.
+    #
+    # `create_missing` because this user was never shown the job — they pasted it. Without it
+    # `record` refuses, correctly for a tap on a trimmed old message and wrongly here, and the
+    # paste would silently produce no training signal at all.
+    result = record(db, user.id, resolved.job_id, "applied", create_missing=True)
+    if result.changed and result.labels_since_train >= TRAIN_MIN_NEW_LABELS:
+        enqueue(db, "train", user.id, dedup_key="retrain", delay_min=TRAIN_DEBOUNCE_MIN)
+
+    enqueue(db, "docgen", user.id, payload={"job_id": resolved.job_id, "kind": kind},
+            dedup_key=f"{kind}:{resolved.job_id}")
+    audit(logger, "telegram.build_from_link", user=user.id, job=resolved.job_id, kind=kind,
+          existing=resolved.existing)
+    document = "cover letter" if kind == "cover" else "CV"
+    return {"status": "queued", "job_id": resolved.job_id,
+            "message": f"Building your {document} for {resolved.title or 'that job'} — "
+                       "it will arrive here shortly."}
 
 
 def _rate(db: Session, user: User) -> dict:

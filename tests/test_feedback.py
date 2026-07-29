@@ -425,3 +425,82 @@ def test_the_rate_buttons_are_ones_the_webhook_understands():
 
     for button in rating_keyboard(1)["inline_keyboard"][0]:
         assert button["callback_data"].split(":")[0] in CALLBACK_PREFIX
+
+
+# ── /cv <link>: a job the harvest never saw ───────────────────────────────────────────────────
+
+def test_a_pasted_link_becomes_an_ordinary_corpus_row(api, monkeypatch):
+    """**Not a side table.** The build path is the ordinary one, so a pasted job produces the same
+    document as a delivered one — and the next user to be shown that job gets it described."""
+    from libs.corpus import ondemand
+    from libs.db.models import CorpusJob
+
+    http, session, _user, _ = api
+    url = f"https://acme.example.com/jobs/{uuid.uuid4()}"
+    monkeypatch.setattr(ondemand, "fetch_posting", lambda *_a, **_k: {
+        "title": "Staff Engineer", "company": "Acme", "location": "Berlin",
+        "description": "A real description of a real job. " * 20, "source": "acme.example.com"})
+
+    body = say(http, f"/cv {url}").json()
+    assert body["status"] == "queued"
+
+    job = session.get(CorpusJob, body["job_id"])
+    assert (job.title, job.company) == ("Staff Engineer", "Acme")
+    assert len(job.description) > 200
+
+
+def test_a_pasted_link_already_in_the_corpus_is_not_added_twice(api, monkeypatch):
+    """A second row would give the user two feed entries for one job and split its history."""
+    from libs.corpus import ondemand
+
+    http, _session, _user, job = api
+    monkeypatch.setattr(ondemand, "fetch_posting",
+                        lambda *_a, **_k: pytest.fail("should not have fetched a known job"))
+
+    body = say(http, f"/cv {job.url}").json()
+    assert body["status"] == "queued" and body["job_id"] == job.id
+
+
+def test_a_page_that_yields_nothing_is_reported_rather_than_built(api, monkeypatch):
+    """A build against a job with no title and no description would cost the user to find out it
+    was about nothing."""
+    from libs.corpus import ondemand
+
+    http, *_ = api
+    monkeypatch.setattr(ondemand, "fetch_posting", lambda *_a, **_k: {
+        "title": "", "company": "", "location": "", "description": "", "source": "x"})
+
+    body = say(http, f"/cv https://blocked.example.com/{uuid.uuid4()}").json()
+    assert body["status"] == "bad_link"
+
+
+def test_a_command_with_no_link_says_what_to_send(api):
+    http, *_ = api
+    assert say(http, "/cv").json()["status"] == "no_link"
+
+
+def test_something_that_is_not_a_url_is_refused(api):
+    http, *_ = api
+    assert say(http, "/cv the one at acme").json()["status"] == "bad_link"
+
+
+def test_a_build_from_a_link_is_still_the_positive_label(api, monkeypatch):
+    """It spends the user's credit whether the job came from the feed or from a paste."""
+    from libs.corpus import ondemand
+    from libs.db.models import UserLabel
+
+    http, session, user, _ = api
+    monkeypatch.setattr(ondemand, "fetch_posting", lambda *_a, **_k: {
+        "title": "Staff Engineer", "company": "Acme", "location": "Berlin",
+        "description": "A real description of a real job. " * 20, "source": "acme.example.com"})
+
+    body = say(http, f"/cv https://acme.example.com/jobs/{uuid.uuid4()}").json()
+    label = session.get(UserLabel, (user.id, body["job_id"]))
+    assert label is not None and label.source == "feedback"
+
+
+def test_a_pasted_link_from_a_channel_member_is_refused(api):
+    """It would spend the account owner's credit."""
+    http, *_ = api
+    assert say(http, "/cv https://acme.example.com/jobs/1",
+               from_id="9999999").json()["status"] == "not_yours"

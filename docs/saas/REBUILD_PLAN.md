@@ -136,6 +136,16 @@ Description fetch happens **per user on their own proxy**, after the free filter
 workplace, recency) — the reference fetches what it is about to score, not everything it found.
 Overlapping fetches between users are accepted for now and are an optimisation later.
 
+**Amended on delivery (2026-07-29): the fetch is split in two, by who pays.** Board and ATS pages
+answer a datacenter IP, so those are described once in the shared harvest cycle — the corpus is
+shared, so one fetch serves every account, and doing it per user would mean N users each fetching
+the same Greenhouse page. LinkedIn keeps the per-user proxied path exactly as planned, because its
+guest endpoint blocks datacenter addresses and the bandwidth must be metered to whoever caused it.
+
+The shared half also runs **before embedding**, which the original ordering did not allow for: a
+vector computed from a teaser is a vector of the advert, and every similarity read against it is
+wrong in a way nothing downstream can detect.
+
 ## The feed, and the two buttons
 
 The card is a line-for-line port of `watcher/feed.py` (already done). Two buttons, as the reference

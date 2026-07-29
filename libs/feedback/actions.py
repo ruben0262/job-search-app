@@ -55,11 +55,18 @@ class FeedbackResult:
     labels_since_train: int
 
 
-def record(session: Session, user_id: _uuid.UUID, job_id: int, action: str) -> FeedbackResult:
+def record(session: Session, user_id: _uuid.UUID, job_id: int, action: str, *,
+           create_missing: bool = False) -> FeedbackResult:
     """Record one action. Idempotent per (user, job, action).
 
     **Does not commit** — the caller owns the transaction, so the label and whatever the caller does
     with the result land together.
+
+    `create_missing` is for the one caller that legitimately acts on a job this user was never
+    shown: `/cv <link>`, where they pasted the posting themselves. It is opt-in rather than the
+    default because the usual cause of a missing state row is a tap on a months-old message whose
+    row has been trimmed, and silently creating state for that would manufacture training data out
+    of an accident.
     """
     if action not in ACTIONS:
         raise ValueError(f"unknown action {action!r}")
@@ -69,6 +76,10 @@ def record(session: Session, user_id: _uuid.UUID, job_id: int, action: str) -> F
         raise ValueError(f"no such user: {user_id}")
 
     state = session.get(UserJobState, (user_id, job_id))
+    if state is None and create_missing:
+        state = UserJobState(user_id=user_id, job_id=job_id)
+        session.add(state)
+        session.flush()
     if state is None:
         # A tap on a job this user was never shown. Not an error worth raising at somebody — the
         # message may be old and the row trimmed — but never silent either.
