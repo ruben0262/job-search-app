@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 
 from sqlalchemy import select
 
-from libs.corpus.postings import ProxyUnusable, fetch_job
+from libs.corpus.postings import ProxyUnusable, fetch_job, fetch_meta
 from libs.corpus.repository import CorpusRepository
 from libs.db.models import User
 from libs.obs import audit
@@ -120,6 +120,43 @@ def describe_pending(corpus: CorpusRepository, client, *, linkedin: bool | None 
     return report
 
 
+def refresh_metadata(corpus: CorpusRepository, client, *, limit: int) -> DescribeReport:
+    """Read the posting signals for LinkedIn rows that already have a description.
+
+    Uses `fetch_meta`, which reads the guest fragment and no description — the text is already
+    stored and re-parsing it would be paying twice for something nobody asked to change.
+
+    Same `None`-never-overwrites rule as everywhere else: a page that did not show an applicant
+    caption must not erase a count an earlier fetch read.
+    """
+    report = DescribeReport()
+    for job in corpus.awaiting_metadata(limit=limit):
+        report.attempted += 1
+        try:
+            meta = fetch_meta(job.url, client=client, stats=report.outcomes)
+        except ProxyUnusable as exc:
+            report.attempted -= 1
+            report.proxy_error = str(exc)
+            logger.warning("metadata: stopping, the proxy refused: %s", exc)
+            break
+
+        before = (job.applicants, job.easy_apply, job.reposted, job.workplace, job.posted_at)
+        corpus.set_posting_metadata(
+            job.id, applicants=meta["applicants"], easy_apply=meta["easy_apply"],
+            reposted=meta["reposted"], workplace=meta["workplace"], posted_at=meta["posted_at"])
+        if (job.applicants, job.easy_apply, job.reposted, job.workplace,
+                job.posted_at) != before:
+            report.metadata_written += 1
+        if meta["application_url"] and not job.application_url:
+            corpus.set_application_url(job.id, meta["application_url"])
+
+    logger.info("metadata: %d attempted, %d written — %s",
+                report.attempted, report.metadata_written, report.outcomes)
+    audit(logger, "harvest.metadata", attempted=report.attempted,
+          written=report.metadata_written, outcomes=report.outcomes)
+    return report
+
+
 def describe_linkedin_for_all(session, *, limit_per_user: int = PROXIED_LIMIT) -> dict[str, int]:
     """The proxied half of the pass, run for every user who brought a proxy credential.
 
@@ -161,7 +198,15 @@ def describe_linkedin_for_all(session, *, limit_per_user: int = PROXIED_LIMIT) -
                 with make_client(lease) as client:
                     report = describe_pending(corpus, client, linkedin=True,
                                               limit=limit_per_user)
+                    # Descriptions first, then whatever budget is left on metadata. The ordering is
+                    # the priority: a row with no description cannot be scored at all, while a row
+                    # missing its applicant count is merely ranked badly.
+                    remaining = max(limit_per_user - report.attempted, 0)
+                    meta = (refresh_metadata(corpus, client, limit=remaining)
+                            if remaining and not report.proxy_error else DescribeReport())
                     usage.record_usage(user_id, megabytes=client.megabytes_downloaded)
+                report.proxy_error = report.proxy_error or meta.proxy_error
+                totals["metadata"] = totals.get("metadata", 0) + meta.metadata_written
                 if report.proxy_error:
                     # Recorded against the credential, not swallowed. Three of these quarantine it,
                     # which is what stops an exhausted account being retried every hour forever —

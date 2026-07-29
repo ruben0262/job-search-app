@@ -279,6 +279,32 @@ class CorpusRepository:
             query = query.where(CorpusJob.url.not_like("%/jobs/view/%"))
         return list(self._s.scalars(query))
 
+    def awaiting_metadata(self, *, limit: int = 200) -> list[CorpusJob]:
+        """LinkedIn rows whose description is fine but whose posting signals were never read.
+
+        **A different question from `awaiting_description`, and the corpus is full of the
+        difference.** JobSpy returns a usable description for most LinkedIn postings, so those rows
+        never look thin — and on 2026-07-29 all 3,494 of them still had a null applicant count,
+        posted timestamp, repost flag and workplace tag, because nothing had ever opened the guest
+        page. Four of the five inputs to opportunity ranking, absent for the largest source in the
+        corpus.
+
+        `applicants IS NULL AND posted_at IS NULL` is the "never looked" test rather than a
+        timestamp: a row that was refreshed and genuinely has no applicant caption keeps its posted
+        date, so it drops out of this set and is not re-fetched every hour forever.
+
+        Newest first, because these are the rows about to be delivered and an applicant count on a
+        three-week-old posting changes nobody's decision.
+        """
+        return list(self._s.scalars(
+            select(CorpusJob)
+            .where(CorpusJob.trimmed_at.is_(None),
+                   CorpusJob.url.like("%/jobs/view/%"),
+                   CorpusJob.applicants.is_(None),
+                   CorpusJob.posted_at.is_(None))
+            .order_by(CorpusJob.first_seen_at.desc())
+            .limit(limit)))
+
     def set_posting_metadata(self, job_id: int, *, applicants: int | None = None,
                              easy_apply: bool | None = None, reposted: bool | None = None,
                              workplace: str | None = None,

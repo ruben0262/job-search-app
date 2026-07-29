@@ -297,3 +297,66 @@ def test_the_refreshed_metadata_goes_back_to_the_shared_corpus(repo):
     refresh_before_build(session, job, FakeMetaClient(OPEN_POSTING))
     session.flush()
     assert job.applicants == 12
+
+
+# ── metadata on rows that already have a description ──────────────────────────────────────────
+
+GUEST = ('<span class="num-applicants__caption"> 42 applicants </span>'
+         '<span class="posted-time-ago__text"> 3 hours ago </span>'
+         '<h1>Engineer (Hybrid)</h1>' + "x" * 300)
+
+
+def test_a_linkedin_row_with_a_description_but_no_signals_is_picked_up(repo):
+    """**A different question from "is it thin", and the corpus was full of the difference.**
+    JobSpy returns a usable description for most LinkedIn postings, so those rows never looked
+    thin — and all 3,494 of them still had a null applicant count, posted time, repost flag and
+    workplace tag, because nothing had ever opened the guest page."""
+    corpus, session = repo
+    job_id = _linkedin(corpus)
+    corpus.set_description(job_id, "A genuine job description. " * 40)
+    session.flush()
+
+    assert job_id not in [job.id for job in corpus.awaiting_description(linkedin=True)]
+    assert job_id in [job.id for job in corpus.awaiting_metadata()]
+
+
+def test_the_refresh_writes_every_signal_the_page_carries(repo):
+    from services.harvester.describe import refresh_metadata
+
+    corpus, session = repo
+    job_id = _linkedin(corpus)
+    corpus.set_description(job_id, "A genuine job description. " * 40)
+    session.flush()
+
+    report = refresh_metadata(corpus, FakeClient(GUEST), limit=10)
+    session.flush()
+
+    job = session.get(CorpusJob, job_id)
+    assert report.metadata_written >= 1
+    assert (job.applicants, job.workplace) == (42, "hybrid")
+    assert job.posted_at is not None
+
+
+def test_a_row_that_was_refreshed_is_not_asked_again(repo):
+    """The "never looked" test is the absence of both signals, not a timestamp — otherwise every
+    row would be re-fetched every hour forever."""
+    from services.harvester.describe import refresh_metadata
+
+    corpus, session = repo
+    job_id = _linkedin(corpus)
+    corpus.set_description(job_id, "A genuine job description. " * 40)
+    session.flush()
+
+    refresh_metadata(corpus, FakeClient(GUEST), limit=10)
+    session.flush()
+    assert job_id not in [job.id for job in corpus.awaiting_metadata()]
+
+
+def test_a_board_row_is_never_in_the_metadata_queue(repo):
+    """Only LinkedIn exposes any of these. A Greenhouse page has no applicant count to read, so
+    fetching it would be a proxied request that cannot succeed."""
+    corpus, session = repo
+    job_id = _board(corpus)
+    corpus.set_description(job_id, "A genuine job description. " * 40)
+    session.flush()
+    assert job_id not in [job.id for job in corpus.awaiting_metadata()]
