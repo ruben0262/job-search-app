@@ -216,6 +216,7 @@
         "additionalProperties": false,
         "properties": {
           "degree": {
+            "description": "e.g. 'BEng Software Engineering'",
             "maxLength": 120,
             "title": "Degree",
             "type": "string"
@@ -233,6 +234,7 @@
             "title": "Field"
           },
           "institution": {
+            "description": "The university, school or awarding body",
             "maxLength": 160,
             "title": "Institution",
             "type": "string"
@@ -261,6 +263,7 @@
         "additionalProperties": false,
         "properties": {
           "bullets": {
+            "description": "What they did in this role, in their own words, one achievement per bullet. Copy the substance of every bullet the documents give for this role \u2014 these become the CV, so a role summarised in one line loses the work.",
             "items": {
               "type": "string"
             },
@@ -281,6 +284,7 @@
             "title": "End"
           },
           "metrics": {
+            "description": "Numbers this role achieved, exactly as stated (e.g. 'AUC 0.82', '10k records')",
             "items": {
               "type": "string"
             },
@@ -299,6 +303,7 @@
             "type": "string"
           },
           "stack": {
+            "description": "Technologies used in THIS role",
             "items": {
               "type": "string"
             },
@@ -324,6 +329,20 @@
           "org"
         ],
         "title": "Experience",
+        "type": "object"
+      },
+      "FileEdit": {
+        "properties": {
+          "content": {
+            "maxLength": 200000,
+            "title": "Content",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "title": "FileEdit",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -542,6 +561,7 @@
         "additionalProperties": false,
         "properties": {
           "certifications": {
+            "description": "Courses, licences and accreditations, with the issuer and year where stated",
             "items": {
               "$ref": "#/components/schemas/Certification"
             },
@@ -566,6 +586,7 @@
             "$ref": "#/components/schemas/Constraints"
           },
           "education": {
+            "description": "Every qualification, most recent first",
             "items": {
               "$ref": "#/components/schemas/Education"
             },
@@ -582,6 +603,7 @@
             "type": "array"
           },
           "experience": {
+            "description": "EVERY role, position and engagement in the documents, most recent first \u2014 employment, contract, freelance and substantial independent work. This is what the candidate's CV is built from, so a missing role cannot appear on any application. Never summarise several roles into one entry.",
             "items": {
               "$ref": "#/components/schemas/Experience"
             },
@@ -601,6 +623,7 @@
             "type": "array"
           },
           "projects": {
+            "description": "Substantial things they built that are not a job: side projects, research systems, published work.",
             "items": {
               "$ref": "#/components/schemas/Project"
             },
@@ -829,6 +852,26 @@
           }
         },
         "title": "Targets",
+        "type": "object"
+      },
+      "Turn": {
+        "properties": {
+          "agent": {
+            "default": "setup",
+            "title": "Agent",
+            "type": "string"
+          },
+          "message": {
+            "maxLength": 8000,
+            "minLength": 1,
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "title": "Turn",
         "type": "object"
       },
       "UserConfigSchema": {
@@ -2161,6 +2204,195 @@
         "summary": "State",
         "tags": [
           "process"
+        ]
+      }
+    },
+    "/setup": {
+      "get": {
+        "description": "The transcript, the files, and whether this account can generate documents yet.",
+        "operationId": "conversation_setup_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Conversation Setup Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Conversation",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/setup/files/{name}": {
+      "get": {
+        "operationId": "read_file_setup_files__name__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Read File Setup Files  Name  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read File",
+        "tags": [
+          "setup"
+        ]
+      },
+      "put": {
+        "description": "Edit a file by hand.\n\nEditing is allowed but the agent is the better route, especially for a prompt: it knows where a\nnew role belongs and what the surrounding structure expects. This exists because somebody who\nspots a wrong date should be able to fix it in ten seconds.",
+        "operationId": "write_file_setup_files__name__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileEdit"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Write File Setup Files  Name  Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Write File",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/setup/message": {
+      "post": {
+        "description": "One turn: the user says something, the agent answers and writes what it learned.\n\nSynchronous, and a turn can take minutes on a frontier model. The client shows it as pending;\nan interview that arrives complete is better than one that arrives in pieces and then fails.\n\n**On the user's own credential**, like every other call this platform makes. Their profile,\ntheir spend, no platform cost.",
+        "operationId": "send_setup_message_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Turn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Send Setup Message Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Send",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/setup/start": {
+      "post": {
+        "description": "Begin the first labelling run \u2014 the step after setup, pressed rather than assumed.\n\nThe old flow queued this the moment a profile was confirmed. It is the most expensive thing the\nplatform does on somebody's behalf, and it should not begin because a form was submitted.",
+        "operationId": "start_search_setup_start_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Start Search Setup Start Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Start Search",
+        "tags": [
+          "setup"
         ]
       }
     },

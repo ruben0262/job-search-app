@@ -584,3 +584,59 @@ th {
 tr:last-child td {
   border-bottom: 0;
 }
+
+/* ── the setup conversation ──────────────────────────────────────────────────────────────────
+ *
+ * A chat, not a chat product: no avatars, no timestamps, no typing dots. Two bubble styles that
+ * differ by alignment and one border, because the only thing a reader needs to know is who said
+ * which line.
+ */
+
+.chat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: 1.5rem 0;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+.bubble {
+  max-width: 85%;
+  padding: 0.7rem 0.9rem;
+  border-radius: var(--radius);
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  /* Answers arrive as written prose with its own line breaks; collapsing them would run a
+     three-part question into one paragraph. */
+  white-space: pre-wrap;
+}
+
+.bubble.assistant {
+  align-self: flex-start;
+  background: var(--panel-alt);
+  border: 1px solid var(--line);
+}
+
+.bubble.user {
+  align-self: flex-end;
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+/* A turn on a frontier model can run for minutes. Saying so is more honest than a spinner that
+   implies seconds, and it is why this reads as a sentence rather than an animation. */
+.bubble.pending {
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* What the assistant wrote down, under the message that wrote it. Quiet on purpose: the user is
+   having a conversation, and the filing is incidental to them. */
+.saved {
+  display: block;
+  margin-top: 0.45rem;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}

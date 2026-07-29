@@ -18,6 +18,7 @@ import { FeedPage } from "./pages/FeedPage";
 import { Onboarding } from "./pages/Onboarding";
 import { PrivacyPage } from "./pages/PrivacyPage";
 import { ProcessPage } from "./pages/ProcessPage";
+import { SetupPage } from "./pages/SetupPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { SignIn } from "./pages/SignIn";
 import { Verify } from "./pages/Verify";
@@ -84,6 +85,8 @@ export function App() {
       <Nav current={hash} />
       {hash.startsWith("/feed") ? (
         <FeedPage />
+      ) : hash.startsWith("/profile") ? (
+        <SetupPage onChanged={reload} />
       ) : hash.startsWith("/process") ? (
         <ProcessPage onChanged={reload} />
       ) : hash.startsWith("/settings") ? (
@@ -99,7 +102,7 @@ function Nav({ current }: { current: string }) {
   const links = [
     ["/", "Overview"],
     ["/feed", "Jobs"],
-    ["/process", "Your profile"],
+    ["/profile", "Your profile"],
     ["/settings", "Settings"],
   ] as const;
   return (

@@ -758,6 +758,100 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Conversation
+         * @description The transcript, the files, and whether this account can generate documents yet.
+         */
+        get: operations["conversation_setup_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/setup/files/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read File */
+        get: operations["read_file_setup_files__name__get"];
+        /**
+         * Write File
+         * @description Edit a file by hand.
+         *
+         *     Editing is allowed but the agent is the better route, especially for a prompt: it knows where a
+         *     new role belongs and what the surrounding structure expects. This exists because somebody who
+         *     spots a wrong date should be able to fix it in ten seconds.
+         */
+        put: operations["write_file_setup_files__name__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/setup/message": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send
+         * @description One turn: the user says something, the agent answers and writes what it learned.
+         *
+         *     Synchronous, and a turn can take minutes on a frontier model. The client shows it as pending;
+         *     an interview that arrives complete is better than one that arrives in pieces and then fails.
+         *
+         *     **On the user's own credential**, like every other call this platform makes. Their profile,
+         *     their spend, no platform cost.
+         */
+        post: operations["send_setup_message_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/setup/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Search
+         * @description Begin the first labelling run — the step after setup, pressed rather than assumed.
+         *
+         *     The old flow queued this the moment a profile was confirmed. It is the most expensive thing the
+         *     platform does on somebody's behalf, and it should not begin because a form was submitted.
+         */
+        post: operations["start_search_setup_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/telegram/webhook/{secret}": {
         parameters: {
             query?: never;
@@ -869,31 +963,51 @@ export interface components {
         };
         /** Education */
         Education: {
-            /** Degree */
+            /**
+             * Degree
+             * @description e.g. 'BEng Software Engineering'
+             */
             degree: string;
             /** Field */
             field?: string | null;
-            /** Institution */
+            /**
+             * Institution
+             * @description The university, school or awarding body
+             */
             institution: string;
             /** Thesis */
             thesis?: string | null;
         };
         /** Experience */
         Experience: {
-            /** Bullets */
+            /**
+             * Bullets
+             * @description What they did in this role, in their own words, one achievement per bullet. Copy the substance of every bullet the documents give for this role — these become the CV, so a role summarised in one line loses the work.
+             */
             bullets?: string[];
             /** End */
             end?: string | null;
-            /** Metrics */
+            /**
+             * Metrics
+             * @description Numbers this role achieved, exactly as stated (e.g. 'AUC 0.82', '10k records')
+             */
             metrics?: string[];
             /** Org */
             org: string;
             /** Role */
             role: string;
-            /** Stack */
+            /**
+             * Stack
+             * @description Technologies used in THIS role
+             */
             stack?: string[];
             /** Start */
             start?: string | null;
+        };
+        /** FileEdit */
+        FileEdit: {
+            /** Content */
+            content: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -983,7 +1097,10 @@ export interface components {
         };
         /** ProfileSchema */
         ProfileSchema: {
-            /** Certifications */
+            /**
+             * Certifications
+             * @description Courses, licences and accreditations, with the issuer and year where stated
+             */
             certifications?: components["schemas"]["Certification"][];
             /**
              * Confirmed
@@ -993,16 +1110,25 @@ export interface components {
             /** Conflicts */
             conflicts?: components["schemas"]["Conflict"][];
             constraints?: components["schemas"]["Constraints"];
-            /** Education */
+            /**
+             * Education
+             * @description Every qualification, most recent first
+             */
             education?: components["schemas"]["Education"][];
             /** Exclusions */
             exclusions?: string[];
-            /** Experience */
+            /**
+             * Experience
+             * @description EVERY role, position and engagement in the documents, most recent first — employment, contract, freelance and substantial independent work. This is what the candidate's CV is built from, so a missing role cannot appear on any application. Never summarise several roles into one entry.
+             */
             experience?: components["schemas"]["Experience"][];
             identity: components["schemas"]["Identity"];
             /** Not List */
             not_list?: string[];
-            /** Projects */
+            /**
+             * Projects
+             * @description Substantial things they built that are not a job: side projects, research systems, published work.
+             */
             projects?: components["schemas"]["Project"][];
             skills?: components["schemas"]["Skills"];
             targets?: components["schemas"]["Targets"];
@@ -1089,6 +1215,16 @@ export interface components {
             role_types?: string[];
             /** Seniority */
             seniority?: string | null;
+        };
+        /** Turn */
+        Turn: {
+            /**
+             * Agent
+             * @default setup
+             */
+            agent: string;
+            /** Message */
+            message: string;
         };
         /**
          * UserConfigSchema
@@ -2166,6 +2302,155 @@ export interface operations {
         };
     };
     state_process_state_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    conversation_setup_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    read_file_setup_files__name__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    write_file_setup_files__name__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FileEdit"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    send_setup_message_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Turn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_search_setup_start_post: {
         parameters: {
             query?: never;
             header?: never;

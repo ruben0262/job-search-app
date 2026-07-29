@@ -22,13 +22,15 @@ import { Banner } from "../ui";
  *  this owns the four words above it, the same split the onboarding wizard uses for its titles. */
 const HEADLINES: Record<string, string> = {
   confirm: "Your profile is ready to review",
-  process: "Your documents are waiting",
+  process: "Your profile is not built yet",
   upload: "Add your CV to get started",
 };
 
 const ACTIONS: Record<string, { href: string; label: string }> = {
   confirm: { href: "#/process", label: "Review your profile" },
-  process: { href: "#/process", label: "Process your documents" },
+  // Not "process your documents" any more: the step is a conversation, and the label should say
+  // what the user is about to do rather than what the platform does with it.
+  process: { href: "#/profile", label: "Build your profile" },
   upload: { href: "#/settings", label: "Upload your CV" },
 };
 
