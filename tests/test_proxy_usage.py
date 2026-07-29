@@ -284,3 +284,37 @@ def test_one_users_usage_never_touches_anothers(ctx):
     assert float(b_cred.mb_used_today) == 0
     assert a_cred.fail_streak == 0
     assert b_cred.fail_streak == 1
+
+
+# ── the row that has to exist beside the secret ───────────────────────────────────────────────
+
+def test_saving_a_proxy_url_also_creates_the_credential_row(ctx):
+    """**The gap that made the whole tier dead.** `user_secrets` holds the URL, but every proxied
+    fetch acquires a lease from `proxy_credentials` — which carries the cap and the health status.
+    Saving one without the other stored a working credential that nothing could use, and the
+    LinkedIn tier skipped the account forever without an error anywhere."""
+    from libs.db.models import ProxyCredential
+    from services.api.credential_routes import _ensure_proxy_credential
+
+    _repo, session = ctx
+    user = _user(session)
+    assert session.get(ProxyCredential, user.id) is None
+
+    _ensure_proxy_credential(session, user.id)
+    credential = session.get(ProxyCredential, user.id)
+    assert credential is not None
+    assert credential.status == "healthy" and credential.daily_cap_mb > 0
+
+
+def test_re_saving_a_proxy_url_does_not_un_quarantine_the_account(ctx):
+    """A rotation is not a reset. Returning a quarantined credential to `healthy` would put the
+    user straight back into whatever quarantined it."""
+    from libs.db.models import ProxyCredential
+    from services.api.credential_routes import _ensure_proxy_credential
+
+    _repo, session = ctx
+    user = _user(session)
+    _credential(session, user, status="quarantined")
+
+    _ensure_proxy_credential(session, user.id)
+    assert session.get(ProxyCredential, user.id).status == "quarantined"

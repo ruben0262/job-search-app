@@ -25,7 +25,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from libs.credentials import telegram_chat_id, validate_credential
-from libs.db.models import User
+from libs.db.models import ProxyCredential, User
 from libs.db.models.user import SECRET_KINDS
 from libs.secrets import SecretStore, redacting
 from services.api.deps import current_user, get_db, get_store, rate_limit
@@ -71,6 +71,15 @@ def put_credential(kind: str, body: CredentialBody, request: Request, *,
 
         store.put(user_id, kind, value, validated=result.ok)
 
+        if kind == "proxy":
+            # **The credential row, not just the secret.** `user_secrets` holds the URL; the lease
+            # every proxied fetch has to acquire is granted from `proxy_credentials`, which carries
+            # the daily cap and the health status. Saving one without the other stored a working
+            # credential that nothing could ever use — which is what had happened: a proxy secret on
+            # the account, no row beside it, and the LinkedIn tier silently skipping the user
+            # forever because `acquire_lease` had nothing to grant from.
+            _ensure_proxy_credential(db, user_id)
+
         if kind == "telegram_bot" and result.ok:
             # The chat id is read for them rather than asked for. It is the step that confuses
             # people more than the rest of the setup put together (`TENANT_SAFETY.md` §2).
@@ -87,6 +96,19 @@ def put_credential(kind: str, body: CredentialBody, request: Request, *,
 
     return {"status": "saved", "validated": result.ok,
             "detail": result.detail, **extra}
+
+
+def _ensure_proxy_credential(db: Session, user_id) -> None:
+    """Give this user a proxy credential row if they have none. Idempotent.
+
+    The cap and status are left at their defaults on an existing row: re-saving a URL is a rotation,
+    not a reset, and silently returning a quarantined credential to `healthy` would put a user
+    straight back into whatever got them quarantined.
+    """
+    if db.get(ProxyCredential, user_id) is not None:
+        return
+    db.add(ProxyCredential(user_id=user_id, secret_ref=f"{user_id}:proxy"))
+    db.flush()
 
 
 @router.post("/telegram/connect")
