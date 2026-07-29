@@ -102,17 +102,73 @@ UNSUPPORTED_SCHEMA_KEYS = (
 )
 
 
+# `identity.links` is a free-form map, which renders as `additionalProperties: {"type": "string"}` —
+# and structured output requires `additionalProperties: false` on every object. Setting it false on
+# a map with no declared properties would mean "no keys allowed", so the model would return an
+# always-empty links object and every CV header would lose its contact details again.
+#
+# So the model is asked for a *list* of {label, url} instead, and `links_to_map` folds it back into
+# the map `ProfileSchema` stores. The stored shape does not change; only the request does.
+LINKS_ARRAY_SCHEMA = {
+    "type": "array",
+    "description": ("Every link the documents give: portfolio, GitHub, LinkedIn, personal site, and "
+                    "an email address or phone number if the documents state one."),
+    "items": {
+        "type": "object",
+        "properties": {
+            "label": {"type": "string", "description": "e.g. 'portfolio', 'github', 'email'"},
+            "url": {"type": "string", "description": "The address itself, exactly as written"},
+        },
+        "required": ["label", "url"],
+        "additionalProperties": False,
+    },
+}
+
+
 def output_schema() -> dict:
-    """The JSON Schema the response is constrained to — the same model everything else validates
-    against, so a captured profile cannot be shaped differently from a hand-typed one."""
-    return _supported(ProfileSchema.model_json_schema())
+    """The JSON Schema the response is constrained to.
+
+    The same model everything else validates against, with the two adjustments structured output
+    requires: no unsupported validation keywords, and `additionalProperties: false` on every object.
+    """
+    schema = _supported(ProfileSchema.model_json_schema())
+    identity = schema.get("$defs", {}).get("Identity", {}).get("properties", {})
+    if "links" in identity:
+        identity["links"] = dict(LINKS_ARRAY_SCHEMA)
+    return schema
+
+
+def links_to_map(raw: dict) -> dict:
+    """Fold the model's `[{label, url}]` back into the `{label: url}` the profile stores.
+
+    Tolerant of a model that answered with the map anyway: the shape it was asked for is a list, and
+    the shape it sometimes returns is the one in the stored profile it may have seen an example of.
+    """
+    links = (raw.get("identity") or {}).get("links")
+    if not isinstance(links, list):
+        return raw
+
+    folded: dict[str, str] = {}
+    for index, entry in enumerate(links):
+        if not isinstance(entry, dict):
+            continue
+        url = (entry.get("url") or "").strip()
+        if url:
+            folded[(entry.get("label") or "").strip() or f"link{index + 1}"] = url
+    raw["identity"]["links"] = folded
+    return raw
 
 
 def _supported(node):
-    """The schema with the keywords the API refuses removed, recursively."""
+    """The schema the API accepts: unsupported keywords dropped, objects closed."""
     if isinstance(node, dict):
-        return {key: _supported(value) for key, value in node.items()
-                if key not in UNSUPPORTED_SCHEMA_KEYS}
+        cleaned = {key: _supported(value) for key, value in node.items()
+                   if key not in UNSUPPORTED_SCHEMA_KEYS}
+        # Every object must be closed. Harmless where the properties are declared — which, after the
+        # links substitution above, is all of them.
+        if cleaned.get("type") == "object" or "properties" in cleaned:
+            cleaned["additionalProperties"] = False
+        return cleaned
     if isinstance(node, list):
         return [_supported(item) for item in node]
     return node

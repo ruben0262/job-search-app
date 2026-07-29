@@ -311,3 +311,30 @@ def test_the_schema_sent_to_the_model_carries_nothing_the_api_refuses():
         assert key not in rendered, f"{key} would fail the call"
     # The part that has to survive: the field descriptions are the instruction to extract a career.
     assert "EVERY role" in rendered
+
+
+def test_the_links_map_becomes_an_array_for_the_model_and_a_map_again_on_the_way_back():
+    """`identity.links` is a free-form map, which renders as an open `additionalProperties` — and
+    structured output requires every object closed. Closing an empty map would mean "no keys
+    allowed", so the model would return no links at all and every CV header would lose its contact
+    details a second time. It is asked for a list instead, and folded back here."""
+    from services.capture.prompt import links_to_map, output_schema
+
+    links_schema = output_schema()["$defs"]["Identity"]["properties"]["links"]
+    assert links_schema["type"] == "array"
+
+    folded = links_to_map({"identity": {"links": [
+        {"label": "github", "url": "https://github.com/alice"},
+        {"label": "", "url": "alice@example.test"},
+        {"label": "junk", "url": ""},
+    ]}})
+
+    assert folded["identity"]["links"] == {"github": "https://github.com/alice",
+                                           "link2": "alice@example.test"}
+
+
+def test_a_model_that_answered_with_a_map_anyway_is_left_alone():
+    from services.capture.prompt import links_to_map
+
+    already = {"identity": {"links": {"github": "https://github.com/alice"}}}
+    assert links_to_map(already) == already

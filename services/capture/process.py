@@ -28,6 +28,7 @@ from services.capture.prompt import (
     MAX_TOKENS,
     SYSTEM_PROMPT,
     build_messages,
+    links_to_map,
     output_schema,
 )
 
@@ -90,6 +91,9 @@ def capture_profile(client: LlmClient, documents: list[tuple[str, str]], *,
                                schema=schema, max_tokens=MAX_TOKENS)
     # Braces. Whatever came back, this profile is a proposal until a human says otherwise.
     raw["confirmed"] = False
+    # The links come back as a list because that is the only shape structured output accepts for
+    # them; the profile stores a map (`services/capture/prompt.py`).
+    raw = links_to_map(raw)
 
     try:
         return ProfileSchema.model_validate(raw)
