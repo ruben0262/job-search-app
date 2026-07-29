@@ -56,9 +56,13 @@ def send_document(token: str, chat_id: str, content: bytes, filename: str,
 
 def handle(session, job: QueueJob) -> None:
     """Build the CV this job asks for, on the account's own Claude credential."""
-    job_id = (job.payload or {}).get("job_id")
+    payload = job.payload or {}
+    job_id = payload.get("job_id")
     if not isinstance(job_id, int):
         raise Terminal(f"docgen job {job.id} carries no corpus job id")
+    # `cv` unless the tap said otherwise. Defaulted rather than required so a job enqueued before
+    # the cover button existed still builds the document it was queued for.
+    kind = payload.get("kind") or "cv"
 
     store = SecretStore(session)
     with store.use(job.user_id, "telegram_bot") as bot:
@@ -66,21 +70,22 @@ def handle(session, job: QueueJob) -> None:
             raise Terminal("no Telegram bot token stored — the CV would have nowhere to go")
         bot_token = bot.reveal()
 
-        for kind in CLAUDE_KINDS:
-            with store.use(job.user_id, kind) as secret:
+        for credential in CLAUDE_KINDS:
+            with store.use(job.user_id, credential) as secret:
                 if secret is None:
                     continue
                 value = secret.reveal()
                 with redacting(value, bot_token):
-                    result = _build(session, job, client_for(value, kind), bot_token, job_id)
-            logger.info("docgen: built %s for %s in %d call(s), %s page(s)",
-                        result.job_id, job.user_id, result.calls, result.pages)
+                    result = _build(session, job, client_for(value, credential), bot_token,
+                                    job_id=job_id, kind=kind)
+            logger.info("docgen: built the %s for %s in %d call(s), %s page(s)",
+                        kind, job.user_id, result.calls, result.pages)
             return
 
     raise Terminal("no Claude credential stored — a CV build needs the user's own key or token")
 
 
-def _build(session, job: QueueJob, client, bot_token: str, job_id: int):
+def _build(session, job: QueueJob, client, bot_token: str, *, job_id: int, kind: str):
     """The failure taxonomy, in one place.
 
     `CompileFailed` is deliberately *not* terminal: Chrome runs out of memory on a busy box and
@@ -89,7 +94,7 @@ def _build(session, job: QueueJob, client, bot_token: str, job_id: int):
     """
     try:
         return run_build(session, job.user_id, job_id, client=client,
-                         send_document=send_document, token=bot_token)
+                         send_document=send_document, token=bot_token, kind=kind)
     except (NotBuildable, LlmError) as exc:
         raise Terminal(str(exc)) from exc
     except CompileFailed as exc:

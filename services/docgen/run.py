@@ -61,19 +61,31 @@ def run_build(session, user_id: _uuid.UUID, job_id: int, *,
               client,
               send_document: Callable[..., None],
               token: str,
+              kind: str = "cv",
               workdir: pathlib.Path | None = None) -> BuildResult:
     """Build one tailored CV for one posting and deliver it.
 
     **Does not commit** — the worker owns the transaction, so the record of the build and the
     queue job's completion land together or neither does (`libs/queue/worker.py`).
     """
+    if kind not in ("cv", "cover"):
+        raise NotBuildable(f"unknown document kind {kind!r}")
     user, job, score = _load(session, user_id, job_id)
     profile = ProfileSchema.model_validate(user.profile)
 
+    # **The user's own grounding document, and `facts_md` only as the backstop.** The reference
+    # instance's CLAUDE.md is what its A/B showed the writing depends on; a facts block rendered
+    # from a schema can only carry what the schema has fields for.
+    grounding = user.profile_context or user.facts_md
+
     scratch = pathlib.Path(workdir) if workdir else pathlib.Path(tempfile.mkdtemp(prefix="docgen-"))
     try:
-        html, pages, calls = _tailor_until_it_fits(
-            client, profile, job, score, facts_md=user.facts_md, scratch=scratch)
+        if kind == "cover":
+            html, pages, calls = _cover(client, profile, job, score, grounding=grounding,
+                                        scratch=scratch)
+        else:
+            html, pages, calls = _tailor_until_it_fits(
+                client, profile, job, score, facts_md=grounding, scratch=scratch)
 
         leftover = build.scan_hidden(html)
         if leftover:
@@ -82,9 +94,9 @@ def run_build(session, user_id: _uuid.UUID, job_id: int, *,
             # never learn why. Not delivering is the recoverable outcome.
             raise NotBuildable(f"the generated CV contained hidden content: {'; '.join(leftover)}")
 
-        source = scratch / "cv.html"
+        source = scratch / f"{kind}.html"
         source.write_text(html, encoding="utf-8")
-        document = pdf.compile_pdf(source, scratch / _filename(profile))
+        document = pdf.compile_pdf(source, scratch / _filename(profile, kind))
         report = pdf.inspect_pdf(document)
 
         # **The personal chat, never a feed channel.** The channels may have other members in them,
@@ -111,6 +123,21 @@ def run_build(session, user_id: _uuid.UUID, job_id: int, *,
         # D9. Runs on every path including the failures — a build that crashed mid-compile has left
         # a half-written CV on disk, and that is exactly the file that must not survive.
         shutil.rmtree(scratch, ignore_errors=True)
+
+
+def _cover(client, profile: ProfileSchema, job: CorpusJob, score: float | None, *,
+           grounding: str | None, scratch: pathlib.Path) -> tuple[str, int | None, int]:
+    """One call, no revision loop.
+
+    A cover letter has a word count in its own prompt and a mechanical scan that enforces it, so the
+    page-count feedback the CV needs would be spending a second call to fix a rule the model already
+    has. The letter is built from the *base* CV rather than a tailored one for the same reason the
+    reference's `build_cover_only` does: the tailored copy is ephemeral and rebuilding it would
+    double the cost of pressing one button.
+    """
+    letter = build.tailor_cover(client, profile, build.base_document(profile),
+                                build.job_context(job, score=score), facts_md=grounding)
+    return letter, _page_count(letter, scratch), 1
 
 
 def _tailor_until_it_fits(client, profile: ProfileSchema, job: CorpusJob, score: float | None, *,
@@ -202,10 +229,12 @@ def _record(session, user_id: _uuid.UUID, job: CorpusJob) -> None:
     session.flush()
 
 
-def _filename(profile: ProfileSchema) -> str:
-    """`Alice_Example_CV.pdf`. Falls back to `CV.pdf` rather than to something anonymous-looking."""
+def _filename(profile: ProfileSchema, kind: str = "cv") -> str:
+    """`Alice_Example_CV.pdf`. Their name, because a recruiter receiving `cv.pdf` from three
+    candidates has three files called `cv.pdf`."""
+    label = "Cover" if kind == "cover" else FILENAME_SUFFIX
     slug = re.sub(r"[^A-Za-z0-9]+", "_", profile.identity.name).strip("_")
-    return f"{slug}_{FILENAME_SUFFIX}.pdf" if slug else f"{FILENAME_SUFFIX}.pdf"
+    return f"{slug}_{label}.pdf" if slug else f"{label}.pdf"
 
 
 def _caption(job: CorpusJob) -> str:

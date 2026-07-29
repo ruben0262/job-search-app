@@ -30,7 +30,7 @@ import re
 
 from libs.contracts.profile import ProfileSchema
 from libs.prompts import TAILOR_CV_TEMPLATE, load
-from libs.scoring.docprompt import render_cv_prompt
+from libs.scoring.docprompt import render_cover_prompt, render_cv_prompt
 from libs.templates import BASE_CV_TEMPLATE
 from libs.templates import load as load_template
 from libs.templates.cv import render_cv
@@ -158,6 +158,67 @@ _MINIMAL_SYSTEM = ("Write only what the base template below already states about
                    "Never invent an employer, a date, a metric, or a technology.")
 
 
+# ── the cover letter ──────────────────────────────────────────────────────────────────────────
+
+# Chars of plain-text CV sent to the cover prompt. The reference's number: the cover model needs the
+# candidate's facts, not the markup, and sending the full HTML costs ~1,000–1,500 tokens for nothing.
+CV_TEXT_MAX = 1_500
+
+
+def tailor_cover(client, profile: ProfileSchema, cv_html: str, context: str, *,
+                 facts_md: str | None = None, model: str = CV_MODEL) -> str:
+    """The cover letter for one job, built from the CV that was just tailored for it.
+
+    **The CV goes in as plain text, not markup** — the reference's own decision, for the reason
+    above. The head block goes in as-is because the prompt asks for it byte-for-byte: the letter is
+    a second document that has to print with the same fonts and the same A4 rules as the CV, and it
+    is the only part of the layout the model is trusted to carry.
+    """
+    head = head_block(base_document(profile))
+    prompt = (render_cover_prompt(profile)
+              .replace("<HEAD_BLOCK>", head)
+              .replace("<JOB_CONTEXT>", context)
+              .replace("<CV_HTML>", html_to_text(cv_html)))
+
+    reply = client.complete_text(
+        model=model,
+        system=facts_md or _MINIMAL_SYSTEM,
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=MAX_TOKENS,
+        thinking_tokens=THINKING_TOKENS)
+
+    letter = extract_html(reply)
+    if letter is None:
+        logger.error("the cover call returned %d chars with no HTML document in it", len(reply))
+        raise BuildFailed("the model did not return an HTML document")
+
+    # **Em-dashes come out of the whole letter, not just its bullets.** A cover letter is prose end
+    # to end, so there is no entry-title header where one is legitimate — the reference strips them
+    # everywhere except the trusted style block, and so does this.
+    return strip_hidden(_strip_cover_emdashes(letter))
+
+
+def head_block(document: str) -> str:
+    """The `<head>` of the CV template, which is what carries the fonts and the page rules."""
+    match = re.search(r"(?is)<head\b.*?</head>", document) or _STYLE.search(document)
+    return match.group(0) if match else ""
+
+
+def html_to_text(document: str, max_chars: int = CV_TEXT_MAX) -> str:
+    """Tags out, whitespace collapsed. The CV as facts, for the cover prompt."""
+    text = re.sub(r"<[^>]+>", " ", _STYLE.sub(" ", document))
+    text = re.sub(r"\s+", " ", text).strip()
+    return text[:max_chars]
+
+
+def _strip_cover_emdashes(letter: str) -> str:
+    match = _STYLE.search(letter)
+    if not match:
+        return _EMDASH.sub(", ", letter)
+    return (_EMDASH.sub(", ", letter[:match.start()]) + match.group(0)
+            + _EMDASH.sub(", ", letter[match.end():]))
+
+
 def sanitise(html: str) -> str:
     """The mechanical enforcement of the rules the prompt states and the model breaks.
 
@@ -214,16 +275,39 @@ def strip_comments(html: str) -> str:
 
 
 def restore_style(tailored: str, style: str) -> str:
-    """Re-inject the canonical CSS, replacing whatever the model emitted."""
+    """Re-inject the canonical CSS, replacing whatever the model emitted.
+
+    **The last branch used to return the document unstyled, and that shipped.** Told the CSS is
+    managed externally, the model sometimes returns `<html><body>…` with no `<head>` at all — and
+    with no `</head>` to inject into, this handed back a document with no stylesheet. Chrome then
+    rendered it at browser defaults: no A4 page rule, no `@page` margin, so it printed its own
+    header and footer over the page, and the first real CV a user received was an unstyled sheet of
+    text with a file path along the bottom.
+
+    It failed silently because every other check still passed — the HTML was valid, the text was
+    correct, the PDF compiled, and it was one page. So the head is now *built* when it is missing
+    rather than skipped, and `tests/test_docgen.py` asserts the stylesheet survives every shape of
+    reply.
+    """
     if not style:
         return tailored
+
     match = _STYLE.search(tailored)
     if match:
         return tailored[:match.start()] + style + tailored[match.end():]
+
     head = tailored.find("</head>")
     if head != -1:
         return tailored[:head] + style + "\n" + tailored[head:]
-    return tailored
+
+    body = re.search(r"(?i)<body\b[^>]*>", tailored)
+    if body:
+        return tailored[:body.start()] + f"<head>\n{style}\n</head>\n" + tailored[body.start():]
+
+    # No head, no body: whatever came back is the content. Wrapping it is the only way the layout
+    # survives, and a document without the platform's CSS must never reach a PDF.
+    return ("<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n"
+            f"{style}\n</head>\n<body>\n{tailored}\n</body>\n</html>")
 
 
 def extract_html(reply: str) -> str | None:

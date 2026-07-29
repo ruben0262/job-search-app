@@ -184,10 +184,25 @@ def test_a_joblink_maps_onto_a_corpus_row_and_carries_no_user():
                   company="Acme", location="London", source="greenhouse",
                   is_remote=True).as_corpus_row()
 
-    assert row == {"url": "https://boards.greenhouse.io/acme/jobs/1", "source": "greenhouse",
-                   "title": "Backend Engineer", "company": "Acme", "location": "London",
-                   "is_remote": True}
+    assert row["url"] == "https://boards.greenhouse.io/acme/jobs/1"
+    assert row["source"] == "greenhouse" and row["title"] == "Backend Engineer"
+    assert row["company"] == "Acme" and row["location"] == "London" and row["is_remote"] is True
     assert not any("user" in key for key in row)
+
+
+def test_a_joblink_carries_the_posting_metadata_the_feed_card_reads():
+    """**Both of these were collected and then dropped.** `date_posted` never reached the corpus, so
+    every card was rendered with no age on it; `easy_apply` is the ⚡ and the signal that makes the
+    apply-URL dedup layer resolvable."""
+    row = JobLink(url="https://www.linkedin.com/jobs/view/1", title="Backend Engineer (Remote)",
+                  company="Acme", location="London", source="linkedin",
+                  date_posted="2026-07-29T08:00:00+00:00", easy_apply=True,
+                  is_remote=True).as_corpus_row()
+
+    assert row["posted_at"] is not None and row["posted_at"].year == 2026
+    assert row["easy_apply"] is True
+    # Classified from what the source gave us; LinkedIn's own pill overwrites it at fetch time.
+    assert row["workplace"] == "remote"
 
 
 def test_joblink_defaults_are_safe_for_an_unknown_field():

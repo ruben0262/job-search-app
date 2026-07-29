@@ -179,7 +179,9 @@ class CorpusRepository:
     # ── ingest ───────────────────────────────────────────────────────────────────────────────
 
     def add(self, *, url: str, source: str, title: str, company: str = "", location: str = "",
-            is_remote: bool | None = None, posted_at: datetime | None = None) -> int | None:
+            is_remote: bool | None = None, posted_at: datetime | None = None,
+            easy_apply: bool | None = None, applicants: int | None = None,
+            reposted: bool | None = None, workplace: str | None = None) -> int | None:
         """Insert if absent. Returns the new row's id, or `None` if the url was already present.
 
         `ON CONFLICT DO NOTHING` is the port of the reference's `INSERT OR IGNORE`, and the property
@@ -200,6 +202,12 @@ class CorpusRepository:
                 location=location or None,
                 is_remote=is_remote,
                 posted_at=posted_at,
+                # What the feed card reads. Opportunistic: a source that reports none of them still
+                # produces a row, and the card omits the elements rather than the job.
+                easy_apply=easy_apply,
+                applicants=applicants,
+                reposted=reposted,
+                workplace=workplace,
             )
             .on_conflict_do_nothing(index_elements=[CorpusJob.url])
             .returning(CorpusJob.id)

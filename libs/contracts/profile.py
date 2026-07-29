@@ -40,8 +40,8 @@ class Identity(_Strict):
 
 
 class Education(_Strict):
-    degree: str = Field(max_length=120)
-    institution: str = Field(max_length=160)
+    degree: str = Field(max_length=120, description="e.g. 'BEng Software Engineering'")
+    institution: str = Field(max_length=160, description="The university, school or awarding body")
     field: str | None = Field(default=None, max_length=120)
     thesis: str | None = Field(default=None, max_length=400)
 
@@ -53,9 +53,16 @@ class Experience(_Strict):
     # real profiles to gain a precision nothing downstream uses.
     start: str | None = Field(default=None, max_length=32)
     end: str | None = Field(default=None, max_length=32)
-    bullets: list[str] = Field(default_factory=list, max_length=20)
-    stack: list[str] = Field(default_factory=list, max_length=40)
-    metrics: list[str] = Field(default_factory=list, max_length=20)
+    bullets: list[str] = Field(
+        default_factory=list, max_length=20,
+        description=("What they did in this role, in their own words, one achievement per bullet. "
+                     "Copy the substance of every bullet the documents give for this role — these "
+                     "become the CV, so a role summarised in one line loses the work."))
+    stack: list[str] = Field(default_factory=list, max_length=40,
+                             description="Technologies used in THIS role")
+    metrics: list[str] = Field(
+        default_factory=list, max_length=20,
+        description="Numbers this role achieved, exactly as stated (e.g. 'AUC 0.82', '10k records')")
 
 
 class Project(_Strict):
@@ -110,10 +117,24 @@ class Conflict(_Strict):
 
 class ProfileSchema(_Strict):
     identity: Identity
-    education: list[Education] = Field(default_factory=list, max_length=10)
-    experience: list[Experience] = Field(default_factory=list, max_length=30)
-    projects: list[Project] = Field(default_factory=list, max_length=30)
-    certifications: list[Certification] = Field(default_factory=list, max_length=20)
+    education: list[Education] = Field(default_factory=list, max_length=10,
+                                       description="Every qualification, most recent first")
+    # **The field that was silently coming back empty.** Nine documents produced zero entries: the
+    # schema is what the model is handed (`services/capture/prompt.py` builds it from this class),
+    # and a bare property name asks for nothing. The description is the instruction.
+    experience: list[Experience] = Field(
+        default_factory=list, max_length=30,
+        description=("EVERY role, position and engagement in the documents, most recent first — "
+                     "employment, contract, freelance and substantial independent work. This is "
+                     "what the candidate's CV is built from, so a missing role cannot appear on "
+                     "any application. Never summarise several roles into one entry."))
+    projects: list[Project] = Field(
+        default_factory=list, max_length=30,
+        description=("Substantial things they built that are not a job: side projects, research "
+                     "systems, published work."))
+    certifications: list[Certification] = Field(
+        default_factory=list, max_length=20,
+        description="Courses, licences and accreditations, with the issuer and year where stated")
     skills: Skills = Field(default_factory=Skills)
     targets: Targets = Field(default_factory=Targets)
     constraints: Constraints = Field(default_factory=Constraints)

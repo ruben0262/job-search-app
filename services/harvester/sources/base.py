@@ -19,6 +19,9 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
+from libs.corpus.timefilter import parse_date
+from libs.corpus.workfilter import classify
+
 
 @dataclass
 class JobLink:
@@ -52,4 +55,13 @@ class JobLink:
             "company": self.company,
             "location": self.location,
             "is_remote": self.is_remote,
+            # **These two were collected and then dropped here.** `date_posted` is why every feed
+            # card was rendered without an age on it, and `easy_apply` is a ⚡ on the card and the
+            # signal that makes the apply-URL dedup layer resolvable. Both were already on the
+            # dataclass; this line is the whole fix.
+            "posted_at": parse_date(self.date_posted),
+            "easy_apply": self.easy_apply,
+            # Inferred from what the source gave us. The authoritative value — LinkedIn's own
+            # workplace pill — arrives later with the description fetch and overwrites this.
+            "workplace": classify(self.title, self.location, self.snippet, self.is_remote),
         }

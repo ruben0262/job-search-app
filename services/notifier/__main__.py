@@ -33,7 +33,11 @@ def send(token: str, chat_id: str, message: str, keyboard: dict | None = None) -
     The description matters: `deliver` decides terminal-versus-transient from its text, and a
     generic "HTTP 403" would lose the distinction between a blocked bot and a rate limit.
     """
-    payload = {"chat_id": chat_id, "text": message, "disable_web_page_preview": True}
+    # **HTML, because the card is HTML.** `<b>85</b>` and an escaped `&` in a company name are the
+    # whole reason the reference's cards read as cards; without the parse mode they arrive as raw
+    # markup. Every field is escaped in `services/notifier/card.py`.
+    payload = {"chat_id": chat_id, "text": message, "disable_web_page_preview": True,
+               "parse_mode": "HTML"}
     if keyboard:
         payload["reply_markup"] = keyboard
     response = httpx.post(

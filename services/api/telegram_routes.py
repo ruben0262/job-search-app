@@ -46,7 +46,9 @@ TRAIN_MIN_NEW_LABELS = 5
 
 # `callback_data` is capped at 64 bytes by Telegram, so it carries an action and a job id and
 # nothing else. Everything about *who* comes from the URL and the header.
-CALLBACK_PREFIX = {"ap": "applied", "sk": "skipped", "bc": "build_cv"}
+# `ap` and `sk` are still understood: cards delivered before the two-button change are sitting in
+# channels with those buttons on them, and a tap months later must not read as an unknown action.
+CALLBACK_PREFIX = {"ap": "applied", "sk": "skipped", "bc": "build_cv", "co": "build_cover"}
 
 
 def _authenticate(secret: str, db: Session, header_token: str | None) -> User:
@@ -98,7 +100,9 @@ async def webhook(secret: str, request: Request, db: Session = Depends(get_db),
     if action is None:
         return {"status": "unknown_action"}
 
-    if action == "build_cv":
+    if action in ("build_cv", "build_cover"):
+        kind = "cover" if action == "build_cover" else "cv"
+
         # **The quota is checked here, at the admission point**, never inside the worker
         # (`TENANT_SAFETY.md` §3): a limit checked halfway through a build has already spent the
         # Claude call it was protecting. The popup names the limit, because a button that silently
@@ -106,12 +110,23 @@ async def webhook(secret: str, request: Request, db: Session = Depends(get_db),
         try:
             quotas_for(db, user.id).check("cv_builds_per_day", jobs_today(db, "docgen", user.id))
         except QuotaExceeded as exc:
-            audit(logger, "telegram.build_cv_over_quota", user=user.id, job=job_id)
+            audit(logger, "telegram.build_over_quota", user=user.id, job=job_id, kind=kind)
             return {"status": "over_quota", "answer": str(exc)}
 
-        enqueue(db, "docgen", user.id, payload={"job_id": job_id}, dedup_key=f"cv:{job_id}")
-        audit(logger, "telegram.build_cv", user=user.id, job=job_id)
-        return {"status": "queued", "answer": "Building your CV — it will arrive here shortly."}
+        # **A build is the positive label** (decided 2026-07-29). It spends the user's own credit,
+        # so nobody presses it on a job they are not going to apply to — which makes it a stronger
+        # signal than a tap on "Applied", backed by spending rather than by intention. The feed
+        # carries no Applied button any more, so this is where the label comes from.
+        result = record(db, user.id, job_id, "applied")
+        if result.changed and result.labels_since_train >= TRAIN_MIN_NEW_LABELS:
+            enqueue(db, "train", user.id, dedup_key="retrain", delay_min=TRAIN_DEBOUNCE_MIN)
+
+        enqueue(db, "docgen", user.id, payload={"job_id": job_id, "kind": kind},
+                dedup_key=f"{kind}:{job_id}")
+        audit(logger, "telegram.build", user=user.id, job=job_id, kind=kind)
+        document = "cover letter" if kind == "cover" else "CV"
+        return {"status": "queued",
+                "answer": f"Building your {document} — it will arrive here shortly."}
 
     result = record(db, user.id, job_id, action)
     if result.changed and result.labels_since_train >= TRAIN_MIN_NEW_LABELS:

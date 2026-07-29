@@ -21,7 +21,6 @@ from __future__ import annotations
 import logging
 import uuid as _uuid
 from collections.abc import Callable
-from dataclasses import dataclass
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -29,6 +28,8 @@ from sqlalchemy.orm import Session
 from libs.db.models import CorpusJob, User, UserJobState
 from libs.secrets import SecretStore
 from services.notifier.buttons import keyboard
+from services.notifier.card import FeedItem
+from services.notifier.card import render as render_card
 from services.notifier.routing import group_by_chat
 
 logger = logging.getLogger(__name__)
@@ -51,20 +52,6 @@ class BotRevoked(RuntimeError):
     """The user's bot is gone. Terminal — flag the account, do not retry."""
 
 
-@dataclass(frozen=True)
-class FeedItem:
-    job_id: int
-    url: str
-    title: str
-    company: str | None
-    score: float
-    # Carried only so the item can be routed to a channel (`services/notifier/routing.py`). Not
-    # rendered — the digest is already dense, and a source name per line is noise to somebody who
-    # is reading the channel that source routes to.
-    source: str | None = None
-    location: str | None = None
-
-
 def pending_feed(session: Session, user_id: _uuid.UUID, *, cutoff: float,
                  limit: int = MAX_ITEMS_PER_DIGEST) -> list[FeedItem]:
     """Scored, above cutoff, not yet notified. Highest score first.
@@ -75,7 +62,9 @@ def pending_feed(session: Session, user_id: _uuid.UUID, *, cutoff: float,
     """
     rows = session.execute(
         select(UserJobState.job_id, CorpusJob.url, CorpusJob.title, CorpusJob.company,
-               UserJobState.score, CorpusJob.source, CorpusJob.location)
+               UserJobState.score, CorpusJob.source, CorpusJob.location, CorpusJob.is_remote,
+               CorpusJob.description, CorpusJob.posted_at, CorpusJob.applicants,
+               CorpusJob.easy_apply, CorpusJob.reposted, CorpusJob.workplace)
         .join(CorpusJob, CorpusJob.id == UserJobState.job_id)
         .where(UserJobState.user_id == user_id,
                UserJobState.notified_at.is_(None),
@@ -141,10 +130,9 @@ def deliver(session: Session, user_id: _uuid.UUID, *,
             raise BotRevoked(f"user {user_id} has no telegram token stored")
         for chat_id, batch in batches.items():
             try:
-                # A header, then one message per job. The header is what makes a burst read as a
-                # delivery rather than as the bot malfunctioning.
-                send(token.reveal(), chat_id,
-                     f"{len(batch)} new match{'es' if len(batch) != 1 else ''}")
+                # **Cards only, no header.** The reference feed posts one card per job and nothing
+                # else; a "10 new matches" line above them was a platform addition that turns a
+                # channel you scroll into a channel you have to read the top of.
                 for item in batch:
                     send(token.reveal(), chat_id, render_job(item), keyboard(item.job_id))
             except Exception as exc:
@@ -162,10 +150,13 @@ def deliver(session: Session, user_id: _uuid.UUID, *,
     return len(items)
 
 
-def render_job(item: FeedItem) -> str:
-    """One job, as its own message, so it can carry its own buttons."""
-    company = f"\n{item.company}" if item.company else ""
-    return f"{int(item.score)}  {item.title}{company}\n{item.url}"
+def render_job(item: FeedItem, salary_bands: dict | None = None) -> str:
+    """One job, as its own message, so it can carry its own buttons.
+
+    The card is `services/notifier/card.py`, a port of the reference's `watcher/feed.py`. This stays
+    as the seam `deliver` and the tests both call.
+    """
+    return render_card(item, salary_bands=salary_bands)
 
 
 def render_digest(items: list[FeedItem]) -> str:

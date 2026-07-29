@@ -112,6 +112,17 @@ class CorpusJob(Base):
     # model name, which is not ours to bound.
     embedding_version: Mapped[str | None] = mapped_column(Text)
 
+    # ── what the feed card shows about a posting ─────────────────────────────────────────────
+    # The reference's card answers "how contested, how fresh, one-click or not, and where" before
+    # anybody opens the link (`watcher/feed.py`). All nullable and opportunistic: a source that does
+    # not report a field is not a reason to withhold the job, and the card omits the element.
+    applicants: Mapped[int | None] = mapped_column(Integer)
+    easy_apply: Mapped[bool | None] = mapped_column(Boolean)
+    reposted: Mapped[bool | None] = mapped_column(Boolean)
+    # 'remote' | 'hybrid' | 'onsite'. NULL means unknown, and unknown means keep — the fail-open
+    # rule `libs/corpus/workfilter.py` applies.
+    workplace: Mapped[str | None] = mapped_column(String(8))
+
     posted_at: Mapped[timestamptz | None]
     first_seen_at: Mapped[timestamptz] = mapped_column(server_default=func.now())
     last_seen_at: Mapped[timestamptz] = mapped_column(server_default=func.now())
@@ -143,4 +154,6 @@ class CorpusJob(Base):
         CheckConstraint(
             "(embedding IS NULL) OR (text_sha256 IS NOT NULL AND embedding_dim IS NOT NULL)",
             name="embedding_has_provenance"),
+        CheckConstraint("workplace IS NULL OR workplace IN ('remote', 'hybrid', 'onsite')",
+                        name="corpus_workplace_valid"),
     )

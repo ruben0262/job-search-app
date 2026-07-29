@@ -185,6 +185,17 @@ class User(Base):
     # so a generated document can name the exact bytes that grounded it.
     facts_md: Mapped[str | None] = mapped_column(Text)
 
+    # **The grounding document, in the user's own prose.** The reference instance's CLAUDE.md is
+    # auto-loaded on every generation call, and the 2026-07-15 A/B measured what it is worth:
+    # without it the model invented an employer and fabricated metrics. `facts_md` is rendered from
+    # a schema and can only contain what the schema has fields for; this can hold the judgement a
+    # schema has nowhere to put — what to lead with for which kind of role, how to frame a
+    # discipline, which claims are off-limits.
+    #
+    # Injected as the system prompt for CV and cover-letter generation, with `facts_md` as the
+    # fallback for an account that has not got one yet.
+    profile_context: Mapped[str | None] = mapped_column(Text)
+
     # Managed Agents agent objects are created with the *user's* API key, so they live in that
     # user's Anthropic workspace — one per user, not one per platform. Stored so re-capture reuses
     # it: "create the agent once" still holds, it is just once per user

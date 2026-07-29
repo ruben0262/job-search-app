@@ -119,6 +119,25 @@ ignore = [
     "F401",     # imports the adapters keep for re-export
     "I001",     # import order as the original had it
 ]
+# Salary extraction, recency labels and workplace classification, lifted from the reference
+# instance's `pipeline/lib/` on 2026-07-29. Kept byte-identical apart from one seam each: the
+# salary bands and the allowed on-site locations are per-user here and were a process-wide config
+# file and an env var there.
+#
+# Every regex, threshold, currency table and bucket edge is the original's. These modules decide
+# what a feed card says about money and freshness, and they were arrived at by reading real
+# postings — restyling them to satisfy a linter would make the diff against the source unreviewable
+# for no gain.
+"libs/corpus/salary.py" = [
+    "RUF001",   # NBSP and en dashes: they are what real postings contain, and the regexes match them
+    "E501",     # long regex lines in the original
+    "PLR0911",  # the extractor's early returns, one per currency shape
+    "PLC0415",  # local imports as the original had them
+    "UP017", "UP035", "UP037",
+]
+"libs/corpus/timefilter.py" = ["UP017", "UP035", "UP037", "RUF001", "E501"]
+"libs/corpus/workfilter.py" = ["UP017", "UP035", "UP037", "RUF001", "E501", "PLR0911"]
+
 # The module-level connection pool. Deliberate: ATS polling opens hundreds of boards per cycle and
 # connection reuse is the dominant per-request cost, so one pool is reused across them.
 "services/harvester/sources/ats.py" = [
