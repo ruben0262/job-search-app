@@ -28,6 +28,33 @@ from libs.ops import evaluate, platform_health, render
 logger = logging.getLogger("health")
 
 
+# Every timer the platform depends on. Checked here rather than assumed, because a timer that was
+# never installed is invisible from inside the application: the lane it feeds simply has no work,
+# which reads identically to a quiet day. `notify-dispatch` was missing for weeks in exactly that
+# way — the notifier container up, no errors, and nobody hearing from us.
+REQUIRED_TIMERS = ("harvester", "notify-dispatch", "linkedin-describe", "health", "backup")
+
+
+def missing_timers() -> list[str]:
+    """Which required timers are not enabled. Empty when systemd cannot be asked at all.
+
+    Silent rather than noisy off-box: this script is also run by hand on a laptop, and "systemctl
+    not found" is not a platform alert.
+    """
+    import shutil
+    import subprocess
+
+    if not shutil.which("systemctl"):
+        return []
+    missing = []
+    for unit in REQUIRED_TIMERS:
+        result = subprocess.run(["systemctl", "is-enabled", f"{unit}.timer"],
+                                capture_output=True, text=True, check=False)
+        if result.stdout.strip() != "enabled":
+            missing.append(unit)
+    return missing
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--email-on", choices=("never", "page", "warn"), default="page",
@@ -45,7 +72,14 @@ def main(argv: list[str] | None = None) -> int:
         state = platform_health(session)
         alerts = evaluate(state)
 
+    absent = missing_timers()
     summary = render(alerts)
+    if absent:
+        # Prepended rather than appended: it is the finding that explains the others. A missing
+        # `notify-dispatch` is why the notify lane is empty, and reading that the other way round
+        # wastes an hour.
+        summary = ("TIMERS NOT ENABLED: " + ", ".join(absent)
+                   + "\n  Fix with: sudo deploy/install-units.sh\n\n" + summary)
     print(f"{state.corpus_rows:,} corpus rows, {state.users_active} active users, "
           f"{state.postgres_bytes / 1024**3:.2f} GB, {state.connections} connections")
     for lane in state.lanes:
@@ -55,8 +89,12 @@ def main(argv: list[str] | None = None) -> int:
     print(summary)
 
     paging = [alert for alert in alerts if alert.pages]
+    if absent:
+        # A missing timer pages. It is not a degraded state that recovers on its own — the work it
+        # schedules is simply never happening, and it will keep not happening until somebody acts.
+        paging.append(f"timers not enabled: {', '.join(absent)}")
     audit(logger, "health.checked", alerts=len(alerts), paging=len(paging),
-          corpus=state.corpus_rows)
+          corpus=state.corpus_rows, timers_missing=len(absent))
 
     threshold_met = (args.email_on == "warn" and alerts) or (args.email_on == "page" and paging)
     if threshold_met and args.to:

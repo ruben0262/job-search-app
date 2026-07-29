@@ -27,11 +27,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from sqlalchemy import select
 
 from libs.credentials import telegram_chat_id, validate_credential
-from libs.db.models import User
+from libs.db.models import ProxyCredential, User
 from libs.db.models.user import SECRET_KINDS
 from libs.db.session import session_scope
 from libs.obs import configure
 from libs.secrets import SecretStore, install, redacting
+from services.api.credential_routes import _ensure_proxy_credential
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -75,6 +76,22 @@ def main(argv: list[str] | None = None) -> int:
                 return 3
 
         SecretStore(session).put(user.id, args.kind, value, validated=validated)
+
+        if args.kind == "proxy":
+            # The credential row, not just the secret. `user_secrets` holds the URL; the lease
+            # every proxied fetch acquires is granted from `proxy_credentials`, which carries the
+            # cap and the health status. Storing one without the other is what left a working
+            # proxy on the account that nothing could ever use.
+            _ensure_proxy_credential(session, user.id)
+            credential = session.get(ProxyCredential, user.id)
+            if credential.status != "healthy":
+                # A rotation is usually somebody replacing the credential that got quarantined.
+                # Clearing the failures here is the deliberate act of saying "this one is new".
+                credential.status = "healthy"
+                credential.fail_streak = 0
+                credential.last_error = None
+                print("credential was quarantined — reset to healthy for the new URL")
+            print(f"proxy credential ready: {credential.daily_cap_mb} MB/day cap")
 
         if args.kind == "telegram_bot":
             # The step that confuses people more than the rest of setup put together, so it is read
