@@ -280,3 +280,32 @@ def test_the_age_window_is_not_the_notification_interval():
 
     assert "posted_within_hours" in SearchSection.model_fields
     assert "notify_interval_min" not in SearchSection.model_fields
+
+
+# ── the terms the user asked never to see ─────────────────────────────────────────────────────
+
+def test_an_excluded_keyword_is_a_hard_no_at_delivery():
+    """**They were honoured only by the cold-start keyword scorer**, so they quietly stopped
+    applying the moment an account got a trained model. "I told it never to show me contract roles
+    and it started again" is indistinguishable from the product ignoring them — because it was."""
+    item = Item(title="Contract Backend Engineer")
+    assert is_eligible(item, rules(sections=[{"exclude_keywords": ["contract"]}]),
+                       now=NOW) == (False, "excluded_keyword")
+
+
+def test_an_excluded_keyword_matches_the_company_too():
+    item = Item(title="Backend Engineer", company="Hays Recruitment")
+    assert is_eligible(item, rules(sections=[{"exclude_keywords": ["hays"]}]), now=NOW)[0] is False
+
+
+def test_an_excluded_term_in_the_description_does_not_drop_the_job():
+    """A posting that merely mentions the term in a benefits paragraph is not the job being
+    excluded. Matching the body turned "no recruitment agencies" into a filter that removed most
+    of a feed."""
+    item = Item(title="Backend Engineer",
+                description="We work with contract staff occasionally. " * 10)
+    assert is_eligible(item, rules(sections=[{"exclude_keywords": ["contract"]}]), now=NOW)[0] is True
+
+
+def test_no_excluded_keywords_drops_nothing():
+    assert is_eligible(Item(), rules(sections=[{"exclude_keywords": []}]), now=NOW)[0] is True

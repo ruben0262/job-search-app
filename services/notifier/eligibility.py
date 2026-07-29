@@ -48,6 +48,12 @@ class Eligibility:
 
     languages: set[str]
     onsite_locations: list[str]
+    # Terms the user typed specifically in order not to see them. **A hard no at delivery, not a
+    # scoring input.** They were honoured only by the cold-start keyword scorer, which means they
+    # quietly stopped applying the moment an account got a trained model — and "I told it never to
+    # show me contract roles and it started again" is indistinguishable from the product ignoring
+    # them, because that is what it was doing.
+    exclude_keywords: tuple[str, ...] = ()
     applicant_cap: int = DEFAULT_APPLICANT_CAP
     # How old a posting may be and still be worth sending. **The user's own answer, applied here.**
     # The harvester fetches at the *widest* window any active account asked for, because the corpus
@@ -76,6 +82,11 @@ class Eligibility:
             applicant_cap=int(config.get("applicant_cap", DEFAULT_APPLICANT_CAP)),
             max_age_hours=max([window for window in windows if window > 0],
                               default=DEFAULT_MAX_AGE_HOURS),
+            exclude_keywords=tuple(
+                term.strip().lower()
+                for section in config.get("sections") or []
+                for term in section.get("exclude_keywords") or []
+                if term and term.strip()),
         )
 
 
@@ -106,6 +117,15 @@ def is_eligible(item, rules: Eligibility, *, first_seen=None, now=None) -> tuple
     40" is alarming and unactionable, while "dropped 38 for language" is a config problem somebody
     can fix in a minute.
     """
+    if rules.exclude_keywords:
+        # Title and company only, never the description. A posting that merely *mentions* a term
+        # in a benefits paragraph is not the job the user was excluding, and matching the body
+        # turned "no recruitment agencies" into a filter that removed most of a feed.
+        haystack = f"{item.title or ''} {item.company or ''}".lower()
+        for term in rules.exclude_keywords:
+            if term in haystack:
+                return False, "excluded_keyword"
+
     if too_old(item, rules, first_seen=first_seen, now=now):
         return False, "too_old"
 
