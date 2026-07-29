@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 
 from sqlalchemy import select
 
-from libs.corpus.postings import fetch_job
+from libs.corpus.postings import ProxyUnusable, fetch_job
 from libs.corpus.repository import CorpusRepository
 from libs.db.models import User
 from libs.obs import audit
@@ -55,6 +55,9 @@ class DescribeReport:
     still_thin: int = 0
     metadata_written: int = 0
     outcomes: dict[str, int] = field(default_factory=dict)
+    # Set when the pass stopped because the proxy itself refused — out of traffic, bad credentials,
+    # unreachable. A run that ends this way is not a run that found nothing.
+    proxy_error: str | None = None
 
     @property
     def hit_rate(self) -> float:
@@ -77,8 +80,16 @@ def describe_pending(corpus: CorpusRepository, client, *, linkedin: bool | None 
 
     for job in jobs:
         report.attempted += 1
-        posting = fetch_job(job.url, client=client, snippet=job.description or "",
-                            title=job.title or "", stats=report.outcomes)
+        try:
+            posting = fetch_job(job.url, client=client, snippet=job.description or "",
+                                title=job.title or "", stats=report.outcomes)
+        except ProxyUnusable as exc:
+            # The credential is the problem, not this job. Continuing would spend six retries per
+            # row on a proxy that has already said no.
+            report.attempted -= 1
+            report.proxy_error = str(exc)
+            logger.warning("describe: stopping, the proxy refused: %s", exc)
+            break
 
         # The page answers several questions at once, and the metadata is worth keeping even when
         # the description came back thin — an applicant count and a workplace tag are what the card
@@ -151,6 +162,12 @@ def describe_linkedin_for_all(session, *, limit_per_user: int = PROXIED_LIMIT) -
                     report = describe_pending(corpus, client, linkedin=True,
                                               limit=limit_per_user)
                     usage.record_usage(user_id, megabytes=client.megabytes_downloaded)
+                if report.proxy_error:
+                    # Recorded against the credential, not swallowed. Three of these quarantine it,
+                    # which is what stops an exhausted account being retried every hour forever —
+                    # and what makes "why is my LinkedIn feed empty" answerable.
+                    usage.record_failure(user_id, report.proxy_error[:200])
+                    totals["proxy_failures"] = totals.get("proxy_failures", 0) + 1
 
         totals["attempted"] += report.attempted
         totals["described"] += report.described

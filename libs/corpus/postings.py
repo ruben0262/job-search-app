@@ -50,6 +50,16 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
+
+class ProxyUnusable(RuntimeError):
+    """The proxy itself refused, so no retry and no other job will fare any better.
+
+    Distinct from a per-job failure on purpose. "This posting would not load" is worth six retries
+    on a rotating IP; "your proxy account is out of traffic" is worth none, and retrying it turns
+    one dead credential into six requests per row for as long as the pass runs. The reference never
+    had to distinguish them because it had exactly one proxy and a human watching it.
+    """
+
 try:
     from bs4 import BeautifulSoup
 except ImportError:  # pragma: no cover - only the harvester image installs it
@@ -472,36 +482,52 @@ def fetch_job(url: str, *, client: httpx.Client, snippet: str = "", title: str =
                   posted_at=None, application_url=None, easy_apply=None)
 
     if not job_id:
-        if len(snippet) >= MIN_SNIPPET:
-            tally("snippet")
-            out["description"] = snippet[:MAX_DESC]
-            return out
-        try:
-            if url:
-                response = client.get(url)
-                if response.status_code == 200:
-                    # Free while the page is open: the board's external ATS link, and the
-                    # authoritative workplace type most ATS boards emit as JSON-LD. Getting the
-                    # workplace here is what lets an explicit on-site posting be dropped rather
-                    # than passed through as unknown.
-                    out["application_url"] = extract_ats_url(response.text)
-                    out["workplace"] = parse_workplace(response.text)
-                    body = jsonld_description(response.text)
-                    text = body or strip_html(response.text)
-                    if len(text) > len(snippet):
-                        tally("jsonld_ok" if body else "generic_ok")
-                        out["description"] = text[:MAX_DESC]
-                        return out
-                tally(f"generic_http_{response.status_code}")
-        except Exception:
-            tally("generic_error")
-        tally("thin")
-        out["description"] = (snippet or title)[:MAX_DESC]
-        return out
+        return _fetch_board(url, client=client, snippet=snippet, title=title, out=out, tally=tally)
 
+    return _fetch_linkedin(job_id, client=client, snippet=snippet, title=title, out=out,
+                           tally=tally)
+
+
+def _fetch_board(url: str, *, client: httpx.Client, snippet: str, title: str,
+                 out: Posting, tally) -> Posting:
+    """Anything that is not LinkedIn: one request, JSON-LD preferred, page strip as the fallback."""
+    if len(snippet) >= MIN_SNIPPET:
+        tally("snippet")
+        out["description"] = snippet[:MAX_DESC]
+        return out
+    try:
+        if url:
+            response = client.get(url)
+            if response.status_code == 200:
+                # Free while the page is open: the board's external ATS link, and the
+                # authoritative workplace type most ATS boards emit as JSON-LD. Getting the
+                # workplace here is what lets an explicit on-site posting be dropped rather
+                # than passed through as unknown.
+                out["application_url"] = extract_ats_url(response.text)
+                out["workplace"] = parse_workplace(response.text)
+                body = jsonld_description(response.text)
+                text = body or strip_html(response.text)
+                if len(text) > len(snippet):
+                    tally("jsonld_ok" if body else "generic_ok")
+                    out["description"] = text[:MAX_DESC]
+                    return out
+            tally(f"generic_http_{response.status_code}")
+    except Exception:
+        tally("generic_error")
+    tally("thin")
+    out["description"] = (snippet or title)[:MAX_DESC]
+    return out
+
+
+def _fetch_linkedin(job_id: str, *, client: httpx.Client, snippet: str, title: str,
+                    out: Posting, tally) -> Posting:
+    """The guest endpoint, retried — each attempt goes out on a fresh residential IP."""
     for _ in range(LI_RETRIES):
         try:
             response = client.get(_guest_url(job_id))
+        except httpx.ProxyError as exc:
+            tally("li_proxy_error")
+            raise ProxyUnusable(str(exc)) from exc
         except Exception:
             tally("li_error")
             time.sleep(LI_BACKOFF)
@@ -550,6 +576,9 @@ def fetch_meta(url: str, *, client: httpx.Client, stats: dict | None = None) -> 
     for _ in range(LI_RETRIES):
         try:
             response = client.get(_guest_url(job_id))
+        except httpx.ProxyError as exc:
+            tally("li_proxy_error")
+            raise ProxyUnusable(str(exc)) from exc
         except Exception:
             tally("li_error")
             time.sleep(LI_BACKOFF)

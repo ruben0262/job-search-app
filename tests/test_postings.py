@@ -313,3 +313,46 @@ def test_a_non_linkedin_url_yields_no_metadata_rather_than_a_fetch():
     assert client.requested == []
     assert stats == {"non_li": 1}
     assert all(value is None for value in result.values())
+
+
+# ── a dead proxy is not a dead job ────────────────────────────────────────────────────────────
+
+class ProxyRefusing:
+    def get(self, _url, **_):
+        raise httpx.ProxyError("407 TRAFFIC_EXHAUSTED")
+
+    def stream(self, *_a, **_k):
+        raise httpx.ProxyError("407 TRAFFIC_EXHAUSTED")
+
+
+def test_a_refusing_proxy_stops_immediately_rather_than_retrying_six_times():
+    """**"This posting would not load" is worth six retries on a rotating IP. "Your proxy account
+    is out of traffic" is worth none** — and retrying it turns one dead credential into six
+    requests per row for as long as the pass runs. Seen in production on 2026-07-29: thirty
+    requests to fetch five jobs, all of them refused before they left the box."""
+    stats: dict[str, int] = {}
+    with pytest.raises(postings.ProxyUnusable):
+        postings.fetch_job("https://www.linkedin.com/jobs/view/1", client=ProxyRefusing(),
+                           stats=stats)
+    assert stats == {"li_proxy_error": 1}
+
+
+def test_the_metadata_refresh_reports_a_refusing_proxy_the_same_way():
+    stats: dict[str, int] = {}
+    with pytest.raises(postings.ProxyUnusable):
+        postings.fetch_meta("https://www.linkedin.com/jobs/view/1", client=ProxyRefusing(),
+                            stats=stats)
+    assert stats == {"li_proxy_error": 1}
+
+
+def test_an_ordinary_transport_failure_is_still_retried():
+    """The distinction has to be narrow: a dropped connection is exactly what the retries exist
+    for, and treating it as a dead credential would quarantine a working proxy."""
+    class Flaky:
+        def get(self, _url, **_):
+            raise httpx.ConnectError("reset by peer")
+
+    stats: dict[str, int] = {}
+    postings.fetch_job("https://www.linkedin.com/jobs/view/1", client=Flaky(), snippet="teaser",
+                       stats=stats)
+    assert stats["li_error"] == postings.LI_RETRIES
