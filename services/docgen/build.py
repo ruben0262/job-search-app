@@ -169,14 +169,19 @@ def _age(posted_at) -> str:
 
 
 def build_prompt(profile: ProfileSchema, base_html: str, context: str, *,
-                 feedback: str | None = None) -> str:
-    """The SACRED prompt, filled: the candidate from the profile, the job, the base document.
+                 template: str | None = None, feedback: str | None = None) -> str:
+    """The SACRED prompt, filled: the candidate, the job, and the base document.
 
-    `render_cv_prompt` fills the candidate placeholders — name, languages, eligibility — and this
-    fills the two the caller owns. Keeping that split means the identity rules have exactly one
-    implementation, shared with the cover letter.
+    **`template` is the user's own `tailor_cv.md`.** They ship field-agnostic and get tuned per
+    person — `/setup-prompts` calls it "a short interview to set the handful of things that
+    genuinely differ". Somebody who has tuned theirs over months keeps it; a new account starts
+    from the platform's.
+
+    `render_cv_prompt` fills the candidate placeholders on a generalised copy. A copy that already
+    names its subject has none to fill and passes through untouched, which is what makes importing
+    a hand-tuned prompt a straight copy rather than a conversion.
     """
-    prompt = (render_cv_prompt(profile)
+    prompt = (render_cv_prompt(profile, template=template)
               .replace("<JOB_CONTEXT>", context)
               .replace("<BASE_TEMPLATE>", base_html))
     if feedback:
@@ -185,7 +190,7 @@ def build_prompt(profile: ProfileSchema, base_html: str, context: str, *,
 
 
 def tailor(client, profile: ProfileSchema, base_html: str, context: str, *,
-           facts_md: str | None = None, feedback: str | None = None,
+           facts_md: str | None = None, feedback: str | None = None, template: str | None = None,
            model: str = CV_MODEL) -> str:
     """One call. Returns the tailored document with the platform's own CSS restored.
 
@@ -195,7 +200,8 @@ def tailor(client, profile: ProfileSchema, base_html: str, context: str, *,
     on a real application under a real person's name (`libs/scoring/facts.py`).
     """
     stripped, style = strip_style(base_html)
-    prompt = build_prompt(profile, strip_comments(stripped), context, feedback=feedback)
+    prompt = build_prompt(profile, strip_comments(stripped), context, template=template,
+                          feedback=feedback)
 
     reply = client.complete_text(
         model=model,
@@ -228,7 +234,8 @@ CV_TEXT_MAX = 1_500
 
 
 def tailor_cover(client, profile: ProfileSchema, cv_html: str, context: str, *,
-                 facts_md: str | None = None, model: str = CV_MODEL) -> str:
+                 facts_md: str | None = None, template: str | None = None,
+                 model: str = CV_MODEL) -> str:
     """The cover letter for one job, built from the CV that was just tailored for it.
 
     **The CV goes in as plain text, not markup** — the reference's own decision, for the reason
@@ -237,7 +244,7 @@ def tailor_cover(client, profile: ProfileSchema, cv_html: str, context: str, *,
     is the only part of the layout the model is trusted to carry.
     """
     head = head_block(cv_html)
-    prompt = (render_cover_prompt(profile)
+    prompt = (render_cover_prompt(profile, template=template)
               .replace("<HEAD_BLOCK>", head)
               .replace("<JOB_CONTEXT>", context)
               .replace("<CV_HTML>", html_to_text(cv_html)))

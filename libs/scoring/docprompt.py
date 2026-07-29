@@ -20,14 +20,19 @@ from libs.prompts import TAILOR_COVER_TEMPLATE, TAILOR_CV_TEMPLATE, load
 DEFAULT_LANGUAGES = "English"
 
 
-def render_cv_prompt(profile: ProfileSchema) -> str:
-    """The CV prompt, about this candidate."""
-    return _fill(load(TAILOR_CV_TEMPLATE), profile)
+def render_cv_prompt(profile: ProfileSchema, template: str | None = None) -> str:
+    """The CV prompt, about this candidate.
+
+    `template` is the user's own copy where they have one (`libs/profiles`); the platform's
+    field-agnostic version otherwise. Filling a prompt that already names its subject is a no-op,
+    so a hand-tuned import passes through unchanged.
+    """
+    return _fill(template or load(TAILOR_CV_TEMPLATE), profile)
 
 
-def render_cover_prompt(profile: ProfileSchema) -> str:
+def render_cover_prompt(profile: ProfileSchema, template: str | None = None) -> str:
     """The cover-letter prompt, about this candidate."""
-    return _fill(load(TAILOR_COVER_TEMPLATE), profile)
+    return _fill(template or load(TAILOR_COVER_TEMPLATE), profile)
 
 
 def _fill(template: str, profile: ProfileSchema) -> str:

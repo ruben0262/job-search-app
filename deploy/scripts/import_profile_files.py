@@ -42,6 +42,10 @@ SOURCES: tuple[tuple[str, str, str], ...] = (
     (".claude/skills/job-application-assistant/07-interview-prep.md",
      "07-interview-prep.md", "skill"),
     ("scorer/prompts/label.md", "label.md", "prompt"),
+    # The task prompts are per user (`libs/profiles`). Somebody who has tuned theirs over months
+    # keeps them; the platform's field-agnostic version is only the starting point.
+    ("pipeline/prompts/tailor_cv.md", "tailor_cv.md", "prompt"),
+    ("pipeline/prompts/tailor_cover.md", "tailor_cover.md", "prompt"),
     # The reference kept `dev` and `quant`; the platform has one base CV that tailoring adapts.
     # `base_cv.html` first for a cleaned checkout, then the dev template for the original.
     ("cv/base_cv.html", "base_cv.html", "template"),

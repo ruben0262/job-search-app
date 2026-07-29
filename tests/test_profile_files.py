@@ -35,12 +35,14 @@ def test_every_seeded_file_exists_on_disk():
         assert content.strip(), f"{name} is empty"
 
 
-# `05-cv-templates.md` ships **usable**, unlike the rest. It is framework rules — the A4 layout,
-# the compile step, what to change per posting — and `/setup` personalises exactly one section of
-# it ("CV Content Judgement — Tailoring by Role-Type Lens"), replacing the generic dev/quant framing
-# with the user's own role directions. So it carries no `[PLACEHOLDER]` tokens and is legitimately
-# filled from the moment it is seeded.
-SHIPS_USABLE = ("05-cv-templates.md",)
+# Three files ship **usable**, unlike the rest — the module's own `SHIPS_USABLE`, asserted here so
+# the two cannot drift.
+#
+# `05-cv-templates.md` is framework rules and `/setup` personalises one section of it. The two task
+# prompts are the reference's own words on the subject: they "ship field-agnostic and already good"
+# and `/setup-prompts` is "not a rewrite: it is a short interview to set the handful of things that
+# genuinely differ per person". A new account writes real documents with them on day one.
+from libs.profiles import SHIPS_USABLE
 
 
 def test_the_shipped_scaffolds_are_unfilled():

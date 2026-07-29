@@ -49,6 +49,13 @@ SEED_FILES: tuple[tuple[str, str], ...] = (
     ("05-cv-templates.md", "skill"),
     ("07-interview-prep.md", "skill"),
     ("label.md", "prompt"),
+    # **The task prompts are per user too.** `/setup-prompts` says so plainly: they ship
+    # field-agnostic and already good, and the command is "a short interview to set the handful of
+    # things that genuinely differ per person" — spelling convention, application languages, the
+    # role-type angles. A user who has tuned theirs over months should keep it, and a new user
+    # should start from the platform's best version rather than a blank.
+    ("tailor_cv.md", "prompt"),
+    ("tailor_cover.md", "prompt"),
     ("base_cv.html", "template"),
 )
 
@@ -66,6 +73,11 @@ GENERATION_FILES: tuple[str, ...] = (
 # What an unfilled scaffold looks like. `/setup` uses the first as its own "is this populated"
 # check, so a user is considered set up by the same test the agent applies to itself.
 PLACEHOLDER_MARKERS = ("[FILLED BY", "[YOUR NAME]", "[BRACKETED]", "[CITY, COUNTRY]")
+
+# Files that ship usable rather than as placeholders: framework rules and the task prompts, which
+# are already good and only need tuning. Seeded `filled=True` so an account can generate documents
+# before anyone has personalised them.
+SHIPS_USABLE = ("05-cv-templates.md", "tailor_cv.md", "tailor_cover.md")
 
 
 class ProfileIncomplete(RuntimeError):
@@ -128,3 +140,8 @@ def seed_files() -> list[tuple[str, str, str]]:
     same shape as another's.
     """
     return [(name, kind, scaffold(name)) for name, kind in SEED_FILES]
+
+
+def ships_usable(name: str) -> bool:
+    """Whether this file is usable as shipped rather than a placeholder to fill."""
+    return name in SHIPS_USABLE

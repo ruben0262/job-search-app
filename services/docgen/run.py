@@ -98,10 +98,12 @@ def run_build(session, user_id: _uuid.UUID, job_id: int, *,
 
         if kind == "cover":
             html, pages, calls = _cover(client, profile, context, base_cv=base_cv,
-                                        grounding=grounding, scratch=scratch)
+                                        grounding=grounding, scratch=scratch,
+                                        template=files.read("tailor_cover.md"))
         else:
             html, pages, calls = _tailor_until_it_fits(
-                client, profile, context, base_cv=base_cv, facts_md=grounding, scratch=scratch)
+                client, profile, context, base_cv=base_cv, facts_md=grounding, scratch=scratch,
+                template=files.read("tailor_cv.md"))
 
         leftover = build.scan_hidden(html)
         if leftover:
@@ -142,8 +144,8 @@ def run_build(session, user_id: _uuid.UUID, job_id: int, *,
 
 
 def _cover(client, profile: ProfileSchema, context: str, *,
-           base_cv: str, grounding: str | None,
-           scratch: pathlib.Path) -> tuple[str, int | None, int]:
+           base_cv: str, grounding: str | None, scratch: pathlib.Path,
+           template: str | None = None) -> tuple[str, int | None, int]:
     """One call, no revision loop.
 
     A cover letter has a word count in its own prompt and a mechanical scan that enforces it, so the
@@ -152,13 +154,14 @@ def _cover(client, profile: ProfileSchema, context: str, *,
     reference's `build_cover_only` does: the tailored copy is ephemeral and rebuilding it would
     double the cost of pressing one button.
     """
-    letter = build.tailor_cover(client, profile, base_cv, context, facts_md=grounding)
+    letter = build.tailor_cover(client, profile, base_cv, context, facts_md=grounding,
+                                template=template)
     return letter, _page_count(letter, scratch), 1
 
 
 def _tailor_until_it_fits(client, profile: ProfileSchema, context: str, *,
-                          base_cv: str, facts_md: str | None,
-                          scratch: pathlib.Path) -> tuple[str, int | None, int]:
+                          base_cv: str, facts_md: str | None, scratch: pathlib.Path,
+                          template: str | None = None) -> tuple[str, int | None, int]:
     """Tailor, compile, and if the PDF is too long, say so once and tailor again.
 
     The compile is what makes this loop honest: the page count is measured from the real PDF rather
@@ -167,7 +170,7 @@ def _tailor_until_it_fits(client, profile: ProfileSchema, context: str, *,
     """
     base = base_cv
 
-    html = build.tailor(client, profile, base, context, facts_md=facts_md)
+    html = build.tailor(client, profile, base, context, facts_md=facts_md, template=template)
     pages = _page_count(html, scratch)
 
     feedback = build.page_feedback(pages)
@@ -175,7 +178,8 @@ def _tailor_until_it_fits(client, profile: ProfileSchema, context: str, *,
         return html, pages, 1
 
     logger.info("docgen: %s pages, asking for one revision", pages)
-    retried = build.tailor(client, profile, base, context, facts_md=facts_md, feedback=feedback)
+    retried = build.tailor(client, profile, base, context, facts_md=facts_md,
+                           template=template, feedback=feedback)
     retried_pages = _page_count(retried, scratch)
 
     # Keep whichever is shorter. A revision that came back *longer* is not an improvement, and the

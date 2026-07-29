@@ -14,7 +14,13 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from libs.db.models import SCORING_RELEVANT_FILES, UserProfileFile
-from libs.profiles import ProfileIncomplete, grounding, is_filled, seed_files
+from libs.profiles import (
+    ProfileIncomplete,
+    grounding,
+    is_filled,
+    seed_files,
+    ships_usable,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +98,8 @@ class ProfileFiles:
         for name, kind, content in seed_files():
             inserted = self._s.scalar(
                 pg_insert(UserProfileFile)
-                .values(user_id=self._user, name=name, kind=kind, content=content, filled=False)
+                .values(user_id=self._user, name=name, kind=kind, content=content,
+                        filled=ships_usable(name))
                 .on_conflict_do_nothing(index_elements=["user_id", "name"])
                 .returning(UserProfileFile.name))
             written += 1 if inserted else 0
