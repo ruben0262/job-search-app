@@ -145,6 +145,10 @@ ignore = [
     "BLE001",   # see above: a fetch failure is data, not an exception to propagate
     "S112",     # one JSON-LD block failing to parse means skip it, not abandon the page
 ]
+# The language filter. `langdetect` is imported inside the function and every failure keeps the
+# job: the library is optional (only the notifier image carries it), and a filter that raised on a
+# posting it could not read would drop a real job over a missing dependency.
+"libs/corpus/langfilter.py" = ["BLE001", "PLC0415"]
 "libs/corpus/timefilter.py" = ["UP017", "UP035", "UP037", "RUF001", "E501"]
 "libs/corpus/workfilter.py" = ["UP017", "UP035", "UP037", "RUF001", "E501", "PLR0911"]
 

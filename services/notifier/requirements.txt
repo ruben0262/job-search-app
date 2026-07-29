@@ -6,3 +6,8 @@ httpx>=0.28
 SQLAlchemy>=2.0
 psycopg[binary]>=3.2
 cryptography>=44.0       # libs/secrets: the bot token is decrypted for the duration of one call
+
+# The language filter (`libs/corpus/langfilter.py`). Pure Python, no models to download. Optional at
+# import — the filter fails open without it — but shipped here on purpose: failing open means every
+# German posting reaches an English-only user's feed, which is a bad enough feed to look broken.
+langdetect>=1.0.9

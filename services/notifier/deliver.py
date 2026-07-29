@@ -25,11 +25,13 @@ from collections.abc import Callable
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from libs.db.models import CorpusJob, User, UserJobState
+from libs.db.models import CorpusJob, User, UserConfig, UserJobState
 from libs.secrets import SecretStore
 from services.notifier.buttons import keyboard
 from services.notifier.card import FeedItem
 from services.notifier.card import render as render_card
+from services.notifier.eligibility import CANDIDATE_MULTIPLIER, Eligibility
+from services.notifier.eligibility import select as select_feed
 from services.notifier.routing import group_by_chat
 
 logger = logging.getLogger(__name__)
@@ -53,26 +55,45 @@ class BotRevoked(RuntimeError):
 
 
 def pending_feed(session: Session, user_id: _uuid.UUID, *, cutoff: float,
-                 limit: int = MAX_ITEMS_PER_DIGEST) -> list[FeedItem]:
-    """Scored, above cutoff, not yet notified. Highest score first.
+                 limit: int = MAX_ITEMS_PER_DIGEST,
+                 rules: Eligibility | None = None) -> tuple[list[FeedItem], dict[str, int]]:
+    """This user's next digest: eligible, ranked by opportunity, capped at `limit`.
+
+    Returns the items and a tally of why the rest were dropped.
 
     `notified_at IS NULL` is the dedup, and it is a per-user column — the same posting can be new to
     one user and already sent to another, which is the whole point of a shared corpus with a
     per-user tail.
+
+    **The database ordering is not the delivery ordering.** Score orders the *candidate pool* only,
+    because "which jobs might be worth sending" is a fit question. Which of them actually goes out
+    is an opportunity question — youth and scarcity — and `eligibility.select` answers it. Sorting
+    by score and taking ten put a three-week-old posting with two hundred applicants ahead of one
+    posted an hour ago.
+
+    The pool is `CANDIDATE_MULTIPLIER` times the digest so that filtering cannot starve it: taking
+    ten and then dropping four for language would send six when forty were eligible.
     """
     rows = session.execute(
         select(UserJobState.job_id, CorpusJob.url, CorpusJob.title, CorpusJob.company,
                UserJobState.score, CorpusJob.source, CorpusJob.location, CorpusJob.is_remote,
                CorpusJob.description, CorpusJob.posted_at, CorpusJob.applicants,
-               CorpusJob.easy_apply, CorpusJob.reposted, CorpusJob.workplace)
+               CorpusJob.easy_apply, CorpusJob.reposted, CorpusJob.workplace,
+               CorpusJob.first_seen_at)
         .join(CorpusJob, CorpusJob.id == UserJobState.job_id)
         .where(UserJobState.user_id == user_id,
                UserJobState.notified_at.is_(None),
                UserJobState.score.is_not(None),
                UserJobState.score >= cutoff)
         .order_by(UserJobState.score.desc())
-        .limit(limit)).all()
-    return [FeedItem(*r) for r in rows]
+        .limit(limit * CANDIDATE_MULTIPLIER)).all()
+
+    items = [FeedItem(*row[:-1]) for row in rows]
+    first_seen = {row[0]: row[-1] for row in rows}
+    if rules is None:
+        config = session.scalar(select(UserConfig.config).where(UserConfig.user_id == user_id))
+        rules = Eligibility.from_config(config)
+    return select_feed(items, rules, limit=limit, first_seen=first_seen)
 
 
 def notifications_today(session: Session, user_id: _uuid.UUID) -> int:
@@ -115,8 +136,12 @@ def deliver(session: Session, user_id: _uuid.UUID, *,
         logger.info("notify: %s is at their daily cap, deferring", user_id)
         return 0
 
-    items = pending_feed(session, user_id, cutoff=cutoff, limit=min(remaining,
-                                                                   MAX_ITEMS_PER_DIGEST))
+    items, dropped = pending_feed(session, user_id,
+                                  cutoff=cutoff, limit=min(remaining, MAX_ITEMS_PER_DIGEST))
+    if dropped:
+        # Counted by reason, because "delivered 2" is alarming and unactionable while "dropped 38
+        # for language" is a config problem somebody can fix in a minute.
+        logger.info("notify: %s dropped %s before ranking", user_id, dropped)
     if not items:
         return 0
 

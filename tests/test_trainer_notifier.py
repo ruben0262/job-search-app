@@ -254,7 +254,9 @@ def test_only_scores_above_the_cutoff_are_sent(ctx):
     _scored(ctx, user, score=90.0)
     _scored(ctx, user, score=20.0)
     ctx.flush()
-    assert len(pending_feed(ctx, user.id, cutoff=60.0)) == 1
+    items, dropped = pending_feed(ctx, user.id, cutoff=60.0)
+    assert len(items) == 1
+    assert dropped == {}          # the low score never reached the filters — the cutoff took it
 
 
 def test_a_revoked_bot_is_terminal_and_flags_the_account(ctx):
