@@ -20,11 +20,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from sqlalchemy import select  # noqa: E402
+from sqlalchemy import select
 
-from libs.db.models import User  # noqa: E402
-from libs.db.session import session_scope  # noqa: E402
-from libs.profiles.repository import ProfileFiles  # noqa: E402
+from libs.db.models import User
+from libs.db.session import session_scope
+from libs.profiles.repository import ProfileFiles
 
 # Where each file lives in a reference checkout, and which kind it becomes. `CLAUDE.md` is the
 # document the platform calls `context.md` — same content, a name that says what it is rather than
