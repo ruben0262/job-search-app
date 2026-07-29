@@ -62,7 +62,12 @@ logger = logging.getLogger("ab")
 
 # The judge is deliberately not the writer's model. The reference makes the same choice and for the
 # same reason: a judge no better than the author cannot see the author's mistakes.
-JUDGE_MODEL = "claude-opus-5"
+#
+# Sonnet 5 rather than Opus by default, and that is a limits decision rather than a quality one: the
+# writer is Haiku, so Sonnet is comfortably the stronger model, and a personal plan rate-limits Opus
+# hard enough that a two-variant run stalls partway through. `--judge-model claude-opus-5` when the
+# account can take it.
+JUDGE_MODEL = "claude-sonnet-5"
 
 # What a judgement must come back as. Same constraints every structured-output call here obeys:
 # `additionalProperties: false` on every object, and no `minimum`/`maximum`.
@@ -153,7 +158,8 @@ def deterministic_summary(html: str, text: str) -> str:
             + f"\n- em-dashes in prose: {text.count(chr(8212))}")
 
 
-def judge(client, *, prompt: str, description: str, cv_text: str, summary: str) -> dict:
+def judge(client, *, model: str, prompt: str, description: str, cv_text: str,
+          summary: str) -> dict:
     """One judgement. Returns the parsed verdict."""
     filled = (prompt.replace("<DETERMINISTIC_SUMMARY>", summary)
                     .replace("<JOB_DESCRIPTION>", description[:6_000])
@@ -162,7 +168,7 @@ def judge(client, *, prompt: str, description: str, cv_text: str, summary: str) 
         # The reference's template ends with the CV under a header rather than a placeholder.
         filled = f"{filled}\n\n{cv_text[:12_000]}"
     return client.complete_json(
-        model=JUDGE_MODEL, system="You are a strict technical recruiter.",
+        model=model, system="You are a strict technical recruiter.",
         messages=[{"role": "user", "content": filled}],
         schema=VERDICT_SCHEMA, max_tokens=4_000)
 
@@ -174,6 +180,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--variant", action="append", required=True,
                         metavar="NAME=SOURCE",
                         help="stored | scaffold:tailor_cv.md | file:/path/to/prompt.md")
+    parser.add_argument("--judge-model", default=JUDGE_MODEL,
+                        help=f"the grading model (default {JUDGE_MODEL})")
     parser.add_argument("--out", default="ab_results.json")
     args = parser.parse_args(argv)
 
@@ -228,7 +236,7 @@ def main(argv: list[str] | None = None) -> int:
                                                 facts_md=grounding, template=prompt)
                             text = build.html_to_text(html)
                             verdict = judge(
-                                client, prompt=judge_prompt,
+                                client, model=args.judge_model, prompt=judge_prompt,
                                 description=job.description or "", cv_text=text,
                                 summary=deterministic_summary(html, text))
                             results.append({"job_id": job.id, "title": job.title,

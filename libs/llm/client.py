@@ -22,6 +22,9 @@ from typing import Protocol
 
 logger = logging.getLogger(__name__)
 
+# How many times the SDK retries a 429 or a 5xx before giving up. The default is 2.
+MAX_RETRIES = 8
+
 # An OAuth token authenticates on `Authorization: Bearer` and needs this beta header; an API key
 # goes on `x-api-key` and does not. Sending one on the other's channel is the single most common way
 # a working credential looks broken (`libs.credentials.validate` carries the same constant).
@@ -60,11 +63,17 @@ class AnthropicClient:
     def __init__(self, value: str, kind: str = "claude_api"):
         import anthropic  # noqa: PLC0415 - keeps the SDK off the import path of everything else
 
+        # **Eight retries, not the SDK's two.** Every call here runs on a *user's* credential, and
+        # a personal plan rate-limits far harder than a platform key: a batch of a dozen CV builds
+        # exhausts the default budget partway through and surfaces as a dead queue job on work the
+        # user is waiting for. The SDK backs off exponentially and honours `retry-after`, so the
+        # cost of a higher ceiling is patience on a call that was going to fail anyway.
         if kind == "claude_oauth":
             self._client = anthropic.Anthropic(
-                auth_token=value, default_headers={"anthropic-beta": CLAUDE_OAUTH_BETA})
+                auth_token=value, max_retries=MAX_RETRIES,
+                default_headers={"anthropic-beta": CLAUDE_OAUTH_BETA})
         else:
-            self._client = anthropic.Anthropic(api_key=value)
+            self._client = anthropic.Anthropic(api_key=value, max_retries=MAX_RETRIES)
 
     def complete_json(self, *, model: str, system: str, messages: list[dict],
                       schema: dict, max_tokens: int,
