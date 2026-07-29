@@ -28,6 +28,11 @@ CAPTURE_MODEL = "claude-haiku-4-5"
 # profile. Finite, because the ceiling is the user's money.
 MAX_TOKENS = 16_000
 
+# Stated rather than left to the model's default: Haiku refuses `adaptive`, and reading a whole
+# career out of a hundred thousand characters is the kind of work a thinking budget is for. Same
+# figure the reference instance settled on for its generation calls.
+THINKING_TOKENS = 4_096
+
 SYSTEM_PROMPT = """\
 You are building a structured profile for a job-search platform from a candidate's own documents.
 

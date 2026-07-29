@@ -39,7 +39,8 @@ class LlmError(RuntimeError):
 
 class LlmClient(Protocol):
     def complete_json(self, *, model: str, system: str, messages: list[dict],
-                      schema: dict, max_tokens: int) -> dict: ...
+                      schema: dict, max_tokens: int,
+                      thinking_tokens: int | None = None) -> dict: ...
 
     def complete_text(self, *, model: str, system: str, messages: list[dict],
                       max_tokens: int, thinking_tokens: int | None = None) -> str: ...
@@ -63,7 +64,8 @@ class AnthropicClient:
             self._client = anthropic.Anthropic(api_key=value)
 
     def complete_json(self, *, model: str, system: str, messages: list[dict],
-                      schema: dict, max_tokens: int) -> dict:
+                      schema: dict, max_tokens: int,
+                      thinking_tokens: int | None = None) -> dict:
         """One call, constrained to the schema, returned as a dict.
 
         Structured output rather than "reply with JSON and please do not add prose": the failure
@@ -78,7 +80,7 @@ class AnthropicClient:
                 system=system,
                 messages=messages,
                 max_tokens=max_tokens,
-                thinking={"type": "adaptive"},
+                thinking=_thinking(thinking_tokens),
                 output_config={"format": {"type": "json_schema", "schema": schema}}) as stream:
             message = stream.get_final_message()
 
@@ -104,8 +106,7 @@ class AnthropicClient:
         openers went from 1 to 5 and the style discipline degraded. Default thinking stays on for
         documents an employer reads; `0` is the escape hatch, and taking it needs an A/B.
         """
-        thinking = ({"type": "enabled", "budget_tokens": thinking_tokens}
-                    if thinking_tokens else {"type": "adaptive"})
+        thinking = _thinking(thinking_tokens)
         # Streamed for the same reason the JSON path is: a whole HTML document at a high token
         # ceiling is exactly the request that meets a timeout instead of an answer.
         with self._client.messages.stream(
@@ -116,6 +117,17 @@ class AnthropicClient:
                 thinking=thinking) as stream:
             message = stream.get_final_message()
         return _text_of(message)
+
+
+def _thinking(budget: int | None) -> dict:
+    """The thinking block for a call, in the shape the model actually accepts.
+
+    **`adaptive` is not universal.** It was hardcoded here, which was fine while every call went to
+    Opus and became a 400 — "adaptive thinking is not supported on this model" — the moment capture
+    moved to Haiku. A budget works on both, so a caller that states one gets it and a caller that
+    does not gets the model's own default.
+    """
+    return {"type": "enabled", "budget_tokens": budget} if budget else {"type": "adaptive"}
 
 
 def _text_of(message) -> str:

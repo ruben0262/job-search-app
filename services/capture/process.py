@@ -27,6 +27,7 @@ from services.capture.prompt import (
     CAPTURE_MODEL,
     MAX_TOKENS,
     SYSTEM_PROMPT,
+    THINKING_TOKENS,
     build_messages,
     links_to_map,
     output_schema,
@@ -88,7 +89,8 @@ def capture_profile(client: LlmClient, documents: list[tuple[str, str]], *,
 
     raw = client.complete_json(model=CAPTURE_MODEL, system=SYSTEM_PROMPT,
                                messages=build_messages(documents, full_name=full_name),
-                               schema=schema, max_tokens=MAX_TOKENS)
+                               schema=schema, max_tokens=MAX_TOKENS,
+                               thinking_tokens=THINKING_TOKENS)
     # Braces. Whatever came back, this profile is a proposal until a human says otherwise.
     raw["confirmed"] = False
     # The links come back as a list because that is the only shape structured output accepts for
