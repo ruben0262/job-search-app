@@ -55,6 +55,7 @@ from libs.llm import CLAUDE_KINDS, client_for
 from libs.profiles import scaffold
 from libs.profiles.repository import ProfileFiles
 from libs.prompts import EVAL_CV_TEMPLATE, load
+from libs.scoring.cveval import deterministic
 from libs.secrets import SecretStore, install, redacting
 from services.docgen import build
 
@@ -177,20 +178,26 @@ def role_angles_for(prompt: str, files: ProfileFiles) -> str | None:
     return files.read("08-role-angles.md") if "<<ROLE_ANGLES>>" in prompt else None
 
 
-def deterministic_summary(html: str, text: str) -> str:
+def deterministic_summary(html: str, text: str, *, job) -> str:
     """The objective half, computed rather than asked for.
 
-    The judge is told to use this as context and **not** to re-grade it, exactly as the reference
-    does: a model asked to count words will invent a count, and a model shown one will reason about
-    what it means instead.
+    The judge is told these checks are already done and **not** to re-grade them. Handing it a
+    character count and nothing else was worse than handing it nothing: a model told a measurement
+    exists and then not shown it does not abstain — it estimates, from the same text it is meant to
+    be judging subjectively, which is exactly the contamination the split exists to prevent.
+
+    Format follows the reference's `_load_judge_prompt`, so the judge reads what it was tuned on.
     """
-    hidden = build.scan_hidden(html)
-    words = len(text.split())
-    return (f"- extracted characters: {len(text):,}\n"
-            f"- extracted words: {words:,}\n"
-            f"- hidden-content findings: {len(hidden)}"
-            + (f" ({'; '.join(hidden[:3])})" if hidden else "")
-            + f"\n- em-dashes in prose: {text.count(chr(8212))}")
+    det = deterministic(job.description or "", job.title or "", html, text,
+                        {"pages": None}, job.company or "")
+    coverage = det["keyword_coverage"]
+    hidden = det["issues"]
+    return (f"keyword coverage: {coverage['all_pct']}% overall, "
+            f"{coverage['critical_pct']}% of critical keywords; "
+            f"missing critical: {', '.join(coverage['missing_critical']) or 'none'}. "
+            f"bullets: {det['bullets']['compliant']}/{det['bullets']['total']} follow the formula. "
+            f"extracted characters: {len(text):,}."
+            + (f" objective issues: {'; '.join(hidden[:3])}." if hidden else ""))
 
 
 def judge(client, *, model: str, prompt: str, description: str, cv_text: str,
