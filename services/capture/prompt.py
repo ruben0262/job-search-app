@@ -35,8 +35,13 @@ Work in this order:
 
 1. Read every document. They are the candidate's CV, cover letters, references, achievements, \
 diplomas, and a long-form history they wrote themselves.
-2. Build a picture of what the candidate has *actually done*, with evidence. Prefer what the \
-documents show over what they claim.
+2. Extract their career **completely**. Every role, every project, every qualification and every \
+certification the documents mention, most recent first, each with its dates, the technologies it \
+used, and what they actually achieved in it. Prefer what the documents show over what they claim. \
+This is the part their CV is built from: a role you leave out cannot appear on any application they \
+send, and a role reduced to a single line loses the work that would have won the interview. Carry \
+the substance of their own bullets across rather than summarising them — they wrote those about \
+their own work.
 3. Derive what the candidate is NOT. Name domains and technologies with no supporting professional \
 evidence. This is the hardest and most valuable part: nobody self-reports it accurately, and it is \
 what stops off-stack roles being recommended. Be specific ("enterprise Java at depth", "mobile", \
@@ -79,7 +84,28 @@ def build_messages(documents: list[tuple[str, str]], *, full_name: str | None = 
     return [{"role": "user", "content": "\n\n".join(parts)}]
 
 
+# Keywords the structured-output API rejects. `maxItems` comes straight from `Field(max_length=...)`
+# on every list in `ProfileSchema`, and sending it fails the whole call with
+# "For 'array' type, property 'maxItems' is not supported" — a 400 that dead-letters the job after
+# the user has already waited for it.
+#
+# Dropping them costs nothing that matters: the limits exist to bound what is *stored*, and
+# `ProfileSchema.model_validate` still enforces every one of them on the way back in. The schema
+# sent to the model is a description of the shape, not the validator.
+UNSUPPORTED_SCHEMA_KEYS = ("maxItems", "minItems")
+
+
 def output_schema() -> dict:
     """The JSON Schema the response is constrained to — the same model everything else validates
     against, so a captured profile cannot be shaped differently from a hand-typed one."""
-    return ProfileSchema.model_json_schema()
+    return _supported(ProfileSchema.model_json_schema())
+
+
+def _supported(node):
+    """The schema with the keywords the API refuses removed, recursively."""
+    if isinstance(node, dict):
+        return {key: _supported(value) for key, value in node.items()
+                if key not in UNSUPPORTED_SCHEMA_KEYS}
+    if isinstance(node, list):
+        return [_supported(item) for item in node]
+    return node

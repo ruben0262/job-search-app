@@ -292,3 +292,22 @@ def test_an_account_with_no_links_leaves_the_profile_alone():
     draft = ProfileSchema.model_validate({"identity": {"name": "A"}})
 
     assert with_account_links(draft, type("U", (), {"links": None})()).identity.links == {}
+
+
+def test_the_schema_sent_to_the_model_carries_nothing_the_api_refuses():
+    """`Field(max_length=...)` on every list becomes `maxItems`, and structured output rejects it:
+    "For 'array' type, property 'maxItems' is not supported". The whole call 400s, after the user
+    has already waited for it.
+
+    The limits still hold — `ProfileSchema.model_validate` enforces them on the way back in. What
+    goes out is a description of the shape, not the validator."""
+    import json
+
+    from services.capture.prompt import UNSUPPORTED_SCHEMA_KEYS, output_schema
+
+    rendered = json.dumps(output_schema())
+
+    for key in UNSUPPORTED_SCHEMA_KEYS:
+        assert key not in rendered, f"{key} would fail the call"
+    # The part that has to survive: the field descriptions are the instruction to extract a career.
+    assert "EVERY role" in rendered
