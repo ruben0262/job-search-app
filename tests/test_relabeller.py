@@ -223,3 +223,40 @@ def test_a_full_run_reports_what_is_left(db):
     written, remaining = relabel_user(session, user.id, FakeClient(), limit=2)
     assert written == 2
     assert remaining == 1
+
+
+# ── the schema the API will actually accept ───────────────────────────────────────────────────
+
+def test_every_object_in_the_score_schema_forbids_extra_properties():
+    """**A 400 before a token is generated, and it was invisible.** The API requires
+    `additionalProperties: false` on every object including nested ones. Without it, every
+    labelling call this service made was rejected — which nothing noticed until the shadow pass
+    made the lane run again on 2026-07-29."""
+    from services.labeller.label import SCORE_SCHEMA
+
+    def objects(node):
+        if isinstance(node, dict):
+            if node.get("type") == "object":
+                yield node
+            for value in node.values():
+                yield from objects(value)
+        elif isinstance(node, list):
+            for item in node:
+                yield from objects(item)
+
+    found = list(objects(SCORE_SCHEMA))
+    assert found, "the schema has no objects — this test is not testing anything"
+    for node in found:
+        assert node.get("additionalProperties") is False
+
+
+def test_the_score_schema_uses_no_keyword_structured_output_rejects():
+    """`minimum`, `maximum`, `maxItems` and `maxLength` are rejected the same way and cost the same
+    debugging round trip each. Listed here so the next person adding a field finds out now."""
+    import json
+
+    from services.labeller.label import SCORE_SCHEMA
+
+    encoded = json.dumps(SCORE_SCHEMA)
+    for keyword in ("minimum", "maximum", "maxItems", "maxLength", "minItems", "minLength"):
+        assert f'"{keyword}"' not in encoded, f"{keyword} is not supported by structured output"

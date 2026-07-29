@@ -61,18 +61,31 @@ SYSTEM_PROMPT = ("You are a precise scoring engine. Follow the user's rubric exa
 
 # One score object per job, and the batch is an array of them. Constrained rather than requested:
 # "return only JSON" is a wish, a schema is a guarantee.
+#
+# **Two constraints the API imposes on structured output, both learned the hard way.**
+#
+# `additionalProperties: false` is required on *every* object, including nested ones. Without it the
+# request is rejected with a 400 before a token is generated — which is what every labelling call
+# was doing until 2026-07-29, discovered only when the shadow pass made the lane run again.
+#
+# `minimum` and `maximum` are **not** supported and are rejected the same way, so the 0–100 range
+# lives in the rubric's own words instead. That is a real loss of a guarantee, and it is why
+# `write_labels` coerces with `int()` rather than trusting the number it is handed.
 SCORE_SCHEMA = {
     "type": "object",
+    "additionalProperties": False,
     "properties": {
         "scores": {
             "type": "array",
             "items": {
                 "type": "object",
+                "additionalProperties": False,
                 "properties": {
                     "url": {"type": "string"},
-                    "score": {"type": "integer", "minimum": 0, "maximum": 100},
+                    "score": {"type": "integer"},
                     "score_breakdown": {
                         "type": "object",
+                        "additionalProperties": False,
                         "properties": {
                             "technical": {"type": "integer"},
                             "experience": {"type": "integer"},
