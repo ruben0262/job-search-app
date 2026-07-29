@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from libs.corpus import langfilter, workfilter
 from libs.corpus.ranking import applicant_glut, opportunity_score, priority_key
@@ -37,6 +38,9 @@ CANDIDATE_MULTIPLIER = 5
 # reposted; 0 disables the drop for a user who would rather see everything.
 DEFAULT_APPLICANT_CAP = 200
 
+# The window a user gets if they never said. Matches `SearchSection.posted_within_hours`.
+DEFAULT_MAX_AGE_HOURS = 24
+
 
 @dataclass(frozen=True)
 class Eligibility:
@@ -45,6 +49,12 @@ class Eligibility:
     languages: set[str]
     onsite_locations: list[str]
     applicant_cap: int = DEFAULT_APPLICANT_CAP
+    # How old a posting may be and still be worth sending. **The user's own answer, applied here.**
+    # The harvester fetches at the *widest* window any active account asked for, because the corpus
+    # is shared and one fetch serves everyone — which means a user who asked for six hours was
+    # being sent whatever the most patient account on the platform wanted. This is where their
+    # answer is honoured.
+    max_age_hours: int = DEFAULT_MAX_AGE_HOURS
 
     @classmethod
     def from_config(cls, config: dict | None) -> Eligibility:
@@ -54,20 +64,51 @@ class Eligibility:
         question must not have its entire feed dropped for being in the wrong language.
         """
         config = config or {}
+        # The **widest** of their sections, not the narrowest. A user with a six-hour window on one
+        # search and a week on another asked for both, and a job cannot be attributed back to the
+        # section that found it — so the generous reading is the only one that cannot silently
+        # delete something they asked for.
+        windows = [int(section.get("posted_within_hours") or 0)
+                   for section in config.get("sections") or []]
         return cls(
             languages={str(code).lower() for code in config.get("languages") or []},
             onsite_locations=workfilter.onsite_locations(config.get("onsite_locations")),
             applicant_cap=int(config.get("applicant_cap", DEFAULT_APPLICANT_CAP)),
+            max_age_hours=max([window for window in windows if window > 0],
+                              default=DEFAULT_MAX_AGE_HOURS),
         )
 
 
-def is_eligible(item, rules: Eligibility) -> tuple[bool, str | None]:
+def too_old(item, rules: Eligibility, *, first_seen=None, now=None) -> bool:
+    """Whether this posting is past the window the user asked for.
+
+    Falls back to `first_seen_at` when the source gave no posted date, which most do not — when we
+    found it is a weaker answer than when it was posted, but it is a real one, and it is the same
+    fallback the recency buckets use.
+
+    **Unknown means keep.** With neither date there is no evidence of age, and dropping on an
+    absent field would silently empty the feed of every source that does not report one. The
+    reference's `is_within_hours` makes the same call for the same reason.
+    """
+    when = item.posted_at or first_seen
+    if when is None:
+        return False
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=UTC)
+    hours = ((now or datetime.now(UTC)) - when).total_seconds() / 3600
+    return hours > rules.max_age_hours
+
+
+def is_eligible(item, rules: Eligibility, *, first_seen=None, now=None) -> tuple[bool, str | None]:
     """Whether to send this job, and the reason if not.
 
     The reason is returned rather than logged here so the caller can count them: "delivered 2 of
     40" is alarming and unactionable, while "dropped 38 for language" is a config problem somebody
     can fix in a minute.
     """
+    if too_old(item, rules, first_seen=first_seen, now=now):
+        return False, "too_old"
+
     if applicant_glut(source=item.source, applicants=item.applicants,
                       cap=rules.applicant_cap):
         return False, "applicant_glut"
@@ -106,7 +147,8 @@ def select(items: list, rules: Eligibility, *, limit: int,
     """Filter, rank, and take the top `limit`. Returns the items and why the rest were dropped."""
     kept, dropped = [], {}
     for item in items:
-        eligible, reason = is_eligible(item, rules)
+        eligible, reason = is_eligible(item, rules, first_seen=first_seen.get(item.job_id)
+                                       if first_seen else None)
         if eligible:
             kept.append(item)
         else:

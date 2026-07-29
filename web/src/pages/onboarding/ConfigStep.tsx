@@ -194,6 +194,31 @@ export function ConfigStep({ onDone }: { onDone: () => void }) {
         </select>
       </Field>
 
+      {/* **How old a posting may be — not how often you hear from us.** Two questions that read
+          alike and are not: the delivery interval lives in settings and decides when we check,
+          while this decides what is still worth sending when we do. A job posted four days ago
+          has been collecting applications for four days whether or not we found it this minute. */}
+      <Field label="How fresh">
+        <select
+          value={section.posted_within_hours}
+          onChange={(event) =>
+            setConfig({
+              ...config,
+              sections: [
+                { ...section, posted_within_hours: Number(event.target.value) },
+                ...config.sections.slice(1),
+              ],
+            })
+          }
+        >
+          <option value={6}>Posted in the last 6 hours</option>
+          <option value={12}>Posted in the last 12 hours</option>
+          <option value={24}>Posted in the last day</option>
+          <option value={72}>Posted in the last 3 days</option>
+          <option value={168}>Posted in the last week</option>
+        </select>
+      </Field>
+
       <Error>{save.error}</Error>
       <button type="submit"
               className={section.keywords.length ? "advance ready" : "advance"}

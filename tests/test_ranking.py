@@ -202,12 +202,15 @@ def test_applicant_glut_needs_a_count_to_act_on():
 # ── selection ─────────────────────────────────────────────────────────────────────────────────
 
 def test_selection_filters_ranks_and_caps_in_that_order():
+    # A week's window, so the stale job is dropped for being crowded rather than for being old —
+    # the age filter has its own tests and this one is about ordering.
+    week = rules(sections=[{"posted_within_hours": 168}])
     items = [
-        Item(job_id=1, score=99, posted_at=NOW - timedelta(days=30), applicants=180),
+        Item(job_id=1, score=99, posted_at=NOW - timedelta(hours=100), applicants=180),
         Item(job_id=2, score=70, posted_at=NOW - timedelta(minutes=10), applicants=2),
         Item(job_id=3, score=95, applicants=200),                        # glut
     ]
-    kept, dropped = select(items, rules(), limit=2)
+    kept, dropped = select(items, week, limit=2)
 
     assert [item.job_id for item in kept] == [2, 1]
     assert dropped == {"applicant_glut": 1}
@@ -222,3 +225,58 @@ def test_the_drop_tally_says_why_a_digest_was_small():
 
     assert kept == []
     assert dropped == {"language": 3}
+
+
+# ── the age window the user asked for ─────────────────────────────────────────────────────────
+
+def test_a_posting_older_than_the_users_window_is_dropped():
+    """**The harvester fetches at the widest window any account asked for**, because the corpus is
+    shared and one fetch serves everyone. Without this, a user who asked for six hours was being
+    sent whatever the most patient account on the platform wanted."""
+    old = Item(posted_at=NOW - timedelta(hours=30))
+    assert is_eligible(old, rules(sections=[{"posted_within_hours": 24}]),
+                       now=NOW) == (False, "too_old")
+
+
+def test_a_posting_inside_the_window_is_kept():
+    fresh = Item(posted_at=NOW - timedelta(hours=3))
+    assert is_eligible(fresh, rules(sections=[{"posted_within_hours": 24}]), now=NOW)[0] is True
+
+
+def test_the_widest_of_several_sections_wins():
+    """A user with six hours on one search and a week on another asked for both, and a job cannot
+    be attributed back to the section that found it. The generous reading is the only one that
+    cannot silently delete something they asked for."""
+    item = Item(posted_at=NOW - timedelta(hours=100))
+    both = rules(sections=[{"posted_within_hours": 6}, {"posted_within_hours": 168}])
+    assert both.max_age_hours == 168
+    assert is_eligible(item, both, now=NOW)[0] is True
+
+
+def test_the_age_filter_falls_back_to_when_we_found_it():
+    item = Item(posted_at=None)
+    tight = rules(sections=[{"posted_within_hours": 6}])
+    assert is_eligible(item, tight, first_seen=NOW - timedelta(hours=40), now=NOW)[0] is False
+    assert is_eligible(item, tight, first_seen=NOW - timedelta(hours=1), now=NOW)[0] is True
+
+
+def test_a_posting_with_no_dates_at_all_is_kept():
+    """**Unknown means keep.** Most sources report no posted date, so dropping on an absent field
+    would silently empty the feed of every one of them."""
+    item = Item(posted_at=None)
+    assert is_eligible(item, rules(sections=[{"posted_within_hours": 6}]), now=NOW)[0] is True
+
+
+def test_an_account_with_no_sections_gets_the_default_window():
+    from services.notifier.eligibility import DEFAULT_MAX_AGE_HOURS
+
+    assert Eligibility.from_config({}).max_age_hours == DEFAULT_MAX_AGE_HOURS
+
+
+def test_the_age_window_is_not_the_notification_interval():
+    """They are different questions and were being conflated. `notify_interval_min` is how often
+    the user hears from us; this is how old a posting may be to be worth hearing about."""
+    from libs.contracts.config import SearchSection
+
+    assert "posted_within_hours" in SearchSection.model_fields
+    assert "notify_interval_min" not in SearchSection.model_fields
