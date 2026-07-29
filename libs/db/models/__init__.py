@@ -33,6 +33,7 @@ from libs.db.models.profile_file import (
 )
 from libs.db.models.proxy import PROXY_STATUSES, ProxyCredential
 from libs.db.models.queue import CLAIM_TIMEOUT_MIN, JOB_STATES, LANES, MAX_ATTEMPTS, QueueJob
+from libs.db.models.setup import SETUP_AGENTS, SetupMessage
 from libs.db.models.tenant import LABEL_SOURCES, UserJobState, UserLabel, UserModel
 from libs.db.models.user import (
     SECRET_KINDS,
@@ -56,6 +57,7 @@ __all__ = [
     "PROXY_STATUSES",
     "SCORING_RELEVANT_FILES",
     "SECRET_KINDS",
+    "SETUP_AGENTS",
     "TELEGRAM_STATUSES",
     "TOKEN_PURPOSES",
     "USER_STATUSES",
@@ -68,6 +70,7 @@ __all__ = [
     "Plan",
     "ProxyCredential",
     "QueueJob",
+    "SetupMessage",
     "User",
     "UserConfig",
     "UserDocument",

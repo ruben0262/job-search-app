@@ -45,6 +45,9 @@ class LlmClient(Protocol):
     def complete_text(self, *, model: str, system: str, messages: list[dict],
                       max_tokens: int, thinking_tokens: int | None = None) -> str: ...
 
+    def complete_tools(self, *, model: str, system: str, messages: list[dict], tools: list[dict],
+                       max_tokens: int, on_text=None) -> dict: ...
+
 
 class AnthropicClient:
     """`LlmClient` over the real SDK, built from **the user's own credential**.
@@ -117,6 +120,48 @@ class AnthropicClient:
                 thinking=thinking) as stream:
             message = stream.get_final_message()
         return _text_of(message)
+
+
+    def complete_tools(self, *, model: str, system: str, messages: list[dict], tools: list[dict],
+                       max_tokens: int, on_text=None) -> dict:
+        """One turn of a tool-using conversation. Returns the reply and any tool calls it made.
+
+        **One turn, not the whole loop.** The caller executes the tools and calls again — which is
+        what keeps every write to somebody's profile visible to the code that audits it, rather
+        than happening inside a helper (`libs/agents`).
+
+        `on_text` receives text as it arrives, so a chat can render a reply while a frontier model
+        is still working. A setup turn can run for minutes; without it the page shows nothing until
+        the turn ends.
+
+        No `thinking` parameter: this is Opus 5, where thinking is on by default and a stated
+        `budget_tokens` is rejected outright.
+        """
+        blocks: list[dict] = []
+        with self._client.messages.stream(
+                model=model,
+                system=system,
+                messages=messages,
+                tools=tools,
+                max_tokens=max_tokens) as stream:
+            if on_text is not None:
+                for chunk in stream.text_stream:
+                    on_text(chunk)
+            message = stream.get_final_message()
+
+        text_parts, tool_uses = [], []
+        for block in message.content:
+            kind = getattr(block, "type", "")
+            if kind == "text":
+                text_parts.append(block.text)
+                blocks.append({"type": "text", "text": block.text})
+            elif kind == "tool_use":
+                tool_uses.append({"id": block.id, "name": block.name, "input": block.input})
+                blocks.append({"type": "tool_use", "id": block.id, "name": block.name,
+                               "input": block.input})
+
+        return {"text": "".join(text_parts), "tool_uses": tool_uses, "content": blocks,
+                "stop_reason": message.stop_reason}
 
 
 def _thinking(budget: int | None) -> dict:
