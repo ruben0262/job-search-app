@@ -25,6 +25,10 @@ logger = logging.getLogger(__name__)
 # How many times the SDK retries a 429 or a 5xx before giving up. The default is 2.
 MAX_RETRIES = 8
 
+# The identity block a subscription OAuth token is entitled to. Verbatim — it is compared, not
+# parsed, and a reworded version is refused exactly as a missing one is.
+CLAUDE_CODE_IDENTITY = "You are Claude Code, Anthropic's official CLI for Claude."
+
 # An OAuth token authenticates on `Authorization: Bearer` and needs this beta header; an API key
 # goes on `x-api-key` and does not. Sending one on the other's channel is the single most common way
 # a working credential looks broken (`libs.credentials.validate` carries the same constant).
@@ -68,12 +72,35 @@ class AnthropicClient:
         # exhausts the default budget partway through and surfaces as a dead queue job on work the
         # user is waiting for. The SDK backs off exponentially and honours `retry-after`, so the
         # cost of a higher ceiling is patience on a call that was going to fail anyway.
-        if kind == "claude_oauth":
+        self._oauth = kind == "claude_oauth"
+        if self._oauth:
             self._client = anthropic.Anthropic(
                 auth_token=value, max_retries=MAX_RETRIES,
                 default_headers={"anthropic-beta": CLAUDE_OAUTH_BETA})
         else:
             self._client = anthropic.Anthropic(api_key=value, max_retries=MAX_RETRIES)
+
+    def _system(self, system: str) -> str | list[dict]:
+        """The system prompt, with the identity block an OAuth token requires in front of it.
+
+        **A subscription OAuth token is entitled to the Claude Code product, not to the raw API**,
+        and the entitlement is checked against the first system block. Send anything else as the
+        first block and the request is refused — with a `rate_limit_error`, which is the part that
+        cost a day: it reads as "you have used your quota", it is retried politely by every client
+        in the world, and it never clears because nothing was ever consumed.
+
+        Measured on 2026-07-29 against a live subscription token: an identical call is `429` with a
+        plain system prompt and `200` with this block in front. Haiku happened to pass either way,
+        which is why labelling and CV builds worked while the Opus setup agent failed on every
+        OAuth account.
+
+        API keys need none of this and get the string unchanged — sending the block on that channel
+        would claim to be a product the caller is not.
+        """
+        if not self._oauth:
+            return system
+        return [{"type": "text", "text": CLAUDE_CODE_IDENTITY},
+                {"type": "text", "text": system}]
 
     def complete_json(self, *, model: str, system: str, messages: list[dict],
                       schema: dict, max_tokens: int,
@@ -89,7 +116,7 @@ class AnthropicClient:
         """
         with self._client.messages.stream(
                 model=model,
-                system=system,
+                system=self._system(system),
                 messages=messages,
                 max_tokens=max_tokens,
                 **_thinking(thinking_tokens),
@@ -122,7 +149,7 @@ class AnthropicClient:
         # ceiling is exactly the request that meets a timeout instead of an answer.
         with self._client.messages.stream(
                 model=model,
-                system=system,
+                system=self._system(system),
                 messages=messages,
                 max_tokens=max_tokens,
                 **_thinking(thinking_tokens)) as stream:
@@ -148,7 +175,7 @@ class AnthropicClient:
         blocks: list[dict] = []
         with self._client.messages.stream(
                 model=model,
-                system=system,
+                system=self._system(system),
                 messages=messages,
                 tools=tools,
                 max_tokens=max_tokens) as stream:

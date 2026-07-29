@@ -271,3 +271,33 @@ def test_a_call_with_no_stated_thinking_budget_sends_no_thinking_parameter():
     assert _thinking(None) == {}
     assert _thinking(0) == {}
     assert _thinking(4_000) == {"thinking": {"type": "enabled", "budget_tokens": 4_000}}
+
+
+def test_an_oauth_client_puts_the_claude_code_identity_first():
+    """**A subscription OAuth token is entitled to the Claude Code product, not the raw API**, and
+    the entitlement is checked against the first system block.
+
+    The failure is what makes this worth a test: a wrong first block comes back as
+    `rate_limit_error`, which reads as "you used your quota", gets retried politely by every client
+    in the world, and never clears because nothing was consumed. Measured live on 2026-07-29 — the
+    same call is 429 with a plain system prompt and 200 with this block in front.
+    """
+    from libs.llm.client import CLAUDE_CODE_IDENTITY, AnthropicClient
+
+    oauth = AnthropicClient.__new__(AnthropicClient)
+    oauth._oauth = True
+    blocks = oauth._system("Score these jobs.")
+
+    assert isinstance(blocks, list)
+    assert blocks[0] == {"type": "text", "text": CLAUDE_CODE_IDENTITY}
+    assert blocks[1]["text"] == "Score these jobs."
+
+
+def test_an_api_key_client_sends_the_system_prompt_unchanged():
+    """An API key needs none of it, and sending the block on that channel would claim to be a
+    product the caller is not."""
+    from libs.llm.client import AnthropicClient
+
+    key = AnthropicClient.__new__(AnthropicClient)
+    key._oauth = False
+    assert key._system("Score these jobs.") == "Score these jobs."
