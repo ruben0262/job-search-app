@@ -84,15 +84,22 @@ def build_messages(documents: list[tuple[str, str]], *, full_name: str | None = 
     return [{"role": "user", "content": "\n\n".join(parts)}]
 
 
-# Keywords the structured-output API rejects. `maxItems` comes straight from `Field(max_length=...)`
-# on every list in `ProfileSchema`, and sending it fails the whole call with
-# "For 'array' type, property 'maxItems' is not supported" — a 400 that dead-letters the job after
-# the user has already waited for it.
+# **Validation keywords the structured-output API refuses.** Pydantic renders every `Field`
+# constraint into the schema — `max_length` on a list becomes `maxItems`, on a string `maxLength`,
+# and `ge`/`le` become `minimum`/`maximum` — and each one fails the whole call with a 400 naming
+# only itself, so removing them one at a time is a round trip per keyword against a user's money.
 #
-# Dropping them costs nothing that matters: the limits exist to bound what is *stored*, and
-# `ProfileSchema.model_validate` still enforces every one of them on the way back in. The schema
-# sent to the model is a description of the shape, not the validator.
-UNSUPPORTED_SCHEMA_KEYS = ("maxItems", "minItems")
+# Dropping them costs nothing that matters: they exist to bound what is *stored*, and
+# `ProfileSchema.model_validate` still enforces every one of them on the way back in. What the model
+# receives is a description of the shape, not the validator — the types, the property names and the
+# descriptions, which are the parts that tell it what to extract.
+UNSUPPORTED_SCHEMA_KEYS = (
+    "maxItems", "minItems",           # arrays: Field(max_length=...) on a list
+    "maxLength", "minLength",         # strings: Field(max_length=...) on a str
+    "maximum", "minimum",             # integers: Field(ge=..., le=...)
+    "exclusiveMaximum", "exclusiveMinimum",
+    "pattern", "format",              # neither is enforced there, and both can reject a valid answer
+)
 
 
 def output_schema() -> dict:
