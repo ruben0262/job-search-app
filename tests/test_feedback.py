@@ -314,3 +314,114 @@ def test_a_malformed_callback_is_ignored_rather_than_guessed():
 
     for junk in ("", "ap", "ap:", "ap:abc", "xx:1", "ap:1:2", "'; DROP TABLE users--"):
         assert _parse(junk) == (None, 0)
+
+
+# ── /rate: where the negatives come from ──────────────────────────────────────────────────────
+
+def say(http, text, *, secret=SECRET, from_id=OWNER_CHAT):
+    return http.post(
+        f"/telegram/webhook/{secret}",
+        headers={"X-Telegram-Bot-Api-Secret-Token": secret},
+        json={"message": {"text": text, "from": {"id": int(from_id)}}})
+
+
+def _scored(session, user, *, score, description="a real description " * 30, model_version=None):
+    from libs.db.models import CorpusJob, UserJobState
+
+    job = CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
+                    title="Engineer", description=description)
+    session.add(job)
+    session.flush()
+    session.add(UserJobState(user_id=user.id, job_id=job.id, score=score,
+                             scored_model_version=user.model_version
+                             if model_version is None else model_version))
+    session.flush()
+    return job
+
+
+def test_rate_offers_the_job_closest_to_the_delivery_threshold(api):
+    """**The jobs where an answer teaches most are the ones the model is least sure about.** A 96
+    and a 4 are already decided; the boundary is where a label moves something."""
+    http, session, user, _ = api
+    _scored(session, user, score=98)
+    boundary = _scored(session, user, score=59)
+    _scored(session, user, score=12)
+
+    body = say(http, "/rate").json()
+    assert body["status"] == "rate"
+    assert body["job_id"] == boundary.id
+
+
+def test_the_pool_includes_jobs_that_were_never_delivered(api):
+    """**The property that makes `/rate` worth building.** Rating only what reached the channel
+    would teach the boundary from one side: every "no" would come from jobs the model already
+    ranked highly, and it would never hear that something it rejected was worth sending."""
+    from libs.feedback import rating_pool
+
+    _http, session, user, _ = api
+    below = _scored(session, user, score=55)
+    above = _scored(session, user, score=65)
+
+    pool = rating_pool(session, user.id)
+    assert below.id in pool and above.id in pool
+
+
+def test_a_job_with_no_real_description_is_never_offered(api):
+    """The user would be judging a job title, and so would the model they are teaching."""
+    from libs.feedback import rating_pool
+
+    _http, session, user, _ = api
+    thin = _scored(session, user, score=60, description="Engineer wanted")
+    assert thin.id not in rating_pool(session, user.id)
+
+
+def test_a_job_scored_by_an_older_model_is_not_offered(api):
+    """A score from a previous model says nothing about where the current model's boundary is,
+    which is the thing being probed."""
+    from libs.feedback import rating_pool
+
+    _http, session, user, _ = api
+    stale = _scored(session, user, score=60, model_version=(user.model_version or 0) + 5)
+    assert stale.id not in rating_pool(session, user.id)
+
+
+def test_a_job_already_answered_is_not_asked_about_again(api):
+    """Asking twice reads as the platform not listening."""
+    from libs.feedback import rating_pool
+
+    http, session, user, _ = api
+    job = _scored(session, user, score=60)
+    assert job.id in rating_pool(session, user.id)
+
+    tap(http, job.id, action="sk")
+    assert job.id not in rating_pool(session, user.id)
+
+
+def test_rate_says_so_when_there_is_nothing_left(api):
+    http, *_ = api
+    assert say(http, "/rate").json()["status"] == "nothing_to_rate"
+
+
+def test_rate_from_a_channel_member_who_is_not_the_owner_is_refused(api):
+    """A command is not a lesser thing than a button: typing it would train somebody else's model
+    just as effectively."""
+    http, session, user, _ = api
+    _scored(session, user, score=60)
+    assert say(http, "/rate", from_id="9999999").json()["status"] == "not_yours"
+
+
+def test_an_ordinary_message_is_acknowledged_rather_than_refused(api):
+    """Telegram resends whatever is not answered with a 2xx, and a bot that argues with its own
+    channel is worse than one that says nothing."""
+    http, *_ = api
+    response = say(http, "hello")
+    assert response.status_code == 200
+    assert response.json()["status"] == "ignored"
+
+
+def test_the_rate_buttons_are_ones_the_webhook_understands():
+    """A button whose callback the webhook does not parse is a tap that silently does nothing."""
+    from services.api.telegram_routes import CALLBACK_PREFIX, rating_keyboard
+
+    for button in rating_keyboard(1)["inline_keyboard"][0]:
+        assert button["callback_data"].split(":")[0] in CALLBACK_PREFIX

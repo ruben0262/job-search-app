@@ -28,8 +28,8 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from libs.db.models import User
-from libs.feedback import ACTIONS, record
+from libs.db.models import CorpusJob, User
+from libs.feedback import ACTIONS, next_to_rate, record
 from libs.obs import audit
 from libs.queue import enqueue, jobs_today
 from libs.tenant.quotas import QuotaExceeded, quotas_for
@@ -83,9 +83,7 @@ async def webhook(secret: str, request: Request, db: Session = Depends(get_db),
 
     query = update.get("callback_query")
     if not query:
-        # A plain message, a channel post, whatever else the bot is subscribed to. Not an error:
-        # acknowledging it is how Telegram stops resending it.
-        return {"status": "ignored"}
+        return _command(db, user, update.get("message") or {})
 
     tapper = str((query.get("from") or {}).get("id") or "")
     if not _is_owner(user, tapper):
@@ -139,6 +137,55 @@ async def webhook(secret: str, request: Request, db: Session = Depends(get_db),
             "answer": _confirmation(result.action, result.changed)}
 
 
+def _command(db: Session, user: User, message: dict) -> dict:
+    """A typed command rather than a button tap.
+
+    Anything unrecognised is acknowledged rather than refused: a plain message, a channel post, a
+    sticker. Telegram resends whatever is not answered with a 2xx, and a bot that argues with its
+    own channel is worse than one that says nothing.
+    """
+    command = ((message.get("text") or "").strip().split() or [""])[0].lower()
+    if command.split("@")[0] != "/rate":
+        return {"status": "ignored"}
+
+    # The same ownership check a button tap gets. The bot may sit in a channel, and a member of it
+    # must not be able to train somebody else's model by typing a command.
+    if not _is_owner(user, str((message.get("from") or {}).get("id") or "")):
+        audit(logger, "telegram.foreign_command", user=user.id)
+        return {"status": "not_yours"}
+    return _rate(db, user)
+
+
+def _rate(db: Session, user: User) -> dict:
+    """Hand back the job whose answer would teach the model most.
+
+    **Not the highest-scoring job, and not one from the feed.** The pool is ordered by distance
+    from the delivery threshold, and about half of it sits below that threshold and was therefore
+    never sent — which is the only way the model hears that something it rejected was worth
+    sending (`libs/feedback/rating.py`).
+    """
+    job_id = next_to_rate(db, user.id)
+    if job_id is None:
+        return {"status": "nothing_to_rate",
+                "message": "Nothing to rate right now — every scored job has an answer already."}
+
+    job = db.get(CorpusJob, job_id)
+    audit(logger, "telegram.rate", user=user.id, job=job_id)
+    return {"status": "rate", "job_id": job_id,
+            "message": f"{job.title} — {job.company or 'unknown company'}\n{job.url}",
+            "keyboard": rating_keyboard(job_id)}
+
+
+def rating_keyboard(job_id: int) -> dict:
+    """Two answers and nothing else. `/rate` asks one question: would you have applied?"""
+    return {
+        "inline_keyboard": [[
+            {"text": "👍 Would apply", "callback_data": f"ap:{job_id}"},
+            {"text": "👎 Not for me", "callback_data": f"sk:{job_id}"},
+        ]],
+    }
+
+
 def _is_owner(user: User, tapper_id: str) -> bool:
     """The tap came from the person whose account this is.
 
@@ -183,5 +230,5 @@ def keyboard(job_id: int) -> dict:
     }
 
 
-__all__ = ["ACTIONS", "CALLBACK_PREFIX", "TRAIN_DEBOUNCE_MIN", "TRAIN_MIN_NEW_LABELS", "keyboard",
-           "router"]
+__all__ = ["ACTIONS", "CALLBACK_PREFIX", "TRAIN_DEBOUNCE_MIN", "TRAIN_MIN_NEW_LABELS",
+           "keyboard", "rating_keyboard", "router"]
