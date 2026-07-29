@@ -131,8 +131,18 @@ def pick_jobs(session, user_id, count: int, *, min_score: float = 60.0) -> list[
     highest = max(score for _job, score in rows)
     width = max((highest - lowest) / 5, 1e-6)
 
+    # **One posting per role.** The corpus carries the same job from several boards and the same
+    # employer re-listing it, and the first run of this graded "Software Engineer (AI Training)"
+    # twice and "Back End Developer (AI Infrastructure)" twice — halving an eight-job sample
+    # without saying so. Dedup is not the corpus's job here: those are genuinely distinct rows
+    # with distinct URLs, and it is only *this* comparison that wants them collapsed.
     bands: dict[int, list] = defaultdict(list)
+    seen: set[tuple[str, str]] = set()
     for job, score in rows:
+        role = ((job.title or "").strip().lower(), (job.company or "").strip().lower())
+        if role in seen:
+            continue
+        seen.add(role)
         bands[min(int((score - lowest) / width), 4)].append(job)
 
     # Best band first: a short run should sample the jobs most likely to be applied to.
@@ -221,6 +231,7 @@ def main(argv: list[str] | None = None) -> int:
     install()
     variants = dict(pair.split("=", 1) for pair in args.variant)
     results: list[dict] = []
+    failures: list[dict] = []
 
     with session_scope() as session:
         user = session.scalar(select(User).where(User.email == args.email.lower()))
@@ -265,9 +276,24 @@ def main(argv: list[str] | None = None) -> int:
                         context = build.job_context(job, score=score, fit_notes=notes)
 
                         for name, prompt in prompts.items():
-                            html = build.tailor(client, profile, base_cv, context,
-                                                facts_md=grounding, template=prompt,
-                                                role_angles=angles[name])
+                            # **One bad call must not destroy a paid run.** A model that returns
+                            # no HTML is a real and occasional outcome, and losing fifteen
+                            # completed judgements to the sixteenth is losing the money they cost.
+                            # The failure is recorded rather than swallowed: a variant that fails
+                            # to produce a document more often than the other is *worse*, and a
+                            # run that quietly dropped those rows would score it as equal.
+                            try:
+                                html = build.tailor(client, profile, base_cv, context,
+                                                    facts_md=grounding, template=prompt,
+                                                    role_angles=angles[name])
+                            except Exception as exc:
+                                failures.append({"job_id": job.id, "title": job.title,
+                                                 "variant": name, "error": type(exc).__name__})
+                                print(f"  {job.title[:44]:44} {name:10} "
+                                      f"BUILD FAILED  {type(exc).__name__}")
+                                _save(args.out, results, failures)
+                                continue
+
                             text = build.html_to_text(html)
                             verdict = judge(
                                 client, model=args.judge_model, prompt=judge_prompt,
@@ -277,17 +303,26 @@ def main(argv: list[str] | None = None) -> int:
                                             "variant": name, "chars": len(text), **verdict})
                             print(f"  {job.title[:44]:44} {name:10} "
                                   f"{verdict['overall_100']:>3}/100  {verdict['verdict']}")
+                            # Written after every judgement, not at the end. The run is expensive
+                            # and long enough that a crash at minute nine should cost the last
+                            # call, not all of them.
+                            _save(args.out, results, failures)
                 break
         else:
             raise SystemExit("no Claude credential stored for this account")
 
-    Path(args.out).write_text(json.dumps(results, indent=2), encoding="utf-8")
-    report(results)
+    _save(args.out, results, failures)
+    report(results, failures)
     print(f"\nwrote {args.out}")
     return 0
 
 
-def report(results: list[dict]) -> None:
+def _save(path: str, results: list[dict], failures: list[dict]) -> None:
+    Path(path).write_text(
+        json.dumps({"results": results, "failures": failures}, indent=2), encoding="utf-8")
+
+
+def report(results: list[dict], failures: list[dict] | None = None) -> None:
     """Per-variant means, then per-dimension, then where they most disagreed."""
     by_variant: dict[str, list[dict]] = defaultdict(list)
     for row in results:

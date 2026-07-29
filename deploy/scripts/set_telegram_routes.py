@@ -42,7 +42,7 @@ def _reachable(token: str, chat_id: str) -> tuple[bool, str]:
         response = httpx.get(f"https://api.telegram.org/bot{token}/getChat",
                              params={"chat_id": chat_id}, timeout=15)
         body = response.json()
-    except Exception as exc:  # noqa: BLE001 - any transport failure is the same answer here
+    except Exception as exc:
         return False, f"could not reach Telegram: {type(exc).__name__}"
     if not body.get("ok"):
         return False, str(body.get("description") or "refused")

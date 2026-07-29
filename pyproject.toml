@@ -84,6 +84,12 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 # Operational scripts, run by path on a VPS rather than imported.
 "deploy/scripts/*.py" = [
+    # The A/B loop is one readable sequence — jobs, variants, build, judge, record — and splitting
+    # it to satisfy a statement count would put the thing a reader most wants to follow behind two
+    # indirections. One blind except is deliberate: a build that fails for any reason is data about
+    # that variant, and losing fifteen paid judgements to the sixteenth is losing what they cost.
+    "PLR0915",  # long but linear main()
+    "BLE001",   # a failed build is recorded, not propagated
     "E402",     # imports follow the sys.path bootstrap, which has to come first
     "PLC0415",  # a local `import yaml`, so the dependency stays optional for everything else
     "S106",     # "!migrated-no-login" is a sentinel that cannot hash-match, not a password

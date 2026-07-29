@@ -103,7 +103,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             sender_from_env().send(args.to, subject, summary)
             print(f"\nemailed {args.to}")
-        except Exception as exc:  # noqa: BLE001 - a failed alert email must not hide the alert
+        except Exception as exc:
             # The exit code still carries the signal, which is the reason it is the interface.
             print(f"\nALERT EMAIL FAILED ({type(exc).__name__}) — the exit code still reports it",
                   file=sys.stderr)

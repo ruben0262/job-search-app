@@ -216,7 +216,7 @@ def _check_decryption(scratch: str) -> list[str]:
                             f"restore is a database of unreadable credentials"]
             print(f"  decryption   ok — a stored {secret.kind} opened with the current KEK")
             return []
-    except Exception as exc:  # noqa: BLE001 - any failure here means the same thing
+    except Exception as exc:
         return [f"decryption raised {type(exc).__name__}: {exc}"]
     finally:
         engine.dispose()
