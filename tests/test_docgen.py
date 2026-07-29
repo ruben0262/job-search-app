@@ -51,7 +51,12 @@ TAILORED = """<!DOCTYPE html>
 
 
 class FakeJob:
-    """The two rows a build reads, without a database."""
+    """The corpus row a build reads, without a database.
+
+    Carries the posting metadata the card and the job context both read — a build that only sees a
+    title and a description writes a document that matches keywords rather than one written toward
+    an angle (`REBUILD_PLAN.md`).
+    """
 
     def __init__(self, description="We need a backend engineer. Python, Postgres, on-call."):
         self.id = 7
@@ -59,7 +64,12 @@ class FakeJob:
         self.title = "Backend Engineer"
         self.company = "Northwind"
         self.location = "Berlin"
+        self.source = "linkedin"
         self.description = description
+        self.posted_at = None
+        self.applicants = 25
+        self.workplace = "remote"
+        self.application_url = None
 
 
 class FakeClient:
@@ -283,13 +293,17 @@ def _session(monkeypatch, *, profile=PROFILE, chat_id="4242", description="Backe
     """A stand-in for the two `session.get` calls and the pin, with no database."""
     user = type("U", (), {"id": uuid.uuid4(), "profile": profile.model_dump(),
                           "facts_md": "# Facts about Alice Example",
-                          "profile_context": None,
+                          "profile_context": None, "config": None,
                           "telegram_chat_id": chat_id})()
     job = FakeJob(description=description)
     state = type("S", (), {"score": 88.0, "applied_at": None})()
     pinned: list[int] = []
 
     class Session:
+        def scalar(self, _statement):
+            """The labeller's fifteen-word read on this job, which the build writes toward."""
+            return "Backend API role; matches her Python and Postgres work."
+
         def get(self, model, key, **kwargs):
             name = model.__name__
             if name == "User":
@@ -466,3 +480,38 @@ def test_the_documents_do_not_survive_a_failure_either(monkeypatch, fake_chrome,
                       token="t", workdir=scratch)
 
     assert not scratch.exists()
+
+
+# ── what the model is told about the posting ──────────────────────────────────────────────────
+
+def test_the_context_carries_the_scoring_time_assessment():
+    """**Trimming this made the CVs worse.** A model given only a description matches keywords
+    against it; one told what we already concluded about the role has an angle to write toward.
+    The labeller stores that read in `user_labels.rationale` and nothing used it until now."""
+    context = build.job_context(FakeJob(), score=86,
+                                fit_notes="Python API role, matches her backend work.")
+
+    assert "What we understand" in context
+    assert "matches her backend work" in context
+
+
+def test_the_context_carries_the_money_and_the_competition():
+    """Both salary lines answer different questions — what the role pays, and what she should be
+    asking for. And an opening written for a job with 200 applicants is not the one written for a
+    job with six."""
+    job = FakeJob(description="Salary 60,000 - 80,000 EUR per annum. Python.")
+    context = build.job_context(job, score=86)
+
+    # The en dash is the formatter's own, lifted with lib/salary.py.
+    assert f"Posted salary: 60k{chr(0x2013)}80k EUR/yr" in context
+    assert "Target ask band:" in context
+    assert "Applicants: 25" in context
+    assert "Workplace: remote" in context
+
+
+def test_a_posting_with_no_salary_says_nothing_rather_than_guessing():
+    context = build.job_context(FakeJob(description="Python role. No pay stated."), score=70)
+
+    assert "Posted salary" not in context
+    # The ask band is the user's own and stands whether or not the posting states one.
+    assert "Target ask band:" in context

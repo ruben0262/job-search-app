@@ -175,14 +175,20 @@ def write_labels(session: Session, user_id: _uuid.UUID, scored: dict[str, dict],
             # guessed job is worse than having one fewer label.
             logger.warning("scored URL not in the batch, dropped")
             continue
+        # **`fit_notes` is stored, not discarded.** The rubric asks for it in fifteen words —
+        # what the role is, and why it did or did not match — and `rationale` has been on this
+        # table since Phase 2 with nothing writing it. It is the scoring-time read that a CV build
+        # later uses as its angle, which is the difference between a document written *toward*
+        # something and one that keyword-matches a description (`REBUILD_PLAN.md`).
+        notes = (score.get("fit_notes") or "").strip() or None
         session.execute(
             pg_insert(UserLabel)
             .values(user_id=user_id, job_id=job.id, label=int(score["score"]), source="llm",
-                    weight=1.0, profile_version=user.profile_version,
+                    weight=1.0, rationale=notes, profile_version=user.profile_version,
                     profile_generation=user.profile_generation)
             .on_conflict_do_update(
                 index_elements=["user_id", "job_id"],
-                set_={"label": int(score["score"]), "source": "llm",
+                set_={"label": int(score["score"]), "source": "llm", "rationale": notes,
                       "profile_version": user.profile_version,
                       "profile_generation": user.profile_generation}))
         written += 1

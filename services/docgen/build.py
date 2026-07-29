@@ -90,26 +90,82 @@ def base_document(profile: ProfileSchema) -> str:
     return render_cv(profile)
 
 
-def job_context(job, *, score: float | None = None, description: str | None = None) -> str:
-    """What the model is told about the posting.
+def job_context(job, *, score: float | None = None, description: str | None = None,
+                fit_notes: str | None = None, salary_bands: dict | None = None) -> str:
+    """What the model is told about the posting — the reference instance's context, ported whole.
 
-    Deliberately short. The reference instance's version carried salary intel, fit breakdowns,
-    opportunity scores and its own assessment notes; most of that is context for a human reading a
-    log, and every line of it is tokens the user pays for on a document that is written from the
-    posting and the CV.
+    **This was trimmed to four lines once and the CVs got worse.** The reasoning was that salary
+    intel and assessment notes are context for a human reading a log; that was wrong. A model given
+    only a description matches keywords against it. A model told *what we already concluded about
+    this role and why it fits this person* has an angle to write toward, which is the difference
+    between a document that reads as tailored and one that reads as search-and-replace.
+
+    `fit_notes` is the scoring-time read, written by the labeller into `user_labels.rationale` —
+    fifteen words on what the role is and why it matched.
     """
     lines = [f"Title: {job.title or ''}",
              f"Company: {job.company or ''}",
              f"Location: {job.location or ''}",
+             f"Source: {job.source or ''}",
              f"URL: {job.url}"]
+    if getattr(job, "application_url", None):
+        lines.append(f"Application URL: {job.application_url}")
     if score is not None:
         lines.append(f"Model fit score: {score:.0f}")
 
+    posted = _age(getattr(job, "posted_at", None))
+    if posted:
+        lines.append(f"Posted: {posted}")
+    if getattr(job, "applicants", None) is not None:
+        # How contested it is. A role with two hundred applicants deserves a sharper opening than
+        # one with six, and the model can only weigh that if it is told.
+        lines.append(f"Applicants: {job.applicants}")
+    if getattr(job, "workplace", None):
+        lines.append(f"Workplace: {job.workplace}")
+
     text = (description if description is not None else job.description) or ""
+    lines.extend(_salary_lines(job, text, salary_bands))
+
+    if fit_notes:
+        lines += ["", "=== What we understand (our assessment) ===", fit_notes]
+
     text = text.strip() or "(no description was captured for this posting)"
     if len(text) > JD_MAX_CHARS:
         text = text[:JD_MAX_CHARS] + f"\n[truncated to {JD_MAX_CHARS} chars]"
     return "\n".join([*lines, "", "=== Job description ===", text])
+
+
+def _salary_lines(job, description: str, bands: dict | None) -> list[str]:
+    """What the posting pays and what this candidate should be asking for.
+
+    Both, because they answer different questions: the first is a fact about the role, the second
+    is the do-not-undersell position the reference instance takes deliberately. A gap between them
+    is information a cover letter may need, not an error.
+    """
+    from libs.corpus import salary as salarylib  # noqa: PLC0415 - one caller, kept local
+
+    payload = {"title": job.title or "", "location": job.location or "",
+               "description": description, "source": job.source or ""}
+    posted = salarylib.extract(description)
+    ask = salarylib.suggest(payload, posted, bands)
+
+    out = []
+    if posted:
+        out.append(f"Posted salary: {salarylib.fmt(posted)}")
+    if ask:
+        below = "  (posting below target)" if ask.get("below_target") else ""
+        out.append(f"Target ask band: {salarylib.fmt(ask)}{below}")
+    return out
+
+
+def _age(posted_at) -> str:
+    """`3d`, `<1h`, or empty. Freshness changes how much effort a posting is worth."""
+    from libs.corpus.timefilter import age_label  # noqa: PLC0415 - one caller
+
+    if posted_at is None:
+        return ""
+    return age_label(posted_at.isoformat() if hasattr(posted_at, "isoformat") else str(posted_at))
+
 
 
 def build_prompt(profile: ProfileSchema, base_html: str, context: str, *,

@@ -25,11 +25,11 @@ import uuid as _uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from sqlalchemy import func
+from sqlalchemy import func, select
 
 from libs.contracts.profile import ProfileSchema
 from libs.corpus.repository import CorpusRepository
-from libs.db.models import CorpusJob, User, UserJobState
+from libs.db.models import CorpusJob, User, UserJobState, UserLabel
 from libs.obs import audit
 from libs.profiles import ProfileIncomplete
 from libs.profiles.repository import ProfileFiles
@@ -92,12 +92,16 @@ def run_build(session, user_id: _uuid.UUID, job_id: int, *,
 
     scratch = pathlib.Path(workdir) if workdir else pathlib.Path(tempfile.mkdtemp(prefix="docgen-"))
     try:
+        context = build.job_context(job, score=score,
+                                    fit_notes=_fit_notes(session, user_id, job_id),
+                                    salary_bands=_salary_bands(user))
+
         if kind == "cover":
-            html, pages, calls = _cover(client, profile, job, score, base_cv=base_cv,
+            html, pages, calls = _cover(client, profile, context, base_cv=base_cv,
                                         grounding=grounding, scratch=scratch)
         else:
             html, pages, calls = _tailor_until_it_fits(
-                client, profile, job, score, base_cv=base_cv, facts_md=grounding, scratch=scratch)
+                client, profile, context, base_cv=base_cv, facts_md=grounding, scratch=scratch)
 
         leftover = build.scan_hidden(html)
         if leftover:
@@ -137,7 +141,7 @@ def run_build(session, user_id: _uuid.UUID, job_id: int, *,
         shutil.rmtree(scratch, ignore_errors=True)
 
 
-def _cover(client, profile: ProfileSchema, job: CorpusJob, score: float | None, *,
+def _cover(client, profile: ProfileSchema, context: str, *,
            base_cv: str, grounding: str | None,
            scratch: pathlib.Path) -> tuple[str, int | None, int]:
     """One call, no revision loop.
@@ -148,12 +152,11 @@ def _cover(client, profile: ProfileSchema, job: CorpusJob, score: float | None, 
     reference's `build_cover_only` does: the tailored copy is ephemeral and rebuilding it would
     double the cost of pressing one button.
     """
-    letter = build.tailor_cover(client, profile, base_cv,
-                                build.job_context(job, score=score), facts_md=grounding)
+    letter = build.tailor_cover(client, profile, base_cv, context, facts_md=grounding)
     return letter, _page_count(letter, scratch), 1
 
 
-def _tailor_until_it_fits(client, profile: ProfileSchema, job: CorpusJob, score: float | None, *,
+def _tailor_until_it_fits(client, profile: ProfileSchema, context: str, *,
                           base_cv: str, facts_md: str | None,
                           scratch: pathlib.Path) -> tuple[str, int | None, int]:
     """Tailor, compile, and if the PDF is too long, say so once and tailor again.
@@ -163,7 +166,6 @@ def _tailor_until_it_fits(client, profile: ProfileSchema, job: CorpusJob, score:
     is not evidence of anything.
     """
     base = base_cv
-    context = build.job_context(job, score=score)
 
     html = build.tailor(client, profile, base, context, facts_md=facts_md)
     pages = _page_count(html, scratch)
@@ -196,6 +198,17 @@ def _page_count(html: str, scratch: pathlib.Path) -> int | None:
         return None
 
 
+def _fit_notes(session, user_id: _uuid.UUID, job_id: int) -> str | None:
+    """What the labeller concluded about this job, in its own fifteen words.
+
+    The angle the CV is written toward. Without it the model has a description and a CV and has to
+    infer the connection; with it, it starts from the one this platform already drew.
+    """
+    return session.scalar(
+        select(UserLabel.rationale)
+        .where(UserLabel.user_id == user_id, UserLabel.job_id == job_id))
+
+
 def _load(session, user_id: _uuid.UUID, job_id: int) -> tuple[User, CorpusJob, float | None]:
     """Everything the build needs, with the reasons it cannot run stated as refusals.
 
@@ -219,6 +232,16 @@ def _load(session, user_id: _uuid.UUID, job_id: int) -> tuple[User, CorpusJob, f
 
     state = session.get(UserJobState, (user_id, job_id))
     return user, job, (state.score if state else None)
+
+
+def _salary_bands(user: User) -> dict | None:
+    """This user's target ask bands, from their config.
+
+    Per user, where the reference instance had one set in a config file — the whole point of the
+    🎯 line is that it is *their* ask, and a shared default would understate somebody.
+    """
+    config = getattr(user, "config", None)
+    return (getattr(config, "config", None) or {}).get("salary_bands") if config else None
 
 
 def _record(session, user_id: _uuid.UUID, job: CorpusJob) -> None:
