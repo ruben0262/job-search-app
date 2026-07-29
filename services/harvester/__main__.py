@@ -28,8 +28,10 @@ import sys
 from libs.contracts.embedder import EmbedderClient, EmbedderVersion
 from libs.db.session import session_scope
 from libs.obs import configure
+from libs.secrets import install
 from libs.tenant.repository import TenantRepository
 from services.harvester.cycle import run_cycle
+from services.harvester.describe import describe_linkedin_for_all
 from services.harvester.source_config import build_source_configs
 
 logger = logging.getLogger("harvester")
@@ -65,9 +67,21 @@ def main(argv: list[str] | None = None) -> int:
                         help="build and budget the query set, then stop before fetching anything")
     parser.add_argument("--max-queries", type=int, default=None,
                         help="override the fan-out budget for this run")
+    parser.add_argument("--describe-linkedin", action="store_true",
+                        help="fill LinkedIn descriptions on each user's own proxy, then stop")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args(argv)
     _configure_logging(args.verbose)
+
+    if args.describe_linkedin:
+        # **A separate pass on a slower timer, not part of the cycle.** It spends users' own
+        # bandwidth rather than the platform's, so it is bounded per user and runs hourly — where
+        # the shared cycle runs every fifteen minutes because it costs nothing.
+        install()
+        with session_scope() as session:
+            totals = describe_linkedin_for_all(session)
+        logger.info("describe(linkedin): %s", totals)
+        return 0
 
     embedder_url = os.environ.get("EMBEDDER_URL")
     if not embedder_url and not args.dry_run:

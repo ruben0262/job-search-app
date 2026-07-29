@@ -1,0 +1,15 @@
+# Hourly, where the shared harvest is every fifteen minutes.
+#
+# The floor is deliberate and matches `governor.LINKEDIN_MIN_INTERVAL_MIN`: this tier spends the
+# user's own bandwidth, and a user on a four-hour digest does not need LinkedIn re-read 96 times a
+# day. Persistent so a reboot does not skip a day of it silently.
+[Unit]
+Description=Run the LinkedIn description pass hourly
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=1h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -27,9 +27,15 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 
+from sqlalchemy import select
+
 from libs.corpus.postings import fetch_job
 from libs.corpus.repository import CorpusRepository
+from libs.db.models import User
 from libs.obs import audit
+from libs.secrets import SecretStore, redacting
+from services.harvester.fetch import ProxyCapExceeded, make_client
+from services.harvester.proxy_usage import ProxyUsageRepository
 
 logger = logging.getLogger(__name__)
 
@@ -101,3 +107,54 @@ def describe_pending(corpus: CorpusRepository, client, *, linkedin: bool | None 
     audit(logger, "harvest.describe", attempted=report.attempted, described=report.described,
           still_thin=report.still_thin, linkedin=linkedin, outcomes=report.outcomes)
     return report
+
+
+def describe_linkedin_for_all(session, *, limit_per_user: int = PROXIED_LIMIT) -> dict[str, int]:
+    """The proxied half of the pass, run for every user who brought a proxy credential.
+
+    **LinkedIn rows are the ones that need this most and can least be got for free.** Its guest
+    endpoint refuses datacenter addresses, so the shared cycle cannot touch them: on this platform
+    that left every LinkedIn posting in the corpus with no description beyond its title, and no
+    applicant count, posted time or workplace tag at all — three of the five things ranking reads.
+
+    Each user's own lease pays for their own requests, and the rows they fill are shared. That is
+    not a loophole in the tenancy rule but the point of a shared corpus: the second account to be
+    shown a job pays nothing for it, and nobody's bandwidth is spent on anybody else's behalf
+    without them having caused a fetch.
+
+    A user with no credential is skipped silently. That is the ordinary case, not an error — they
+    still get the two thirds of sources that cost nothing.
+    """
+    corpus = CorpusRepository(session)
+    usage = ProxyUsageRepository(session)
+    store = SecretStore(session)
+    totals: dict[str, int] = {"users": 0, "attempted": 0, "described": 0}
+
+    for user_id in list(session.scalars(select(User.id).where(User.active))):
+        # The plaintext lives inside `store.use` and nowhere else — the whole fetch happens within
+        # the block, and the client is closed with it, so the proxy URL never outlives the requests
+        # it authorised (`TENANT_SAFETY.md` §2).
+        with store.use(user_id, "proxy") as secret:
+            if secret is None:
+                continue
+            proxy_url = secret.reveal()
+            with redacting(proxy_url):
+                try:
+                    lease = usage.acquire_lease(user_id, secret_resolver=lambda _ref, url=proxy_url: url)
+                except ProxyCapExceeded:
+                    continue
+                if lease is None:
+                    continue
+
+                totals["users"] += 1
+                with make_client(lease) as client:
+                    report = describe_pending(corpus, client, linkedin=True,
+                                              limit=limit_per_user)
+                    usage.record_usage(user_id, megabytes=client.megabytes_downloaded)
+
+        totals["attempted"] += report.attempted
+        totals["described"] += report.described
+
+    logger.info("describe(linkedin): %d user(s), %d attempted, %d described",
+                totals["users"], totals["attempted"], totals["described"])
+    return totals

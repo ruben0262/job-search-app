@@ -1,0 +1,23 @@
+# One pass filling LinkedIn descriptions on each user's own proxy, then exit.
+#
+# **Separate from the harvest cycle because a different person pays.** The shared cycle runs every
+# fifteen minutes and costs the platform nothing — boards answer a datacenter IP. LinkedIn does not:
+# its guest endpoint refuses datacenter addresses, so those rows can only be filled through a user's
+# own residential credential, and every request is bandwidth off their monthly cap.
+#
+# Without this pass, LinkedIn postings sit in the corpus with a title and nothing else — no
+# description to score, and none of the applicant count, posted time or workplace tag that ranking
+# reads. That was the state of 3,494 rows on 2026-07-29.
+[Unit]
+Description=job-search-app LinkedIn description pass (one-shot)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/ruben/job-search-app
+# --no-deps so a pass never restarts Postgres underneath the stack.
+ExecStart=/usr/bin/docker compose -f deploy/compose.yml run --rm --no-deps harvester --describe-linkedin
+# Bounded at 60 rows per user, each with up to six retries at two seconds. A pass that takes longer
+# than this is one where LinkedIn is refusing everything, and the next hour's pass is the retry.
+TimeoutStartSec=30min
