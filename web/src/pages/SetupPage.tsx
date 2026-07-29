@@ -49,6 +49,12 @@ const DESCRIPTIONS: Record<string, string> = {
   "07-interview-prep.md": "Your examples, ready for an interview",
   "label.md": "How your model scores jobs",
   "base_cv.html": "Your CV, before it is tailored to a job",
+  "tailor_cv.md": "The instructions for writing your tailored CVs",
+  "tailor_cover.md": "The instructions for writing your cover letters",
+  "score.md": "How a job is assessed against your profile",
+  "interview.md": "How your interview prep is written",
+  "outreach.md": "How your messages to hiring managers are written",
+  "build_cvs.md": "The checks a finished CV has to pass",
 };
 
 export function SetupPage({ onChanged }: { onChanged: () => void }) {

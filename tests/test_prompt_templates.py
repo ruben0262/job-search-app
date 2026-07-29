@@ -1,14 +1,14 @@
 """The generation prompts must not carry one person's identity into another person's documents.
 
 `label_template.md` was generalised in Phase 2 — `<<NAME>>`, `<<WHO>>`, `<<HARD_GATES>>` filled from
-the profile. `tailor_cv.md` and `tailor_cover.md` are ported verbatim from the reference instance
-and **still carry its owner's name 28 times between them**, because the port is deliberately
-byte-identical: they are SACRED (`libs/prompts/__init__.py`), and generalising during a copy would
-make the diff against the original unreviewable.
+the profile. The task prompts were ported from the reference instance and generalised the same way,
+and this test is what stops a half-way state from shipping: a prompt is only allowed into
+`SEEDED_PROMPTS` once it has no hardcoded identity left, because a scaffold carrying a stranger's
+name is seeded into *every new account*.
 
-This test is what stops the half-way state from shipping. A prompt is only allowed into
-`DOCGEN_TEMPLATES` once it has no hardcoded identity left — until then, wiring it in would put a
-stranger's name on a real user's CV.
+**These read the scaffolds, not a wired-in file.** Since 2026-07-29 the task prompts are per-user
+(`libs/profiles`), so what is checked here is what a new account is seeded with — the platform's
+default, and the only version a user who never edits theirs will ever run.
 """
 from __future__ import annotations
 
@@ -17,11 +17,16 @@ import re
 
 import pytest
 
-from libs.prompts import load
+from libs.profiles import scaffold as load
 
-# Prompts docgen is allowed to use. **Empty until each has been generalised** — adding a name here
-# is the deliberate act that the test below then checks.
-DOCGEN_TEMPLATES: tuple[str, ...] = ("tailor_cv.md", "tailor_cover.md")
+# Every prompt seeded into a new account. **Adding a name here is the deliberate act** the tests
+# below then check — a scaffold is copied to every user, so an identity left in one propagates.
+SEEDED_PROMPTS: tuple[str, ...] = ("tailor_cv.md", "tailor_cover.md", "score.md", "interview.md",
+                                   "outreach.md", "build_cvs.md")
+
+# Kept under the same name so the parametrised tests read unchanged: what docgen uses is a subset
+# of what is seeded, and both need the identical guarantee.
+DOCGEN_TEMPLATES = SEEDED_PROMPTS
 
 # Anything ported but not yet generalised. Empty since 2026-07-28, and kept so the state is
 # asserted rather than assumed the next time something is ported in.
@@ -109,9 +114,7 @@ def test_the_language_rule_is_about_the_candidate_not_one_language():
     Case-insensitive, which is not pedantry: the cover letter's rule said "HUNGARIAN" in capitals
     and passed this test for a day, complete with the Hungarian formal-address grammar under it.
     """
-    from libs.prompts import TAILOR_COVER_TEMPLATE, TAILOR_CV_TEMPLATE, load
-
-    for name in (TAILOR_CV_TEMPLATE, TAILOR_COVER_TEMPLATE):
+    for name in ("tailor_cv.md", "tailor_cover.md"):
         body = load(name)
         assert not re.search(r"hungarian", body, re.IGNORECASE), f"{name} names one language"
         assert "<<LANGUAGES>>" in body
@@ -152,3 +155,24 @@ def test_the_cv_template_keeps_the_layout_rules_that_are_load_bearing():
 
     assert "@page" in template
     assert "cv-header" in template and "cv-contact" in template
+
+
+# ── the platform-owned prompts ────────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("name", ("SKILL.md", "03-writing-style.md",
+                                  "06-cover-letter-templates.md", "eval_cv.md"))
+def test_a_platform_prompt_is_the_same_bytes_for_everyone(name):
+    """These are not seeded per user — every account reads the identical file, so an identity in one
+    is not one user's problem but everyone's.
+
+    `eval_cv.md` is here on the strength of a measurement rather than a hope: the reference
+    instance's own copy names its owner zero times, which is why it could be lifted as-is while the
+    four task prompts beside it had to be generalised first.
+    """
+    from libs.prompts import load as platform
+
+    body = platform(name)
+    assert not _IDENTITY.search(body), f"{name} names a person and is served to every user"
+    for specific in _REFERENCE_SPECIFICS:
+        assert not re.search(rf"\b{re.escape(specific)}\b", body, re.IGNORECASE), (
+            f"{name} still carries {specific!r} from the reference instance")

@@ -29,7 +29,7 @@ import logging
 import re
 
 from libs.contracts.profile import ProfileSchema
-from libs.prompts import TAILOR_CV_TEMPLATE, load
+from libs.profiles import scaffold
 from libs.scoring.docprompt import render_cover_prompt, render_cv_prompt
 from libs.templates import BASE_CV_TEMPLATE
 from libs.templates import load as load_template
@@ -443,5 +443,9 @@ def template_base() -> str:
 
 
 def prompt_text() -> str:
-    """The SACRED CV prompt, unfilled. Exposed so a test can assert what reaches the model."""
-    return load(TAILOR_CV_TEMPLATE)
+    """The shipped CV prompt, unfilled. Exposed so a test can assert what reaches the model.
+
+    The *scaffold*, not what any given run uses: since the task prompts became per-user, a real
+    build passes the user's own `tailor_cv.md` as `template=`. This is the default it starts from.
+    """
+    return scaffold("tailor_cv.md")

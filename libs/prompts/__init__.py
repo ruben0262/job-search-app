@@ -18,17 +18,15 @@ _HERE = Path(__file__).parent
 
 LABEL_TEMPLATE = "label_template.md"
 
-# Ported byte-identical from the reference instance 2026-07-28 and **not yet usable**: both still
-# name that instance's owner, 28 times between them. They are copied verbatim on purpose —
-# generalising during a port makes the diff against the original unreviewable, and these are the
-# most heavily tuned prompts in either repository.
-#
-# Generalising them is the same job `label_template.md` already had: replace the identity with
-# placeholders filled from the profile. `tests/test_prompt_templates.py` refuses to let either be
-# wired into docgen until that is done, because the failure otherwise is a user receiving a CV
-# written about somebody else.
-TAILOR_CV_TEMPLATE = "tailor_cv.md"
-TAILOR_COVER_TEMPLATE = "tailor_cover.md"
+# The LLM judge from the reference instance, ported 2026-07-29. It lives here rather than in
+# `libs/scaffolds/` because it names nobody — measured, not assumed: the reference's own copy has
+# zero occurrences of its owner's name. It grades a CV against the posting, and that job is the
+# same whoever the CV belongs to.
+EVAL_CV_TEMPLATE = "eval_cv.md"
+
+# `tailor_cv.md` and `tailor_cover.md` moved to `libs/scaffolds/` on 2026-07-29: they are per-user
+# files now (`libs/profiles`), seeded from the scaffold and thereafter the user's own. Reading them
+# from here would have served the shipped default to somebody who had edited theirs.
 
 
 @lru_cache(maxsize=8)

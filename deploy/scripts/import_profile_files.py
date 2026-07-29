@@ -46,6 +46,10 @@ SOURCES: tuple[tuple[str, str, str], ...] = (
     # keeps them; the platform's field-agnostic version is only the starting point.
     ("pipeline/prompts/tailor_cv.md", "tailor_cv.md", "prompt"),
     ("pipeline/prompts/tailor_cover.md", "tailor_cover.md", "prompt"),
+    ("pipeline/prompts/score.md", "score.md", "prompt"),
+    ("pipeline/prompts/interview.md", "interview.md", "prompt"),
+    ("pipeline/prompts/outreach.md", "outreach.md", "prompt"),
+    ("pipeline/prompts/build_cvs.md", "build_cvs.md", "prompt"),
     # The reference kept `dev` and `quant`; the platform has one base CV that tailoring adapts.
     # `base_cv.html` first for a cleaned checkout, then the dev template for the original.
     ("cv/base_cv.html", "base_cv.html", "template"),

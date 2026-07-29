@@ -13,7 +13,7 @@ posting, and somebody who writes only English never gets a CV they cannot read.
 from __future__ import annotations
 
 from libs.contracts.profile import ProfileSchema
-from libs.prompts import TAILOR_COVER_TEMPLATE, TAILOR_CV_TEMPLATE, load
+from libs.profiles import scaffold
 
 # What a Languages line says when the profile does not say. Never invented as a level: claiming
 # fluency nobody stated is exactly the fabrication the facts block exists to prevent.
@@ -27,12 +27,12 @@ def render_cv_prompt(profile: ProfileSchema, template: str | None = None) -> str
     field-agnostic version otherwise. Filling a prompt that already names its subject is a no-op,
     so a hand-tuned import passes through unchanged.
     """
-    return _fill(template or load(TAILOR_CV_TEMPLATE), profile)
+    return _fill(template or scaffold("tailor_cv.md"), profile)
 
 
 def render_cover_prompt(profile: ProfileSchema, template: str | None = None) -> str:
     """The cover-letter prompt, about this candidate."""
-    return _fill(template or load(TAILOR_COVER_TEMPLATE), profile)
+    return _fill(template or scaffold("tailor_cover.md"), profile)
 
 
 def _fill(template: str, profile: ProfileSchema) -> str:

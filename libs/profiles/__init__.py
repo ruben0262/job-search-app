@@ -9,9 +9,11 @@ live in Postgres and this module assembles them explicitly.
 ## Three classes of file, and only one of them is per user
 
 - **Platform-owned** (`libs/prompts/`) — `SKILL.md`, `03-writing-style.md`,
-  `06-cover-letter-templates.md`. Identical for everyone, because they describe *how to write*, not
-  *who this person is*. `setup-prompts.md` states the rule they exist under: "never copy profile
-  facts into a prompt — that duplicates the truth in two places and they drift."
+  `06-cover-letter-templates.md`, `eval_cv.md`, `label_template.md`. Identical for everyone, because
+  they describe *how to write* and *how to grade*, not *who this person is*. `setup-prompts.md`
+  states the rule they exist under: "never copy profile facts into a prompt — that duplicates the
+  truth in two places and they drift." `eval_cv.md` earns its place here by measurement: it names
+  nobody in the reference instance either.
 - **Per-user** (`user_profile_files`) — `context.md` and the numbered skill files, written by the
   setup agents and editable by the user.
 - **Scaffolds** (`libs/scaffolds/`) — the clean, `[PLACEHOLDER]`-filled versions seeded into a new
@@ -56,6 +58,13 @@ SEED_FILES: tuple[tuple[str, str], ...] = (
     # should start from the platform's best version rather than a blank.
     ("tailor_cv.md", "prompt"),
     ("tailor_cover.md", "prompt"),
+    # Staged rather than wired: nothing calls these yet (`REBUILD_PLAN.md` phases 3–4). They are
+    # seeded now so a user who tunes one keeps it, and so an import of a reference checkout brings
+    # everything across in one pass instead of leaving a trail of files to remember later.
+    ("score.md", "prompt"),
+    ("interview.md", "prompt"),
+    ("outreach.md", "prompt"),
+    ("build_cvs.md", "prompt"),
     ("base_cv.html", "template"),
 )
 
@@ -77,7 +86,8 @@ PLACEHOLDER_MARKERS = ("[FILLED BY", "[YOUR NAME]", "[BRACKETED]", "[CITY, COUNT
 # Files that ship usable rather than as placeholders: framework rules and the task prompts, which
 # are already good and only need tuning. Seeded `filled=True` so an account can generate documents
 # before anyone has personalised them.
-SHIPS_USABLE = ("05-cv-templates.md", "tailor_cv.md", "tailor_cover.md")
+SHIPS_USABLE = ("05-cv-templates.md", "tailor_cv.md", "tailor_cover.md", "score.md",
+                "interview.md", "outreach.md", "build_cvs.md")
 
 
 class ProfileIncomplete(RuntimeError):
