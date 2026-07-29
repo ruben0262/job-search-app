@@ -216,3 +216,84 @@ def test_metadata_is_kept_even_when_the_description_came_back_thin(repo):
 
     job = session.get(CorpusJob, job_id)
     assert (job.applicants, job.workplace) == (12, "hybrid")
+
+
+def _posting(repo):
+    """One LinkedIn row to refresh, flushed so the repository can find it."""
+    corpus, session = repo
+    job_id = _linkedin(corpus)
+    session.flush()
+    return session, session.get(CorpusJob, job_id)
+
+
+
+# ── the freshness check ───────────────────────────────────────────────────────────────────────
+
+class FakeMetaResponse:
+    def __init__(self, text: str = "", status_code: int = 200):
+        self.text, self.status_code = text, status_code
+        self.url = "https://www.linkedin.com/jobs/view/1"
+
+
+class FakeMetaClient:
+    """Answers every request with the same page, and records that it was asked."""
+
+    def __init__(self, text: str, status_code: int = 200):
+        self.text, self.status_code = text, status_code
+        self.requested: list[str] = []
+
+    def get(self, url, **_):
+        self.requested.append(url)
+        return FakeMetaResponse(self.text, self.status_code)
+
+    def stream(self, _method, url, **_):
+        from contextlib import nullcontext
+        self.requested.append(url)
+
+        class Streamed(FakeMetaResponse):
+            def iter_bytes(inner):
+                yield inner.text.encode()
+
+        return nullcontext(Streamed(self.text, self.status_code))
+
+
+OPEN_POSTING = ('<span class="num-applicants__caption"> 12 applicants </span>'
+                '<span class="posted-time-ago__text"> 3 hours ago </span>' + "x" * 300)
+CLOSED_POSTING = "<p>No longer accepting applications</p>" + "x" * 300
+
+
+def test_a_closed_posting_stops_the_build_before_anything_is_spent(repo):
+    """**The most annoying possible failure is the one where everything succeeds.** The document
+    arrives, it is good, and the apply link says the job closed three days ago."""
+    from services.docgen.refresh import PostingClosed, refresh_before_build
+
+    session, job = _posting(repo)
+    with pytest.raises(PostingClosed):
+        refresh_before_build(session, job, FakeMetaClient(CLOSED_POSTING))
+
+
+def test_a_live_posting_lets_the_build_proceed(repo):
+    from services.docgen.refresh import refresh_before_build
+
+    session, job = _posting(repo)
+    meta = refresh_before_build(session, job, FakeMetaClient(OPEN_POSTING))
+    assert meta["accepting"] is True
+
+
+def test_a_failed_fetch_never_reads_as_a_closed_job(repo):
+    """A proxy hiccup must not present to the user as "that job is gone". Only a page that says so
+    stops a build."""
+    from services.docgen.refresh import refresh_before_build
+
+    session, job = _posting(repo)
+    assert refresh_before_build(session, job, FakeMetaClient("", 429))["accepting"] is None
+
+
+def test_the_refreshed_metadata_goes_back_to_the_shared_corpus(repo):
+    """The user paid for the request. Everyone gets the applicant count."""
+    from services.docgen.refresh import refresh_before_build
+
+    session, job = _posting(repo)
+    refresh_before_build(session, job, FakeMetaClient(OPEN_POSTING))
+    session.flush()
+    assert job.applicants == 12

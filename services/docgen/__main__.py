@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 import os
+from contextlib import contextmanager
 
 import httpx
 
@@ -75,9 +76,9 @@ def handle(session, job: QueueJob) -> None:
                 if secret is None:
                     continue
                 value = secret.reveal()
-                with redacting(value, bot_token):
+                with redacting(value, bot_token), _http_for(store, job.user_id) as http:
                     result = _build(session, job, client_for(value, credential), bot_token,
-                                    job_id=job_id, kind=kind)
+                                    job_id=job_id, kind=kind, http=http)
             logger.info("docgen: built the %s for %s in %d call(s), %s page(s)",
                         kind, job.user_id, result.calls, result.pages)
             return
@@ -85,7 +86,30 @@ def handle(session, job: QueueJob) -> None:
     raise Terminal("no Claude credential stored — a CV build needs the user's own key or token")
 
 
-def _build(session, job: QueueJob, client, bot_token: str, *, job_id: int, kind: str):
+@contextmanager
+def _http_for(store: SecretStore, user_id):
+    """An HTTP client for the pre-build freshness check, on this user's own proxy if they have one.
+
+    Their proxy, or nothing — never the shared IP. The check only matters for LinkedIn, which
+    blocks datacenter addresses, so an unproxied client simply learns nothing and the build goes
+    ahead. That is the correct outcome: a missing credential must not stop a user getting their CV.
+
+    The credential lives inside `store.use` for the duration of the call and the client is closed
+    with it, so the proxy URL never outlives the request it authorised.
+    """
+    with store.use(user_id, "proxy") as secret:
+        if secret is None:
+            with httpx.Client(timeout=25, follow_redirects=True) as client:
+                yield client
+            return
+        value = secret.reveal()
+        with redacting(value), httpx.Client(timeout=25, follow_redirects=True,
+                                            proxy=value) as client:
+            yield client
+
+
+def _build(session, job: QueueJob, client, bot_token: str, *, job_id: int, kind: str,
+           http=None):
     """The failure taxonomy, in one place.
 
     `CompileFailed` is deliberately *not* terminal: Chrome runs out of memory on a busy box and
@@ -94,7 +118,7 @@ def _build(session, job: QueueJob, client, bot_token: str, *, job_id: int, kind:
     """
     try:
         return run_build(session, job.user_id, job_id, client=client,
-                         send_document=send_document, token=bot_token, kind=kind)
+                         send_document=send_document, token=bot_token, kind=kind, http=http)
     except (NotBuildable, LlmError) as exc:
         raise Terminal(str(exc)) from exc
     except CompileFailed as exc:

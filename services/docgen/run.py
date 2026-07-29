@@ -34,6 +34,7 @@ from libs.obs import audit
 from libs.profiles import ProfileIncomplete
 from libs.profiles.repository import ProfileFiles
 from services.docgen import build, pdf
+from services.docgen.refresh import PostingClosed, refresh_before_build
 
 logger = logging.getLogger(__name__)
 
@@ -64,15 +65,30 @@ def run_build(session, user_id: _uuid.UUID, job_id: int, *,
               send_document: Callable[..., None],
               token: str,
               kind: str = "cv",
+              http: object | None = None,
               workdir: pathlib.Path | None = None) -> BuildResult:
     """Build one tailored CV for one posting and deliver it.
 
     **Does not commit** — the worker owns the transaction, so the record of the build and the
     queue job's completion land together or neither does (`libs/queue/worker.py`).
+
+    `http` is the user's own HTTP client, used for the pre-build freshness check. Optional so the
+    tests and any caller without a proxy lease can skip it; when it is passed, a posting that has
+    closed stops the build before a token is spent.
     """
     if kind not in ("cv", "cover"):
         raise NotBuildable(f"unknown document kind {kind!r}")
     user, job, score = _load(session, user_id, job_id)
+
+    # **Before anything is spent.** A CV costs the user real money, and the worst possible outcome
+    # is that all of it succeeds against a listing that closed three days ago. Only a positive
+    # "closed" stops the build — a failed fetch proceeds, because a proxy hiccup must not present
+    # to the user as "that job is gone".
+    if http is not None:
+        try:
+            refresh_before_build(session, job, http)
+        except PostingClosed as exc:
+            raise NotBuildable(str(exc)) from exc
     profile = ProfileSchema.model_validate(user.profile)
 
     # **The reference instance's `CLAUDE.md` and skill files, per user** (`libs/profiles`). This is
