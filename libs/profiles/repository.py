@@ -85,13 +85,17 @@ class ProfileFiles:
         somebody has already filled in, and a seed call is exactly the sort of thing that gets run
         twice during a migration.
         """
+        # Counted with RETURNING rather than `rowcount`: for `ON CONFLICT DO NOTHING` the driver
+        # reports -1 here, so a first seed of eight files announced "-8 scaffolds". A count nobody
+        # can trust is worse than no count, and this one is printed to an operator.
         written = 0
         for name, kind, content in seed_files():
-            result = self._s.execute(
+            inserted = self._s.scalar(
                 pg_insert(UserProfileFile)
                 .values(user_id=self._user, name=name, kind=kind, content=content, filled=False)
-                .on_conflict_do_nothing(index_elements=["user_id", "name"]))
-            written += result.rowcount or 0
+                .on_conflict_do_nothing(index_elements=["user_id", "name"])
+                .returning(UserProfileFile.name))
+            written += 1 if inserted else 0
         return written
 
     def grounding(self) -> str:

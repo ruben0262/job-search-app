@@ -278,3 +278,22 @@ def test_text_is_streamed_as_it_arrives(account):
              message="hi", on_text=chunks.append)
 
     assert chunks, "no text reached the caller while the turn was running"
+
+
+def test_seeding_reports_what_it_actually_wrote(account):
+    """`ON CONFLICT DO NOTHING` reports `rowcount = -1` through this driver, so the first seed of
+    eight files announced "-8 scaffolds" to an operator. A count nobody can trust is worse than no
+    count at all."""
+    from libs.db.models import User
+    from libs.profiles import SEED_FILES
+    from libs.profiles.repository import ProfileFiles
+
+    session, _user = account
+    fresh = User(email=f"{uuid.uuid4()}@example.test", password_hash="x", status="active")
+    session.add(fresh)
+    session.flush()
+
+    files = ProfileFiles(session, fresh.id)
+    assert files.seed() == len(SEED_FILES)
+    # Re-seeding must neither write nor claim to have written.
+    assert files.seed() == 0
