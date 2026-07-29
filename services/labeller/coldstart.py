@@ -145,6 +145,19 @@ def next_batch(session: Session, user_id: _uuid.UUID, client: LlmClient) -> tupl
     if state["action"] == "cold_start":
         written, remaining = cold_start_batch(session, user_id, client)
         return "cold_start", written, remaining
+
+    # Nothing owed. **This is where the model gets checked rather than trusted.** A served model
+    # drifts silently — no error, no alert, just numbers that stop meaning what they meant — so an
+    # account with nothing else to do spends a small sample asking the judge whether it still
+    # agrees. Last on purpose: a backlog of stale labels is work the user is waiting on, and a
+    # health check never competes with it.
+    from services.labeller.shadow_lane import run_shadow  # noqa: PLC0415 - avoids a cycle
+
+    user = session.get(User, user_id)
+    if user is not None and user.model_version:
+        compared, _ = run_shadow(session, user_id, client)
+        if compared:
+            return "shadow", compared, 0
     return "train", 0, 0
 
 
