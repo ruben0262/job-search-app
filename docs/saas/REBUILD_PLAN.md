@@ -76,12 +76,16 @@ Found in Andras's changelog, never back-ported to mahoraga-jobs:
    prompts read that field expecting it to exist.
 2. **Salary target.** Skipped entirely: *"no target-ask line configured."* That is the 🎯 ask band
    the feed card shows.
-3. **Location.** It **inferred** his home town from a summer job on his CV and flagged
-   *"verify/correct this the first time a Hungary-based application comes up."* Ask for **current
-   location**, not home town — people are not where they grew up.
+3. **Work eligibility and sponsorship.** Where they may legally work, whether they need
+   sponsorship, and where they *want* to work. Andras's setup **inferred** his home town from a
+   summer job on his CV and flagged *"verify/correct this the first time a Hungary-based
+   application comes up"* — a guess at the field that decides which country a recruiter thinks
+   you are in.
 
-Add a fourth: **work eligibility and sponsorship.** Where they may legally work, whether they need
-sponsorship, and where they *want* to work.
+**Current location is an onboarding field, not an agent question** (decided 2026-07-29). It is a
+fact the user can simply state, it goes straight onto the CV, and a form is the right place to
+collect a fact. The agents ask what can *shape a prompt* — a convention, a band, a rule about
+eligibility — not what can be typed into a box.
 
 ## Eligibility filtering
 

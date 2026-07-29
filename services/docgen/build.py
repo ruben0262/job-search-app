@@ -80,7 +80,13 @@ class BuildFailed(RuntimeError):
 
 
 def base_document(profile: ProfileSchema) -> str:
-    """The candidate's full CV, before tailoring — the input the prompt calls BASE TEMPLATE."""
+    """**Deprecated — the base CV is now a per-user file** (`libs/profiles`, `base_cv.html`).
+
+    Kept only until the schema machinery is deleted in the last phase of `REBUILD_PLAN.md`; the
+    tests that still exercise the renderer call it. A caller wanting the document a user actually
+    applies with should read their `base_cv.html` instead: the setup agent writes their real
+    experience into it, where this can only emit what a schema has fields for.
+    """
     return render_cv(profile)
 
 
@@ -174,7 +180,7 @@ def tailor_cover(client, profile: ProfileSchema, cv_html: str, context: str, *,
     a second document that has to print with the same fonts and the same A4 rules as the CV, and it
     is the only part of the layout the model is trusted to carry.
     """
-    head = head_block(base_document(profile))
+    head = head_block(cv_html)
     prompt = (render_cover_prompt(profile)
               .replace("<HEAD_BLOCK>", head)
               .replace("<JOB_CONTEXT>", context)

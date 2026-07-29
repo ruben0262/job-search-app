@@ -26,6 +26,11 @@ from libs.db.models.auth import (
 from libs.db.models.corpus import CorpusJob
 from libs.db.models.document import DOCUMENT_KINDS, UserDocument
 from libs.db.models.plan import FREE_PLAN, Plan
+from libs.db.models.profile_file import (
+    PROFILE_FILE_KINDS,
+    SCORING_RELEVANT_FILES,
+    UserProfileFile,
+)
 from libs.db.models.proxy import PROXY_STATUSES, ProxyCredential
 from libs.db.models.queue import CLAIM_TIMEOUT_MIN, JOB_STATES, LANES, MAX_ATTEMPTS, QueueJob
 from libs.db.models.tenant import LABEL_SOURCES, UserJobState, UserLabel, UserModel
@@ -47,7 +52,9 @@ __all__ = [
     "LANES",
     "MAIL_PURPOSES",
     "MAX_ATTEMPTS",
+    "PROFILE_FILE_KINDS",
     "PROXY_STATUSES",
+    "SCORING_RELEVANT_FILES",
     "SECRET_KINDS",
     "TELEGRAM_STATUSES",
     "TOKEN_PURPOSES",
@@ -67,6 +74,7 @@ __all__ = [
     "UserJobState",
     "UserLabel",
     "UserModel",
+    "UserProfileFile",
     "UserSecret",
     "UserSession",
 ]

@@ -177,3 +177,76 @@ def _supported(node):
     if isinstance(node, list):
         return [_supported(item) for item in node]
     return node
+
+# ── two calls, because one grammar is too big ─────────────────────────────────────────────────
+#
+# Structured output compiles the schema into a grammar, and the whole of `ProfileSchema` exceeds
+# what the API will compile: "The compiled grammar is too large, which would cause performance
+# issues." Shrinking the schema would mean dropping fields from the profile, which is the opposite
+# of the problem being fixed — the profile was already too thin.
+#
+# So the profile is captured in two calls over the same documents. The split is by *what the model
+# has to do*, not by size: transcribing a career is careful copying, and deriving what somebody is
+# not is judgement. They were competing for attention in one call, which is the likeliest reason
+# the NOT-list came back full and the experience empty.
+CAREER_FIELDS = ("education", "experience", "projects", "certifications")
+JUDGEMENT_FIELDS = ("identity", "skills", "targets", "constraints", "not_list", "conflicts",
+                    "exclusions")
+
+CAREER_INSTRUCTION = """\
+Transcribe this candidate's career from the documents. Every role, every project, every \
+qualification, every certification, most recent first — with dates, the technologies each used, \
+and what they achieved, carrying the substance of their own bullets rather than summarising them.
+
+This is what their CV is built from. A role you leave out cannot appear on any application they \
+send, and a role reduced to one line loses the work that would have won the interview. Never \
+invent an entry, and never merge two roles into one.
+"""
+
+JUDGEMENT_INSTRUCTION = """\
+Read this candidate's documents and describe who they are: their identity and contact details, \
+their skills, what they are looking for, their constraints — and, hardest of all, what they \
+are NOT.
+
+For the NOT-list, name domains and technologies with no supporting professional evidence. Nobody \
+self-reports this accurately and it is what stops off-stack roles being recommended. Be specific \
+("enterprise Java at depth", "mobile", "game engines"), and only include a domain when the absence \
+of evidence is clear rather than merely unmentioned.
+"""
+
+
+def subset_schema(fields: tuple[str, ...]) -> dict:
+    """The schema for one call: these top-level fields, and only the definitions they reach.
+
+    Pruned rather than filtered, because an unreferenced `$def` still costs grammar: the point of
+    splitting the call is to compile a smaller one.
+    """
+    schema = output_schema()
+    properties = {name: value for name, value in schema.get("properties", {}).items()
+                  if name in fields}
+    subset = {"type": "object", "properties": properties,
+              "required": [name for name in schema.get("required", []) if name in fields],
+              "additionalProperties": False}
+
+    definitions = schema.get("$defs", {})
+    reachable: set[str] = set()
+    _walk(properties, definitions, reachable)
+    if reachable:
+        subset["$defs"] = {name: definitions[name] for name in sorted(reachable)}
+    return subset
+
+
+def _walk(node, definitions: dict, seen: set) -> None:
+    """Collect every `$defs` name reachable from `node`."""
+    if isinstance(node, dict):
+        ref = node.get("$ref")
+        if isinstance(ref, str) and ref.startswith("#/$defs/"):
+            name = ref.split("/")[-1]
+            if name not in seen and name in definitions:
+                seen.add(name)
+                _walk(definitions[name], definitions, seen)
+        for value in node.values():
+            _walk(value, definitions, seen)
+    elif isinstance(node, list):
+        for item in node:
+            _walk(item, definitions, seen)

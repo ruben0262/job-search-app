@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<!--
+  BASE CV — TEMPLATE
+  [FILLED BY /setup] — /setup writes your real profile into this file. Right now it is a
+  blank scaffold: real layout/CSS, placeholder content.
+
+  This is the ONE base CV for every application. Each job gets a tailored copy generated
+  from it (the pipeline builds them automatically; /apply does it interactively) — the
+  angle, wording and emphasis are decided per posting, so you do not need a template per
+  role type. Keep the <style> block intact: the pipeline restores this canonical CSS on
+  every build and relies on these class names.
+
+  Layout: single-column, ATS-parseable, no photo/graphics/tables. Section order is the
+  recruiter-standard one and should not be reshuffled.
+
+  Compile (interactive/manual use):
+    powershell -File cv/compile.ps1 cv/base_cv.html cv/base_cv.pdf
+
+  Tailoring checklist (per job):
+  - Update <title> with the company name
+  - Rewrite .profile paragraph for the specific role, leading with its keywords
+  - Reorder/rewrite Core Competency bullets to front-load matching skills
+  - Adjust experience bullet emphasis toward what the posting asks for
+  - Verify the PDF is exactly 2 pages after compilation
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>[YOUR NAME] – CV</title>
+<style>
+
+/* ---- FONTS ---- */
+@font-face {
+  font-family: 'Lato';
+  src: url('../cover_letters/OpenFonts/fonts/lato/Lato-Lig.ttf');
+  font-weight: 300;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'Lato';
+  src: url('../cover_letters/OpenFonts/fonts/lato/Lato-Reg.ttf');
+  font-weight: 400;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'Lato';
+  src: url('../cover_letters/OpenFonts/fonts/lato/Lato-Bol.ttf');
+  font-weight: 700;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'Lato';
+  src: url('../cover_letters/OpenFonts/fonts/lato/Lato-Bla.ttf');
+  font-weight: 900;
+  font-style: normal;
+}
+
+/* ---- PAGE ---- */
+@page {
+  size: A4;
+  margin: 0;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: 'Lato', Arial, sans-serif;
+  font-size: 10pt;
+  color: #222;
+  line-height: 1.32;
+  padding: 17mm 20mm 16mm 20mm;
+}
+
+a { color: #003399; text-decoration: none; }
+
+/* ---- HEADER ---- */
+.cv-header { margin-bottom: 5pt; }
+
+.cv-name {
+  font-size: 29pt;
+  font-weight: 900;
+  color: #003399;
+  line-height: 1.0;
+  letter-spacing: 0.3pt;
+}
+
+.cv-contact {
+  font-size: 9pt;
+  color: #555;
+  margin-top: 4pt;
+}
+
+.cv-contact span { margin-right: 10pt; }
+
+.header-rule {
+  border: none;
+  border-top: 1.5pt solid #003399;
+  margin: 6pt 0 7pt 0;
+}
+
+/* ---- PROFILE ---- */
+.profile {
+  font-size: 10pt;
+  text-align: justify;
+  margin-bottom: 0;
+  line-height: 1.35;
+}
+
+/* ---- SECTIONS ---- */
+.section { margin-top: 7pt; }
+
+.section-title {
+  font-size: 10.5pt;
+  font-weight: 900;
+  color: #003399;
+  text-transform: uppercase;
+  letter-spacing: 0.3pt;
+  border-bottom: 1pt solid #003399;
+  padding-bottom: 1.5pt;
+  margin-bottom: 4pt;
+}
+
+/* ---- COMPETENCIES ---- */
+.competencies ul {
+  padding-left: 13pt;
+  list-style-type: disc;
+}
+
+.competencies ul li {
+  font-size: 9.5pt;
+  margin-bottom: 2.5pt;
+  line-height: 1.3;
+}
+
+/* ---- EXPERIENCE ENTRIES ---- */
+.entry {
+  break-inside: avoid;
+  page-break-inside: avoid;
+  margin-bottom: 4.5pt;
+}
+
+.entry-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 6pt;
+}
+
+.entry-title {
+  font-weight: 700;
+  font-size: 10pt;
+  flex: 1;
+  line-height: 1.2;
+}
+
+.entry-date {
+  font-size: 9pt;
+  color: #555;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.entry-desc {
+  font-size: 9.5pt;
+  color: #333;
+  margin-top: 1.5pt;
+  line-height: 1.35;
+}
+
+.entry ul {
+  padding-left: 13pt;
+  list-style-type: disc;
+  margin-top: 2pt;
+}
+
+.entry ul li {
+  font-size: 9.5pt;
+  margin-bottom: 1.5pt;
+  line-height: 1.3;
+}
+
+/* ---- MISC LISTS ---- */
+.plain-list {
+  padding-left: 13pt;
+  list-style-type: disc;
+}
+
+.plain-list li {
+  font-size: 9.5pt;
+  margin-bottom: 2pt;
+  line-height: 1.3;
+}
+
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="cv-header">
+  <div class="cv-name">[YOUR NAME]</div>
+  <div class="cv-contact">
+    <span>[CITY, COUNTRY]</span>
+    <span>[PHONE]</span>
+    <span><a href="mailto:[EMAIL]">[EMAIL]</a></span>
+    <span><a href="[LINKEDIN URL]">LinkedIn</a></span>
+    <span><a href="[GITHUB URL]">GitHub</a></span>
+  </div>
+</div>
+<hr class="header-rule">
+
+<!-- PROFILE — tailor this paragraph for every role -->
+<p class="profile">[Elevator-pitch profile paragraph, 3-5 lines, tailored per role. Lead with the
+job title or closest equivalent and the 3-4 most important keywords from the posting. Say what
+you build, the stack, and the value you bring — not a generic summary.]</p>
+
+<!-- CORE COMPETENCIES — reorder bullets to match role requirements -->
+<div class="section competencies">
+  <div class="section-title">Core Competencies</div>
+  <ul>
+    <li><strong>[Category e.g. Languages &amp; Frameworks]:</strong> [comma-separated skills]</li>
+    <li><strong>[Category]:</strong> [skills]</li>
+    <li><strong>[Category]:</strong> [skills]</li>
+    <li><strong>[Category]:</strong> [skills]</li>
+    <li><strong>[Category]:</strong> [skills]</li>
+  </ul>
+</div>
+
+<!-- EXPERIENCE -->
+<div class="section">
+  <div class="section-title">Experience</div>
+
+  <div class="entry">
+    <div class="entry-head">
+      <span class="entry-title">[Role Title] &mdash; [Company] &middot; [Location / Remote]</span>
+      <span class="entry-date">[Start] &ndash; [End]</span>
+    </div>
+    <ul>
+      <li>[Bullet: strong verb + specific achievement + quantified impact]</li>
+      <li>[Bullet]</li>
+      <li>[Bullet]</li>
+    </ul>
+  </div>
+
+  <div class="entry">
+    <div class="entry-head">
+      <span class="entry-title">[Role Title] &mdash; [Company] &middot; [Location / Remote]</span>
+      <span class="entry-date">[Start] &ndash; [End]</span>
+    </div>
+    <ul>
+      <li>[Bullet]</li>
+      <li>[Bullet]</li>
+    </ul>
+  </div>
+
+  <!-- Add more .entry blocks as needed. -->
+
+</div>
+
+<!-- EDUCATION -->
+<div class="section">
+  <div class="section-title">Education</div>
+
+  <div class="entry">
+    <div class="entry-head">
+      <span class="entry-title">[Degree] &middot; [Institution] &middot; [Location]</span>
+      <span class="entry-date">[Start] &ndash; [End]</span>
+    </div>
+    <p class="entry-desc">[Optional: dissertation title and relevant modules — include only when relevant to the role.]</p>
+  </div>
+</div>
+
+<!-- LANGUAGES -->
+<div class="section">
+  <div class="section-title">Languages</div>
+  <ul class="plain-list">
+    <li>[Language (level), Language (level)]</li>
+  </ul>
+</div>
+
+<!-- CERTIFICATIONS -->
+<div class="section">
+  <div class="section-title">Certifications</div>
+  <ul class="plain-list">
+    <li><strong>[Certification]</strong> &mdash; [Issuer] ([Year])</li>
+  </ul>
+</div>
+
+<!-- REFERENCES -->
+<div class="section">
+  <div class="section-title">References</div>
+  <ul class="plain-list">
+    <li>Available upon request.</li>
+  </ul>
+</div>
+
+</body>
+</html>

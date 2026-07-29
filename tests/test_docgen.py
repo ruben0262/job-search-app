@@ -275,7 +275,11 @@ def fake_chrome(monkeypatch):
     return state
 
 
-def _session(monkeypatch, *, profile=PROFILE, chat_id="4242", description="Backend role. Python."):
+DEFAULT_FILES = {"grounding": "# Facts about Alice Example", "base_cv.html": TAILORED}
+
+
+def _session(monkeypatch, *, profile=PROFILE, chat_id="4242", description="Backend role. Python.",
+             profile_files=DEFAULT_FILES):
     """A stand-in for the two `session.get` calls and the pin, with no database."""
     user = type("U", (), {"id": uuid.uuid4(), "profile": profile.model_dump(),
                           "facts_md": "# Facts about Alice Example",
@@ -302,6 +306,22 @@ def _session(monkeypatch, *, profile=PROFILE, chat_id="4242", description="Backe
 
     monkeypatch.setattr(run, "CorpusRepository",
                         lambda _s: type("R", (), {"pin": lambda _self, job_id: pinned.append(job_id)})())
+
+    # The profile is files now (`libs/profiles`), not a schema render. Stubbed here so these tests
+    # stay about docgen: what reaches the model, what comes back, and what is never delivered.
+    class Files:
+        def __init__(self, *_args):
+            pass
+
+        def grounding(self):
+            if profile_files is None:
+                raise run.ProfileIncomplete("no completed profile")
+            return profile_files["grounding"]
+
+        def read(self, name):
+            return (profile_files or {}).get(name)
+
+    monkeypatch.setattr(run, "ProfileFiles", Files)
     # `func.now()` is a SQL expression, not a value; nothing here evaluates it.
     return Session(), user, job, state, pinned
 
@@ -377,20 +397,37 @@ def test_a_cv_with_hidden_content_is_never_delivered(monkeypatch, fake_chrome, t
     assert state.applied_at is None
 
 
-@pytest.mark.parametrize(("field", "value"), [("profile", None), ("telegram_chat_id", None)])
-def test_an_account_that_cannot_receive_a_cv_refuses_before_spending_a_call(monkeypatch,
-                                                                           fake_chrome, tmp_path,
-                                                                           field, value):
-    session, user, _job, _state, _pinned = _session(monkeypatch)
-    setattr(user, field, value)
+def test_an_account_with_no_completed_profile_refuses_before_spending_a_call(monkeypatch,
+                                                                            fake_chrome, tmp_path):
+    """Setup was never finished. Terminal, and refused before the credential is touched — a call
+    spent on an account that cannot receive a document is money for nothing."""
+    session, user, _job, _state, _pinned = _session(monkeypatch, profile_files=None)
     client = FakeClient()
 
     with pytest.raises(run.NotBuildable):
         run.run_build(session, user.id, 7, client=client, send_document=Recorder(),
                       token="t", workdir=tmp_path)
 
-    if field == "profile":
-        assert client.calls == [], "a call was spent on an account that could never receive a CV"
+    assert client.calls == [], "a call was spent on an account that could never receive a CV"
+
+
+def test_an_account_with_no_base_cv_refuses(monkeypatch, fake_chrome, tmp_path):
+    """The base CV is the document the tailoring prompt edits. Without one there is nothing to
+    tailor, and the model would invent a CV from the grounding alone."""
+    session, user, _job, _state, _pinned = _session(
+        monkeypatch, profile_files={"grounding": "# Facts", "base_cv.html": ""})
+
+    with pytest.raises(run.NotBuildable):
+        run.run_build(session, user.id, 7, client=FakeClient(), send_document=Recorder(),
+                      token="t", workdir=tmp_path)
+
+
+def test_an_account_with_no_telegram_chat_refuses(monkeypatch, fake_chrome, tmp_path):
+    session, user, _job, _state, _pinned = _session(monkeypatch, chat_id=None)
+
+    with pytest.raises(run.NotBuildable):
+        run.run_build(session, user.id, 7, client=FakeClient(), send_document=Recorder(),
+                      token="t", workdir=tmp_path)
 
 
 def test_a_posting_with_no_description_is_refused(monkeypatch, fake_chrome, tmp_path):

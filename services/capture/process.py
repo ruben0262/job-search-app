@@ -25,12 +25,16 @@ from libs.llm import LlmClient, LlmError
 from libs.obs import audit
 from services.capture.prompt import (
     CAPTURE_MODEL,
+    CAREER_FIELDS,
+    CAREER_INSTRUCTION,
+    JUDGEMENT_FIELDS,
+    JUDGEMENT_INSTRUCTION,
     MAX_TOKENS,
     SYSTEM_PROMPT,
     THINKING_TOKENS,
     build_messages,
     links_to_map,
-    output_schema,
+    subset_schema,
 )
 
 logger = logging.getLogger(__name__)
@@ -83,14 +87,24 @@ def capture_profile(client: LlmClient, documents: list[tuple[str, str]], *,
     if not documents:
         raise CaptureFailed("no documents to read")
 
-    schema = output_schema()
-    # The model is never shown the flag it must not set. Belt to the braces below.
-    schema.get("properties", {}).pop("confirmed", None)
+    messages = build_messages(documents, full_name=full_name)
 
-    raw = client.complete_json(model=CAPTURE_MODEL, system=SYSTEM_PROMPT,
-                               messages=build_messages(documents, full_name=full_name),
-                               schema=schema, max_tokens=MAX_TOKENS,
-                               thinking_tokens=THINKING_TOKENS)
+    # **Two calls over the same documents**, because one grammar is too large to compile and because
+    # the two halves are different work: transcribing a career is careful copying, and deciding what
+    # somebody is *not* is judgement. Asking for both at once is the likeliest reason the first
+    # capture came back with a full NOT-list and no experience at all.
+    raw: dict = {}
+    for fields, instruction in ((CAREER_FIELDS, CAREER_INSTRUCTION),
+                                (JUDGEMENT_FIELDS, JUDGEMENT_INSTRUCTION)):
+        schema = subset_schema(fields)
+        # The model is never shown the flag it must not set. Belt to the braces below.
+        schema.get("properties", {}).pop("confirmed", None)
+        part = client.complete_json(model=CAPTURE_MODEL,
+                                    system=SYSTEM_PROMPT + "\n\n" + instruction,
+                                    messages=messages, schema=schema, max_tokens=MAX_TOKENS,
+                                    thinking_tokens=THINKING_TOKENS)
+        raw.update(part or {})
+
     # Braces. Whatever came back, this profile is a proposal until a human says otherwise.
     raw["confirmed"] = False
     # The links come back as a list because that is the only shape structured output accepts for

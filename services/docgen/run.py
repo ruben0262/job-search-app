@@ -31,6 +31,8 @@ from libs.contracts.profile import ProfileSchema
 from libs.corpus.repository import CorpusRepository
 from libs.db.models import CorpusJob, User, UserJobState
 from libs.obs import audit
+from libs.profiles import ProfileIncomplete
+from libs.profiles.repository import ProfileFiles
 from services.docgen import build, pdf
 
 logger = logging.getLogger(__name__)
@@ -73,19 +75,29 @@ def run_build(session, user_id: _uuid.UUID, job_id: int, *,
     user, job, score = _load(session, user_id, job_id)
     profile = ProfileSchema.model_validate(user.profile)
 
-    # **The user's own grounding document, and `facts_md` only as the backstop.** The reference
-    # instance's CLAUDE.md is what its A/B showed the writing depends on; a facts block rendered
-    # from a schema can only carry what the schema has fields for.
-    grounding = user.profile_context or user.facts_md
+    # **The reference instance's `CLAUDE.md` and skill files, per user** (`libs/profiles`). This is
+    # the port of `cwd=REPO_ROOT`: what the CLI loads off disk automatically, assembled explicitly.
+    # `ProfileIncomplete` here means setup was never finished — terminal, not a retry.
+    files = ProfileFiles(session, user_id)
+    try:
+        grounding = files.grounding()
+    except ProfileIncomplete as exc:
+        raise NotBuildable(str(exc)) from exc
+
+    # Their own CV, with their real experience in it — written by the setup agent into
+    # `base_cv.html`, not rendered from a schema.
+    base_cv = files.read("base_cv.html")
+    if not base_cv or not base_cv.strip():
+        raise NotBuildable("this account has no base CV yet — finish setup first")
 
     scratch = pathlib.Path(workdir) if workdir else pathlib.Path(tempfile.mkdtemp(prefix="docgen-"))
     try:
         if kind == "cover":
-            html, pages, calls = _cover(client, profile, job, score, grounding=grounding,
-                                        scratch=scratch)
+            html, pages, calls = _cover(client, profile, job, score, base_cv=base_cv,
+                                        grounding=grounding, scratch=scratch)
         else:
             html, pages, calls = _tailor_until_it_fits(
-                client, profile, job, score, facts_md=grounding, scratch=scratch)
+                client, profile, job, score, base_cv=base_cv, facts_md=grounding, scratch=scratch)
 
         leftover = build.scan_hidden(html)
         if leftover:
@@ -126,7 +138,8 @@ def run_build(session, user_id: _uuid.UUID, job_id: int, *,
 
 
 def _cover(client, profile: ProfileSchema, job: CorpusJob, score: float | None, *,
-           grounding: str | None, scratch: pathlib.Path) -> tuple[str, int | None, int]:
+           base_cv: str, grounding: str | None,
+           scratch: pathlib.Path) -> tuple[str, int | None, int]:
     """One call, no revision loop.
 
     A cover letter has a word count in its own prompt and a mechanical scan that enforces it, so the
@@ -135,13 +148,13 @@ def _cover(client, profile: ProfileSchema, job: CorpusJob, score: float | None, 
     reference's `build_cover_only` does: the tailored copy is ephemeral and rebuilding it would
     double the cost of pressing one button.
     """
-    letter = build.tailor_cover(client, profile, build.base_document(profile),
+    letter = build.tailor_cover(client, profile, base_cv,
                                 build.job_context(job, score=score), facts_md=grounding)
     return letter, _page_count(letter, scratch), 1
 
 
 def _tailor_until_it_fits(client, profile: ProfileSchema, job: CorpusJob, score: float | None, *,
-                          facts_md: str | None,
+                          base_cv: str, facts_md: str | None,
                           scratch: pathlib.Path) -> tuple[str, int | None, int]:
     """Tailor, compile, and if the PDF is too long, say so once and tailor again.
 
@@ -149,7 +162,7 @@ def _tailor_until_it_fits(client, profile: ProfileSchema, job: CorpusJob, score:
     than estimated from the markup, because the model's own sense of how long its output will print
     is not evidence of anything.
     """
-    base = build.base_document(profile)
+    base = base_cv
     context = build.job_context(job, score=score)
 
     html = build.tailor(client, profile, base, context, facts_md=facts_md)
