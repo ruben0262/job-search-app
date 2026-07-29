@@ -100,29 +100,43 @@ VERDICT_SCHEMA = {
 }
 
 
-def pick_jobs(session, user_id, count: int) -> list[CorpusJob]:
-    """Real jobs this account was scored on, spread across the score range.
+def pick_jobs(session, user_id, count: int, *, min_score: float = 60.0) -> list[CorpusJob]:
+    """Real jobs this account was scored on, spread across the score range above `min_score`.
 
-    Spread rather than top-N because a prompt can look excellent on the obvious fits and fall apart
-    on the ones needing a real angle — and the second group is where a CV earns its keep. Ordered
-    by id within each band so the same corpus yields the same sample twice.
+    **Above the threshold, because that is the only population a CV is ever built for.** The first
+    run of this graded a Senior Product Designer posting the model had scored 12; both variants
+    produced a bad CV, both judgements said "this is an engineer applying for a design role", and
+    the comparison measured nothing about either prompt. A CV is built when the user decides to
+    apply, so the prompt has to be judged on the jobs they would actually apply to.
+
+    Spread across the bands above it rather than top-N, because a prompt can look excellent on the
+    obvious fits and fall apart on the ones needing a real angle — and that second group is where a
+    CV earns its keep. Ordered by id within each band, so the same corpus yields the same sample
+    twice and two runs are comparable.
     """
     rows = session.execute(
         select(CorpusJob, UserJobState.score)
         .join(UserJobState, UserJobState.job_id == CorpusJob.id)
         .where(UserJobState.user_id == user_id,
-               UserJobState.score.is_not(None),
+               UserJobState.score >= min_score,
                CorpusJob.trimmed_at.is_(None),
                func.length(func.coalesce(CorpusJob.description, "")) >= 1_500)
         .order_by(CorpusJob.id)).all()
     if not rows:
         return []
 
+    # Five bands across whatever range survived the floor, so a run of three does not take three
+    # near-identical jobs from the top of it.
+    lowest = min(score for _job, score in rows)
+    highest = max(score for _job, score in rows)
+    width = max((highest - lowest) / 5, 1e-6)
+
     bands: dict[int, list] = defaultdict(list)
     for job, score in rows:
-        bands[min(int(score) // 20, 4)].append(job)
+        bands[min(int((score - lowest) / width), 4)].append(job)
 
-    picked, band_keys = [], sorted(bands)
+    # Best band first: a short run should sample the jobs most likely to be applied to.
+    picked, band_keys = [], sorted(bands, reverse=True)
     while len(picked) < count and any(bands[key] for key in band_keys):
         for key in band_keys:
             if bands[key] and len(picked) < count:
@@ -188,6 +202,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--email", required=True)
     parser.add_argument("--jobs", type=int, default=12)
+    parser.add_argument("--min-score", type=float, default=60.0,
+                        help="only grade jobs at or above this score (default: the delivery "
+                             "threshold, which is the population a CV is ever built for)")
     parser.add_argument("--variant", action="append", required=True,
                         metavar="NAME=SOURCE",
                         help="stored | scaffold:tailor_cv.md | file:/path/to/prompt.md")
@@ -219,9 +236,10 @@ def main(argv: list[str] | None = None) -> int:
         for name, prompt in prompts.items():
             print(f"  variant {name:10} {len(prompt):>6,} chars"
                   f"{'  + role angles' if angles[name] else '  (angles inline)'}")
-        jobs = pick_jobs(session, user.id, args.jobs)
+        jobs = pick_jobs(session, user.id, args.jobs, min_score=args.min_score)
         if not jobs:
-            raise SystemExit("no scored jobs with a real description — run a harvest first")
+            raise SystemExit(f"no jobs scored >= {args.min_score:.0f} with a real description — "
+                             "lower --min-score or run a harvest first")
 
         print(f"{len(jobs)} job(s) x {len(prompts)} variant(s) "
               f"= {len(jobs) * len(prompts)} build(s) and as many judgements\n")
