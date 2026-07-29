@@ -135,6 +135,16 @@ ignore = [
     "PLC0415",  # local imports as the original had them
     "UP017", "UP035", "UP037",
 ]
+# The posting fetcher, ported from the reference's `scorer/fetch_desc.py` on 2026-07-29.
+#
+# The blind excepts are the contract, not sloppiness: every function here reaches a third-party page
+# over a residential proxy, and the only acceptable failure mode is "no signal" — a job must never
+# be dropped from the corpus because a board returned malformed HTML or the proxy timed out. Each
+# one either tallies the outcome into `stats` or returns None to a caller that handles it.
+"libs/corpus/postings.py" = [
+    "BLE001",   # see above: a fetch failure is data, not an exception to propagate
+    "S112",     # one JSON-LD block failing to parse means skip it, not abandon the page
+]
 "libs/corpus/timefilter.py" = ["UP017", "UP035", "UP037", "RUF001", "E501"]
 "libs/corpus/workfilter.py" = ["UP017", "UP035", "UP037", "RUF001", "E501", "PLR0911"]
 

@@ -47,7 +47,9 @@ from libs.db.models import User
 from libs.obs import audit
 from libs.queue import enqueue
 from libs.tenant.repository import TenantRepository
+from services.harvester.describe import describe_pending
 from services.harvester.embedding import embed_all_pending
+from services.harvester.fetch import make_shared_client
 from services.harvester.query_set import (
     HARVEST_MAX_QUERIES_PER_CYCLE,
     PlannedQuery,
@@ -78,6 +80,11 @@ class CycleReport:
     links_found: int = 0
     duplicates: dict[str, int] = field(default_factory=dict)
     new_jobs: int = 0
+    # Rows whose thin snippet was replaced by the posting's own text. Low with a healthy
+    # `describe_outcomes` means the sources are already generous; low with `generic_http_403`
+    # everywhere means the pass is being blocked and every label is being formed from a teaser.
+    described: int = 0
+    describe_outcomes: dict[str, int] = field(default_factory=dict)
     embedded: int = 0
     # Per source, so "the cycle found 200 links" cannot hide "and four of six sources found none".
     links_by_source: dict[str, int] = field(default_factory=dict)
@@ -145,8 +152,13 @@ def run_cycle(
     carried_over: Iterable[QueryKey] = (),
     max_queries: int = HARVEST_MAX_QUERIES_PER_CYCLE,
     run_source: Callable[[Source, dict, AtsRepository], list[JobLink]] = _run_source,
+    describe: bool = True,
 ) -> tuple[CycleReport, list[QueryKey]]:
     """Run one shared harvest cycle. Returns the report and the queries to carry into the next.
+
+    `describe` turns off the description pass, which is the one stage that makes its own HTTP
+    requests outside `run_source`. Tests that inject a fake source set it False rather than have
+    every orchestration test reach the network.
 
     `run_source` is injectable so the orchestration can be tested without a network — the adapters
     themselves are covered structurally (`tests/test_harvester_sources.py`), and what is worth
@@ -191,6 +203,20 @@ def run_cycle(
         # 4-5. Dedup and upsert.
         report.new_jobs = _ingest(corpus, links, report)
 
+        # 5b. Fetch the descriptions the listing APIs did not give us.
+        #
+        # **Before embedding, deliberately.** A vector computed from a 180-character teaser is a
+        # vector of the advert, and every similarity read against it is wrong in a way nothing
+        # downstream can detect. Describing first means the row embeds once, from the real text.
+        #
+        # Only the free tier here: LinkedIn needs a residential IP, so those rows are left for the
+        # per-user pass that holds a lease. A shared cycle must never reach for a user's proxy.
+        if describe:
+            with make_shared_client() as client:
+                described = describe_pending(corpus, client, linkedin=False)
+            report.described = described.described
+            report.describe_outcomes = described.outcomes
+
         # 6. Embed the new rows. Once, for everyone.
         if embedder is not None:
             result = embed_all_pending(corpus, embedder, expected=expected_embedder)
@@ -208,12 +234,13 @@ def run_cycle(
         report.scoring_enqueued = _enqueue_scoring(session)
 
     logger.info(
-        "harvest: %d queries (%d deferred), %d links, %d duplicates, %d new, %d embedded",
+        "harvest: %d queries (%d deferred), %d links, %d duplicates, %d new, %d described, "
+        "%d embedded",
         report.queries_planned, report.queries_deferred, report.links_found,
-        report.duplicates_total, report.new_jobs, report.embedded)
+        report.duplicates_total, report.new_jobs, report.described, report.embedded)
     audit(logger, "harvest.cycle",
           queries=report.queries_planned, links=report.links_found,
-          new=report.new_jobs, embedded=report.embedded,
+          new=report.new_jobs, described=report.described, embedded=report.embedded,
           scoring_enqueued=report.scoring_enqueued,
           failed_sources=len(report.source_failures),
           empty_sources=sum(1 for n in report.links_by_source.values() if n == 0))

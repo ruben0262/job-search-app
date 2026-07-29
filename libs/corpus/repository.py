@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -43,6 +43,11 @@ from libs.db.models import CorpusJob
 # are dropped and the ~258-byte dedup key is kept forever. This is what makes 0.87 GB a *steady*
 # state rather than a number that grows until someone notices.
 CORPUS_HOT_DAYS = 90
+
+# Below this, stored text is a teaser rather than a description and the job is re-fetched from its
+# own page. The reference's threshold, and it is a judgement about listing pages rather than a round
+# number: at 200 characters a LinkedIn snippet is still the first paragraph of the advert.
+MIN_DESCRIPTION = 200
 
 
 @dataclass(frozen=True)
@@ -245,6 +250,51 @@ class CorpusRepository:
         job.embedding_dim = None
         job.embedding_version = None
         return True
+
+    def awaiting_description(self, *, limit: int = 200, linkedin: bool | None = None,
+                             min_chars: int = MIN_DESCRIPTION) -> list[CorpusJob]:
+        """Jobs whose stored text is too thin to score on. Newest first.
+
+        A row can be here for two reasons and they need the same treatment: the source gave no
+        snippet at all, or it gave a teaser. `min_chars` is what separates a description from an
+        advertisement — below it the labeller is reading the listing page's furniture.
+
+        `linkedin` splits the work by **who can pay for it**. LinkedIn's guest endpoint blocks
+        datacenter IPs, so those rows can only be filled by a caller holding a user's residential
+        proxy lease; everything else is free on the shared client. Passing None takes both.
+
+        Trimmed rows are excluded: retention deliberately dropped that text, and re-fetching it
+        would undo the sweep on every cycle.
+        """
+        query = (
+            select(CorpusJob)
+            .where(CorpusJob.trimmed_at.is_(None),
+                   or_(CorpusJob.description.is_(None),
+                       func.length(CorpusJob.description) < min_chars))
+            .order_by(CorpusJob.first_seen_at.desc())
+            .limit(limit))
+        if linkedin is True:
+            query = query.where(CorpusJob.url.like("%/jobs/view/%"))
+        elif linkedin is False:
+            query = query.where(CorpusJob.url.not_like("%/jobs/view/%"))
+        return list(self._s.scalars(query))
+
+    def set_posting_metadata(self, job_id: int, *, applicants: int | None = None,
+                             easy_apply: bool | None = None, reposted: bool | None = None,
+                             workplace: str | None = None,
+                             posted_at: datetime | None = None) -> None:
+        """Record what the posting's own page said. **A None never overwrites a known value.**
+
+        That rule is the whole design. These signals come off pages that answer inconsistently —
+        the guest fragment carries the applicant count but not the apply button, the full page the
+        reverse — so a fetch that simply did not see a field must not erase what an earlier one
+        did. Clearing `workplace` this way would silently un-filter a job the user had excluded.
+        """
+        values = {name: value for name, value in (
+            ("applicants", applicants), ("easy_apply", easy_apply), ("reposted", reposted),
+            ("workplace", workplace), ("posted_at", posted_at)) if value is not None}
+        if values:
+            self._s.execute(update(CorpusJob).where(CorpusJob.id == job_id).values(**values))
 
     # ── embedding ────────────────────────────────────────────────────────────────────────────
 
