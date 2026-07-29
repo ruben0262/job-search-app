@@ -260,3 +260,14 @@ def test_the_score_schema_uses_no_keyword_structured_output_rejects():
     encoded = json.dumps(SCORE_SCHEMA)
     for keyword in ("minimum", "maximum", "maxItems", "maxLength", "minItems", "minLength"):
         assert f'"{keyword}"' not in encoded, f"{keyword} is not supported by structured output"
+
+
+def test_a_call_with_no_stated_thinking_budget_sends_no_thinking_parameter():
+    """**Neither shape is universal.** `adaptive` is rejected by Haiku and `budget_tokens` by Opus
+    5, both with a 400 and both only at runtime. The one setting correct on every model is the
+    model's own, so saying nothing is the default and a stated budget is the exception."""
+    from libs.llm.client import _thinking
+
+    assert _thinking(None) == {}
+    assert _thinking(0) == {}
+    assert _thinking(4_000) == {"thinking": {"type": "enabled", "budget_tokens": 4_000}}

@@ -83,7 +83,7 @@ class AnthropicClient:
                 system=system,
                 messages=messages,
                 max_tokens=max_tokens,
-                thinking=_thinking(thinking_tokens),
+                **_thinking(thinking_tokens),
                 output_config={"format": {"type": "json_schema", "schema": schema}}) as stream:
             message = stream.get_final_message()
 
@@ -109,7 +109,6 @@ class AnthropicClient:
         openers went from 1 to 5 and the style discipline degraded. Default thinking stays on for
         documents an employer reads; `0` is the escape hatch, and taking it needs an A/B.
         """
-        thinking = _thinking(thinking_tokens)
         # Streamed for the same reason the JSON path is: a whole HTML document at a high token
         # ceiling is exactly the request that meets a timeout instead of an answer.
         with self._client.messages.stream(
@@ -117,7 +116,7 @@ class AnthropicClient:
                 system=system,
                 messages=messages,
                 max_tokens=max_tokens,
-                thinking=thinking) as stream:
+                **_thinking(thinking_tokens)) as stream:
             message = stream.get_final_message()
         return _text_of(message)
 
@@ -165,14 +164,18 @@ class AnthropicClient:
 
 
 def _thinking(budget: int | None) -> dict:
-    """The thinking block for a call, in the shape the model actually accepts.
+    """The thinking block for a call, or nothing at all.
 
-    **`adaptive` is not universal.** It was hardcoded here, which was fine while every call went to
-    Opus and became a 400 — "adaptive thinking is not supported on this model" — the moment capture
-    moved to Haiku. A budget works on both, so a caller that states one gets it and a caller that
-    does not gets the model's own default.
+    **Neither shape is universal, so the default is to say nothing.** `adaptive` was hardcoded here
+    and became a 400 — "adaptive thinking is not supported on this model" — the moment a call went
+    to Haiku; `budget_tokens` is rejected by Opus 5 the same way. The only setting that is correct
+    everywhere is the model's own, so a caller that states a budget gets it and a caller that does
+    not gets whatever the model does by default.
+
+    Returned as kwargs rather than a value, so "no opinion" can mean an absent parameter instead of
+    a sentinel every call site would have to know about.
     """
-    return {"type": "enabled", "budget_tokens": budget} if budget else {"type": "adaptive"}
+    return {"thinking": {"type": "enabled", "budget_tokens": budget}} if budget else {}
 
 
 def _text_of(message) -> str:
