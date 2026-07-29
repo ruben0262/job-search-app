@@ -142,6 +142,17 @@ def variant_prompt(spec: str, files: ProfileFiles) -> str:
     raise SystemExit(f"unknown variant source {spec!r} — use stored, scaffold:NAME or file:PATH")
 
 
+def role_angles_for(prompt: str, files: ProfileFiles) -> str | None:
+    """This account's own angles, but only for a prompt that has somewhere to put them.
+
+    A stored prompt from before the split has its lenses written inline and no `<<ROLE_ANGLES>>`,
+    so it needs nothing. Returning None makes that explicit rather than incidental, which matters
+    here: the whole comparison is inline-lenses against injected-lenses, and a variant that
+    accidentally got both would measure neither.
+    """
+    return files.read("08-role-angles.md") if "<<ROLE_ANGLES>>" in prompt else None
+
+
 def deterministic_summary(html: str, text: str) -> str:
     """The objective half, computed rather than asked for.
 
@@ -204,6 +215,10 @@ def main(argv: list[str] | None = None) -> int:
         base_cv = files.read("base_cv.html")
         profile = ProfileSchema.model_validate(user.profile or {})
         prompts = {name: variant_prompt(spec, files) for name, spec in variants.items()}
+        angles = {name: role_angles_for(prompt, files) for name, prompt in prompts.items()}
+        for name, prompt in prompts.items():
+            print(f"  variant {name:10} {len(prompt):>6,} chars"
+                  f"{'  + role angles' if angles[name] else '  (angles inline)'}")
         jobs = pick_jobs(session, user.id, args.jobs)
         if not jobs:
             raise SystemExit("no scored jobs with a real description — run a harvest first")
@@ -233,7 +248,8 @@ def main(argv: list[str] | None = None) -> int:
 
                         for name, prompt in prompts.items():
                             html = build.tailor(client, profile, base_cv, context,
-                                                facts_md=grounding, template=prompt)
+                                                facts_md=grounding, template=prompt,
+                                                role_angles=angles[name])
                             text = build.html_to_text(html)
                             verdict = judge(
                                 client, model=args.judge_model, prompt=judge_prompt,
