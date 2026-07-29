@@ -17,9 +17,16 @@ the judge reproduces it.
 1. **Tailored beats untailored.** The same job, the base CV against the tailored one. If tailoring
    for a specific posting does not beat not tailoring at all, the judge cannot see the thing the
    whole product does.
-2. **A CV collapses on the wrong job.** The CV tailored for job A, graded against job B. This
-   should fall hardest on `role_angle_fit` and `keyword_integration` — the two dimensions that are
-   *about* the posting. A judge that scores it the same is reading the CV and ignoring the JD.
+2. **A CV collapses on the wrong job.** The CV tailored for job A, graded against a posting from
+   a **different field entirely**. This should fall hardest on `role_angle_fit` and
+   `keyword_integration` — the two dimensions that are *about* the posting. A judge that scores it
+   the same is reading the CV and ignoring the JD.
+
+   The distant job is chosen by *lowest* score, deliberately, and the first version of this probe
+   got it wrong: it paired jobs drawn from the same band above the delivery threshold, which for
+   this account meant "Software Engineer (AI Training)" against "Back End Developer (AI
+   Infrastructure)". Those are the same role. The probe returned +1.7 and looked like a broken
+   judge; it was a broken experiment, because the wrong job was not wrong.
 3. **Real beats degraded.** The tailored CV against a mechanically damaged copy of itself: metrics
    stripped, strong verbs replaced with "Responsible for", every bullet flattened to one shape.
    This is aimed at `achievement_quality` and `human_voice`, and it is the probe that catches a
@@ -143,8 +150,17 @@ def main(argv: list[str] | None = None) -> int:
         angles = role_angles_for(template or "", files)
 
         jobs = pick_jobs(session, user.id, args.jobs)
-        if len(jobs) < 2:
-            raise SystemExit("need at least two scored jobs — the wrong-job probe compares them")
+        if not jobs:
+            raise SystemExit("no scored jobs with a real description — run a harvest first")
+
+        # The most distant posting this account has, not a sibling of the ones being tested. Taken
+        # from the bottom of the score range and capped there, because a low score for this user is
+        # precisely "a job in a different field".
+        distant = pick_jobs(session, user.id, 1, min_score=0.0, prefer="worst")
+        if not distant:
+            raise SystemExit("no low-scored job to use as the wrong-job control")
+        wrong = distant[0]
+        print(f"wrong-job control: {wrong.title!r} at {wrong.company or 'unknown'}")
 
         print(f"{len(jobs)} job(s), 4 judgements each "
               f"= {len(jobs) * 4} judgement(s) and {len(jobs)} build(s)\n")
@@ -159,8 +175,7 @@ def main(argv: list[str] | None = None) -> int:
                     client = client_for(value, credential)
                     judge_prompt = load(EVAL_CV_TEMPLATE)
 
-                    for index, job in enumerate(jobs):
-                        other = jobs[(index + 1) % len(jobs)]
+                    for job in jobs:
                         score = session.scalar(
                             select(UserJobState.score).where(
                                 UserJobState.user_id == user.id,
@@ -180,7 +195,7 @@ def main(argv: list[str] | None = None) -> int:
                         probes = {
                             "tailored": (tailored, job),
                             "untailored": (base_cv, job),
-                            "wrong_job": (tailored, other),
+                            "wrong_job": (tailored, wrong),
                             "degraded": (degrade(tailored), job),
                         }
                         for label, (document, against) in probes.items():

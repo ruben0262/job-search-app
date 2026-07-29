@@ -101,7 +101,8 @@ VERDICT_SCHEMA = {
 }
 
 
-def pick_jobs(session, user_id, count: int, *, min_score: float = 60.0) -> list[CorpusJob]:
+def pick_jobs(session, user_id, count: int, *, min_score: float = 60.0,
+              prefer: str = "best") -> list[CorpusJob]:
     """Real jobs this account was scored on, spread across the score range above `min_score`.
 
     **Above the threshold, because that is the only population a CV is ever built for.** The first
@@ -146,8 +147,10 @@ def pick_jobs(session, user_id, count: int, *, min_score: float = 60.0) -> list[
         seen.add(role)
         bands[min(int((score - lowest) / width), 4)].append(job)
 
-    # Best band first: a short run should sample the jobs most likely to be applied to.
-    picked, band_keys = [], sorted(bands, reverse=True)
+    # Best band first: a short run should sample the jobs most likely to be applied to. `prefer`
+    # flips it for the one caller that wants the opposite — the calibration's wrong-job control,
+    # which needs the most distant posting this account has rather than the most relevant.
+    picked, band_keys = [], sorted(bands, reverse=prefer == "best")
     while len(picked) < count and any(bands[key] for key in band_keys):
         for key in band_keys:
             if bands[key] and len(picked) < count:
