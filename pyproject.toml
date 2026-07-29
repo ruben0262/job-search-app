@@ -155,6 +155,22 @@ ignore = [
 # job: the library is optional (only the notifier image carries it), and a filter that raised on a
 # posting it could not read would drop a real job over a missing dependency.
 "libs/corpus/langfilter.py" = ["BLE001", "PLC0415"]
+# The objective CV checks, lifted from the reference's `pipeline/cv_eval.py` on 2026-07-29. Same
+# argument as the source adapters: every threshold, weight, stopword and tech term came from
+# reading real postings against real outcomes, and restyling it makes the diff against the source
+# unreviewable for no gain.
+#
+# `PLE2502`/`PLE2515` are the point of the file, not a defect: `_scan_hidden` matches literal
+# zero-width and bidi control characters, and escaping them would stop it detecting the thing it
+# exists to detect. `F841` is a genuine artifact of porting only the parts the platform uses —
+# `fmt_ok` is consumed by a gate block that lives in the half not ported.
+"libs/scoring/cveval.py" = [
+    "B034",     # positional re.split as the original wrote it
+    "F841",     # fmt_ok, set by the ported half and read by the half that is not
+    "PLE2502", "PLE2515",  # the hidden-character detector's own literals
+    "PLR0912", "PLR0915", "PLR0917",  # one long linear checker, as in the original
+    "RUF001",   # the × in a dimension string
+]
 "libs/corpus/timefilter.py" = ["UP017", "UP035", "UP037", "RUF001", "E501"]
 "libs/corpus/workfilter.py" = ["UP017", "UP035", "UP037", "RUF001", "E501", "PLR0911"]
 

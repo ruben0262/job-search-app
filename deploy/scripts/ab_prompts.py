@@ -298,7 +298,7 @@ def main(argv: list[str] | None = None) -> int:
                             verdict = judge(
                                 client, model=args.judge_model, prompt=judge_prompt,
                                 description=job.description or "", cv_text=text,
-                                summary=deterministic_summary(html, text))
+                                summary=deterministic_summary(html, text, job=job))
                             results.append({"job_id": job.id, "title": job.title,
                                             "variant": name, "chars": len(text), **verdict})
                             print(f"  {job.title[:44]:44} {name:10} "
