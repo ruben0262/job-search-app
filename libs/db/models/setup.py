@@ -17,7 +17,7 @@ from libs.db.base import Base, timestamptz
 
 # The commands a user can run in the chat. Ported from `.claude/commands/`; the first is the one
 # that has to run before either of the others will start.
-SETUP_AGENTS = ("setup", "setup-prompts", "setup-scorer")
+SETUP_AGENTS = ("setup", "setup-prompts", "setup-role-angles", "setup-scorer")
 
 
 class SetupMessage(Base):

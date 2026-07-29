@@ -119,7 +119,8 @@ def run_build(session, user_id: _uuid.UUID, job_id: int, *,
         else:
             html, pages, calls = _tailor_until_it_fits(
                 client, profile, context, base_cv=base_cv, facts_md=grounding, scratch=scratch,
-                template=files.read("tailor_cv.md"))
+                template=files.read("tailor_cv.md"),
+                role_angles=files.read("08-role-angles.md"))
 
         leftover = build.scan_hidden(html)
         if leftover:
@@ -177,7 +178,8 @@ def _cover(client, profile: ProfileSchema, context: str, *,
 
 def _tailor_until_it_fits(client, profile: ProfileSchema, context: str, *,
                           base_cv: str, facts_md: str | None, scratch: pathlib.Path,
-                          template: str | None = None) -> tuple[str, int | None, int]:
+                          template: str | None = None,
+                          role_angles: str | None = None) -> tuple[str, int | None, int]:
     """Tailor, compile, and if the PDF is too long, say so once and tailor again.
 
     The compile is what makes this loop honest: the page count is measured from the real PDF rather
@@ -186,7 +188,8 @@ def _tailor_until_it_fits(client, profile: ProfileSchema, context: str, *,
     """
     base = base_cv
 
-    html = build.tailor(client, profile, base, context, facts_md=facts_md, template=template)
+    html = build.tailor(client, profile, base, context, facts_md=facts_md, template=template,
+                        role_angles=role_angles)
     pages = _page_count(html, scratch)
 
     feedback = build.page_feedback(pages)
@@ -195,7 +198,7 @@ def _tailor_until_it_fits(client, profile: ProfileSchema, context: str, *,
 
     logger.info("docgen: %s pages, asking for one revision", pages)
     retried = build.tailor(client, profile, base, context, facts_md=facts_md,
-                           template=template, feedback=feedback)
+                           template=template, role_angles=role_angles, feedback=feedback)
     retried_pages = _page_count(retried, scratch)
 
     # Keep whichever is shorter. A revision that came back *longer* is not an improvement, and the

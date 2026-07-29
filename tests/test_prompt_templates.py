@@ -80,10 +80,40 @@ def test_every_placeholder_a_prompt_uses_is_one_the_renderer_fills():
         "constraints": {"languages": ["English (Native)", "German (C1)"]},
     })
 
+    # `<<ROLE_ANGLES>>` is filled a stage later, at build time, from the user's own
+    # `08-role-angles.md` — the renderer knows the profile and not the file. Everything else must
+    # be gone by here.
     for rendered in (render_cv_prompt(profile), render_cover_prompt(profile)):
-        assert not re.search(r"<<[A-Z_]+>>", rendered), "an unfilled placeholder reached the prompt"
+        left = set(re.findall(r"<<[A-Z_]+>>", rendered))
+        assert left <= {"<<ROLE_ANGLES>>"}, f"an unfilled placeholder reached the prompt: {left}"
         assert "Alice Example" in rendered
         assert "German (C1)" in rendered
+
+
+def test_the_role_angles_placeholder_never_survives_to_the_model():
+    """An unfilled `<<ROLE_ANGLES>>` would ask the model to write against a literal token, and an
+    empty heading would read as "this was meant to say something" and invite it to invent one."""
+    from libs.profiles import scaffold
+    from services.docgen.build import fill_role_angles
+
+    template = "before\n<<ROLE_ANGLES>>\nafter"
+
+    assert "<<ROLE_ANGLES>>" not in fill_role_angles(template, None)
+    assert "<<ROLE_ANGLES>>" not in fill_role_angles(template, "   ")
+    # The unedited scaffold is not content: it is instructions to the agent about what to write.
+    assert "<<ROLE_ANGLES>>" not in fill_role_angles(template, scaffold("08-role-angles.md"))
+    assert "ROLE ANGLES" not in fill_role_angles(template, scaffold("08-role-angles.md"))
+
+    filled = fill_role_angles(template, "ANGLE 1 - district nurse\n  Lead with: ward experience")
+    assert "district nurse" in filled and "ROLE ANGLES FOR THIS CANDIDATE" in filled
+
+
+def test_a_prompt_that_predates_the_split_is_left_alone():
+    """An imported hand-tuned prompt has its angles written inline and no placeholder. Injecting a
+    heading into it would be editing somebody's SACRED prompt behind their back."""
+    from services.docgen.build import fill_role_angles
+
+    assert fill_role_angles("no placeholder here", "angles") == "no placeholder here"
 
 
 def test_a_profile_with_no_languages_still_yields_a_writable_prompt():

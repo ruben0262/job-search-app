@@ -29,7 +29,7 @@ import logging
 import re
 
 from libs.contracts.profile import ProfileSchema
-from libs.profiles import scaffold
+from libs.profiles import PLACEHOLDER_MARKERS, scaffold
 from libs.scoring.docprompt import render_cover_prompt, render_cv_prompt
 from libs.templates import BASE_CV_TEMPLATE
 from libs.templates import load as load_template
@@ -168,8 +168,26 @@ def _age(posted_at) -> str:
 
 
 
+def fill_role_angles(template: str, role_angles: str | None) -> str:
+    """Put this candidate's role angles into the prompt, or take the instruction out.
+
+    An unfilled placeholder reaching the model would ask it to write against a literal
+    `<<ROLE_ANGLES>>`, and an *empty* one would leave a heading with nothing under it — which reads
+    as "this section was meant to say something" and invites the model to invent it. So a user
+    without the file gets the sentence removed entirely and the rest of the prompt, which is the
+    honest degradation: general instructions, no invented specialism.
+    """
+    if "<<ROLE_ANGLES>>" not in template:
+        return template                       # a prompt from before the split, or the user's own
+    angles = (role_angles or "").strip()
+    if not angles or any(marker in angles for marker in PLACEHOLDER_MARKERS):
+        return template.replace("<<ROLE_ANGLES>>", "")
+    return template.replace("<<ROLE_ANGLES>>", f"ROLE ANGLES FOR THIS CANDIDATE\n{angles}")
+
+
 def build_prompt(profile: ProfileSchema, base_html: str, context: str, *,
-                 template: str | None = None, feedback: str | None = None) -> str:
+                 template: str | None = None, feedback: str | None = None,
+                 role_angles: str | None = None) -> str:
     """The SACRED prompt, filled: the candidate, the job, and the base document.
 
     **`template` is the user's own `tailor_cv.md`.** They ship field-agnostic and get tuned per
@@ -181,7 +199,7 @@ def build_prompt(profile: ProfileSchema, base_html: str, context: str, *,
     names its subject has none to fill and passes through untouched, which is what makes importing
     a hand-tuned prompt a straight copy rather than a conversion.
     """
-    prompt = (render_cv_prompt(profile, template=template)
+    prompt = (fill_role_angles(render_cv_prompt(profile, template=template), role_angles)
               .replace("<JOB_CONTEXT>", context)
               .replace("<BASE_TEMPLATE>", base_html))
     if feedback:
@@ -191,7 +209,7 @@ def build_prompt(profile: ProfileSchema, base_html: str, context: str, *,
 
 def tailor(client, profile: ProfileSchema, base_html: str, context: str, *,
            facts_md: str | None = None, feedback: str | None = None, template: str | None = None,
-           model: str = CV_MODEL) -> str:
+           role_angles: str | None = None, model: str = CV_MODEL) -> str:
     """One call. Returns the tailored document with the platform's own CSS restored.
 
     **The facts block is the system prompt**, and that is the single most important line in this
@@ -201,6 +219,7 @@ def tailor(client, profile: ProfileSchema, base_html: str, context: str, *,
     """
     stripped, style = strip_style(base_html)
     prompt = build_prompt(profile, strip_comments(stripped), context, template=template,
+                          role_angles=role_angles,
                           feedback=feedback)
 
     reply = client.complete_text(

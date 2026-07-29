@@ -297,3 +297,42 @@ def test_seeding_reports_what_it_actually_wrote(account):
     assert files.seed() == len(SEED_FILES)
     # Re-seeding must neither write nor claim to have written.
     assert files.seed() == 0
+
+
+# ── the role-angles command ───────────────────────────────────────────────────────────────────
+
+def test_the_role_angles_command_is_loadable_and_names_nobody():
+    """It is platform-authored rather than ported, and it is served to every account — an example
+    from one person's career in it would be aimed at everybody."""
+    import re
+
+    from libs.agents import command
+
+    body = command("setup-role-angles")
+    assert "08-role-angles.md" in body
+    assert not re.search(r"\bRuben\b|\bLekli\b", body, re.IGNORECASE)
+
+
+def test_the_role_angles_file_is_writeable_by_the_agent():
+    """A command that cannot write the file it exists to write would fail at the last step, after
+    the user had answered every question."""
+    from services.api.setup_routes import WRITEABLE
+
+    assert "08-role-angles.md" in WRITEABLE
+
+
+def test_the_role_angles_agent_is_one_the_api_will_accept():
+    from libs.db.models import SETUP_AGENTS
+
+    assert "setup-role-angles" in SETUP_AGENTS
+
+
+def test_the_scaffold_says_one_angle_is_an_acceptable_answer():
+    """**The failure mode is invention.** Asked for two or three angles, a model will produce two
+    or three whatever the profile holds — and an angle written for a job the candidate cannot do
+    produces a CV they cannot defend in the interview it wins."""
+    from libs.agents import command
+    from libs.profiles import scaffold
+
+    assert "one angle is the honest answer" in scaffold("08-role-angles.md")
+    assert "one angle is the honest answer" in command("setup-role-angles")

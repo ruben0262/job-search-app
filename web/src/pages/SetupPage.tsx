@@ -47,6 +47,7 @@ const DESCRIPTIONS: Record<string, string> = {
   "04-job-evaluation.md": "What makes a job a good fit for you",
   "05-cv-templates.md": "How your CV should be shaped per role",
   "07-interview-prep.md": "Your examples, ready for an interview",
+  "08-role-angles.md": "The kinds of job you go for, and what to lead with for each",
   "label.md": "How your model scores jobs",
   "base_cv.html": "Your CV, before it is tailored to a job",
   "tailor_cv.md": "The instructions for writing your tailored CVs",

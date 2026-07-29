@@ -27,9 +27,9 @@ COVERAGE — lead with the MOST relevant experience and cut hard to it. Pick the
 match the 5–7 things this hiring manager cares about, strongest first, and leave the rest out —
 even when it is real and even when it is decent, if it is not among the most relevant for THIS role
 it does not belong on this CV. Fewer, sharper entries beat a long list. Do pull the best matches
-from ACROSS their background rather than one obvious role (for a quant / quant-dev role that means the
-strongest of their finance/quant work AND their engineering, not one role standing in for both), but
-pick the strongest FEW of each, not all of it. Two rails: never drop the single strongest relevant item to
+from ACROSS their background rather than one obvious role — where a posting asks for two sides of
+this candidate, BOTH belong on the CV and neither role stands in for the other — but pick the
+strongest FEW of each, not all of it. Two rails: never drop the single strongest relevant item to
 save space, and never pad with weaker material to fill the page. A tight one-to-1.5-page CV that
 lands every line beats a dense two-page one the recruiter will not finish.
 
@@ -40,8 +40,9 @@ CV must satisfy all of the following:
 1. EXTRACT: Identify the 12–15 highest-weight keywords from the posting — required skills,
    exact tool/technology names, repeated phrases, the job title, and any term used 2+ times.
 2. MAP: For each keyword, decide if the candidate genuinely has it, INCLUDING adjacent forms they can
-   honestly claim (a posting asking for FastAPI/Flask is met by their Python API + Go Fiber API
-   work; Polars by their Pandas work; "data engineering" by their ETL pipelines). Walk the posting's
+   honestly claim — a posting naming one tool is met by their work in a sibling tool of the same
+   kind, and a posting naming a discipline is met by the work that discipline is made of. The
+   specific mappings that hold for THIS candidate are in ROLE ANGLES below. Walk the posting's
    named tools one by one. Every genuine match, direct or adjacent, MUST appear visibly in the
    CV — do not leave a real match unclaimed or buried in a low-visibility bullet.
 3. FREQUENCY: The top 6 most critical keywords must each appear at least TWICE in the
@@ -118,35 +119,9 @@ frame the whole CV for it. Judge from the described work, not the title alone, a
 which base template you were handed — reshape its emphasis as needed. The candidate's full
 background is available to you; pull in whatever is relevant and leave out the rest.
 
-If it's a DEVELOPER / SOFTWARE-ENGINEERING / AI-engineering / general-tech role (most roles):
-frame everything through the ENGINEERING lens — what was built, the stack, the system-design
-decisions — not the domain/returns angle.
-  - Cut entries that are pure research or pure domain analysis with no engineering in them.
-  - Drop specialist tooling and in-house jargon that only reads to somebody in that domain
-    (trading terminals and exchange APIs, factor-attribution or bias-correction acronyms,
-    clinical or actuarial shorthand). A term the hiring manager would have to look up is a
-    line they skim past.
-  - Prefer the industry-neutral name for a thing over the insider one where both are true
-    ("digital assets" over "crypto"), and rename an entry title the same way.
-  - Keep at most ONE line of domain performance figures as proof a system shipped; drop the
-    rest of the numbers that only mean something inside that domain.
-  - Lead with system design, APIs, real-time data, testing, and production deployment.
+<<ROLE_ANGLES>>
 
-If it's a QUANT / RESEARCH / TRADING role — or any other SPECIALIST role where the domain is the
-qualification: lead with domain and statistical depth — methodology, research, risk, strategy or
-model development, feature engineering and bias correction. Keep the specialist tooling and the
-performance metrics the base template states; inside the domain they signal credibility rather
-than noise, and the insider terminology is now an advantage.
-  - COVERAGE: include the STRONGEST few of their domain entries AND any employment in that
-    industry AND a little of their software engineering — do NOT reduce the CV to a single
-    entry, and do NOT list everything either. Pick the most relevant of each and leave the
-    weaker items out.
-  - Where the role is a hybrid of the domain and engineering (a quant-dev, a research engineer,
-    an ML engineer), engineering is a HEADLINE too, not an afterthought: give their production
-    work — services, pipelines, backends and APIs — real space alongside the domain work. For a
-    pure research or analyst role, engineering is present but more condensed.
-
-For hybrid / AI roles, lead with whatever the posting values most (often LLM/AI engineering).
+Where a posting is a hybrid of two of those angles, lead with whichever the posting values most.
 In every case, only keep experience entries that earn their place for THIS specific job: an
 entry with nothing to do with the role gets cut rather than padding the CV, however good it is.
 
@@ -158,10 +133,9 @@ relevant; do NOT merge them back into one dense "machine learning" block.
 - They are WORK, not blanket "research". Only paper-backed strands may be called research; the
   rest are independent technical projects — describe them as work they did, not coursework or a
   study. Never write "studied", "coursework", or "as part of a module".
-- Select per role: for an AI/ML/quant/research role, surface the disciplines the posting cares
-  about as their own titled entries (e.g. keep Reinforcement Learning and Computer Vision if the
-  role wants them). For an unrelated dev role, cut the ones that don't earn their place rather
-  than pad — often you keep zero or one.
+- Select per role: where the posting is about one of these disciplines, surface the ones it cares
+  about as their own titled entries. Where it is unrelated, cut the ones that don't earn their
+  place rather than pad — often you keep zero or one.
 - Frame each around the METHODS, mathematical concepts, libraries, and techniques the entry
   itself names, and the goal each served — the breadth of what they can actually use: the
   architecture and the training method, the algorithm and the theory behind it, the numerical
@@ -232,9 +206,9 @@ HARD RULES
   Write the line in whatever language the CV is written in, using that language's own names for
   the languages. Never downgrade a level to Fluent/C2/Professional when a higher one was given;
   never drop the section.
-- ENTRY TITLES — keep the template's title convention: role first ("Developer — …",
-  "Quantitative Developer — …"), never the word "Independent", never a university presented as
-  a company, no location tag on independent projects.
+- ENTRY TITLES — keep the template's title convention: role first ("<Role> — <where>"), never the
+  word "Independent", never a university presented as a company, no location tag on independent
+  projects.
 - Every claim must already exist in the base template. Do NOT invent skills, employers,
   dates, titles, or numbers. Rephrase and re-emphasise — never fabricate.
 - Describing AI/LLM work: never phrase it in a way that raises questions about how the work

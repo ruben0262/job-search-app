@@ -50,6 +50,11 @@ SEED_FILES: tuple[tuple[str, str], ...] = (
     ("04-job-evaluation.md", "skill"),
     ("05-cv-templates.md", "skill"),
     ("07-interview-prep.md", "skill"),
+    # **The part of CV tailoring that cannot be shared.** `tailor_cv.md` knows how to write a CV;
+    # this knows what the different kinds of job this person chases actually want. The reference
+    # had it inline as two lenses — engineering and quant — which was right for one person and
+    # wrong for everyone else, so it is lifted out and written per user by the setup agent.
+    ("08-role-angles.md", "skill"),
     ("label.md", "prompt"),
     # **The task prompts are per user too.** `/setup-prompts` says so plainly: they ship
     # field-agnostic and already good, and the command is "a short interview to set the handful of
