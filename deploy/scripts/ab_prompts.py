@@ -353,10 +353,9 @@ def report(results: list[dict], failures: list[dict] | None = None) -> None:
     # variant can win overall and still be the weaker one on the dimension that decides a callback.
     for name, rows in by_variant.items():
         weakest = sorted(
-            ((statistics.mean(row["dimensions"][dimension]["score"] for row in rows), dimension)
-             for dimension in DIMENSIONS))[:3]
-        print(f"
-{name}: weakest dimensions — "
+            (statistics.mean(row["dimensions"][dimension]["score"] for row in rows), dimension)
+            for dimension in DIMENSIONS)[:3]
+        print(f"\n{name}: weakest dimensions — "
               + ", ".join(f"{dimension} {mean:.1f}/10" for mean, dimension in weakest))
 
         # Ranked by how often the judge asked for the same thing. One fix on one CV is that CV; the
