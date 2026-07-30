@@ -16,6 +16,23 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ## 2026-07-30
 
+### Deployed, and the two things deploying found
+
+`api` and `notifier` rebuilt and restarted on the box, running everything above.
+
+**The api container was never given `PUBLIC_URL`.** It was in `.env.example` and in nothing that
+reads it, so `_base_url` fell back to `http://localhost:8000` and every verification and reset
+mail production ever sent pointed the recipient at their own machine. Set on the box, added to
+`compose.yml` as `:?`-required — a silently wrong link is worse than a container that will not
+start — and asserted in `tests/test_mail_config.py`, beside the sender-selection test written
+after the same shape of outage. Verified live: the API now builds
+`https://mahoraga-app.rubenlekli.com/#/verify?token=…` and resolves `SmtpSender`, not the console.
+
+**The notifier crash-looped on `ModuleNotFoundError: pydantic`.** The v1-config fix imported
+`libs.contracts.config` into a service that never declared it — the indirect-dependency gap the
+`service-deps` CI job exists for, reproduced locally by installing the notifier's requirements
+alone into a clean venv and importing its entrypoint. Declared, rebuilt, both containers stable.
+
 ### The e2e browser run, and the three bugs the API tests could not see
 
 "I can't log in and reset doesn't work" — reproduced by driving the real dev stack (vite, uvicorn,

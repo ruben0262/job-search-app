@@ -13,7 +13,7 @@ to re-derive. `CHANGELOG.md` is the history; this is the position.
 | Box | `ruben@169.58.16.241`, checkout at `~/job-search-app` |
 | Running | postgres, api, capture, labeller, scorer, notifier, trainer, docgen, cloudflared, embedder |
 | Timers | **all five installed and enabled** — harvester 15 min, notify-dispatch 60 s, linkedin-describe hourly, health, backup |
-| Tests | 966 passing, 2 skipped, against a throwaway Postgres |
+| Tests | 982 passing, 2 skipped, against a throwaway Postgres |
 | Accounts | `lekliruben@gmail.com` (full profile, model servable), `andraslekli@gmail.com` (config only) |
 
 `sudo deploy/install-units.sh` installs and enables every timer idempotently, and `check_health.py`
@@ -44,30 +44,20 @@ The delivery-side filters do now catch the stale imported rows: a dry run droppe
 **The site is finished before any prompt is touched.** Prompts are measurable now and can wait; a
 half-working product cannot be evaluated at all.
 
-### 1. Jobs page — the priority
+### 1–3. The web layer — **done, deployed, verified in a browser**
 
-Currently not a table. It needs:
+The jobs table (columns, filters, search, pagination, server-side salary and applied state), the
+setup chat's typing indicator and openable file cards, the mahoraga design system across every
+page, the landing page ported in with auth CTAs, onboarding as numbered step circles, a
+**Your details** page where everything onboarding collected can be corrected, and delivery
+settings (message interval, freshness window down to one hour).
 
-- a real table with the columns that matter (score, title, company, location, source, posted age,
-  salary, applied state)
-- **filters** on those columns
-- a **search box** over job titles and links
-- **pagination**
+Auth is complete and proven end to end in a real browser: signup → emailed link → verify → login,
+and forgot → emailed link → reset → old password refused → new one works. Password change lives in
+settings. `CHANGELOG.md` 2026-07-30 carries the six bugs that run found, three of which no API
+test could see.
 
-`GET /feed` already returns the rows, so this is largely a web change. A `jobs_detail` page — click
-a row, see everything about that posting — was explicitly deferred, but should exist eventually.
-
-### 2. Profile / setup chat
-
-- The chat should feel like talking to Claude: **a typing indicator while the model is working.** A
-  turn can take minutes and the current pending line is static.
-- **"What we have written down" cannot be opened.** The file list renders but clicking does nothing.
-  It should open the file, and the entries want **names and icons** rather than filenames, so a
-  non-technical user can tell what each one is.
-
-### 3. Dashboard, onboarding, settings
-
-Reviewed by the owner on 2026-07-30 and judged good. Nothing outstanding.
+A `jobs_detail` page — click a row, see everything about that posting — remains deferred.
 
 ### 4. Prompts — after the above
 
@@ -102,7 +92,11 @@ better than the author cannot see the author's mistakes.
 
 ## Known wrong or unfinished
 
-- **The JobSpy tier does not exist** (above). The largest gap.
+- **The JobSpy tier does not exist** (above). The largest gap, and now measured: on 2026-07-30 the
+  enabled no-auth sources produced 154 fresh jobs in six hours, all scored, **none at or above the
+  60 delivery cutoff** — the account's top fresh score was 57. Every historical ≥60 traces to the
+  one-time LinkedIn import. So "my feed is quiet" is an ingestion gap, not a filter or a threshold
+  to loosen.
 - **The free-tier description pass fills few descriptions.** A recent cycle: 66 attempted, 0
   described, mostly `generic_http_200` — the page fetched fine and its text did not beat the snippet
   already stored. The JSON-LD path works well when it matches; the fallback rarely wins.
@@ -143,6 +137,17 @@ better than the author cannot see the author's mistakes.
 ---
 
 ## Operational notes worth keeping
+
+- **`PUBLIC_URL` must be set on the box**, in `deploy/.env`. Every verification and reset link is
+  built from it; absent, they point at `localhost` and signup looks like it worked. Now
+  `:?`-required in compose, so a box missing it fails to start rather than mailing dead links.
+- **Run the `service-deps` check before deploying a new import.** Installing one service's
+  requirements alone into a clean venv and importing its entrypoint is what catches an indirect
+  dependency — the notifier crash-looped on `pydantic` this way, and CI would have caught it after
+  the push rather than before.
+- **The web layer needs a real browser to verify.** Three auth bugs shipped green through the API
+  suite because the failure was in what the *page* sends and how many times it sends it. The
+  Playwright run that catches them is in the scratchpad, not the repo — worth committing.
 
 - **Claude OAuth requires the Claude Code identity block as the first system block.** Without it,
   every Sonnet and Opus call returns `rate_limit_error` no matter how long you wait.
