@@ -186,12 +186,23 @@ def test_the_tools_reach_one_account_only(account):
     assert "No document called" in tools.run("read_document", {"name": "secret.pdf"})
 
 
+def _chat(session, user_id):
+    """A conversation to talk in. Every turn belongs to one now — the unit of context."""
+    from libs.db.models import SetupConversation
+
+    row = SetupConversation(user_id=user_id)
+    session.add(row)
+    session.flush()
+    return row.id
+
+
 # ── the loop ──────────────────────────────────────────────────────────────────────────────────
 
 def test_a_turn_runs_tools_then_answers(account):
     from libs.agents.loop import run_turn
 
     session, user = account
+    chat = _chat(session, user.id)
     client = FakeClient(
         {"text": "Let me read your CV.", "tool_uses": [use("read_document", name="cv.pdf")]},
         {"text": "You are a backend engineer. Saving that.",
@@ -199,7 +210,7 @@ def test_a_turn_runs_tools_then_answers(account):
         {"text": "Done — your profile is set up.", "tool_uses": []},
     )
 
-    result = run_turn(session, user.id, client=client, message="Set me up")
+    result = run_turn(session, user.id, conversation_id=chat, client=client, message="Set me up")
 
     assert result["tools_run"] == ["read_document", "write_profile_file"]
     assert result["files_written"] == ["context.md"]
@@ -213,12 +224,13 @@ def test_the_transcript_replays_tool_calls_so_the_model_sees_what_it_wrote(accou
     from libs.agents.loop import history, run_turn
 
     session, user = account
-    run_turn(session, user.id, client=FakeClient(
+    chat = _chat(session, user.id)
+    run_turn(session, user.id, conversation_id=chat, client=FakeClient(
         {"text": "Reading.", "tool_uses": [use("read_document", name="cv.pdf")]},
         {"text": "Got it.", "tool_uses": []},
     ), message="go")
 
-    replayed = history(session, user.id)
+    replayed = history(session, user.id, chat)
     assert any(block.get("type") == "tool_use"
                for turn in replayed if isinstance(turn["content"], list)
                for block in turn["content"])
@@ -231,10 +243,11 @@ def test_the_conversation_resumes_rather_than_restarting(account):
     from libs.agents.loop import run_turn
 
     session, user = account
-    run_turn(session, user.id, client=FakeClient({"text": "Hello.", "tool_uses": []}),
+    chat = _chat(session, user.id)
+    run_turn(session, user.id, conversation_id=chat, client=FakeClient({"text": "Hello.", "tool_uses": []}),
              message="hi")
     client = FakeClient({"text": "Still here.", "tool_uses": []})
-    run_turn(session, user.id, client=client, message="are you there")
+    run_turn(session, user.id, conversation_id=chat, client=client, message="are you there")
 
     sent = client.calls[0]["messages"]
     assert [turn["role"] for turn in sent] == ["user", "assistant", "user"]
@@ -249,10 +262,11 @@ def test_a_runaway_turn_stops_and_says_so(account):
     from libs.agents.loop import ITERATION_LIMIT_MESSAGE, run_turn
 
     session, user = account
+    chat = _chat(session, user.id)
     forever = FakeClient(*[{"text": "", "tool_uses": [use("list_documents")]}
                            for _ in range(MAX_TOOL_ITERATIONS + 5)])
 
-    result = run_turn(session, user.id, client=forever, message="go")
+    result = run_turn(session, user.id, conversation_id=chat, client=forever, message="go")
 
     assert ITERATION_LIMIT_MESSAGE in result["reply"]
     assert len(forever.calls) == MAX_TOOL_ITERATIONS
@@ -262,9 +276,11 @@ def test_an_unknown_command_is_refused_before_anything_is_sent(account):
     from libs.agents.loop import run_turn
 
     session, user = account
+    chat = _chat(session, user.id)
     client = FakeClient()
     with pytest.raises(ValueError, match="unknown setup agent"):
-        run_turn(session, user.id, client=client, message="go", agent="setup-everything")
+        run_turn(session, user.id, conversation_id=chat, client=client, message="go",
+                 agent="setup-everything")
     assert client.calls == []
 
 
@@ -273,8 +289,9 @@ def test_text_is_streamed_as_it_arrives(account):
     from libs.agents.loop import run_turn
 
     session, user = account
+    chat = _chat(session, user.id)
     chunks: list[str] = []
-    run_turn(session, user.id, client=FakeClient({"text": "Hello.", "tool_uses": []}),
+    run_turn(session, user.id, conversation_id=chat, client=FakeClient({"text": "Hello.", "tool_uses": []}),
              message="hi", on_text=chunks.append)
 
     assert chunks, "no text reached the caller while the turn was running"

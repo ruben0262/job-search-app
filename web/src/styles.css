@@ -1132,6 +1132,111 @@ td.num {
   padding: 0.1em 0.4em;
 }
 
+/* ── the chat switcher ───────────────────────────────────────────────────────────────────── */
+
+.chat-tabs {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin: 1.1rem 0 1.25rem;
+}
+
+.chat-tab {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--bg-raised);
+  max-width: 18rem;
+  transition:
+    border-color var(--fade) var(--ease),
+    background var(--fade) var(--ease);
+}
+
+.chat-tab:hover {
+  border-color: var(--faint);
+}
+
+.chat-tab.on {
+  border-color: var(--dim);
+  background: var(--bg);
+}
+
+.chat-tab > button:first-child {
+  background: none;
+  border: none;
+  border-radius: 999px;
+  padding: 0.4rem 0.35rem 0.4rem 0.95rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 400;
+  max-width: 15rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.chat-tab.on > button:first-child {
+  color: var(--ink);
+  font-weight: 550;
+}
+
+.chat-tab > button:hover:not([disabled]) {
+  transform: none;
+}
+
+/* The close affordance stays quiet until the tab is hovered — deleting a chat is destructive and
+   should not be the most visible thing about it. */
+.chat-tab-x {
+  background: none;
+  border: none;
+  padding: 0.4rem 0.7rem 0.4rem 0.25rem;
+  color: transparent;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.chat-tab:hover .chat-tab-x,
+.chat-tab.on .chat-tab-x {
+  color: var(--dim);
+}
+
+.chat-tab-x:hover:not([disabled]) {
+  color: var(--danger);
+  transform: none;
+}
+
+.chat-tab-new {
+  background: none;
+  border: 1px dashed var(--faint);
+  border-radius: 999px;
+  padding: 0.4rem 0.95rem;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.chat-tab-new:hover:not([disabled]) {
+  color: var(--ink);
+  border-color: var(--dim);
+  transform: none;
+}
+
+/* Not an error, and not a button: a fact about how many chats there are. */
+.chat-tab-full {
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
 /* ── the composer ────────────────────────────────────────────────────────────────────────── */
 
 .composer {

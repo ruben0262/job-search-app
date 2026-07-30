@@ -34,7 +34,13 @@ from libs.db.models.profile_file import (
 )
 from libs.db.models.proxy import PROXY_STATUSES, ProxyCredential
 from libs.db.models.queue import CLAIM_TIMEOUT_MIN, JOB_STATES, LANES, MAX_ATTEMPTS, QueueJob
-from libs.db.models.setup import SETUP_AGENTS, SetupMessage
+from libs.db.models.setup import (
+    DEFAULT_TITLE,
+    MAX_CONVERSATIONS,
+    SETUP_AGENTS,
+    SetupConversation,
+    SetupMessage,
+)
 from libs.db.models.shadow import ShadowScore
 from libs.db.models.tenant import LABEL_SOURCES, UserJobState, UserLabel, UserModel
 from libs.db.models.user import (
@@ -48,6 +54,7 @@ from libs.db.models.user import (
 
 __all__ = [
     "CLAIM_TIMEOUT_MIN",
+    "DEFAULT_TITLE",
     "DOCUMENT_KINDS",
     "FREE_PLAN",
     "JOB_STATES",
@@ -55,6 +62,7 @@ __all__ = [
     "LANES",
     "MAIL_PURPOSES",
     "MAX_ATTEMPTS",
+    "MAX_CONVERSATIONS",
     "PROFILE_FILE_KINDS",
     "PROXY_STATUSES",
     "SCORING_RELEVANT_FILES",
@@ -72,6 +80,7 @@ __all__ = [
     "Plan",
     "ProxyCredential",
     "QueueJob",
+    "SetupConversation",
     "SetupMessage",
     "ShadowScore",
     "User",

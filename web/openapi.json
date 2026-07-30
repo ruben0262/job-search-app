@@ -1005,6 +1005,18 @@
             "title": "Agent",
             "type": "string"
           },
+          "conversation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Id"
+          },
           "message": {
             "maxLength": 8000,
             "minLength": 1,
@@ -2870,8 +2882,27 @@
     },
     "/setup": {
       "get": {
-        "description": "The transcript, the files, and whether this account can generate documents yet.",
+        "description": "One chat's transcript, the list of chats, the files, and whether documents can be built.\n\n**The chat list and the open chat come back together** because they are always rendered\ntogether, and two calls would let the switcher disagree with the transcript beneath it.\n\nWith no `conversation_id` this opens the most recent chat, creating the first one if the\naccount has none \u2014 so a new user lands in a conversation without pressing anything.",
         "operationId": "conversation_setup_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "conversation_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Conversation Id"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -2884,9 +2915,89 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Conversation",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/setup/conversations": {
+      "post": {
+        "description": "Start a fresh chat, with an empty transcript and the same profile underneath.\n\n**The cap is enforced here and is not a setting** (owner, 2026-07-30). Every turn replays its\nwhole conversation on the user's own credential, so unbounded chats is unbounded spend on\nre-reading them. Hitting the cap is answered with what to do about it rather than a bare\nrefusal, because deleting one is the intended move.",
+        "operationId": "new_conversation_setup_conversations_post",
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response New Conversation Setup Conversations Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "New Conversation",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/setup/conversations/{conversation_id}": {
+      "delete": {
+        "description": "Delete a chat and everything said in it. **The profile is untouched.**\n\nThat asymmetry is the point and is worth stating: the files are what the conversation was for,\nand throwing away the talking must not throw away the work. Deleting the last chat is allowed \u2014\nthe next visit opens a fresh one, which is the same place a new account starts.",
+        "operationId": "delete_conversation_setup_conversations__conversation_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Delete Conversation Setup Conversations  Conversation Id  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Conversation",
         "tags": [
           "setup"
         ]

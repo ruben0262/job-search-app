@@ -953,12 +953,67 @@ export interface paths {
         };
         /**
          * Conversation
-         * @description The transcript, the files, and whether this account can generate documents yet.
+         * @description One chat's transcript, the list of chats, the files, and whether documents can be built.
+         *
+         *     **The chat list and the open chat come back together** because they are always rendered
+         *     together, and two calls would let the switcher disagree with the transcript beneath it.
+         *
+         *     With no `conversation_id` this opens the most recent chat, creating the first one if the
+         *     account has none — so a new user lands in a conversation without pressing anything.
          */
         get: operations["conversation_setup_get"];
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/setup/conversations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * New Conversation
+         * @description Start a fresh chat, with an empty transcript and the same profile underneath.
+         *
+         *     **The cap is enforced here and is not a setting** (owner, 2026-07-30). Every turn replays its
+         *     whole conversation on the user's own credential, so unbounded chats is unbounded spend on
+         *     re-reading them. Hitting the cap is answered with what to do about it rather than a bare
+         *     refusal, because deleting one is the intended move.
+         */
+        post: operations["new_conversation_setup_conversations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/setup/conversations/{conversation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Conversation
+         * @description Delete a chat and everything said in it. **The profile is untouched.**
+         *
+         *     That asymmetry is the point and is worth stating: the files are what the conversation was for,
+         *     and throwing away the talking must not throw away the work. Deleting the last chat is allowed —
+         *     the next visit opens a fresh one, which is the same place a new account starts.
+         */
+        delete: operations["delete_conversation_setup_conversations__conversation_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1478,6 +1533,8 @@ export interface components {
              * @default setup
              */
             agent: string;
+            /** Conversation Id */
+            conversation_id?: string | null;
             /** Message */
             message: string;
         };
@@ -2897,7 +2954,9 @@ export interface operations {
     };
     conversation_setup_get: {
         parameters: {
-            query?: never;
+            query?: {
+                conversation_id?: string | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2913,6 +2972,70 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    new_conversation_setup_conversations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    delete_conversation_setup_conversations__conversation_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

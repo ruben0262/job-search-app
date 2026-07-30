@@ -7,6 +7,10 @@ this platform does not otherwise depend on.
 **The transcript is the state.** There is no session object holding a conversation in memory: each
 turn is rebuilt from `setup_messages`, so a worker restart, a closed browser tab, or a user coming
 back a week later all resume the same way.
+
+**One conversation at a time.** Every read here filters on `conversation_id`, so a chat can never
+see another chat's transcript — which is the whole reason for having more than one. What crosses
+between them is the profile the tools write, not the talking.
 """
 from __future__ import annotations
 
@@ -14,12 +18,12 @@ import logging
 import uuid as _uuid
 from collections.abc import Callable, Sequence
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from libs.agents import MAX_TOKENS, MAX_TOOL_ITERATIONS, SETUP_MODEL, TOOLS, system_prompt
 from libs.agents.tools import SetupTools
-from libs.db.models import SetupMessage
+from libs.db.models import DEFAULT_TITLE, SetupConversation, SetupMessage
 from libs.db.models.setup import SETUP_AGENTS
 
 logger = logging.getLogger(__name__)
@@ -30,16 +34,21 @@ ITERATION_LIMIT_MESSAGE = ("I have run out of steps for this turn. Everything wr
                            "saved — say 'continue' and I will pick up from there.")
 
 
-def history(session: Session, user_id: _uuid.UUID) -> list[dict]:
-    """The conversation so far, in the shape the API takes it back.
+def history(session: Session, user_id: _uuid.UUID,
+            conversation_id: _uuid.UUID) -> list[dict]:
+    """This conversation so far, in the shape the API takes it back.
 
     Tool calls and their results are replayed as their own turns, so the model sees the file it
     wrote rather than a summary of having written one — the difference between it knowing what is
     in `context.md` and it guessing.
+
+    Scoped to one conversation **and** one user: the conversation id alone would be enough, and
+    carrying the user as well is what makes a guessed id useless.
     """
     rows = session.scalars(
         select(SetupMessage)
-        .where(SetupMessage.user_id == user_id)
+        .where(SetupMessage.user_id == user_id,
+               SetupMessage.conversation_id == conversation_id)
         .order_by(SetupMessage.id)).all()
 
     messages: list[dict] = []
@@ -64,6 +73,7 @@ def history(session: Session, user_id: _uuid.UUID) -> list[dict]:
 
 
 def run_turn(session: Session, user_id: _uuid.UUID, *, client, message: str,
+             conversation_id: _uuid.UUID,
              agent: str = "setup",
              on_text: Callable[[str], None] | None = None) -> dict:
     """Take one message from the user and run the agent until it stops calling tools.
@@ -78,11 +88,13 @@ def run_turn(session: Session, user_id: _uuid.UUID, *, client, message: str,
     if agent not in SETUP_AGENTS:
         raise ValueError(f"unknown setup agent {agent!r}; known: {SETUP_AGENTS}")
 
-    session.add(SetupMessage(user_id=user_id, role="user", content=message, agent=agent))
+    session.add(SetupMessage(user_id=user_id, conversation_id=conversation_id,
+                             role="user", content=message, agent=agent))
+    _touch(session, user_id, conversation_id, message)
     session.commit()
 
     tools = SetupTools(session, user_id)
-    messages = history(session, user_id)
+    messages = history(session, user_id, conversation_id)
     prompt = system_prompt(agent)
 
     reply_parts: list[str] = []
@@ -110,12 +122,30 @@ def run_turn(session: Session, user_id: _uuid.UUID, *, client, message: str,
         reply_parts.append(ITERATION_LIMIT_MESSAGE)
 
     reply = "\n\n".join(part for part in reply_parts if part.strip())
-    session.add(SetupMessage(user_id=user_id, role="assistant", content=reply, agent=agent,
+    session.add(SetupMessage(user_id=user_id, conversation_id=conversation_id,
+                             role="assistant", content=reply, agent=agent,
                              tool_calls=executed or None))
     session.commit()
 
     return {"reply": reply, "tools_run": [call["name"] for call in executed],
             "files_written": _written(executed), "scoring_edits": tools.scoring_edits}
+
+
+def _touch(session: Session, user_id: _uuid.UUID, conversation_id: _uuid.UUID,
+           message: str) -> None:
+    """Move the conversation to the top of the list, and name it if it has no name yet.
+
+    The title is the first thing the user said, trimmed — no model call, because naming a chat is
+    not worth a request that can fail, and the first sentence is what somebody would have typed
+    anyway.
+    """
+    row = session.get(SetupConversation, conversation_id)
+    if row is None or row.user_id != user_id:
+        return
+    row.last_message_at = func.now()
+    if row.title == DEFAULT_TITLE:
+        first = " ".join(message.split())
+        row.title = (first[:57] + "…") if len(first) > 58 else first or DEFAULT_TITLE
 
 
 def _written(executed: Sequence[dict]) -> list[str]:

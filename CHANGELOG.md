@@ -16,6 +16,35 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ## 2026-07-30
 
+### Three chats per account, each with its own memory
+
+Persistence was never the gap — the transcript has always been a table, so a closed tab, a
+sign-out and a week away all resumed the same way. What was missing was **more than one of them**.
+
+`setup_conversations` is the new unit of context. Messages belong to one, `history()` filters on
+it, and the model is only ever shown the chat being spoken in. A new chat starts empty; the old
+one keeps everything. What crosses between them is the **profile**, not the talking — the files
+are the durable product and every chat reads and writes the same ones, which is what makes
+starting fresh cheap rather than a loss.
+
+**Three, fixed, not a setting** (owner's call). Every turn replays its whole transcript on the
+user's own credential, so unbounded chats is unbounded spend on re-reading them. Deleting one is
+how you make room, and the refusal at the cap says so rather than just saying no. Deleting a chat
+never touches the profile, and deleting the last one is allowed — the next visit opens a fresh
+one, which is where a new account starts anyway.
+
+Titles come from the first thing the user says, trimmed. No naming call: a title is not worth a
+request that can fail, and the first sentence is what somebody would have typed anyway.
+
+Existing transcripts migrate into one conversation per user rather than being discarded — whatever
+was said during setup is the reason the profile looks the way it does.
+
+**The browser run earned its keep again.** A fresh chat was titled "New chat" and the button that
+creates one said "+ New chat" — two identical labels side by side in the switcher, and the first
+automated click hit the wrong one. Untitled chats are "Untitled chat" now. Eight new tests cover
+persistence across sign-out, context isolation asserted at the enforcement point, the cap, delete,
+and that another account's conversation id is useless.
+
 ### The evening batch: twelve owner asks, hardest first
 
 **In-app notifications** — `user_notifications`, `libs/notify` with event templates and

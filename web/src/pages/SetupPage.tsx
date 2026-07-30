@@ -33,7 +33,17 @@ type ProfileFile = {
   updated_at: string | null;
 };
 
+type ChatSummary = {
+  id: string;
+  title: string;
+  created_at: string | null;
+  last_message_at: string | null;
+};
+
 type Conversation = {
+  conversation_id: string;
+  conversations: ChatSummary[];
+  max_conversations: number;
   messages: Message[];
   files: ProfileFile[];
   ready: boolean;
@@ -102,8 +112,8 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
   const scroller = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLTextAreaElement>(null);
 
-  const load = async () => {
-    const fresh = await api.get<Conversation>("/setup");
+  const load = async (id?: string) => {
+    const fresh = await api.get<Conversation>(id ? `/setup?conversation_id=${id}` : "/setup");
     cachedConversation = fresh;
     setState(fresh);
   };
@@ -112,6 +122,23 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
     // rather than an error — the one state a user cannot act on.
     load().catch(() => setFailed(true));
   }, []);
+
+  // Switching chats replaces the transcript wholesale — the cached one belongs to whichever chat
+  // was open, and showing it under a different title would be a lie about what was said.
+  const openChat = useAction(async (id: string) => {
+    await load(id);
+  });
+
+  const newChat = useAction(async () => {
+    const created = await api.post<{ id: string }>("/setup/conversations");
+    await load(created.id);
+    box.current?.focus();
+  });
+
+  const deleteChat = useAction(async (id: string) => {
+    await api.del(`/setup/conversations/${id}`);
+    await load();
+  });
   useEffect(() => {
     bottom.current?.scrollIntoView({ behavior: "smooth" });
   }, [state?.messages.length]);
@@ -128,8 +155,10 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
     if (box.current) {
       box.current.style.height = "auto";
     }
-    await api.post("/setup/message", { message: text });
-    await load();
+    // Named explicitly rather than left to "the most recent": a turn that takes two minutes must
+    // land in the chat it was typed in, even if something else touched another one meanwhile.
+    await api.post("/setup/message", { message: text, conversation_id: state?.conversation_id });
+    await load(state?.conversation_id);
     onChanged();
   });
 
@@ -187,10 +216,53 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
             </span>
           ) : null}
         </div>
+        {/* The chat switcher. Every chat has its own memory; the profile underneath is shared,
+            which is what makes starting a fresh one cheap rather than a loss. */}
+        <div className="chat-tabs">
+          {state.conversations.map((chat) => (
+            <span
+              key={chat.id}
+              className={`chat-tab${chat.id === state.conversation_id ? " on" : ""}`}
+            >
+              <button type="button" onClick={() => void openChat.run(chat.id)}>
+                {chat.title}
+              </button>
+              <button
+                type="button"
+                className="chat-tab-x"
+                aria-label={`Delete ${chat.title}`}
+                title="Delete this chat"
+                disabled={deleteChat.busy}
+                onClick={() => {
+                  if (window.confirm(`Delete "${chat.title}"? What was said is gone. Your profile is not affected.`))
+                    void deleteChat.run(chat.id);
+                }}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+          {state.conversations.length < state.max_conversations ? (
+            <button
+              type="button"
+              className="chat-tab-new"
+              disabled={newChat.busy}
+              onClick={() => void newChat.run()}
+            >
+              + New chat
+            </button>
+          ) : (
+            <span className="chat-tab-full">
+              {state.max_conversations} chats max · delete one to start another
+            </span>
+          )}
+        </div>
+        <Error>{openChat.error ?? newChat.error ?? deleteChat.error}</Error>
+
         <p className="muted" style={{ maxWidth: "44rem" }}>
           {state.messages.length === 0
             ? "A conversation about your career. Everything you say here is sorted into your profile — the files every CV, cover letter and job match is built from."
-            : "Talk to it like you would to a person: new roles, corrections, changes of direction. It knows where things belong. Training the model that ranks your jobs happens on the Model page, not here."}
+            : "Talk to it like you would to a person: new roles, corrections, changes of direction. It knows where things belong. Each chat remembers only itself; your profile is shared across all of them. Training the model that ranks your jobs happens on the Model page, not here."}
         </p>
 
         <div className="chat" ref={scroller}>
