@@ -19,13 +19,16 @@ platform. The per-user throttle here is to stop one badly-configured account spa
 from __future__ import annotations
 
 import logging
+import statistics
 import uuid as _uuid
 from collections.abc import Callable
+from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from libs.db.models import CorpusJob, User, UserConfig, UserJobState
+from libs.obs import audit
 from libs.secrets import SecretStore
 from services.notifier.buttons import keyboard
 from services.notifier.card import FeedItem
@@ -182,7 +185,44 @@ def deliver(session: Session, user_id: _uuid.UUID, *,
 
     for item in items:
         session.get(UserJobState, (user_id, item.job_id)).notified_at = func.now()
+
+    _log_freshness(session, user_id, items)
     return len(items)
+
+
+def _log_freshness(session: Session, user_id: _uuid.UUID, items: list[FeedItem]) -> None:
+    """How stale the feed was, measured at the only point where the answer is real.
+
+    **This is the number the product is judged on, and no stage duration predicts it.** A cycle
+    whose every stage is fast still delivers a job that waited for the next fifteen-minute tick, and
+    then for the user's own notify interval on top. Most of the latency is spent *between* stages,
+    which is invisible to anything timing a stage.
+
+    Two clocks, because they answer different questions and neither alone is enough:
+
+    - **from posted** — what the user experiences. How old the job was when they heard about it,
+      and the one that decides whether they are early to it.
+    - **from first seen** — what this platform controls. Everything before we saw the posting
+      belongs to the source, and holding ourselves to it would be measuring LinkedIn's crawl.
+    """
+    job_ids = [item.job_id for item in items]
+    if not job_ids:
+        return
+
+    rows = session.execute(
+        select(CorpusJob.posted_at, CorpusJob.first_seen_at)
+        .where(CorpusJob.id.in_(job_ids))).all()
+    now = datetime.now(UTC)
+
+    def minutes(values) -> int | None:
+        ages = [(now - value).total_seconds() / 60 for value in values if value is not None]
+        return round(statistics.median(ages)) if ages else None
+
+    # Median, not mean: one job the source dated three weeks ago drags a mean into meaninglessness,
+    # and the question is what a typical card in this batch was worth.
+    audit(logger, "notify.freshness", user=user_id, items=len(job_ids),
+          median_age_from_posted_min=minutes(row[0] for row in rows),
+          median_age_from_first_seen_min=minutes(row[1] for row in rows))
 
 
 def render_job(item: FeedItem, salary_bands: dict | None = None,

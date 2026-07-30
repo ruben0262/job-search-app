@@ -44,7 +44,7 @@ from libs.contracts.embedder import EmbedderClient, EmbedderVersion
 from libs.corpus.ats import AtsRepository
 from libs.corpus.repository import CorpusRepository
 from libs.db.models import User
-from libs.obs import audit
+from libs.obs import Timings, audit, report_timings, timed
 from libs.queue import enqueue
 from libs.tenant.repository import TenantRepository
 from services.harvester.describe import describe_pending
@@ -93,6 +93,9 @@ class CycleReport:
     # a broken enqueue, which would otherwise present as feeds that quietly stop moving.
     scoring_enqueued: int = 0
     skipped_locked: bool = False
+    # How long each stage took. "The feed is slow" is not a diagnosis, and the stage everybody
+    # guesses is the model call — which on this platform is frequently not the one.
+    timings: Timings = field(default_factory=Timings)
 
     @property
     def duplicates_total(self) -> int:
@@ -197,11 +200,13 @@ def run_cycle(
 
         # 3. Execute the shared tier. The per-user LinkedIn loop is deliberately absent: it runs on
         # its owner's schedule with their credential, and cannot be reached from here.
-        links = _gather(source_configs, planned, ats, run_source, report)
+        with timed("gather", report.timings):
+            links = _gather(source_configs, planned, ats, run_source, report)
         report.links_found = len(links)
 
         # 4-5. Dedup and upsert.
-        report.new_jobs = _ingest(corpus, links, report)
+        with timed("ingest", report.timings):
+            report.new_jobs = _ingest(corpus, links, report)
 
         # 5b. Fetch the descriptions the listing APIs did not give us.
         #
@@ -212,14 +217,15 @@ def run_cycle(
         # Only the free tier here: LinkedIn needs a residential IP, so those rows are left for the
         # per-user pass that holds a lease. A shared cycle must never reach for a user's proxy.
         if describe:
-            with make_shared_client() as client:
+            with timed("describe", report.timings), make_shared_client() as client:
                 described = describe_pending(corpus, client, linkedin=False)
             report.described = described.described
             report.describe_outcomes = described.outcomes
 
         # 6. Embed the new rows. Once, for everyone.
         if embedder is not None:
-            result = embed_all_pending(corpus, embedder, expected=expected_embedder)
+            with timed("embed", report.timings):
+                result = embed_all_pending(corpus, embedder, expected=expected_embedder)
             report.embedded = result.embedded
 
         # 7. Ask the `score` lane to catch each account up.
@@ -231,13 +237,16 @@ def run_cycle(
         # anything to score, and an account with no model yet ends its job quietly.
         #
         # Collapsed on `dedup_key`, so a cycle that finds nothing new does not pile up work.
-        report.scoring_enqueued = _enqueue_scoring(session)
+        with timed("enqueue_scoring", report.timings):
+            report.scoring_enqueued = _enqueue_scoring(session)
 
     logger.info(
         "harvest: %d queries (%d deferred), %d links, %d duplicates, %d new, %d described, "
         "%d embedded",
         report.queries_planned, report.queries_deferred, report.links_found,
         report.duplicates_total, report.new_jobs, report.described, report.embedded)
+    report_timings(report.timings, event="harvest.timing", log=logger,
+                   links=report.links_found, new=report.new_jobs)
     audit(logger, "harvest.cycle",
           queries=report.queries_planned, links=report.links_found,
           new=report.new_jobs, described=report.described, embedded=report.embedded,
