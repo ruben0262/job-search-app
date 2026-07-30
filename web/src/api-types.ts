@@ -66,6 +66,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/account/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Change Password
+         * @description Change the password. The semantics are the reference implementation's
+         *     (FlowSolutions `security/handler.go`, via `AUTH_REUSE.md`), because each was learned the
+         *     hard way there:
+         *
+         *     - **the current password is required** — a stolen session cookie must not be enough to lock
+         *       the owner out of their own account;
+         *     - **the new password may not equal the current one** — accepting it would record a change
+         *       that changed nothing while still revoking every session;
+         *     - **every session is revoked, including this one.** If the password is being changed because
+         *       it leaked, a session the thief already holds must die with it. The client signs the user
+         *       back in with the new password, which is one honest re-login rather than a silently
+         *       privileged session surviving the rotation.
+         */
+        put: operations["change_password_account_password_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/health": {
         parameters: {
             query?: never;
@@ -1083,6 +1114,13 @@ export interface components {
             /** Password */
             password: string;
         };
+        /** PasswordChange */
+        PasswordChange: {
+            /** Current Password */
+            current_password: string;
+            /** New Password */
+            new_password: string;
+        };
         /**
          * Platform
          * @description Which sources a search section targets.
@@ -1414,6 +1452,41 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    change_password_account_password_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordChange"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

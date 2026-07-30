@@ -74,6 +74,8 @@ export function SettingsPage({ onSignedOut }: { onSignedOut: () => void }) {
         ) : null}
       </Card>
 
+      <PasswordCard onChanged={onSignedOut} />
+
       <Card title="Your data">
         <p className="small muted">
           We send your document text to Anthropic on your own credential when you process it, and
@@ -138,5 +140,67 @@ export function SettingsPage({ onSignedOut }: { onSignedOut: () => void }) {
         </button>
       </p>
     </>
+  );
+}
+
+/** Change the password. Success signs you out everywhere — including here — because if the
+ *  password is being changed for the reason passwords usually are, a session the thief already
+ *  holds must die with it. The server enforces that; this just says it out loud beforehand. */
+function PasswordCard({ onChanged }: { onChanged: () => void }) {
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [done, setDone] = useState(false);
+
+  const change = useAction(async () => {
+    await api.put("/account/password", { current_password: current, new_password: next });
+    setDone(true);
+    // Give the sentence a beat to be read before the reload lands on the sign-in page.
+    window.setTimeout(onChanged, 1500);
+  });
+
+  if (done) {
+    return (
+      <Card title="Password">
+        <p className="small muted">
+          Changed. Every session is signed out, including this one — sign back in with the new
+          password.
+        </p>
+      </Card>
+    );
+  }
+
+  return (
+    <Card title="Password">
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          void change.run();
+        }}
+      >
+        <Field label="Current password">
+          <input
+            type="password"
+            value={current}
+            autoComplete="current-password"
+            required
+            onChange={(event) => setCurrent(event.target.value)}
+          />
+        </Field>
+        <Field label="New password" hint="At least 12 characters. Longer beats complicated.">
+          <input
+            type="password"
+            value={next}
+            autoComplete="new-password"
+            required
+            onChange={(event) => setNext(event.target.value)}
+          />
+        </Field>
+        <Error>{change.error}</Error>
+        <p className="small muted">Changing it signs you out on every device, this one included.</p>
+        <button type="submit" disabled={change.busy || !current || !next}>
+          {change.busy ? "Changing…" : "Change password"}
+        </button>
+      </form>
+    </Card>
   );
 }

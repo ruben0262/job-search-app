@@ -211,6 +211,40 @@ def test_deleting_requires_the_password_not_just_a_session(api):
     assert session.get(User, user.id) is not None
 
 
+def test_changing_the_password_needs_the_old_one_and_ends_every_session(api):
+    """The reference's semantics (`security/handler.go`): a stolen cookie must not be enough to
+    rotate the owner out, and a session the thief already holds must die with the change."""
+    from libs.auth.passwords import verify_password
+    from libs.auth.sessions import issue_session
+    from libs.db.models import UserSession
+
+    http, session, user = api
+    live = issue_session(session, user.id)
+
+    response = http.put("/account/password", json={
+        "current_password": PASSWORD, "new_password": "an entirely different phrase"})
+    assert response.status_code == 200
+    assert response.json()["force_relogin"] is True
+    session.refresh(user)
+    assert verify_password(user.password_hash, "an entirely different phrase")
+    assert session.get(UserSession, live.session_id).revoked_at is not None
+
+
+def test_changing_the_password_refuses_a_wrong_current_or_a_weak_new_one(api):
+    http, _, _ = api
+    wrong = http.put("/account/password", json={
+        "current_password": "not it", "new_password": "an entirely different phrase"})
+    assert wrong.status_code == 401
+
+    weak = http.put("/account/password", json={
+        "current_password": PASSWORD, "new_password": "short"})
+    assert weak.status_code == 400
+
+    same = http.put("/account/password", json={
+        "current_password": PASSWORD, "new_password": PASSWORD})
+    assert same.status_code == 400
+
+
 def test_the_settings_page_never_returns_a_credential(api):
     """It shows everything onboarding collected, and the credentials are write-only everywhere."""
     http, _, _ = api

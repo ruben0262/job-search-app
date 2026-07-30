@@ -520,6 +520,28 @@
         "title": "LoginRequest",
         "type": "object"
       },
+      "PasswordChange": {
+        "properties": {
+          "current_password": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Current Password",
+            "type": "string"
+          },
+          "new_password": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "New Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "current_password",
+          "new_password"
+        ],
+        "title": "PasswordChange",
+        "type": "object"
+      },
       "Platform": {
         "description": "Which sources a search section targets.\n\nOnly sources that *take a query* can be named. The ATS and board families are crawled rather\nthan searched \u2014 naming one here would silently produce no queries at all, which is exactly the\nkind of configuration that looks fine and returns nothing.",
         "enum": [
@@ -1128,6 +1150,50 @@
           }
         },
         "summary": "Grant Consent",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/account/password": {
+      "put": {
+        "description": "Change the password. The semantics are the reference implementation's\n(FlowSolutions `security/handler.go`, via `AUTH_REUSE.md`), because each was learned the\nhard way there:\n\n- **the current password is required** \u2014 a stolen session cookie must not be enough to lock\n  the owner out of their own account;\n- **the new password may not equal the current one** \u2014 accepting it would record a change\n  that changed nothing while still revoking every session;\n- **every session is revoked, including this one.** If the password is being changed because\n  it leaked, a session the thief already holds must die with it. The client signs the user\n  back in with the new password, which is one honest re-login rather than a silently\n  privileged session surviving the rotation.",
+        "operationId": "change_password_account_password_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Change Password Account Password Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Change Password",
         "tags": [
           "account"
         ]

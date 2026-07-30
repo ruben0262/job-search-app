@@ -18,16 +18,18 @@ from __future__ import annotations
 import logging
 import uuid as _uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from libs.auth.passwords import verify_password
+from libs.auth.passwords import hash_password, password_problems, verify_password
+from libs.auth.sessions import revoke_all
 from libs.db.models import User
 from libs.legal import DISCLOSURE_VERSION, disclosure
 from libs.obs import audit
 from libs.secrets import SecretStore
+from services.api.auth_routes import _clear_session_cookies
 from services.api.deps import current_user, get_db, get_store
 
 logger = logging.getLogger(__name__)
@@ -104,6 +106,49 @@ def withdraw_consent(db: Session = Depends(get_db),
     return {"status": "withdrawn",
             "detail": ("Processing is now unavailable. Your existing profile is unchanged — delete "
                        "your account if you want everything removed.")}
+
+
+class PasswordChange(BaseModel):
+    current_password: str = Field(min_length=1, max_length=1024)
+    new_password: str = Field(min_length=1, max_length=1024)
+
+
+@router.put("/account/password")
+def change_password(body: PasswordChange, response: Response, db: Session = Depends(get_db),
+                    user_id: _uuid.UUID = Depends(current_user)) -> dict:
+    """Change the password. The semantics are the reference implementation's
+    (FlowSolutions `security/handler.go`, via `AUTH_REUSE.md`), because each was learned the
+    hard way there:
+
+    - **the current password is required** — a stolen session cookie must not be enough to lock
+      the owner out of their own account;
+    - **the new password may not equal the current one** — accepting it would record a change
+      that changed nothing while still revoking every session;
+    - **every session is revoked, including this one.** If the password is being changed because
+      it leaked, a session the thief already holds must die with it. The client signs the user
+      back in with the new password, which is one honest re-login rather than a silently
+      privileged session surviving the rotation.
+    """
+    user = db.get(User, user_id)
+    if not verify_password(user.password_hash, body.current_password):
+        # Deliberately the same shape as a failed login: no oracle, no timing shortcut.
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="that password is not correct")
+    if body.new_password == body.current_password:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            detail="the new password must be different from the current one")
+    problems = password_problems(body.new_password, email=user.email)
+    if problems:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            detail="that password " + "; ".join(problems))
+
+    user.password_hash = hash_password(body.new_password)
+    revoked = revoke_all(db, user_id)
+    # The refresh sessions are dead in the database; the cookies still sitting in this browser are
+    # what would otherwise keep presenting them. The access cookie dies here too rather than at its
+    # natural expiry — sixty seconds of ghost session after "your password changed" reads as broken.
+    _clear_session_cookies(response)
+    audit(logger, "account.password_changed", user=user_id, sessions_revoked=revoked)
+    return {"status": "changed", "force_relogin": True}
 
 
 class DeleteBody(BaseModel):
