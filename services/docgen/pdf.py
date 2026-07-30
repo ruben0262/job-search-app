@@ -32,7 +32,17 @@ logger = logging.getLogger(__name__)
 # Chrome's own flags. `--headless=old` because the new headless mode changed print behaviour
 # mid-series; `--no-sandbox` because this runs as a container's only process with no user namespace,
 # which is also why the container gets nothing else to run.
-CHROME_FLAGS = ("--headless=old", "--no-sandbox", "--print-to-pdf-no-header", "--disable-gpu",
+#
+# **Both header flags, because Chrome renamed it.** `--print-to-pdf-no-header` is the old name and
+# is silently ignored by current builds (the image ships Chromium 150); `--no-pdf-header-footer` is
+# the current one. An unrecognised flag is not an error, so the only symptom is a date, a title, a
+# `file:///` path and a page number printed onto somebody's CV.
+#
+# It hid for as long as it did because `@page { margin: 0 }` left Chrome no margin box to draw
+# into. Giving the page real margins — which is what page two needs — revealed it immediately. Two
+# defects cancelling out is not the same as either being fixed.
+CHROME_FLAGS = ("--headless=old", "--no-sandbox",
+                "--print-to-pdf-no-header", "--no-pdf-header-footer", "--disable-gpu",
                 "--disable-extensions", "--disable-background-networking",
                 "--disable-component-update", "--disable-default-apps", "--metrics-recording-only",
                 "--mute-audio", "--hide-scrollbars")

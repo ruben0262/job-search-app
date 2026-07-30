@@ -530,3 +530,17 @@ def test_the_token_ceiling_leaves_room_for_the_document_after_thinking():
     # for, a long CV truncates and the user gets nothing.
     document_tokens = 8_000
     assert document_tokens * 2 <= MAX_TOKENS - THINKING_TOKENS
+
+
+def test_chrome_is_told_to_suppress_its_header_under_both_flag_names():
+    """**An unrecognised Chrome flag is not an error**, so the only symptom of using the old name
+    is a date, a title, a `file:///` path and a page number printed onto somebody's CV.
+
+    `--print-to-pdf-no-header` was renamed to `--no-pdf-header-footer`; the image ships Chromium
+    150, which ignores the first. It stayed hidden while `@page` had zero margins and there was no
+    margin box to draw into — two defects cancelling out, until page two needed a real margin.
+    """
+    from services.docgen.pdf import CHROME_FLAGS
+
+    assert "--no-pdf-header-footer" in CHROME_FLAGS
+    assert "--print-to-pdf-no-header" in CHROME_FLAGS
