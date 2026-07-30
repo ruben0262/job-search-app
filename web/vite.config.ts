@@ -10,7 +10,7 @@ export default defineConfig({
   server: {
     proxy: Object.fromEntries(
       ["/auth", "/account", "/legal", "/credentials", "/documents", "/onboarding", "/process",
-       "/dashboard", "/feed", "/health"].map((path) => [
+       "/dashboard", "/feed", "/health", "/setup", "/admin"].map((path) => [
         path,
         { target: "http://127.0.0.1:8000", changeOrigin: false },
       ]),

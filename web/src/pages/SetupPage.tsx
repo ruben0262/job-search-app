@@ -78,6 +78,7 @@ const DESCRIPTIONS: Record<string, string> = {
 
 export function SetupPage({ onChanged }: { onChanged: () => void }) {
   const [state, setState] = useState<Conversation | null>(null);
+  const [failed, setFailed] = useState(false);
   const [draft, setDraft] = useState("");
   const [openFile, setOpenFile] = useState<string | null>(null);
   const [fileText, setFileText] = useState("");
@@ -85,7 +86,9 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
 
   const load = async () => setState(await api.get<Conversation>("/setup"));
   useEffect(() => {
-    void load();
+    // A load that fails silently leaves "Loading…" on screen forever, which reads as a hang
+    // rather than an error — the one state a user cannot act on.
+    load().catch(() => setFailed(true));
   }, []);
   useEffect(() => {
     bottom.current?.scrollIntoView({ behavior: "smooth" });
@@ -122,6 +125,7 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
     setOpenFile(name);
   };
 
+  if (failed) return <p className="error">This page did not load. Refresh to try again.</p>;
   if (!state) return <p className="muted">Loading…</p>;
 
   if (openFile) {

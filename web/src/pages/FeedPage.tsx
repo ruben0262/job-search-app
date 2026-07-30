@@ -18,11 +18,12 @@ const PAGE = 25;
 type Sort = "score" | "posted" | "title" | "company";
 type AppliedFilter = "any" | "applied" | "not";
 
-/** "3h" / "2d" / "34d" — the resolution somebody scanning a feed actually reads at. */
+/** "<1h" / "3h" / "2d" — the resolution somebody scanning a feed actually reads at. */
 function age(iso: string | null): string | null {
   if (!iso) return null;
   const hours = Math.floor((Date.now() - new Date(iso).getTime()) / 3_600_000);
   if (hours < 0) return null;
+  if (hours < 1) return "<1h";
   if (hours < 24) return `${hours}h`;
   return `${Math.floor(hours / 24)}d`;
 }
@@ -31,7 +32,12 @@ function age(iso: string | null): string | null {
 function money(salary: Salary): string {
   if (!salary || salary.min == null) return "—";
   const symbol = { EUR: "€", USD: "$", GBP: "£" }[salary.currency] ?? `${salary.currency} `;
-  const compact = (value: number) => (value >= 10_000 ? `${Math.round(value / 1000)}k` : `${value}`);
+  const compact = (value: number) =>
+    value >= 1_000_000
+      ? `${(value / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`
+      : value >= 10_000
+        ? `${Math.round(value / 1000)}k`
+        : `${value}`;
   const range =
     salary.max != null && salary.max !== salary.min
       ? `${compact(salary.min)}–${compact(salary.max)}`
@@ -214,7 +220,7 @@ function Row({ job }: { job: FeedJob }) {
       <td className="job-sub">{job.source}</td>
       {/* Posted age when the source reported one; first-seen with a ~ when it did not, because
           "how long has this been out" deserves an honest approximation over a blank. */}
-      <td className="num job-sub">{posted ?? (seen ? `~${seen}` : "—")}</td>
+      <td className="num job-sub">{posted ?? (seen ? (seen === "<1h" ? "new" : `~${seen}`) : "—")}</td>
       <td className="num job-sub">{money(job.salary)}</td>
       <td>{job.applied_at ? <span className="tag">applied</span> : null}</td>
     </tr>
