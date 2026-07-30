@@ -14,6 +14,131 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-07-30
+
+### The instruments, and the nine bugs they found
+
+Most of today was building things that measure, then believing them when they disagreed with me.
+The measurements are described last because the bugs they surfaced matter more.
+
+**A subscription OAuth token needs the Claude Code identity block, or it 429s.** The entitlement is
+checked against the *first system block*; anything else is refused with `rate_limit_error` — an
+error that reads as "out of quota", is politely retried by every client, and never clears because
+nothing was consumed. Measured live: identical call, 429 with a plain system prompt, 200 with the
+block in front. Haiku passes either way, which is why it hid — labelling and CV builds both run on
+Haiku and worked, while the Opus setup agent would have failed on **every OAuth account**, telling
+users they were out of quota.
+
+**Transport retries went 8 to 2.** They were raised to 8 that morning while chasing the above; with
+the cause fixed, 8 is a spend multiplier. A 429 is refused before generation and costs nothing to
+retry; a 529 mid-stream has already produced tokens, and retrying re-runs the reasoning on the
+user's money. The reference allows one, transient only, because "retrying just burns another call".
+The logic-level retry (`MAX_TAILOR_CALLS`) already matched at one; both are asserted now.
+
+**CV builds were failing silently on the token ceiling.** `stop_reason=max_tokens` with zero text
+blocks: the model finished reasoning and never started the document. The thinking budget is spent
+*inside* `max_tokens`, and a CV is around 6,000 tokens of HTML, so 16,000 left no margin. Raised to
+32,000, which costs nothing until used. Found within an hour of adding the diagnostic that
+distinguishes truncation from refusal — the log previously could not.
+
+**The recency window was read from where nobody stores it.** `posted_within_hours` lives on each
+`SearchSection`; `build_source_configs` read it from the top level of the config. Every generator
+yielded zero, `max()` fell through to its default, and every harvest ran at 72 hours regardless of
+what anyone asked for. The test added alongside the `hours_old` fix did not catch it, because it
+asserted only that two keys agreed — they did, both at the default.
+
+**The age filter never reached LinkedIn, Indeed or Google.** Those pass `hours_old` to the scraper
+and ignore `max_age_hours`, which was the only key being set. The reference sets both and its
+comment says why. Currently moot in production: `DEFAULT_ENABLED` is seven no-auth REST sources and
+the JobSpy tier is not enabled at all — every LinkedIn row in the corpus arrived in one import on
+2026-07-27.
+
+**Chrome printed its own header onto every CV with margins.** `--print-to-pdf-no-header` is the old
+flag name and current Chromium ignores it; an unrecognised flag is not an error. The symptom is a
+date, a title, a `file:///` path and a page number on a document sent to an employer. It hid because
+`@page { margin: 0 }` left no margin box to draw into — which was itself the bug giving page two no
+top margin. Two defects cancelling out. Both fixed: margins onto `@page`, where they repeat, and
+both flag spellings passed.
+
+**A saved proxy URL never created a `proxy_credentials` row**, so `acquire_lease` had nothing to
+grant and the LinkedIn tier skipped the account silently, forever.
+
+**Excluded keywords stopped applying once a model was trained.** They were read only by the
+cold-start keyword scorer, so a term the user typed specifically in order not to see it came back
+the day their first training finished. Now a hard gate at delivery, on title and company only —
+matching the description turns "no recruitment agencies" into a filter that eats most of a feed.
+
+**A delivered job was shown as borderline.** The card called anything under 80 a yellow dot while
+delivery sent everything at 60 and above, under a comment claiming the two matched. One number now,
+passed from the send decision into the card.
+
+**The score schema was rejected by the API on every call.** `additionalProperties: false` is
+required on every nested object and was on none of them. Invisible because the account's labels were
+migrated rather than produced here, so a permanently broken call looked exactly like an empty queue.
+
+### What was built to find them
+
+`libs/scoring/cveval.py` — the reference's objective checks, ported. `eval_cv.md` opens by saying
+keyword coverage and bullet metrics are already computed and must not be re-graded, and the judge
+was being handed a character count. A model told a measurement exists and then not shown it does not
+abstain; it estimates. Giving it the real numbers moved scores about 11 points. The module is
+careful about what it claims: **it is not an ATS**. It measures what holds whether screening is
+boolean search or a learned ranker — is the text extractable, are the posting's own terms present —
+and none of it is a target, because optimising for exact-term coverage *is* keyword stuffing.
+
+`deploy/scripts/calibrate_judge.py` — three probes whose ordering is not in doubt: tailored over
+untailored, the right job over a distant one, real over a mechanically degraded copy. All three pass
+by 23 to 51 points, so an A/B run on this judge measures something real. Its first version failed
+the wrong-job probe, and the *experiment* was wrong rather than the judge: both jobs were drawn from
+the same band above the delivery threshold, which for this account meant three variants of one role.
+
+`deploy/scripts/ab_prompts.py` — holds everything constant except the prompt bytes, and reports the
+weakest dimensions plus the judge's own fixes ranked by repetition, because a mean says a prompt is
+losing and not what to change about it.
+
+`libs/obs/timing.py` — per-stage durations with the slowest named explicitly, and end-to-end
+freshness at delivery from two clocks: age from posted, which is what the user experiences, and from
+first seen, which is what the platform controls. No stage duration predicts the second, because most
+of the latency is spent *between* stages.
+
+### Feed correctness
+
+**The age filter could only drop what it could date.** Of 216 jobs pending delivery, 68 carried a
+`posted_at` — LinkedIn reports none to the listing API. The front of the queue is now dated
+immediately before selection, on the user's own proxy, capped at about one digest, which is the
+order the reference uses. First run after the fix: 33 dropped as too old and 17 as closed, where all
+50 would previously have been sent.
+
+Also ported or added: `libs/corpus/ranking.py` (opportunity ordering — youth and scarcity, with fit
+as a tiebreaker only), `libs/corpus/langfilter.py`, the per-user age window applied at delivery, and
+closed-posting detection stored on `corpus.closed_at`.
+
+### Prompts
+
+**Role angles are per user now.** The shipped `tailor_cv.md` still argued in one person's
+vocabulary — two role lenses, and adjacent-skill examples naming FastAPI and Polars. Lifted into
+`08-role-angles.md`, written by `/setup-role-angles`, injected at build time where `<<ROLE_ANGLES>>`
+sits. Measured indistinguishable from the inline version (+1.7 across six jobs), so the split costs
+nothing and a new user gets a mechanism that provably works.
+
+**One prompt hypothesis was tested and falsified.** A variant capping length at one page while
+cutting the competencies block scored 3.8 *below* current, and its own feedback said why: "far too
+thin — one visible role, no education section". Cutting the keyword wall is right; capping total
+length at the same time took the space away instead of moving it. The competencies finding is
+confirmed on the *winning* variant, whose most-repeated fix is to cut it.
+
+### Two of the instruments were themselves wrong
+
+The judge did not know what day it is, and twice called a current role "a credibility killer — a
+future start date". A CV is mostly dates, so a judge without a today marks down the most recent work
+on every candidate, in the dimension the holistic score weights most heavily.
+
+And the ranking tests expired overnight: fixtures pinned to a fixed date while `select` had no
+notion of now, so every check inside it read the machine clock independently. `select` takes `now`
+now — a caller that cannot say what time it is cannot be tested about time at all.
+
+---
+
 ## 2026-07-28
 
 ### Delivery is on, and two things the first real build found

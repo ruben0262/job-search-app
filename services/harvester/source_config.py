@@ -139,8 +139,8 @@ def build_source_configs(
     # stored config actually has it; the flat form is what older callers and fixtures pass. Reading
     # only the flat one is what made this always return the default.
     windows = []
-    for config in configs.values():
-        config = config or {}
+    for stored in configs.values():
+        config = stored or {}
         windows.append(int(config.get("posted_within_hours") or 0))
         windows += [int(section.get("posted_within_hours") or 0)
                     for section in config.get("sections") or []]

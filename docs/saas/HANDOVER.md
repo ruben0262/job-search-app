@@ -1,7 +1,7 @@
-# Handover — 2026-07-28
+# Handover — 2026-07-30
 
 Where the platform actually is, what is left, and the decisions a new session would otherwise have
-to re-derive. `ROADMAP.md` is the plan; this is the position.
+to re-derive. `CHANGELOG.md` is the history; this is the position.
 
 ---
 
@@ -11,97 +11,151 @@ to re-derive. `ROADMAP.md` is the plan; this is the position.
 |---|---|
 | Site + API | `https://mahoraga-app.rubenlekli.com` (Cloudflare Tunnel; port 22 is the only public listener) |
 | Box | `ruben@169.58.16.241`, checkout at `~/job-search-app` |
-| Running | `postgres`, `capture`, `labeller`, `scorer`, `api`, `cloudflared`, embedder (own project) |
-| Built, **not started** | `notifier`, `trainer` — starting the notifier messages real people |
-| Built, **not deployed** | `docgen` — the image has never been built on the box |
-| Timers | `harvester` (15 min) and `backup` (03:20) enabled; **`health.timer` deliberately disabled** |
-| Tests | 730 passing against a throwaway Postgres, CI 10/10 jobs green |
+| Running | postgres, api, capture, labeller, scorer, notifier, trainer, docgen, cloudflared, embedder |
+| Timers | **all five installed and enabled** — harvester 15 min, notify-dispatch 60 s, linkedin-describe hourly, health, backup |
+| Tests | 966 passing, 2 skipped, against a throwaway Postgres |
+| Accounts | `lekliruben@gmail.com` (full profile, model servable), `andraslekli@gmail.com` (config only) |
 
-**Phases 0–4 complete.** Phase 5a (feedback loop) complete. Phase 5b (docgen) built and waiting on a deploy.
-
-Both accounts are fully configured: passwords set, Telegram connected with per-category channel
-routing, documents imported (Ruben 9 / 98,059 chars, Andras 11 / 243,819), models servable, feeds
-scored.
-
-### Why `health.timer` is off
-
-Its silent-feed alert is a **true positive** while `notifier` is not running: both accounts have
-matches waiting and no delivery. Enable it in the same change that starts delivery, or it emails
-every 15 minutes about a condition we created deliberately.
+`sudo deploy/install-units.sh` installs and enables every timer idempotently, and `check_health.py`
+**pages** when one is missing — a timer that was never installed is invisible from inside the
+application, which is how `notify-dispatch` was absent for weeks while the stack looked healthy.
 
 ---
 
-## What is left, in the order it has to happen
+## The thing most likely to mislead a new session
 
-**All three of the items below were built on 2026-07-28. What remains is not code:**
+**The JobSpy tier is not enabled.** `source_config.DEFAULT_ENABLED` is seven no-auth REST sources.
+LinkedIn, Indeed and Google are not harvested at all, and every LinkedIn row in the corpus — 3,495
+of them — arrived in a single import on 2026-07-27.
 
-1. **Build and start `docgen` on the box**, then watch one real tap through (§1–2).
-2. **Look at the redesigned overview in a browser** against a real account (§3).
-3. **Decide when delivery starts.** `notifier` is built and stopped, and `health.timer` stays off
-   until it runs — both accounts have matches waiting, so the silent-feed alert is a true positive
-   until somebody turns delivery on.
-4. **Cover letters** are the first thing with no design yet: `tailor_cover.md` is generalised and
-   ready, and nothing says *when* a posting wants one. The reference instance read a
-   `cover_letter_required` flag the platform's corpus does not have.
+So "LinkedIn jobs are old" is not a filter bug. There is no LinkedIn ingestion. The per-user
+LinkedIn tier is designed (`services/harvester/governor.py` holds the concurrency ceiling, the
+interval floor and the kill switch) and **was never built**. The proxy, the lease accounting and the
+per-user description pass all exist and work; what is missing is the loop that searches LinkedIn on
+a user's own schedule with their own credential.
 
-### 1–2. ~~The CV render and the docgen worker~~ — **done 2026-07-28, not deployed**
-
-`libs/templates/cv.py` fills the template from `ProfileSchema`; `services/docgen` turns a tap into a
-PDF. Both prompts are generalised — the SACRED change was approved on the day and is in the
-changelog with its reasoning. Cover letters are deliberately not wired: `tailor_cover.md` is ready
-and nothing yet says *when* a posting wants one.
-
-**What is left is deployment**, and it is the only thing between a tap and a real PDF:
-
-```bash
-cd ~/job-search-app && git pull
-docker compose -f deploy/compose.yml --profile full up -d --build docgen
-docker compose -f deploy/compose.yml logs -f docgen
-```
-
-Then tap Build CV on a real match and watch one through. Things worth knowing before that first tap:
-
-- **The image build fails if `fonts-lato` is missing** — deliberately. Chrome falls back to Arial in
-  silence otherwise, which is a correct document in the wrong typeface.
-- **~90–130 s and two Chrome compiles per build** on the user's own Claude credential, capped at 10
-  builds a day by the free plan's `cv_builds_per_day`. The quota is refused at the tap, with a popup
-  naming the limit.
-- **A failed compile retries; everything else dead-letters.** Chrome running out of memory on a busy
-  box is transient, and `mem_limit: 1500m` is what keeps a bad build from taking the API with it.
-- **Nothing is delivered if the output contains hidden content.** Fail closed, on purpose.
-- The real-Chrome test is skipped unless a browser is present: `CHROME_BIN=… pytest tests/test_docgen.py`
-  runs it, and it is the only check that says the layout survives a real render.
-
-### 3. ~~Dashboard redesign~~ — **done 2026-07-28**
-
-The backend was already state-driven; the UI was three bordered panels of equal weight, so the one
-action worth taking looked exactly like the delivery settings. Now: state as the headline, the
-server's explanation under it, one control, and the numbers as figures underneath
-(`web/src/pages/DashboardPage.tsx`, `.overview` / `.stats` in `styles.css`).
-
-**Not looked at in a browser** — `npm run build` typechecks and builds, and nobody has seen it
-rendered against a real account. That is worth five minutes before it counts as finished.
+The delivery-side filters do now catch the stale imported rows: a dry run dropped 33 as too old and
+17 as closed, where all 50 would previously have been sent.
 
 ---
 
-## Decisions a new session should not re-litigate
+## Order of work agreed with the owner (2026-07-30)
 
-- **The landing page stays in `mahoraga-jobs-web`.** It was copied in on 2026-07-28 and removed the
-  same day: copying it meant rewriting its copy to suit a hosted product, which is a change to that
-  page made in the wrong repository. The app's sign-in is the entry point and the landing page links
-  to it.
-- **The API serves the SPA**, rather than Cloudflare Pages as D7 planned. D7's requirement was no
-  open inbound port and the tunnel already provides that; a second origin adds a CORS policy that
-  stays untested until the day it is wrong.
-- **`notifier` is behind the `full` compose profile** so `up -d` never starts delivery by accident.
-- **Backups stay on the box** (accepted risk, 2026-07-28) — covers a bad migration or a dropped
-  table, not disk loss. There is nowhere off-box to put them yet.
-- **Zoho EU, not global.** `smtp.zoho.com` answers `535 Authentication Failed` for
-  `no-reply@flow-solutions.xyz`; `smtp.zoho.eu` authenticates. The error is indistinguishable from a
-  wrong password.
+**The site is finished before any prompt is touched.** Prompts are measurable now and can wait; a
+half-working product cannot be evaluated at all.
+
+### 1. Jobs page — the priority
+
+Currently not a table. It needs:
+
+- a real table with the columns that matter (score, title, company, location, source, posted age,
+  salary, applied state)
+- **filters** on those columns
+- a **search box** over job titles and links
+- **pagination**
+
+`GET /feed` already returns the rows, so this is largely a web change. A `jobs_detail` page — click
+a row, see everything about that posting — was explicitly deferred, but should exist eventually.
+
+### 2. Profile / setup chat
+
+- The chat should feel like talking to Claude: **a typing indicator while the model is working.** A
+  turn can take minutes and the current pending line is static.
+- **"What we have written down" cannot be opened.** The file list renders but clicking does nothing.
+  It should open the file, and the entries want **names and icons** rather than filenames, so a
+  non-technical user can tell what each one is.
+
+### 3. Dashboard, onboarding, settings
+
+Reviewed by the owner on 2026-07-30 and judged good. Nothing outstanding.
+
+### 4. Prompts — after the above
+
+The next experiment is already designed: cut the Core Competencies block and require an outcome on
+every retained bullet, **without** capping total length, plus floors — never fewer than three
+experience entries, never drop Education. The previous variant failed precisely because it capped
+length at the same time.
+
+---
+
+## The measurement stack, and why it can be trusted
+
+| Script | Question it answers |
+|---|---|
+| `deploy/scripts/calibrate_judge.py` | Does the judge discriminate at all? |
+| `deploy/scripts/ab_prompts.py` | Is prompt A better than B, and where is it losing? |
+| `libs/scoring/cveval.py` | The objective checks the judge is told already exist |
+
+The judge passed all three calibration probes by 23–51 points — tailored over untailored, the right
+job over a distant one, real over a mechanically degraded copy — ordering correctly on **every** job
+rather than on average.
+
+Absolute scores run 50–60 for a tailored CV. The owner independently rated one of his own real CVs
+at "40, maybe 50", so the scale is roughly honest rather than punitive.
+
+**Known limits.** Six jobs per variant is a small sample and run-to-run variance is large: the same
+prompt produced a 1-page/3,522-character CV on one run and 2-page/5,393 on the next. Gaps under
+about 5 points are noise. The judge needs an Opus-class model — Haiku is the writer, and a judge no
+better than the author cannot see the author's mistakes.
+
+---
+
+## Known wrong or unfinished
+
+- **The JobSpy tier does not exist** (above). The largest gap.
+- **The free-tier description pass fills few descriptions.** A recent cycle: 66 attempted, 0
+  described, mostly `generic_http_200` — the page fetched fine and its text did not beat the snippet
+  already stored. The JSON-LD path works well when it matches; the fallback rarely wins.
+- **The shared harvest window is the widest any active account asked for.** Andras asks for 72
+  hours, so the founder's 6 does not tighten the *fetch*. It does tighten his delivery, which is
+  where it matters, but a second account raises everyone's fetch cost.
+- **`users.profile_context` is a dead column**, superseded by `user_profile_files['context.md']`.
+- **The context-file upload step is not built.** Agreed design: after onboarding, explain what a
+  context file is, let the user write and upload one, then chat to Opus with it already in hand.
+- **`jobs_detail` page** does not exist.
+- **Phase 5 of `REBUILD_PLAN.md`** — deleting the schema machinery (`rubric.py`, `facts.py`,
+  `docprompt.py`, `templates/cv.py`, the confirmation form, the generated types) — is not started.
+- **Andras has no profile.** He was always going to run the setup chat as the real test of it.
+- **Cover letters have no trigger.** `tailor_cover.md` is ready and nothing says *when* a posting
+  wants one; the reference read a `cover_letter_required` flag this corpus does not have.
+
+---
+
+## Decisions that should not be re-litigated
+
+- **Three file classes.** Platform-owned prompts (`libs/prompts/`), per-user files
+  (`user_profile_files`), scaffolds (`libs/scaffolds/`). A scaffold never grounds a generation call.
+- **Role angles are per user**, in `08-role-angles.md`, because the reference's two lenses were
+  right for one person and wrong for everyone else. Measured to cost nothing (+1.7, noise).
+- **Prompts are SACRED**: no edit without an A/B and a changelog entry. The A/B exists now, so this
+  is enforceable rather than aspirational.
+- **Every filter fails open except facts about the posting.** Closed and too-old are facts.
+  Language, workplace and applicant count are preferences, and keep the job when unknown.
+- **The user's own credential pays for everything**, and secrets are decrypted only inside
+  `SecretStore.use` under `redacting()`.
+- **Transport retries are two; the logic-level retry is one.** Eight was masking a bug.
+- **The card's green dot is the delivery cutoff.** One number, passed from the send decision, so a
+  job cannot be sent and called borderline in the same breath.
 - **`max_notifications_per_day` is out of the onboarding form**, kept in the schema with its
   default. It is a plan limit, not a search preference, and becomes a tier setting when Stripe
-  arrives (the seam is the `plans` table — adding a tier is an INSERT).
+  arrives — the seam is the `plans` table, where adding a tier is an INSERT.
+
+---
+
+## Operational notes worth keeping
+
+- **Claude OAuth requires the Claude Code identity block as the first system block.** Without it,
+  every Sonnet and Opus call returns `rate_limit_error` no matter how long you wait.
+- **Structured output** rejects `minimum`, `maximum`, `maxItems` and `maxLength`, and requires
+  `additionalProperties: false` on *every* nested object.
+- **`thinking` is charged inside `max_tokens`.** A 32,000 ceiling with a 4,096 budget leaves about
+  28,000 for the document.
+- The host venv needs `anthropic` installed for the A/B and calibration scripts; the service images
+  already have it.
+- Run long scripts on the box with `setsid nohup … &` and poll the output file. `pgrep -f name`
+  matches the ssh command running it — use `pgrep -f "[n]ame"`.
+- **Never chain `pytest … | tail -n && git commit`.** `tail` exits 0 regardless, so the commit runs
+  even when the suite fails. That let two broken commits through on 2026-07-30.
 
 ---
 
@@ -126,6 +180,3 @@ docker run -d --name js-test-pg --restart unless-stopped \
 DATABASE_URL="postgresql+psycopg://jobsearch:test@localhost:55432/jobsearch" alembic upgrade head
 DATABASE_URL="postgresql+psycopg://jobsearch:test@localhost:55432/jobsearch" pytest tests/ -q
 ```
-
-Every failure that reached CI in this build was catchable by that loop or by
-`alembic upgrade <rev>:head --sql`, which renders a migration offline.
