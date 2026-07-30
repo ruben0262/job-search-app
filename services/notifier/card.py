@@ -79,6 +79,10 @@ class FeedItem:
     easy_apply: bool | None = None
     reposted: bool | None = None
     workplace: str | None = None
+    # Set when a pre-send refresh found the posting closed. Not rendered — a closed job is dropped
+    # before the card is built — but carried so the filter and the fetch do not need a second query
+    # to agree with each other.
+    closed: bool = False
 
 
 def applicant_bucket(count: int) -> int:

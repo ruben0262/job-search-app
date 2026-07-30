@@ -58,7 +58,11 @@
 /* ---- PAGE ---- */
 @page {
   size: A4;
-  margin: 0;
+  /* **The margins live here, not on the body.** Body padding is applied once to the whole flowed
+     document, so it puts a gap above page 1 and nothing above page 2 — content starts hard against
+     the top edge of every page after the first. `@page` margins repeat on every page, which is what
+     a printed document needs and what a recruiter opening page 2 expects to see. */
+  margin: 17mm 20mm 16mm 20mm;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -68,7 +72,7 @@ body {
   font-size: 10pt;
   color: #222;
   line-height: 1.32;
-  padding: 17mm 20mm 16mm 20mm;
+  padding: 0;
 }
 
 a { color: #003399; text-decoration: none; }

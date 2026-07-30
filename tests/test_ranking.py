@@ -309,3 +309,53 @@ def test_an_excluded_term_in_the_description_does_not_drop_the_job():
 
 def test_no_excluded_keywords_drops_nothing():
     assert is_eligible(Item(), rules(sections=[{"exclude_keywords": []}]), now=NOW)[0] is True
+
+
+# ── dating the feed before filtering it ───────────────────────────────────────────────────────
+
+class DatingClient:
+    """Answers the guest fragment for any job asked about."""
+
+    def __init__(self, page: str):
+        self.page = page
+        self.asked: list[str] = []
+
+    def get(self, url, **_):
+        self.asked.append(url)
+        return type("R", (), {"text": self.page, "status_code": 200, "url": url})()
+
+    def stream(self, _method, url, **_):
+        from contextlib import nullcontext
+        streamed = type("S", (), {"text": self.page, "status_code": 200,
+                                  "iter_bytes": lambda self: iter([self.text.encode()])})()
+        return nullcontext(streamed)
+
+
+MONTH_OLD = ('<span class="posted-time-ago__text"> Reposted 1 month ago </span>'
+             '<span class="num-applicants__caption"> 180 applicants </span>' + "x" * 300)
+
+
+def test_an_undated_linkedin_job_is_only_dropped_once_it_has_been_dated():
+    """**The leak that kept "Reposted 1 month ago" in the feed.** LinkedIn reports no posted time
+    to the listing API, so the age filter had nothing to test and correctly failed open. Dating the
+    job first is what turns "we never asked" into an answer."""
+    from libs.corpus import postings
+
+    undated = Item(posted_at=None, source="linkedin")
+    tight = rules(sections=[{"posted_within_hours": 6}])
+
+    # Undated and recently found: nothing to drop it on, so it goes out.
+    assert is_eligible(undated, tight, first_seen=NOW, now=NOW)[0] is True
+
+    # Dated from the posting's own page, it is a month old and fails the same filter.
+    undated.posted_at = postings.parse_posted_at(MONTH_OLD, now=NOW)
+    assert undated.posted_at is not None
+    assert is_eligible(undated, tight, first_seen=NOW, now=NOW) == (False, "too_old")
+
+
+def test_a_closed_posting_found_at_send_time_is_dropped_and_not_failed_open():
+    """Closed is a fact about the posting, not a preference. It does not get the benefit of the
+    doubt the language and workplace filters get."""
+    item = Item()
+    item.closed = True
+    assert is_eligible(item, rules(), now=NOW) == (False, "closed")

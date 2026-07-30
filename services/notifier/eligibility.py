@@ -116,7 +116,29 @@ def is_eligible(item, rules: Eligibility, *, first_seen=None, now=None) -> tuple
     The reason is returned rather than logged here so the caller can count them: "delivered 2 of
     40" is alarming and unactionable, while "dropped 38 for language" is a config problem somebody
     can fix in a minute.
+
+    **Two kinds of check, in order.** The first two are facts about the posting — it is closed, or
+    it is older than the user asked for — and they are not judgements about anybody's preferences.
+    The rest are preferences, and every one of them fails open.
     """
+    fact = _unusable(item, rules, first_seen=first_seen, now=now)
+    if fact is not None:
+        return False, fact
+    return _preferences(item, rules)
+
+
+def _unusable(item, rules: Eligibility, *, first_seen, now) -> str | None:
+    """Facts about the posting that make it not worth sending, whoever the user is."""
+    if getattr(item, "closed", False):
+        # Learned during the pre-send refresh. There is nothing to apply for.
+        return "closed"
+    if too_old(item, rules, first_seen=first_seen, now=now):
+        return "too_old"
+    return None
+
+
+def _preferences(item, rules: Eligibility) -> tuple[bool, str | None]:
+    """What this particular user does and does not want to see. Every check fails open."""
     if rules.exclude_keywords:
         # Title and company only, never the description. A posting that merely *mentions* a term
         # in a benefits paragraph is not the job the user was excluding, and matching the body
@@ -125,9 +147,6 @@ def is_eligible(item, rules: Eligibility, *, first_seen=None, now=None) -> tuple
         for term in rules.exclude_keywords:
             if term in haystack:
                 return False, "excluded_keyword"
-
-    if too_old(item, rules, first_seen=first_seen, now=now):
-        return False, "too_old"
 
     if applicant_glut(source=item.source, applicants=item.applicants,
                       cap=rules.applicant_cap):

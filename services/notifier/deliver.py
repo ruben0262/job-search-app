@@ -22,19 +22,22 @@ import logging
 import statistics
 import uuid as _uuid
 from collections.abc import Callable
+from contextlib import contextmanager
 from datetime import UTC, datetime
 
+import httpx
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from libs.db.models import CorpusJob, User, UserConfig, UserJobState
 from libs.obs import audit
-from libs.secrets import SecretStore
+from libs.secrets import SecretsError, SecretStore, redacting
 from services.notifier.buttons import keyboard
 from services.notifier.card import FeedItem
 from services.notifier.card import render as render_card
 from services.notifier.eligibility import CANDIDATE_MULTIPLIER, Eligibility
 from services.notifier.eligibility import select as select_feed
+from services.notifier.freshness import date_candidates
 from services.notifier.routing import group_by_chat
 
 logger = logging.getLogger(__name__)
@@ -65,7 +68,8 @@ class BotRevoked(RuntimeError):
 
 def pending_feed(session: Session, user_id: _uuid.UUID, *, cutoff: float,
                  limit: int = MAX_ITEMS_PER_DIGEST,
-                 rules: Eligibility | None = None) -> tuple[list[FeedItem], dict[str, int]]:
+                 rules: Eligibility | None = None,
+                 store: SecretStore | None = None) -> tuple[list[FeedItem], dict[str, int]]:
     """This user's next digest: eligible, ranked by opportunity, capped at `limit`.
 
     Returns the items and a tally of why the rest were dropped.
@@ -105,7 +109,43 @@ def pending_feed(session: Session, user_id: _uuid.UUID, *, cutoff: float,
     if rules is None:
         config = session.scalar(select(UserConfig.config).where(UserConfig.user_id == user_id))
         rules = Eligibility.from_config(config)
+
+    # **Date the front of the queue before filtering it.** The age filter can only drop what it can
+    # date, and LinkedIn reports no posted time to the listing API at all — so the filter was
+    # failing open on most of the feed, which is how "Reposted 1 month ago" kept arriving as a live
+    # card. `store` is optional so every existing caller and test keeps working undated.
+    if store is not None:
+        with _fetching_as(store, user_id) as client:
+            if client is not None:
+                date_candidates(session, items, client)
+
     return select_feed(items, rules, limit=limit, first_seen=first_seen)
+
+
+@contextmanager
+def _fetching_as(store: SecretStore, user_id: _uuid.UUID):
+    """An HTTP client on this user's own proxy, or `None` if they have none.
+
+    Their proxy or nothing — LinkedIn's guest endpoint refuses datacenter addresses, so an
+    unproxied attempt is a request that cannot succeed. `None` rather than an unproxied client
+    makes the caller skip instead of spending a round trip to learn that.
+
+    A secret store that cannot answer is caught rather than propagated: dating the feed is an
+    improvement to it, not a precondition for having one.
+    """
+    try:
+        with store.use(user_id, "proxy") as secret:
+            if secret is None:
+                yield None
+                return
+            proxy = secret.reveal()
+            with redacting(proxy), httpx.Client(timeout=25, follow_redirects=True,
+                                                proxy=proxy) as client:
+                yield client
+        return
+    except SecretsError:
+        logger.warning("notify: no proxy available for %s, sending undated", user_id)
+    yield None
 
 
 def notifications_today(session: Session, user_id: _uuid.UUID) -> int:
@@ -148,7 +188,7 @@ def deliver(session: Session, user_id: _uuid.UUID, *,
         logger.info("notify: %s is at their daily cap, deferring", user_id)
         return 0
 
-    items, dropped = pending_feed(session, user_id,
+    items, dropped = pending_feed(session, user_id, store=store,
                                   cutoff=cutoff, limit=min(remaining, MAX_ITEMS_PER_DIGEST))
     if dropped:
         # Counted by reason, because "delivered 2" is alarming and unactionable while "dropped 38

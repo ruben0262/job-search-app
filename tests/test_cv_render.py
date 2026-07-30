@@ -259,3 +259,26 @@ def test_the_template_on_disk_is_the_one_the_renderer_reads():
     on_disk = pathlib.Path("libs/templates/base_cv.html").read_text(encoding="utf-8")
 
     assert load(BASE_CV_TEMPLATE) == on_disk.replace("\r\n", "\n")
+
+
+# ── page geometry ─────────────────────────────────────────────────────────────────────────────
+
+def test_page_margins_are_on_the_page_rule_not_the_body():
+    """**Body padding is applied once to the whole flowed document.** It puts a gap above page 1
+    and nothing above page 2, so a two-page CV starts hard against the paper edge on the second —
+    which is what a recruiter sees when they scroll past the fold. `@page` margins repeat.
+    """
+    import pathlib
+    import re
+
+    for path in ("libs/templates/base_cv.html", "libs/scaffolds/base_cv.html"):
+        css = pathlib.Path(path).read_text(encoding="utf-8")
+        page_rule = re.search(r"@page\s*\{[^}]*\}", css, re.S)
+        assert page_rule, f"{path} has no @page rule — the PDF would use Chrome's defaults"
+        assert re.search(r"margin:\s*\d", page_rule.group(0)), (
+            f"{path} sets @page margin to zero, so only the first page gets one")
+
+        body_rule = re.search(r"\bbody\s*\{[^}]*\}", css, re.S)
+        assert body_rule
+        assert not re.search(r"padding:\s*\d+mm", body_rule.group(0)), (
+            f"{path} still puts the page margin on the body, which only affects page one")
