@@ -43,6 +43,7 @@ import statistics
 import sys
 import time
 from collections import defaultdict
+from datetime import date
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -196,7 +197,13 @@ def deterministic_summary(html: str, text: str, *, job) -> str:
                         {"pages": None}, job.company or "")
     coverage = det["keyword_coverage"]
     hidden = det["issues"]
-    return (f"keyword coverage: {coverage['all_pct']}% overall, "
+    # **Today's date, because the judge does not have one.** It twice called a current role a
+    # "credibility killer — a future start date": the CV said "May 2026 – Present", the run was in
+    # July 2026, and the model was reasoning from whenever it thinks now is. A CV is a document
+    # full of dates, so a judge without a today marks down the most recent and most relevant work
+    # on every candidate it sees.
+    return (f"today's date: {date.today():%d %B %Y}. "
+            f"keyword coverage: {coverage['all_pct']}% overall, "
             f"{coverage['critical_pct']}% of critical keywords; "
             f"missing critical: {', '.join(coverage['missing_critical']) or 'none'}. "
             f"bullets: {det['bullets']['compliant']}/{det['bullets']['total']} follow the formula. "
