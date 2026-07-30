@@ -386,6 +386,11 @@ def test_the_jobspy_tier_is_given_the_age_window_under_the_key_it_reads():
     for source, cfg in configs.items():
         assert cfg.get("hours_old") == cfg.get("max_age_hours"), (
             f"{source} would filter on one key and scrape on the other")
+        # **The number the user asked for, not merely a number.** The first version of this test
+        # checked only that the two keys agreed, which they did — both at the platform default,
+        # because the window was being read from the top level of the config where it has never
+        # lived. A user asking for four hours was harvested at seventy-two and nothing said so.
+        assert cfg["hours_old"] == 4, f"{source} ignored the window the user asked for"
 
 
 def test_the_window_is_the_widest_any_active_account_asked_for():
@@ -398,6 +403,7 @@ def test_the_window_is_the_widest_any_active_account_asked_for():
         "wide": {"sections": [{"keywords": ["python"], "posted_within_hours": 72}]}})
 
     assert all(cfg["hours_old"] == 72 for cfg in configs.values())
+    assert all(cfg["hours_old"] != 2 for cfg in configs.values()), "the tighter ask won"
 
 
 def test_an_account_may_ask_for_a_window_as_tight_as_the_reference_watcher():
