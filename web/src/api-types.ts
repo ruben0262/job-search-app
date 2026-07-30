@@ -316,6 +316,10 @@ export interface paths {
          *
          *     Nothing here logs the user in. Verification proves control of the address; a session should
          *     still start from a deliberate login, so a forwarded link cannot hand someone a session.
+         *
+         *     The token arrives in the body, matching what the SPA sends. It was a query parameter, which
+         *     the page never sent — so every human verification failed 422 while the tests, which used the
+         *     query form, stayed green. The e2e browser run is what caught it.
          */
         post: operations["verify_auth_verify_post"];
         delete?: never;
@@ -1385,6 +1389,11 @@ export interface components {
             /** Error Type */
             type: string;
         };
+        /** VerifyRequest */
+        VerifyRequest: {
+            /** Token */
+            token: string;
+        };
     };
     responses: never;
     parameters: never;
@@ -1850,14 +1859,16 @@ export interface operations {
     };
     verify_auth_verify_post: {
         parameters: {
-            query: {
-                token: string;
-            };
+            query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VerifyRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

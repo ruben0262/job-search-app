@@ -16,6 +16,28 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ## 2026-07-30
 
+### The e2e browser run, and the three bugs the API tests could not see
+
+"I can't log in and reset doesn't work" — reproduced by driving the real dev stack (vite, uvicorn,
+Chromium) through signup → emailed link → verify → login, then forgot → reset → old password
+refused → new one works. That run now passes end to end. What it caught, none of which any API
+test could have:
+
+- **`/auth/verify` took the token as a query parameter; the page sends a JSON body.** Every human
+  verification failed 422 while the tests stayed green — they used the query form. The endpoint
+  takes a body now, matching what the SPA sends.
+- **StrictMode consumed the verification token twice.** The second POST finds it used, and the
+  page flips from "confirmed" to "did not work" *after succeeding* — both requests are valid
+  requests, and only a page that makes both misbehaves. A ref guards the effect.
+- **A stale signed-in state survived the reset.** Hash navigation never re-checks the session, so
+  an app that was open before the reset link kept rendering its shell after every session was
+  revoked. The reset page tells the app to re-ask.
+
+And the reason the flow was unfinishable locally at all: **`ConsoleSender` kept the link in memory
+and logged only the subject** — and could not have logged the body, because the auth routes send
+inside `redacting(token)`, which scrubs the token from every log record. It prints to stdout now,
+which the redaction filter does not touch, with a test pinning that the link is visible.
+
 ### Onboarding wears the design, and everything collected becomes editable
 
 **The wizard's progress is numbered circles now** — done is filled with a check, current is

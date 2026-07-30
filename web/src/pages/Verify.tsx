@@ -4,7 +4,7 @@
  * **Confirming does not sign you in.** The server deliberately does not issue a session from a link
  * that arrived by email, so this ends at the sign-in form rather than inside the account.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { ApiError, api } from "../api";
 import { AuthShell } from "./SignIn";
@@ -12,8 +12,15 @@ import { AuthShell } from "./SignIn";
 export function Verify({ onDone }: { onDone: () => void }) {
   const [state, setState] = useState<"pending" | "done" | "failed">("pending");
   const [detail, setDetail] = useState("");
+  // The token works exactly once, and StrictMode runs effects twice in development — without the
+  // guard the second POST consumes nothing, and the page flips from "confirmed" to "did not work"
+  // right after succeeding. Found by the e2e run, not by any API test: both requests are valid
+  // requests, and only a page that makes them both misbehaves.
+  const requested = useRef(false);
 
   useEffect(() => {
+    if (requested.current) return;
+    requested.current = true;
     const query = window.location.hash.split("?")[1] ?? "";
     const token = new URLSearchParams(query).get("token");
     if (!token) {

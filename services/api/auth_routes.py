@@ -127,14 +127,22 @@ def signup(body: SignupRequest, request: Request,
     return OPAQUE_SIGNUP
 
 
+class VerifyRequest(BaseModel):
+    token: str = Field(min_length=1, max_length=256)
+
+
 @router.post("/verify")
-def verify(token: str, db: Session = Depends(get_db)) -> dict:
+def verify(body: VerifyRequest, db: Session = Depends(get_db)) -> dict:
     """Redeem a verification link. Activates the account.
 
     Nothing here logs the user in. Verification proves control of the address; a session should
     still start from a deliberate login, so a forwarded link cannot hand someone a session.
+
+    The token arrives in the body, matching what the SPA sends. It was a query parameter, which
+    the page never sent — so every human verification failed 422 while the tests, which used the
+    query form, stayed green. The e2e browser run is what caught it.
     """
-    user_id = consume_token(db, token, "verify_email")
+    user_id = consume_token(db, body.token, "verify_email")
     if user_id is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             detail="this link is invalid or has expired — request another")

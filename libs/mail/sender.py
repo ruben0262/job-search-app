@@ -60,6 +60,12 @@ class ConsoleSender:
 
     Deliberately keeps the message: a test that asserts a link was generated needs to read it, and
     a developer running the signup flow locally needs to click it.
+
+    **The body goes to stdout via `print`, not through logging.** The auth routes send inside
+    `redacting(token)`, which scrubs the token from every log record — correct in production and
+    fatal here, because the whole point of this sender is that the developer can click the link.
+    Before this, "email (not sent)" logged only the subject and the signup flow was locally
+    unfinishable: the verification link existed nowhere a human could see.
     """
 
     def __init__(self) -> None:
@@ -68,6 +74,7 @@ class ConsoleSender:
     def send(self, to: str, subject: str, body: str) -> None:
         self.sent.append((to, subject, body))
         logger.info("email (not sent) to %s: %s", to, subject)
+        print(f"--- email to {to}: {subject} ---\n{body}\n---", flush=True)  # noqa: T201
 
 
 def sender_from_env(env: dict[str, str] | None = None) -> EmailSender:

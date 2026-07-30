@@ -137,11 +137,11 @@ def test_verification_activates_the_account_and_works_once(client):
     session.flush()
     token = _link_token(mailer)
 
-    assert http.post(f"/auth/verify?token={token}").status_code == 200
+    assert http.post("/auth/verify", json={"token": token}).status_code == 200
     session.flush()
     assert http.post("/auth/login", json={"email": email, "password": PASSWORD}).status_code == 200
 
-    replayed = http.post(f"/auth/verify?token={token}")
+    replayed = http.post("/auth/verify", json={"token": token})
     assert replayed.status_code == 400
 
 
@@ -152,7 +152,7 @@ def test_verification_does_not_log_the_user_in(client):
     _signup(http, _email())
     session.flush()
 
-    response = http.post(f"/auth/verify?token={_link_token(mailer)}")
+    response = http.post("/auth/verify", json={"token": _link_token(mailer)})
     assert "access_token" not in response.cookies
     assert "refresh_token" not in response.cookies
 
@@ -172,7 +172,7 @@ def _logged_in(http, session, mailer):
     email = _email()
     _signup(http, email)
     session.flush()
-    http.post(f"/auth/verify?token={_link_token(mailer)}")
+    http.post("/auth/verify", json={"token": _link_token(mailer)})
     session.flush()
     return email, http.post("/auth/login", json={"email": email, "password": PASSWORD})
 
@@ -366,7 +366,7 @@ def test_a_reset_token_works_once_and_a_verification_token_is_not_a_reset_token(
                                              "new_password": "an entirely different phrase"})
     assert crossed.status_code == 400
 
-    http.post(f"/auth/verify?token={verify_token}")
+    http.post("/auth/verify", json={"token": verify_token})
     http.post("/auth/forgot", json={"email": email})
     reset_token = _link_token(mailer)
     first = http.post("/auth/reset", json={"token": reset_token,
@@ -375,3 +375,14 @@ def test_a_reset_token_works_once_and_a_verification_token_is_not_a_reset_token(
                                             "new_password": "yet another phrase entirely"})
     assert first.status_code == 200
     assert second.status_code == 400
+
+
+def test_the_console_sender_shows_the_link_a_developer_must_click(capsys):
+    """The auth routes send inside `redacting(token)`, which scrubs tokens from every log record —
+    so the console fallback prints to stdout, or local signup is unfinishable."""
+    from libs.mail.sender import ConsoleSender
+
+    sender = ConsoleSender()
+    sender.send("dev@example.com", "Confirm your email", "  http://localhost/#/verify?token=abc123")
+    out = capsys.readouterr().out
+    assert "token=abc123" in out

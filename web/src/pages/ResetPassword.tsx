@@ -65,7 +65,7 @@ export function ForgotPassword() {
   );
 }
 
-export function ResetPassword() {
+export function ResetPassword({ onDone }: { onDone: () => void }) {
   const [password, setPassword] = useState("");
   const [done, setDone] = useState(false);
 
@@ -74,6 +74,10 @@ export function ResetPassword() {
     const token = new URLSearchParams(query).get("token") ?? "";
     await api.post("/auth/reset", { token, new_password: password });
     setDone(true);
+    // The reset revoked every session, and this app may still be holding a signed-in state from
+    // before the link was opened — hash navigation never re-checks. Telling the app to re-ask now
+    // is what makes the Sign in button land on the sign-in form rather than a stale shell.
+    onDone();
   });
 
   if (done) {

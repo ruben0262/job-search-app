@@ -1048,6 +1048,21 @@
         ],
         "title": "ValidationError",
         "type": "object"
+      },
+      "VerifyRequest": {
+        "properties": {
+          "token": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "VerifyRequest",
+        "type": "object"
       }
     }
   },
@@ -1590,19 +1605,18 @@
     },
     "/auth/verify": {
       "post": {
-        "description": "Redeem a verification link. Activates the account.\n\nNothing here logs the user in. Verification proves control of the address; a session should\nstill start from a deliberate login, so a forwarded link cannot hand someone a session.",
+        "description": "Redeem a verification link. Activates the account.\n\nNothing here logs the user in. Verification proves control of the address; a session should\nstill start from a deliberate login, so a forwarded link cannot hand someone a session.\n\nThe token arrives in the body, matching what the SPA sends. It was a query parameter, which\nthe page never sent \u2014 so every human verification failed 422 while the tests, which used the\nquery form, stayed green. The e2e browser run is what caught it.",
         "operationId": "verify_auth_verify_post",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "token",
-            "required": true,
-            "schema": {
-              "title": "Token",
-              "type": "string"
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyRequest"
+              }
             }
-          }
-        ],
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {

@@ -68,7 +68,7 @@ export function App() {
   if (hash.startsWith("/privacy")) return <PrivacyPage />;
   if (hash.startsWith("/verify")) return <Verify onDone={reload} />;
   if (hash.startsWith("/forgot")) return <ForgotPassword />;
-  if (hash.startsWith("/reset")) return <ResetPassword />;
+  if (hash.startsWith("/reset")) return <ResetPassword onDone={reload} />;
 
   if (session.state === "loading") return <main className="centered">Loading…</main>;
 
