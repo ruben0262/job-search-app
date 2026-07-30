@@ -41,9 +41,17 @@ from libs.corpus.workfilter import classify
 APPLICANT_BUCKETS = (10, 50, 200)
 APPLICANT_DOTS = ("🟢", "🟡", "🟠", "🔴")
 
-# The score at or above which a match is a 🟢 rather than a 🟡. The same cutoff the feed query uses
-# for "high", so the dot and the ranking cannot disagree.
-HIGH_FIT = 80.0
+# The score at or above which a match is a 🟢 rather than a 🟡.
+#
+# **60, which is the delivery cutoff, and that is the whole point.** The reference calls a job
+# "high" at `min_score_for_cv` — the same number it will auto-build a CV at — so the dot means "this
+# one clears the bar", not "this one is exceptional".
+#
+# It was 80 here, under a comment claiming it matched the feed query. It did not: `deliver` sends at
+# 60, so everything between 60 and 80 arrived wearing the colour that means *borderline*. A 68 is a
+# job this platform decided was worth interrupting somebody for, and it was telling them not to get
+# excited about it.
+HIGH_FIT = 60.0
 
 WORKPLACE_LABELS = {"remote": "🌍 Remote", "hybrid": "🏠 Hybrid", "onsite": "🏢 On-site"}
 
@@ -87,10 +95,16 @@ def applicant_label(count: int | None) -> str:
     return f"{count}{'+' if count >= 200 else ''} {APPLICANT_DOTS[applicant_bucket(count)]}"
 
 
-def render(item: FeedItem, *, salary_bands: dict | None = None) -> str:
-    """The card, in Telegram HTML."""
+def render(item: FeedItem, *, salary_bands: dict | None = None,
+           high_fit: float = HIGH_FIT) -> str:
+    """The card, in Telegram HTML.
+
+    `high_fit` is passed by the caller that knows the user's own cutoff, so the dot and the
+    decision to send cannot drift apart again. The default is only for a caller that has no user in
+    hand — a test, or a preview.
+    """
     esc = html.escape
-    icon = "🟢" if item.score >= HIGH_FIT else "🟡"
+    icon = "🟢" if item.score >= high_fit else "🟡"
 
     applicants = applicant_label(item.applicants)
     applicants = f" · 👥{esc(applicants)}" if applicants else ""

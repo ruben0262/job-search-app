@@ -334,3 +334,28 @@ def test_the_token_reaches_the_transport_and_nothing_else(ctx):
 
     assert seen["token"] == BOT_TOKEN, "the transport gets the real value"
     assert BOT_TOKEN not in stream.getvalue(), "and the log does not"
+
+
+def test_a_delivered_job_is_never_shown_as_borderline():
+    """**The dot and the decision to send were two different numbers.** The card called anything
+    under 80 a 🟡 while delivery sent everything at 60 and above, so a 68 — a job the platform
+    decided was worth interrupting somebody for — arrived wearing the colour that means "do not get
+    excited". The reference calls a job high at `min_score_for_cv`, the same score it will build a
+    CV at."""
+    from services.notifier.card import FeedItem
+    from services.notifier.deliver import DEFAULT_CUTOFF, render_job
+
+    item = FeedItem(job_id=1, url="https://example.com/1", title="Backend Engineer",
+                    company="Acme", score=68.0)
+    assert "🟢" in render_job(item, cutoff=DEFAULT_CUTOFF)
+    assert "🟡" not in render_job(item, cutoff=DEFAULT_CUTOFF)
+
+
+def test_a_job_below_the_cutoff_still_reads_as_borderline():
+    """The band has to mean something. Everything green is the same as everything yellow."""
+    from services.notifier.card import FeedItem
+    from services.notifier.deliver import render_job
+
+    item = FeedItem(job_id=1, url="https://example.com/1", title="Backend Engineer",
+                    company="Acme", score=55.0)
+    assert "🟡" in render_job(item, cutoff=60.0)

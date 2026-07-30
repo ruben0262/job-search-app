@@ -44,6 +44,12 @@ MAX_ITEMS_PER_DIGEST = 10
 # `notified_at` in their timezone rather than against a counter column.
 MAX_NOTIFICATIONS_PER_DAY = 100
 
+# The score at or above which a job is worth sending — and, handed to the card, the score at which
+# it shows as a 🟢. One number for both, because a feed that sends a job while calling it borderline
+# is telling the user not to trust the thing it just did. Matches the reference's
+# `min_score_for_cv`.
+DEFAULT_CUTOFF = 60.0
+
 # Telegram's answers when the bot is gone. Distinct from a transient failure in every way that
 # matters: no amount of retrying changes them.
 TERMINAL_ERRORS = ("bot was blocked", "chat not found", "user is deactivated",
@@ -118,7 +124,7 @@ def notifications_today(session: Session, user_id: _uuid.UUID) -> int:
 def deliver(session: Session, user_id: _uuid.UUID, *,
             store: SecretStore,
             send: Callable[..., None],
-            cutoff: float = 60.0,
+            cutoff: float = DEFAULT_CUTOFF,
             daily_cap: int = MAX_NOTIFICATIONS_PER_DAY) -> int:
     """Send this user's pending feed. Returns how many items were delivered.
 
@@ -162,7 +168,8 @@ def deliver(session: Session, user_id: _uuid.UUID, *,
                 # else; a "10 new matches" line above them was a platform addition that turns a
                 # channel you scroll into a channel you have to read the top of.
                 for item in batch:
-                    send(token.reveal(), chat_id, render_job(item), keyboard(item.job_id))
+                    send(token.reveal(), chat_id, render_job(item, cutoff=cutoff),
+                         keyboard(item.job_id))
             except Exception as exc:
                 if _is_terminal(exc):
                     # A revoked token is terminal for every channel, so stopping here is right.
@@ -178,13 +185,18 @@ def deliver(session: Session, user_id: _uuid.UUID, *,
     return len(items)
 
 
-def render_job(item: FeedItem, salary_bands: dict | None = None) -> str:
+def render_job(item: FeedItem, salary_bands: dict | None = None,
+               cutoff: float = DEFAULT_CUTOFF) -> str:
     """One job, as its own message, so it can carry its own buttons.
 
     The card is `services/notifier/card.py`, a port of the reference's `watcher/feed.py`. This stays
     as the seam `deliver` and the tests both call.
+
+    `cutoff` is the same number this delivery was selected on, handed to the card so the 🟢 and the
+    decision to send cannot disagree. They did: the card called anything under 80 borderline while
+    delivery sent everything over 60.
     """
-    return render_card(item, salary_bands=salary_bands)
+    return render_card(item, salary_bands=salary_bands, high_fit=cutoff)
 
 
 def render_digest(items: list[FeedItem]) -> str:
