@@ -29,6 +29,7 @@ import httpx
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+import libs.notify as notifylib
 from libs.db.models import CorpusJob, User, UserConfig, UserJobState
 from libs.obs import audit
 from libs.secrets import SecretsError, SecretStore, redacting
@@ -220,6 +221,10 @@ def deliver(session: Session, user_id: _uuid.UUID, *,
                     # `_is_terminal` does not match, so it retries rather than marking the account
                     # broken.
                     user.telegram_status = "broken"
+                    # The one failure Telegram itself cannot tell them about.
+                    notifylib.notify(session, user_id, notifylib.TELEGRAM_BROKEN,
+                                     "Your bot token stopped working, so jobs are not being "
+                                     "delivered. Save a fresh token under Your details.")
                     raise BotRevoked(str(exc)[:200]) from exc
                 raise
 

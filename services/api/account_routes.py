@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+import libs.notify as notifylib
 from libs.auth.passwords import hash_password, password_problems, verify_password
 from libs.auth.sessions import revoke_all
 from libs.db.models import User
@@ -142,6 +143,9 @@ def change_password(body: PasswordChange, response: Response, db: Session = Depe
                             detail="that password " + "; ".join(problems))
 
     user.password_hash = hash_password(body.new_password)
+    notifylib.notify(db, user_id, notifylib.PASSWORD_CHANGED,
+                     "Every session was signed out. If this was not you, reset your password "
+                     "from the sign-in page immediately.")
     revoked = revoke_all(db, user_id)
     # The refresh sessions are dead in the database; the cookies still sitting in this browser are
     # what would otherwise keep presenting them. The access cookie dies here too rather than at its

@@ -55,10 +55,6 @@ export function SignIn({
       kicker={mode === "in" ? "Welcome back" : "Get started"}
       title={mode === "in" ? "Sign in" : "Create your account"}
     >
-      <p className="muted" style={{ marginBottom: "1.75rem" }}>
-        Jobs found for you, scored by a model trained on your own judgement.{" "}
-        <a href="#/privacy">What we do with your data</a>.
-      </p>
 
       <form
         onSubmit={(event) => {

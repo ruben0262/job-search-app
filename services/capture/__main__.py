@@ -17,6 +17,7 @@ import os
 
 from sqlalchemy import func
 
+import libs.notify as notifylib
 from libs.db.models import QueueJob, User
 from libs.db.session import session_scope
 from libs.llm import CLAUDE_KINDS, client_for
@@ -42,6 +43,9 @@ def handle(session, job: QueueJob) -> None:
                     # Terminal, not a retry: the same documents and the same prompt will fail the
                     # same way, and each attempt costs the user another call. The dashboard offers
                     # manual entry instead (`services.capture.manual`).
+                    notifylib.notify(session, job.user_id, notifylib.PROCESSING_FAILED,
+                                     "The documents could not be turned into a profile. You can "
+                                     "enter it by hand instead, or fix the documents and retry.")
                     raise Terminal(str(exc)) from exc
 
         user = session.get(User, job.user_id)

@@ -19,6 +19,7 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+import libs.notify as notifylib
 from libs.contracts.profile import ProfileSchema
 from libs.db.models import User, UserDocument
 from libs.llm import LlmClient, LlmError
@@ -166,4 +167,6 @@ def process_user(session: Session, user_id: _uuid.UUID, client: LlmClient) -> Pr
     user.capture_source = "capture"
     audit(logger, "process.drafted", user=user_id, documents=len(documents),
           not_list=len(draft.not_list), conflicts=len(draft.conflicts))
+    notifylib.notify(session, user_id, notifylib.PROCESSING_DONE,
+                     "Read it before anything uses it — the not-a-fit list especially.")
     return draft

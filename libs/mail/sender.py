@@ -74,7 +74,7 @@ class ConsoleSender:
     def send(self, to: str, subject: str, body: str) -> None:
         self.sent.append((to, subject, body))
         logger.info("email (not sent) to %s: %s", to, subject)
-        print(f"--- email to {to}: {subject} ---\n{body}\n---", flush=True)  # noqa: T201
+        print(f"--- email to {to}: {subject} ---\n{body}\n---", flush=True)
 
 
 def sender_from_env(env: dict[str, str] | None = None) -> EmailSender:

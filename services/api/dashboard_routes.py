@@ -140,7 +140,7 @@ def _banners(user: User, servable: bool, onboarding) -> list[dict]:
 
 
 @router.get("/feed")
-def feed(db: Session = Depends(get_db), user_id: _uuid.UUID = Depends(current_user),
+def feed(*, db: Session = Depends(get_db), user_id: _uuid.UUID = Depends(current_user),
          limit: int = Query(FEED_PAGE, ge=1, le=100),
          offset: int = Query(0, ge=0),
          q: str | None = Query(None, max_length=200),

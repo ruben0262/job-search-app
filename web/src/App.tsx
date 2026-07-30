@@ -25,6 +25,7 @@ import { SetupPage } from "./pages/SetupPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { SignIn } from "./pages/SignIn";
 import { Verify } from "./pages/Verify";
+import { NotificationBell } from "./notifications";
 import { ThemeToggle } from "./theme";
 
 function useHash(): string {
@@ -149,6 +150,7 @@ function Nav({ current }: { current: string }) {
           {label}
         </a>
       ))}
+      <NotificationBell />
       <ThemeToggle />
     </nav>
   );

@@ -15,8 +15,12 @@
  * this profile version, applications recorded. They are set as figures rather than a table for the
  * same reason — a table implies rows worth comparing, and these are three unrelated facts.
  */
-import type { Dashboard } from "../api";
+import { useEffect, useState } from "react";
+
+import { api, type Dashboard } from "../api";
 import { Banner } from "../ui";
+
+type Component = { key: string; label: string; state: "ok" | "warn" | "down" | "off"; detail: string };
 
 /** The state, as a sentence somebody can act on. The server owns the *explanation* (`next.message`);
  *  this owns the four words above it, the same split the onboarding wizard uses for its titles. */
@@ -79,8 +83,42 @@ export function DashboardPage({ dashboard }: { dashboard: Dashboard; onChanged: 
           Telegram is {telegram}. At most {notifications.per_day_cap} messages a day, checked every{" "}
           {notifications.interval_min} minutes.
         </p>
+
+        <StatusList />
       </div>
     </>
+  );
+}
+
+/** Every moving part, with a dot and a sentence. Derived from the data server-side, so a green
+ *  dot means "your jobs are flowing", not merely "a process exists". */
+function StatusList() {
+  const [components, setComponents] = useState<Component[] | null>(null);
+
+  useEffect(() => {
+    api
+      .get<{ components: Component[] }>("/status")
+      .then((body) => setComponents(body.components))
+      .catch(() => setComponents([]));
+  }, []);
+
+  if (!components?.length) return null;
+
+  return (
+    <div style={{ marginTop: "2.5rem" }}>
+      <p className="kicker">Status</p>
+      <ul className="status-list">
+        {components.map((component) => (
+          <li key={component.key} className={`status-row ${component.state}`}>
+            <span className="status-dot" aria-hidden="true" />
+            <span>
+              <span className="status-label">{component.label}</span>
+              <span className="status-detail">{component.detail}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

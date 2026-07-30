@@ -307,7 +307,7 @@ def test_no_recipient_address_is_stored(client):
 
 def test_forgot_answers_identically_for_a_known_and_unknown_address(client):
     """The same no-oracle rule as login: a reset form must not confirm who has an account."""
-    http, session, mailer = client
+    http, session, _mailer = client
     email = _email()
     _signup(http, email)
     session.flush()
@@ -357,7 +357,7 @@ def test_reset_sets_the_password_ends_every_session_and_does_not_log_in(client):
 
 def test_a_reset_token_works_once_and_a_verification_token_is_not_a_reset_token(client):
     """"Can receive email" must not become "can take the account" through the wrong door."""
-    http, session, mailer = client
+    http, _session, mailer = client
     email = _email()
     _signup(http, email)
     verify_token = _link_token(mailer)

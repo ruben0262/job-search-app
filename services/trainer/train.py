@@ -27,6 +27,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+import libs.notify as notifylib
 from libs.contracts.embedder import unpack_vector
 from libs.contracts.profile import ProfileSchema
 from libs.db.models import CorpusJob, User, UserLabel, UserModel
@@ -158,6 +159,9 @@ def train_user(session: Session, user_id: _uuid.UUID, *,
         n_labels=len(data.targets), is_active=True,
         metrics={"n_train": len(data.targets)}))
     user.model_version = version
+    notifylib.notify(session, user_id, notifylib.MODEL_TRAINED,
+                     f"Version {version}, trained on {len(data.targets)} of your decisions. "
+                     "Your feed is ranked by it from the next cycle.")
     return version
 
 
