@@ -515,3 +515,18 @@ def test_a_posting_with_no_salary_says_nothing_rather_than_guessing():
     assert "Posted salary" not in context
     # The ask band is the user's own and stands whether or not the posting states one.
     assert "Target ask band:" in context
+
+
+def test_the_token_ceiling_leaves_room_for_the_document_after_thinking():
+    """**A ceiling the thinking budget eats is a failed build with no explanation.**
+
+    Observed 2026-07-30: `stop_reason=max_tokens` with zero text blocks — the reasoning finished
+    and the document had not started. The budget is spent inside the ceiling, and a CV is itself
+    around 6,000 tokens of HTML, so the margin has to be real rather than nominal.
+    """
+    from services.docgen.build import MAX_TOKENS, THINKING_TOKENS
+
+    # A CV document, generously. If the ceiling is not several times this after thinking is paid
+    # for, a long CV truncates and the user gets nothing.
+    document_tokens = 8_000
+    assert MAX_TOKENS - THINKING_TOKENS >= document_tokens * 2

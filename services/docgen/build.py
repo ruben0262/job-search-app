@@ -45,7 +45,16 @@ CV_MODEL = "claude-haiku-4-5"
 
 # Enough for a two-page CV with room to spare. A truncated document is not a shorter CV — it is an
 # HTML fragment that will not compile.
-MAX_TOKENS = 16_000
+#
+# **32,000, raised from 16,000 on 2026-07-30 after watching it fail.** The thinking budget is spent
+# *inside* this ceiling, and a CV document is itself around 6,000 tokens of HTML — so 16,000 left
+# too little margin, and observed builds hit the ceiling with the reasoning finished and the
+# document not yet started: `stop_reason=max_tokens` with zero text blocks. The user's outcome was
+# a failed build with no explanation.
+#
+# The cost of a higher ceiling is nothing until it is used, because output is billed per token
+# produced rather than per token allowed.
+MAX_TOKENS = 32_000
 
 # 4096 measured better on writing quality than the adaptive default (2026-07-20, reference
 # instance). `None` would mean adaptive; `0` disables thinking, which measured ~8x faster and
