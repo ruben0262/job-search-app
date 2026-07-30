@@ -165,6 +165,14 @@ export type Dashboard =
       banners: { level: "error" | "warning" | "info"; key: string; text: string }[];
     };
 
+export type Salary = {
+  min: number | null;
+  max: number | null;
+  currency: string;
+  period: string;
+  raw?: string;
+} | null;
+
 export type FeedJob = {
   id: number;
   title: string;
@@ -175,12 +183,17 @@ export type FeedJob = {
   source: string;
   score: number | null;
   posted_at: string | null;
+  first_seen_at: string | null;
+  salary: Salary;
+  applied_at: string | null;
 };
 
 export type Feed = {
   stage: "personal" | "rules";
   approximate: boolean;
   detail?: string;
+  total: number;
+  sources: string[];
   jobs: FeedJob[];
 };
 

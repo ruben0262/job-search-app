@@ -39,10 +39,11 @@ export function SettingsPage({ onSignedOut }: { onSignedOut: () => void }) {
 
   return (
     <>
+      <p className="kicker">Your account</p>
       <h1>Settings</h1>
 
       <Card title="Account">
-        <table>
+        <table className="kv">
           <tbody>
             <tr>
               <td>Email</td>

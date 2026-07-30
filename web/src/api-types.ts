@@ -399,11 +399,15 @@ export interface paths {
         };
         /**
          * Feed
-         * @description The ranked jobs. Personal model if there is a servable one, otherwise the config alone.
+         * @description The ranked jobs — a page of them, with the filters the table offers.
          *
          *     The stage is in the response because a feed that silently changes how it ranks is one nobody can
          *     reason about — and a new account's first feed *is* the keyword one, which is worth saying rather
          *     than passing off as the model's work.
+         *
+         *     **The age filter keeps undated rows.** Same rule as delivery: a missing `posted_at` is unknown,
+         *     not old, and a preference filter fails open. `total` and `sources` are for the table's pager and
+         *     source dropdown — computed under the same filters as the page, or the counts would lie.
          */
         get: operations["feed_feed_get"];
         put?: never;
@@ -1855,6 +1859,14 @@ export interface operations {
         parameters: {
             query?: {
                 limit?: number;
+                offset?: number;
+                q?: string | null;
+                source?: string | null;
+                remote?: boolean | null;
+                applied?: boolean | null;
+                max_age_days?: number | null;
+                sort?: string;
+                direction?: string;
             };
             header?: never;
             path?: never;

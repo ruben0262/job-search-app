@@ -38,8 +38,26 @@ type Conversation = {
   ready: boolean;
 };
 
-/** What each file is, in the user's terms rather than the platform's. They never need this, but
- *  somebody who opens the panel deserves better than a filename. */
+/** What each file is called, in the user's terms rather than the platform's. A filename like
+ *  `02-behavioral-profile.md` tells a non-technical user nothing; "How you work" does. */
+const NAMES: Record<string, string> = {
+  "context.md": "Who you are",
+  "01-candidate-profile.md": "Your history",
+  "02-behavioral-profile.md": "How you work",
+  "04-job-evaluation.md": "What fits you",
+  "05-cv-templates.md": "CV shapes",
+  "07-interview-prep.md": "Interview prep",
+  "08-role-angles.md": "Role angles",
+  "label.md": "Job scoring",
+  "base_cv.html": "Your base CV",
+  "tailor_cv.md": "CV instructions",
+  "tailor_cover.md": "Cover letter instructions",
+  "score.md": "Job assessment",
+  "interview.md": "Interview instructions",
+  "outreach.md": "Outreach instructions",
+  "build_cvs.md": "CV checks",
+};
+
 const DESCRIPTIONS: Record<string, string> = {
   "context.md": "Who you are — the summary every document is written from",
   "01-candidate-profile.md": "Your full history: roles, education, projects",
@@ -109,7 +127,7 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
   if (openFile) {
     return (
       <div className="overview">
-        <h1>{openFile}</h1>
+        <h1>{NAMES[openFile] ?? openFile}</h1>
         <p className="lede">{DESCRIPTIONS[openFile] ?? "One of your profile files."}</p>
         <textarea
           value={fileText}
@@ -156,6 +174,11 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
           ))}
           {send.busy ? (
             <div className="bubble assistant pending">
+              <span className="typing" aria-hidden="true">
+                <i />
+                <i />
+                <i />
+              </span>
               Reading and writing this down. This can take a couple of minutes.
             </div>
           ) : null}
@@ -193,21 +216,63 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
         ) : null}
       </div>
 
-      <div className="overview" style={{ marginTop: "2.5rem" }}>
+      <div style={{ marginTop: "3rem", maxWidth: "48rem" }}>
+        <p className="kicker">Your files</p>
         <h2>What we have written down</h2>
-        <dl className="stats" style={{ marginTop: "0.75rem" }}>
+        <p className="facts">Click one to read or correct it.</p>
+        <div className="files">
           {state.files.map((file) => (
-            <div key={file.name} className="stat">
-              <dt style={{ fontSize: "0.9375rem" }}>
-                <a href="#/setup" onClick={() => void openEditor(file.name)}>
-                  {DESCRIPTIONS[file.name] ?? file.name}
-                </a>
-              </dt>
-              <dd>{file.filled ? "written" : "not yet"}</dd>
-            </div>
+            <button
+              key={file.name}
+              type="button"
+              className={`file${file.filled ? " filled" : ""}`}
+              onClick={() => void openEditor(file.name)}
+            >
+              <FileIcon kind={file.kind} />
+              <span>
+                <span className="file-name">{NAMES[file.name] ?? file.name}</span>
+                <span className="file-state">{file.filled ? "written" : "not yet"}</span>
+              </span>
+            </button>
           ))}
-        </dl>
+        </div>
       </div>
     </>
+  );
+}
+
+/* Monochrome inline SVGs, one per file kind — an emoji renders as a colour image on most
+   platforms, which is the one thing this palette does not have. */
+function FileIcon({ kind }: { kind: string }) {
+  const stroke = { stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round" } as const;
+  if (kind === "context")
+    // A person: the file that says who this is.
+    return (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <circle cx="12" cy="8" r="3.6" {...stroke} />
+        <path d="M4.5 20c1.3-3.4 4.1-5 7.5-5s6.2 1.6 7.5 5" {...stroke} />
+      </svg>
+    );
+  if (kind === "prompt")
+    // A pen: instructions for writing on the user's behalf.
+    return (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M4 20l1.2-4.2L16.4 4.6a2 2 0 012.9 0l.1.1a2 2 0 010 2.9L8.2 18.8 4 20z" {...stroke} strokeLinejoin="round" />
+      </svg>
+    );
+  if (kind === "template")
+    // A layout: the shape a document is poured into.
+    return (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <rect x="4" y="4" width="16" height="16" rx="2" {...stroke} />
+        <path d="M4 9.5h16M9.5 9.5V20" {...stroke} />
+      </svg>
+    );
+  // Default, including "skill": a document with lines.
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M6 3.5h8.5L19 8v12.5H6z" {...stroke} strokeLinejoin="round" />
+      <path d="M9 12h6M9 15.5h6" {...stroke} />
+    </svg>
   );
 }

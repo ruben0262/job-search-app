@@ -80,21 +80,37 @@ export function App() {
     return <Onboarding state={dashboard.onboarding} onChanged={reload} />;
   }
 
+  // Keyed on the route so the fade-up replays on navigation, not only on first load.
+  const section = hash.startsWith("/feed")
+    ? "feed"
+    : hash.startsWith("/profile")
+      ? "profile"
+      : hash.startsWith("/process")
+        ? "process"
+        : hash.startsWith("/settings")
+          ? "settings"
+          : "overview";
+
   return (
-    <div className="app">
-      <Nav current={hash} />
-      {hash.startsWith("/feed") ? (
-        <FeedPage />
-      ) : hash.startsWith("/profile") ? (
-        <SetupPage onChanged={reload} />
-      ) : hash.startsWith("/process") ? (
-        <ProcessPage onChanged={reload} />
-      ) : hash.startsWith("/settings") ? (
-        <SettingsPage onSignedOut={reload} />
-      ) : (
-        <DashboardPage dashboard={dashboard} onChanged={reload} />
-      )}
-    </div>
+    <>
+      <div className="backdrop" aria-hidden="true" />
+      <div className="app">
+        <Nav current={hash} />
+        <div className="page-in" key={section}>
+          {section === "feed" ? (
+            <FeedPage />
+          ) : section === "profile" ? (
+            <SetupPage onChanged={reload} />
+          ) : section === "process" ? (
+            <ProcessPage onChanged={reload} />
+          ) : section === "settings" ? (
+            <SettingsPage onSignedOut={reload} />
+          ) : (
+            <DashboardPage dashboard={dashboard} onChanged={reload} />
+          )}
+        </div>
+      </div>
+    </>
   );
 }
 
@@ -102,11 +118,14 @@ function Nav({ current }: { current: string }) {
   const links = [
     ["/", "Overview"],
     ["/feed", "Jobs"],
-    ["/profile", "Your profile"],
+    ["/profile", "Profile"],
     ["/settings", "Settings"],
   ] as const;
   return (
     <nav>
+      <a className="brand" href="#/">
+        Mahoraga
+      </a>
       {links.map(([path, label]) => (
         <a
           key={path}

@@ -52,6 +52,7 @@ export function DashboardPage({ dashboard }: { dashboard: Dashboard; onChanged: 
       ))}
 
       <div className="overview">
+        <p className="kicker">Overview</p>
         <h1>{headline}</h1>
         <p className="lede">{next.message}</p>
 

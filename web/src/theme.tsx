@@ -1,14 +1,13 @@
 /**
- * Light and dark, chosen or inherited.
+ * Dark by default, light by choice.
  *
- * **Three states, not two.** `light`, `dark`, and *unset* — and unset is the default, because a
- * viewer whose system is dark should get dark without being asked. Pressing the toggle moves them
- * out of unset permanently; there is deliberately no way back to "follow the system", since a
- * three-way control is a puzzle in a corner nobody wanted to solve.
+ * **Dark is the brand** — the landing page at mahoraga.rubenlekli.com is dark-only, and the app
+ * opening in white would read as a different product (decided 2026-07-30). The toggle offers light
+ * for anyone who wants it, and the choice sticks in `localStorage`.
  *
  * The attribute is written to `<html>` **before first paint** by a snippet in `index.html`, not
- * here: a React effect runs after the first frame, so a dark-mode viewer would see one white flash
- * on every load. This module only keeps the toggle in sync afterwards.
+ * here: a React effect runs after the first frame, so a light-choosing viewer would see one dark
+ * flash on every load. This module only keeps the toggle in sync afterwards.
  */
 import { useEffect, useState } from "react";
 
@@ -20,27 +19,13 @@ function stored(): Choice | null {
   return value === "light" || value === "dark" ? value : null;
 }
 
-function systemPrefersDark(): boolean {
-  return window.matchMedia("(prefers-color-scheme: dark)").matches;
-}
-
 export function ThemeToggle({ floating = false }: { floating?: boolean }) {
-  const [choice, setChoice] = useState<Choice>(() => stored() ?? (systemPrefersDark() ? "dark" : "light"));
+  const [choice, setChoice] = useState<Choice>(() => stored() ?? "dark");
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", choice);
     localStorage.setItem(KEY, choice);
   }, [choice]);
-
-  // Follow the system until the viewer decides for themselves. Once `localStorage` holds a choice
-  // this stops mattering, which is the intended asymmetry.
-  useEffect(() => {
-    if (stored()) return;
-    const query = window.matchMedia("(prefers-color-scheme: dark)");
-    const follow = (event: MediaQueryListEvent) => setChoice(event.matches ? "dark" : "light");
-    query.addEventListener("change", follow);
-    return () => query.removeEventListener("change", follow);
-  }, []);
 
   const next = choice === "dark" ? "light" : "dark";
   return (

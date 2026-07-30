@@ -13,13 +13,12 @@
       // dark-mode viewer would see one white flash on every single load.
       (function () {
         try {
+          // Dark is the brand default (the landing page is dark-only); light is a choice.
           var choice = localStorage.getItem("theme");
-          if (choice !== "light" && choice !== "dark") {
-            choice = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-          }
+          if (choice !== "light" && choice !== "dark") choice = "dark";
           document.documentElement.setAttribute("data-theme", choice);
         } catch (e) {
-          /* Private mode, or storage disabled. The CSS media query still gives a sane default. */
+          /* Private mode, or storage disabled. The CSS default is dark anyway. */
         }
       })();
     </script>

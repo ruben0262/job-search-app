@@ -35,21 +35,23 @@ weight until 2026-07-28, which made "process your documents" look exactly like t
 settings; the panels remain where a page genuinely holds several unrelated things (the feed, the
 privacy disclosure, the settings forms).
 
-**Light and dark, with a toggle on every page** including the ones you reach signed out. Three
-states, not two: `light`, `dark`, and *unset* — unset is the default, so somebody whose system is
-dark gets dark without being asked. Pressing the toggle leaves unset permanently; there is no way
-back to "follow the system", because a three-way control is a puzzle in a corner nobody wanted.
+**Dark by default, light by choice** (changed 2026-07-30). The landing page at
+mahoraga.rubenlekli.com is dark-only, and the app opening in white read as a different product — so
+the app carries the landing's exact tokens (`#060606`, hairline borders, mono uppercase kickers,
+pill buttons, the faint dot-grid backdrop) and dark is the default regardless of the system
+preference. The toggle offers light, an equivalent inverse, and the choice sticks.
 
 **The attribute is set before first paint** by a snippet in `index.html`, not by a React effect. An
 effect runs after the first frame, so a dark-mode viewer would see one white flash on every load.
 
-Transitions are colour-only, 140 ms, one duration for everything — different speeds on one page
-read as jitter — and `prefers-reduced-motion` turns them off entirely.
+Transitions are 0.25 s, one duration for everything — different speeds on one page read as
+jitter — plus a single fade-up when a route changes, and `prefers-reduced-motion` turns all of it
+off entirely.
 
 **No component library and no router.** This is a wizard plus four screens: `react-router` would be
 more configuration than routing, and a component library would be a build-time dependency and a lot
 of generated markup for markup that is already written. Two runtime dependencies, `react` and
-`react-dom`, and a 69 kB gzipped bundle.
+`react-dom`, and a ~74 kB gzipped bundle.
 
 **A hash router, not history.** Cloudflare Pages then serves `index.html` for every URL with no
 rewrite rule for anybody to forget.

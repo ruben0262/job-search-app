@@ -15,12 +15,14 @@ from __future__ import annotations
 
 import logging
 import uuid as _uuid
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from libs.contracts.config import migrate_config
+from libs.corpus import salary
 from libs.db.models import CorpusJob, User, UserDocument, UserJobState, UserLabel, UserModel
 from libs.onboarding import onboarding_state
 from libs.scoring.rules import score_job
@@ -139,70 +141,141 @@ def _banners(user: User, servable: bool, onboarding) -> list[dict]:
 
 @router.get("/feed")
 def feed(db: Session = Depends(get_db), user_id: _uuid.UUID = Depends(current_user),
-         limit: int = Query(FEED_PAGE, ge=1, le=100)) -> dict:
-    """The ranked jobs. Personal model if there is a servable one, otherwise the config alone.
+         limit: int = Query(FEED_PAGE, ge=1, le=100),
+         offset: int = Query(0, ge=0),
+         q: str | None = Query(None, max_length=200),
+         source: str | None = Query(None, max_length=64),
+         remote: bool | None = Query(None),
+         applied: bool | None = Query(None),
+         max_age_days: int | None = Query(None, ge=1, le=365),
+         sort: str = Query("score", pattern="^(score|posted|title|company)$"),
+         direction: str = Query("desc", pattern="^(asc|desc)$")) -> dict:
+    """The ranked jobs — a page of them, with the filters the table offers.
 
     The stage is in the response because a feed that silently changes how it ranks is one nobody can
     reason about — and a new account's first feed *is* the keyword one, which is worth saying rather
     than passing off as the model's work.
+
+    **The age filter keeps undated rows.** Same rule as delivery: a missing `posted_at` is unknown,
+    not old, and a preference filter fails open. `total` and `sources` are for the table's pager and
+    source dropdown — computed under the same filters as the page, or the counts would lie.
     """
     user = db.get(User, user_id)
     model = db.scalar(
         select(UserModel).where(UserModel.user_id == user_id,
                                 UserModel.profile_generation == user.profile_generation)
         .limit(1))
+    sources = sorted(db.scalars(select(CorpusJob.source).distinct()).all())
 
     if model is not None:
-        rows = db.execute(
-            select(CorpusJob, UserJobState.score)
-            .join(UserJobState, UserJobState.job_id == CorpusJob.id)
-            .where(UserJobState.user_id == user_id,
-                   UserJobState.score.isnot(None),
-                   UserJobState.dismissed_at.is_(None))
-            .order_by(UserJobState.score.desc())
-            .limit(limit)).all()
-        return {"stage": "personal", "approximate": False,
-                "jobs": [_item(job, score) for job, score in rows]}
+        conditions = [UserJobState.user_id == user_id,
+                      UserJobState.score.isnot(None),
+                      UserJobState.dismissed_at.is_(None)]
+        if q:
+            pattern = f"%{q}%"
+            conditions.append(CorpusJob.title.ilike(pattern)
+                              | CorpusJob.company.ilike(pattern)
+                              | CorpusJob.url.ilike(pattern))
+        if source:
+            conditions.append(CorpusJob.source == source)
+        if remote is not None:
+            conditions.append(CorpusJob.is_remote.is_(remote))
+        if applied is not None:
+            conditions.append(UserJobState.applied_at.isnot(None) if applied
+                              else UserJobState.applied_at.is_(None))
+        if max_age_days is not None:
+            cutoff = func.now() - func.make_interval(0, 0, 0, max_age_days)
+            conditions.append(CorpusJob.posted_at.is_(None) | (CorpusJob.posted_at >= cutoff))
 
-    return {"stage": "rules", "approximate": True,
+        order_column = {"score": UserJobState.score, "posted": CorpusJob.posted_at,
+                        "title": CorpusJob.title, "company": CorpusJob.company}[sort]
+        ordering = order_column.desc().nulls_last() if direction == "desc" \
+            else order_column.asc().nulls_last()
+
+        base = (select(CorpusJob, UserJobState)
+                .join(UserJobState, UserJobState.job_id == CorpusJob.id)
+                .where(*conditions))
+        total = db.scalar(select(func.count()).select_from(base.subquery()))
+        rows = db.execute(base.order_by(ordering, CorpusJob.id).offset(offset).limit(limit)).all()
+        return {"stage": "personal", "approximate": False, "total": total, "sources": sources,
+                "jobs": [_item(job, state.score, state.applied_at) for job, state in rows]}
+
+    jobs, total = _rules_feed(db, user_id, limit=limit, offset=offset, q=q, source=source,
+                              remote=remote, applied=applied, max_age_days=max_age_days,
+                              sort=sort, direction=direction)
+    return {"stage": "rules", "approximate": True, "total": total, "sources": sources,
             "detail": ("Ranked by your keywords until your own model has been trained. It will "
                        "get much better."),
-            "jobs": _rules_feed(db, user_id, limit)}
+            "jobs": jobs}
 
 
-def _rules_feed(db: Session, user_id: _uuid.UUID, limit: int) -> list[dict]:
+def _rules_feed(db: Session, user_id: _uuid.UUID, *, limit: int, offset: int,
+                q: str | None, source: str | None, remote: bool | None, applied: bool | None,
+                max_age_days: int | None, sort: str, direction: str) -> tuple[list[dict], int]:
     """Stage 0. Scored in Python over the most recent slice, not in SQL.
 
     In Python because the rule is a word-boundary match tolerant of the space/hyphen split, and
     expressing that as SQL would either be wrong (`LIKE '%full-stack%'` misses "Full Stack") or a
-    regular expression per keyword per row, which is not faster for being in the database.
+    regular expression per keyword per row, which is not faster for being in the database. The
+    filters follow the scoring for the same reason: one list, filtered once, is simpler than the
+    same conditions split across SQL and Python.
     """
     config = TenantRepository(db).get_config(user_id)
     if not config:
-        return []
+        return [], 0
     config = migrate_config(config)
 
-    dismissed = set(db.scalars(
-        select(UserJobState.job_id).where(UserJobState.user_id == user_id,
-                                          UserJobState.dismissed_at.isnot(None))).all())
+    states = db.execute(
+        select(UserJobState.job_id, UserJobState.dismissed_at, UserJobState.applied_at)
+        .where(UserJobState.user_id == user_id)).all()
+    dismissed = {job_id for job_id, dismissed_at, _ in states if dismissed_at is not None}
+    applied_at = {job_id: at for job_id, _, at in states if at is not None}
     rows = db.scalars(
         select(CorpusJob).order_by(CorpusJob.first_seen_at.desc()).limit(STAGE0_SCAN)).all()
 
+    needle = q.lower() if q else None
+    cutoff = datetime.now(UTC) - timedelta(days=max_age_days) if max_age_days else None
     scored = []
     for row in rows:
         if row.id in dismissed:
+            continue
+        if needle and needle not in " ".join(
+                part for part in (row.title, row.company, row.url) if part).lower():
+            continue
+        if source and row.source != source:
+            continue
+        if remote is not None and bool(row.is_remote) != remote:
+            continue
+        if applied is not None and (row.id in applied_at) != applied:
+            continue
+        if cutoff and row.posted_at is not None and row.posted_at < cutoff:
             continue
         result = score_job(config, title=row.title, description=row.description,
                            location=row.location, is_remote=row.is_remote)
         if not result.excluded:
             scored.append((result.score, row))
-    scored.sort(key=lambda item: item[0], reverse=True)
-    return [_item(row, score) for score, row in scored[:limit]]
+
+    if sort == "score":
+        scored.sort(key=lambda item: item[0], reverse=direction == "desc")
+    elif sort == "posted":
+        # Undated rows go last whichever way the dated ones are ordered.
+        scored.sort(key=lambda item: (item[1].posted_at is None,
+                                      (item[1].posted_at or datetime.min.replace(tzinfo=UTC))
+                                      .timestamp() * (-1 if direction == "desc" else 1)))
+    else:
+        scored.sort(key=lambda item: (getattr(item[1], sort) is None,
+                                      (getattr(item[1], sort) or "").lower()),
+                    reverse=direction == "desc")
+
+    page = scored[offset:offset + limit]
+    return [_item(row, score, applied_at.get(row.id)) for score, row in page], len(scored)
 
 
-def _item(job: CorpusJob, score: float | None) -> dict:
+def _item(job: CorpusJob, score: float | None, applied_at=None) -> dict:
     """One feed row. **No description** — it is up to 2,500 characters per job and the list does not
-    show it; fetching 25 of them would be most of the response for none of the value."""
+    show it; fetching 25 of them would be most of the response for none of the value. The salary is
+    the one thing the description holds that the table wants, so it is extracted here (regex, free)
+    rather than shipped raw."""
     return {
         "id": job.id,
         "title": job.title,
@@ -213,4 +286,7 @@ def _item(job: CorpusJob, score: float | None) -> dict:
         "source": job.source,
         "score": round(float(score), 1) if score is not None else None,
         "posted_at": job.posted_at.isoformat() if job.posted_at else None,
+        "first_seen_at": job.first_seen_at.isoformat() if job.first_seen_at else None,
+        "salary": salary.extract(job.description),
+        "applied_at": applied_at.isoformat() if applied_at else None,
     }

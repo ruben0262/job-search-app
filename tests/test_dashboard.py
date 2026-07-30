@@ -198,6 +198,83 @@ def test_the_feed_does_not_carry_the_full_description(api):
     assert "description" not in http.get("/feed").json()["jobs"][0]
 
 
+def test_the_feed_pages_and_reports_the_total_behind_the_page(api):
+    """The pager needs the count under the same filters as the page, or "1 of 3" lies."""
+    from libs.db.models import UserJobState
+
+    http, session, user, jobs = api
+    _model(session, user, generation=1)
+    for index, job in enumerate(jobs):
+        session.add(UserJobState(user_id=user.id, job_id=job.id, score=90.0 - index))
+    session.flush()
+
+    body = http.get("/feed?limit=2&offset=2").json()
+    assert body["total"] == 3
+    assert len(body["jobs"]) == 1
+
+
+def test_the_search_box_reaches_titles_and_links(api):
+    from libs.db.models import UserJobState
+
+    http, session, user, jobs = api
+    _model(session, user, generation=1)
+    for job in jobs:
+        session.add(UserJobState(user_id=user.id, job_id=job.id, score=50.0))
+    session.flush()
+
+    titles = [job["title"] for job in http.get("/feed?q=nurse").json()["jobs"]]
+    assert titles == ["Registered Nurse"]
+    # And the URL, because a pasted link is how people look a job back up.
+    by_url = http.get(f"/feed?q={jobs[0].url.rsplit('/', 1)[1][:12]}").json()["jobs"]
+    assert [job["id"] for job in by_url] == [jobs[0].id]
+
+
+def test_the_applied_filter_splits_the_feed_both_ways(api):
+    from sqlalchemy import func as sqlfunc
+
+    from libs.db.models import UserJobState
+
+    http, session, user, jobs = api
+    _model(session, user, generation=1)
+    session.add(UserJobState(user_id=user.id, job_id=jobs[0].id, score=50.0,
+                             applied_at=sqlfunc.now()))
+    session.add(UserJobState(user_id=user.id, job_id=jobs[1].id, score=60.0))
+    session.flush()
+
+    assert [job["id"] for job in http.get("/feed?applied=true").json()["jobs"]] == [jobs[0].id]
+    assert [job["id"] for job in http.get("/feed?applied=false").json()["jobs"]] == [jobs[1].id]
+    # The applied state travels with the row either way, so the table can tag it.
+    assert http.get("/feed?applied=true").json()["jobs"][0]["applied_at"] is not None
+
+
+def test_a_salary_in_the_description_reaches_the_row_without_the_description(api):
+    """The one thing the description holds that the table wants, extracted server-side for free."""
+    http, session, _, jobs = api
+    jobs[0].description = "Backend role paying €60,000 - €80,000 per year. We build things."
+    session.flush()
+
+    row = next(job for job in http.get("/feed").json()["jobs"] if job["id"] == jobs[0].id)
+    assert row["salary"]["min"] == 60000
+    assert row["salary"]["max"] == 80000
+    assert row["salary"]["currency"] == "EUR"
+    assert "description" not in row
+
+
+def test_the_source_dropdown_lists_what_the_corpus_actually_has(api):
+    http, _, _, _ = api
+    assert http.get("/feed").json()["sources"] == ["test"]
+
+
+def test_the_rules_feed_takes_the_same_filters(api):
+    """Stage 0 filters in Python rather than SQL, and must not behave differently for it."""
+    http, _, _, _ = api
+    body = http.get("/feed?q=senior&limit=1").json()
+    assert body["total"] == 1
+    assert [job["title"] for job in body["jobs"]] == ["Senior Backend Engineer"]
+
+    assert http.get("/feed?source=nowhere").json()["jobs"] == []
+
+
 def test_the_dashboard_requires_signing_in(api):
     http, _, _, _ = api
     http.cookies.clear()

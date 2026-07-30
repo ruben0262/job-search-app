@@ -1,79 +1,60 @@
 /**
- * Black, white, and grey. Nothing else carries meaning here, so nothing else has a colour.
+ * The landing page's design system (`mahoraga-jobs-web/src/index.css`), carried into the app.
  *
- * Two exceptions, and they are the reason the rule is worth stating: an error and a score. A red
- * that appears nowhere else is read instantly; a red among six other hues is decoration. Everything
- * structural — borders, panels, muted text — is a step on one grey ramp.
- *
- * **Both themes are one set of variables.** The light values live on `:root`, the dark ones on
- * `[data-theme="dark"]`, and the `prefers-color-scheme` block applies the dark set only when the
- * viewer has expressed no preference of their own. A toggle writes `data-theme` and wins over the
- * system, which is what makes the toggle mean something.
+ * **Dark is the brand default** — `#060606`, hairline borders, mono uppercase kickers, pill
+ * buttons — and light is its exact inverse for anyone who asks. Two colours carry meaning in the
+ * whole palette: a red for errors and a green for a score. Everything structural is a step on one
+ * ramp of the ink colour at falling opacity, which is what keeps both themes one set of rules.
  */
 
 :root {
-  --bg: #ffffff;
-  --panel: #ffffff;
-  --panel-alt: #fafafa;
-  --ink: #111111;
-  --ink-soft: #3d3d3d;
-  --muted: #767676; /* 4.6:1 on white — the lightest grey that still passes for body text */
-  --line: #e3e3e3;
-  --line-strong: #c9c9c9;
-  --accent: #111111;
-  --accent-ink: #ffffff;
+  --bg: #060606;
+  --bg-raised: #0d0d0d;
+  --ink: #f4f4f2;
+  --muted: rgba(244, 244, 242, 0.58);
+  --dim: rgba(244, 244, 242, 0.32);
+  --faint: rgba(244, 244, 242, 0.14);
+  --hairline: rgba(244, 244, 242, 0.09);
+  --accent: #f4f4f2;
+  --accent-ink: #060606;
   /* The only two colours in the palette. Both mean exactly one thing. */
-  --danger: #b3261e;
-  --score: #1f6f4a;
-  --radius: 8px;
-  --shadow: 0 1px 2px rgb(0 0 0 / 6%);
-  /* One duration for everything that moves. Different speeds on one page read as jitter. */
-  --fade: 140ms;
-  --ease: cubic-bezier(0.2, 0, 0.2, 1);
-}
-
-[data-theme="dark"] {
-  --bg: #0d0d0d;
-  --panel: #161616;
-  --panel-alt: #1c1c1c;
-  --ink: #f2f2f2;
-  --ink-soft: #cfcfcf;
-  --muted: #949494; /* 5.1:1 on #0d0d0d */
-  --line: #2a2a2a;
-  --line-strong: #3d3d3d;
-  --accent: #f2f2f2;
-  --accent-ink: #0d0d0d;
   --danger: #ef9a95;
   --score: #6fd39f;
-  --shadow: none;
+  --dot: rgba(244, 244, 242, 0.05);
+
+  --font-body:
+    "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --font-mono:
+    "Cascadia Code", "SF Mono", Consolas, "Liberation Mono", monospace;
+
+  --radius: 10px;
+  --radius-lg: 16px;
+  /* One duration for everything that moves. Different speeds on one page read as jitter. */
+  --fade: 0.25s;
+  --ease: ease;
 }
 
-/* Only when the viewer has not chosen. An explicit `data-theme` always wins, because a toggle the
-   operating system can override is a toggle that appears broken. */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #0d0d0d;
-    --panel: #161616;
-    --panel-alt: #1c1c1c;
-    --ink: #f2f2f2;
-    --ink-soft: #cfcfcf;
-    --muted: #949494;
-    --line: #2a2a2a;
-    --line-strong: #3d3d3d;
-    --accent: #f2f2f2;
-    --accent-ink: #0d0d0d;
-    --danger: #ef9a95;
-    --score: #6fd39f;
-    --shadow: none;
-  }
+[data-theme="light"] {
+  --bg: #f7f7f5;
+  --bg-raised: #ffffff;
+  --ink: #111110;
+  --muted: rgba(17, 17, 16, 0.62);
+  --dim: rgba(17, 17, 16, 0.4);
+  --faint: rgba(17, 17, 16, 0.16);
+  --hairline: rgba(17, 17, 16, 0.1);
+  --accent: #111110;
+  --accent-ink: #f7f7f5;
+  --danger: #b3261e;
+  --score: #1f6f4a;
+  --dot: rgba(17, 17, 16, 0.05);
 }
 
 * {
   box-sizing: border-box;
 }
 
-/* Colour only, and only on the elements that change with the theme. Transitioning `all` would
-   animate layout on every re-render, which is how a simple page starts feeling slow. */
+/* Colour only, and only on the elements that change with the theme or on hover. Transitioning
+   `all` would animate layout on every re-render, which is how a simple page starts feeling slow. */
 body,
 .card,
 input,
@@ -81,10 +62,13 @@ select,
 textarea,
 button,
 nav,
+nav a,
 .banner,
 .job,
 td,
-th {
+th,
+.chip,
+.bubble {
   transition:
     background-color var(--fade) var(--ease),
     border-color var(--fade) var(--ease),
@@ -103,21 +87,38 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
-  font:
-    16px/1.6 ui-sans-serif,
-    system-ui,
-    -apple-system,
-    "Segoe UI",
-    sans-serif;
+  font: 16px/1.6 var(--font-body);
   -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--ink);
+  color: var(--bg);
+}
+
+/* The landing page's faint dot grid, so the space behind the content never reads as pure void. */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: radial-gradient(var(--dot) 1px, transparent 1.4px);
+  background-size: 36px 36px;
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.9), rgba(0, 0, 0, 0.35));
 }
 
 .app,
 .wizard,
 .centered {
-  max-width: 44rem;
+  position: relative;
+  z-index: 1;
+  max-width: 64rem;
   margin: 0 auto;
-  padding: 1.25rem 1.25rem 5rem;
+  padding: 1.25rem 2rem 5rem;
+}
+
+.wizard {
+  max-width: 44rem;
 }
 
 .centered {
@@ -126,27 +127,58 @@ body {
   color: var(--muted);
 }
 
+/* Route content fades up once — the landing page's reveal, at page scale. */
+.page-in {
+  animation: page-in 0.4s var(--ease) both;
+}
+
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 /* ── top bar ─────────────────────────────────────────────────────────────────────────────── */
 
 nav {
   display: flex;
   align-items: center;
-  gap: 1.5rem;
-  border-bottom: 1px solid var(--line);
-  margin-bottom: 2rem;
+  gap: 1.6rem;
+  border-bottom: 1px solid var(--hairline);
+  margin-bottom: 2.5rem;
 }
 
-nav a {
-  color: var(--muted);
+/* The wordmark, exactly as the landing sets it: uppercase, spaced, heavy. */
+.brand {
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 0.9rem;
+  color: var(--ink);
   text-decoration: none;
-  padding: 0.85rem 0;
+  margin-right: 0.6rem;
+  padding: 0.9rem 0;
+}
+
+nav a:not(.brand) {
+  color: var(--dim);
+  text-decoration: none;
+  padding: 0.95rem 0;
   border-bottom: 1px solid transparent;
   margin-bottom: -1px;
-  font-size: 0.9375rem;
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
 }
 
-nav a:hover {
-  color: var(--ink-soft);
+nav a:not(.brand):hover {
+  color: var(--muted);
 }
 
 nav a.on {
@@ -159,9 +191,9 @@ nav a.on {
 .theme-toggle {
   margin-left: auto;
   background: none;
-  border: 1px solid var(--line);
+  border: 1px solid var(--faint);
   color: var(--muted);
-  border-radius: 99px;
+  border-radius: 999px;
   width: 2rem;
   height: 2rem;
   padding: 0;
@@ -173,7 +205,7 @@ nav a.on {
 
 .theme-toggle:hover {
   color: var(--ink);
-  border-color: var(--line-strong);
+  border-color: var(--dim);
   opacity: 1;
 }
 
@@ -182,21 +214,23 @@ nav a.on {
   position: fixed;
   top: 1rem;
   right: 1rem;
-  background: var(--panel);
+  background: var(--bg-raised);
+  z-index: 10;
 }
 
 /* ── type ────────────────────────────────────────────────────────────────────────────────── */
 
 h1 {
-  font-size: 1.375rem;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-size: 1.6rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
   margin: 0 0 0.35rem;
 }
 
 h2 {
-  font-size: 0.9375rem;
-  font-weight: 600;
+  font-size: 1rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
   margin: 0 0 0.85rem;
 }
 
@@ -216,15 +250,38 @@ a {
   font-size: 0.875rem;
 }
 
+/* The landing's section label: mono, spaced, uppercase, with a leading rule. */
+.kicker {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--dim);
+  margin: 0 0 1.1rem;
+}
+
+.kicker::before {
+  content: "";
+  width: 2.4rem;
+  height: 1px;
+  background: var(--faint);
+}
+
 /* ── surfaces ────────────────────────────────────────────────────────────────────────────── */
 
 .card {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 1.25rem;
-  margin-bottom: 1rem;
-  box-shadow: var(--shadow);
+  background: var(--bg-raised);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  padding: 1.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.card:hover {
+  border-color: var(--faint);
 }
 
 .field {
@@ -250,19 +307,23 @@ input,
 select,
 textarea {
   width: 100%;
-  padding: 0.55rem 0.7rem;
-  border: 1px solid var(--line-strong);
+  padding: 0.55rem 0.8rem;
+  border: 1px solid var(--faint);
   border-radius: var(--radius);
-  background: var(--panel-alt);
+  background: var(--bg-raised);
   color: var(--ink);
   font: inherit;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--dim);
 }
 
 input:focus,
 select:focus,
 textarea:focus {
-  outline: 2px solid var(--ink);
-  outline-offset: -1px;
+  outline: none;
   border-color: var(--ink);
 }
 
@@ -272,25 +333,40 @@ textarea {
   line-height: 1.55;
 }
 
+/* The landing's pill buttons: solid inverts on hover, ghost sharpens its border. */
 button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
   font: inherit;
   font-size: 0.9375rem;
-  padding: 0.55rem 1.15rem;
+  font-weight: 550;
+  padding: 0.6rem 1.4rem;
   border: 1px solid var(--accent);
-  border-radius: var(--radius);
+  border-radius: 999px;
   background: var(--accent);
   color: var(--accent-ink);
   cursor: pointer;
+  transition:
+    background var(--fade) var(--ease),
+    color var(--fade) var(--ease),
+    border-color var(--fade) var(--ease),
+    transform var(--fade) var(--ease);
 }
 
 button:hover:not([disabled]) {
-  opacity: 0.85;
+  transform: translateY(-2px);
 }
 
 button.secondary {
   background: transparent;
   color: var(--ink);
-  border-color: var(--line-strong);
+  border-color: var(--faint);
+}
+
+button.secondary:hover:not([disabled]) {
+  border-color: var(--ink);
 }
 
 button.danger {
@@ -328,11 +404,11 @@ button[disabled] {
 /* Banners are told apart by a left rule and their words, not by a fill. Three coloured blocks on
    one page is a traffic light nobody reads. */
 .banner {
-  padding: 0.7rem 0.9rem;
+  padding: 0.75rem 1rem;
   border-radius: var(--radius);
-  border: 1px solid var(--line);
+  border: 1px solid var(--hairline);
   border-left-width: 3px;
-  background: var(--panel-alt);
+  background: var(--bg-raised);
   font-size: 0.9375rem;
 }
 
@@ -346,7 +422,7 @@ button[disabled] {
 }
 
 .banner.info {
-  border-left-color: var(--line-strong);
+  border-left-color: var(--faint);
   color: var(--muted);
 }
 
@@ -364,8 +440,8 @@ button[disabled] {
 }
 
 .step h1 {
-  font-size: 1.75rem;
-  font-weight: 600;
+  font-size: 1.9rem;
+  font-weight: 650;
   letter-spacing: -0.02em;
   margin: 0 0 1.75rem;
 }
@@ -418,9 +494,9 @@ button[disabled] {
   padding: 0;
   display: grid;
   place-items: center;
-  border-radius: 99px;
+  border-radius: 999px;
   background: transparent;
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--faint);
   color: var(--muted);
   font-size: 1rem;
   line-height: 1;
@@ -429,7 +505,7 @@ button[disabled] {
 .icon-btn:hover:not([disabled]) {
   color: var(--ink);
   border-color: var(--ink);
-  opacity: 1;
+  transform: none;
 }
 
 /* The add button sits above the first row, on the right, where it reads as "more of these". */
@@ -455,7 +531,7 @@ button[disabled] {
   content: "";
   flex: 1;
   height: 1px;
-  background: var(--line);
+  background: var(--hairline);
 }
 
 /* ── the wizard's step list ──────────────────────────────────────────────────────────────── */
@@ -473,21 +549,185 @@ button[disabled] {
   width: 1.75rem;
   height: 2px;
   border-radius: 2px;
-  background: var(--line);
+  background: var(--faint);
   font-size: 0;
+  transition: background var(--fade) var(--ease);
 }
 
 .steps li.done {
-  background: var(--line-strong);
+  background: var(--dim);
   cursor: pointer;
 }
 
 .steps li.on { background: var(--ink); }
 
-/* ── the feed ────────────────────────────────────────────────────────────────────────────── */
+/* ── the jobs table ──────────────────────────────────────────────────────────────────────── */
+
+/* Filter chips and the search box sit in one row above the table. */
+.toolbar {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 1.25rem 0 1rem;
+}
+
+.toolbar input[type="search"] {
+  flex: 1 1 14rem;
+  min-width: 10rem;
+}
+
+.toolbar select {
+  width: auto;
+  padding-right: 2rem;
+}
+
+/* A quiet on/off filter — mono like every other label of its kind. */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.4rem 0.9rem;
+  border: 1px solid var(--faint);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.chip:hover {
+  border-color: var(--dim);
+  color: var(--ink);
+  transform: none;
+}
+
+.chip.on {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: var(--accent);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9375rem;
+}
+
+td,
+th {
+  text-align: left;
+  padding: 0.65rem 0.9rem 0.65rem 0;
+  border-bottom: 1px solid var(--hairline);
+  vertical-align: top;
+}
+
+th {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-weight: 500;
+  color: var(--dim);
+  white-space: nowrap;
+  user-select: none;
+}
+
+/* A sortable heading is a control and says so on hover; the active one is ink. */
+th.sortable {
+  cursor: pointer;
+}
+
+th.sortable:hover {
+  color: var(--muted);
+}
+
+th.sorted {
+  color: var(--ink);
+}
+
+tr:last-child td {
+  border-bottom: 0;
+}
+
+/* A key-value readout, not a data table: the keys are labels and read like them. */
+.kv td:first-child {
+  width: 32%;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--dim);
+  padding-top: 0.8rem;
+}
+
+tbody tr {
+  transition: background var(--fade) var(--ease);
+}
+
+tbody tr:hover {
+  background: var(--bg-raised);
+}
+
+td.num {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.job-title {
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.job-title:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* The word under the title: company, quiet. */
+.job-sub {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* Pagination reads like the nav: mono, spaced, quiet. */
+.pager {
+  display: flex;
+  align-items: center;
+  gap: 1.2rem;
+  margin-top: 1.25rem;
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.pager button {
+  background: transparent;
+  color: var(--muted);
+  border-color: var(--faint);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  padding: 0.45rem 1.1rem;
+}
+
+.pager button:hover:not([disabled]) {
+  color: var(--ink);
+  border-color: var(--ink);
+  transform: none;
+}
+
+/* ── the feed card (kept for anything still rendering list-style jobs) ───────────────────── */
 
 .job {
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--hairline);
   padding: 0.9rem 0;
 }
 
@@ -513,11 +753,24 @@ button[disabled] {
   font-weight: 600;
 }
 
+/* Applied is a fact, not a colour: a small mono tag. */
+.tag {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border: 1px solid var(--faint);
+  border-radius: 999px;
+  padding: 0.1rem 0.55rem;
+  white-space: nowrap;
+}
+
 /* ── the overview ────────────────────────────────────────────────────────────────────────────
  *
- * **The same rules as onboarding: no card, one idea per screen.** It was three bordered panels of
- * equal weight, which made the thing to do next look exactly like the delivery settings. The state
- * is the headline, the one action is the only control, and the rest is quiet text underneath.
+ * **The same rules as onboarding: no card, one idea per screen.** The state is the headline, the
+ * one action is the only control, and the rest is quiet text underneath.
  */
 
 .overview {
@@ -526,8 +779,8 @@ button[disabled] {
 }
 
 .overview h1 {
-  font-size: 1.75rem;
-  font-weight: 600;
+  font-size: 1.9rem;
+  font-weight: 650;
   letter-spacing: -0.02em;
   margin: 0 0 0.6rem;
 }
@@ -548,7 +801,7 @@ button[disabled] {
 
 .stat dt {
   font-size: 1.75rem;
-  font-weight: 600;
+  font-weight: 650;
   letter-spacing: -0.02em;
   /* Tabular figures so three numbers of different widths still line up under each other. */
   font-variant-numeric: tabular-nums;
@@ -556,9 +809,12 @@ button[disabled] {
 
 .stat dd {
   margin: 0.15rem 0 0;
-  color: var(--muted);
-  font-size: 0.875rem;
-  line-height: 1.4;
+  color: var(--dim);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  line-height: 1.5;
 }
 
 /* The things worth knowing and not worth reading twice. */
@@ -568,28 +824,10 @@ button[disabled] {
   margin: 0 0 0.4rem;
 }
 
-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.9375rem;
-}
-
-td,
-th {
-  text-align: left;
-  padding: 0.5rem 0;
-  border-bottom: 1px solid var(--line);
-}
-
-tr:last-child td {
-  border-bottom: 0;
-}
-
 /* ── the setup conversation ──────────────────────────────────────────────────────────────────
  *
- * A chat, not a chat product: no avatars, no timestamps, no typing dots. Two bubble styles that
- * differ by alignment and one border, because the only thing a reader needs to know is who said
- * which line.
+ * A chat, not a chat product: no avatars, no timestamps. Two bubble styles that differ by
+ * alignment and one border, because the only thing a reader needs to know is who said which line.
  */
 
 .chat {
@@ -604,32 +842,59 @@ tr:last-child td {
 
 .bubble {
   max-width: 85%;
-  padding: 0.7rem 0.9rem;
-  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+  border-radius: 14px;
   font-size: 0.9375rem;
   line-height: 1.5;
   /* Answers arrive as written prose with its own line breaks; collapsing them would run a
      three-part question into one paragraph. */
   white-space: pre-wrap;
+  animation: page-in 0.3s var(--ease) both;
 }
 
 .bubble.assistant {
   align-self: flex-start;
-  background: var(--panel-alt);
-  border: 1px solid var(--line);
+  background: var(--bg-raised);
+  border: 1px solid var(--hairline);
+  border-bottom-left-radius: 4px;
 }
 
 .bubble.user {
   align-self: flex-end;
   background: var(--accent);
   color: var(--accent-ink);
+  border-bottom-right-radius: 4px;
 }
 
-/* A turn on a frontier model can run for minutes. Saying so is more honest than a spinner that
-   implies seconds, and it is why this reads as a sentence rather than an animation. */
+/* A turn on a frontier model can run for minutes. The dots say "working"; the sentence says how
+   long — an animation that implies seconds would be dishonest on its own. */
 .bubble.pending {
   color: var(--muted);
   font-style: italic;
+}
+
+.typing {
+  display: inline-flex;
+  gap: 0.3rem;
+  align-items: center;
+  margin-right: 0.6rem;
+  vertical-align: middle;
+}
+
+.typing i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--dim);
+  animation: typing-dot 1.2s ease-in-out infinite;
+}
+
+.typing i:nth-child(2) { animation-delay: 0.15s; }
+.typing i:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes typing-dot {
+  0%, 60%, 100% { opacity: 0.35; transform: translateY(0); }
+  30% { opacity: 1; transform: translateY(-3px); }
 }
 
 /* What the assistant wrote down, under the message that wrote it. Quiet on purpose: the user is
@@ -639,4 +904,81 @@ tr:last-child td {
   margin-top: 0.45rem;
   color: var(--muted);
   font-size: 0.8125rem;
+}
+
+/* ── the profile file list ───────────────────────────────────────────────────────────────── */
+
+.files {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.file {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.8rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+  text-align: left;
+  font-weight: 400;
+  transition:
+    border-color var(--fade) var(--ease),
+    transform var(--fade) var(--ease);
+}
+
+.file:hover {
+  border-color: var(--dim);
+  transform: translateY(-2px);
+}
+
+.file svg {
+  flex-shrink: 0;
+  margin-top: 0.2rem;
+  color: var(--dim);
+}
+
+.file .file-name {
+  font-weight: 600;
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+.file .file-state {
+  display: block;
+  margin-top: 0.2rem;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.file.filled .file-state {
+  color: var(--muted);
+}
+
+/* ── small screens ───────────────────────────────────────────────────────────────────────── */
+
+@media (max-width: 720px) {
+  .app,
+  .wizard,
+  .centered {
+    padding: 1rem 1rem 4rem;
+  }
+
+  nav {
+    gap: 1rem;
+  }
+
+  nav a:not(.brand) {
+    font-size: 0.68rem;
+    letter-spacing: 0.16em;
+  }
 }

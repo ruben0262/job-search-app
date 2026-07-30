@@ -16,6 +16,42 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ## 2026-07-30
 
+### The app looks like the landing page, and the jobs page becomes a table
+
+The two top items of the handover's work order, plus the setup-chat fixes beneath them.
+
+**The design system is the landing page's** (`mahoraga-jobs-web/src/index.css`), carried into
+`web/src/styles.css` wholesale: `#060606`, hairline borders at falling ink opacity, mono uppercase
+kickers, pill buttons that invert on hover, the faint dot-grid backdrop, 0.25 s transitions and a
+single fade-up on route change. **Dark is the default now, not the system preference** — the
+landing is dark-only, and the app opening in white read as a different product. The toggle stays
+and offers light, an equivalent inverse built from the same variables, so the palette remains one
+set of rules. Every existing class name survived the rewrite; no page needed restyling by hand.
+
+**`GET /feed` grew the parameters a real table needs**: `offset` and `total` for pagination, `q`
+over titles, companies and URLs, `source`/`remote`/`applied`/`max_age_days` filters, and
+`sort`+`direction` over score, posted date, title and company. The age filter keeps undated rows —
+the same fail-open rule delivery uses, because a missing `posted_at` is unknown, not old. The
+salary column is extracted server-side per page by `libs/corpus/salary.extract` (regex, free) so
+the description still never crosses the wire, and `applied_at` travels with the row. The stage-0
+feed takes the same filters in Python, after its scoring loop, so the two stages cannot behave
+differently. Seven tests, including one asserting the page and its `total` are computed under the
+same filters — a pager that says "1 of 3" against a differently-filtered count lies.
+
+**The jobs page renders that**: sortable column headers, filter chips, a debounced search box with
+a response sequence guard (a late answer to an old query must not overwrite the current one), and
+prev/next paging. The filters live server-side deliberately — filtering the loaded page in the
+client silently lies whenever the answer is on a page that was never fetched.
+
+**The setup chat's file list works now.** The entries linked `#/setup`, a route that does not
+exist, so clicking one navigated to the overview instead of opening the file — the "clicking does
+nothing" from the handover. They are buttons now, in a card grid with a monochrome icon per file
+kind and short human names ("How you work", not `02-behavioral-profile.md`). The pending line has
+typing dots beside the honest sentence about minutes — the dots say working, the words say how
+long, and neither alone is enough.
+
+972 passed against a real Postgres; `openapi.json` and `api-types.ts` regenerated.
+
 ### The instruments, and the nine bugs they found
 
 Most of today was building things that measure, then believing them when they disagreed with me.

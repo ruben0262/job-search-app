@@ -726,7 +726,7 @@
           "posted_within_hours": {
             "default": 24,
             "maximum": 168.0,
-            "minimum": 6.0,
+            "minimum": 1.0,
             "title": "Posted Within Hours",
             "type": "integer"
           },
@@ -1665,7 +1665,7 @@
     },
     "/feed": {
       "get": {
-        "description": "The ranked jobs. Personal model if there is a servable one, otherwise the config alone.\n\nThe stage is in the response because a feed that silently changes how it ranks is one nobody can\nreason about \u2014 and a new account's first feed *is* the keyword one, which is worth saying rather\nthan passing off as the model's work.",
+        "description": "The ranked jobs \u2014 a page of them, with the filters the table offers.\n\nThe stage is in the response because a feed that silently changes how it ranks is one nobody can\nreason about \u2014 and a new account's first feed *is* the keyword one, which is worth saying rather\nthan passing off as the model's work.\n\n**The age filter keeps undated rows.** Same rule as delivery: a missing `posted_at` is unknown,\nnot old, and a preference filter fails open. `total` and `sources` are for the table's pager and\nsource dropdown \u2014 computed under the same filters as the page, or the counts would lie.",
         "operationId": "feed_feed_get",
         "parameters": [
           {
@@ -1678,6 +1678,123 @@
               "minimum": 1,
               "title": "Limit",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source"
+            }
+          },
+          {
+            "in": "query",
+            "name": "remote",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Remote"
+            }
+          },
+          {
+            "in": "query",
+            "name": "applied",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Applied"
+            }
+          },
+          {
+            "in": "query",
+            "name": "max_age_days",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 365,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Max Age Days"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "score",
+              "pattern": "^(score|posted|title|company)$",
+              "title": "Sort",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "direction",
+            "required": false,
+            "schema": {
+              "default": "desc",
+              "pattern": "^(asc|desc)$",
+              "title": "Direction",
+              "type": "string"
             }
           }
         ],
