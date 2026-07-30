@@ -41,6 +41,7 @@ import json
 import logging
 import statistics
 import sys
+import time
 from collections import defaultdict
 from pathlib import Path
 
@@ -203,19 +204,41 @@ def deterministic_summary(html: str, text: str, *, job) -> str:
             + (f" objective issues: {'; '.join(hidden[:3])}." if hidden else ""))
 
 
+# Transient server-side failures, retried here rather than left to the SDK. The SDK retries the
+# *request*; an `overloaded_error` delivered as an event inside an already-open stream is past that
+# point and surfaces as a plain exception — which killed a run eleven judgements in.
+JUDGE_ATTEMPTS = 4
+JUDGE_BACKOFF_SEC = 20
+
+
 def judge(client, *, model: str, prompt: str, description: str, cv_text: str,
           summary: str) -> dict:
-    """One judgement. Returns the parsed verdict."""
+    """One judgement, retried through an overloaded API. Returns the parsed verdict."""
     filled = (prompt.replace("<DETERMINISTIC_SUMMARY>", summary)
                     .replace("<JOB_DESCRIPTION>", description[:6_000])
                     .replace("<CV_TEXT>", cv_text[:12_000]))
     if "<CV_TEXT>" not in prompt:
         # The reference's template ends with the CV under a header rather than a placeholder.
         filled = f"{filled}\n\n{cv_text[:12_000]}"
-    return client.complete_json(
-        model=model, system="You are a strict technical recruiter.",
-        messages=[{"role": "user", "content": filled}],
-        schema=VERDICT_SCHEMA, max_tokens=4_000)
+    for attempt in range(1, JUDGE_ATTEMPTS + 1):
+        try:
+            return client.complete_json(
+                model=model, system="You are a strict technical recruiter.",
+                messages=[{"role": "user", "content": filled}],
+                schema=VERDICT_SCHEMA, max_tokens=4_000)
+        except Exception as exc:
+            # Only the transient shapes. A 400 is a bug in the request and retrying it four times
+            # is four identical failures and a longer wait before anybody sees the message.
+            transient = any(word in str(exc).lower()
+                            for word in ("overloaded", "timeout", "rate_limit", "502", "503",
+                                         "504", "529"))
+            if not transient or attempt == JUDGE_ATTEMPTS:
+                raise
+            wait = JUDGE_BACKOFF_SEC * attempt
+            logger.warning("judge attempt %d/%d failed (%s), retrying in %ds",
+                           attempt, JUDGE_ATTEMPTS, type(exc).__name__, wait)
+            time.sleep(wait)
+    raise RuntimeError("unreachable")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -305,10 +328,21 @@ def main(argv: list[str] | None = None) -> int:
                                 continue
 
                             text = build.html_to_text(html)
-                            verdict = judge(
-                                client, model=args.judge_model, prompt=judge_prompt,
-                                description=job.description or "", cv_text=text,
-                                summary=deterministic_summary(html, text, job=job))
+                            try:
+                                verdict = judge(
+                                    client, model=args.judge_model, prompt=judge_prompt,
+                                    description=job.description or "", cv_text=text,
+                                    summary=deterministic_summary(html, text, job=job))
+                            except Exception as exc:
+                                # The build already cost money; losing the run over the grading of
+                                # it loses that money and every judgement before it.
+                                failures.append({"job_id": job.id, "title": job.title,
+                                                 "variant": name, "error": type(exc).__name__,
+                                                 "stage": "judge"})
+                                print(f"  {job.title[:44]:44} {name:10} "
+                                      f"JUDGE FAILED  {type(exc).__name__}")
+                                _save(args.out, results, failures)
+                                continue
                             results.append({"job_id": job.id, "title": job.title,
                                             "variant": name, "chars": len(text), **verdict})
                             print(f"  {job.title[:44]:44} {name:10} "
