@@ -179,6 +179,24 @@ def delete_account(body: DeleteBody, db: Session = Depends(get_db),
     return {"status": "deleted"}
 
 
+class AccountPatch(BaseModel):
+    # The one delivery knob that lives on the user row rather than in the search config. Bounds
+    # mirror the DB constraint (`notify_interval_bounds`) so the error is a sentence rather than an
+    # IntegrityError.
+    notify_interval_min: int | None = Field(default=None, ge=15, le=1440)
+
+
+@router.patch("/account")
+def patch_account(body: AccountPatch, db: Session = Depends(get_db),
+                  user_id: _uuid.UUID = Depends(current_user)) -> dict:
+    """Settings the user may change directly. Only what is named is touched."""
+    user = db.get(User, user_id)
+    if body.notify_interval_min is not None:
+        user.notify_interval_min = body.notify_interval_min
+        audit(logger, "account.notify_interval", user=user_id, minutes=body.notify_interval_min)
+    return {"status": "ok", "notify_interval_min": user.notify_interval_min}
+
+
 @router.get("/account")
 def account(db: Session = Depends(get_db), user_id: _uuid.UUID = Depends(current_user)) -> dict:
     """What the settings page shows. Everything onboarding collected, minus anything secret."""

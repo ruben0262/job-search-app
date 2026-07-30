@@ -15,6 +15,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ApiError, api, type Dashboard } from "./api";
 import { Landing } from "./landing/Landing";
 import { DashboardPage } from "./pages/DashboardPage";
+import { DataPage } from "./pages/DataPage";
 import { FeedPage } from "./pages/FeedPage";
 import { Onboarding } from "./pages/Onboarding";
 import { PrivacyPage } from "./pages/PrivacyPage";
@@ -95,9 +96,11 @@ export function App() {
       ? "profile"
       : hash.startsWith("/process")
         ? "process"
-        : hash.startsWith("/settings")
-          ? "settings"
-          : "overview";
+        : hash.startsWith("/data")
+          ? "data"
+          : hash.startsWith("/settings")
+            ? "settings"
+            : "overview";
 
   return (
     <>
@@ -111,6 +114,8 @@ export function App() {
             <SetupPage onChanged={reload} />
           ) : section === "process" ? (
             <ProcessPage onChanged={reload} />
+          ) : section === "data" ? (
+            <DataPage onChanged={reload} />
           ) : section === "settings" ? (
             <SettingsPage onSignedOut={reload} />
           ) : (
@@ -127,6 +132,7 @@ function Nav({ current }: { current: string }) {
     ["/", "Overview"],
     ["/feed", "Jobs"],
     ["/profile", "Profile"],
+    ["/data", "Your details"],
     ["/settings", "Settings"],
   ] as const;
   return (

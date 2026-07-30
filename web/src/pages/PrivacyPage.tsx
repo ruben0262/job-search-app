@@ -24,10 +24,19 @@ export function PrivacyPage() {
   if (!disclosure) return <main className="centered">Loading…</main>;
 
   return (
-    <main className="wizard">
-      <ThemeToggle floating />
-      <h1>Who sees your data</h1>
-      <p className="muted small">Version {disclosure.version}</p>
+    <>
+      <div className="backdrop" aria-hidden="true" />
+      <main className="wizard page-in">
+        <ThemeToggle floating />
+        <nav style={{ border: "none", marginBottom: 0 }}>
+          <a className="brand" href="#/">
+            Mahoraga
+          </a>
+        </nav>
+        <p className="kicker" style={{ marginTop: "2.5rem" }}>
+          Privacy · version {disclosure.version}
+        </p>
+        <h1>Who sees your data</h1>
 
       <Card title={disclosure.headline}>
         {disclosure.body.split("\n\n").map((paragraph, index) => (
@@ -48,9 +57,10 @@ export function PrivacyPage() {
         </Card>
       ))}
 
-      <p>
-        <a href="#/">Back</a>
-      </p>
-    </main>
+        <p>
+          <a href="#/">Back</a>
+        </p>
+      </main>
+    </>
   );
 }

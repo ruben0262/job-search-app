@@ -30,7 +30,11 @@ export interface paths {
         delete: operations["delete_account_account_delete"];
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Patch Account
+         * @description Settings the user may change directly. Only what is named is touched.
+         */
+        patch: operations["patch_account_account_patch"];
         trace?: never;
     };
     "/account/consent": {
@@ -965,6 +969,11 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AccountPatch */
+        AccountPatch: {
+            /** Notify Interval Min */
+            notify_interval_min?: number | null;
+        };
         /** Body_upload_documents_post */
         Body_upload_documents_post: {
             /** File */
@@ -1417,6 +1426,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["DeleteBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_account_account_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccountPatch"];
             };
         };
         responses: {

@@ -1,6 +1,25 @@
 {
   "components": {
     "schemas": {
+      "AccountPatch": {
+        "properties": {
+          "notify_interval_min": {
+            "anyOf": [
+              {
+                "maximum": 1440.0,
+                "minimum": 15.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notify Interval Min"
+          }
+        },
+        "title": "AccountPatch",
+        "type": "object"
+      },
       "Body_upload_documents_post": {
         "properties": {
           "file": {
@@ -1099,6 +1118,48 @@
           }
         },
         "summary": "Account",
+        "tags": [
+          "account"
+        ]
+      },
+      "patch": {
+        "description": "Settings the user may change directly. Only what is named is touched.",
+        "operationId": "patch_account_account_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Patch Account Account Patch",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Patch Account",
         "tags": [
           "account"
         ]

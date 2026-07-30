@@ -534,6 +534,117 @@ button[disabled] {
   background: var(--hairline);
 }
 
+/* ── the wizard's step circles ───────────────────────────────────────────────────────────────
+ *
+ * Numbered circles joined by a rule: done is filled and carries a check, current is ringed in
+ * ink, the future is a dim number. Labels sit under the circles and only the current one is ink,
+ * so the row reads as "you are here" rather than as seven competing words.
+ */
+
+.dots {
+  list-style: none;
+  padding: 0;
+  margin: 2.5rem 0 0;
+  display: flex;
+  justify-content: center;
+}
+
+.dot-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  flex: 1;
+  max-width: 6.5rem;
+}
+
+.dot-rule {
+  position: absolute;
+  top: 1rem;
+  right: 50%;
+  width: 100%;
+  height: 1px;
+  background: var(--faint);
+  z-index: 0;
+}
+
+.dot {
+  position: relative;
+  z-index: 1;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  background: var(--bg);
+  border: 1px solid var(--faint);
+  color: var(--dim);
+  cursor: default;
+  transition:
+    background var(--fade) var(--ease),
+    border-color var(--fade) var(--ease),
+    color var(--fade) var(--ease),
+    transform var(--fade) var(--ease);
+}
+
+.dot.done {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  cursor: pointer;
+}
+
+.dot.done:hover:not(.on) {
+  transform: scale(1.12);
+}
+
+.dot.on {
+  background: var(--bg);
+  border-color: var(--ink);
+  color: var(--ink);
+  box-shadow: 0 0 0 4px var(--hairline);
+}
+
+.dot[disabled] {
+  opacity: 1;
+  cursor: default;
+}
+
+.dot-label {
+  margin-top: 0.55rem;
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--dim);
+  text-align: center;
+  line-height: 1.4;
+  transition: color var(--fade) var(--ease);
+}
+
+.dot-label.on {
+  color: var(--ink);
+}
+
+@media (max-width: 560px) {
+  .dot-label {
+    display: none;
+  }
+
+  .dot {
+    width: 1.6rem;
+    height: 1.6rem;
+    font-size: 0.64rem;
+  }
+
+  .dot-rule {
+    top: 0.8rem;
+  }
+}
+
 /* ── the wizard's step list ──────────────────────────────────────────────────────────────── */
 
 .steps {
@@ -962,6 +1073,73 @@ td.num {
 
 .file.filled .file-state {
   color: var(--muted);
+}
+
+/* ── the details page's folds ────────────────────────────────────────────────────────────── */
+
+.fold {
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  background: var(--bg-raised);
+  margin-bottom: 0.75rem;
+  transition: border-color var(--fade) var(--ease);
+}
+
+.fold:hover,
+.fold.open {
+  border-color: var(--faint);
+}
+
+.fold-head {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.1rem 1.4rem;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-lg);
+  color: inherit;
+  font-weight: 400;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fold-head:hover:not([disabled]) {
+  transform: none;
+}
+
+.fold-title {
+  display: block;
+  font-weight: 600;
+  font-size: 0.9875rem;
+}
+
+.fold-hint {
+  display: block;
+  margin-top: 0.15rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.saved-flash {
+  color: var(--score);
+}
+
+.fold-chevron {
+  color: var(--dim);
+  font-size: 1.3rem;
+  line-height: 1;
+  transition: transform var(--fade) var(--ease);
+}
+
+.fold.open .fold-chevron {
+  transform: rotate(90deg);
+}
+
+.fold-body {
+  padding: 0.25rem 1.4rem 1.4rem;
 }
 
 /* ── small screens ───────────────────────────────────────────────────────────────────────── */

@@ -16,6 +16,44 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ## 2026-07-30
 
+### Onboarding wears the design, and everything collected becomes editable
+
+**The wizard's progress is numbered circles now** — done is filled with a check, current is
+ringed, the future is a dim number, labels underneath, joined by a rule. Finished circles are
+clickable, which is what saving per page always bought and the thin bars never said. The mechanics
+did not move: which page you are on is still the server's answer, and nothing here can skip.
+
+**"Your details" is a page** (`web/src/pages/DataPage.tsx`): every onboarding form, rendered by
+the same components the wizard uses, in closed folds — name and links, documents, history, search
+config, and the three credentials. Not copies: a field added to onboarding appears here without
+anyone remembering to mirror it, and a correction saves exactly the way getting it right the first
+time would have.
+
+**Settings grew the two delivery knobs**, worded for the confusion between them: how often we
+message you (`PATCH /account`, new, bounds mirroring the DB constraint) and how fresh a job has to
+be (the config's `posted_within_hours`, down to one hour now in both forms). The interval is when
+we check; the freshness is what is still worth sending when we do.
+
+### The live box check, and what it found
+
+Prompted by "make sure my account gets last-hour jobs". Ran against the box read-only, then fixed
+what it turned up:
+
+- **The delivery age filter works** — since the 11:15 UTC image rebuild, every cycle logs
+  `dropped {'too_old': N}` and sends nothing stale. The 160 stale sends earlier that morning
+  predate the rebuild, and they burned the owner's daily cap, which is why his feed then went
+  quiet: the cap frees itself as the 24-hour window rolls.
+- **A v1 config's own answers were being ignored.** `Eligibility.from_config` reads sections; a
+  v1 row keeps `posted_within_hours` and `exclude_keywords` at the top level — so the account that
+  asked for 72 hours and typed exclusions was getting the 24-hour default and none of them.
+  `from_config` migrates first now, inside the method so no future caller can repeat it.
+- **Fresh high scorers are scarce because LinkedIn ingestion does not exist** — the handover's
+  known largest gap, confirmed in numbers: 154 fresh jobs in six hours, all scored, none ≥ 60,
+  because the enabled no-auth REST sources top out at 57 for this profile and every historical
+  ≥ 60 came from the one-time LinkedIn import. The fix is the JobSpy tier, not a filter.
+- The Telegram card's age element (`· <1h`) was already the reference's, ported line for line —
+  verified rather than changed.
+
 ### The auth audit: two findings, both the missing half of something shipped
 
 Prompted by the owner asking whether everything ported from the FlowSolutions reference

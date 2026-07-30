@@ -72,52 +72,76 @@ export function Onboarding({
   const previous = index > 0 ? state.pages[index - 1] : undefined;
 
   return (
-    <main className="wizard">
-      <ThemeToggle floating />
+    <>
+      <div className="backdrop" aria-hidden="true" />
+      <main className="wizard">
+        <ThemeToggle floating />
+        <nav style={{ border: "none", marginBottom: 0 }}>
+          <span className="brand">Mahoraga</span>
+        </nav>
 
-      {previous ? (
-        <a className="back" href="#/" onClick={() => setViewing(previous.key)}>
-          ‹ Back
-        </a>
-      ) : (
-        <span className="back" style={{ visibility: "hidden" }}>
-          ‹ Back
-        </span>
-      )}
+        {/* Numbered circles, joined by a rule. A finished one is filled and carries a check; the
+            current one is ringed; a future one is a dim number. Finished ones are clickable —
+            going back to correct something is exactly what saving per page buys. */}
+        <ol className="dots" aria-label={index >= 0 ? `Step ${index + 1} of ${state.pages.length}` : "Finished"}>
+          {state.pages.map((page, position) => (
+            <li key={page.key} className="dot-wrap">
+              {position > 0 ? <span className="dot-rule" aria-hidden="true" /> : null}
+              <button
+                type="button"
+                className={`dot${page.key === current ? " on" : ""}${page.complete ? " done" : ""}`}
+                title={page.title}
+                aria-current={page.key === current ? "step" : undefined}
+                disabled={!page.complete && page.key !== current}
+                onClick={() => page.complete && setViewing(page.key)}
+              >
+                {page.complete && page.key !== current ? <Check /> : position + 1}
+              </button>
+              <span className={`dot-label${page.key === current ? " on" : ""}`}>{page.title}</span>
+            </li>
+          ))}
+        </ol>
 
-      <ol className="steps" aria-label={`Step ${index + 1} of ${state.pages.length}`}>
-        {state.pages.map((page) => (
-          <li
-            key={page.key}
-            className={page.key === current ? "on" : page.complete ? "done" : ""}
-            title={page.title}
-            onClick={() => page.complete && setViewing(page.key)}
-          />
-        ))}
-      </ol>
+        <div className="step page-in" key={current}>
+          {copy ? (
+            <>
+              {previous ? (
+                <a className="back" href="#/" onClick={() => setViewing(previous.key)}>
+                  ‹ Back
+                </a>
+              ) : null}
+              <p className="kicker">
+                Step {index + 1} of {state.pages.length}
+              </p>
+              <h1>{copy.title}</h1>
+              {copy.lede ? <p className="lede">{copy.lede}</p> : null}
+              <Step which={current} onDone={done} />
+            </>
+          ) : (
+            <>
+              <p className="kicker">All set</p>
+              <h1>That is everything</h1>
+              <p className="lede">
+                Next you will build your profile in a conversation. That is the first thing that
+                uses your Claude credential, and you decide when.
+              </p>
+              <Error>{finish.error}</Error>
+              <button className="advance ready" disabled={finish.busy} onClick={() => void finish.run()}>
+                {finish.busy ? "Finishing…" : "Go to my dashboard"}
+              </button>
+            </>
+          )}
+        </div>
+      </main>
+    </>
+  );
+}
 
-      <div className="step">
-        {copy ? (
-          <>
-            <h1>{copy.title}</h1>
-            {copy.lede ? <p className="lede">{copy.lede}</p> : null}
-            <Step which={current} onDone={done} />
-          </>
-        ) : (
-          <>
-            <h1>That is everything</h1>
-            <p className="lede">
-              Next you will process your documents to build your profile. That is the first thing
-              that uses your Claude credential, and you decide when.
-            </p>
-            <Error>{finish.error}</Error>
-            <button className="advance ready" disabled={finish.busy} onClick={() => void finish.run()}>
-              {finish.busy ? "Finishing…" : "Go to my dashboard"}
-            </button>
-          </>
-        )}
-      </div>
-    </main>
+function Check() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M4.5 12.5l5 5 10-11" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }
 

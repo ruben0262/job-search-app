@@ -25,6 +25,7 @@ import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from libs.contracts.config import migrate_config
 from libs.corpus import langfilter, workfilter
 from libs.corpus.ranking import applicant_glut, opportunity_score, priority_key
 
@@ -68,8 +69,14 @@ class Eligibility:
 
         That reading matters for `languages` especially: an account that never answered the
         question must not have its entire feed dropped for being in the wrong language.
+
+        **Migrated before it is read.** A v1 config keeps `posted_within_hours` and
+        `exclude_keywords` at the top level; this method reads sections. Without the migration both
+        of a v1 user's own answers are silently replaced by the defaults — found live on
+        2026-07-30, where the account that asked for 72 hours and typed exclusions was getting
+        24 hours and none. Done here rather than in the caller so no future caller can repeat it.
         """
-        config = config or {}
+        config = migrate_config(config) if config else {}
         # The **widest** of their sections, not the narrowest. A user with a six-hour window on one
         # search and a week on another asked for both, and a job cannot be attributed back to the
         # section that found it — so the generous reading is the only one that cannot silently

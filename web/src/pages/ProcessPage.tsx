@@ -75,6 +75,7 @@ export function ProcessPage({ onChanged }: { onChanged: () => void }) {
   if (draft) {
     return (
       <>
+        <p className="kicker">Review</p>
         <h1>Review your profile</h1>
         <p className="muted">
           Nothing here is used until you agree to it. Read the last section especially carefully.
@@ -120,6 +121,7 @@ export function ProcessPage({ onChanged }: { onChanged: () => void }) {
 
   return (
     <>
+      <p className="kicker">Processing</p>
       <h1>Your profile</h1>
       <p>{state.message}</p>
 

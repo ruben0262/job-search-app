@@ -245,6 +245,16 @@ def test_changing_the_password_refuses_a_wrong_current_or_a_weak_new_one(api):
     assert same.status_code == 400
 
 
+def test_the_delivery_interval_can_be_changed_within_the_db_bounds(api):
+    http, session, user = api
+    assert http.patch("/account", json={"notify_interval_min": 30}).status_code == 200
+    session.flush()
+    session.refresh(user)
+    assert user.notify_interval_min == 30
+    # Below the DB constraint's floor: refused as a sentence, not an IntegrityError.
+    assert http.patch("/account", json={"notify_interval_min": 5}).status_code == 422
+
+
 def test_the_settings_page_never_returns_a_credential(api):
     """It shows everything onboarding collected, and the credentials are write-only everywhere."""
     http, _, _ = api

@@ -276,6 +276,20 @@ def test_an_account_with_no_sections_gets_the_default_window():
     assert Eligibility.from_config({}).max_age_hours == DEFAULT_MAX_AGE_HOURS
 
 
+def test_a_v1_config_keeps_its_window_and_its_exclusions():
+    """A v1 row is flat — `posted_within_hours` and `exclude_keywords` at the top level — and
+    `from_config` reads sections. Found live: the account that asked for 72 hours and typed
+    exclusions was getting the 24-hour default and none of them."""
+    rules = Eligibility.from_config({
+        "keywords": ["mechanical engineer"],
+        "posted_within_hours": 72,
+        "exclude_keywords": ["recruitment agency"],
+        "languages": [],
+    })
+    assert rules.max_age_hours == 72
+    assert rules.exclude_keywords == ("recruitment agency",)
+
+
 def test_the_age_window_is_not_the_notification_interval():
     """They are different questions and were being conflated. `notify_interval_min` is how often
     the user hears from us; this is how old a posting may be to be worth hearing about."""
