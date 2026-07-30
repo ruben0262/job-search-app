@@ -64,6 +64,11 @@ DORMANT_AFTER_DAYS = 30
 # and emails the user, rather than five wasted attempts followed by silence (SCHEDULER_PLAN.md §4).
 TELEGRAM_STATUSES = ("unconfigured", "connected", "broken")
 
+# The keys `telegram_routes` may carry (`services/notifier/routing.py` is the reader).
+# Beside the column's model rather than in the notifier because the API writes the table,
+# the notifier reads it, and services may not import each other.
+TELEGRAM_ROUTE_KEYS = ("hu", "linkedin", "other")
+
 
 class User(Base):
     __tablename__ = "users"

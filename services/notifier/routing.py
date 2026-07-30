@@ -29,9 +29,9 @@ HU_SOURCES = frozenset({"profession", "dreamjobs", "nofluffjobs_hu", "jooble"})
 HU_LOCATIONS = ("hungary", "budapest", "magyarorsz", "debrecen", "szeged", "győr", "gyor",
                 "pécs", "pecs", "miskolc")
 
-# The keys a user's `telegram_routes` may carry. Anything else is ignored rather than rejected, so
-# an old routing table survives a rename here instead of breaking delivery.
-ROUTES = ("hu", "linkedin", "other")
+# The keys a user's `telegram_routes` may carry — defined beside the column
+# (`libs.db.models.user.TELEGRAM_ROUTE_KEYS`) because the API writes what this file reads.
+# Anything else is ignored rather than rejected, so an old routing table survives a rename.
 
 
 @dataclass(frozen=True)

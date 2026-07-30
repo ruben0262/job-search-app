@@ -16,6 +16,7 @@ import { ApiError, api, type Dashboard } from "./api";
 import { Landing } from "./landing/Landing";
 import { DashboardPage } from "./pages/DashboardPage";
 import { DataPage } from "./pages/DataPage";
+import { ModelPage } from "./pages/ModelPage";
 import { FeedPage } from "./pages/FeedPage";
 import { Onboarding } from "./pages/Onboarding";
 import { PrivacyPage } from "./pages/PrivacyPage";
@@ -95,13 +96,15 @@ export function App() {
     ? "feed"
     : hash.startsWith("/profile")
       ? "profile"
-      : hash.startsWith("/process")
-        ? "process"
-        : hash.startsWith("/data")
-          ? "data"
-          : hash.startsWith("/settings")
-            ? "settings"
-            : "overview";
+      : hash.startsWith("/model")
+        ? "model"
+        : hash.startsWith("/process")
+          ? "process"
+          : hash.startsWith("/data")
+            ? "data"
+            : hash.startsWith("/settings")
+              ? "settings"
+              : "overview";
 
   return (
     <>
@@ -113,6 +116,8 @@ export function App() {
             <FeedPage />
           ) : section === "profile" ? (
             <SetupPage onChanged={reload} />
+          ) : section === "model" ? (
+            <ModelPage dashboard={dashboard} onChanged={reload} />
           ) : section === "process" ? (
             <ProcessPage onChanged={reload} />
           ) : section === "data" ? (
@@ -133,6 +138,7 @@ function Nav({ current }: { current: string }) {
     ["/", "Overview"],
     ["/feed", "Jobs"],
     ["/profile", "Profile"],
+    ["/model", "Model"],
     ["/data", "Your details"],
     ["/settings", "Settings"],
   ] as const;

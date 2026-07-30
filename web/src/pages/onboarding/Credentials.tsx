@@ -79,6 +79,8 @@ function CredentialForm({
 
 export function TelegramStep({ onDone }: { onDone: () => void }) {
   const [status, setStatus] = useState<string | null>(null);
+  const [channel, setChannel] = useState("");
+  const [channelStatus, setChannelStatus] = useState<string | null>(null);
 
   const connect = useAction(async () => {
     const result = await api.post<{ status: string; detail?: string }>("/credentials/telegram/connect");
@@ -86,13 +88,28 @@ export function TelegramStep({ onDone }: { onDone: () => void }) {
     onDone();
   });
 
+  const saveChannel = useAction(async () => {
+    const result = await api.put<{ detail: string }>("/credentials/telegram/channel", {
+      channel_id: channel.trim(),
+    });
+    setChannelStatus(result.detail);
+    onDone();
+  });
+
   return (
     <>
-      <ol className="small muted">
-        <li>Message @BotFather on Telegram and send /newbot.</li>
-        <li>Paste the token it gives you below.</li>
-        <li>Open your new bot and press Start — then use the button underneath.</li>
-      </ol>
+      <details className="howto">
+        <summary>How to create your bot (2 minutes)</summary>
+        <ol className="small muted">
+          <li>Open Telegram and search for <strong>@BotFather</strong> (blue tick).</li>
+          <li>Press Start, then send the message <code>/newbot</code>.</li>
+          <li>Give it any name, then any username ending in "bot".</li>
+          <li>BotFather replies with a token that looks like <code>123456:AA…</code> — copy it and
+              paste it below.</li>
+          <li>Open your new bot's chat and press <strong>Start</strong>, then use the "I pressed
+              Start" button underneath.</li>
+        </ol>
+      </details>
 
       <CredentialForm
         kind="telegram_bot"
@@ -109,6 +126,47 @@ export function TelegramStep({ onDone }: { onDone: () => void }) {
       </p>
       <Error>{connect.error}</Error>
       {status ? <p className="small muted">{status}</p> : null}
+
+      <div style={{ marginTop: "2rem" }}>
+        <p className="small muted">
+          <strong>Optional: a channel for your job stream.</strong> Jobs land in a channel you can
+          scroll like a feed, and the bot chat stays for commands and your finished CVs.
+        </p>
+        <details className="howto">
+          <summary>How to find your channel ID (2 minutes)</summary>
+          <ol className="small muted">
+            <li>In Telegram, create a channel (New message → New channel). Private is fine.</li>
+            <li>Open the channel's settings → Administrators → Add admin → pick <strong>your
+                bot</strong>, and allow it to post messages.</li>
+            <li>Post any message in the channel — "hello" works.</li>
+            <li>Forward that message to <strong>@getidsbot</strong>. It replies with a "forwarded
+                from" ID starting with <code>-100</code>.</li>
+            <li>Paste that ID below. We send a test message to prove it works — you will see it in
+                the channel.</li>
+          </ol>
+        </details>
+        <Field label="Channel ID" hint="Starts with -100. Leave empty to keep everything in the bot chat.">
+          <input
+            value={channel}
+            placeholder="-1001234567890"
+            onChange={(event) => setChannel(event.target.value)}
+          />
+        </Field>
+        <Error>{saveChannel.error}</Error>
+        {channelStatus ? (
+          <p className="small" style={{ color: "var(--score)" }}>
+            {channelStatus}
+          </p>
+        ) : null}
+        <button
+          type="button"
+          className="secondary"
+          disabled={saveChannel.busy || !channel.trim()}
+          onClick={() => void saveChannel.run()}
+        >
+          {saveChannel.busy ? "Testing…" : "Connect channel"}
+        </button>
+      </div>
     </>
   );
 }

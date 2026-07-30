@@ -151,6 +151,43 @@ def _validate_proxy(value: str, http: httpx.Client) -> ValidationResult:
     return ValidationResult(True, extra={"egress_ip": response.text.strip()[:64]})
 
 
+def telegram_channel_check(token: str, channel_id: str, *,
+                           client: httpx.Client | None = None) -> ValidationResult:
+    """Prove the bot can post to this channel — by posting to it.
+
+    A real `sendMessage`, not `getChat`: a bot must be an **administrator** of a channel to post,
+    and the send is the only check that proves the one thing delivery needs. The message doubles as
+    the user's confirmation on their own phone that the right channel is wired. Telegram's error
+    strings for the failure modes ("chat not found", "not enough rights") are surfaced because each
+    has a different one-minute fix.
+    """
+    owned = client is None
+    http = client or httpx.Client(timeout=TIMEOUT, trust_env=False)
+    try:
+        response = http.post(
+            TELEGRAM_URL.format(token=token, method="sendMessage"),
+            json={"chat_id": channel_id,
+                  "text": "Mahoraga connected — your jobs will stream here. 🛞"})
+    except httpx.HTTPError as exc:
+        return ValidationResult(False, redact(f"could not reach Telegram: {exc!s}")[:200])
+    finally:
+        if owned:
+            http.close()
+
+    payload = response.json() if response.headers.get("content-type", "").startswith(
+        "application/json") else {}
+    if response.status_code == 200 and payload.get("ok"):
+        return ValidationResult(True)
+    description = str(payload.get("description", f"Telegram answered {response.status_code}"))
+    if "not found" in description.lower():
+        return ValidationResult(False, "Telegram cannot find that channel — check the ID starts "
+                                       "with -100, and that the bot has been added to the channel")
+    if "rights" in description.lower() or "forbidden" in description.lower():
+        return ValidationResult(False, "the bot is in the channel but cannot post — make it an "
+                                       "administrator with permission to post messages")
+    return ValidationResult(False, redact(description)[:200])
+
+
 def telegram_chat_id(token: str, *, client: httpx.Client | None = None) -> str | None:
     """The chat id of whoever last messaged this bot, or `None` if nobody has yet.
 

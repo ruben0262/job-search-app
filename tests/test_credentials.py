@@ -293,3 +293,49 @@ def test_signing_in_is_required(api):
     http, _, _, _ = api
     http.cookies.clear()
     assert http.get("/credentials").status_code == 401
+
+
+@pytestmark_db
+def test_the_channel_is_proven_by_posting_not_trusted(api, monkeypatch):
+    """The one check that matches what delivery needs: a bot must be an admin to post to a
+    channel, so the test send is the proof — and its failure strings are the user's fix."""
+    from libs.credentials import ValidationResult
+
+    http, session, user, _ = api
+    monkeypatch.setattr("services.api.credential_routes.validate_credential",
+                        lambda kind, value, **kw: ValidationResult(True))
+    monkeypatch.setattr("services.api.credential_routes.telegram_chat_id",
+                        lambda token, **kw: "12345")
+    http.put("/credentials/telegram_bot", json={"value": BOT_TOKEN})
+
+    monkeypatch.setattr("services.api.credential_routes.telegram_channel_check",
+                        lambda token, channel, **kw: ValidationResult(True))
+    response = http.put("/credentials/telegram/channel", json={"channel_id": "-1001234567890"})
+    assert response.status_code == 200
+    session.flush()
+    session.refresh(user)
+    assert user.telegram_routes == {"hu": "-1001234567890", "linkedin": "-1001234567890",
+                                    "other": "-1001234567890"}
+
+    # A failed post surfaces Telegram's reason, and stores nothing.
+    monkeypatch.setattr(
+        "services.api.credential_routes.telegram_channel_check",
+        lambda token, channel, **kw: ValidationResult(False, "the bot is in the channel but "
+                                                            "cannot post"))
+    refused = http.put("/credentials/telegram/channel", json={"channel_id": "-1009999999999"})
+    assert refused.status_code == 400
+    session.refresh(user)
+    assert user.telegram_routes["other"] == "-1001234567890"
+
+    # And removing it falls delivery back to the private chat rather than dropping anything.
+    assert http.delete("/credentials/telegram/channel").status_code == 200
+    session.flush()
+    session.refresh(user)
+    assert user.telegram_routes is None
+
+
+@pytestmark_db
+def test_a_channel_id_that_is_not_one_is_refused_by_shape(api):
+    http, _, _, _ = api
+    assert http.put("/credentials/telegram/channel",
+                    json={"channel_id": "1234567890"}).status_code == 422

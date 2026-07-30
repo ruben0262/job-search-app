@@ -10,6 +10,7 @@ something the layering decides for them.
 from libs.credentials.validate import (
     CLAUDE_OAUTH_BETA,
     ValidationResult,
+    telegram_channel_check,
     telegram_chat_id,
     validate_credential,
 )
@@ -17,6 +18,7 @@ from libs.credentials.validate import (
 __all__ = [
     "CLAUDE_OAUTH_BETA",
     "ValidationResult",
+    "telegram_channel_check",
     "telegram_chat_id",
     "validate_credential",
 ]

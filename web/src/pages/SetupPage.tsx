@@ -16,6 +16,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { api } from "../api";
+import { Markdown } from "../markdown";
 import { Error, useAction } from "../ui";
 
 type Message = {
@@ -76,6 +77,12 @@ const DESCRIPTIONS: Record<string, string> = {
   "build_cvs.md": "The checks a finished CV has to pass",
 };
 
+/** Grow with the text, shrink back after a send — the composer every chat app taught. */
+function autogrow(box: HTMLTextAreaElement): void {
+  box.style.height = "auto";
+  box.style.height = `${Math.min(box.scrollHeight, 200)}px`;
+}
+
 export function SetupPage({ onChanged }: { onChanged: () => void }) {
   const [state, setState] = useState<Conversation | null>(null);
   const [failed, setFailed] = useState(false);
@@ -83,6 +90,8 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
   const [openFile, setOpenFile] = useState<string | null>(null);
   const [fileText, setFileText] = useState("");
   const bottom = useRef<HTMLDivElement>(null);
+  const scroller = useRef<HTMLDivElement>(null);
+  const box = useRef<HTMLTextAreaElement>(null);
 
   const load = async () => setState(await api.get<Conversation>("/setup"));
   useEffect(() => {
@@ -103,13 +112,11 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
         : previous,
     );
     setDraft("");
+    if (box.current) {
+      box.current.style.height = "auto";
+    }
     await api.post("/setup/message", { message: text });
     await load();
-    onChanged();
-  });
-
-  const start = useAction(async () => {
-    await api.post("/setup/start");
     onChanged();
   });
 
@@ -157,67 +164,99 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
 
   return (
     <>
-      <div className="overview">
-        <h1>Build your profile</h1>
-        <p className="lede">
+      <div style={{ maxWidth: "48rem" }}>
+        <p className="kicker">Your profile</p>
+        <div className="spread">
+          <h1>Build your profile</h1>
+          {state.ready ? (
+            <span className="small muted">
+              Ready — <a href="#/model">train your model</a> when you like
+            </span>
+          ) : null}
+        </div>
+        <p className="muted" style={{ maxWidth: "44rem" }}>
           {state.messages.length === 0
-            ? "A conversation about your career. What comes out of it is what every CV, cover letter and job match is built from."
-            : state.ready
-              ? "Your profile is ready. Keep going if there is more to add."
-              : "Keep going — nothing is lost if you close this and come back."}
+            ? "A conversation about your career. Everything you say here is sorted into your profile — the files every CV, cover letter and job match is built from."
+            : "Talk to it like you would to a person: new roles, corrections, changes of direction. It knows where things belong. Training the model that ranks your jobs happens on the Model page, not here."}
         </p>
 
-        <div className="chat">
+        <div className="chat" ref={scroller}>
+          {state.messages.length === 0 ? (
+            <div className="chat-empty">
+              <p className="md-heading">Some things worth telling it</p>
+              <ul className="md-list">
+                <li>"Walk me through what you need from me."</li>
+                <li>"I just changed jobs — here is what I do now."</li>
+                <li>"Stop putting my first startup on CVs, it is ancient."</li>
+              </ul>
+            </div>
+          ) : null}
           {state.messages.map((message, index) => (
-            <div key={index} className={`bubble ${message.role}`}>
-              {message.content}
-              {message.files_written.length > 0 ? (
-                <span className="saved">Saved: {message.files_written.join(", ")}</span>
-              ) : null}
+            <div key={index} className={`turn ${message.role}`}>
+              {message.role === "assistant" ? (
+                <div className="turn-body">
+                  <Markdown text={message.content} />
+                  {message.files_written.length > 0 ? (
+                    <span className="saved">
+                      Updated: {message.files_written.map((name) => NAMES[name] ?? name).join(" · ")}
+                    </span>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="turn-bubble">{message.content}</div>
+              )}
             </div>
           ))}
           {send.busy ? (
-            <div className="bubble assistant pending">
-              <span className="typing" aria-hidden="true">
-                <i />
-                <i />
-                <i />
-              </span>
-              Reading and writing this down. This can take a couple of minutes.
+            <div className="turn assistant">
+              <div className="turn-body pending">
+                <span className="typing" aria-hidden="true">
+                  <i />
+                  <i />
+                  <i />
+                </span>
+                Reading and writing this down. This can take a couple of minutes.
+              </div>
             </div>
           ) : null}
           <div ref={bottom} />
         </div>
 
         <Error>{send.error}</Error>
-        <div className="row" style={{ marginTop: "1rem" }}>
-          <input
+        <form
+          className="composer"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (draft.trim() && !send.busy) void send.run(draft.trim());
+          }}
+        >
+          <textarea
+            ref={box}
+            rows={1}
             value={draft}
-            placeholder={state.messages.length === 0 ? "Say hello to begin" : "Your answer"}
+            placeholder={state.messages.length === 0 ? "Say hello to begin" : "Message the assistant"}
             disabled={send.busy}
-            onChange={(event) => setDraft(event.target.value)}
+            onChange={(event) => {
+              setDraft(event.target.value);
+              autogrow(event.target);
+            }}
             onKeyDown={(event) => {
-              if (event.key === "Enter" && draft.trim() && !send.busy) void send.run(draft.trim());
+              // Enter sends, Shift+Enter breaks the line — the grammar every chat app taught.
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                if (draft.trim() && !send.busy) void send.run(draft.trim());
+              }
             }}
           />
-          <button disabled={send.busy || !draft.trim()} onClick={() => void send.run(draft.trim())}>
-            Send
+          <button
+            type="submit"
+            className="composer-send"
+            aria-label="Send"
+            disabled={send.busy || !draft.trim()}
+          >
+            <SendIcon />
           </button>
-        </div>
-
-        {state.ready ? (
-          <div style={{ marginTop: "2rem" }}>
-            <h2>Next: score your first jobs</h2>
-            <p className="facts">
-              This reads the jobs already collected and scores them against your profile. It runs on
-              your own Claude key and takes a few minutes.
-            </p>
-            <Error>{start.error}</Error>
-            <button disabled={start.busy} onClick={() => void start.run()}>
-              {start.busy ? "Starting…" : "Start scoring"}
-            </button>
-          </div>
-        ) : null}
+        </form>
       </div>
 
       <div style={{ marginTop: "3rem", maxWidth: "48rem" }}>
@@ -242,6 +281,20 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
         </div>
       </div>
     </>
+  );
+}
+
+function SendIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M12 19V5M5.5 11.5L12 5l6.5 6.5"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
 

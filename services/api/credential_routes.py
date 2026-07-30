@@ -24,9 +24,10 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from libs.credentials import telegram_chat_id, validate_credential
+from libs.credentials import telegram_channel_check, telegram_chat_id, validate_credential
 from libs.db.models import ProxyCredential, User
-from libs.db.models.user import SECRET_KINDS
+from libs.db.models.user import SECRET_KINDS, TELEGRAM_ROUTE_KEYS
+from libs.obs import audit
 from libs.secrets import SecretStore, redacting
 from services.api.deps import current_user, get_db, get_store, rate_limit
 
@@ -134,6 +135,46 @@ def telegram_connect(db: Session = Depends(get_db),
     user.telegram_chat_id = chat_id
     user.telegram_status = "connected"
     return {"status": "connected"}
+
+
+class ChannelBody(BaseModel):
+    # A channel id from @getidsbot (-100…), or a public @name. Nothing else is plausibly a channel.
+    channel_id: str = Field(min_length=2, max_length=64, pattern=r"^(-100\d{4,}|@[A-Za-z0-9_]{4,})$")
+
+
+@router.put("/telegram/channel")
+def set_channel(body: ChannelBody, db: Session = Depends(get_db),
+                store: SecretStore = Depends(get_store),
+                user_id: _uuid.UUID = Depends(current_user)) -> dict:
+    """Point the job stream at a channel. Proven by posting to it, not by trusting the ID.
+
+    On success every route goes to the channel and the private chat keeps commands and documents —
+    the reference's split. One channel rather than the per-stream routing the table supports,
+    because that is the setup being asked for; the routes stay per-key underneath for the day
+    somebody wants the split back.
+    """
+    with store.use(user_id, "telegram_bot") as token:
+        if token is None:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="save your bot token first")
+        result = telegram_channel_check(token.reveal(), body.channel_id)
+
+    if not result.ok:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=result.detail)
+
+    user = db.get(User, user_id)
+    user.telegram_routes = dict.fromkeys(TELEGRAM_ROUTE_KEYS, body.channel_id)
+    audit(logger, "credentials.channel_set", user=user_id)
+    return {"status": "connected",
+            "detail": "A test message just landed in the channel — that is where jobs stream now."}
+
+
+@router.delete("/telegram/channel")
+def unset_channel(db: Session = Depends(get_db),
+                  user_id: _uuid.UUID = Depends(current_user)) -> dict:
+    """Back to the private chat. Never a drop — the fallback chat is always valid."""
+    user = db.get(User, user_id)
+    user.telegram_routes = None
+    return {"status": "removed", "detail": "Jobs go to your bot chat again."}
 
 
 @router.get("")

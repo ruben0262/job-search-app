@@ -944,44 +944,202 @@ td.num {
 .chat {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
-  margin: 1.5rem 0;
-  max-height: 60vh;
+  gap: 1.1rem;
+  margin: 1.5rem 0 1rem;
+  min-height: 16rem;
+  max-height: 58vh;
   overflow-y: auto;
   padding-right: 0.25rem;
 }
 
-.bubble {
-  max-width: 85%;
-  padding: 0.75rem 1rem;
-  border-radius: 14px;
-  font-size: 0.9375rem;
-  line-height: 1.5;
-  /* Answers arrive as written prose with its own line breaks; collapsing them would run a
-     three-part question into one paragraph. */
-  white-space: pre-wrap;
+/* The grammar every LLM app converged on: the user speaks in a bubble on the right, the
+   assistant answers as plain prose on the page. Who said what is carried by shape, not labels. */
+.turn {
+  display: flex;
   animation: page-in 0.3s var(--ease) both;
 }
 
-.bubble.assistant {
-  align-self: flex-start;
-  background: var(--bg-raised);
-  border: 1px solid var(--hairline);
-  border-bottom-left-radius: 4px;
+.turn.user {
+  justify-content: flex-end;
 }
 
-.bubble.user {
-  align-self: flex-end;
-  background: var(--accent);
-  color: var(--accent-ink);
+.turn-bubble {
+  max-width: 80%;
+  padding: 0.7rem 1rem;
+  border-radius: 16px;
   border-bottom-right-radius: 4px;
+  background: var(--bg-raised);
+  border: 1px solid var(--faint);
+  font-size: 0.9375rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.turn-body {
+  max-width: 100%;
+  font-size: 0.9375rem;
+  line-height: 1.65;
+}
+
+.turn-body p {
+  margin: 0 0 0.75rem;
+}
+
+.turn-body p:last-child {
+  margin-bottom: 0;
+}
+
+.md-heading {
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.md-list {
+  margin: 0 0 0.75rem;
+  padding-left: 1.2rem;
+}
+
+.md-list li {
+  margin-bottom: 0.3rem;
+  color: inherit;
+}
+
+.md-code {
+  background: var(--bg-raised);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 0.8rem 1rem;
+  margin: 0 0 0.75rem;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+.turn-body code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: var(--bg-raised);
+  border: 1px solid var(--hairline);
+  border-radius: 5px;
+  padding: 0.1em 0.4em;
+}
+
+/* What the first-time visitor sees instead of an empty void: three things worth saying. */
+.chat-empty {
+  border: 1px dashed var(--faint);
+  border-radius: var(--radius-lg);
+  padding: 1.4rem 1.6rem;
+  color: var(--muted);
+  font-size: 0.9375rem;
 }
 
 /* A turn on a frontier model can run for minutes. The dots say "working"; the sentence says how
    long — an animation that implies seconds would be dishonest on its own. */
-.bubble.pending {
+.turn-body.pending {
   color: var(--muted);
   font-style: italic;
+}
+
+/* ── how-to folds for the fiddly setup steps ─────────────────────────────────────────────── */
+
+.howto {
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  margin: 0 0 1.15rem;
+}
+
+.howto summary {
+  padding: 0.7rem 1rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: var(--muted);
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.howto summary::before {
+  content: "›";
+  color: var(--dim);
+  transition: transform var(--fade) var(--ease);
+}
+
+.howto[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.howto summary:hover {
+  color: var(--ink);
+}
+
+.howto ol {
+  margin: 0;
+  padding: 0 1.25rem 1rem 2.4rem;
+}
+
+.howto li {
+  margin-bottom: 0.45rem;
+  line-height: 1.55;
+}
+
+.howto code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: var(--bg);
+  border: 1px solid var(--hairline);
+  border-radius: 5px;
+  padding: 0.1em 0.4em;
+}
+
+/* ── the composer ────────────────────────────────────────────────────────────────────────── */
+
+.composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  border: 1px solid var(--faint);
+  border-radius: 22px;
+  background: var(--bg-raised);
+  padding: 0.5rem 0.5rem 0.5rem 1.1rem;
+  transition: border-color var(--fade) var(--ease);
+}
+
+.composer:focus-within {
+  border-color: var(--dim);
+}
+
+.composer textarea {
+  flex: 1;
+  min-height: 1.6rem;
+  max-height: 200px;
+  resize: none;
+  border: none;
+  background: transparent;
+  padding: 0.3rem 0;
+  line-height: 1.5;
+  overflow-y: auto;
+}
+
+.composer textarea:focus {
+  border: none;
+  outline: none;
+}
+
+.composer-send {
+  flex-shrink: 0;
+  width: 2.1rem;
+  height: 2.1rem;
+  padding: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+}
+
+.composer-send:hover:not([disabled]) {
+  transform: none;
 }
 
 .typing {
@@ -1073,6 +1231,43 @@ td.num {
 
 .file.filled .file-state {
   color: var(--muted);
+}
+
+/* ── the model page's loop ───────────────────────────────────────────────────────────────── */
+
+.loop {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0 1.25rem;
+  counter-reset: loop;
+}
+
+.loop li {
+  position: relative;
+  padding: 0.75rem 0 0.75rem 2.6rem;
+  border-bottom: 1px solid var(--hairline);
+  color: var(--muted);
+  font-size: 0.9375rem;
+  counter-increment: loop;
+}
+
+.loop li:last-child {
+  border-bottom: none;
+}
+
+.loop li::before {
+  content: "0" counter(loop);
+  position: absolute;
+  left: 0;
+  top: 0.85rem;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  color: var(--dim);
+}
+
+.loop li strong {
+  color: var(--ink);
 }
 
 /* ── the status list ─────────────────────────────────────────────────────────────────────────

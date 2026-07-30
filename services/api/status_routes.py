@@ -63,8 +63,7 @@ def _telegram_bot(user: User) -> dict:
 
 
 def _telegram_channel(user: User) -> dict:
-    channel = getattr(user, "telegram_channel_id", None)
-    if channel:
+    if user.telegram_routes and any(user.telegram_routes.values()):
         return _entry("telegram_channel", "Telegram channel", "ok",
                       "Jobs stream to your channel; the bot chat stays for commands.")
     return _entry("telegram_channel", "Telegram channel", "off",
