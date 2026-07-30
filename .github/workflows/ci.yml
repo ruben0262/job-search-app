@@ -173,6 +173,7 @@ jobs:
           - { service: labeller, module: "services.labeller.__main__" }
           - { service: notifier, module: "services.notifier.__main__" }
           - { service: scorer, module: "services.scorer.__main__" }
+          - { service: setupagent, module: "services.setupagent.__main__" }
           - { service: trainer, module: "services.trainer.__main__" }
     steps:
       - uses: actions/checkout@v4
