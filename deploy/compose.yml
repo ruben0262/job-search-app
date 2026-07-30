@@ -257,6 +257,12 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       MAIL_FROM: ${MAIL_FROM:-}
+      # **Every emailed link is built from this.** Absent, `_base_url` falls back to
+      # `http://localhost:8000` and every verification and reset mail sends the user to their own
+      # machine — which is what happened in production until 2026-07-30: the variable was in
+      # `.env.example` and in nothing that reads it. Required, because a silently wrong link is
+      # worse than a container that refuses to start.
+      PUBLIC_URL: ${PUBLIC_URL:?the verification and reset emails are built from it}
       LOG_DIR: /var/log/jobsearch
     volumes:
       - ../logs:/var/log/jobsearch

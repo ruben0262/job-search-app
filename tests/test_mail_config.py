@@ -56,3 +56,26 @@ def test_the_sender_address_defaults_to_the_login_but_can_differ():
     assert sender_from_env(CONFIGURED)._from == CONFIGURED["SMTP_USER"]
     assert sender_from_env({**CONFIGURED, "MAIL_FROM": "alias@flow-solutions.xyz"})._from == (
         "alias@flow-solutions.xyz")
+
+
+# ── the links inside those emails ─────────────────────────────────────────────────────────────
+
+def test_the_api_container_is_given_the_public_url():
+    """**Every emailed link is built from `PUBLIC_URL`.** Absent, `_base_url` falls back to
+    `http://localhost:8000` and each verification and reset mail points the user at their own
+    machine — signup looks like it worked and the link is dead.
+
+    The same shape as the fallback above: the variable was in `.env.example` and in nothing that
+    reads it, so production sent localhost links for as long as the endpoint existed. Asserted
+    against the compose file because that is where the omission lived, not in any Python.
+    """
+    import pathlib
+    import re
+
+    compose = (pathlib.Path(__file__).resolve().parents[1]
+               / "deploy" / "compose.yml").read_text(encoding="utf-8")
+    api_block = compose.split("\n  api:\n", 1)[1].split("\n  cloudflared:", 1)[0]
+    assert re.search(r"^\s+PUBLIC_URL:", api_block, re.MULTILINE), (
+        "the api service must pass PUBLIC_URL or every emailed link points at localhost")
+    # Required, not defaulted: a silently wrong link is worse than a container that will not start.
+    assert re.search(r"^\s+PUBLIC_URL:\s+\$\{PUBLIC_URL:\?", api_block, re.MULTILINE)
