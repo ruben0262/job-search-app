@@ -348,6 +348,26 @@ def report(results: list[dict], failures: list[dict] | None = None) -> None:
             scores = [row["dimensions"][dimension]["score"] for row in rows]
             print(f"    {dimension:22} {statistics.mean(scores):.2f}")
 
+    # **What to fix, not just how bad it is.** A mean tells you a prompt is losing; the weakest
+    # dimensions and the judge's own fixes tell you where. They are printed per variant because a
+    # variant can win overall and still be the weaker one on the dimension that decides a callback.
+    for name, rows in by_variant.items():
+        weakest = sorted(
+            ((statistics.mean(row["dimensions"][dimension]["score"] for row in rows), dimension)
+             for dimension in DIMENSIONS))[:3]
+        print(f"
+{name}: weakest dimensions — "
+              + ", ".join(f"{dimension} {mean:.1f}/10" for mean, dimension in weakest))
+
+        # Ranked by how often the judge asked for the same thing. One fix on one CV is that CV; the
+        # same fix on five is the prompt.
+        fixes: dict[str, int] = defaultdict(int)
+        for row in rows:
+            for fix in row.get("top_fixes") or []:
+                fixes[fix.strip()] += 1
+        for fix, count in sorted(fixes.items(), key=lambda item: -item[1])[:6]:
+            print(f"    x{count}  {fix[:100]}")
+
     if len(by_variant) == 2:
         first, second = by_variant
         paired = {}
