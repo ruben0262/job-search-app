@@ -233,8 +233,14 @@ def tailor(client, profile: ProfileSchema, base_html: str, context: str, *,
     if html is None:
         # Never log the reply: it is the candidate's CV. The length is what distinguishes "refused"
         # from "wrote prose instead of HTML" from "truncated", which is all triage needs.
-        logger.error("the tailor call returned %d chars with no HTML document in it", len(reply))
-        raise BuildFailed("the model did not return an HTML document")
+        # `<html` present without `</html>` is the signature of a cut-off document, and it is a
+        # different fault from a reply that never started one — the first wants a higher ceiling,
+        # the second wants a look at the prompt. The client logs the stop reason alongside this.
+        started = "<html" in reply.lower()
+        logger.error("the tailor call returned %d chars with no complete HTML document "
+                     "(document %s)", len(reply),
+                     "started and was cut off" if started else "never started")
+        raise BuildFailed("the model did not return a complete HTML document")
 
     return sanitise(restore_style(html, style))
 

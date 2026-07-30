@@ -154,6 +154,7 @@ class AnthropicClient:
                 max_tokens=max_tokens,
                 **_thinking(thinking_tokens)) as stream:
             message = stream.get_final_message()
+        _warn_if_truncated(message, model, max_tokens)
         return _text_of(message)
 
 
@@ -212,6 +213,22 @@ def _thinking(budget: int | None) -> dict:
     a sentinel every call site would have to know about.
     """
     return {"thinking": {"type": "enabled", "budget_tokens": budget}} if budget else {}
+
+
+def _warn_if_truncated(message, model: str, max_tokens: int) -> None:
+    """Say so when the model ran out of room rather than finishing.
+
+    **A truncated document and a refused one look identical to the caller** — both arrive as a
+    reply with no closing `</html>` in it — and the two need opposite fixes. Docgen logged "the
+    tailor call returned 2367 chars with no HTML document in it" for both, which is enough to know
+    something failed and not enough to know what.
+
+    Worth noting for anyone raising the ceiling: the thinking budget is spent *inside* `max_tokens`,
+    so a 16,000-token call with 4,096 of thinking has under 12,000 left for the document.
+    """
+    if getattr(message, "stop_reason", None) == "max_tokens":
+        logger.error("%s hit the %d-token ceiling mid-response — the output is truncated, "
+                     "not refused", model, max_tokens)
 
 
 def _text_of(message) -> str:

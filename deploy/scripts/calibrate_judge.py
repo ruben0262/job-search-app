@@ -185,9 +185,16 @@ def main(argv: list[str] | None = None) -> int:
                                 UserLabel.user_id == user.id, UserLabel.job_id == job.id))
                         context = build.job_context(job, score=score, fit_notes=notes)
 
-                        tailored = build.tailor(client, profile, base_cv, context,
-                                                facts_md=grounding, template=template,
-                                                role_angles=angles)
+                        # A build that comes back without a document is an occasional real
+                        # outcome, and it must not take the whole run with it — the same lesson the
+                        # A/B learned when its sixteenth build destroyed fifteen paid judgements.
+                        try:
+                            tailored = build.tailor(client, profile, base_cv, context,
+                                                    facts_md=grounding, template=template,
+                                                    role_angles=angles)
+                        except Exception as exc:
+                            print(f"  {job.title[:38]:38} BUILD FAILED  {type(exc).__name__}")
+                            continue
 
                         # Four judgements, one build. The wrong-job and degraded probes reuse the
                         # document rather than building again — the probe is about the judge, and a
