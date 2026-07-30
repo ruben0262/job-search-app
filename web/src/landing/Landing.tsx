@@ -1,0 +1,73 @@
+/**
+ * The landing page, ported from `mahoraga-jobs-web` (mahoraga.rubenlekli.com) on 2026-07-30.
+ *
+ * **Ported, not linked** — the owner wants one deployment where the front door and the app share
+ * an origin, with Create account / Sign in wired straight into the hash router. The sections and
+ * wheel are copied as close to verbatim as the two repos allow; the CSS is scoped under `.landing`
+ * so the app's styles and this page's cannot reach into each other, and the landing pins its own
+ * dark tokens because the brand page is dark whatever the app's toggle says.
+ *
+ * Copy edits are deliberate and minimal: the hero CTAs are auth buttons now, and the self-hosted
+ * framing stays in the "Run it" section — the product is the same system, hosted or not.
+ */
+import { LazyMotion, domAnimation } from "framer-motion";
+import { useCallback, useEffect, useState } from "react";
+
+import "./landing.css";
+import BackgroundWheel from "./components/BackgroundWheel";
+import Wheel from "./components/Wheel";
+import { SECTIONS } from "./sections";
+import Footer from "./sections/Footer";
+import GetStarted from "./sections/GetStarted";
+import Hero from "./sections/Hero";
+import HowItWorks from "./sections/HowItWorks";
+import LiveFeed from "./sections/LiveFeed";
+import WhatItIs from "./sections/WhatItIs";
+
+export function Landing() {
+  const [active, setActive] = useState(0);
+
+  useEffect(() => {
+    let ticking = false;
+    const onScroll = () => {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        ticking = false;
+        const marker = window.scrollY + window.innerHeight * 0.38;
+        let current = 0;
+        SECTIONS.forEach((section, i) => {
+          const el = document.getElementById(section.id);
+          if (el && el.offsetTop <= marker) current = i;
+        });
+        setActive(current);
+      });
+    };
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  const goTo = useCallback((i: number) => {
+    const section = SECTIONS[i];
+    if (section) document.getElementById(section.id)?.scrollIntoView({ behavior: "smooth" });
+  }, []);
+
+  return (
+    <LazyMotion features={domAnimation} strict>
+      <div className="landing">
+        <div className="landing-backdrop" aria-hidden="true" />
+        <BackgroundWheel />
+        <Wheel active={active} onSelect={goTo} />
+        <main className="page">
+          <Hero onExplore={() => goTo(2)} />
+          <WhatItIs />
+          <HowItWorks />
+          <LiveFeed />
+          <GetStarted />
+          <Footer />
+        </main>
+      </div>
+    </LazyMotion>
+  );
+}

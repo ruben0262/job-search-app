@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { ApiError, api, type Dashboard } from "./api";
+import { Landing } from "./landing/Landing";
 import { DashboardPage } from "./pages/DashboardPage";
 import { FeedPage } from "./pages/FeedPage";
 import { Onboarding } from "./pages/Onboarding";
@@ -67,10 +68,13 @@ export function App() {
   if (session.state === "loading") return <main className="centered">Loading…</main>;
 
   if (session.state === "out") {
-    // **The landing page lives in `mahoraga-jobs-web`, not here** (decided 2026-07-28). It is
-    // deployed separately and links to this app; copying it in meant rewriting its copy to suit a
-    // hosted product, which is a change to somebody else's page made in the wrong repository.
-    return <SignIn onSignedIn={reload} initialMode={hash.startsWith("/signup") ? "up" : "in"} />;
+    // The landing page is the ported `mahoraga-jobs-web` (decision reversed 2026-07-30: one
+    // deployment, one origin, auth CTAs wired straight into the router). The auth screen keeps
+    // its own routes so the hero buttons and old bookmarks both land somewhere sensible.
+    if (hash.startsWith("/signin") || hash.startsWith("/signup")) {
+      return <SignIn onSignedIn={reload} initialMode={hash.startsWith("/signup") ? "up" : "in"} />;
+    }
+    return <Landing />;
   }
 
   const { dashboard } = session;

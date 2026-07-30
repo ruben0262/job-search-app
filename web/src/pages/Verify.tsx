@@ -7,41 +7,63 @@
 import { useEffect, useState } from "react";
 
 import { ApiError, api } from "../api";
-import { ThemeToggle } from "../theme";
-import { Card } from "../ui";
+import { AuthShell } from "./SignIn";
 
 export function Verify({ onDone }: { onDone: () => void }) {
-  const [message, setMessage] = useState("Confirming…");
+  const [state, setState] = useState<"pending" | "done" | "failed">("pending");
+  const [detail, setDetail] = useState("");
 
   useEffect(() => {
     const query = window.location.hash.split("?")[1] ?? "";
     const token = new URLSearchParams(query).get("token");
     if (!token) {
-      setMessage("That link is missing its token. Try the one in your email again.");
+      setState("failed");
+      setDetail("That link is missing its token. Try the one in your email again.");
       return;
     }
     void api
       .post("/auth/verify", { token })
       .then(() => {
-        setMessage("Confirmed. You can sign in now.");
+        setState("done");
         onDone();
       })
       .catch((error: unknown) => {
-        setMessage(
+        setState("failed");
+        setDetail(
           error instanceof ApiError ? error.detail : "That link did not work. Request another.",
         );
       });
   }, [onDone]);
 
-  return (
-    <main className="wizard">
-      <ThemeToggle floating />
-      <Card title="Email confirmation">
-        <p>{message}</p>
-        <a href="#/">
-          <button>Go to sign in</button>
+  if (state === "pending") {
+    return (
+      <AuthShell kicker="Almost there" title="Confirming…">
+        <p className="muted">Checking your link.</p>
+      </AuthShell>
+    );
+  }
+
+  if (state === "done") {
+    return (
+      <AuthShell kicker="You're in" title="Email confirmed">
+        <p className="muted" style={{ marginBottom: "1.75rem" }}>
+          Your address is verified. Sign in and the setup takes it from there.
+        </p>
+        <a href="#/signin">
+          <button>Sign in</button>
         </a>
-      </Card>
-    </main>
+      </AuthShell>
+    );
+  }
+
+  return (
+    <AuthShell kicker="Verification" title="That link did not work">
+      <p className="muted" style={{ marginBottom: "1.75rem" }}>
+        {detail}
+      </p>
+      <a href="#/signup">
+        <button className="secondary">Request a new link</button>
+      </a>
+    </AuthShell>
   );
 }
