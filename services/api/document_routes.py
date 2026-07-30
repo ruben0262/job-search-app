@@ -75,6 +75,24 @@ async def upload(request: Request, kind: str = Form(...), file: UploadFile = Fil
         return {"status": "replaced", "id": stored.id, "chars": extracted.chars,
                 "truncated": extracted.truncated}
 
+    if kind == "history":
+        # **The history is one document, always** (owner, 2026-07-30). It is "the long-form
+        # write-up of what you have done" — a singular thing the profile is built from, edited in
+        # its own page. Two of them would both be read at processing time, and which one the user
+        # believes is current would be anybody's guess. New content replaces the old row; the form
+        # asks "are you sure" before sending, so the disappearance is chosen, not discovered.
+        existing = db.scalar(
+            select(UserDocument).where(UserDocument.user_id == user_id,
+                                       UserDocument.kind == "history"))
+        if existing is not None:
+            existing.filename = file.filename or existing.filename
+            existing.text, existing.text_sha256 = extracted.text, extracted.sha256
+            existing.chars = extracted.chars
+            _documents_changed(db, user_id)
+            audit(logger, "document.replaced", user=user_id, kind=kind, chars=extracted.chars)
+            return {"status": "replaced", "id": existing.id, "chars": extracted.chars,
+                    "truncated": extracted.truncated}
+
     total = db.scalar(
         select(func.count()).select_from(UserDocument)
         .where(UserDocument.user_id == user_id)) or 0

@@ -184,10 +184,14 @@ def delete_account(body: DeleteBody, db: Session = Depends(get_db),
 
 
 class AccountPatch(BaseModel):
-    # The one delivery knob that lives on the user row rather than in the search config. Bounds
-    # mirror the DB constraint (`notify_interval_bounds`) so the error is a sentence rather than an
+    # The delivery knobs that live on the user row rather than in the search config. Bounds mirror
+    # the DB constraint (`notify_interval_bounds`) so the error is a sentence rather than an
     # IntegrityError.
     notify_interval_min: int | None = Field(default=None, ge=15, le=1440)
+    # The feed's on/off switch. **Messages stop; nothing else does.** The dispatcher reads this
+    # before queueing notify jobs, so pausing stops delivery while collection, scoring and the bot
+    # itself keep running — resuming picks up a warm feed rather than a cold start.
+    active: bool | None = None
 
 
 @router.patch("/account")
@@ -198,7 +202,11 @@ def patch_account(body: AccountPatch, db: Session = Depends(get_db),
     if body.notify_interval_min is not None:
         user.notify_interval_min = body.notify_interval_min
         audit(logger, "account.notify_interval", user=user_id, minutes=body.notify_interval_min)
-    return {"status": "ok", "notify_interval_min": user.notify_interval_min}
+    if body.active is not None:
+        user.active = body.active
+        audit(logger, "account.delivery_toggled", user=user_id, active=body.active)
+    return {"status": "ok", "notify_interval_min": user.notify_interval_min,
+            "active": user.active}
 
 
 @router.get("/account")

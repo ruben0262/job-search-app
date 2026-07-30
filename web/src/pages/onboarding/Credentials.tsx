@@ -8,10 +8,121 @@
  * the rest of setup put together, so the form asks for the bot token, then waits while they press
  * Start on their phone and reads the id itself.
  */
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { api } from "../../api";
 import { Error, Field, useAction } from "../../ui";
+
+type StoredCredential = { kind: string; last_4: string | null; validated: boolean };
+
+/**
+ * What is stored for one credential kind: a masked preview, a copy that costs the account
+ * password, and a delete. The plaintext is fetched once at the moment of copying and handed to the
+ * clipboard — it is never rendered, so it is on screen for exactly zero frames.
+ */
+function Stored({ kind, onChanged }: { kind: string; onChanged: () => void }) {
+  const [stored, setStored] = useState<StoredCredential | null>(null);
+  const [asking, setAsking] = useState(false);
+  const [password, setPassword] = useState("");
+  const [copied, setCopied] = useState(false);
+
+  const load = useCallback(() => {
+    api
+      .get<{ credentials: StoredCredential[] }>("/credentials")
+      .then((body) => setStored(body.credentials.find((row) => row.kind === kind) ?? null))
+      .catch(() => undefined);
+  }, [kind]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const copy = useAction(async () => {
+    const body = await api.post<{ value: string }>(`/credentials/${kind}/reveal`, { password });
+    await navigator.clipboard.writeText(body.value);
+    setPassword("");
+    setAsking(false);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 2500);
+  });
+
+  const remove = useAction(async () => {
+    await api.del(`/credentials/${kind}`);
+    load();
+    onChanged();
+  });
+
+  if (!stored) return null;
+
+  return (
+    <div className="stored">
+      <span className="stored-value">
+        ••••••••{stored.last_4 ?? ""}
+        {!stored.validated ? <span className="stored-note"> · unchecked</span> : null}
+      </span>
+      <span className="row" style={{ gap: "0.4rem" }}>
+        <button
+          type="button"
+          className="icon-btn"
+          title={copied ? "Copied" : "Copy the stored value"}
+          aria-label="Copy the stored value"
+          onClick={() => setAsking(!asking)}
+        >
+          {copied ? <CheckIcon /> : <CopyIcon />}
+        </button>
+        <button
+          type="button"
+          className="icon-btn"
+          title="Delete this credential"
+          aria-label="Delete this credential"
+          disabled={remove.busy}
+          onClick={() => void remove.run()}
+        >
+          −
+        </button>
+      </span>
+      {asking ? (
+        <form
+          className="stored-ask"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (password) void copy.run();
+          }}
+        >
+          <input
+            type="password"
+            value={password}
+            placeholder="Account password to copy"
+            autoComplete="current-password"
+            autoFocus
+            onChange={(event) => setPassword(event.target.value)}
+          />
+          <button type="submit" className="secondary" disabled={copy.busy || !password}>
+            {copy.busy ? "…" : "Copy"}
+          </button>
+        </form>
+      ) : null}
+      <Error>{copy.error ?? remove.error}</Error>
+    </div>
+  );
+}
+
+function CopyIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="8" y="8" width="12" height="12" rx="2" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M16 4H6a2 2 0 00-2 2v10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M4.5 12.5l5 5 10-11" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
 
 function CredentialForm({
   kind,
@@ -111,6 +222,7 @@ export function TelegramStep({ onDone }: { onDone: () => void }) {
         </ol>
       </details>
 
+      <Stored kind="telegram_bot" onChanged={onDone} />
       <CredentialForm
         kind="telegram_bot"
         label="Bot token"
@@ -185,6 +297,7 @@ export function ClaudeStep({ onDone }: { onDone: () => void }) {
           <option value="claude_oauth">A Claude subscription token</option>
         </select>
       </Field>
+      <Stored key={`stored-${kind}`} kind={kind} onChanged={onDone} />
       <CredentialForm
         key={kind}
         kind={kind}
@@ -208,6 +321,7 @@ export function ProxyStep({ onDone }: { onDone: () => void }) {
         LinkedIn is fetched through your own proxy and never a shared one, so one account's traffic
         can never be attributed to another's.
       </p>
+      <Stored kind="proxy" onChanged={onDone} />
       <CredentialForm
         kind="proxy"
         label="Proxy URL"

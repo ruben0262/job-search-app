@@ -3,6 +3,17 @@
     "schemas": {
       "AccountPatch": {
         "properties": {
+          "active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active"
+          },
           "notify_interval_min": {
             "anyOf": [
               {
@@ -77,6 +88,22 @@
           "name"
         ],
         "title": "Certification",
+        "type": "object"
+      },
+      "ChannelBody": {
+        "properties": {
+          "channel_id": {
+            "maxLength": 64,
+            "minLength": 2,
+            "pattern": "^(-100\\d{4,}|@[A-Za-z0-9_]{4,})$",
+            "title": "Channel Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel_id"
+        ],
+        "title": "ChannelBody",
         "type": "object"
       },
       "Conflict": {
@@ -553,6 +580,31 @@
         "title": "LoginRequest",
         "type": "object"
       },
+      "MarkRead": {
+        "properties": {
+          "all": {
+            "default": false,
+            "title": "All",
+            "type": "boolean"
+          },
+          "ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ids"
+          }
+        },
+        "title": "MarkRead",
+        "type": "object"
+      },
       "PasswordChange": {
         "properties": {
           "current_password": {
@@ -765,6 +817,21 @@
           "new_password"
         ],
         "title": "ResetRequest",
+        "type": "object"
+      },
+      "RevealBody": {
+        "properties": {
+          "password": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "password"
+        ],
+        "title": "RevealBody",
         "type": "object"
       },
       "SearchSection": {
@@ -1671,6 +1738,72 @@
         ]
       }
     },
+    "/credentials/telegram/channel": {
+      "delete": {
+        "description": "Back to the private chat. Never a drop \u2014 the fallback chat is always valid.",
+        "operationId": "unset_channel_credentials_telegram_channel_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Unset Channel Credentials Telegram Channel Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Unset Channel",
+        "tags": [
+          "credentials"
+        ]
+      },
+      "put": {
+        "description": "Point the job stream at a channel. Proven by posting to it, not by trusting the ID.\n\nOn success every route goes to the channel and the private chat keeps commands and documents \u2014\nthe reference's split. One channel rather than the per-stream routing the table supports,\nbecause that is the setup being asked for; the routes stay per-key underneath for the day\nsomebody wants the split back.",
+        "operationId": "set_channel_credentials_telegram_channel_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChannelBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Set Channel Credentials Telegram Channel Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Channel",
+        "tags": [
+          "credentials"
+        ]
+      }
+    },
     "/credentials/telegram/connect": {
       "post": {
         "description": "Re-read the chat id after the user has pressed Start. Idempotent.\n\nSeparate from saving the token because the two happen minutes apart: the token is pasted, then\nthe user goes to their phone, then they come back. Asking them to re-paste the token to finish\nconnecting would be gratuitous.",
@@ -1788,6 +1921,61 @@
           }
         },
         "summary": "Put Credential",
+        "tags": [
+          "credentials"
+        ]
+      }
+    },
+    "/credentials/{kind}/reveal": {
+      "post": {
+        "description": "Hand back the plaintext, once, after the account password.\n\n**The exception to write-only, and the shape of the exception is the point** (owner's decision,\n2026-07-30). A copy button cannot exist without the browser receiving the plaintext \u2014 there is\nno cryptographic trick that yields a usable token without revealing it. So the security lives\nin the gate instead: the password is required (a stolen session cookie is not enough), the\nvalue is returned in this one response and never listed anywhere, the attempt is audited either\nway, and the rate limit keeps a stolen password from becoming a quiet bulk export.",
+        "operationId": "reveal_credential_credentials__kind__reveal_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevealBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Reveal Credential Credentials  Kind  Reveal Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reveal Credential",
         "tags": [
           "credentials"
         ]
@@ -2046,7 +2234,7 @@
             "required": false,
             "schema": {
               "default": "score",
-              "pattern": "^(score|posted|title|company)$",
+              "pattern": "^(score|posted|fetched|title|company)$",
               "title": "Sort",
               "type": "string"
             }
@@ -2135,6 +2323,97 @@
         "summary": "Privacy",
         "tags": [
           "account"
+        ]
+      }
+    },
+    "/notifications": {
+      "get": {
+        "description": "The panel's list plus the bell's count, in one call \u2014 they are always shown together.",
+        "operationId": "list_notifications_notifications_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Notifications Notifications Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Notifications",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/notifications/read": {
+      "post": {
+        "operationId": "mark_read_notifications_read_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarkRead"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Mark Read Notifications Read Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mark Read",
+        "tags": [
+          "notifications"
         ]
       }
     },
@@ -2775,6 +3054,30 @@
         "summary": "Start Search",
         "tags": [
           "setup"
+        ]
+      }
+    },
+    "/status": {
+      "get": {
+        "description": "Every component, one call \u2014 the page shows them together or not at all.",
+        "operationId": "status_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Status Status Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Status",
+        "tags": [
+          "status"
         ]
       }
     },

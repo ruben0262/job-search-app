@@ -148,7 +148,7 @@ def feed(*, db: Session = Depends(get_db), user_id: _uuid.UUID = Depends(current
          remote: bool | None = Query(None),
          applied: bool | None = Query(None),
          max_age_days: int | None = Query(None, ge=1, le=365),
-         sort: str = Query("score", pattern="^(score|posted|title|company)$"),
+         sort: str = Query("score", pattern="^(score|posted|fetched|title|company)$"),
          direction: str = Query("desc", pattern="^(asc|desc)$")) -> dict:
     """The ranked jobs — a page of them, with the filters the table offers.
 
@@ -188,6 +188,7 @@ def feed(*, db: Session = Depends(get_db), user_id: _uuid.UUID = Depends(current
             conditions.append(CorpusJob.posted_at.is_(None) | (CorpusJob.posted_at >= cutoff))
 
         order_column = {"score": UserJobState.score, "posted": CorpusJob.posted_at,
+                        "fetched": CorpusJob.first_seen_at,
                         "title": CorpusJob.title, "company": CorpusJob.company}[sort]
         ordering = order_column.desc().nulls_last() if direction == "desc" \
             else order_column.asc().nulls_last()
@@ -257,10 +258,12 @@ def _rules_feed(db: Session, user_id: _uuid.UUID, *, limit: int, offset: int,
 
     if sort == "score":
         scored.sort(key=lambda item: item[0], reverse=direction == "desc")
-    elif sort == "posted":
+    elif sort in ("posted", "fetched"):
         # Undated rows go last whichever way the dated ones are ordered.
-        scored.sort(key=lambda item: (item[1].posted_at is None,
-                                      (item[1].posted_at or datetime.min.replace(tzinfo=UTC))
+        column = "posted_at" if sort == "posted" else "first_seen_at"
+        scored.sort(key=lambda item: (getattr(item[1], column) is None,
+                                      (getattr(item[1], column)
+                                       or datetime.min.replace(tzinfo=UTC))
                                       .timestamp() * (-1 if direction == "desc" else 1)))
     else:
         scored.sort(key=lambda item: (getattr(item[1], sort) is None,

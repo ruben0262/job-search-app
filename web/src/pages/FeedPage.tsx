@@ -15,8 +15,17 @@ import { api, type Feed, type FeedJob, type Salary } from "../api";
 
 const PAGE = 25;
 
-type Sort = "score" | "posted" | "title" | "company";
+type Sort = "score" | "posted" | "fetched" | "title" | "company";
 type AppliedFilter = "any" | "applied" | "not";
+
+// The last answer, kept across mounts. Navigating away and back renders it instantly while the
+// fresh one loads — the split-second "Loading…" flash was the page throwing away what it knew.
+let cached: Feed | null = null;
+
+/** Forgotten on sign-out, or the next account flashes this one's jobs. */
+export function clearFeedCache(): void {
+  cached = null;
+}
 
 /** "<1h" / "3h" / "2d" — the resolution somebody scanning a feed actually reads at. */
 function age(iso: string | null): string | null {
@@ -47,7 +56,7 @@ function money(salary: Salary): string {
 }
 
 export function FeedPage() {
-  const [feed, setFeed] = useState<Feed | null>(null);
+  const [feed, setFeed] = useState<Feed | null>(cached);
   const [failed, setFailed] = useState(false);
 
   const [query, setQuery] = useState("");
@@ -75,6 +84,7 @@ export function FeedPage() {
       api
         .get<Feed>(`/feed?${params}`)
         .then((body) => {
+          cached = body;
           if (requestSeq.current === seq) setFeed(body);
         })
         .catch(() => {
@@ -175,7 +185,7 @@ export function FeedPage() {
               {heading("company", "Company")}
               <th>Location</th>
               <th>Source</th>
-              {heading("posted", "Age")}
+              {heading("fetched", "Fetched")}
               <th>Salary</th>
               <th></th>
             </tr>
@@ -203,9 +213,17 @@ export function FeedPage() {
   );
 }
 
+/** "30 Jul 14:05" — when the radar found it. A real timestamp rather than a relative age
+ *  (owner, 2026-07-30): "when we fetched it" is a fact worth reading off the row, and the posted
+ *  age still shows beside it when the source reported one. */
+function fetched(iso: string | null): string {
+  if (!iso) return "—";
+  const date = new Date(iso);
+  return `${date.toLocaleDateString(undefined, { day: "numeric", month: "short" })} ${date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`;
+}
+
 function Row({ job }: { job: FeedJob }) {
   const posted = age(job.posted_at);
-  const seen = age(job.first_seen_at);
   return (
     <tr>
       <td className="num">{job.score === null ? "—" : <span className="score">{Math.round(job.score)}</span>}</td>
@@ -218,9 +236,10 @@ function Row({ job }: { job: FeedJob }) {
       <td className="job-sub">{job.company ?? "—"}</td>
       <td className="job-sub">{job.location ?? "—"}</td>
       <td className="job-sub">{job.source}</td>
-      {/* Posted age when the source reported one; first-seen with a ~ when it did not, because
-          "how long has this been out" deserves an honest approximation over a blank. */}
-      <td className="num job-sub">{posted ?? (seen ? (seen === "<1h" ? "new" : `~${seen}`) : "—")}</td>
+      <td className="num job-sub">
+        {fetched(job.first_seen_at)}
+        {posted ? <span className="job-sub"> · {posted} old</span> : null}
+      </td>
       <td className="num job-sub">{money(job.salary)}</td>
       <td>{job.applied_at ? <span className="tag">applied</span> : null}</td>
     </tr>

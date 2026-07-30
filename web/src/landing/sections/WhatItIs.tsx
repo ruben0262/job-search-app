@@ -11,18 +11,18 @@ export default function WhatItIs() {
       </Reveal>
       <Reveal delay={0.1}>
         <p className="lede">
-          Mahoraga is a <strong>self-hosted job-hunting system</strong>. Four
-          Docker services scan LinkedIn, Indeed, Google, ~940 company career
-          boards (Greenhouse, Ashby, Lever, Workday, Personio, Workable and
-          more), hiring.cafe, VC portfolio boards and RSS feeds every 15
+          Mahoraga is a <strong>job-hunting radar that works for you alone</strong>. It scans
+          LinkedIn, Indeed, Google, ~940 company career boards (Greenhouse, Ashby, Lever, Workday,
+          Personio, Workable and more), hiring.cafe, VC portfolio boards and RSS feeds every 15
           minutes, all day, every day.
         </p>
         <p className="lede">
           Every new posting is deduplicated three ways, filtered for
           seniority, language and workplace mode, then scored by{" "}
-          <strong>your own local model</strong>: sentence embeddings,
-          engineered features and a classifier trained on your decisions. No
-          API cost per job, and no third party sees your search.
+          <strong>a model that belongs to you</strong>: sentence embeddings,
+          engineered features and a classifier trained on your own decisions.
+          Scoring costs nothing per job, and nobody else's model ever ranks
+          your search.
         </p>
         <p className="lede">
           The result: jobs land on your phone{" "}

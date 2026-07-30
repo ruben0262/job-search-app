@@ -1041,6 +1041,44 @@ td.num {
   font-style: italic;
 }
 
+/* ── a stored credential's row ───────────────────────────────────────────────────────────── */
+
+.stored {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  padding: 0.55rem 0.55rem 0.55rem 1rem;
+  margin-bottom: 1rem;
+}
+
+.stored-value {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  user-select: none;
+}
+
+.stored-note {
+  color: var(--dim);
+  letter-spacing: 0.02em;
+}
+
+.stored-ask {
+  display: flex;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.stored-ask input {
+  flex: 1;
+}
+
 /* ── how-to folds for the fiddly setup steps ─────────────────────────────────────────────── */
 
 .howto {

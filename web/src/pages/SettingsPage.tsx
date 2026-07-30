@@ -10,12 +10,27 @@ import { useEffect, useState } from "react";
 import { api, type Account } from "../api";
 import { Card, Error, Field, useAction } from "../ui";
 
+// The last answer, kept across mounts to kill the split-second "Loading…" on every visit.
+let cachedAccount: Account | null = null;
+
+/** Forgotten on sign-out, or the next account flashes this one's details. */
+export function clearAccountCache(): void {
+  cachedAccount = null;
+}
+
 export function SettingsPage({ onSignedOut }: { onSignedOut: () => void }) {
-  const [account, setAccount] = useState<Account | null>(null);
+  const [account, setAccount] = useState<Account | null>(cachedAccount);
   const [password, setPassword] = useState("");
   const [confirming, setConfirming] = useState(false);
 
-  const reload = () => api.get<Account>("/account").then(setAccount).catch(() => undefined);
+  const reload = () =>
+    api
+      .get<Account>("/account")
+      .then((fresh) => {
+        cachedAccount = fresh;
+        setAccount(fresh);
+      })
+      .catch(() => undefined);
   useEffect(() => {
     void reload();
   }, []);
@@ -74,7 +89,11 @@ export function SettingsPage({ onSignedOut }: { onSignedOut: () => void }) {
         ) : null}
       </Card>
 
-      <DeliveryCard interval={account.notify_interval_min} onChanged={() => void reload()} />
+      <DeliveryCard
+        interval={account.notify_interval_min}
+        active={account.active}
+        onChanged={() => void reload()}
+      />
 
       <PasswordCard onChanged={onSignedOut} />
 
@@ -145,10 +164,23 @@ export function SettingsPage({ onSignedOut }: { onSignedOut: () => void }) {
   );
 }
 
-/** The two delivery knobs, side by side because people confuse them and the fix is words:
- *  the interval is when we check, the freshness is what is still worth sending when we do. */
-function DeliveryCard({ interval, onChanged }: { interval: number; onChanged: () => void }) {
+/** The delivery knobs, side by side because people confuse them and the fix is words:
+ *  the switch is whether messages arrive at all, the interval is when we check, the freshness is
+ *  what is still worth sending when we do. */
+function DeliveryCard({
+  interval,
+  active,
+  onChanged,
+}: {
+  interval: number;
+  active: boolean;
+  onChanged: () => void;
+}) {
   const [minutes, setMinutes] = useState(interval);
+  const toggle = useAction(async () => {
+    await api.patch("/account", { active: !active });
+    onChanged();
+  });
   const [hours, setHours] = useState<number | null>(null);
   const [config, setConfig] = useState<Record<string, unknown> | null>(null);
   const [saved, setSaved] = useState(false);
@@ -182,6 +214,27 @@ function DeliveryCard({ interval, onChanged }: { interval: number; onChanged: ()
 
   return (
     <Card title="Delivery">
+      <div className="spread" style={{ marginBottom: "1.25rem" }}>
+        <span>
+          <span className="label" style={{ marginBottom: 0 }}>
+            Job messages are {active ? "on" : "off"}
+          </span>
+          <span className="hint" style={{ marginBottom: 0 }}>
+            {active
+              ? "Pausing stops Telegram messages. Collection and scoring keep running, and the bot stays on — resuming picks up where you left off."
+              : "Nothing is being sent. Everything else keeps running, so turning it back on delivers a warm feed."}
+          </span>
+        </span>
+        <button
+          className={active ? "secondary" : ""}
+          disabled={toggle.busy}
+          onClick={() => void toggle.run()}
+        >
+          {toggle.busy ? "…" : active ? "Pause messages" : "Start messages"}
+        </button>
+      </div>
+      <Error>{toggle.error}</Error>
+
       <Field
         label="How often we message you"
         hint="How often Telegram is checked for something new to send. More often means fresher, smaller batches."

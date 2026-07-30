@@ -203,6 +203,45 @@ def list_credentials(db: Session = Depends(get_db),
     }
 
 
+class RevealBody(BaseModel):
+    password: str = Field(min_length=1, max_length=1024)
+
+
+@router.post("/{kind}/reveal")
+def reveal_credential(kind: str, body: RevealBody, request: Request, *,
+                      db: Session = Depends(get_db),
+                      store: SecretStore = Depends(get_store),
+                      user_id: _uuid.UUID = Depends(current_user)) -> dict:
+    """Hand back the plaintext, once, after the account password.
+
+    **The exception to write-only, and the shape of the exception is the point** (owner's decision,
+    2026-07-30). A copy button cannot exist without the browser receiving the plaintext — there is
+    no cryptographic trick that yields a usable token without revealing it. So the security lives
+    in the gate instead: the password is required (a stolen session cookie is not enough), the
+    value is returned in this one response and never listed anywhere, the attempt is audited either
+    way, and the rate limit keeps a stolen password from becoming a quiet bulk export.
+    """
+    from libs.auth.passwords import verify_password  # noqa: PLC0415 - the one route that needs it
+
+    if kind not in SECRET_KINDS:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=f"unknown credential {kind!r}")
+    rate_limit(request, f"reveal:{user_id}", limit=10, per_seconds=3600)
+
+    user = db.get(User, user_id)
+    if not verify_password(user.password_hash, body.password):
+        audit(logger, "credentials.reveal_refused", user=user_id, kind=kind)
+        # Deliberately the same shape as a failed login: no oracle, no timing shortcut.
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="that password is not correct")
+
+    with store.use(user_id, kind) as secret:
+        if secret is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="nothing stored")
+        value = secret.reveal()
+
+    audit(logger, "credentials.revealed", user=user_id, kind=kind)
+    return {"value": value}
+
+
 @router.delete("/{kind}")
 def delete_credential(kind: str, db: Session = Depends(get_db),
                       store: SecretStore = Depends(get_store),

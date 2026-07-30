@@ -351,6 +351,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/credentials/telegram/channel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Channel
+         * @description Point the job stream at a channel. Proven by posting to it, not by trusting the ID.
+         *
+         *     On success every route goes to the channel and the private chat keeps commands and documents —
+         *     the reference's split. One channel rather than the per-stream routing the table supports,
+         *     because that is the setup being asked for; the routes stay per-key underneath for the day
+         *     somebody wants the split back.
+         */
+        put: operations["set_channel_credentials_telegram_channel_put"];
+        post?: never;
+        /**
+         * Unset Channel
+         * @description Back to the private chat. Never a drop — the fallback chat is always valid.
+         */
+        delete: operations["unset_channel_credentials_telegram_channel_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/credentials/telegram/connect": {
         parameters: {
             query?: never;
@@ -400,6 +429,33 @@ export interface paths {
          *     fail — and each one would look like a delivery problem rather than a missing credential.
          */
         delete: operations["delete_credential_credentials__kind__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/credentials/{kind}/reveal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reveal Credential
+         * @description Hand back the plaintext, once, after the account password.
+         *
+         *     **The exception to write-only, and the shape of the exception is the point** (owner's decision,
+         *     2026-07-30). A copy button cannot exist without the browser receiving the plaintext — there is
+         *     no cryptographic trick that yields a usable token without revealing it. So the security lives
+         *     in the gate instead: the password is required (a stolen session cookie is not enough), the
+         *     value is returned in this one response and never listed anywhere, the attempt is audited either
+         *     way, and the rate limit keeps a stolen password from becoming a quiet bulk export.
+         */
+        post: operations["reveal_credential_credentials__kind__reveal_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -548,6 +604,43 @@ export interface paths {
         get: operations["privacy_legal_privacy_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Notifications
+         * @description The panel's list plus the bell's count, in one call — they are always shown together.
+         */
+        get: operations["list_notifications_notifications_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notifications/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark Read */
+        post: operations["mark_read_notifications_read_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -945,6 +1038,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Status
+         * @description Every component, one call — the page shows them together or not at all.
+         */
+        get: operations["status_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/telegram/webhook/{secret}": {
         parameters: {
             query?: never;
@@ -975,6 +1088,8 @@ export interface components {
     schemas: {
         /** AccountPatch */
         AccountPatch: {
+            /** Active */
+            active?: boolean | null;
             /** Notify Interval Min */
             notify_interval_min?: number | null;
         };
@@ -1000,6 +1115,11 @@ export interface components {
             name: string;
             /** Year */
             year?: string | null;
+        };
+        /** ChannelBody */
+        ChannelBody: {
+            /** Channel Id */
+            channel_id: string;
         };
         /**
          * Conflict
@@ -1185,6 +1305,16 @@ export interface components {
             /** Password */
             password: string;
         };
+        /** MarkRead */
+        MarkRead: {
+            /**
+             * All
+             * @default false
+             */
+            all: boolean;
+            /** Ids */
+            ids?: number[] | null;
+        };
         /** PasswordChange */
         PasswordChange: {
             /** Current Password */
@@ -1271,6 +1401,11 @@ export interface components {
             new_password: string;
             /** Token */
             token: string;
+        };
+        /** RevealBody */
+        RevealBody: {
+            /** Password */
+            password: string;
         };
         /**
          * SearchSection
@@ -1914,6 +2049,63 @@ export interface operations {
             };
         };
     };
+    set_channel_credentials_telegram_channel_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChannelBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unset_channel_credentials_telegram_channel_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     telegram_connect_credentials_telegram_connect_post: {
         parameters: {
             query?: never;
@@ -1983,6 +2175,43 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reveal_credential_credentials__kind__reveal_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kind: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RevealBody"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -2199,6 +2428,74 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    list_notifications_notifications_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mark_read_notifications_read_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MarkRead"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -2726,6 +3023,28 @@ export interface operations {
         };
     };
     start_search_setup_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    status_status_get: {
         parameters: {
             query?: never;
             header?: never;

@@ -43,7 +43,11 @@ export function NotificationBell() {
   const load = useCallback(() => {
     api
       .get<Feed>("/notifications")
-      .then(setFeed)
+      .then((body) => {
+        // Guarded because a dev proxy that misses this path answers with something that is not
+        // the feed — and the bell must degrade to silence, never take the page down with it.
+        if (body && Array.isArray(body.notifications)) setFeed(body);
+      })
       .catch(() => undefined);
   }, []);
 

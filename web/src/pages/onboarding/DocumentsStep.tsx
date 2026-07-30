@@ -75,10 +75,12 @@ export function DocumentsStep({ onDone }: { onDone: () => void }) {
       </Field>
       <Error>{upload.error ?? remove.error}</Error>
 
-      {list?.documents.length ? (
+      {/* The history is its own page with its own single file — listing it here as one more row
+          would invite deleting or duplicating it from the wrong place. */}
+      {list?.documents.filter((document) => document.kind !== "history").length ? (
         <table>
           <tbody>
-            {list.documents.map((document) => (
+            {list.documents.filter((document) => document.kind !== "history").map((document) => (
               <tr key={document.id}>
                 <td>{document.filename}</td>
                 <td className="muted small">{document.kind}</td>
@@ -120,7 +122,18 @@ export function HistoryStep({ onDone }: { onDone: () => void }) {
   // **Either is accepted, and both end up in the same place.** A file is extracted server-side and
   // dropped into the box, so somebody who uploaded a document can still read and edit what was
   // pulled out of it — rather than trusting that something invisible was understood correctly.
+  //
+  // There is exactly one history, so an upload over an existing one asks first: what is there now
+  // disappears, and that should be chosen rather than discovered.
   const upload = useAction(async (file: File) => {
+    if (
+      text.trim().length > 0 &&
+      !window.confirm(
+        "This replaces your current history — what is written there now disappears. Replace it?",
+      )
+    ) {
+      return;
+    }
     const form = new FormData();
     form.set("kind", "history");
     form.set("file", file);

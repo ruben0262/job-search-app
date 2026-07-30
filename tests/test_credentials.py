@@ -339,3 +339,29 @@ def test_a_channel_id_that_is_not_one_is_refused_by_shape(api):
     http, _, _, _ = api
     assert http.put("/credentials/telegram/channel",
                     json={"channel_id": "1234567890"}).status_code == 422
+
+
+@pytestmark_db
+def test_reveal_needs_the_password_and_returns_the_value_once(api, monkeypatch):
+    """The one exception to write-only, gated the way deletion is: a stolen session cookie is not
+    enough, the attempt is audited either way, and nothing else ever returns a value."""
+    from libs.auth.passwords import hash_password
+    from libs.credentials import ValidationResult
+
+    http, session, user, _ = api
+    user.password_hash = hash_password("correct horse battery staple")
+    monkeypatch.setattr("services.api.credential_routes.validate_credential",
+                        lambda kind, value, **kw: ValidationResult(True))
+    http.put("/credentials/proxy", json={"value": "http://user:pass@proxy.example:8080"})
+    session.flush()
+
+    wrong = http.post("/credentials/proxy/reveal", json={"password": "not the password"})
+    assert wrong.status_code == 401
+    assert "value" not in wrong.json()
+
+    right = http.post("/credentials/proxy/reveal", json={"password": "correct horse battery staple"})
+    assert right.status_code == 200
+    assert right.json()["value"] == "http://user:pass@proxy.example:8080"
+
+    nothing = http.post("/credentials/telegram_bot/reveal", json={"password": "correct horse battery staple"})
+    assert nothing.status_code == 404

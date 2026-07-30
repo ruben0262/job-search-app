@@ -84,11 +84,11 @@ export default function HowItWorks() {
         <p className="kicker">
           <span className="num">02</span> How it works
         </p>
-        <h2>Six stages, four Docker services, one loop.</h2>
+        <h2>Six stages, one loop, always on.</h2>
         <p className="lede">
-          <strong>watcher</strong> (the radar) · <strong>notifier</strong> (the
-          Telegram bot) · <strong>scorer-service</strong> (your model,
-          hot-swappable) · an on-demand <strong>pipeline</strong> container.
+          <strong>the radar</strong> (collection, every 15 minutes) ·{" "}
+          <strong>the scorer</strong> (your model, always current) ·{" "}
+          <strong>the bot</strong> (delivery and one-tap documents).
         </p>
       </Reveal>
 

@@ -9,7 +9,6 @@ export const SECTIONS: Section[] = [
   { id: "what", label: "What it is" },
   { id: "how", label: "How it works" },
   { id: "live", label: "Live feed" },
-  { id: "start", label: "Run it" },
+  { id: "start", label: "Get started" },
 ];
 
-export const GITHUB_URL = "https://github.com/ruben0262/mahoraga-jobs";

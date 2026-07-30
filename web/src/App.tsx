@@ -16,7 +16,10 @@ import { ApiError, api, type Dashboard } from "./api";
 import { Landing } from "./landing/Landing";
 import { DashboardPage } from "./pages/DashboardPage";
 import { DataPage } from "./pages/DataPage";
+import { clearFeedCache } from "./pages/FeedPage";
 import { ModelPage } from "./pages/ModelPage";
+import { clearAccountCache } from "./pages/SettingsPage";
+import { clearConversationCache } from "./pages/SetupPage";
 import { FeedPage } from "./pages/FeedPage";
 import { Onboarding } from "./pages/Onboarding";
 import { PrivacyPage } from "./pages/PrivacyPage";
@@ -56,8 +59,14 @@ export function App() {
       // 401 is the ordinary signed-out case — `request` has already tried a refresh. Anything else
       // is a real failure and must not be disguised as a logout, or an outage looks like a bug in
       // the user's own session.
-      if (error instanceof ApiError && error.status === 401) setSession({ state: "out" });
-      else throw error;
+      if (error instanceof ApiError && error.status === 401) {
+        // The page caches die with the session, or the next account to sign in on this browser
+        // flashes this one's jobs and details.
+        clearFeedCache();
+        clearConversationCache();
+        clearAccountCache();
+        setSession({ state: "out" });
+      } else throw error;
     }
   }, []);
 

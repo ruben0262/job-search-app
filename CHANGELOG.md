@@ -16,6 +16,54 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ## 2026-07-30
 
+### The evening batch: twelve owner asks, hardest first
+
+**In-app notifications** — `user_notifications`, `libs/notify` with event templates and
+collapse-onto-unread (producers run on timers; forty copies of "Telegram is broken" is how a bell
+gets ignored), a list/mark-read API, and a polling bell in the nav. Producers wired where the
+facts are learned: bot revoked, model trained, processing drafted and failed, password changed.
+
+**A status readout on the Overview** — `GET /status` derives each component's health from the
+data (bot, channel, harvester freshness, scorer, docgen), each a colour and a sentence, because a
+red dot with no words is a support request.
+
+**The chat became a chat and the Model page exists.** User in a bubble, assistant as prose with
+markdown-lite rendering, autogrowing Enter-to-send composer, an empty state that suggests what to
+say. Training moved to its own nav page — the chat edits what the platform knows; the Model page
+owns label → train → rank, with the one paid action as a button and the free retrain described as
+what it is.
+
+**Jobs can stream to a channel.** `PUT /credentials/telegram/channel` proves the ID by posting to
+it (a bot must be an admin to post — the test send is the whole check, and its failure strings are
+the user's fix), then routes every stream there; the bot chat keeps commands and documents.
+@getids walk-through folds sit beside every fiddly Telegram step. No message ID is stored — the
+channel ID alone is what sending needs.
+
+**Credentials show what is stored** — masked last-4, replace, delete, and copy behind the account
+password. `POST /credentials/{kind}/reveal` is the one exception to write-only, and the shape of
+the exception is the point: plaintext is what "usable" means, so the security is the gate — the
+password (a stolen cookie is not enough), one response, an audit line either way, a rate limit.
+
+**Documents are uploads only.** The history is one document by construction now (a new upload
+replaces it, behind an are-you-sure), it no longer appears in the Documents list, and
+`scripts/move_md_documents.py` moves the migrated profile `.md` files out of both live accounts'
+Documents into the profile store where the chat maintains them. Agent coverage audit: `setup.md`
+writes every per-user file; `03-writing-style` and `06-cover-letter-templates` are platform-shared
+by design (`libs/profiles` EXCLUDED) and are not supposed to be per-user.
+
+**Delivery has an on/off switch** (`PATCH /account {active}`) with the honest sentence beside it:
+messages stop, collection and scoring keep running, the bot stays on.
+
+**The landing page stopped being an open-source pitch.** GitHub links and self-hosted framing out;
+same length, same sections, same wheel — Get Started is now "set it up once / the radar takes
+over" ending in Create your account.
+
+**Small but asked for:** the jobs table shows when each job was fetched ("30 Jul 20:04 · 3d old")
+sortable on that column; the split-second "Loading…" flash on Jobs, Profile and Settings is gone
+(module caches render the last answer while the fresh one loads, cleared on sign-out so the next
+account cannot flash this one's data); and the dev proxy learned `/notifications` and `/status` —
+the same class of gap `/setup` fell into, this time caught by the browser pass before it shipped.
+
 ### Deployed, and the two things deploying found
 
 `api` and `notifier` rebuilt and restarted on the box, running everything above.

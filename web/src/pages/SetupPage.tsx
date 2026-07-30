@@ -83,8 +83,17 @@ function autogrow(box: HTMLTextAreaElement): void {
   box.style.height = `${Math.min(box.scrollHeight, 200)}px`;
 }
 
+// The last conversation, kept across mounts so returning to the page renders it instantly while
+// the fresh one loads — the split-second "Loading…" was the page throwing away what it knew.
+let cachedConversation: Conversation | null = null;
+
+/** Forgotten on sign-out, or the next account flashes this one's conversation. */
+export function clearConversationCache(): void {
+  cachedConversation = null;
+}
+
 export function SetupPage({ onChanged }: { onChanged: () => void }) {
-  const [state, setState] = useState<Conversation | null>(null);
+  const [state, setState] = useState<Conversation | null>(cachedConversation);
   const [failed, setFailed] = useState(false);
   const [draft, setDraft] = useState("");
   const [openFile, setOpenFile] = useState<string | null>(null);
@@ -93,7 +102,11 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
   const scroller = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLTextAreaElement>(null);
 
-  const load = async () => setState(await api.get<Conversation>("/setup"));
+  const load = async () => {
+    const fresh = await api.get<Conversation>("/setup");
+    cachedConversation = fresh;
+    setState(fresh);
+  };
   useEffect(() => {
     // A load that fails silently leaves "Loading…" on screen forever, which reads as a hang
     // rather than an error — the one state a user cannot act on.
