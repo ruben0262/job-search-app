@@ -529,4 +529,4 @@ def test_the_token_ceiling_leaves_room_for_the_document_after_thinking():
     # A CV document, generously. If the ceiling is not several times this after thinking is paid
     # for, a long CV truncates and the user gets nothing.
     document_tokens = 8_000
-    assert MAX_TOKENS - THINKING_TOKENS >= document_tokens * 2
+    assert document_tokens * 2 <= MAX_TOKENS - THINKING_TOKENS

@@ -301,3 +301,24 @@ def test_an_api_key_client_sends_the_system_prompt_unchanged():
     key = AnthropicClient.__new__(AnthropicClient)
     key._oauth = False
     assert key._system("Score these jobs.") == "Score these jobs."
+
+
+def test_transport_retry_is_bounded_the_way_the_reference_bounds_it():
+    """**A retry that re-runs generation is spent money, not resilience.**
+
+    A 429 is refused before any tokens are produced and costs nothing to retry. A 529 arriving
+    mid-stream has already been billed, and retrying re-runs the whole reasoning. The reference
+    allows one retry on transient failures only, and refuses to retry a quota refusal at all
+    because the second call fails identically and doubles the spend.
+    """
+    from libs.llm.client import MAX_RETRIES
+
+    assert MAX_RETRIES <= 3, "transport retries have become a spend multiplier"
+
+
+def test_a_cv_gets_one_second_attempt_and_no_more():
+    """The logic-level retry, which is a different thing from the transport one: a single rebuild
+    with feedback when the page count is wrong, exactly as the reference does it."""
+    from services.docgen.run import MAX_TAILOR_CALLS
+
+    assert MAX_TAILOR_CALLS == 2

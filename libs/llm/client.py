@@ -22,8 +22,25 @@ from typing import Protocol
 
 logger = logging.getLogger(__name__)
 
-# How many times the SDK retries a 429 or a 5xx before giving up. The default is 2.
-MAX_RETRIES = 8
+# How many times the SDK retries a 429 or a 5xx before giving up.
+#
+# **Two, and this is transport retry — not a second attempt at the work.** The distinction matters
+# because they look identical in a log and cost differently. A 429 is refused before generation and
+# is billed nothing, so retrying it is free; a 529 arriving mid-stream has already produced tokens,
+# and retrying re-runs the whole reasoning from scratch on the user's money.
+#
+# The reference allows exactly one retry and only for transient failures, on the stated grounds that
+# "retrying just burns another call" — and it refuses to retry a quota refusal at all, because the
+# second call fails the same way and doubles the spend.
+#
+# This was briefly 8, raised while diagnosing what looked like relentless rate limiting and turned
+# out to be the missing OAuth identity block (every request refused with a `rate_limit_error` that
+# no amount of retrying could clear). With the cause fixed, 8 is a spend multiplier and a long wait
+# for a user watching a CV build.
+#
+# The *logic*-level retry is separate and stays at one: `MAX_TAILOR_CALLS` gives a CV a single
+# second attempt, with feedback, when the page count is wrong.
+MAX_RETRIES = 2
 
 # The identity block a subscription OAuth token is entitled to. Verbatim — it is compared, not
 # parsed, and a reworded version is refused exactly as a missing one is.
