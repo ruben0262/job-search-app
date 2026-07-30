@@ -167,7 +167,7 @@ def _preferences(item, rules: Eligibility) -> tuple[bool, str | None]:
     return True, None
 
 
-def rank(items: list, *, first_seen: dict[int, object] | None = None) -> list:
+def rank(items: list, *, first_seen: dict[int, object] | None = None, now=None) -> list:
     """Sort by opportunity, best first. Fit is the tiebreaker only.
 
     `first_seen` supplies `first_seen_at` per job id for the postings whose source gave no posted
@@ -178,21 +178,28 @@ def rank(items: list, *, first_seen: dict[int, object] | None = None) -> list:
     return sorted(items, key=lambda item: priority_key(
         posted_at=item.posted_at, first_seen_at=first_seen.get(item.job_id),
         applicants=item.applicants, reposted=item.reposted,
-        workplace=item.workplace, score=int(item.score or 0)))
+        workplace=item.workplace, score=int(item.score or 0), now=now))
 
 
 def select(items: list, rules: Eligibility, *, limit: int,
-           first_seen: dict[int, object] | None = None) -> tuple[list, dict[str, int]]:
-    """Filter, rank, and take the top `limit`. Returns the items and why the rest were dropped."""
+           first_seen: dict[int, object] | None = None,
+           now=None) -> tuple[list, dict[str, int]]:
+    """Filter, rank, and take the top `limit`. Returns the items and why the rest were dropped.
+
+    `now` is threaded through rather than left to each check's own default. Two calls that read the
+    clock a millisecond apart are harmless in production and are the difference between a passing
+    and a failing test suite at midnight — one decision about what time it is, made once.
+    """
     kept, dropped = [], {}
     for item in items:
-        eligible, reason = is_eligible(item, rules, first_seen=first_seen.get(item.job_id)
+        eligible, reason = is_eligible(item, rules, now=now,
+                                       first_seen=first_seen.get(item.job_id)
                                        if first_seen else None)
         if eligible:
             kept.append(item)
         else:
             dropped[reason] = dropped.get(reason, 0) + 1
-    return rank(kept, first_seen=first_seen)[:limit], dropped
+    return rank(kept, first_seen=first_seen, now=now)[:limit], dropped
 
 
 def worth_applying_now(item, *, first_seen: object | None = None,

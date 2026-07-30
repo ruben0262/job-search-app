@@ -41,6 +41,9 @@ class Item:
     description: str | None = ("We are hiring a backend engineer to work on our payments platform. "
                                "You will build services in Python and Go, own them in production, "
                                "and work with a small team of experienced engineers.")
+    # Relative to the module's fixed NOW, and **every call must pass `now=NOW`**. The filters
+    # default to the real clock, so a fixture pinned to a date and a call that is not will agree
+    # for a day and then start failing at midnight — which is exactly what happened.
     posted_at: datetime | None = NOW - timedelta(hours=1)
     applicants: int | None = 5
     easy_apply: bool | None = None
@@ -150,49 +153,49 @@ def test_a_job_in_a_language_the_user_does_not_write_is_dropped():
         "Wir suchen einen erfahrenen Softwareentwickler für unser Team in Berlin. "
         "Sie entwickeln und betreiben unsere Dienste und arbeiten eng mit dem Produktteam "
         "zusammen. Gute Deutschkenntnisse sind erforderlich."))
-    assert is_eligible(german, rules()) == (False, "language")
+    assert is_eligible(german, rules(), now=NOW) == (False, "language")
 
 
 def test_a_description_too_short_to_detect_is_kept():
     """Fails open. A three-word snippet is not evidence of anything."""
-    assert is_eligible(Item(description="Engineer wanted"), rules())[0] is True
+    assert is_eligible(Item(description="Engineer wanted"), rules(), now=NOW)[0] is True
 
 
 def test_an_account_that_never_stated_a_language_keeps_everything():
     """Otherwise a user who skipped one onboarding question would have their entire feed silently
     emptied."""
     german = Item(description="Wir suchen einen erfahrenen Softwareentwickler für unser Team. " * 3)
-    assert is_eligible(german, Eligibility.from_config({}))[0] is True
+    assert is_eligible(german, Eligibility.from_config({}), now=NOW)[0] is True
 
 
 def test_an_explicit_onsite_posting_outside_the_allowed_countries_is_dropped():
     item = Item(workplace="onsite", location="Paris, France")
-    assert is_eligible(item, rules(onsite_locations=["hungary"])) == (False, "workplace")
+    assert is_eligible(item, rules(onsite_locations=["hungary"]), now=NOW) == (False, "workplace")
 
 
 def test_an_onsite_posting_where_the_user_will_go_is_kept():
     item = Item(workplace="onsite", location="Budapest, Hungary")
-    assert is_eligible(item, rules(onsite_locations=["hungary"]))[0] is True
+    assert is_eligible(item, rules(onsite_locations=["hungary"]), now=NOW)[0] is True
 
 
 def test_a_job_whose_workplace_is_unknown_is_never_dropped():
     """The filter only ever drops an *explicit* on-site tag. Everything else fails open."""
     assert is_eligible(Item(workplace=None, location="Paris, France"),
-                       rules(onsite_locations=["hungary"]))[0] is True
+                       rules(onsite_locations=["hungary"]), now=NOW)[0] is True
 
 
 def test_a_linkedin_listing_at_the_display_cap_is_dropped_as_stale():
-    assert is_eligible(Item(applicants=200), rules()) == (False, "applicant_glut")
+    assert is_eligible(Item(applicants=200), rules(), now=NOW) == (False, "applicant_glut")
 
 
 def test_the_same_count_on_another_source_is_not():
     """Only LinkedIn reports a count worth trusting, and only there does the 200 cap mean
     "over-subscribed" rather than "exactly two hundred"."""
-    assert is_eligible(Item(source="greenhouse", applicants=200), rules())[0] is True
+    assert is_eligible(Item(source="greenhouse", applicants=200), rules(), now=NOW)[0] is True
 
 
 def test_a_user_who_disabled_the_cap_sees_them():
-    assert is_eligible(Item(applicants=500), rules(applicant_cap=0))[0] is True
+    assert is_eligible(Item(applicants=500), rules(applicant_cap=0), now=NOW)[0] is True
 
 
 def test_applicant_glut_needs_a_count_to_act_on():
@@ -210,7 +213,7 @@ def test_selection_filters_ranks_and_caps_in_that_order():
         Item(job_id=2, score=70, posted_at=NOW - timedelta(minutes=10), applicants=2),
         Item(job_id=3, score=95, applicants=200),                        # glut
     ]
-    kept, dropped = select(items, week, limit=2)
+    kept, dropped = select(items, week, limit=2, now=NOW)
 
     assert [item.job_id for item in kept] == [2, 1]
     assert dropped == {"applicant_glut": 1}
@@ -221,7 +224,7 @@ def test_the_drop_tally_says_why_a_digest_was_small():
     somebody can fix in a minute."""
     german = "Wir suchen einen erfahrenen Softwareentwickler für unser Team in Berlin. " * 3
     items = [Item(job_id=index, description=german) for index in range(3)]
-    kept, dropped = select(items, rules(), limit=10)
+    kept, dropped = select(items, rules(), limit=10, now=NOW)
 
     assert kept == []
     assert dropped == {"language": 3}
