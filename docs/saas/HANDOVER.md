@@ -13,7 +13,7 @@ to re-derive. `CHANGELOG.md` is the history; this is the position.
 | Box | `ruben@169.58.16.241`, checkout at `~/job-search-app` |
 | Running | postgres, api, capture, labeller, scorer, notifier, trainer, docgen, cloudflared, embedder |
 | Timers | **all five installed and enabled** — harvester 15 min, notify-dispatch 60 s, linkedin-describe hourly, health, backup |
-| Tests | 982 passing, 2 skipped, against a throwaway Postgres |
+| Tests | 992 passing, 2 skipped, against a throwaway Postgres |
 | Accounts | `lekliruben@gmail.com` (full profile, model servable), `andraslekli@gmail.com` (config only) |
 
 `sudo deploy/install-units.sh` installs and enables every timer idempotently, and `check_health.py`
@@ -58,6 +58,18 @@ settings. `CHANGELOG.md` 2026-07-30 carries the six bugs that run found, three o
 test could see.
 
 A `jobs_detail` page — click a row, see everything about that posting — remains deferred.
+
+### 3b. The evening batch — **done and deployed** (2026-07-30)
+
+Notifications (bell, collapse-onto-unread, producers on every real event), a status readout on the
+Overview derived from the data, the chat rebuilt as a chat with markdown rendering, **a Model page
+that owns training** so it is no longer confused with the profile chat, Telegram channel routing
+proven by a test post with @getids walk-throughs, credential reveal behind the account password,
+the history as one replaceable document, a delivery on/off switch, the landing page rewritten for
+the hosted product, a fetched-at column, and the loading flash removed.
+
+Verified in a browser on the live domain. Both users' bots answer `getMe`, webhooks are set with
+no errors and nothing pending, and the `<1h` age element renders as the reference does.
 
 ### 4. Prompts — after the above
 
@@ -148,6 +160,16 @@ better than the author cannot see the author's mistakes.
 - **The web layer needs a real browser to verify.** Three auth bugs shipped green through the API
   suite because the failure was in what the *page* sends and how many times it sends it. The
   Playwright run that catches them is in the scratchpad, not the repo — worth committing.
+- **A new route needs a line in `web/vite.config.ts`.** The dev proxy lists paths explicitly, so a
+  new API prefix returns `index.html` in development and the page fails on JSON that is HTML.
+  `/setup` cost an afternoon this way; `/notifications` and `/status` were caught by the browser
+  pass in minutes. Add the prefix in the same commit as the router.
+- **The workers log to files, not stdout.** `docker logs` is empty for notifier, trainer, capture
+  and labeller because `LOG_DIR` sends them to `~/job-search-app/logs/*.log`. A quiet
+  `docker logs` is not a dead worker; read the file.
+- **One pending manual step:** `scripts/move_md_documents.py` moves the migrated profile `.md`
+  files out of both accounts' Documents into the profile store. Written and committed, not yet
+  run — the sandbox refuses remote writes to the live database.
 
 - **Claude OAuth requires the Claude Code identity block as the first system block.** Without it,
   every Sonnet and Opus call returns `rate_limit_error` no matter how long you wait.

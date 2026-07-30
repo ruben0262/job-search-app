@@ -257,7 +257,10 @@ export function TelegramStep({ onDone }: { onDone: () => void }) {
                 the channel.</li>
           </ol>
         </details>
-        <Field label="Channel ID" hint="Starts with -100. Leave empty to keep everything in the bot chat.">
+        <Field
+          label="Channel ID"
+          hint="Starts with -100. Every job goes to this one channel — if you already have separate channels set up, this replaces that split."
+        >
           <input
             value={channel}
             placeholder="-1001234567890"
