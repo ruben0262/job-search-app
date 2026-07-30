@@ -117,7 +117,7 @@ def pending_feed(session: Session, user_id: _uuid.UUID, *, cutoff: float,
     if store is not None:
         with _fetching_as(store, user_id) as client:
             if client is not None:
-                date_candidates(session, items, client)
+                items = date_candidates(session, items, client)
 
     return select_feed(items, rules, limit=limit, first_seen=first_seen)
 

@@ -31,6 +31,7 @@ fresh".
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 
 from libs.corpus.postings import ProxyUnusable, fetch_meta, linkedin_id
 from libs.corpus.repository import CorpusRepository
@@ -42,48 +43,57 @@ logger = logging.getLogger(__name__)
 MAX_REFRESH = 12
 
 
-def date_candidates(session, items, client) -> int:
-    """Fill `posted_at` for the undated jobs nearest the front of the queue. Returns how many.
+def date_candidates(session, items: list, client) -> list:
+    """Fill `posted_at` for the undated jobs nearest the front of the queue. Returns the new list.
 
     `items` is the candidate list in score order, so taking from the front dates the ones most
     likely to be sent. LinkedIn only: nothing else exposes a posted time on the page that the
     listing API did not already give us, so a request would be spent to learn nothing.
 
-    Mutates the `FeedItem`s in place as well as the corpus row, because the caller is about to
-    filter on exactly these objects and re-reading them from the database would be a second query
-    for data already in hand.
+    **Returns replacements rather than mutating.** `FeedItem` is frozen, and deliberately so — it
+    is what gets rendered into a message, and a card that can be edited after the decision to send
+    it is a card that can disagree with the decision. Each dated job becomes a new item carrying
+    what the posting's own page said; the corpus row is updated in the same breath, so the next
+    user gets it without a fetch.
     """
     corpus = CorpusRepository(session)
+    updated: list = []
     dated = 0
 
     for item in items:
-        if dated >= MAX_REFRESH:
-            break
-        if item.posted_at is not None or not linkedin_id(item.url):
+        if dated >= MAX_REFRESH or item.posted_at is not None or not linkedin_id(item.url):
+            updated.append(item)
             continue
 
         try:
             meta = fetch_meta(item.url, client=client)
         except ProxyUnusable as exc:
-            # The credential, not this job. Every remaining fetch would fail the same way.
+            # The credential, not this job. Every remaining fetch would fail the same way, so the
+            # rest of the list is passed through undated rather than retried twelve times.
             logger.warning("freshness: stopping, the proxy refused: %s", exc)
+            updated.append(item)
+            updated.extend(items[len(updated):])
             break
 
         if meta["accepting"] is False:
             corpus.mark_closed(item.job_id)
-            item.closed = True
+            updated.append(replace(item, closed=True))
+            continue
 
         if meta["posted_at"] is None:
+            updated.append(item)
             continue
 
         corpus.set_posting_metadata(
             item.job_id, applicants=meta["applicants"], reposted=meta["reposted"],
             workplace=meta["workplace"], posted_at=meta["posted_at"])
-        item.posted_at = meta["posted_at"]
-        item.applicants = meta["applicants"] if meta["applicants"] is not None else item.applicants
-        item.reposted = meta["reposted"] if meta["reposted"] is not None else item.reposted
+        updated.append(replace(
+            item,
+            posted_at=meta["posted_at"],
+            applicants=meta["applicants"] if meta["applicants"] is not None else item.applicants,
+            reposted=meta["reposted"] if meta["reposted"] is not None else item.reposted))
         dated += 1
 
     if dated:
         logger.info("freshness: dated %d candidate(s) before selection", dated)
-    return dated
+    return updated
