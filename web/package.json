@@ -9,6 +9,7 @@
     "types": "python scripts/dump_openapi.py && openapi-typescript openapi.json -o src/api-types.ts"
   },
   "dependencies": {
+    "framer-motion": "^12.43.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
