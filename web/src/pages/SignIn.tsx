@@ -105,6 +105,12 @@ export function SignIn({
         >
           {mode === "in" ? "Create an account" : "Sign in instead"}
         </a>
+        {mode === "in" ? (
+          <>
+            {" · "}
+            <a href="#/forgot">Forgot your password?</a>
+          </>
+        ) : null}
       </p>
     </AuthShell>
   );

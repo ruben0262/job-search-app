@@ -47,7 +47,7 @@ from libs.auth import (
 from libs.auth.access import issue_access_token
 from libs.auth.sessions import ACCESS_TTL, REFRESH_TTL, session_owner
 from libs.db.models import User, UserSession
-from libs.mail import EmailSender, MailError, send_within_cap, verification_email
+from libs.mail import EmailSender, MailError, reset_email, send_within_cap, verification_email
 from libs.secrets import redacting
 from services.api.deps import get_db, get_mailer, rate_limit
 
@@ -149,6 +149,76 @@ def verify(token: str, db: Session = Depends(get_db)) -> dict:
     return {"status": "verified"}
 
 
+class ForgotRequest(BaseModel):
+    email: EmailStr
+
+
+@router.post("/forgot", status_code=status.HTTP_202_ACCEPTED)
+def forgot(body: ForgotRequest, request: Request, db: Session = Depends(get_db),
+           mailer: EmailSender = Depends(get_mailer)) -> dict:
+    """Email a reset link. Always answers the same way, whatever actually happened.
+
+    The other half of a flow whose libs half (`reset_password` tokens, the mail template) shipped
+    in Phase 3 with nothing calling it — until now a forgotten password was a locked account.
+    Answering opaquely for an unknown address is the same no-oracle rule login follows; issuing a
+    fresh token revokes the previous link (`issue_token` does), so the newest email is always the
+    one that counts.
+    """
+    rate_limit(request, f"forgot:{body.email.lower()}", limit=3, per_seconds=3600)
+
+    user = db.scalar(select(User).where(User.email == body.email.lower()))
+    if user is not None and user.status not in ("suspended", "deleted"):
+        token = issue_token(db, user.id, "reset_password")
+        url = f"{_base_url()}/#/reset?token={token}"
+        subject, mail_body = reset_email(url)
+        with redacting(token):
+            try:
+                send_within_cap(db, mailer, user.email, subject, mail_body,
+                                purpose="reset_password")
+            except MailError:
+                logger.warning("reset email failed; the user can ask again", exc_info=True)
+    else:
+        logger.info("password reset for an unknown or inactive address; answering opaquely")
+    return {"status": "check your email"}
+
+
+class ResetRequest(BaseModel):
+    token: str = Field(min_length=1, max_length=256)
+    new_password: str = Field(min_length=1, max_length=256)
+
+
+@router.post("/reset")
+def reset(body: ResetRequest, request: Request, db: Session = Depends(get_db)) -> dict:
+    """Redeem a reset link and set the new password.
+
+    Every session dies with it — the reason a stranger resets somebody's password is that they are
+    already inside, or the owner fears they are. Nothing here logs the user in either: proving
+    control of an inbox is not a login, same as verification.
+    """
+    rate_limit(request, "reset", limit=10, per_seconds=900)
+
+    user_id = consume_token(db, body.token, "reset_password")
+    if user_id is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            detail="this link is invalid or has expired — request another")
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="account no longer exists")
+
+    problems = password_problems(body.new_password, email=user.email)
+    if problems:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail={"password": problems})
+
+    user.password_hash = hash_password(body.new_password)
+    revoke_all(db, user_id)
+    # Arriving here also proves control of the inbox, which is what verification proves.
+    if user.email_verified_at is None:
+        user.email_verified_at = _now()
+        user.status = "active"
+        user.active = True
+    return {"status": "reset"}
+
+
 @router.post("/login")
 def login(body: LoginRequest, request: Request, response: Response,
           db: Session = Depends(get_db)) -> dict:
@@ -246,7 +316,10 @@ def _send_verification(db: Session, mailer: EmailSender, email: str, token: str)
     on Gmail being reachable — or on there being allowance left today — would turn a provider
     problem into a closed front door.
     """
-    url = f"{_base_url()}/auth/verify?token={token}"
+    # The SPA's hash route, not the API's path. `/auth/verify` is a POST-only API endpoint, so a
+    # mail client GETting it lands on a 405 JSON error — which is exactly what the first user to
+    # click a real link would have seen.
+    url = f"{_base_url()}/#/verify?token={token}"
     subject, body = verification_email(url)
     # The token grants access to the account, so it is scrubbed from anything logged while it is in
     # flight — including a traceback from `smtplib`.

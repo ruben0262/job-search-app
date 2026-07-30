@@ -186,3 +186,21 @@ jobs:
       - run: python -c "import ${{ matrix.module }}"
         env:
           ACCESS_TOKEN_SECRET: ci-import-check-${{ matrix.service }}-xxxxxxxxxxxxxxxxxxxx
+
+  # Secret leakage. Every push is scanned over the full history, because a key that was committed
+  # and then removed is still in every clone — the removal commit is where people stop looking and
+  # the history is where the key still lives. This platform holds other people's Claude keys and
+  # proxy credentials, so the bar is "a leaked credential never reaches the remote", not "we would
+  # probably notice". Local-only files (accounts.local.txt, deploy/.env, .pwenc*) are gitignored;
+  # this job is the backstop for the day one of them is added with -f.
+  secrets:
+    name: secret leakage scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The whole history, not the tip — see above.
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

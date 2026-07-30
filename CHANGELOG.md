@@ -16,6 +16,36 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ## 2026-07-30
 
+### The auth audit: two findings, both the missing half of something shipped
+
+Prompted by the owner asking whether everything ported from the FlowSolutions reference
+(`AUTH_REUSE.md`) actually works. The §3 decision table checks out line by line — argon2id at the
+production parameters, tokens hashed at rest, 15 min/30 day TTLs, cookie flags and the scoped
+refresh path, the 12-character minimum, no v1 path. What the audit found was not a wrong decision
+but two flows whose libs half existed and whose route half did not:
+
+**The emailed verification link pointed at a POST-only API path.** `{PUBLIC_URL}/auth/verify?...`
+— a mail client GETs, and the answer is a 405 JSON error. Both accounts were migrated rather than
+signed up, so no human had ever clicked a real link. Both emails now point at the SPA's hash
+routes (`/#/verify`, `/#/reset`), and a test pins that.
+
+**Password reset did not exist.** `reset_password` tokens, their one-hour TTL, and the mail
+template all shipped in Phase 3 with nothing calling them — a forgotten password was a locked
+account, on a platform whose accounts hold paid credentials. `POST /auth/forgot` (opaque always,
+same no-oracle rule as login; a fresh link revokes the previous one) and `POST /auth/reset`
+(strength-checked, revokes every session, does not log in — proving control of an inbox is not a
+login, and a verification token is not a reset token) close it, with `#/forgot` and `#/reset`
+pages behind the sign-in form's "Forgot your password?".
+
+**Password change from settings**, same commit family: `PUT /account/password` with the
+reference's semantics — current password required, new must differ, every session dies including
+the one asking, cookies cleared in the response rather than left to expire.
+
+**And CI scans for leaked secrets.** Gitleaks over the full history on every push, because a key
+committed and then removed is still in every clone. The first full-history scan found exactly one
+thing: a test's literal `"argon2-placeholder"`, now pinned by fingerprint in `.gitleaksignore`
+so the suppression cannot widen. The local-only credential files were confirmed gitignored.
+
 ### The app looks like the landing page, and the jobs page becomes a table
 
 The two top items of the handover's work order, plus the setup-chat fixes beneath them.

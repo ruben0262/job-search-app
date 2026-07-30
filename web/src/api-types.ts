@@ -144,6 +144,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/forgot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Forgot
+         * @description Email a reset link. Always answers the same way, whatever actually happened.
+         *
+         *     The other half of a flow whose libs half (`reset_password` tokens, the mail template) shipped
+         *     in Phase 3 with nothing calling it — until now a forgotten password was a locked account.
+         *     Answering opaquely for an unknown address is the same no-oracle rule login follows; issuing a
+         *     fresh token revokes the previous link (`issue_token` does), so the newest email is always the
+         *     one that counts.
+         */
+        post: operations["forgot_auth_forgot_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/login": {
         parameters: {
             query?: never;
@@ -218,6 +244,30 @@ export interface paths {
          * @description Rotate the refresh token and mint a new access token.
          */
         post: operations["refresh_auth_refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reset
+         * @description Redeem a reset link and set the new password.
+         *
+         *     Every session dies with it — the reason a stranger resets somebody's password is that they are
+         *     already inside, or the owner fears they are. Nothing here logs the user in either: proving
+         *     control of an inbox is not a login, same as verification.
+         */
+        post: operations["reset_auth_reset_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1044,6 +1094,14 @@ export interface components {
             /** Content */
             content: string;
         };
+        /** ForgotRequest */
+        ForgotRequest: {
+            /**
+             * Email
+             * Format: email
+             */
+            email: string;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -1194,6 +1252,13 @@ export interface components {
          * @enum {string}
          */
         RemotePolicy: "remote_only" | "remote_or_hybrid" | "any";
+        /** ResetRequest */
+        ResetRequest: {
+            /** New Password */
+            new_password: string;
+            /** Token */
+            token: string;
+        };
         /**
          * SearchSection
          * @description One search, targeted at one platform or at all of them.
@@ -1535,6 +1600,41 @@ export interface operations {
             };
         };
     };
+    forgot_auth_forgot_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ForgotRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     login_auth_login_post: {
         parameters: {
             query?: never;
@@ -1630,6 +1730,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    reset_auth_reset_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResetRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

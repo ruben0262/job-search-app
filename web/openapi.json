@@ -345,6 +345,20 @@
         "title": "FileEdit",
         "type": "object"
       },
+      "ForgotRequest": {
+        "properties": {
+          "email": {
+            "format": "email",
+            "title": "Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "ForgotRequest",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -711,6 +725,28 @@
         ],
         "title": "RemotePolicy",
         "type": "string"
+      },
+      "ResetRequest": {
+        "properties": {
+          "new_password": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "New Password",
+            "type": "string"
+          },
+          "token": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "new_password"
+        ],
+        "title": "ResetRequest",
+        "type": "object"
       },
       "SearchSection": {
         "additionalProperties": false,
@@ -1247,6 +1283,50 @@
         ]
       }
     },
+    "/auth/forgot": {
+      "post": {
+        "description": "Email a reset link. Always answers the same way, whatever actually happened.\n\nThe other half of a flow whose libs half (`reset_password` tokens, the mail template) shipped\nin Phase 3 with nothing calling it \u2014 until now a forgotten password was a locked account.\nAnswering opaquely for an unknown address is the same no-oracle rule login follows; issuing a\nfresh token revokes the previous link (`issue_token` does), so the newest email is always the\none that counts.",
+        "operationId": "forgot_auth_forgot_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ForgotRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Forgot Auth Forgot Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Forgot",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/auth/login": {
       "post": {
         "description": "Exchange a password for a session. Sets both cookies.",
@@ -1354,6 +1434,50 @@
           }
         },
         "summary": "Refresh",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/reset": {
+      "post": {
+        "description": "Redeem a reset link and set the new password.\n\nEvery session dies with it \u2014 the reason a stranger resets somebody's password is that they are\nalready inside, or the owner fears they are. Nothing here logs the user in either: proving\ncontrol of an inbox is not a login, same as verification.",
+        "operationId": "reset_auth_reset_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Reset Auth Reset Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reset",
         "tags": [
           "auth"
         ]

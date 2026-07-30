@@ -19,6 +19,7 @@ import { FeedPage } from "./pages/FeedPage";
 import { Onboarding } from "./pages/Onboarding";
 import { PrivacyPage } from "./pages/PrivacyPage";
 import { ProcessPage } from "./pages/ProcessPage";
+import { ForgotPassword, ResetPassword } from "./pages/ResetPassword";
 import { SetupPage } from "./pages/SetupPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { SignIn } from "./pages/SignIn";
@@ -61,9 +62,12 @@ export function App() {
     void reload();
   }, [reload]);
 
-  // Public, and reachable signed out: signup links it before anybody has an account.
+  // Public, and reachable signed out: signup links it before anybody has an account, and the two
+  // email links must work whatever session state the browser happens to be in.
   if (hash.startsWith("/privacy")) return <PrivacyPage />;
   if (hash.startsWith("/verify")) return <Verify onDone={reload} />;
+  if (hash.startsWith("/forgot")) return <ForgotPassword />;
+  if (hash.startsWith("/reset")) return <ResetPassword />;
 
   if (session.state === "loading") return <main className="centered">Loading…</main>;
 

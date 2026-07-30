@@ -1,0 +1,4 @@
+# Known false positives, pinned by fingerprint (commit:file:rule:line) so the suppression cannot
+# accidentally widen. `argon2-placeholder` is a test fixture's literal stand-in for a hash — the
+# real hashes never appear anywhere, which is the property the scan exists to keep.
+7a38dfc1579b76cc91fb4dfcb776047b3ec857e0:tests/test_schema.py:generic-api-key:60

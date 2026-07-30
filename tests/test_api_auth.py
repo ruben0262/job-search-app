@@ -301,3 +301,77 @@ def test_no_recipient_address_is_stored(client):
 
     columns = set(MailSend.__table__.columns.keys())
     assert not (columns & {"to_email", "recipient", "email", "address"})
+
+
+# ── forgot / reset ────────────────────────────────────────────────────────────────────────────
+
+def test_forgot_answers_identically_for_a_known_and_unknown_address(client):
+    """The same no-oracle rule as login: a reset form must not confirm who has an account."""
+    http, session, mailer = client
+    email = _email()
+    _signup(http, email)
+    session.flush()
+
+    known = http.post("/auth/forgot", json={"email": email})
+    unknown = http.post("/auth/forgot", json={"email": _email()})
+    assert known.status_code == unknown.status_code == 202
+    assert known.json() == unknown.json()
+
+
+def test_the_emailed_links_point_at_the_spa_routes_not_the_api(client):
+    """`/auth/verify` is a POST-only API path; a mail client GETs, and would land on a 405. The
+    first real signup would have found this."""
+    http, session, mailer = client
+    email = _email()
+    _signup(http, email)
+    assert "/#/verify?token=" in mailer.sent[-1][2]
+
+    session.flush()
+    http.post("/auth/forgot", json={"email": email})
+    assert "/#/reset?token=" in mailer.sent[-1][2]
+
+
+def test_reset_sets_the_password_ends_every_session_and_does_not_log_in(client):
+    http, session, mailer = client
+    email, _ = _logged_in(http, session, mailer)
+
+    http.post("/auth/forgot", json={"email": email})
+    token = _link_token(mailer)
+    response = http.post("/auth/reset", json={"token": token,
+                                              "new_password": "an entirely different phrase"})
+    assert response.status_code == 200
+    assert "set-cookie" not in {k.lower() for k in response.headers}
+
+    from libs.db.models import UserSession
+    user_id = session.scalar(select(User.id).where(User.email == email))
+    live = session.query(UserSession).filter(UserSession.user_id == user_id,
+                                             UserSession.revoked_at.is_(None)).count()
+    assert live == 0
+
+    old = http.post("/auth/login", json={"email": email, "password": PASSWORD})
+    assert old.status_code == 401
+    new = http.post("/auth/login", json={"email": email,
+                                         "password": "an entirely different phrase"})
+    assert new.status_code == 200
+
+
+def test_a_reset_token_works_once_and_a_verification_token_is_not_a_reset_token(client):
+    """"Can receive email" must not become "can take the account" through the wrong door."""
+    http, session, mailer = client
+    email = _email()
+    _signup(http, email)
+    verify_token = _link_token(mailer)
+
+    crossed = http.post("/auth/reset", json={"token": verify_token,
+                                             "new_password": "an entirely different phrase"})
+    assert crossed.status_code == 400
+
+    http.post(f"/auth/verify?token={verify_token}")
+    http.post("/auth/forgot", json={"email": email})
+    reset_token = _link_token(mailer)
+    first = http.post("/auth/reset", json={"token": reset_token,
+                                           "new_password": "an entirely different phrase"})
+    second = http.post("/auth/reset", json={"token": reset_token,
+                                            "new_password": "yet another phrase entirely"})
+    assert first.status_code == 200
+    assert second.status_code == 400
