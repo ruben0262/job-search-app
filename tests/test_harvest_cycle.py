@@ -364,3 +364,46 @@ def test_the_recency_window_is_the_widest_any_user_asked_for(ctx):
 
     built = build_source_configs(t.active_configs(), env={})
     assert built["remotive"]["max_age_hours"] == 168
+
+
+# ── the age window actually reaching the sources ──────────────────────────────────────────────
+
+def test_the_jobspy_tier_is_given_the_age_window_under_the_key_it_reads():
+    """**The bug that put month-old, already-closed postings into live feeds.**
+
+    The ATS and REST adapters filter on `max_age_hours`; the JobSpy tier — LinkedIn, Indeed,
+    Google, which produce most of the volume — passes `hours_old` to the scraper and ignores
+    anything else. Only the first was ever set, so the age filter was real for two thirds of the
+    sources and absent for the ones that mattered. The reference's watcher sets both and its
+    comment says exactly why.
+    """
+    from services.harvester.source_config import build_source_configs
+
+    configs = build_source_configs({
+        "user-1": {"sections": [{"keywords": ["python"], "posted_within_hours": 4}]}})
+
+    assert configs, "no sources enabled — the assertion below would pass vacuously"
+    for source, cfg in configs.items():
+        assert cfg.get("hours_old") == cfg.get("max_age_hours"), (
+            f"{source} would filter on one key and scrape on the other")
+
+
+def test_the_window_is_the_widest_any_active_account_asked_for():
+    """The corpus is shared, so one fetch serves everyone and it has to be the most generous ask.
+    Each user's own window is then applied at delivery, not here."""
+    from services.harvester.source_config import build_source_configs
+
+    configs = build_source_configs({
+        "tight": {"sections": [{"keywords": ["python"], "posted_within_hours": 2}]},
+        "wide": {"sections": [{"keywords": ["python"], "posted_within_hours": 72}]}})
+
+    assert all(cfg["hours_old"] == 72 for cfg in configs.values())
+
+
+def test_an_account_may_ask_for_a_window_as_tight_as_the_reference_watcher():
+    """The reference's frequent loop runs at two hours, and being first to a posting is the single
+    biggest thing a candidate controls. A six-hour floor made the platform's tightest setting three
+    times looser than the instance it was ported from."""
+    from libs.contracts.config import SearchSection
+
+    assert SearchSection(keywords=["python"], posted_within_hours=2).posted_within_hours == 2

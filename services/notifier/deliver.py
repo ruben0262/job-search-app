@@ -82,6 +82,9 @@ def pending_feed(session: Session, user_id: _uuid.UUID, *, cutoff: float,
                CorpusJob.first_seen_at)
         .join(CorpusJob, CorpusJob.id == UserJobState.job_id)
         .where(UserJobState.user_id == user_id,
+               # Never a closed posting. Filtered in SQL rather than in `eligibility` because it is
+               # not a judgement about the user's preferences — there is nothing to apply for.
+               CorpusJob.closed_at.is_(None),
                UserJobState.notified_at.is_(None),
                UserJobState.score.is_not(None),
                UserJobState.score >= cutoff)

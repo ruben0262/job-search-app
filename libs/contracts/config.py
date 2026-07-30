@@ -212,7 +212,12 @@ class SearchSection(BaseModel):
     # 24 hours by default. The harvest runs every 15 minutes, so a wider window mostly re-reads
     # postings already deduplicated away — but a brand new account needs one wider pass or its first
     # impression of the product is a blank page, which is what `COLD_START_PLAN.md` covers.
-    posted_within_hours: int = Field(default=24, ge=6, le=168)
+    #
+    # **The floor is 1, not 6.** The reference's frequent loop runs at two hours
+    # (`WATCHER_MAX_AGE_HOURS`) and that is the whole point of it: being first to a posting is the
+    # single biggest thing a candidate controls, and a six-hour floor made the platform's tightest
+    # setting three times looser than the instance it was ported from.
+    posted_within_hours: int = Field(default=24, ge=1, le=168)
 
     @field_validator("keywords", "exclude_keywords")
     @classmethod

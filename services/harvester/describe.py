@@ -58,6 +58,9 @@ class DescribeReport:
     # Set when the pass stopped because the proxy itself refused — out of traffic, bad credentials,
     # unreachable. A run that ends this way is not a run that found nothing.
     proxy_error: str | None = None
+    # Postings that answered "no longer accepting applications". Not a failure — finding them is
+    # the job, and each one is a card the user does not have to read.
+    closed: int = 0
 
     @property
     def hit_rate(self) -> float:
@@ -140,6 +143,12 @@ def refresh_metadata(corpus: CorpusRepository, client, *, limit: int) -> Describ
             logger.warning("metadata: stopping, the proxy refused: %s", exc)
             break
 
+        if meta["accepting"] is False:
+            # The posting itself says so. Worth more than every other signal on the page: a closed
+            # listing in a feed costs the user attention and sometimes a build before they find out.
+            corpus.mark_closed(job.id)
+            report.closed += 1
+
         before = (job.applicants, job.easy_apply, job.reposted, job.workplace, job.posted_at)
         corpus.set_posting_metadata(
             job.id, applicants=meta["applicants"], easy_apply=meta["easy_apply"],
@@ -150,8 +159,8 @@ def refresh_metadata(corpus: CorpusRepository, client, *, limit: int) -> Describ
         if meta["application_url"] and not job.application_url:
             corpus.set_application_url(job.id, meta["application_url"])
 
-    logger.info("metadata: %d attempted, %d written — %s",
-                report.attempted, report.metadata_written, report.outcomes)
+    logger.info("metadata: %d attempted, %d written, %d closed — %s",
+                report.attempted, report.metadata_written, report.closed, report.outcomes)
     audit(logger, "harvest.metadata", attempted=report.attempted,
           written=report.metadata_written, outcomes=report.outcomes)
     return report

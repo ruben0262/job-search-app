@@ -19,7 +19,17 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import Boolean, Float, ForeignKey, Integer, SmallInteger, String, func
+from sqlalchemy import (
+    Boolean,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    SmallInteger,
+    String,
+    func,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from libs.db.base import Base, timestamptz
@@ -54,3 +64,11 @@ class ShadowScore(Base):
     profile_generation: Mapped[int | None] = mapped_column(SmallInteger)
 
     created_at: Mapped[timestamptz] = mapped_column(server_default=func.now())
+
+    __table_args__ = (
+        # The one query this table exists to serve: "how well has the model agreed with the judge
+        # lately, for this user". Declared here rather than only in the migration that created it —
+        # an index the models do not know about is one autogenerate proposes dropping on every
+        # subsequent revision, and eventually somebody accepts.
+        Index("ix_shadow_scores_user_recent", "user_id", text("created_at DESC")),
+    )

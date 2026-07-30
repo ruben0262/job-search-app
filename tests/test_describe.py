@@ -360,3 +360,58 @@ def test_a_board_row_is_never_in_the_metadata_queue(repo):
     corpus.set_description(job_id, "A genuine job description. " * 40)
     session.flush()
     assert job_id not in [job.id for job in corpus.awaiting_metadata()]
+
+
+# ── a closed posting must not reach a feed ────────────────────────────────────────────────────
+
+CLOSED_GUEST = ('<p>No longer accepting applications</p>'
+                '<span class="posted-time-ago__text"> 1 month ago </span>' + "x" * 300)
+
+
+def test_a_closed_posting_is_marked_and_leaves_the_queue(repo):
+    """**The failure the user saw.** A month-old, already-closed LinkedIn posting arrived as a live
+    card with two build buttons on it. The page said so plainly and nothing read it."""
+    from services.harvester.describe import refresh_metadata
+
+    corpus, session = repo
+    job_id = _linkedin(corpus)
+    corpus.set_description(job_id, "A genuine job description. " * 40)
+    session.flush()
+
+    report = refresh_metadata(corpus, FakeClient(CLOSED_GUEST), limit=10)
+    session.flush()
+
+    assert report.closed == 1
+    assert session.get(CorpusJob, job_id).closed_at is not None
+    assert job_id not in [job.id for job in corpus.awaiting_metadata()]
+
+
+def test_marking_closed_keeps_the_row_and_its_description(repo):
+    """Not a deletion and not a trim. A CV already built against it keeps its evidence; what stops
+    is delivery."""
+    corpus, session = repo
+    job_id = _linkedin(corpus)
+    corpus.set_description(job_id, "A genuine job description. " * 40)
+    session.flush()
+
+    corpus.mark_closed(job_id)
+    session.flush()
+
+    job = session.get(CorpusJob, job_id)
+    assert job.description and job.trimmed_at is None
+
+
+def test_closing_twice_does_not_move_the_timestamp(repo):
+    """A listing that reopens is rare; a timestamp that drifts is worse than a stale one."""
+    corpus, session = repo
+    job_id = _linkedin(corpus)
+    session.flush()
+
+    corpus.mark_closed(job_id)
+    session.flush()
+    first = session.get(CorpusJob, job_id).closed_at
+
+    corpus.mark_closed(job_id)
+    session.flush()
+    session.expire_all()
+    assert session.get(CorpusJob, job_id).closed_at == first

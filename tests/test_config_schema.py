@@ -128,7 +128,7 @@ def test_keyword_length_is_bounded_and_names_the_field(bad):
     ("field", "value"),
     [("min_salary", -1), ("min_salary", 500_001),
      ("max_notifications_per_day", 0), ("max_notifications_per_day", 101),
-     ("posted_within_hours", 5), ("posted_within_hours", 169)])
+     ("posted_within_hours", 0), ("posted_within_hours", 169)])
 def test_out_of_range_values_are_rejected_with_the_field_named(field, value):
     with pytest.raises(ValidationError) as exc:
         _valid(**{field: value})
@@ -139,7 +139,10 @@ def test_out_of_range_values_are_rejected_with_the_field_named(field, value):
     ("field", "value"),
     [("min_salary", 0), ("min_salary", 500_000),
      ("max_notifications_per_day", 1), ("max_notifications_per_day", 100),
-     ("posted_within_hours", 6), ("posted_within_hours", 168)])
+     # 1 hour, not 6. The reference's frequent loop runs at two, and being first to a posting is
+     # the single biggest thing a candidate controls — a six-hour floor made the platform's
+     # tightest setting three times looser than the instance it was ported from.
+     ("posted_within_hours", 1), ("posted_within_hours", 168)])
 def test_the_boundaries_themselves_are_accepted(field, value):
     """Off-by-one on a bound is a real bug: it makes a documented-legal value mysteriously fail."""
     assert _field(_valid(**{field: value}), field) == value

@@ -299,11 +299,24 @@ class CorpusRepository:
         return list(self._s.scalars(
             select(CorpusJob)
             .where(CorpusJob.trimmed_at.is_(None),
+                   CorpusJob.closed_at.is_(None),
                    CorpusJob.url.like("%/jobs/view/%"),
                    CorpusJob.applicants.is_(None),
                    CorpusJob.posted_at.is_(None))
             .order_by(CorpusJob.first_seen_at.desc())
             .limit(limit)))
+
+    def mark_closed(self, job_id: int) -> None:
+        """Record that the posting is no longer accepting applications. Idempotent.
+
+        Not a deletion and not a trim: the row, its description and any CV already built against it
+        all stay. What stops is delivery. `closed_at` is set once and never moved, because a
+        listing that reopens is rare and a timestamp that drifts is worse than a stale one.
+        """
+        self._s.execute(
+            update(CorpusJob)
+            .where(CorpusJob.id == job_id, CorpusJob.closed_at.is_(None))
+            .values(closed_at=datetime.now(UTC)))
 
     def set_posting_metadata(self, job_id: int, *, applicants: int | None = None,
                              easy_apply: bool | None = None, reposted: bool | None = None,

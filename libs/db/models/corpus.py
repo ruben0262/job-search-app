@@ -122,6 +122,11 @@ class CorpusJob(Base):
     # 'remote' | 'hybrid' | 'onsite'. NULL means unknown, and unknown means keep — the fail-open
     # rule `libs/corpus/workfilter.py` applies.
     workplace: Mapped[str | None] = mapped_column(String(8))
+    # When the posting said "no longer accepting applications". **Not a deletion**: the row stays,
+    # the description stays, and a CV already built against it keeps its evidence — what changes is
+    # that it stops being delivered. A closed listing in a feed is worse than no listing, because
+    # the user spends attention and sometimes a build before finding out.
+    closed_at: Mapped[timestamptz | None]
 
     posted_at: Mapped[timestamptz | None]
     first_seen_at: Mapped[timestamptz] = mapped_column(server_default=func.now())

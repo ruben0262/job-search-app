@@ -211,6 +211,8 @@ export function ConfigStep({ onDone }: { onDone: () => void }) {
             })
           }
         >
+          <option value={2}>Posted in the last 2 hours</option>
+          <option value={4}>Posted in the last 4 hours</option>
           <option value={6}>Posted in the last 6 hours</option>
           <option value={12}>Posted in the last 12 hours</option>
           <option value={24}>Posted in the last day</option>

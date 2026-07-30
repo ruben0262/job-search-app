@@ -138,7 +138,17 @@ def build_source_configs(
     for source in active:
         cfg = dict(PLATFORM_DEFAULTS.get(source, {}))
         cfg["enabled"] = True
+        # **Both keys, because the two tiers read different ones.** The ATS and REST adapters
+        # filter on `max_age_hours`; the JobSpy tier (LinkedIn, Indeed, Google) passes `hours_old`
+        # straight to the scraper and ignores anything else. Setting only the first is what put
+        # month-old, already-closed LinkedIn postings into live feeds: the age filter was real for
+        # two thirds of the sources and absent for the ones that produce most of the volume.
+        #
+        # The reference's watcher does the same thing explicitly and says why: "the JobSpy sources
+        # use `hours_old` instead ... so force `hours_old` to the same window, else we'd stream a
+        # day of jobs, not the freshest slice."
         cfg["max_age_hours"] = max_age
+        cfg["hours_old"] = max_age
         if keywords:
             cfg["keywords"] = keywords
         if locations:
