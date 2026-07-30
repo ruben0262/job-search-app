@@ -16,6 +16,58 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ## 2026-07-30
 
+### A chat turn that survives the browser, and the cap that was never enforced
+
+**The turn ran inside the HTTP request, and that was the bug.** It takes minutes on a frontier
+model, so switching tabs, opening another chat, refreshing or signing out aborted it — the user's
+question was already committed and the reply never arrived, with nothing on screen to say why.
+Persistence was never the problem; the request's lifetime was.
+
+So a turn is a queue job now (`setup` lane, `services/setupagent`). The API writes the question and
+a **pending** assistant row and returns `202` immediately; the worker streams text into that row as
+the model produces it and marks it done. The page polls while anything is unfinished, so what it
+renders is the same row whether somebody watched it arrive or came back the next morning — with a
+caret while text is landing, and a failed turn written down rather than swallowed, because a chat
+that silently stops answering is indistinguishable from one still thinking.
+
+Proven in a browser, not asserted: send → thinking state → streaming text → **navigate to Jobs
+mid-turn** → come back → the reply is there and complete → full page reload → still there.
+
+**Two bugs found on the way.** `CLAIM_TIMEOUT_MIN` had no `setup` entry, so the new worker
+crash-looped on its first sweep rather than its first job — a test now pins that the lane list and
+the timeout map agree by construction. And a stored config section written before `locations`
+existed has the key absent, which the old `<select multiple>` tolerated and `.includes()` does
+not: the whole details page went blank. Defaults are spread under the stored section now.
+
+### Telegram: your own cap was being ignored
+
+Nothing was arriving, and it was not the proxy. Two separate causes, both now understood:
+
+- **`max_notifications_per_day` was read by nothing.** It is in the config schema and on the
+  dashboard ("At most 20 messages a day"), and `deliver()` used its own hardcoded 100 regardless.
+  The account that asked for 20 received **160 in sixteen hours**, which is what exhausted the
+  window it is now stuck behind. `deliver` reads the user's config (migrated, so v1 rows count
+  too), with tests for both shapes.
+- **The other account's candidates are all too old** — 44 unsent jobs at or above the cutoff, none
+  posted within its 6-hour window. That is the JobSpy/LinkedIn ingestion gap, not a filter fault.
+
+The cap counts from the user's local midnight, so the account that overshot resumes on its own.
+
+### Everything else asked for
+
+**Deleting a credential asks first**, naming what stops: job delivery, the profile chat, LinkedIn
+collection. A one-click destructive control next to a copy button is a mis-click waiting to happen.
+
+**Freshness lives in Settings alone.** It was on both the config form and the delivery card, and
+nobody could say which was in force — they wrote the same field, so both worked, which is worse
+than one being broken. Settings keeps it, beside the interval it is so often confused with.
+
+**The config form was rebuilt for people who do not read forms.** Two newline-separated textareas
+and a `<select multiple>` became chips you add one at a time and labelled checkboxes grouped into
+"work from anywhere", "regions and countries" and "cities" — with the distinction between "remote
+from the EU" and "in the EU" written out, because it is the one everybody gets wrong. Onboarding
+and Your details share the component, so both changed at once.
+
 ### Three chats per account, each with its own memory
 
 Persistence was never the gap — the transcript has always been a table, so a closed tab, a

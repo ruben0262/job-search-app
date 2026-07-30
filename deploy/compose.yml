@@ -117,6 +117,28 @@ services:
     mem_limit: 512m
     cpus: 1
 
+  # `setup` lane. One chat turn, run off the request path so navigating away cannot kill it — the
+  # bug this service exists to remove. Streams its reply into the message row as it goes, which is
+  # what the page polls.
+  setupagent:
+    build:
+      context: ..
+      dockerfile: deploy/docker/Dockerfile.setupagent
+    environment:
+      DATABASE_URL: postgresql+psycopg://jobsearch:${POSTGRES_PASSWORD:?}@postgres:5432/jobsearch
+      SECRETS_KEK: ${SECRETS_KEK:?set it in deploy/.env — the workers cannot decrypt without it}
+      LOG_DIR: /var/log/jobsearch
+      WORKER_NAME: setupagent-1
+    volumes:
+      - ../logs:/var/log/jobsearch
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: always
+    # Small: one transcript in memory, waiting on the network for most of the turn.
+    mem_limit: 512m
+    cpus: 1
+
   # `label` lane. One Haiku call per job over 50 postings, then it re-enqueues itself — so this is
   # the container that runs longest and most often on a new account.
   labeller:

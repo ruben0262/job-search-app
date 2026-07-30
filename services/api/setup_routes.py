@@ -24,20 +24,20 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from libs.agents.loop import run_turn
+from libs.agents.loop import touch_conversation
 from libs.db.models import (
     MAX_CONVERSATIONS,
     SETUP_AGENTS,
     SetupConversation,
     SetupMessage,
     User,
+    UserSecret,
 )
-from libs.llm import CLAUDE_KINDS, client_for
+from libs.llm import CLAUDE_KINDS
 from libs.obs import audit
 from libs.profiles import SEED_FILES
 from libs.profiles.repository import ProfileFiles
 from libs.queue import enqueue
-from libs.secrets import SecretStore, redacting
 from services.api.deps import current_user, get_db
 
 logger = logging.getLogger(__name__)
@@ -57,6 +57,12 @@ class Turn(BaseModel):
 
 class FileEdit(BaseModel):
     content: str = Field(max_length=200_000)
+
+
+def _stored_claude_kinds(db: Session, user_id: _uuid.UUID) -> set[str]:
+    """Which Claude credentials this account has, if any."""
+    stored = set(db.scalars(select(UserSecret.kind).where(UserSecret.user_id == user_id)).all())
+    return stored & set(CLAUDE_KINDS)
 
 
 def _conversations(db: Session, user_id: _uuid.UUID) -> list[SetupConversation]:
@@ -122,7 +128,10 @@ def conversation(db: Session = Depends(get_db),
                                                if row.last_message_at else None)}
                           for row in existing],
         "max_conversations": MAX_CONVERSATIONS,
+        # `status` is what tells the page whether to keep polling: a `pending` or `streaming` row
+        # is a turn still running somewhere, and it renders as the thinking state.
         "messages": [{"role": row.role, "content": row.content, "agent": row.agent,
+                      "status": row.status, "error": row.error,
                       "files_written": _written(row.tool_calls),
                       "at": row.created_at.isoformat() if row.created_at else None}
                      for row in rows],
@@ -171,13 +180,16 @@ def delete_conversation(conversation_id: _uuid.UUID, db: Session = Depends(get_d
     return {"status": "deleted"}
 
 
-@router.post("/message")
+@router.post("/message", status_code=status.HTTP_202_ACCEPTED)
 def send(body: Turn, db: Session = Depends(get_db),
          user_id: _uuid.UUID = Depends(current_user)) -> dict:
-    """One turn: the user says something, the agent answers and writes what it learned.
+    """Accept one turn and queue it. Answers immediately; the reply arrives in the transcript.
 
-    Synchronous, and a turn can take minutes on a frontier model. The client shows it as pending;
-    an interview that arrives complete is better than one that arrives in pieces and then fails.
+    **This used to run the turn inside the request, and that was the bug.** A turn takes minutes on
+    a frontier model, so switching tabs, opening another chat, refreshing or signing out aborted
+    it — the user's message was committed, the reply never came, and nothing said why. Now the
+    pending assistant row is created here and `services/setupagent` fills it in, so a turn survives
+    everything the browser can do to it.
 
     **On the user's own credential**, like every other call this platform makes. Their profile,
     their spend, no platform cost.
@@ -199,36 +211,31 @@ def send(body: Turn, db: Session = Depends(get_db),
             db.add(current)
             db.flush()
 
-    store = SecretStore(db)
-    for kind in CLAUDE_KINDS:
-        with store.use(user_id, kind) as secret:
-            if secret is None:
-                continue
-            value = secret.reveal()
-            with redacting(value):
-                result = run_turn(db, user_id, client=client_for(value, kind),
-                                  message=body.message, agent=body.agent,
-                                  conversation_id=current.id)
+    # Refused here rather than in the worker: "connect your Claude account" is an answer the user
+    # can act on at the moment they pressed send, not a failed turn they find in the transcript.
+    if not _stored_claude_kinds(db, user_id):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="Connect your Claude account first — setup runs on your own credential.")
 
-        files = ProfileFiles(db, user_id)
-        audit(logger, "setup.turn", user=user_id, agent=body.agent,
-              tools=len(result["tools_run"]), files=len(result["files_written"]))
-        return {
-            "conversation_id": str(current.id),
-            "reply": result["reply"],
-            "files_written": result["files_written"],
-            "files": [{**row,
-                       "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None}
-                      for row in files.listing()],
-            "ready": files.is_ready(),
-            # Said, never acted on. Spending the user's money on a relabel is their decision
-            # (`REBUILD_PLAN.md`, "Retraining is a notification, never a side effect").
-            "scoring_changed": result["scoring_edits"],
-        }
+    # **Both rows before the queue sees anything.** The page renders the question and a thinking
+    # reply the instant this returns, and the worker has a row to stream into rather than one to
+    # invent.
+    db.add(SetupMessage(user_id=user_id, conversation_id=current.id,
+                        role="user", content=body.message, agent=body.agent))
+    touch_conversation(db, user_id, current.id, body.message)
+    reply = SetupMessage(user_id=user_id, conversation_id=current.id,
+                         role="assistant", content="", agent=body.agent, status="pending")
+    db.add(reply)
+    db.flush()
 
-    raise HTTPException(
-        status.HTTP_400_BAD_REQUEST,
-        detail="Connect your Claude account first — setup runs on your own credential.")
+    # No dedup key: two questions in a row are two turns, and collapsing them would silently drop
+    # the second. The per-conversation guard is the pending row itself — the client will not send
+    # again while one is open.
+    enqueue(db, "setup", user_id, payload={"message_id": reply.id, "message": body.message,
+                                           "agent": body.agent})
+    audit(logger, "setup.turn_queued", user=user_id, agent=body.agent, conversation=current.id)
+    return {"conversation_id": str(current.id), "message_id": reply.id, "status": "queued"}
 
 
 @router.get("/files/{name}")

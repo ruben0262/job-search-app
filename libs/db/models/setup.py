@@ -87,6 +87,16 @@ class SetupMessage(Base):
     role: Mapped[str] = mapped_column(String(16))
     content: Mapped[str] = mapped_column(Text)
 
+    # **How far this turn has got.** A user row is always `done`; an assistant row is created
+    # `pending`, moves to `streaming` as text arrives, and ends `done` or `failed`.
+    #
+    # It lives on the message rather than in the queue because the transcript is what the page
+    # reads, and a pending row *is* the thinking state — so a worker that dies mid-turn leaves
+    # something the reader can be told about rather than a gap nothing explains.
+    status: Mapped[str] = mapped_column(String(16), default="done")
+    # Why it failed, in the words the reader gets. Null unless `status = 'failed'`.
+    error: Mapped[str | None] = mapped_column(Text)
+
     # Which command was driving. Null for a message sent outside one.
     agent: Mapped[str | None] = mapped_column(String(32))
 
@@ -101,4 +111,6 @@ class SetupMessage(Base):
         Index("ix_setup_messages_conversation", "conversation_id", "id"),
         Index("ix_setup_messages_user", "user_id", "id"),
         CheckConstraint("role IN ('user', 'assistant')", name="setup_messages_role"),
+        CheckConstraint("status IN ('pending', 'streaming', 'done', 'failed')",
+                        name="setup_messages_status"),
     )

@@ -46,7 +46,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from libs.db.base import Base, timestamptz
 
-LANES = ("notify", "train", "docgen", "label", "process", "score")
+LANES = ("notify", "train", "docgen", "label", "process", "score", "setup")
 JOB_STATES = ("ready", "claimed", "done", "dead")
 
 # Per-lane visibility timeout (SCHEDULER_PLAN.md §4). A sweeper returns `claimed` rows older than
@@ -58,7 +58,11 @@ JOB_STATES = ("ready", "claimed", "done", "dead")
 # `score` is short: one batch of 500 rows through an already-loaded model. A long timeout
 # here would leave a crashed worker's batch unclaimable for no reason.
 CLAIM_TIMEOUT_MIN = {"notify": 2, "train": 30, "docgen": 10, "label": 30, "process": 20,
-                     "score": 5}
+                     "score": 5,
+                     # A chat turn is a tool loop against a frontier model with a human waiting on it.
+                     # Generous, because reclaiming one that is still running would re-answer a
+                     # question on the user's own credential.
+                     "setup": 20}
 
 # A permanently broken job must never retry forever. On the 5th failure the state becomes `dead` and
 # an admin alert fires — visible, rather than quietly consuming a worker slot in perpetuity.

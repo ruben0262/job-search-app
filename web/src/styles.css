@@ -1036,9 +1036,44 @@ td.num {
 
 /* A turn on a frontier model can run for minutes. The dots say "working"; the sentence says how
    long — an animation that implies seconds would be dishonest on its own. */
-.turn-body.pending {
+.turn-body .pending {
   color: var(--muted);
   font-style: italic;
+}
+
+/* A block caret while text is still arriving — the difference between "writing" and "stopped
+   mid-sentence", which a poll every 1.5s otherwise leaves ambiguous. */
+.caret {
+  display: inline-block;
+  width: 0.5rem;
+  height: 1em;
+  margin-left: 0.15rem;
+  vertical-align: text-bottom;
+  background: var(--dim);
+  animation: caret-blink 1.1s steps(1) infinite;
+}
+
+@keyframes caret-blink {
+  0%,
+  50% {
+    opacity: 1;
+  }
+  50.01%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.turn-failed {
+  border-left: 2px solid var(--danger);
+  padding-left: 0.9rem;
+}
+
+.turn-error {
+  display: block;
+  margin-top: 0.4rem;
+  color: var(--danger);
+  font-size: 0.85rem;
 }
 
 /* ── a stored credential's row ───────────────────────────────────────────────────────────── */
@@ -1130,6 +1165,108 @@ td.num {
   border: 1px solid var(--hairline);
   border-radius: 5px;
   padding: 0.1em 0.4em;
+}
+
+/* ── building a list one item at a time ──────────────────────────────────────────────────── */
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.6rem;
+}
+
+.chips:empty {
+  margin-bottom: 0;
+}
+
+.chip-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.4rem 0.3rem 0.8rem;
+  border: 1px solid var(--faint);
+  border-radius: 999px;
+  background: var(--bg-raised);
+  font-size: 0.85rem;
+}
+
+.chip-tag button {
+  background: none;
+  border: none;
+  padding: 0 0.25rem;
+  color: var(--dim);
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.chip-tag button:hover:not([disabled]) {
+  color: var(--danger);
+  transform: none;
+}
+
+/* ── picking from a fixed list ───────────────────────────────────────────────────────────────
+ *
+ * Checkboxes and radios with their labels spelled out, replacing a `<select multiple>` — a control
+ * whose rules (ctrl-click to add a second, drag to range-select) have to be explained to be used.
+ */
+
+.picker {
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 0.9rem 1rem 1rem;
+  margin: 0 0 0.7rem;
+}
+
+.picker legend {
+  padding: 0 0.4rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.picker-hint {
+  margin: 0 0 0.6rem;
+  font-size: 0.8rem;
+  color: var(--dim);
+}
+
+.picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+  gap: 0.3rem 0.9rem;
+}
+
+.pick {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  padding: 0.35rem 0;
+  font-size: 0.9rem;
+  cursor: pointer;
+  color: var(--muted);
+  transition: color var(--fade) var(--ease);
+}
+
+.pick:hover {
+  color: var(--ink);
+}
+
+.pick input {
+  width: auto;
+  margin: 0.15rem 0 0;
+  accent-color: var(--ink);
+  flex-shrink: 0;
+}
+
+.pick:has(input:checked) {
+  color: var(--ink);
+}
+
+.pick-hint {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--dim);
 }
 
 /* ── the chat switcher ───────────────────────────────────────────────────────────────────── */

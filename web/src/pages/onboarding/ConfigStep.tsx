@@ -1,5 +1,5 @@
 /**
- * Page 7 — what to search for, with a live match count.
+ * What to search for, with a live match count.
  *
  * **The count is the point of this page.** A misspelled keyword otherwise surfaces as an empty feed
  * a day later with nothing to explain it, and the person concludes the product does not work. The
@@ -7,14 +7,24 @@
  * against each site directly, so the true number is usually higher — but zero here almost always
  * means a typo.
  *
- * Locations are a picklist and not free text, and that is not only a UI choice: the harvester folds
- * queries on a normalised location, so free text would spend the shared fan-out budget on three
- * spellings of one place.
+ * **Rebuilt for people who do not read forms** (owner, 2026-07-30). It was two textareas of
+ * newline-separated text and a `<select multiple>` — three controls whose rules you have to be told:
+ * that Enter makes a new item, that ctrl-click adds a second place, that a blank line is ignored.
+ * Now search terms are chips you add one at a time, and places are labelled checkboxes in groups,
+ * so the whole page can be operated without instructions.
+ *
+ * Locations stay a fixed list rather than free text, and that is not only a UI choice: the
+ * harvester folds queries on a normalised location, so free text would spend the shared fan-out
+ * budget on three spellings of one place.
+ *
+ * **How fresh a job must be is not here.** It lives in Settings beside the delivery interval, which
+ * is the other half of the same question, and having it in two places meant nobody could say which
+ * one was in force (owner, 2026-07-30).
  */
 import { useEffect, useMemo, useState } from "react";
 
 import { api, type ConfigPreview } from "../../api";
-import { Error, Field, useAction } from "../../ui";
+import { Error, useAction } from "../../ui";
 
 type Section = {
   platform: string;
@@ -55,14 +65,53 @@ const BLANK: Config = {
   max_notifications_per_day: 20,
 };
 
-const label = (value: string) => value.replaceAll("_", " ");
+/** Places, grouped the way somebody thinks about them rather than the order the enum happens to
+ *  be in. Anything the schema adds that is not listed here still appears, under "Other". */
+const PLACE_GROUPS: { label: string; hint: string; values: string[] }[] = [
+  {
+    label: "Work from anywhere",
+    hint: "Remote roles, by where the company will hire from",
+    values: ["remote_worldwide", "remote_eu", "remote_uk", "remote_us"],
+  },
+  {
+    label: "Regions and countries",
+    hint: "Anywhere in these, including roles that ask you on site",
+    values: ["european_union", "europe", "united_kingdom", "ireland"],
+  },
+  {
+    label: "Cities",
+    hint: "Roles in and around a specific city",
+    values: ["london", "berlin", "amsterdam", "dublin", "paris", "madrid", "lisbon", "warsaw",
+             "budapest", "zurich", "stockholm", "copenhagen"],
+  },
+];
+
+/** Plain names for the values that do not read well spelled out. */
+const PLACE_NAMES: Record<string, string> = {
+  remote_worldwide: "Remote, anywhere in the world",
+  remote_eu: "Remote, from the EU",
+  remote_uk: "Remote, from the UK",
+  remote_us: "Remote, from the US",
+  european_union: "European Union",
+  united_kingdom: "United Kingdom",
+  europe: "Europe (including non-EU)",
+};
+
+const WORKPLACE: { value: string; label: string; hint: string }[] = [
+  { value: "remote_only", label: "Remote only", hint: "Never asks you to come in" },
+  { value: "remote_or_hybrid", label: "Remote or hybrid", hint: "Some days at home is fine" },
+  { value: "any", label: "Anything", hint: "Including full-time on site" },
+];
+
+const title = (value: string) =>
+  PLACE_NAMES[value] ?? value.replaceAll("_", " ").replace(/^./, (c) => c.toUpperCase());
 
 export function ConfigStep({ onDone }: { onDone: () => void }) {
   const [config, setConfig] = useState<Config>(BLANK);
   const [schema, setSchema] = useState<Schema | null>(null);
   const [preview, setPreview] = useState<ConfigPreview | null>(null);
-  const [keywordText, setKeywordText] = useState("");
-  const [excludeText, setExcludeText] = useState("");
+  const [keywords, setKeywords] = useState<string[]>([]);
+  const [excluded, setExcluded] = useState<string[]>([]);
 
   useEffect(() => {
     void api
@@ -71,30 +120,35 @@ export function ConfigStep({ onDone }: { onDone: () => void }) {
         setSchema(stored.schema);
         if (stored.config) {
           setConfig(stored.config);
-          setKeywordText((stored.config.sections[0]?.keywords ?? []).join("\n"));
-          setExcludeText((stored.config.sections[0]?.exclude_keywords ?? []).join("\n"));
+          setKeywords(stored.config.sections[0]?.keywords ?? []);
+          setExcluded(stored.config.sections[0]?.exclude_keywords ?? []);
         }
       })
       .catch(() => undefined);
   }, []);
 
-  const options = (name: string): string[] => schema?.$defs?.[name]?.enum ?? [];
+  const known = (schema?.$defs?.Location?.enum ?? []) as string[];
+  const grouped = PLACE_GROUPS.map((group) => ({
+    ...group,
+    values: group.values.filter((value) => known.includes(value)),
+  }));
+  const listed = new Set(grouped.flatMap((group) => group.values));
+  const other = known.filter((value) => !listed.has(value));
 
   const draft = useMemo<Config>(() => {
-    const lines = (text: string) =>
-      text
-        .split("\n")
-        .map((line) => line.trim())
-        .filter(Boolean);
     const [first, ...rest] = config.sections;
     return {
       ...config,
       sections: [
-        { ...(first ?? BLANK.sections[0]!), keywords: lines(keywordText), exclude_keywords: lines(excludeText) },
+        // **Defaults under the stored section, not merely in place of a missing one.** A config
+        // written before a field existed has the key absent rather than empty, and every list on
+        // this form calls `.includes` on it — a stored section with no `locations` took the whole
+        // page down until this spread was here.
+        { ...BLANK.sections[0]!, ...(first ?? {}), keywords, exclude_keywords: excluded },
         ...rest,
       ],
     };
-  }, [config, keywordText, excludeText]);
+  }, [config, keywords, excluded]);
 
   // Debounced, because it runs while somebody is still typing and a request per keystroke is a
   // request per keystroke.
@@ -118,6 +172,15 @@ export function ConfigStep({ onDone }: { onDone: () => void }) {
   });
 
   const section = draft.sections[0]!;
+  const patch = (changes: Partial<Section>) =>
+    setConfig({ ...config, sections: [{ ...section, ...changes }, ...config.sections.slice(1)] });
+
+  const toggleLocation = (value: string) =>
+    patch({
+      locations: section.locations.includes(value)
+        ? section.locations.filter((each) => each !== value)
+        : [...section.locations, value],
+    });
 
   return (
     <form
@@ -126,14 +189,14 @@ export function ConfigStep({ onDone }: { onDone: () => void }) {
         void save.run();
       }}
     >
-      <Field label="What are you looking for?" hint="One search term per line. Up to 25.">
-        <textarea
-          value={keywordText}
-          placeholder={"backend engineer\nfull-stack developer\nquant analyst"}
-          style={{ minHeight: "7rem" }}
-          onChange={(event) => setKeywordText(event.target.value)}
-        />
-      </Field>
+      <ChipInput
+        label="What job titles are you after?"
+        hint="Add them one at a time. We search for each separately, so two or three specific titles beat one vague one."
+        placeholder="e.g. backend engineer"
+        values={keywords}
+        onChange={setKeywords}
+        max={25}
+      />
 
       {preview ? (
         <p className={preview.matches === 0 ? "error" : "muted"}>
@@ -144,83 +207,82 @@ export function ConfigStep({ onDone }: { onDone: () => void }) {
         </p>
       ) : null}
 
-      <Field label="Anything to keep out?" hint="One per line. A job mentioning any of these is never shown.">
-        <textarea
-          value={excludeText}
-          placeholder={"unpaid\ninternship"}
-          style={{ minHeight: "4rem" }}
-          onChange={(event) => setExcludeText(event.target.value)}
-        />
-      </Field>
+      <ChipInput
+        label="Anything you never want to see?"
+        hint="A job whose title or company mentions one of these is never sent. Leave it empty if nothing comes to mind."
+        placeholder="e.g. unpaid"
+        values={excluded}
+        onChange={setExcluded}
+        max={25}
+      />
 
-      <Field label="Where?" hint="Pick as many as apply. Remote regions are not the same as the country itself.">
-        <select
-          multiple
-          size={6}
-          value={section.locations}
-          onChange={(event) =>
-            setConfig({
-              ...config,
-              sections: [
-                { ...section, locations: [...event.target.selectedOptions].map((option) => option.value) },
-                ...config.sections.slice(1),
-              ],
-            })
-          }
-        >
-          {options("Location").map((value) => (
-            <option key={value} value={value}>
-              {label(value)}
-            </option>
+      <div className="field">
+        <span className="label">Where would you work?</span>
+        <span className="hint">
+          Tick everything that applies. Picking a country includes its cities, and "remote from the
+          EU" is not the same as "in the EU" — it means the company hires people living there.
+        </span>
+        {grouped.map((group) =>
+          group.values.length ? (
+            <fieldset className="picker" key={group.label}>
+              <legend>{group.label}</legend>
+              <p className="picker-hint">{group.hint}</p>
+              <div className="picker-grid">
+                {group.values.map((value) => (
+                  <label key={value} className="pick">
+                    <input
+                      type="checkbox"
+                      checked={section.locations.includes(value)}
+                      onChange={() => toggleLocation(value)}
+                    />
+                    <span>{title(value)}</span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          ) : null,
+        )}
+        {other.length ? (
+          <fieldset className="picker">
+            <legend>Other</legend>
+            <div className="picker-grid">
+              {other.map((value) => (
+                <label key={value} className="pick">
+                  <input
+                    type="checkbox"
+                    checked={section.locations.includes(value)}
+                    onChange={() => toggleLocation(value)}
+                  />
+                  <span>{title(value)}</span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+        ) : null}
+        {section.locations.length === 0 ? (
+          <p className="facts">Nothing picked yet — we will search everywhere.</p>
+        ) : null}
+      </div>
+
+      <div className="field">
+        <span className="label">How often would you go in?</span>
+        <div className="picker-grid" style={{ marginTop: "0.5rem" }}>
+          {WORKPLACE.map((option) => (
+            <label key={option.value} className="pick">
+              <input
+                type="radio"
+                name="remote_policy"
+                checked={section.remote_policy === option.value}
+                onChange={() => patch({ remote_policy: option.value })}
+              />
+              <span>
+                {option.label}
+                <span className="pick-hint">{option.hint}</span>
+              </span>
+            </label>
           ))}
-        </select>
-      </Field>
-
-      <Field label="Workplace">
-        <select
-          value={section.remote_policy}
-          onChange={(event) =>
-            setConfig({
-              ...config,
-              sections: [{ ...section, remote_policy: event.target.value }, ...config.sections.slice(1)],
-            })
-          }
-        >
-          {options("RemotePolicy").map((value) => (
-            <option key={value} value={value}>
-              {label(value)}
-            </option>
-          ))}
-        </select>
-      </Field>
-
-      {/* **How old a posting may be — not how often you hear from us.** Two questions that read
-          alike and are not: the delivery interval lives in settings and decides when we check,
-          while this decides what is still worth sending when we do. A job posted four days ago
-          has been collecting applications for four days whether or not we found it this minute. */}
-      <Field label="How fresh">
-        <select
-          value={section.posted_within_hours}
-          onChange={(event) =>
-            setConfig({
-              ...config,
-              sections: [
-                { ...section, posted_within_hours: Number(event.target.value) },
-                ...config.sections.slice(1),
-              ],
-            })
-          }
-        >
-          <option value={1}>Posted in the last hour</option>
-          <option value={2}>Posted in the last 2 hours</option>
-          <option value={4}>Posted in the last 4 hours</option>
-          <option value={6}>Posted in the last 6 hours</option>
-          <option value={12}>Posted in the last 12 hours</option>
-          <option value={24}>Posted in the last day</option>
-          <option value={72}>Posted in the last 3 days</option>
-          <option value={168}>Posted in the last week</option>
-        </select>
-      </Field>
+        </div>
+      </div>
 
       <Error>{save.error}</Error>
       <button type="submit"
@@ -229,5 +291,79 @@ export function ConfigStep({ onDone }: { onDone: () => void }) {
         {save.busy ? "Saving…" : "Save and continue"}
       </button>
     </form>
+  );
+}
+
+/**
+ * A list you build one item at a time. Enter or comma commits, backspace on an empty box removes
+ * the last one — the pattern every tag input has taught, and the reason this is not a textarea:
+ * a newline-separated box needs a sentence explaining that newlines separate.
+ */
+function ChipInput({
+  label,
+  hint,
+  placeholder,
+  values,
+  onChange,
+  max,
+}: {
+  label: string;
+  hint: string;
+  placeholder: string;
+  values: string[];
+  onChange: (values: string[]) => void;
+  max: number;
+}) {
+  const [draft, setDraft] = useState("");
+
+  const commit = () => {
+    const value = draft.trim().replace(/,$/, "").trim();
+    // Case-insensitive: "Backend Engineer" and "backend engineer" are the same search, and two
+    // chips that look identical is the kind of thing people assume is broken.
+    if (!value || values.length >= max) return setDraft("");
+    if (values.some((each) => each.toLowerCase() === value.toLowerCase())) return setDraft("");
+    onChange([...values, value]);
+    setDraft("");
+  };
+
+  return (
+    <div className="field">
+      <span className="label">{label}</span>
+      <span className="hint">{hint}</span>
+      <div className="chips">
+        {values.map((value) => (
+          <span className="chip-tag" key={value}>
+            {value}
+            <button
+              type="button"
+              aria-label={`Remove ${value}`}
+              onClick={() => onChange(values.filter((each) => each !== value))}
+            >
+              ×
+            </button>
+          </span>
+        ))}
+      </div>
+      <div className="row" style={{ gap: "0.5rem" }}>
+        <input
+          value={draft}
+          placeholder={values.length >= max ? `That is the ${max} we can search` : placeholder}
+          disabled={values.length >= max}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === ",") {
+              event.preventDefault();
+              commit();
+            } else if (event.key === "Backspace" && !draft && values.length) {
+              onChange(values.slice(0, -1));
+            }
+          }}
+          onBlur={commit}
+        />
+        <button type="button" className="secondary" disabled={!draft.trim()} onClick={commit}>
+          Add
+        </button>
+      </div>
+    </div>
   );
 }

@@ -1055,10 +1055,13 @@ export interface paths {
         put?: never;
         /**
          * Send
-         * @description One turn: the user says something, the agent answers and writes what it learned.
+         * @description Accept one turn and queue it. Answers immediately; the reply arrives in the transcript.
          *
-         *     Synchronous, and a turn can take minutes on a frontier model. The client shows it as pending;
-         *     an interview that arrives complete is better than one that arrives in pieces and then fails.
+         *     **This used to run the turn inside the request, and that was the bug.** A turn takes minutes on
+         *     a frontier model, so switching tabs, opening another chat, refreshing or signing out aborted
+         *     it — the user's message was committed, the reply never came, and nothing said why. Now the
+         *     pending assistant row is created here and `services/setupagent` fills it in, so a turn survives
+         *     everything the browser can do to it.
          *
          *     **On the user's own credential**, like every other call this platform makes. Their profile,
          *     their spend, no platform cost.
@@ -3124,7 +3127,7 @@ export interface operations {
         };
         responses: {
             /** @description Successful Response */
-            200: {
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -3102,7 +3102,7 @@
     },
     "/setup/message": {
       "post": {
-        "description": "One turn: the user says something, the agent answers and writes what it learned.\n\nSynchronous, and a turn can take minutes on a frontier model. The client shows it as pending;\nan interview that arrives complete is better than one that arrives in pieces and then fails.\n\n**On the user's own credential**, like every other call this platform makes. Their profile,\ntheir spend, no platform cost.",
+        "description": "Accept one turn and queue it. Answers immediately; the reply arrives in the transcript.\n\n**This used to run the turn inside the request, and that was the bug.** A turn takes minutes on\na frontier model, so switching tabs, opening another chat, refreshing or signing out aborted\nit \u2014 the user's message was committed, the reply never came, and nothing said why. Now the\npending assistant row is created here and `services/setupagent` fills it in, so a turn survives\neverything the browser can do to it.\n\n**On the user's own credential**, like every other call this platform makes. Their profile,\ntheir spend, no platform cost.",
         "operationId": "send_setup_message_post",
         "requestBody": {
           "content": {
@@ -3115,7 +3115,7 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "202": {
             "content": {
               "application/json": {
                 "schema": {

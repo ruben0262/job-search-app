@@ -359,3 +359,44 @@ def test_a_job_below_the_cutoff_still_reads_as_borderline():
     item = FeedItem(job_id=1, url="https://example.com/1", title="Backend Engineer",
                     company="Acme", score=55.0)
     assert "🟡" in render_job(item, cutoff=60.0)
+
+
+def test_the_users_own_cap_is_what_is_enforced(ctx):
+    """**`max_notifications_per_day` was read by nothing.** It is in the config schema and on the
+    dashboard ("At most 20 messages a day"), and `deliver` used its own 100 regardless — so an
+    account that asked for 20 received 160 in sixteen hours (found on the box, 2026-07-30)."""
+    from libs.db.models import UserConfig
+
+    user = _connected(ctx)
+    store = _store(ctx)
+    store.put(user.id, "telegram_bot", BOT_TOKEN)
+    ctx.add(UserConfig(user_id=user.id, schema_version=2,
+                       config={"sections": [{"platform": "all", "keywords": ["engineer"]}],
+                               "max_notifications_per_day": 1}))
+    for _ in range(3):
+        _scored(ctx, user)
+    ctx.flush()
+
+    sent: list[str] = []
+    assert deliver(ctx, user.id, store=store,
+                   send=lambda t, c, m, k=None: sent.append(m)) == 1, "their cap of 1, not our 100"
+    ctx.flush()
+    assert deliver(ctx, user.id, store=store, send=lambda t, c, m, k=None: sent.append(m)) == 0
+
+
+def test_a_v1_config_cap_is_honoured_too(ctx):
+    """A flat v1 row keeps the cap at the top level like everything else, and `migrate_config`
+    is what makes both shapes readable — the same gap that swallowed the age window."""
+    from libs.db.models import UserConfig
+
+    user = _connected(ctx)
+    store = _store(ctx)
+    store.put(user.id, "telegram_bot", BOT_TOKEN)
+    ctx.add(UserConfig(user_id=user.id, schema_version=1,
+                       config={"keywords": ["engineer"], "max_notifications_per_day": 1}))
+    for _ in range(2):
+        _scored(ctx, user)
+    ctx.flush()
+
+    sent: list[str] = []
+    assert deliver(ctx, user.id, store=store, send=lambda t, c, m, k=None: sent.append(m)) == 1

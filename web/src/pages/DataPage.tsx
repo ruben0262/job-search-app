@@ -20,7 +20,7 @@ const SECTIONS: { key: string; title: string; hint: string }[] = [
   { key: "identity", title: "Name and links", hint: "What appears at the top of your CVs" },
   { key: "documents", title: "Documents", hint: "The files we read your profile from" },
   { key: "history", title: "Your history", hint: "The long-form write-up of what you have done" },
-  { key: "config", title: "What we search for", hint: "Keywords, locations, freshness" },
+  { key: "config", title: "What we search for", hint: "Job titles, places, and how you want to work" },
   { key: "telegram", title: "Telegram", hint: "Where your jobs arrive" },
   { key: "claude", title: "Claude", hint: "The credential your documents run on" },
   { key: "proxy", title: "Proxy", hint: "What LinkedIn is fetched through" },

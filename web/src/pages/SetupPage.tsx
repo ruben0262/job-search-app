@@ -22,6 +22,8 @@ import { Error, useAction } from "../ui";
 type Message = {
   role: "user" | "assistant";
   content: string;
+  status: "pending" | "streaming" | "done" | "failed";
+  error: string | null;
   files_written: string[];
   at: string | null;
 };
@@ -143,12 +145,34 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
     bottom.current?.scrollIntoView({ behavior: "smooth" });
   }, [state?.messages.length]);
 
+  // **The turn runs on a worker, so the page's job is to watch.** While any message is unfinished
+  // this re-reads the transcript every second and a half, which is what makes a reply appear as it
+  // is written — and what makes leaving and coming back show the same thing rather than nothing.
+  const inFlight = state?.messages.some(
+    (message) => message.status === "pending" || message.status === "streaming",
+  );
+  const openConversation = state?.conversation_id;
+  useEffect(() => {
+    if (!inFlight || !openConversation) return;
+    const timer = window.setInterval(() => {
+      load(openConversation).catch(() => undefined);
+    }, 1500);
+    return () => window.clearInterval(timer);
+  }, [inFlight, openConversation]);
+
   const send = useAction(async (text: string) => {
-    // Shown immediately: a message that vanishes into a pending state for two minutes reads as a
-    // dropped message, and the user retypes it.
+    // Shown immediately: a message that vanishes for two minutes reads as a dropped message, and
+    // the user retypes it. The server writes the same two rows, so the poll replaces these.
     setState((previous) =>
       previous
-        ? { ...previous, messages: [...previous.messages, { role: "user", content: text, files_written: [], at: null }] }
+        ? {
+            ...previous,
+            messages: [
+              ...previous.messages,
+              { role: "user", content: text, status: "done", error: null, files_written: [], at: null },
+              { role: "assistant", content: "", status: "pending", error: null, files_written: [], at: null },
+            ],
+          }
         : previous,
     );
     setDraft("");
@@ -157,6 +181,7 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
     }
     // Named explicitly rather than left to "the most recent": a turn that takes two minutes must
     // land in the chat it was typed in, even if something else touched another one meanwhile.
+    // This returns as soon as the turn is queued — the reply arrives through the poll below.
     await api.post("/setup/message", { message: text, conversation_id: state?.conversation_id });
     await load(state?.conversation_id);
     onChanged();
@@ -279,8 +304,31 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
           {state.messages.map((message, index) => (
             <div key={index} className={`turn ${message.role}`}>
               {message.role === "assistant" ? (
-                <div className="turn-body">
-                  <Markdown text={message.content} />
+                <div className={`turn-body${message.status === "failed" ? " turn-failed" : ""}`}>
+                  {/* Nothing written yet: the turn is queued or the model is still thinking. The
+                      dots say working; the sentence says how long, because a turn really can take
+                      minutes and an animation alone would imply seconds. */}
+                  {message.status === "pending" && !message.content ? (
+                    <span className="pending">
+                      <span className="typing" aria-hidden="true">
+                        <i />
+                        <i />
+                        <i />
+                      </span>
+                      Thinking. This can take a couple of minutes — you can leave this page and come
+                      back, the answer will be here.
+                    </span>
+                  ) : (
+                    <>
+                      <Markdown text={message.content} />
+                      {/* A caret while text is still arriving: the difference between "writing" and
+                          "stopped mid-sentence". */}
+                      {message.status === "streaming" ? <span className="caret" /> : null}
+                    </>
+                  )}
+                  {message.status === "failed" && message.error ? (
+                    <span className="turn-error">{message.error}</span>
+                  ) : null}
                   {message.files_written.length > 0 ? (
                     <span className="saved">
                       Updated: {message.files_written.map((name) => NAMES[name] ?? name).join(" · ")}
@@ -292,18 +340,6 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
               )}
             </div>
           ))}
-          {send.busy ? (
-            <div className="turn assistant">
-              <div className="turn-body pending">
-                <span className="typing" aria-hidden="true">
-                  <i />
-                  <i />
-                  <i />
-                </span>
-                Reading and writing this down. This can take a couple of minutes.
-              </div>
-            </div>
-          ) : null}
           <div ref={bottom} />
         </div>
 
@@ -312,15 +348,21 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
           className="composer"
           onSubmit={(event) => {
             event.preventDefault();
-            if (draft.trim() && !send.busy) void send.run(draft.trim());
+            if (draft.trim() && !send.busy && !inFlight) void send.run(draft.trim());
           }}
         >
           <textarea
             ref={box}
             rows={1}
             value={draft}
-            placeholder={state.messages.length === 0 ? "Say hello to begin" : "Message the assistant"}
-            disabled={send.busy}
+            placeholder={
+              inFlight
+                ? "Waiting for the reply…"
+                : state.messages.length === 0
+                  ? "Say hello to begin"
+                  : "Message the assistant"
+            }
+            disabled={send.busy || inFlight}
             onChange={(event) => {
               setDraft(event.target.value);
               autogrow(event.target);
@@ -329,7 +371,7 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
               // Enter sends, Shift+Enter breaks the line — the grammar every chat app taught.
               if (event.key === "Enter" && !event.shiftKey) {
                 event.preventDefault();
-                if (draft.trim() && !send.busy) void send.run(draft.trim());
+                if (draft.trim() && !send.busy && !inFlight) void send.run(draft.trim());
               }
             }}
           />
@@ -337,7 +379,7 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
             type="submit"
             className="composer-send"
             aria-label="Send"
-            disabled={send.busy || !draft.trim()}
+            disabled={send.busy || inFlight || !draft.trim()}
           >
             <SendIcon />
           </button>

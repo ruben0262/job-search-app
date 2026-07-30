@@ -15,6 +15,24 @@ import { Error, Field, useAction } from "../../ui";
 
 type StoredCredential = { kind: string; last_4: string | null; validated: boolean };
 
+/** What each deletion actually costs, named. "Are you sure?" is something people click past;
+ *  "job delivery stops" is something they read. */
+const CONFIRM: Record<string, string> = {
+  telegram_bot:
+    "Remove your Telegram bot token? Job delivery stops immediately and you will need to paste a "
+    + "new token from BotFather to start it again.",
+  claude_api:
+    "Remove your Claude API key? The profile chat and CV building stop working until you add "
+    + "another one.",
+  claude_oauth:
+    "Remove your Claude token? The profile chat and CV building stop working until you add "
+    + "another one.",
+  proxy:
+    "Remove your proxy? LinkedIn jobs stop being collected for you — every other source keeps "
+    + "working.",
+  default: "Remove this credential? Whatever depends on it stops working until you add another.",
+};
+
 /**
  * What is stored for one credential kind: a masked preview, a copy that costs the account
  * password, and a delete. The plaintext is fetched once at the moment of copying and handed to the
@@ -70,13 +88,19 @@ function Stored({ kind, onChanged }: { kind: string; onChanged: () => void }) {
         >
           {copied ? <CheckIcon /> : <CopyIcon />}
         </button>
+        {/* **Asked, not assumed.** Removing a credential stops whatever depends on it — delivery,
+            document generation, LinkedIn — and it cannot be undone from here: the value is gone and
+            has to be pasted again. A one-click destructive control next to a copy button is a
+            mis-click waiting to happen. */}
         <button
           type="button"
           className="icon-btn"
           title="Delete this credential"
           aria-label="Delete this credential"
           disabled={remove.busy}
-          onClick={() => void remove.run()}
+          onClick={() => {
+            if (window.confirm(CONFIRM[kind] ?? CONFIRM.default)) void remove.run();
+          }}
         >
           −
         </button>

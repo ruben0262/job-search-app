@@ -283,3 +283,13 @@ def test_a_dormant_user_is_not_enqueued(ctx):
     ctx.execute(text("UPDATE users SET next_run_at = now() - interval '1 minute' WHERE id = :i"),
                 {"i": user.id})
     assert dispatch_due_notifications(ctx) == 0
+
+
+def test_every_lane_has_a_claim_timeout():
+    """**A lane missing from the map crashes its worker on the first sweep**, not on the first job —
+    so the container restarts forever and the lane never drains. `setup` was added without one and
+    did exactly that (2026-07-30). The two lists must agree by construction, not by memory."""
+    from libs.db.models.queue import CLAIM_TIMEOUT_MIN, LANES
+
+    assert set(LANES) == set(CLAIM_TIMEOUT_MIN), (
+        "every lane needs a claim timeout and every timeout needs a lane")

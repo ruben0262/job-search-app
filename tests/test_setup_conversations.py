@@ -68,6 +68,15 @@ def _say(session, user_id, conversation_id, role, text):
     session.flush()
 
 
+def _with_claude(session, user):
+    """A real stored credential — the secret store wraps a per-user key, so a hand-written row is
+    a secret nothing can decrypt."""
+    from libs.secrets import SecretStore
+
+    SecretStore(session).put(user.id, "claude_api", "sk-ant-api03-" + "x" * 40)
+    session.flush()
+
+
 def test_opening_the_page_lands_in_a_conversation_without_being_asked(api):
     """A new account should be able to start typing, not press New chat first."""
     http, _, _ = api
@@ -197,3 +206,116 @@ def test_another_accounts_conversation_is_not_reachable(api):
     assert http.delete(f"/setup/conversations/{theirs.id}").status_code == 404
     assert http.post("/setup/message",
                      json={"message": "hello", "conversation_id": str(theirs.id)}).status_code == 404
+
+
+# ── a turn that outlives the request ──────────────────────────────────────────────────────────
+
+def test_sending_queues_a_turn_and_returns_at_once(api):
+    """**The bug this replaced:** the turn ran inside the request, so switching tabs, refreshing or
+    signing out aborted it — the question was committed, the answer never came, and nothing said
+    why. Now the request only accepts the turn."""
+    from libs.db.models import QueueJob
+
+    http, session, user = api
+    _with_claude(session, user)
+
+    response = http.post("/setup/message", json={"message": "Set me up"})
+    assert response.status_code == 202
+    body = response.json()
+    assert body["status"] == "queued"
+
+    # Both rows exist before any model call: the page renders the exchange immediately.
+    messages = http.get("/setup").json()["messages"]
+    assert [m["role"] for m in messages] == ["user", "assistant"]
+    assert messages[0]["content"] == "Set me up"
+    assert messages[1]["status"] == "pending", "the reply is a thinking state, not a missing row"
+
+    queued = session.scalars(select_queue(QueueJob, user.id)).all()
+    assert [job.lane for job in queued] == ["setup"]
+    assert queued[0].payload["message_id"] == body["message_id"]
+
+
+def select_queue(model, user_id):
+    from sqlalchemy import select
+
+    return select(model).where(model.user_id == user_id, model.lane == "setup")
+
+
+def test_a_queued_turn_is_still_there_after_signing_out(api):
+    """The point of moving it off the request path: the browser can do anything it likes."""
+    from libs.auth.access import issue_access_token
+
+    http, session, user = api
+    _with_claude(session, user)
+    http.post("/setup/message", json={"message": "Tell me about yourself"})
+
+    http.cookies.clear()
+    http.cookies.set("access_token", issue_access_token(user.id, uuid.uuid4()), path="/")
+
+    messages = http.get("/setup").json()["messages"]
+    assert messages[0]["content"] == "Tell me about yourself"
+    assert messages[1]["status"] == "pending"
+
+
+def test_a_turn_without_a_claude_credential_is_refused_at_the_form(api):
+    """Answered where the user pressed send, rather than as a failed turn they find later."""
+    http, _, _ = api
+    refused = http.post("/setup/message", json={"message": "hello"})
+    assert refused.status_code == 400
+    assert "Connect your Claude account" in refused.json()["detail"]
+    assert http.get("/setup").json()["messages"] == [], "nothing is written for a refused turn"
+
+
+def test_the_worker_streams_into_the_pending_row_and_marks_it_done(api):
+    """What the page polls. The row it watches is the row the finished reply lands in."""
+    from libs.db.models import QueueJob, SetupMessage
+    from services.setupagent.__main__ import handle
+
+    http, session, user = api
+    _with_claude(session, user)
+    reply_id = http.post("/setup/message", json={"message": "hi"}).json()["message_id"]
+
+    class _Client:
+        def complete_tools(self, *, on_text=None, **kw):
+            for chunk in ("Hello ", "there."):
+                on_text(chunk)
+            return {"text": "Hello there.", "tool_uses": [], "content": [], "stop_reason": "end_turn"}
+
+    import services.setupagent.__main__ as worker
+
+    original = worker.client_for
+    worker.client_for = lambda value, kind: _Client()
+    try:
+        job = session.scalars(select_queue(QueueJob, user.id)).one()
+        handle(session, job)
+    finally:
+        worker.client_for = original
+
+    row = session.get(SetupMessage, reply_id)
+    assert row.status == "done"
+    assert row.content == "Hello there."
+
+
+def test_a_retry_after_the_turn_finished_does_not_run_it_again(api):
+    """At-least-once delivery is normal; spending the user's credential twice for one question
+    is not."""
+    from libs.db.models import QueueJob, SetupMessage
+    from services.setupagent.__main__ import handle
+
+    http, session, user = api
+    _with_claude(session, user)
+    reply_id = http.post("/setup/message", json={"message": "hi"}).json()["message_id"]
+
+    row = session.get(SetupMessage, reply_id)
+    row.status, row.content = "done", "already answered"
+    session.flush()
+
+    import services.setupagent.__main__ as worker
+
+    called = []
+    worker.client_for = lambda value, kind: called.append(1)
+    job = session.scalars(select_queue(QueueJob, user.id)).one()
+    handle(session, job)
+
+    assert called == [], "a finished turn is not re-run"
+    assert session.get(SetupMessage, reply_id).content == "already answered"

@@ -30,6 +30,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 import libs.notify as notifylib
+from libs.contracts.config import migrate_config
 from libs.db.models import CorpusJob, User, UserConfig, UserJobState
 from libs.obs import audit
 from libs.secrets import SecretsError, SecretStore, redacting
@@ -181,6 +182,17 @@ def deliver(session: Session, user_id: _uuid.UUID, *,
     user = session.get(User, user_id)
     if user is None or user.telegram_status != "connected" or not user.telegram_chat_id:
         return 0
+
+    # **The user's own cap, not the platform ceiling.** `max_notifications_per_day` is in the config
+    # schema, is shown on the dashboard ("At most 20 messages a day"), and was read by nothing: the
+    # default parameter meant every account was capped at 100 regardless. One account asked for 20
+    # and received 160 in sixteen hours (found 2026-07-30). The parameter stays as the ceiling for a
+    # caller with no user config in hand — a test, or an account that never answered.
+    config = session.scalar(select(UserConfig.config).where(UserConfig.user_id == user_id))
+    if config:
+        asked = migrate_config(config).get("max_notifications_per_day")
+        if isinstance(asked, int) and asked > 0:
+            daily_cap = min(daily_cap, asked)
 
     remaining = daily_cap - notifications_today(session, user_id)
     if remaining <= 0:

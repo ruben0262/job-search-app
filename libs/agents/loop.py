@@ -75,22 +75,34 @@ def history(session: Session, user_id: _uuid.UUID,
 def run_turn(session: Session, user_id: _uuid.UUID, *, client, message: str,
              conversation_id: _uuid.UUID,
              agent: str = "setup",
+             reply_row: SetupMessage | None = None,
              on_text: Callable[[str], None] | None = None) -> dict:
     """Take one message from the user and run the agent until it stops calling tools.
 
     Returns what the caller needs to render and to decide about retraining: the reply, the tools
     that ran, and which scoring-relevant files were touched.
 
-    **Commits per assistant turn**, unlike the queue workers. A setup conversation is minutes long
-    and the user is watching; losing ten minutes of interview because the last call failed would be
-    the worst possible moment to be strict about transactions.
+    **Commits as it goes**, unlike the queue workers. A setup conversation is minutes long and the
+    user is watching; losing ten minutes of interview because the last call failed would be the
+    worst possible moment to be strict about transactions.
+
+    `reply_row` is the pending assistant message this turn fills in. The queued path creates it
+    before enqueuing — so the page can show the turn as accepted the moment it is — and passes it
+    here; a caller that passes nothing gets the whole exchange written for it.
     """
     if agent not in SETUP_AGENTS:
         raise ValueError(f"unknown setup agent {agent!r}; known: {SETUP_AGENTS}")
 
-    session.add(SetupMessage(user_id=user_id, conversation_id=conversation_id,
-                             role="user", content=message, agent=agent))
-    _touch(session, user_id, conversation_id, message)
+    if reply_row is None:
+        # No row was prepared, so this is the synchronous path: write the user's message and a
+        # pending reply here. The queued path does both before enqueuing, so the page can render
+        # the turn the instant it is accepted.
+        session.add(SetupMessage(user_id=user_id, conversation_id=conversation_id,
+                                 role="user", content=message, agent=agent))
+        touch_conversation(session, user_id, conversation_id, message)
+        reply_row = SetupMessage(user_id=user_id, conversation_id=conversation_id,
+                                 role="assistant", content="", agent=agent, status="pending")
+        session.add(reply_row)
     session.commit()
 
     tools = SetupTools(session, user_id)
@@ -100,11 +112,31 @@ def run_turn(session: Session, user_id: _uuid.UUID, *, client, message: str,
     reply_parts: list[str] = []
     executed: list[dict] = []
 
+    # **Streamed into the row as it arrives.** The page polls the transcript, so writing partial
+    # text is what makes a two-minute turn feel answered rather than hung — and because it is the
+    # same row the finished reply lands in, a reader who walks away and comes back sees the whole
+    # thing rather than the half they watched.
+    #
+    # The live buffer is kept apart from `reply_parts` deliberately: `complete_tools` streams
+    # chunks *and* returns the same text as its final value, so accumulating both would write
+    # every reply twice. The buffer is what the reader watches; the returned text is what is kept.
+    streaming: list[str] = []
+
+    def _stream(chunk: str) -> None:
+        streaming.append(chunk)
+        reply_row.content = "\n\n".join([*reply_parts, "".join(streaming)]).strip()
+        reply_row.status = "streaming"
+        session.commit()
+        if on_text is not None:
+            on_text(chunk)
+
     for step in range(1, MAX_TOOL_ITERATIONS + 1):
+        streaming.clear()
         answer = client.complete_tools(model=SETUP_MODEL, system=prompt, messages=messages,
-                                       tools=TOOLS, max_tokens=MAX_TOKENS, on_text=on_text)
+                                       tools=TOOLS, max_tokens=MAX_TOKENS, on_text=_stream)
         if answer["text"]:
             reply_parts.append(answer["text"])
+        streaming.clear()
 
         if not answer["tool_uses"]:
             break
@@ -122,16 +154,16 @@ def run_turn(session: Session, user_id: _uuid.UUID, *, client, message: str,
         reply_parts.append(ITERATION_LIMIT_MESSAGE)
 
     reply = "\n\n".join(part for part in reply_parts if part.strip())
-    session.add(SetupMessage(user_id=user_id, conversation_id=conversation_id,
-                             role="assistant", content=reply, agent=agent,
-                             tool_calls=executed or None))
+    reply_row.content = reply
+    reply_row.tool_calls = executed or None
+    reply_row.status = "done"
     session.commit()
 
     return {"reply": reply, "tools_run": [call["name"] for call in executed],
             "files_written": _written(executed), "scoring_edits": tools.scoring_edits}
 
 
-def _touch(session: Session, user_id: _uuid.UUID, conversation_id: _uuid.UUID,
+def touch_conversation(session: Session, user_id: _uuid.UUID, conversation_id: _uuid.UUID,
            message: str) -> None:
     """Move the conversation to the top of the list, and name it if it has no name yet.
 
