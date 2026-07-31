@@ -1,11 +1,11 @@
 /**
- * What to search for, with a live match count.
+ * What to search for.
  *
- * **The count is the point of this page.** A misspelled keyword otherwise surfaces as an empty feed
- * a day later with nothing to explain it, and the person concludes the product does not work. The
- * server says plainly that the number is approximate, and so does this form: the real search runs
- * against each site directly, so the true number is usually higher — but zero here almost always
- * means a typo.
+ * **The live match count is switched off as of 2026-07-31**, display and request both, commented
+ * rather than deleted. The argument for it still stands and is why it is kept: a misspelled keyword
+ * otherwise surfaces as an empty feed a day later with nothing to explain it, and the person
+ * concludes the product does not work. `/onboarding/config/preview` is still served, so turning it
+ * back on is two uncomments and restoring the `ConfigPreview` import.
  *
  * **Rebuilt for people who do not read forms** (owner, 2026-07-30). It was two textareas of
  * newline-separated text and a `<select multiple>` — three controls whose rules you have to be told:
@@ -23,7 +23,8 @@
  */
 import { useEffect, useMemo, useState } from "react";
 
-import { api, type ConfigPreview } from "../../api";
+// `ConfigPreview` goes back on this import when the match count is switched on again.
+import { api } from "../../api";
 import { Error, useAction } from "../../ui";
 
 type Section = {
@@ -109,7 +110,11 @@ const title = (value: string) =>
 export function ConfigStep({ onDone }: { onDone: () => void }) {
   const [config, setConfig] = useState<Config>(BLANK);
   const [schema, setSchema] = useState<Schema | null>(null);
-  const [preview, setPreview] = useState<ConfigPreview | null>(null);
+  // **The live match count is switched off** (2026-07-31). The block that rendered it is commented
+  // out below; the debounced request that fed it is commented out with it, because a POST every
+  // 500 keystrokes whose answer nothing displays is pure cost on a page people edit slowly.
+  // Both halves are kept rather than deleted — turning it back on is two uncomments and no
+  // rewriting, and the reasoning for having it at all is in this file's header.
   const [keywords, setKeywords] = useState<string[]>([]);
   const [excluded, setExcluded] = useState<string[]>([]);
 
@@ -152,19 +157,20 @@ export function ConfigStep({ onDone }: { onDone: () => void }) {
 
   // Debounced, because it runs while somebody is still typing and a request per keystroke is a
   // request per keystroke.
-  useEffect(() => {
-    if (!draft.sections[0]?.keywords.length) {
-      setPreview(null);
-      return;
-    }
-    const timer = window.setTimeout(() => {
-      void api
-        .post<ConfigPreview>("/onboarding/config/preview", draft)
-        .then(setPreview)
-        .catch(() => setPreview(null));
-    }, 500);
-    return () => window.clearTimeout(timer);
-  }, [draft]);
+  //
+  // useEffect(() => {
+  //   if (!draft.sections[0]?.keywords.length) {
+  //     setPreview(null);
+  //     return;
+  //   }
+  //   const timer = window.setTimeout(() => {
+  //     void api
+  //       .post<ConfigPreview>("/onboarding/config/preview", draft)
+  //       .then(setPreview)
+  //       .catch(() => setPreview(null));
+  //   }, 500);
+  //   return () => window.clearTimeout(timer);
+  // }, [draft]);
 
   const save = useAction(async () => {
     await api.put("/onboarding/config", draft);
