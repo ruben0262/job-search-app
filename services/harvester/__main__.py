@@ -27,7 +27,7 @@ import sys
 
 from sqlalchemy.exc import OperationalError
 
-from libs.contracts.embedder import EmbedderClient, EmbedderVersion
+from libs.contracts.embedder import EmbedderClient, EmbedderError, EmbedderVersion
 from libs.corpus.repository import CorpusRepository
 from libs.db.session import session_scope
 from libs.obs import configure
@@ -45,6 +45,18 @@ logger = logging.getLogger("harvester")
 # contention with the shared cycle, low enough that a genuinely broken embedder — or a database that
 # is refusing every write — does not spin for hours producing nothing.
 MAX_EMBED_BATCH_FAILURES = 5
+
+# **Smaller than the harvest batch, on purpose.** 200 texts is around 100 seconds of GPU-less
+# encoding on its own, and the scheduled cycle embeds too — two clients on a single-threaded gateway
+# put one call past any sane timeout. 64 keeps each call short enough to finish under contention,
+# and with per-batch commits a smaller batch also means a shorter lock window and less lost on a
+# retry. The cost is more round trips, which is nothing next to the encoding itself.
+EMBED_ONLY_BATCH = 64
+
+# A bulk embed is not a web request. 120 seconds is the client default and it is sized for
+# request latency, not for encoding thousands of documents — it is what killed a rebuild on its
+# first batch while the gateway was still working on it.
+EMBED_ONLY_TIMEOUT = 900.0
 
 
 def _configure_logging(verbose: bool) -> None:
@@ -84,7 +96,7 @@ def _embed_only() -> int:
         logger.error("EMBEDDER_URL is not set — nothing can be embedded")
         return 2
 
-    embedder = EmbedderClient(base_url=embedder_url)
+    embedder = EmbedderClient(base_url=embedder_url, timeout=EMBED_ONLY_TIMEOUT)
     total = 0
     consecutive_failures = 0
     try:
@@ -99,15 +111,23 @@ def _embed_only() -> int:
             try:
                 with session_scope() as session:
                     result = embed_pending(CorpusRepository(session), embedder,
-                                           expected=_expected_embedder())
-            except OperationalError as exc:
-                # **A deadlock is expected here, and it must not end the run.** The shared harvest
-                # cycle writes the same table — ingesting rows, refreshing descriptions, trimming
-                # cold ones — and Postgres resolves a lock cycle by killing one side. On 2026-07-31
-                # that victim was a sixty-minute re-embed, which rolled back every vector it had
-                # paid for. The rows in this batch stay pending and are simply picked up again, so
-                # the cost of losing one is one batch. Retrying rather than aborting is what makes
-                # the rebuild survive running alongside a live pipeline.
+                                           expected=_expected_embedder(),
+                                           batch_size=EMBED_ONLY_BATCH)
+            except (OperationalError, EmbedderError) as exc:
+                # **Both of these are expected here, and neither may end the run.**
+                #
+                # A deadlock, because the shared harvest cycle writes the same table — ingesting
+                # rows, refreshing descriptions, trimming cold ones — and Postgres resolves a lock
+                # cycle by killing one side. On 2026-07-31 that victim was a sixty-minute re-embed,
+                # which rolled back every vector it had paid for.
+                #
+                # A gateway timeout, because the cycle embeds too, and two clients queued on a
+                # single-threaded encoder make a call that would have succeeded alone take longer
+                # than any fixed deadline. That killed the next attempt on its first batch.
+                #
+                # In both cases the rows stay pending and are picked up again, so the cost is one
+                # batch. Retrying rather than aborting is what lets a rebuild run alongside a live
+                # pipeline instead of requiring the pipeline to be stopped.
                 consecutive_failures += 1
                 logger.warning("embed-only: batch failed (%s), retrying — %d in a row",
                                type(exc).__name__, consecutive_failures)

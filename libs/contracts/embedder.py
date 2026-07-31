@@ -116,7 +116,15 @@ class EmbedderClient:
     def _post(self, path: str, texts: list[str]) -> list[list[float]]:
         if not texts:
             return []
-        response = self._client.post(path, json={"texts": texts})
+        try:
+            response = self._client.post(path, json={"texts": texts})
+        except httpx.HTTPError as exc:
+            # **A transport failure is an embedder failure, and must arrive as one.** This used to
+            # propagate raw, so a caller written to handle `EmbedderError` — every caller — was
+            # still killed by a read timeout leaking out of httpx. That is exactly what ended a
+            # corpus rebuild on its first batch: the gateway was working, two clients were queued
+            # on it, and one call went past the deadline.
+            raise EmbedderError(f"{path} failed: {type(exc).__name__}: {exc}") from exc
         if response.status_code >= 400:
             # 503 is the gateway shedding load or refusing to serve an unverified vector space.
             # Either way the answer is to stop, not to substitute something plausible.

@@ -158,6 +158,25 @@ def test_a_short_response_is_refused_rather_than_misaligned():
     assert stub.bulk_calls == 0
 
 
+def test_a_transport_failure_arrives_as_an_embedder_error():
+    """**A read timeout is an embedder failure and must be catchable as one.**
+
+    It used to propagate raw out of httpx, so callers written to handle `EmbedderError` — which is
+    all of them — died on it anyway. That ended a 6,601-row corpus rebuild on its first batch on
+    2026-07-31: the gateway was working, the scheduled cycle was queued on the same single-threaded
+    encoder, and one call went past the deadline. Retrying that batch is cheap; losing the run is not.
+    """
+    def times_out(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/health":
+            return httpx.Response(200, json=SERVED)
+        raise httpx.ReadTimeout("timed out", request=request)
+
+    with EmbedderClient(client=httpx.Client(
+            base_url="http://e", transport=httpx.MockTransport(times_out))) as client, \
+            pytest.raises(EmbedderError, match="ReadTimeout"):
+        client.embed_bulk(["anything"])
+
+
 def test_a_gateway_503_fails_closed():
     """503 is the gateway shedding load or refusing an unverified vector space. Either way the
     answer is to stop, never to substitute something plausible."""
