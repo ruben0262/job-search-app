@@ -265,10 +265,11 @@ def test_a_real_chrome_turns_the_rendered_cv_into_a_readable_pdf(tmp_path):
     report = pdf.inspect_pdf(pdf.compile_pdf(source, tmp_path / "cv.pdf"))
 
     assert report.pages == 1
-    assert report.chars > 100, "the rendered page produced no extractable text"
-    # `issues` is the ATS readability check; an empty page trips several of them, so a clean report
-    # is a stronger statement than the character count alone.
-    assert report.ats_ok, report.issues
+    # Extractable text is the whole question: a PDF Chrome rasterised without fonts, or built from
+    # an empty layout, comes back near zero. **Not `ats_ok`** — that asks whether a *complete* CV is
+    # readable, with education and contact details, and this fixture is a deliberately minimal
+    # document. Asserting it here would test the fixture rather than the browser.
+    assert report.chars > 100, f"no extractable text: {report.issues}"
 
 
 def test_an_unparseable_pdf_reports_no_page_count_rather_than_raising(tmp_path):
