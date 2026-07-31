@@ -319,3 +319,44 @@ def test_a_retry_after_the_turn_finished_does_not_run_it_again(api):
 
     assert called == [], "a finished turn is not re-run"
     assert session.get(SetupMessage, reply_id).content == "already answered"
+
+
+def test_setup_progress_names_the_command_that_produces_each_missing_file(api):
+    """**The definition of done belongs to the code, not to an agent's opinion of itself.**
+
+    Two failures this pins, both found on 2026-07-31. The chat sent no command name, so it always
+    ran `setup` — which writes five of the eight required files. `context.md`, `08-role-angles.md`
+    and `label.md` belong to commands nothing could start, so a new account could not finish setup
+    and therefore could never train. And an agent asked to judge its own completeness will either
+    stop early or polish forever; the ported director's gates read paths (`pipeline/config.yaml`,
+    `scorer/models/scorer.joblib`) that do not exist on this platform at all.
+
+    So progress is answered from the database, and every missing file names the command that
+    produces it.
+    """
+    from libs.profiles import setup_files
+    from libs.profiles.repository import ProfileFiles
+
+    http, session, user = api
+    http.get("/setup")  # seeds the scaffolds
+    session.flush()
+
+    body = http.get("/setup/progress").json()
+    assert body["complete"] is False
+    assert body["may_train"] is False
+    assert set(body["missing"]) == set(setup_files())
+    assert body["next_command"] == "setup", "the first command is the one everything else reads"
+
+    # Every outstanding file is attributed to a command a user can actually start.
+    for command, names in body["outstanding_by_command"].items():
+        assert command in body["commands"], f"{names} belong to a command nothing can start"
+
+    files = ProfileFiles(session, user.id)
+    for name in setup_files():
+        files.write(name, f"# {name}\n\nReal content.")
+    session.flush()
+
+    done = http.get("/setup/progress").json()
+    assert done["complete"] is True
+    assert done["may_train"] is True
+    assert done["missing"] == [] and done["next_command"] is None

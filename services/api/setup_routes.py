@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from libs.agents import FILE_OWNERS, STARTABLE
 from libs.agents.loop import touch_conversation
 from libs.db.models import (
     MAX_CONVERSATIONS,
@@ -35,7 +36,7 @@ from libs.db.models import (
 )
 from libs.llm import CLAUDE_KINDS
 from libs.obs import audit
-from libs.profiles import SEED_FILES
+from libs.profiles import SEED_FILES, setup_files
 from libs.profiles.repository import ProfileFiles
 from libs.queue import enqueue
 from services.api.deps import current_user, get_db
@@ -236,6 +237,41 @@ def send(body: Turn, db: Session = Depends(get_db),
                                            "agent": body.agent})
     audit(logger, "setup.turn_queued", user=user_id, agent=body.agent, conversation=current.id)
     return {"conversation_id": str(current.id), "message_id": reply.id, "status": "queued"}
+
+
+@router.get("/progress")
+def setup_progress(db: Session = Depends(get_db),
+                   user_id: _uuid.UUID = Depends(current_user)) -> dict:
+    """Is setup finished, what is left, and which command produces each missing piece.
+
+    **The success criterion lives here rather than in a prompt.** An agent asked to decide whether
+    it has finished will either stop early or polish forever, and the ported director's gates read
+    a filesystem this platform does not have. This answers from the database: a file exists and is
+    filled, or it does not.
+
+    It is also what unblocks training. `train_user` refuses while anything here is outstanding, so
+    "setup complete" and "may train" are the same sentence rather than two rules that can disagree.
+    """
+    files = ProfileFiles(db, user_id)
+    # Repair first: `filled` is derived data in a column and has drifted in production, and a user
+    # being told to redo finished work is worse than the cost of recomputing it on a page load.
+    files.repair_filled_flags()
+
+    missing = files.missing_setup()
+    outstanding: dict[str, list[str]] = {}
+    for name in missing:
+        outstanding.setdefault(FILE_OWNERS.get(name, "setup"), []).append(name)
+
+    return {
+        "complete": not missing,
+        "missing": missing,
+        "required": list(setup_files()),
+        # What to run next, and why — the client shows one button rather than a command palette.
+        "next_command": next((command for command in STARTABLE if command in outstanding), None),
+        "outstanding_by_command": outstanding,
+        "commands": list(STARTABLE),
+        "may_train": not missing,
+    }
 
 
 @router.get("/files/{name}")

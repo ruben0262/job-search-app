@@ -19,6 +19,18 @@ import { api } from "../api";
 import { Markdown } from "../markdown";
 import { Error, useAction } from "../ui";
 
+/** What setup still needs. Computed server-side from the files themselves, so "done" is a fact
+ *  about the database rather than something an agent decided about itself. */
+type Progress = {
+  complete: boolean;
+  missing: string[];
+  required: string[];
+  next_command: string | null;
+  outstanding_by_command: Record<string, string[]>;
+  commands: string[];
+  may_train: boolean;
+};
+
 type Message = {
   role: "user" | "assistant";
   content: string;
@@ -106,6 +118,8 @@ export function clearConversationCache(): void {
 
 export function SetupPage({ onChanged }: { onChanged: () => void }) {
   const [state, setState] = useState<Conversation | null>(cachedConversation);
+  const [progress, setProgress] = useState<Progress | null>(null);
+  const commands = progress?.commands ?? [];
   const [failed, setFailed] = useState(false);
   const [draft, setDraft] = useState("");
   const [openFile, setOpenFile] = useState<string | null>(null);
@@ -119,10 +133,18 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
     cachedConversation = fresh;
     setState(fresh);
   };
+  // What setup still needs, answered by the server from the database rather than by the agent's
+  // opinion of its own work. It drives the Start button's step and the outstanding list.
+  const loadProgress = async () => {
+    const body = await api.get<Progress>("/setup/progress").catch(() => null);
+    if (body) setProgress(body);
+  };
+
   useEffect(() => {
     // A load that fails silently leaves "Loading…" on screen forever, which reads as a hang
     // rather than an error — the one state a user cannot act on.
     load().catch(() => setFailed(true));
+    void loadProgress();
   }, []);
 
   // Switching chats replaces the transcript wholesale — the cached one belongs to whichever chat
@@ -182,8 +204,19 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
     // Named explicitly rather than left to "the most recent": a turn that takes two minutes must
     // land in the chat it was typed in, even if something else touched another one meanwhile.
     // This returns as soon as the turn is queued — the reply arrives through the poll below.
-    await api.post("/setup/message", { message: text, conversation_id: state?.conversation_id });
+    //
+    // **A leading `/command` selects the step.** The server accepts the command name separately
+    // from the message; without this the page could only ever run the first one, and three of the
+    // eight profile files belong to steps nothing could start.
+    const named = /^\/([a-z-]+)\s*/.exec(text)?.[1];
+    const agent = named && commands.includes(named) ? named : undefined;
+    await api.post("/setup/message", {
+      message: text,
+      conversation_id: state?.conversation_id,
+      ...(agent ? { agent } : {}),
+    });
     await load(state?.conversation_id);
+    await loadProgress();
     onChanged();
   });
 
@@ -290,15 +323,48 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
             : "Talk to it like you would to a person: new roles, corrections, changes of direction. It knows where things belong. Each chat remembers only itself; your profile is shared across all of them. Training the model that ranks your jobs happens on the Model page, not here."}
         </p>
 
+        {/* **Success is stated, not inferred.** An agent that has finished and a user who believes
+            it has finished are different things, and the gap between them is where "why is my feed
+            empty" comes from. This is the same check the trainer refuses on, so the page and the
+            trainer cannot disagree. */}
+        {progress ? (
+          progress.complete ? (
+            <p className="small" style={{ color: "var(--score)" }}>
+              Setup complete — all {progress.required.length} profile files are written. Your model
+              can be trained from the Model page.
+            </p>
+          ) : (
+            <p className="small muted">
+              {progress.missing.length} of {progress.required.length} still to write:{" "}
+              {progress.missing.join(", ")}.
+              {progress.next_command ? ` Next step: /${progress.next_command}.` : ""}
+            </p>
+          )
+        ) : null}
+
         <div className="chat" ref={scroller}>
           {state.messages.length === 0 ? (
             <div className="chat-empty">
-              <p className="md-heading">Some things worth telling it</p>
-              <ul className="md-list">
-                <li>"Walk me through what you need from me."</li>
-                <li>"I just changed jobs — here is what I do now."</li>
-                <li>"Stop putting my first startup on CVs, it is ancient."</li>
-              </ul>
+              {/* **A button, not a blank box.** Asking a new user to invent the first message is
+                  the least helpful screen the product has, and the command they would need to
+                  guess is one they have never seen. `next_command` comes from the server, which
+                  knows which files are still missing and therefore which step runs next. */}
+              <p className="md-heading">Let's build your profile</p>
+              <p className="muted">
+                This is a conversation about your career. It asks the questions, and sorts your
+                answers into the files every CV, cover letter and job match is built from.
+              </p>
+              <p style={{ marginTop: "1.25rem" }}>
+                <button
+                  disabled={send.busy || inFlight}
+                  onClick={() => void send.run(`/${progress?.next_command ?? "setup"}`)}
+                >
+                  {send.busy ? "Starting…" : "Start setup"}
+                </button>
+              </p>
+              <p className="hint">
+                Takes a few passes. You can stop at any point and pick up where you left off.
+              </p>
             </div>
           ) : null}
           {state.messages.map((message, index) => (

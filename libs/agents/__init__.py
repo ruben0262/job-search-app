@@ -95,6 +95,37 @@ def system_prompt(name: str) -> str:
     return command(name) + ENVIRONMENT
 
 
+# Which command produces which setup file. **Code owns the definition of done, not the prompt.**
+#
+# Two failures this exists to prevent, both found on 2026-07-31:
+#
+# 1. **A user could only ever reach `setup`.** The chat sent no command name, so it always defaulted
+#    to one, and `setup` writes five of the eight required files. `context.md`, `08-role-angles.md`
+#    and `label.md` belong to commands nothing could start — so a new account could not finish
+#    setup, and therefore could never train.
+# 2. **An agent asked to judge its own completeness will either stop early or never stop.** A gate
+#    the code checks against the database is a fact; a gate the prompt checks against its own
+#    recollection is an opinion, and the ported director's gates read paths (`pipeline/config.yaml`,
+#    `scorer/models/scorer.joblib`) that do not exist on this platform at all.
+#
+# Keyed by file so a missing file names the command that fixes it, which is what the user is shown.
+FILE_OWNERS: dict[str, str] = {
+    "01-candidate-profile.md": "setup",
+    "02-behavioral-profile.md": "setup",
+    "04-job-evaluation.md": "setup",
+    "07-interview-prep.md": "setup",
+    "base_cv.html": "setup",
+    "context.md": "setup-role-angles",
+    "08-role-angles.md": "setup-role-angles",
+    "label.md": "setup-scorer",
+}
+
+# The commands a user may start from the chat, in the order they should run. `setup` first because
+# everything else reads what it writes; `setup-all` is deliberately absent until its gates are
+# rewritten for this platform rather than a local checkout.
+STARTABLE: tuple[str, ...] = ("setup", "setup-role-angles", "setup-scorer")
+
+
 # The tools, in the shape the API takes them. This is `/setup`'s own tool list — Read, Write, Glob,
 # Edit — mapped onto rows: documents are read-only inputs, profile files are read-write outputs.
 TOOLS: list[dict] = [
