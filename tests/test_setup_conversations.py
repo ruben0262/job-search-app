@@ -345,7 +345,9 @@ def test_setup_progress_names_the_command_that_produces_each_missing_file(api):
     assert body["complete"] is False
     assert body["may_train"] is False
     assert set(body["missing"]) == set(setup_files())
-    assert body["next_command"] == "setup", "the first command is the one everything else reads"
+    assert body["next_command"] == "setup-context", (
+        "the first command is the one everything else reads — `setup-role-angles` says outright "
+        "that context.md must already exist")
 
     # Every outstanding file is attributed to a command a user can actually start.
     for command, names in body["outstanding_by_command"].items():

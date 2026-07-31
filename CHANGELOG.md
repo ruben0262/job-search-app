@@ -116,6 +116,31 @@ matches sat one page further down. The pool is ordered by score and the age filt
 selection, so a backlog of month-old high scorers took every slot. The filter runs in the query
 now; undated rows still come through, because they are what the pre-send dating exists to resolve.
 
+### The setup flow can now be finished, and `setup-all` is retired
+
+`setup-context` and `setup-director` are live. With them, **the four steps produce exactly the eight
+files the trainer gates on** — a property a test asserts rather than a claim: every step is checked
+for owning at least one required file, and the union is compared against `setup_files()`, so a stray
+step or a missing file fails the build instead of stranding an account.
+
+`context.md` has an owner for the first time. Until today nothing wrote it while
+`setup-role-angles` required it, which made setup unfinishable and — after the training gate landed
+— training unreachable for every new user. `UNOWNED_FILES` is now empty and a test keeps it that
+way: a required file with nobody responsible for it is an account that cannot finish.
+
+**`setup-all.md` is deleted.** It was unreachable, superseded, and its gates verified a filesystem
+this platform does not have; leaving a broken director in the tree is how one gets wired up by
+accident. What it was measured against is recorded here rather than in a parallel file:
+
+| | `setup-all` (retired) | live |
+|---|---|---|
+| References to things this platform lacks | 11 | 0 |
+| Required files never mentioned | 6 of 8 | 0 |
+
+The order is now stated as a constraint, not a preference — `setup-context` first, because
+`setup-role-angles` says outright that `context.md` must already exist, and running it earlier
+produces files grounded on nothing.
+
 ### Applications are training data now, and a draft director that can actually run here
 
 **98 real applications became labels.** They had been sitting as `applied_at` timestamps since the

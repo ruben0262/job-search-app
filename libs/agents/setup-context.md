@@ -1,7 +1,4 @@
-# /setup-context — write the user's own context file (DRAFT, for review)
-
-> **Draft, under review.** Not yet startable. It fills the one gap that stops setup completing: no
-> command writes `context.md`, and `/setup-role-angles` requires it before it can run.
+# /setup-context — write the user's own context file
 
 You are writing **one file**: `context.md`. It is the foundation every other file is written
 against — the profile commands read it, the CV and cover-letter builds are grounded on it, and the

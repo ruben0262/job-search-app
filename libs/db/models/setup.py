@@ -36,7 +36,8 @@ from libs.db.base import Base, timestamptz
 
 # The commands a user can run in the chat. Ported from `.claude/commands/`; the first is the one
 # that has to run before either of the others will start.
-SETUP_AGENTS = ("setup", "setup-prompts", "setup-role-angles", "setup-scorer")
+SETUP_AGENTS = ("setup-director", "setup-context", "setup", "setup-prompts",
+                "setup-role-angles", "setup-scorer")
 
 # How many conversations one account may keep. **Fixed, and not a user setting** (owner,
 # 2026-07-30). Each one replays its whole transcript into every turn on the user's own credential,

@@ -1,4 +1,4 @@
-"""The draft platform director, measured against the one it would replace.
+"""The setup director and the context command, held to what made them necessary.
 
 **"Better" has to be checkable or it is an opinion.** A conversational prompt cannot be fully judged
 without running it on somebody's credential, and that is a separate, paid exercise. What *can* be
@@ -6,9 +6,9 @@ checked mechanically is the class of defect that made the rewrite necessary in t
 director whose completion gates name things that do not exist on this platform, and whose steps
 point at commands nothing can start.
 
-So every assertion here is a property the current `setup-all.md` measurably fails and the draft
-measurably passes. The current file is asserted to fail on purpose — if somebody fixes it in place,
-this test fails and tells them the draft is redundant, which is the right outcome.
+Every assertion here is a property the ported local director measurably failed and these
+measurably pass. That file was retired on 2026-07-31 when these went live; the comparison that
+justified them is in `CHANGELOG.md`.
 """
 from __future__ import annotations
 
@@ -21,7 +21,6 @@ from libs.db.models.setup import SETUP_AGENTS
 from libs.profiles import setup_files
 
 DRAFT = "setup-director"
-CURRENT = "setup-all"
 
 # Things that exist only in a local checkout of the reference instance. A gate that names one of
 # these cannot be verified from inside the platform, where there is no filesystem and no shell.
@@ -57,15 +56,6 @@ def test_the_draft_names_nothing_that_does_not_exist_on_this_platform():
     assert not found, f"the draft still names local-checkout things: {found}"
 
 
-def test_the_current_director_is_the_thing_being_fixed():
-    """Documents *why* the draft exists, and fails if somebody fixes the original in place."""
-    found = [marker for marker in LOCAL_ONLY if marker in _text(CURRENT)]
-
-    assert found, (
-        "setup-all.md no longer names local-checkout paths — if it has been rewritten for the "
-        "platform, this draft is redundant and should be deleted rather than kept in parallel")
-
-
 # ── completeness: the gate must cover exactly what the trainer requires ────────────────────────
 
 def test_the_draft_accounts_for_every_file_the_trainer_gates_on():
@@ -78,14 +68,6 @@ def test_the_draft_accounts_for_every_file_the_trainer_gates_on():
     missing = [name for name in setup_files() if name not in text]
 
     assert not missing, f"the draft never mentions {missing}, so nothing would produce them"
-
-
-def test_the_current_director_does_not_cover_them():
-    """The concrete gap: three of the eight files are absent from the original's stages."""
-    text = _text(CURRENT)
-    absent = [name for name in setup_files() if name not in text]
-
-    assert absent, "setup-all.md now covers every required file; the draft may be redundant"
 
 
 # ── reachability: every step it names must be startable ───────────────────────────────────────
@@ -140,10 +122,12 @@ def test_the_draft_carries_no_ones_personal_details():
         assert leak not in text, f"{leak} is in the draft director"
 
 
-def test_the_draft_is_marked_as_a_draft_and_cannot_be_run_yet():
-    """It ships alongside the original rather than replacing it, and stays inert until reviewed."""
-    assert DRAFT not in SETUP_AGENTS, "the draft is startable — it was not meant to be, yet"
-    assert "DRAFT" in _text(DRAFT).split("\n")[0].upper()
+def test_both_commands_are_startable():
+    """Live as of 2026-07-31. A director a user cannot start is the gap they were written to close."""
+    assert DRAFT in SETUP_AGENTS
+    assert CONTEXT in SETUP_AGENTS
+    for name in (DRAFT, CONTEXT):
+        assert "DRAFT" not in _text(name).split("\n")[0].upper(), f"{name} still says draft"
 
 
 def test_the_draft_gets_the_environment_note_like_every_other_command():
@@ -168,11 +152,13 @@ def test_the_draft_is_not_obviously_truncated(name):
 CONTEXT = "setup-context"
 
 
-def test_the_context_command_is_also_a_draft():
-    """It owns `context.md`, which nothing currently writes. Inert until reviewed, like the
-    director — approving one without the other leaves the same gap."""
-    assert CONTEXT not in SETUP_AGENTS
-    assert "DRAFT" in _text(CONTEXT).split("\n")[0].upper()
+def test_the_context_command_owns_the_file_nothing_used_to_write():
+    """The gap that made setup impossible to finish: `setup-role-angles` requires `context.md` and
+    nothing produced it, so every new account stalled at a gate it could not pass."""
+    from libs.agents import FILE_OWNERS, UNOWNED_FILES
+
+    assert FILE_OWNERS["context.md"] == CONTEXT
+    assert UNOWNED_FILES == {}, "a required file with no owner is an account that cannot finish"
 
 
 def test_the_context_command_names_nothing_local_only():
