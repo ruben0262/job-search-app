@@ -209,3 +209,42 @@ def test_health_reads_a_live_database_without_scanning_it():
         session.close()
         trans.rollback()
         conn.close()
+
+
+# ── the embedder probe (G10) ──────────────────────────────────────────────────────────────────
+
+def test_an_unreachable_embedder_is_a_page_not_a_shrug(monkeypatch):
+    """**The second single point of failure, and the only one nothing else reports.** The alerts in
+    `libs/ops` are computed from the database and cannot see a dead embedder; without one, nothing
+    gets a vector, nothing is scored, and from inside the application that reads as a quiet day."""
+    import httpx
+
+    from deploy.scripts.check_health import embedder_down
+
+    monkeypatch.setenv("EMBEDDER_URL", "http://embedder-gateway:8080")
+
+    def refuse(*args, **kwargs):
+        raise httpx.ConnectError("no route to host")
+
+    monkeypatch.setattr(httpx, "get", refuse)
+    reason = embedder_down()
+    assert reason is not None
+    assert "ConnectError" in reason
+
+
+def test_a_healthy_embedder_says_nothing(monkeypatch):
+    import httpx
+
+    from deploy.scripts.check_health import embedder_down
+
+    monkeypatch.setenv("EMBEDDER_URL", "http://embedder-gateway:8080")
+    monkeypatch.setattr(httpx, "get", lambda *a, **kw: httpx.Response(200, json={"ok": True}))
+    assert embedder_down() is None
+
+
+def test_no_embedder_url_is_skipped_rather_than_failed(monkeypatch):
+    """This script is also run by hand on a laptop, where an unset URL is not a platform alert."""
+    from deploy.scripts.check_health import embedder_down
+
+    monkeypatch.delenv("EMBEDDER_URL", raising=False)
+    assert embedder_down() is None

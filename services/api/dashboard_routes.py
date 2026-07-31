@@ -28,6 +28,7 @@ from libs.onboarding import onboarding_state
 from libs.scoring.rules import score_job
 from libs.scoring.thresholds import cutoff_for
 from libs.tenant.repository import TenantRepository
+from services.api.admin_routes import admin_emails
 from services.api.deps import current_user, get_db
 
 logger = logging.getLogger(__name__)
@@ -96,6 +97,11 @@ def dashboard(db: Session = Depends(get_db),
         "notifications": {"per_day_cap": _cap(db, user_id),
                           "interval_min": user.notify_interval_min},
         "banners": _banners(user, servable, onboarding),
+        # **Whether to show the operator panel at all.** The API already refuses `/admin/*` to
+        # anyone not in `ADMIN_EMAILS`, so this is a rendering hint and not the access control —
+        # but without it the SPA would have to probe an endpoint it expects to be denied, and a
+        # 403 on every dashboard load is indistinguishable from a real one in the console.
+        "is_admin": user.email.lower() in admin_emails(),
     }
 
 

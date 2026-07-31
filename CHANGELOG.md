@@ -166,6 +166,39 @@ in — and retrains when it differs from the active artifact's recorded `embedde
 First result, on Andras's 945 labels: **histgbm selected**, cross-validated average precision 0.622
 against svc 0.610, logreg 0.468 and linsvc 0.467; test AP 0.545, AUC 0.79.
 
+Then the owner's, on 2,554 labels: **svc selected**, CV-AP 0.663 (histgbm 0.660 a close second,
+linsvc 0.532, logreg 0.518), test AP 0.665, AUC 0.832 — and an operating point of **cutoff 38 at
+65% recall**, precision 0.616. Near the reference instance's 44, and nothing like the 60 that was
+emptying the feed. All 6,978 rows rescored against it; 1,251 clear the cutoff.
+
+### An unreachable recall target must not silently become the label threshold
+
+A flaw in the bake-off added earlier the same day. When no threshold in 20–90 held the target recall
+out of fold, the sweep fell back to `FIT_THRESHOLD` — **the label threshold, reproducing the exact
+conflation that had just been fixed**. It hit Andras's model: cutoff 60 at 37% recall, with nothing
+to say the target had been missed. An unreachable target now takes the best-F1 point, and `metrics`
+records `recall_target_met`, which is the difference between a feed that is thin by design and one
+that is thin for reasons nobody can name.
+
+### Fifty candidates, fifty dropped, nothing sent
+
+With the model fixed and 26 genuinely fresh matches waiting, the notifier selected 50 candidates and
+dropped every one — `{'too_old': 28, 'closed': 22}` — twice in a row.
+
+The age filter in SQL has to let undated rows through: LinkedIn reports no posted time to the
+listing API, and `date_candidates` exists to resolve them. But the pool was ordered by score alone,
+and undated rows are the bulk of the corpus and indistinguishable from fresh until something fetches
+them. They took every slot, only a handful could be dated per run, and the rest resolved to old —
+while the jobs we *could* prove were recent scored lower and never entered the window.
+
+Every dated row in the pool has already passed the freshness window in SQL, so preferring them costs
+nothing. Undated rows still fill the remaining slots and are still dated: ranked behind certainty,
+not excluded by it.
+
+**Verified end to end**, which is the point of all of the above: *Backend Engineer (Python/AWS)* at
+Digital Waffle, score 90, posted 12:47 UTC and delivered to Telegram at 13:47 — the first delivery
+since 09:11, and the first ever through the corrected vector space.
+
 ### The schema CV renderer, deleted, and five functions nothing called
 
 A scan of every module-level function against every mention of its name in the tree, plus an import
