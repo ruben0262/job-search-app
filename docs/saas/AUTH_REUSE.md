@@ -6,6 +6,51 @@ platform.
 
 ---
 
+## Implementation status — audited 2026-07-31
+
+**Option B was taken. §3 is implemented 11 of 13, verified against the code rather than
+remembered** — the two that are not are the MFA pair, which §6 places in Phase 4. Everything §6
+scopes to Phase 3, the launch scope, is complete.
+
+Three things are outstanding in total, and only the last is a loose end rather than a deliberate
+deferral.
+
+| §3 decision | Where it lives |
+|---|---|
+| argon2id at `time=1, memory=64 MiB, threads=4, keylen=64, salt=32` | `libs/auth/passwords.py` — verbatim |
+| AES-256-GCM for secrets | `libs/secrets/keyring.py`. **One deliberate deviation:** the nonce is its own column rather than prepended to the ciphertext. Same algorithm and same 12-byte nonce; the platform's per-user DEK envelope (which §3 anticipated) made a separate column the clearer layout |
+| Verification tokens hashed at rest | `libs/auth/tokens.py` — `secrets.token_urlsafe` in, SHA-256 stored, compared as hashes |
+| Access TTL 15 min · refresh TTL 30 days | `libs/auth/sessions.py` |
+| Refresh token stored hashed | `libs/auth/sessions.py` — `refresh_hash`, plaintext returned once and never persisted |
+| `HttpOnly` + `Secure` always | `services/api/auth_routes.py::_set_session_cookies` |
+| `SameSite=Lax` access, `Strict` refresh | same |
+| Refresh cookie scoped to its own path | same — `REFRESH_PATH = "/auth/refresh"`, the detail §3 calls the one most implementations miss |
+| Password minimum | 9 (see §4.2 for why it is not 8 and no longer 12) |
+| Rate limiting, fixed window, keyed | `services/api/deps.py::rate_limit`, applied to signup, login, forgot and reset |
+| MFA secret encrypted at rest · MFA recovery codes | **not built** — Phase 4, below |
+
+**Beyond the table**, §5's other reusable pieces landed too: `libs/mail` is the `outboundmail`
+equivalent, `libs/notify` the `notifications` one, and the GDPR surface of `internal/privacy` is
+`services/api/account_routes.py` with an erasure test that enumerates every table carrying a
+`user_id`.
+
+### What is not implemented
+
+1. **MFA / TOTP** — deferred by §6 to Phase 4. Worth more here than in a typical product, since
+   the platform holds live API keys, and still not launch-blocking for an invited cohort.
+2. **Google OAuth sign-in** — deferred by §6 to Phase 4.
+3. **`allowed_hosts` and security headers** (§5, `internal/core/middleware/`) — **this one is a
+   genuine loose end, not a deferral.** §5 listed it as worth reviewing and §6 never placed it in
+   a phase, so it fell between the two. There is no `TrustedHostMiddleware`, no CSP, no HSTS and
+   no `X-Frame-Options` anywhere in `services/api`. The tunnel terminates TLS and is the only way
+   in, which is why nothing has broken, but that is not the same as having decided.
+
+Also still open and recorded in §4: the rate limiter is process-local (fine at one replica, and
+the note says what to do before a second), and the breached-password check is unbuilt because HIBP
+is a network call on the signup path that needs a timeout and a fail-open decision first.
+
+---
+
 ## 1. What is actually there
 
 `internal/auth/` is a complete, production auth system — roughly **3,900 lines** across:
@@ -98,8 +143,11 @@ Reviewing rather than lifting means noting what should not carry over:
    worth having, and is worth more than another three characters — it is not implemented, because
    HIBP is a network call on the signup path and needs a timeout and a fail-open decision first.
 3. **A 2-year cookie expiry** appears in `cookies.go` for a non-session cookie. Audit which cookie
-   that is and whether the platform wants that lifetime.
-4. **Two auth generations coexist** (`v1/` and `v2/`). Port only v2 and do not carry the v1 path over.
+   that is and whether the platform wants that lifetime. **Moot here (2026-07-31):** this platform
+   sets exactly two cookies, at 15 minutes and 30 days, so there is no long-lived cookie to inherit
+   the problem.
+4. **Two auth generations coexist** (`v1/` and `v2/`). Port only v2 and do not carry the v1 path
+   over. **Done:** there is one code path and no v1 compatibility shim.
 
 ## 5. Also worth reviewing while in that codebase
 
