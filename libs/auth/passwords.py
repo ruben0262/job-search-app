@@ -3,8 +3,12 @@
 The parameters are the payload here — they are a real tuning decision already made correctly
 (`AUTH_REUSE.md` §3) and re-deriving them is how a deployment ends up with defaults nobody checked.
 
-The one deliberate departure is the minimum length: FlowSolutions allows 8, and §4 says that is low
-for a product holding users' live API keys. 12 here.
+The one deliberate departure is the minimum length. FlowSolutions allows 8 and `AUTH_REUSE.md` §4
+called that low for a product holding users' live API keys; this was 12 on that reasoning, and is
+**9 since 2026-07-31** at the owner's decision — 12 was turning people away at the door of an
+invited beta, which costs more than the marginal entropy buys. What actually defends this surface
+is unchanged: argon2id at production parameters, a per-address login rate limit, and the fact that
+a stolen password still cannot reveal a stored credential without being re-entered.
 """
 from __future__ import annotations
 
@@ -15,14 +19,20 @@ from argon2.exceptions import InvalidHashError, VerifyMismatchError
 _HASHER = PasswordHasher(time_cost=1, memory_cost=65536, parallelism=4,
                          hash_len=64, salt_len=32)
 
-MIN_PASSWORD_LENGTH = 12
+MIN_PASSWORD_LENGTH = 9
 MAX_PASSWORD_LENGTH = 256
 
 # Not an abuse control — a courtesy. The real defence is argon2 plus rate limiting; this only stops
 # the handful of passwords that would otherwise be guessed on the first attempt.
+#
+# **Every entry must be at least `MIN_PASSWORD_LENGTH` long to do anything**, since a shorter one is
+# already refused for its length and would never reach this check. The list was written against a
+# 12-character minimum, so the nine-character common passwords were added when the floor dropped.
 _OBVIOUS = frozenset({
     "password", "password1", "passw0rd", "123456789012", "qwertyuiop12",
     "letmein12345", "iloveyou1234", "administrator", "welcome12345",
+    "password12", "password123", "123456789", "1234567890", "qwerty123",
+    "iloveyou1", "letmein123", "welcome123", "admin12345", "abc1234567",
 })
 
 

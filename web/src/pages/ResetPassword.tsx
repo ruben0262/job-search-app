@@ -101,7 +101,7 @@ export function ResetPassword({ onDone }: { onDone: () => void }) {
           void submit.run();
         }}
       >
-        <Field label="New password" hint="At least 12 characters. Longer beats complicated.">
+        <Field label="New password" hint="At least 9 characters. Longer beats complicated.">
           <input
             type="password"
             value={password}

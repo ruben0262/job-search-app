@@ -74,7 +74,7 @@ export function SignIn({
         </Field>
         <Field
           label="Password"
-          hint={mode === "up" ? "At least 12 characters. Longer beats complicated." : undefined}
+          hint={mode === "up" ? "At least 9 characters. Longer beats complicated." : undefined}
         >
           <input
             type="password"

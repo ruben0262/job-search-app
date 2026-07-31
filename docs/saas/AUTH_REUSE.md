@@ -92,8 +92,11 @@ Reviewing rather than lifting means noting what should not carry over:
    `limit × replicas`. Fine at ≤50 users on one replica; make it Postgres- or Redis-backed before
    scaling out, and do not treat it as an abuse control until then.
 2. **8-character password minimum is low** for a product holding users' Claude API keys and proxy
-   credentials. Recommend 12 minimum plus a breached-password check (`zxcvbn` or HIBP k-anonymity).
-   Cheap, and this platform's threat model is worse than a messaging app's.
+   credentials. This platform shipped 12, then **settled at 9 on 2026-07-31** (owner's decision):
+   12 was turning invited beta users away at the door, which costs more than the marginal entropy
+   buys. A breached-password check (`zxcvbn` or HIBP k-anonymity) is still the cheap improvement
+   worth having, and is worth more than another three characters — it is not implemented, because
+   HIBP is a network call on the signup path and needs a timeout and a fail-open decision first.
 3. **A 2-year cookie expiry** appears in `cookies.go` for a non-session cookie. Audit which cookie
    that is and whether the platform wants that lifetime.
 4. **Two auth generations coexist** (`v1/` and `v2/`). Port only v2 and do not carry the v1 path over.

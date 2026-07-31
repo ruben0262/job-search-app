@@ -66,6 +66,15 @@ def test_a_password_containing_the_email_is_refused():
     assert password_problems("alice12345678", email="alice@example.com")
 
 
+def test_the_minimum_is_nine_and_the_boundary_holds():
+    """**Pinned to the number, not to the constant.** The floor moved 12 -> 9 on 2026-07-31 at the
+    owner's decision, and the other tests read the constant — so without this one, a later change
+    to it would pass everything silently. Eight is refused, nine is accepted."""
+    assert MIN_PASSWORD_LENGTH == 9
+    assert any("at least" in problem for problem in password_problems("x" * 8))
+    assert password_problems("correct9!") == []
+
+
 # ── the database-backed halves ────────────────────────────────────────────────────────────────
 
 pytestmark_db = pytest.mark.skipif(

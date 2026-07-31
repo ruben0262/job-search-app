@@ -198,14 +198,14 @@ export function ConfigStep({ onDone }: { onDone: () => void }) {
         max={25}
       />
 
-      {preview ? (
+      {/* {preview ? (
         <p className={preview.matches === 0 ? "error" : "muted"}>
           <strong>{preview.matches}</strong> matching jobs in the last {preview.window_days} days
           {preview.examples.length ? ` — e.g. ${preview.examples.slice(0, 2).join("; ")}` : ""}.
           <br />
           <span className="small">{preview.detail}</span>
         </p>
-      ) : null}
+      ) : null} */}
 
       <ChipInput
         label="Anything you never want to see?"

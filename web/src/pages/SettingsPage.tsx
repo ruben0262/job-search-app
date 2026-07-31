@@ -69,24 +69,11 @@ export function SettingsPage({ onSignedOut }: { onSignedOut: () => void }) {
               <td>{account.full_name ?? "—"}</td>
             </tr>
             <tr>
-              <td>Telegram</td>
-              <td>{account.telegram_status}</td>
-            </tr>
-            <tr>
-              <td>Feed</td>
-              <td>{account.active ? "running" : "paused"}</td>
-            </tr>
-            <tr>
               <td>Plan</td>
               <td>{account.plan}</td>
             </tr>
           </tbody>
         </table>
-        {account.links.length ? (
-          <p className="small muted">
-            {account.links.map((link) => `${link.platform}: ${link.url}`).join(" · ")}
-          </p>
-        ) : null}
       </Card>
 
       <DeliveryCard
@@ -225,6 +212,8 @@ function DeliveryCard({
               : "Nothing is being sent. Everything else keeps running, so turning it back on delivers a warm feed."}
           </span>
         </span>
+      </div>
+      <div className="row">
         <button
           className={active ? "secondary" : ""}
           disabled={toggle.busy}
@@ -322,7 +311,7 @@ function PasswordCard({ onChanged }: { onChanged: () => void }) {
             onChange={(event) => setCurrent(event.target.value)}
           />
         </Field>
-        <Field label="New password" hint="At least 12 characters. Longer beats complicated.">
+        <Field label="New password" hint="At least 9 characters. Longer beats complicated.">
           <input
             type="password"
             value={next}

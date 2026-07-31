@@ -1,4 +1,4 @@
-# Handover — 2026-07-30
+# Handover — 2026-07-31
 
 Where the platform actually is, what is left, and the decisions a new session would otherwise have
 to re-derive. `CHANGELOG.md` is the history; this is the position.
@@ -11,10 +11,10 @@ to re-derive. `CHANGELOG.md` is the history; this is the position.
 |---|---|
 | Site + API | `https://mahoraga-app.rubenlekli.com` (Cloudflare Tunnel; port 22 is the only public listener) |
 | Box | `ruben@169.58.16.241`, checkout at `~/job-search-app` |
-| Running | postgres, api, capture, labeller, scorer, notifier, trainer, docgen, cloudflared, embedder |
-| Timers | **all five installed and enabled** — harvester 15 min, notify-dispatch 60 s, linkedin-describe hourly, health, backup |
-| Tests | 992 passing, 2 skipped, against a throwaway Postgres |
-| Accounts | `lekliruben@gmail.com` (full profile, model servable), `andraslekli@gmail.com` (config only) |
+| Running | postgres, api, **setupagent**, capture, labeller, scorer, notifier, trainer, docgen, cloudflared, plus the separate embedder stack (tei + gateway) |
+| Timers | **six installed and enabled** — harvester 15 min, notify-dispatch 60 s, **linkedin 15 min**, linkedin-describe hourly, health, backup |
+| Tests | 1,014 passing, 2 skipped, against a throwaway Postgres |
+| Accounts | `lekliruben@gmail.com` (full profile, model v2 active), `andraslekli@gmail.com` (config + model v1 active) |
 
 `sudo deploy/install-units.sh` installs and enables every timer idempotently, and `check_health.py`
 **pages** when one is missing — a timer that was never installed is invisible from inside the
@@ -24,18 +24,22 @@ application, which is how `notify-dispatch` was absent for weeks while the stack
 
 ## The thing most likely to mislead a new session
 
-**The JobSpy tier is not enabled.** `source_config.DEFAULT_ENABLED` is seven no-auth REST sources.
-LinkedIn, Indeed and Google are not harvested at all, and every LinkedIn row in the corpus — 3,495
-of them — arrived in a single import on 2026-07-27.
+**A re-embed is half done, and until it finishes the models are trained on the wrong vectors.**
 
-So "LinkedIn jobs are old" is not a filter bug. There is no LinkedIn ingestion. The per-user
-LinkedIn tier is designed (`services/harvester/governor.py` holds the concurrency ceiling, the
-interval floor and the kill switch) and **was never built**. The proxy, the lease accounting and the
-per-user description pass all exist and work; what is missing is the loop that searches LinkedIn on
-a user's own schedule with their own credential.
+The corpus moved from embedding `description` alone to the reference's `title_desc` on
+2026-07-31, which invalidated every existing vector by design (the mode is part of
+`EmbedderVersion.version`, so a stale row is refused rather than silently mis-scored). At the last
+check: **3,136 of 6,601 rows re-embedded, 3,465 pending, one version present.** Both users' active
+models were fitted on the old vectors and cannot honestly be retrained until the rebuild lands.
 
-The delivery-side filters do now catch the stale imported rows: a dry run dropped 33 as too old and
-17 as closed, where all 50 would previously have been sent.
+Run it with `--embed-only` (it takes no advisory lock, commits per 64-row batch, and survives a
+deadlock or a timeout by leaving the batch pending). Do **not** conclude from a quiet log that it
+is wedged — that was true before per-batch commits and is the reason they exist.
+
+**The previous version of this section said the JobSpy tier was not enabled. That is now wrong.**
+LinkedIn, the ATS boards, the VC boards and the European boards all run: 24 hours of intake shows
+linkedin 212, arbeitnow 434, himalayas 200, hiringcafe 167, nofluffjobs 87, profession 53. The
+per-user LinkedIn pass exists and is on its own 15-minute timer.
 
 ---
 
@@ -104,11 +108,17 @@ better than the author cannot see the author's mistakes.
 
 ## Known wrong or unfinished
 
-- **The JobSpy tier does not exist** (above). The largest gap, and now measured: on 2026-07-30 the
-  enabled no-auth sources produced 154 fresh jobs in six hours, all scored, **none at or above the
-  60 delivery cutoff** — the account's top fresh score was 57. Every historical ≥60 traces to the
-  one-time LinkedIn import. So "my feed is quiet" is an ingestion gap, not a filter or a threshold
-  to loosen.
+- ~~**The JobSpy tier does not exist.**~~ **Built and running since 2026-07-31**, along with the
+  right source list. What that measurement actually found is still worth keeping: the old enabled
+  set produced 154 fresh jobs in six hours with **none** at or above the cutoff, because all seven
+  were remote-work aggregators the reference does not use. Two things were wrong at once — no
+  LinkedIn ingestion *and* the wrong boards.
+- **The re-embed is unfinished, and the retrain behind it has not run.** 3,136 of 6,601 rows on the
+  new `title_desc` vectors. Both active models were fitted on the old ones. This is the next thing
+  to finish, and nothing downstream of scoring can be judged until it is.
+- **The new classifier has never trained on real data.** `eebeaee` replaced a fixed Ridge
+  regression with a four-way bake-off and a tuned cutoff; it is tested, and no live model has been
+  produced by it yet, because that needs the re-embed first.
 - **The free-tier description pass fills few descriptions.** A recent cycle: 66 attempted, 0
   described, mostly `generic_http_200` — the page fetched fine and its text did not beat the snippet
   already stored. The JSON-LD path works well when it matches; the fallback rarely wins.
@@ -119,8 +129,12 @@ better than the author cannot see the author's mistakes.
 - **The context-file upload step is not built.** Agreed design: after onboarding, explain what a
   context file is, let the user write and upload one, then chat to Opus with it already in hand.
 - **`jobs_detail` page** does not exist.
-- **Phase 5 of `REBUILD_PLAN.md`** — deleting the schema machinery (`rubric.py`, `facts.py`,
-  `docprompt.py`, `templates/cv.py`, the confirmation form, the generated types) — is not started.
+- **Phase 5 of `REBUILD_PLAN.md`** — retiring the schema machinery — is **part done**.
+  `libs/templates/cv.py` and `services/docgen/docprompt.py` are gone (2026-07-31); `rubric.py`,
+  `facts.py`, the whole `services/capture` + `process` lane + `ProcessPage.tsx` flow, the
+  confirmation form and the generated types remain. That flow is *superseded but wired end to end
+  and passing its tests*, so retiring it is a product cutover, not a cleanup — see the 2026-07-31
+  changelog entry, which records why a dead-code scan deliberately left it alone.
 - **Andras has no profile.** He was always going to run the setup chat as the real test of it.
 - **Cover letters have no trigger.** `tailor_cover.md` is ready and nothing says *when* a posting
   wants one; the reference read a `cover_letter_required` flag this corpus does not have.

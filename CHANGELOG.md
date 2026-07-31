@@ -16,6 +16,106 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ## 2026-07-31
 
+### The password floor drops to nine
+
+12 was turning invited beta users away at the door, which costs more than the marginal entropy
+buys (owner's decision). `MIN_PASSWORD_LENGTH = 9` — signup, reset and change all derive from it,
+and the three frontend hints were the only places the number was written out by hand.
+
+The `_OBVIOUS` list was written against a 12-character floor, so every entry in it was already
+longer than the minimum and the nine-character common passwords could never have been reached.
+Nine of them added.
+
+`AUTH_REUSE.md` §4 and `ROADMAP.md` 1a said 12; both now say what the number is and why it moved,
+rather than being left to contradict the code. A test pins the literal 9 and the 8/9 boundary —
+every other password test reads the constant, so a future change to it would otherwise pass
+silently.
+
+### The embedding rebuild, and four things that stopped it finishing
+
+Backfilled 2026-07-31: these nine commits shipped without changelog entries. The reasoning is in
+the commit bodies and is summarised here because that is where it is looked for.
+
+**Why there is a rebuild at all** (`0bfc773`). The platform embedded `description` alone; the
+reference's default is `title_desc` — title first, then description, capped at 4,000 characters.
+Two consequences, and the second is the one that mattered: the title is the single strongest
+statement of what a job is, **and it has to lead, because the encoder truncates**. `bge-base`
+reads ~512 tokens; Arbeitnow descriptions average 6,662 characters, so a title appended at the end
+would be cut off every time. Those sources scored 16–22 against LinkedIn's 43. The mode is folded
+into `EmbedderVersion.version`, so every existing vector went visibly stale rather than
+confidently wrong — the honest price being a re-embed and a retrain. Also fixed: locations reached
+the boards as slugs, so LinkedIn was sent `european_union` and one query died with
+`Invalid country string`.
+
+**Then the rebuild would not run.** Four failures, each found only by watching the live box:
+
+- `0a80ffc` — eight consecutive cycles rebuilt zero vectors. Each holds the shared advisory lock
+  for its whole run, so every cycle after the first was locked out by the one before and the loop
+  looked like it was working. `--embed-only` takes no lock and does nothing but embed.
+- `d039f52` — that pass ran the whole 6,601-row rebuild inside one transaction, committing
+  nothing for an hour. A crash at minute fifty-nine discarded fifty-nine minutes of paid
+  embedding, and while it ran the database still read zero embedded, so a working run and a wedged
+  one were indistinguishable. Now a session per 200-row batch.
+- `3265519` — the rebuild then died at sixty minutes on a Postgres deadlock against the scheduled
+  cycle's own writes to `corpus`, and rolled back everything. Ordering cannot fix contention
+  between two different write patterns, so a failed batch no longer ends the run: the rows stay
+  pending for the next pass, capping the loss at 200 rows. Five consecutive failures still stops
+  it, so a broken embedder does not spin.
+- `bd305ad` — the first batch of the rebuilt run died on a raw `httpcore.ReadTimeout`. `_post`
+  wrapped HTTP status errors but let transport errors through untouched, so every caller — all of
+  which handle `EmbedderError` — was killed by a timeout anyway. Wrapped, with a test. The timeout
+  itself was contention with the scheduled cycle on a single-threaded encoder, so `--embed-only`
+  now uses a 900s timeout and a batch of 64.
+
+**Position at the time of writing: 3,136 of 6,601 rows re-embedded, 3,465 pending, one version.**
+Both users' active models were trained on the old vectors and cannot be retrained until this
+finishes.
+
+### The ingestion gap closed: LinkedIn runs, and the source list was wrong
+
+`23f461d`, `0610a40`. The measured cause of "my feed is quiet", and it was neither the scorer nor
+the filters — both were suspected first and both were fine. LinkedIn produced 337 of the founder
+account's 348 jobs at or above the cutoff; the sources running in its place produced **nine in two
+days**.
+
+**The per-user LinkedIn pass did not exist.** Every part it needs was already built — adapter,
+lease, governor with its concurrency ceiling and interval floor and kill switch, both scheduling
+columns on `users` — and the loop between them was missing, which is why every LinkedIn row in the
+corpus carried the same `first_seen_at`: one import, and nothing had fetched since. It is separate
+from the shared cycle because a different person pays: the cadence, the bandwidth and the ban risk
+are the user's, so one account's quarantine cannot stop everyone's feed.
+
+**And the enabled source list was the wrong seven** — all remote-work aggregators, which the
+reference instance does not use at all. They were a deliberate first notch and the ramp then
+stopped, because nothing measured that it had. Now the reference's own set: ATS boards where
+employers post directly, VC boards, and the European boards where this platform's users are.
+
+`jobspy` was never added to the harvester requirements despite three sources depending on it, so
+those sources could not have run once — and nothing surfaced it, because they were also not
+enabled. Two halves of one omission, each hiding the other.
+
+**Confirmed working since:** 24 hours of intake now shows linkedin 212, hiringcafe 167,
+nofluffjobs 87, profession 53 alongside the aggregators — sources that produced nothing before.
+
+### The scorer stopped asking a regression for a classifier's number
+
+`eebeaee`, `b3e65a6`. The live reference model settles it: `model_type=histgbm`, `task=classify`,
+`decision_cutoff=44`, against a `score_threshold` of 60. The platform used a fixed
+`Ridge(alpha=1.0)` regression and took **60** — which is the *label* threshold deciding what counts
+as fit while training — as its delivery cutoff. A regression fitted on mostly-low labels pulls
+toward the mean, and the platform then demanded 60 of it while the reference asks 44 of a
+calibrated classifier. That is why the feed went quiet even where jobs existed.
+
+Now four candidate heads, class-balanced with calibrated probabilities, selected on
+cross-validated average precision — not ROC-AUC, which is optimistic at a quarter positives, and
+not the held-out split, which would be selection-on-test. The winner is refit on everything before
+deploying.
+
+Separately, `b3e65a6`: fifty candidates, fifty dropped for age, zero sent, while twenty-five fresh
+matches sat one page further down. The pool is ordered by score and the age filter ran only after
+selection, so a backlog of month-old high scorers took every slot. The filter runs in the query
+now; undated rows still come through, because they are what the pre-send dating exists to resolve.
+
 ### The schema CV renderer, deleted, and five functions nothing called
 
 A scan of every module-level function against every mention of its name in the tree, plus an import

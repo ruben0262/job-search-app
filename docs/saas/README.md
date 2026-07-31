@@ -10,16 +10,16 @@ behaviour becomes multi-tenant. Nothing here is green-field.
 
 | Doc | What it settles |
 |---|---|
-| **[PLATFORM_ARCHITECTURE.md](PLATFORM_ARCHITECTURE.md)** | The shared/per-user boundary, container topology, storage sizing, database choice, open decisions. **Start here** |
+| **[PLATFORM_ARCHITECTURE.md](PLATFORM_ARCHITECTURE.md)** | The shared/per-user boundary, container topology, storage sizing, database choice, open decisions. The design |
 | [HARVESTER_PLAN.md](HARVESTER_PLAN.md) | One shared scrape for all users: query-set dedup, fan-out budget, proxy ownership, embed-once |
-| [HANDOVER.md](HANDOVER.md) | **Start here.** Where the platform is now, what is left, and the decisions not to re-litigate |
-| [SCHEDULER_PLAN.md](SCHEDULER_PLAN.md) | One queue, four lanes (notify / train / docgen / label): fairness, restart safety, debounce |
+| **[HANDOVER.md](HANDOVER.md)** | **Start here.** Where the platform is now, what is left, and the decisions not to re-litigate |
+| [SCHEDULER_PLAN.md](SCHEDULER_PLAN.md) | One queue, one lane per kind of work: fairness, restart safety, debounce. Written for four; there are seven now (`notify train docgen label process score setup`) — the design is unchanged, the list grew |
 | [COLD_START_PLAN.md](COLD_START_PLAN.md) | Signup → working feed: three-stage onboarding, per-user rubric, backfill labelling, API vs OAuth |
 | [TENANT_SAFETY.md](TENANT_SAFETY.md) | Isolation, secrets, plan-scoped quotas, bounded config schema, onboarding order, deletion |
 | [TEST_STRATEGY.md](TEST_STRATEGY.md) | The ≥6/10 behaviour tests, anti-flake rules, write-order |
 | [CODE_STRUCTURE.md](CODE_STRUCTURE.md) | Repo layout, module boundaries, the migration map from the reference instance, and how a one-service deploy stays safe |
 | [AUTH_REUSE.md](AUTH_REUSE.md) | What to lift from the FlowSolutions Go auth system, and what to fix rather than copy |
-| [PROFILE_CAPTURE_PLAN.md](PROFILE_CAPTURE_PLAN.md) | How a signup becomes a configured tenant: a sandboxed Managed Agents interview, a confirmation step, then deterministic rendering of the rubric, facts block, and base CV |
+| [PROFILE_CAPTURE_PLAN.md](PROFILE_CAPTURE_PLAN.md) | **Superseded in mechanism, current in intent.** How a signup becomes a configured tenant. The Managed Agents sandbox it specifies was dropped (`libs/llm/client.py`: plain Messages, because Managed Agents is API-key-only and would have silently excluded every OAuth user), and the interview is now the setup chat of `REBUILD_PLAN.md`. §5's confirmation boundary and §6.3–6.4's rubric work still hold |
 | [OPERATIONS_PLAN.md](OPERATIONS_PLAN.md) | Monitoring, alerts, user-facing error surfacing, action-capable admin console, transactional email, backup/restore, runbooks |
 | [GAPS_REVIEW.md](GAPS_REVIEW.md) | The 12-gap review — all blocking gaps now designed |
 | [ROADMAP.md](ROADMAP.md) | Phasing to first users, and what is deliberately deferred |
@@ -44,9 +44,10 @@ behaviour becomes multi-tenant. Nothing here is green-field.
 - **D1 Postgres for everything** — one datastore, FK cascade, JSONB config.
 - **D2 Both Claude credential types**, user chooses; API preselected, OAuth behind an explicit
   cost/quota warning and built second.
-- **Profile capture runs as a Managed Agents session** — Anthropic hosts the sandbox; restricted
-  toolset, read-only document mounts, deny-by-default egress, approval-gated writes. Rendering of
-  the rubric and other artifacts stays deterministic code.
+- ~~**Profile capture runs as a Managed Agents session**~~ — **reversed 2026-07-28.** Managed
+  Agents authenticates by API key only, so the sandboxed design would have silently excluded every
+  OAuth user, and it put a beta on the onboarding critical path. Capture is a plain Messages call
+  and the interview is the setup chat (`REBUILD_PLAN.md`). Rendering stays deterministic code.
 - **Onboarding order:** signup → verify email → free plan → credentials → capture → config →
   cold start. Capture spends the user's own credential, so an **API key is required to onboard**.
 - **One plan (`free`) at launch**, but quotas are plan-scoped from day one so paid tiers are a row
@@ -67,8 +68,9 @@ behaviour becomes multi-tenant. Nothing here is green-field.
 
 ## Known risks carried knowingly
 
-1. **Managed Agents is beta** and sits on the onboarding critical path. Pin the beta header; expect
-   one contract change during the build. Manual entry is always the fallback.
+1. ~~**Managed Agents is beta** and sits on the onboarding critical path.~~ **Retired 2026-07-28.**
+   The platform makes plain Messages calls; there is no beta on the onboarding path to pin. The
+   OAuth-compatibility reason is in `libs/llm/client.py`.
 2. **Profile-capture cost is unmeasured** — first thing a user spends, free plan, their own key.
    Measure before Phase 4.
 3. **The rubric + feature-extractor workstream is the largest hidden task** and must ship as one
@@ -91,8 +93,10 @@ artifacts that do not exist yet, and they are now scheduled into Phase 3 rather 
 
 - a **privacy policy naming each processor** (Anthropic, Telegram, the proxy provider);
 - **explicit consent at CV upload**, at the moment the file leaves for the Anthropic Files API;
-- **account deletion that also removes Anthropic-uploaded files** — today's deletion cascades
-  Postgres only, which is provably complete for the database and silent about everything outside it.
+- ~~**account deletion that also removes Anthropic-uploaded files**~~ — **moot since 2026-07-28.**
+  Nothing is uploaded to the Files API any more: document text is sent inline in a Messages call
+  and never stored outside Postgres, so the cascade *is* the whole story. A test asserts no row
+  referencing the user survives in any table (`tests/test_gdpr.py`).
 
 `internal/privacy` in FlowSolutions is the reusable pattern (`AUTH_REUSE.md` §5). See
 `ROADMAP.md` Phase 3.

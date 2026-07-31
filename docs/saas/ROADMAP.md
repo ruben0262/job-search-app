@@ -239,7 +239,8 @@ and finishable in one sitting.
 
 1a. ✅ **Done 2026-07-27. Auth primitives** — `libs/auth`: argon2id at FlowSolutions' production
    parameters, email tokens stored as hashes only, refresh sessions hashed and rotated with family
-   revocation on replay. Password minimum raised 8 → 12 per `AUTH_REUSE.md` §4.
+   revocation on replay. Password minimum raised 8 → 12 per `AUTH_REUSE.md` §4, then lowered to 9 on
+   2026-07-31 (owner's decision; see that section).
 1b. ✅ **Done 2026-07-27. The `api` service** — signup, email confirmation, login, refresh, logout,
    the §3 cookie policy (refresh cookie scoped to its own path), no account-existence oracle in
    either the response or the timing, and a process-local rate limiter carrying §4.1's caveat
