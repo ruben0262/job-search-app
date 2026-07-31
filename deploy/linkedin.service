@@ -1,0 +1,21 @@
+# One per-user LinkedIn pass: fetch for whoever is due, then exit.
+#
+# **Separate from the harvest cycle because a different person pays and a different risk applies.**
+# The shared cycle runs every fifteen minutes on the platform's own IP and costs nothing per user.
+# This spends one account's residential bandwidth, on a source that bans, so its cadence belongs to
+# that account — derived from their notify interval and floored at an hour by the governor.
+#
+# The tier had no runner at all until 2026-07-31, which is why every LinkedIn row in the corpus
+# shared one `first_seen_at`: they arrived in a single import and nothing fetched afterwards.
+[Unit]
+Description=job-search-app per-user LinkedIn pass (one-shot)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/ruben/job-search-app
+ExecStart=/usr/bin/docker compose -f deploy/compose.yml run --rm --no-deps harvester --linkedin
+# Four users at a time, up to a dozen queries each, on a rotating residential proxy. A pass that
+# runs longer than this is one where LinkedIn is throttling, and the next tick is the retry.
+TimeoutStartSec=30min

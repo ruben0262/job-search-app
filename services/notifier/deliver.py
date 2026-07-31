@@ -33,6 +33,7 @@ import libs.notify as notifylib
 from libs.contracts.config import migrate_config
 from libs.db.models import CorpusJob, User, UserConfig, UserJobState
 from libs.obs import audit
+from libs.scoring.thresholds import DEFAULT_CUTOFF
 from libs.secrets import SecretsError, SecretStore, redacting
 from services.notifier.buttons import keyboard
 from services.notifier.card import FeedItem
@@ -52,11 +53,9 @@ MAX_ITEMS_PER_DIGEST = 10
 # `notified_at` in their timezone rather than against a counter column.
 MAX_NOTIFICATIONS_PER_DAY = 100
 
-# The score at or above which a job is worth sending — and, handed to the card, the score at which
-# it shows as a 🟢. One number for both, because a feed that sends a job while calling it borderline
-# is telling the user not to trust the thing it just did. Matches the reference's
-# `min_score_for_cv`.
-DEFAULT_CUTOFF = 60.0
+# Re-exported, not redefined. The number is `libs.scoring.thresholds`, because the API's jobs table
+# needs the same one and `services` may not import `services` — and three copies of a threshold are
+# three chances for it to drift, which had already happened twice.
 
 # Telegram's answers when the bot is gone. Distinct from a transient failure in every way that
 # matters: no amount of retrying changes them.

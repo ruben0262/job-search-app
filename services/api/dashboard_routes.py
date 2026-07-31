@@ -26,6 +26,7 @@ from libs.corpus import salary
 from libs.db.models import CorpusJob, User, UserDocument, UserJobState, UserLabel, UserModel
 from libs.onboarding import onboarding_state
 from libs.scoring.rules import score_job
+from libs.scoring.thresholds import DEFAULT_CUTOFF
 from libs.tenant.repository import TenantRepository
 from services.api.deps import current_user, get_db
 
@@ -148,6 +149,7 @@ def feed(*, db: Session = Depends(get_db), user_id: _uuid.UUID = Depends(current
          remote: bool | None = Query(None),
          applied: bool | None = Query(None),
          max_age_days: int | None = Query(None, ge=1, le=365),
+         min_score: float | None = Query(None, ge=0, le=100),
          sort: str = Query("score", pattern="^(score|posted|fetched|title|company)$"),
          direction: str = Query("desc", pattern="^(asc|desc)$")) -> dict:
     """The ranked jobs — a page of them, with the filters the table offers.
@@ -159,6 +161,13 @@ def feed(*, db: Session = Depends(get_db), user_id: _uuid.UUID = Depends(current
     **The age filter keeps undated rows.** Same rule as delivery: a missing `posted_at` is unknown,
     not old, and a preference filter fails open. `total` and `sources` are for the table's pager and
     source dropdown — computed under the same filters as the page, or the counts would lie.
+
+    **`min_score` defaults to the delivery cutoff, not to zero.** The corpus is shared and the
+    harvest is broad, so most of what is scored for any given user is not for them: a page showing
+    everything is a page of other people's jobs with a number beside them. The default is the same
+    threshold that decides what reaches Telegram, so the table and the channel agree about what
+    counts as a match. Passing `min_score=0` explicitly widens it, which is a thing a user may
+    genuinely want and should have to ask for.
     """
     user = db.get(User, user_id)
     model = db.scalar(
@@ -168,8 +177,10 @@ def feed(*, db: Session = Depends(get_db), user_id: _uuid.UUID = Depends(current
     sources = sorted(db.scalars(select(CorpusJob.source).distinct()).all())
 
     if model is not None:
+        floor = DEFAULT_CUTOFF if min_score is None else min_score
         conditions = [UserJobState.user_id == user_id,
                       UserJobState.score.isnot(None),
+                      UserJobState.score >= floor,
                       UserJobState.dismissed_at.is_(None)]
         if q:
             pattern = f"%{q}%"

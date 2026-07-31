@@ -32,7 +32,8 @@ logger = logging.getLogger("health")
 # never installed is invisible from inside the application: the lane it feeds simply has no work,
 # which reads identically to a quiet day. `notify-dispatch` was missing for weeks in exactly that
 # way — the notifier container up, no errors, and nobody hearing from us.
-REQUIRED_TIMERS = ("harvester", "notify-dispatch", "linkedin-describe", "health", "backup")
+REQUIRED_TIMERS = ("harvester", "linkedin", "notify-dispatch", "linkedin-describe",
+                   "health", "backup")
 
 
 def missing_timers() -> list[str]:

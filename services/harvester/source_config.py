@@ -24,11 +24,30 @@ import os
 from collections.abc import Mapping
 from uuid import UUID
 
-# Sources needing no API key and no credential. The starting set: each is a public JSON or RSS
-# endpoint, and none of them costs anybody anything.
+# Sources needing no API key and no credential.
+#
+# **This was seven for four days and it was the wrong seven.** The original set was chosen as a
+# deliberate first notch — "sources are enabled incrementally rather than all at once… each has its
+# own failure modes to learn" — and the ramp then stopped, because nothing measured that it had. The
+# seven were all remote-work aggregators, which the reference instance does not use at all, and the
+# result was a feed that scored: 1,293 fresh jobs over two days produced nine at or above the
+# delivery cutoff, against LinkedIn's historical rate of one in ten.
+#
+# This is now the reference's own enabled set, minus the credentialled ones (which `KEY_GATED`
+# handles) and plus the aggregators already running. The ATS boards are where employers post
+# directly and are the ones worth having; they need `ats_tokens` seeded or they iterate an empty
+# company list and return nothing, silently, because that is the adapter contract.
 DEFAULT_ENABLED = (
+    # Remote-work aggregators — the original seven, kept.
     "remotive", "himalayas", "remoteok", "arbeitnow",
     "weworkremotely", "workingnomads", "jobicy",
+    # ATS boards: employers posting directly. Gated on `ats_tokens` having rows.
+    "greenhouse", "ashby", "lever", "smartrecruiters",
+    "recruitee", "breezy", "workday", "personio", "workable",
+    # VC and aggregator boards the reference runs.
+    "hiringcafe", "consider", "getro", "themuse",
+    # European boards, which is where this platform's users actually are.
+    "nofluffjobs", "nofluffjobs_hu", "profession", "dreamjobs", "justjoinit",
 )
 
 # Board APIs that iterate `cfg["queries"]` and do nothing without it. Getting this list wrong is

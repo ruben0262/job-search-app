@@ -22,10 +22,11 @@ UNIT_DIR=/etc/systemd/system
 # Every timer the platform runs, and what breaks when it is missing.
 #   harvester         — the shared cycle. Missing: no new jobs enter the corpus.
 #   notify-dispatch   — fills the notify lane. Missing: nothing is ever delivered.
+#   linkedin          — per-user LinkedIn fetch. Missing: no LinkedIn jobs enter the corpus at all.
 #   linkedin-describe — per-user proxied metadata. Missing: LinkedIn rows rank blind.
 #   health            — the check that notices the above. Missing: nobody finds out.
 #   backup            — pg_dump. Missing: one bad day is unrecoverable.
-TIMERS=(harvester notify-dispatch linkedin-describe health backup)
+TIMERS=(harvester linkedin notify-dispatch linkedin-describe health backup)
 
 if [[ $EUID -ne 0 ]]; then
   echo "needs root: sudo $0" >&2

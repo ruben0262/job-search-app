@@ -1,0 +1,16 @@
+# Every fifteen minutes — the tick, not the cadence.
+#
+# **The interval a user gets is theirs**, held in `users.linkedin_next_run_at` and set by the
+# governor from their notify interval with jitter. This timer only asks "is anybody due", which is
+# cheap and answers no most of the time. Ticking at the same rate as the shared cycle means a user
+# who wants hourly gets hourly rather than hourly-rounded-up-to-whenever-the-timer-next-fires.
+[Unit]
+Description=Ask whether any user is due a LinkedIn pass
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

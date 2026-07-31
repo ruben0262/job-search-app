@@ -1,0 +1,230 @@
+"""The per-user LinkedIn pass. The one tier that runs on its owner's schedule and their credential.
+
+**Everything this needs existed and nothing called it.** The adapter (`gather_linkedin`), the lease
+(`ProxyUsageRepository.acquire_lease`), the governor (concurrency ceiling, interval floor, jitter,
+kill switch) and the two scheduling columns on `users` were all built. What was missing was the
+loop, and its absence is why a corpus of 3,495 LinkedIn rows all carried the same `first_seen_at`:
+they came from one import and nothing has fetched a LinkedIn posting since.
+
+That mattered more than it looks. LinkedIn produced 337 of the founder account's 348 jobs at or
+above the delivery cutoff; the seven aggregator sources running in its place produced nine in two
+days. "My feed is quiet" was an ingestion gap wearing a scoring gap's clothes.
+
+## Why this is not part of the shared cycle
+
+Three reasons, and each on its own would be enough:
+
+- **It spends the user's bandwidth**, so its cadence is theirs — derived from how often they want
+  to hear from us, floored at an hour by `LINKEDIN_MIN_INTERVAL_MIN`. A user on a four-hour digest
+  does not need LinkedIn read ninety-six times a day.
+- **It carries ban risk.** The shared cycle must not stop because LinkedIn started blocking one
+  user's residential IP, and one account's quarantine must not touch anyone else's feed.
+- **There is no cross-user dedup on this tier** (`HARVESTER_PLAN.md` §5.3). Two users searching the
+  same terms both fetch, because the alternative is spending one user's credential on another's
+  query, and the rows land in a shared corpus anyway so the second fetch is cheap in storage terms.
+
+## Failure is per user, always
+
+A user with no proxy credential, an exhausted cap, or a quarantined credential is skipped and
+**still gets their next run scheduled**. Leaving `linkedin_next_run_at` unset on failure would
+either re-attempt them on every tick or drop them from the rotation entirely, depending on the
+query — and both are worse than waiting an interval.
+"""
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+
+from sqlalchemy import or_, select
+
+from libs.corpus.repository import CorpusRepository
+from libs.db.models import User, UserConfig
+from libs.obs import audit
+from libs.secrets import SecretStore, redacting
+from libs.secrets.keyring import SecretsError
+from services.harvester.governor import (
+    LINKEDIN_MAX_CONCURRENT_USERS,
+    linkedin_enabled,
+    next_linkedin_run,
+    resolve_linkedin_interval,
+)
+from services.harvester.proxy_usage import ProxyCapExceeded, ProxyUsageRepository
+from services.harvester.query_set import build_query_set
+from services.harvester.sources import jobspy_source
+
+logger = logging.getLogger(__name__)
+
+# Postings per query. LinkedIn paginates and every page is proxied bandwidth, so this is the
+# reference's figure rather than a bigger number that would feel more thorough.
+RESULTS_WANTED = 30
+
+# Queries one user contributes per run. `build_query_set` already caps a user's keywords; this
+# bounds the cross product with their locations, which is what actually multiplies.
+MAX_QUERIES_PER_RUN = 12
+
+
+@dataclass
+class LinkedInReport:
+    """What one pass did. Per user, because a tier that fails for one account and works for the
+    rest is the normal case here rather than an exception worth collapsing into a total."""
+
+    considered: int = 0
+    ran: int = 0
+    skipped_no_lease: int = 0
+    links_found: int = 0
+    new_jobs: int = 0
+    failures: dict[str, str] = field(default_factory=dict)
+
+
+def due_users(session, *, now: datetime, limit: int) -> list[User]:
+    """Active users whose LinkedIn run is due, soonest first.
+
+    `NULL` counts as due: a user who has never run is exactly who should run next, and treating an
+    unset column as "not yet" would leave every new account permanently unscheduled.
+    """
+    return list(session.scalars(
+        select(User)
+        .where(User.active.is_(True),
+               User.status == "active",
+               or_(User.linkedin_next_run_at.is_(None), User.linkedin_next_run_at <= now))
+        .order_by(User.linkedin_next_run_at.asc().nulls_first())
+        .limit(limit)))
+
+
+def queries_for(session, user: User) -> list[dict]:
+    """This user's own LinkedIn queries — their keywords and locations, nobody else's.
+
+    The shared cycle folds every active user's terms into one query set because the corpus it fills
+    is shared. Here the opposite is true: the fetch is paid for by one person, so it asks only what
+    that person asked for. Sending the folded set would spend their bandwidth on other users' jobs.
+    """
+    config = session.scalar(select(UserConfig.config).where(UserConfig.user_id == user.id))
+    if not config:
+        return []
+
+    keys = build_query_set({user.id: config}, sources=("linkedin",))
+    queries = [{"search_term": key.keyword_norm, "location": key.location_norm or None,
+                "is_remote": key.is_remote, "hours_old": key.max_age_hours}
+               for key in keys]
+    return queries[:MAX_QUERIES_PER_RUN]
+
+
+def run_for_due_users(session, *, now: datetime | None = None,
+                      limit: int = LINKEDIN_MAX_CONCURRENT_USERS,
+                      gather=jobspy_source.gather_linkedin) -> LinkedInReport:
+    """One pass over the users whose LinkedIn run is due.
+
+    `gather` is injectable so the orchestration — who is due, whose credential, what happens when a
+    lease is refused, when the next run lands — is testable without jobspy or a network. What the
+    adapter does with a query is covered structurally elsewhere.
+
+    **Does not commit.** The caller owns the transaction, so a scheduled next run and the rows it
+    produced land together.
+    """
+    report = LinkedInReport()
+    if not linkedin_enabled():
+        logger.warning("linkedin: tier disabled by HARVEST_LINKEDIN_DISABLED")
+        return report
+
+    now = now or datetime.now(UTC)
+    corpus = CorpusRepository(session)
+    usage = ProxyUsageRepository(session)
+    store = SecretStore(session)
+
+    for user in due_users(session, now=now, limit=limit):
+        report.considered += 1
+        # Scheduled first, and deliberately: every path below either succeeds or fails, and both
+        # want the same next run. Setting it at the end would skip it on the exception path and
+        # leave the user re-attempted on every tick.
+        user.linkedin_next_run_at = next_linkedin_run(
+            now, resolve_linkedin_interval(user.linkedin_interval_min or user.notify_interval_min))
+
+        queries = queries_for(session, user)
+        if not queries:
+            continue
+
+        try:
+            ran = _run_one(user, queries, corpus=corpus, usage=usage, store=store,
+                           report=report, gather=gather)
+        except Exception as exc:                                    # noqa: BLE001
+            # One user's LinkedIn failing is not the tier failing. Recorded and moved past, which
+            # is the same contract every shared source adapter has.
+            report.failures[str(user.id)] = f"{type(exc).__name__}: {exc}"
+            logger.warning("linkedin: user %s failed: %s", user.id, type(exc).__name__)
+            continue
+        if ran:
+            report.ran += 1
+
+    audit(logger, "linkedin.pass", considered=report.considered, ran=report.ran,
+          no_lease=report.skipped_no_lease, links=report.links_found, new=report.new_jobs,
+          failures=len(report.failures))
+    return report
+
+
+def _run_one(user: User, queries: list[dict], *, corpus: CorpusRepository,
+             usage: ProxyUsageRepository, store: SecretStore,
+             report: LinkedInReport, gather) -> bool:
+    """One user's fetch, inside their own credential's scope. Returns whether it ran.
+
+    The proxy URL lives only inside `store.use`, and the whole fetch happens within that block —
+    jobspy is handed the value and the block closes before anything else runs.
+    """
+    try:
+        with store.use(user.id, "proxy") as secret:
+            if secret is None:
+                report.skipped_no_lease += 1
+                return False
+
+            proxy = secret.reveal()
+            with redacting(proxy):
+                try:
+                    lease = usage.acquire_lease(user.id, secret_resolver=lambda _ref: proxy)
+                except ProxyCapExceeded:
+                    report.skipped_no_lease += 1
+                    return False
+                if lease is None:
+                    report.skipped_no_lease += 1
+                    return False
+
+                cfg = {"queries": queries, "results_wanted": RESULTS_WANTED,
+                       "hours_old": min(q["hours_old"] for q in queries),
+                       # The description is fetched later by the platform's own pass, which stores
+                       # it on the shared corpus row where every user gets it. Asking jobspy for it
+                       # here would fetch the same page again per user.
+                       "linkedin_fetch_description": False}
+                links = gather(cfg, logger, lease=lease)
+
+    except SecretsError:
+        # The store could not answer. Not this user's fault and not a reason to stop the pass.
+        report.skipped_no_lease += 1
+        return False
+
+    report.links_found += len(links)
+    report.new_jobs += _ingest(corpus, links)
+    logger.info("linkedin: %s ran %d quer(ies), %d link(s)", user.id, len(queries), len(links))
+    return True
+
+
+def _ingest(corpus: CorpusRepository, links) -> int:
+    """Dedup and upsert, the same four layers the shared cycle applies.
+
+    Kept here rather than imported from `cycle` because that one also writes a `CycleReport`; the
+    dedup itself is the repository's, so this is only the loop around it.
+    """
+    new = 0
+    for link in links:
+        if not link.url:
+            continue
+        if corpus.find_duplicate(link.url, link.title, link.company, link.location,
+                                 application_url=link.application_url) is not None:
+            continue
+        job_id = corpus.add(**link.as_corpus_row())
+        if job_id is None:
+            continue
+        new += 1
+        if link.snippet:
+            corpus.set_description(job_id, link.snippet)
+        if link.application_url:
+            corpus.set_application_url(job_id, link.application_url)
+    return new

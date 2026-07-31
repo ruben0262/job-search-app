@@ -173,9 +173,32 @@ def test_a_servable_model_takes_over_the_ranking(api):
     session.add(UserJobState(user_id=user.id, job_id=jobs[0].id, score=10.0))
     session.flush()
 
-    body = http.get("/feed").json()
+    # `min_score=0` because the point here is the *ordering*, and the 10.0 job is deliberately
+    # below the delivery cutoff the table now defaults to.
+    body = http.get("/feed?min_score=0").json()
     assert body["stage"] == "personal"
     assert [job["title"] for job in body["jobs"]] == ["Senior Backend Engineer", "Backend Engineer"]
+
+
+def test_the_table_defaults_to_the_score_that_reaches_telegram(api):
+    """**The corpus is shared and the harvest is broad**, so most of what is scored for any given
+    user is not for them. A page showing everything is a page of other people's jobs with a number
+    beside it — and the same threshold decides what reaches the channel, so the two agree."""
+    from libs.db.models import UserJobState
+    from libs.scoring.thresholds import DEFAULT_CUTOFF
+
+    http, session, user, jobs = api
+    _model(session, user, generation=1)
+    session.add(UserJobState(user_id=user.id, job_id=jobs[0].id, score=DEFAULT_CUTOFF + 5))
+    session.add(UserJobState(user_id=user.id, job_id=jobs[1].id, score=DEFAULT_CUTOFF - 5))
+    session.flush()
+
+    default = http.get("/feed").json()
+    assert [job["title"] for job in default["jobs"]] == ["Backend Engineer"]
+
+    # Widening is a thing a user may genuinely want, and should have to ask for.
+    widened = http.get("/feed?min_score=0").json()
+    assert len(widened["jobs"]) == 2
 
 
 def test_a_dismissed_job_stays_out_of_both_feeds(api):
@@ -219,7 +242,7 @@ def test_the_search_box_reaches_titles_and_links(api):
     http, session, user, jobs = api
     _model(session, user, generation=1)
     for job in jobs:
-        session.add(UserJobState(user_id=user.id, job_id=job.id, score=50.0))
+        session.add(UserJobState(user_id=user.id, job_id=job.id, score=75.0))
     session.flush()
 
     titles = [job["title"] for job in http.get("/feed?q=nurse").json()["jobs"]]
@@ -236,7 +259,7 @@ def test_the_applied_filter_splits_the_feed_both_ways(api):
 
     http, session, user, jobs = api
     _model(session, user, generation=1)
-    session.add(UserJobState(user_id=user.id, job_id=jobs[0].id, score=50.0,
+    session.add(UserJobState(user_id=user.id, job_id=jobs[0].id, score=75.0,
                              applied_at=sqlfunc.now()))
     session.add(UserJobState(user_id=user.id, job_id=jobs[1].id, score=60.0))
     session.flush()

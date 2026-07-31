@@ -32,6 +32,7 @@ from libs.secrets import install
 from libs.tenant.repository import TenantRepository
 from services.harvester.cycle import run_cycle
 from services.harvester.describe import describe_linkedin_for_all
+from services.harvester.linkedin import run_for_due_users as run_linkedin
 from services.harvester.source_config import build_source_configs
 
 logger = logging.getLogger("harvester")
@@ -67,11 +68,25 @@ def main(argv: list[str] | None = None) -> int:
                         help="build and budget the query set, then stop before fetching anything")
     parser.add_argument("--max-queries", type=int, default=None,
                         help="override the fan-out budget for this run")
+    parser.add_argument("--linkedin", action="store_true",
+                        help="run the per-user LinkedIn pass for whoever is due, then stop")
     parser.add_argument("--describe-linkedin", action="store_true",
                         help="fill LinkedIn descriptions on each user's own proxy, then stop")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args(argv)
     _configure_logging(args.verbose)
+
+    if args.linkedin:
+        # **Per user, on their own schedule and their own credential.** Separate from the shared
+        # cycle because the cadence, the bandwidth and the ban risk all belong to one account
+        # rather than to the platform (`services/harvester/linkedin.py`).
+        install()
+        with session_scope() as session:
+            report = run_linkedin(session)
+        logger.info("linkedin: %d considered, %d ran, %d without a lease, %d link(s), %d new",
+                    report.considered, report.ran, report.skipped_no_lease,
+                    report.links_found, report.new_jobs)
+        return 0
 
     if args.describe_linkedin:
         # **A separate pass on a slower timer, not part of the cycle.** It spends users' own
