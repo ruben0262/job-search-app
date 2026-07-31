@@ -35,16 +35,18 @@ operating point.
 | Doc | What it settles |
 |---|---|
 | **[PLATFORM_ARCHITECTURE.md](PLATFORM_ARCHITECTURE.md)** | The shared/per-user boundary, container topology, storage sizing, database choice, open decisions. The design |
-| [HARVESTER_PLAN.md](HARVESTER_PLAN.md) | One shared scrape for all users: query-set dedup, fan-out budget, proxy ownership, embed-once |
+| [HARVESTER_PLAN.md](HARVESTER_PLAN.md) | **Live and current.** One shared scrape for all users: query-set dedup, fan-out budget, proxy ownership, embed-once — plus the per-user LinkedIn tier, built 2026-07-31. The busiest service on the box: three timers, cited by 17 modules |
 | [SCHEDULER_PLAN.md](SCHEDULER_PLAN.md) | One queue, one lane per kind of work: fairness, restart safety, debounce. Written for four; there are seven now (`notify train docgen label process score setup`) — the design is unchanged, the list grew |
-| [COLD_START_PLAN.md](COLD_START_PLAN.md) | Signup → working feed: three-stage onboarding, per-user rubric, backfill labelling, API vs OAuth |
+| [COLD_START_PLAN.md](COLD_START_PLAN.md) | **Implemented.** Signup → working feed. Kept because the labeller reads its thresholds live |
+| [ONBOARDING_AND_PROCESSING.md](ONBOARDING_AND_PROCESSING.md) | **Implemented.** Which page a user is on is the server's answer, config as sections, and the dashboard as state rather than a wall of buttons |
+| [REBUILD_PLAN.md](REBUILD_PLAN.md) | The setup chat that replaced one-shot profile capture, the two feed buttons, and the phase-5 cutover still outstanding |
 | [TENANT_SAFETY.md](TENANT_SAFETY.md) | Isolation, secrets, plan-scoped quotas, bounded config schema, onboarding order, deletion |
 | [TEST_STRATEGY.md](TEST_STRATEGY.md) | The ≥6/10 behaviour tests, anti-flake rules, write-order |
 | [CODE_STRUCTURE.md](CODE_STRUCTURE.md) | Repo layout, module boundaries, the migration map from the reference instance, and how a one-service deploy stays safe |
 | [AUTH_REUSE.md](AUTH_REUSE.md) | What to lift from the FlowSolutions Go auth system, and what to fix rather than copy |
 | [PROFILE_CAPTURE_PLAN.md](PROFILE_CAPTURE_PLAN.md) | **Superseded in mechanism, current in intent.** How a signup becomes a configured tenant. The Managed Agents sandbox it specifies was dropped (`libs/llm/client.py`: plain Messages, because Managed Agents is API-key-only and would have silently excluded every OAuth user), and the interview is now the setup chat of `REBUILD_PLAN.md`. §5's confirmation boundary and §6.3–6.4's rubric work still hold |
-| [OPERATIONS_PLAN.md](OPERATIONS_PLAN.md) | Monitoring, alerts, user-facing error surfacing, action-capable admin console, transactional email, backup/restore, runbooks |
-| [GAPS_REVIEW.md](GAPS_REVIEW.md) | The 12-gap review — all blocking gaps now designed |
+| [OPERATIONS_PLAN.md](OPERATIONS_PLAN.md) | **Half built, still relevant.** Health, alerts, email and backup are live; the admin console is read-only and the runbooks are unwritten |
+| [GAPS_REVIEW.md](GAPS_REVIEW.md) | The 12-gap review, **re-audited 2026-07-31**. Two gaps it calls closed are implemented, tested and called by nothing |
 | [ROADMAP.md](ROADMAP.md) | Phasing to first users, and what is deliberately deferred |
 
 ## Earlier research (still valid, partly superseded)

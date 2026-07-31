@@ -1,5 +1,28 @@
 # Operations — monitoring, email, backup, recovery
 
+## Implementation status — audited 2026-07-31
+
+**Still relevant, and roughly half built.** §1's thesis — every failure here is silent, because
+delivery is Telegram and a user who stops receiving jobs cannot tell "nothing matched" from
+"broken" — is the reason the built half exists and is why the rest is worth finishing.
+
+| Section | State | Evidence |
+|---|---|---|
+| §2 per-user health | ✅ built | `GET /status` derives each component from the data (bot, channel, harvester freshness, scorer, docgen), rendered as a dot list on Overview. Plus the notification bell for events the user would otherwise never see |
+| §3 platform health | ✅ built | `libs/ops/alerts.py` — `PlatformHealth`, `evaluate()`, `render()` |
+| §4 alerts | ✅ built | `deploy/scripts/check_health.py` on `health.timer`, emailing the operator only when something is wrong. Exit code is the interface. A **missing timer pages**, because a timer that was never installed is invisible from inside the application — which is how `notify-dispatch` was absent for weeks while the stack looked healthy |
+| §5 admin console | 🟠 **read-only, not action-capable** | `services/api/admin_routes.py` is two endpoints, `GET /admin/health` and `GET /admin/users`, gated on `ADMIN_EMAILS`. There is no admin page in the SPA and **nothing acts** — the section's whole point was a console that can suspend, requeue and resend with an audit trail. What exists is the read half |
+| §6 transactional email | ✅ built | `libs/mail` — SMTP sender, daily cap, plain-text templates. Verification and reset proven end to end in a browser |
+| §7 backup/restore | ✅ built | `backup.py` on a timer, `restore_drill.py` beside it |
+| §8 embedder SPOF | 🟠 **partly** | Deployed on both boxes, but `check_health.py` checks timers and queue state and does **not** probe the embedder. Its death surfaces as jobs failing to score rather than an alert naming it |
+| §9 runbooks | ❌ **not written** | No `runbooks/` anywhere. The operational knowledge is in `CHANGELOG.md` entries and commit bodies, which is findable by whoever wrote it and nobody else |
+
+**The two worth doing next**, in order: probe the embedder in `check_health.py` (small, and it
+closes G10 properly), then decide whether the admin console earns its build — at two accounts,
+`deploy/scripts/` covers the same ground from a shell, and §5 is honest that the console is for
+when that stops being true.
+
+
 **Status:** design, 2026-07-26. Closes gaps **G2** (observability), **G3** (transactional email),
 **G4** (backup/restore), **G10** (embedder SPOF) from `GAPS_REVIEW.md`. Blocks Phase 4.
 

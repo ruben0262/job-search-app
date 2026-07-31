@@ -1,5 +1,30 @@
 # Onboarding, processing, and training — where the LLM runs and where it does not
 
+## Implementation status — audited 2026-07-31
+
+**Implemented.** Both live accounts went through this flow, and it is verified in a browser rather
+than asserted.
+
+- **§1's rule holds:** the server decides which page a user is on. `/dashboard` answers
+  `stage: "onboarding"` with the page list, so the client never re-derives "are they done yet"
+  from a pile of booleans.
+- **§2's pages** are built, as numbered step circles with working back-navigation, and every
+  answer is editable afterwards on the **Your details** page — which renders the same components
+  the wizard does, so a correction behaves exactly like getting it right the first time.
+- **§3's config-as-sections** is live, and the form was rebuilt on 2026-07-30 for people who do
+  not read forms: chips instead of newline-separated textareas, grouped checkboxes instead of a
+  `<select multiple>`.
+- **§4's "state, not buttons"** is the dashboard: one endpoint reads the counters and says what
+  the account needs now, because the order is not guessable and pressing them wrong costs money.
+- **§5's LLM-first labelling with behaviour as the corrective** is `services/labeller`.
+- **§7 explains why the sandbox went away**, and that reasoning outlived the section: Managed
+  Agents is API-key-only and would have silently excluded every OAuth user.
+
+Two departures worth knowing: the interview is now the setup chat of `REBUILD_PLAN.md` rather
+than a capture call, and a turn runs as a queue job (`services/setupagent`) rather than inside the
+request — an HTTP request that takes minutes dies whenever the browser navigates.
+
+
 **Status:** decided 2026-07-28. Supersedes the onboarding ordering sketched in
 `PROFILE_CAPTURE_PLAN.md` §4.1 and the "capture during onboarding" assumption throughout that
 document. The split it describes between agentic capture and deterministic rendering is unchanged
