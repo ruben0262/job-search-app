@@ -33,6 +33,10 @@ export function ModelPage({
   if (dashboard.stage === "onboarding") return null;
   const { model, feed, next } = dashboard;
 
+  // The columns come from the newest run: it measured the most, and an older row simply leaves the
+  // cells it has no answer for empty rather than the table losing a column for everyone.
+  const columns = model.history?.[0]?.metrics ?? [];
+
   const headline = model.servable
     ? `Your model is live — version ${model.version}`
     : feed.labels > 0
@@ -101,6 +105,57 @@ export function ModelPage({
           </>
         )}
       </div>
+
+      {/* **Every version, not just the live one.** "Is this getting better" is a question about the
+          sequence, and it is the question somebody paying for their own training has. All of this
+          was already measured and stored at fit time; until now the only way to read it was SQL. */}
+      {model.history?.[0] ? (
+        <div style={{ marginTop: "3rem" }}>
+          <h2>Version history</h2>
+          <p className="facts">
+            What each training run measured. <strong>Cutoff</strong> is the score a job must beat to
+            reach you — tuned on held-out predictions rather than picked, so it moves between
+            versions.
+          </p>
+          <div className="table-scroll">
+            <table className="history">
+              <thead>
+                <tr>
+                  <th>Version</th>
+                  <th>Trained</th>
+                  <th>Labels</th>
+                  {columns.map((metric) => (
+                    <th key={metric.key}>{metric.label}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {model.history.map((entry) => (
+                  <tr key={entry.version} className={entry.active ? "on" : undefined}>
+                    <td>
+                      v{entry.version}
+                      {entry.active ? <span className="pill">live</span> : null}
+                    </td>
+                    <td>
+                      {entry.trained_at
+                        ? new Date(entry.trained_at).toLocaleDateString()
+                        : "—"}
+                    </td>
+                    <td>{entry.n_labels?.toLocaleString() ?? "—"}</td>
+                    {columns.map((column) => {
+                      const cell = entry.metrics.find((metric) => metric.key === column.key);
+                      // Absent rather than zero: the earliest runs recorded nothing but a label
+                      // count, and a 0.0 would read as a model that scored nothing rather than one
+                      // nobody measured.
+                      return <td key={column.key}>{cell ? String(cell.value) : "—"}</td>;
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
 
       <div style={{ marginTop: "3rem" }}>
         <h2>How it learns</h2>

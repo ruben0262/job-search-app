@@ -158,7 +158,22 @@ export type Dashboard =
   | {
       stage: "personal" | "rules";
       next: ProcessState;
-      model: { version: number; servable: boolean; stale_reason: string | null; trained_at: string | null };
+      model: {
+        version: number;
+        servable: boolean;
+        stale_reason: string | null;
+        trained_at: string | null;
+        /** Every version this account has had, newest first. `metrics` is a list rather than a
+         *  map so the table can render columns in a fixed, meaningful order, and so a run that
+         *  measured nothing simply contributes no entries. */
+        history: {
+          version: number;
+          active: boolean;
+          n_labels: number | null;
+          trained_at: string | null;
+          metrics: { key: string; label: string; value: string | number }[];
+        }[];
+      };
       feed: { scored: number; labels: number; applied: number };
       documents: number;
       telegram: string;

@@ -18,12 +18,14 @@ import os
 import uuid as _uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from libs.db.models import User
+from libs.db.models import User, UserJobState, UserLabel
 from libs.obs import audit
 from libs.ops import evaluate, platform_health, render
+from libs.profiles.repository import ProfileFiles
+from libs.scoring.history import model_history
 from services.api.deps import current_user, get_db
 
 logger = logging.getLogger(__name__)
@@ -98,4 +100,61 @@ def users(db: Session = Depends(get_db), admin: User = Depends(require_admin)) -
                 "created_at": row.created_at.isoformat() if row.created_at else None,
             }
             for row in db.scalars(select(User).order_by(User.created_at))],
+    }
+
+
+@router.get("/users/{user_id}")
+def user_detail(user_id: _uuid.UUID, db: Session = Depends(get_db),
+                admin: User = Depends(require_admin)) -> dict:
+    """One account, for the two questions an operator actually has.
+
+    **"Why is this person's feed bad" and "did their setup finish"** — both answerable here, and
+    neither answerable from the list. The model history is the same builder the user's own Model
+    page reads, so an operator and the person they are helping are looking at the same numbers.
+
+    **Read-only, and no credential material of any kind** — not even `last_4`, on the same
+    reasoning as the list: an operator does not need it to answer either question, and a support
+    view that shows a fragment of a key is one that leaks it over somebody's shoulder. An operator
+    who could *edit* a user's model or profile from here is a different product with a different
+    consent story.
+    """
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="no such user")
+
+    files = ProfileFiles(db, user_id)
+    audit(logger, "admin.user_detail", user=admin.id, subject=user_id)
+    return {
+        "user": {
+            "id": str(user.id),
+            "email": user.email,
+            "status": user.status,
+            "active": user.active,
+            "plan": user.plan_id,
+            "telegram": user.telegram_status,
+            "profile_generation": user.profile_generation,
+            "model_version": user.model_version,
+            "onboarded": user.onboarding_completed_at is not None,
+            "created_at": user.created_at.isoformat() if user.created_at else None,
+            "last_active_at": user.last_active_at.isoformat() if user.last_active_at else None,
+        },
+        # Setup completeness, by the same predicate the trainer refuses on — so "their setup looks
+        # finished but training is refused" cannot happen without this page showing why.
+        "setup": {"missing": files.missing_setup(),
+                  "files": [{"name": row["name"], "kind": row["kind"], "filled": row["filled"]}
+                            for row in files.listing()]},
+        "models": model_history(db, user_id),
+        "counts": {
+            "labels": db.scalar(select(func.count()).select_from(UserLabel)
+                                .where(UserLabel.user_id == user_id)) or 0,
+            "scored": db.scalar(select(func.count()).select_from(UserJobState)
+                                .where(UserJobState.user_id == user_id,
+                                       UserJobState.score.isnot(None))) or 0,
+            "applied": db.scalar(select(func.count()).select_from(UserJobState)
+                                 .where(UserJobState.user_id == user_id,
+                                        UserJobState.applied_at.isnot(None))) or 0,
+            "notified": db.scalar(select(func.count()).select_from(UserJobState)
+                                  .where(UserJobState.user_id == user_id,
+                                         UserJobState.notified_at.isnot(None))) or 0,
+        },
     }

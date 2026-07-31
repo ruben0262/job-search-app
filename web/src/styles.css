@@ -1944,3 +1944,59 @@ td.num {
     letter-spacing: 0.16em;
   }
 }
+
+/* ── model version history ───────────────────────────────────────────────────────────────────── */
+
+/* The table scrolls inside its own box rather than widening the page: there is one column per
+   measurement and a future fit may add more, and a page that scrolls sideways is a page whose
+   navigation moves. */
+.table-scroll {
+  margin-top: 1rem;
+  overflow-x: auto;
+}
+
+.history {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.history th {
+  padding: 0.5rem 0.9rem 0.5rem 0;
+  border-bottom: 1px solid var(--hairline);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 400;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-align: left;
+}
+
+.history td {
+  padding: 0.6rem 0.9rem 0.6rem 0;
+  border-bottom: 1px solid var(--hairline);
+  color: var(--muted);
+}
+
+/* The live version carries the ink; superseded ones fade. Same grammar as the notification list. */
+.history tr.on td {
+  color: var(--ink);
+}
+
+.history tr:last-child td {
+  border-bottom: none;
+}
+
+.history .pill {
+  margin-left: 0.5rem;
+  padding: 0.1rem 0.45rem;
+  border: 1px solid var(--faint);
+  border-radius: 999px;
+  color: var(--score);
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}

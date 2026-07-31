@@ -25,6 +25,7 @@ from libs.contracts.config import migrate_config
 from libs.corpus import salary
 from libs.db.models import CorpusJob, User, UserDocument, UserJobState, UserLabel, UserModel
 from libs.onboarding import onboarding_state
+from libs.scoring.history import model_history
 from libs.scoring.rules import score_job
 from libs.scoring.thresholds import cutoff_for
 from libs.tenant.repository import TenantRepository
@@ -89,6 +90,9 @@ def dashboard(db: Session = Depends(get_db),
             # is a sentence a user can act on; a greyed-out button is not.
             "stale_reason": None if servable else _stale_reason(user, model),
             "trained_at": model.created_at.isoformat() if model and model.created_at else None,
+            # Every version, not just the live one: "is this getting better" is a question about
+            # the sequence, and it is the question a user paying for their own training has.
+            "history": model_history(db, user_id),
         },
         "feed": {"scored": scored, "labels": labels, "applied": applied},
         "documents": db.scalar(select(func.count()).select_from(UserDocument)
