@@ -26,12 +26,14 @@ import os
 import sys
 
 from libs.contracts.embedder import EmbedderClient, EmbedderVersion
+from libs.corpus.repository import CorpusRepository
 from libs.db.session import session_scope
 from libs.obs import configure
 from libs.secrets import install
 from libs.tenant.repository import TenantRepository
 from services.harvester.cycle import run_cycle
 from services.harvester.describe import describe_linkedin_for_all
+from services.harvester.embedding import embed_all_pending
 from services.harvester.linkedin import run_for_due_users as run_linkedin
 from services.harvester.source_config import build_source_configs
 
@@ -62,12 +64,43 @@ def _expected_embedder() -> EmbedderVersion | None:
     return EmbedderVersion(model=model, dim=int(dim), version=os.environ.get("EMBEDDER_VERSION", ""))
 
 
+def _embed_only() -> int:
+    """Rebuild vectors until there are none left, and do nothing else.
+
+    **No gather, no describe, and no advisory lock.** A full cycle spends most of a minute on HTTP
+    before it reaches the embed step and holds the cycle lock throughout, so draining a re-embed
+    backlog by running cycles is both slow and self-blocking — eight of them in a row rebuilt
+    nothing at all, because each was locked out by the one before.
+    """
+    embedder_url = os.environ.get("EMBEDDER_URL")
+    if not embedder_url:
+        logger.error("EMBEDDER_URL is not set — nothing can be embedded")
+        return 2
+
+    embedder = EmbedderClient(base_url=embedder_url)
+    total = 0
+    try:
+        while True:
+            with session_scope() as session:
+                result = embed_all_pending(CorpusRepository(session), embedder,
+                                           expected=_expected_embedder())
+            total += result.embedded
+            logger.info("embed-only: %d this batch, %d total, %d remaining",
+                        result.embedded, total, result.remaining)
+            if not result.embedded:
+                return 0
+    finally:
+        embedder.close()
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run one shared harvest cycle.")
     parser.add_argument("--dry-run", action="store_true",
                         help="build and budget the query set, then stop before fetching anything")
     parser.add_argument("--max-queries", type=int, default=None,
                         help="override the fan-out budget for this run")
+    parser.add_argument("--embed-only", action="store_true",
+                        help="embed the backlog and nothing else, then stop")
     parser.add_argument("--linkedin", action="store_true",
                         help="run the per-user LinkedIn pass for whoever is due, then stop")
     parser.add_argument("--describe-linkedin", action="store_true",
@@ -75,6 +108,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args(argv)
     _configure_logging(args.verbose)
+
+    if args.embed_only:
+        install()
+        return _embed_only()
 
     if args.linkedin:
         # **Per user, on their own schedule and their own credential.** Separate from the shared

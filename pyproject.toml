@@ -111,6 +111,10 @@ ignore = [
 #
 # Note what is NOT ignored here: F841 stays on, and it is what caught the port silently dropping
 # RemoteOK's custom User-Agent.
+# The harvester's entry point dispatches five one-shot modes — cycle, linkedin, describe-linkedin,
+# embed-only, dry-run — each of which ends in a return. Collapsing them behind a dispatch table
+# would hide the one thing a reader opens this file to learn: what the process can be asked to do.
+"services/harvester/__main__.py" = ["PLR0911"]
 "services/harvester/sources/*.py" = [
     "BLE001",   # a bare `except` per adapter IS the contract: a source must never raise
     "E501",     # long lines in lifted parsing code
