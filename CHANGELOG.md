@@ -116,6 +116,56 @@ matches sat one page further down. The pool is ordered by score and the age filt
 selection, so a backlog of month-old high scorers took every slot. The filter runs in the query
 now; undated rows still come through, because they are what the pre-send dating exists to resolve.
 
+### Four bugs between a re-embed and a trained model, each hiding the next
+
+The corpus had to be rebuilt because the platform embedded `description` alone where the reference
+embeds `title + description`, so every stored vector was in the wrong space. Getting 6,601 rows
+through that rebuild took four fixes, and their shape is the lesson: **each one only became visible
+once the one in front of it was gone.**
+
+**1. One transaction for the whole rebuild.** `--embed-only` called `embed_all_pending` inside a
+single `session_scope`, and that function drains up to fifty batches before returning. Twenty-five
+successful `/embed/bulk` calls had already happened and `corpus.embedding IS NOT NULL` still counted
+zero, because nothing commits until the end. Now one batch per transaction: the run is
+interruptible, its progress is readable from the database, and a stop costs at most one batch —
+which is what "we can start and stop this process" actually requires.
+
+**2. A deadlock destroyed the first hour.** The shared harvest cycle writes the same table — ingest,
+description refresh, cold trim — and Postgres resolved the lock cycle by killing the re-embed. Sixty
+minutes of paid embedding rolled back. `awaiting_embedding` already orders by id, so embed-against-
+embed was never the problem and ordering one side cannot fix it. Instead a failed batch no longer
+ends the run: the rows stay pending and are picked up again.
+
+**3. A raw timeout killed the next attempt on its first batch.** `EmbedderClient._post` wrapped HTTP
+status errors and short responses in `EmbedderError` but let transport errors through untouched, so a
+read timeout escaped as a raw `httpx` exception past every caller — all of which handle
+`EmbedderError`. Now wrapped, with a test.
+
+**4. And that timeout was contention, not a broken gateway.** The cycle embeds too, and two clients
+queued on a single-threaded encoder push a 200-text call past the 120-second client default. A bulk
+embed is not a web request: the rebuild now uses a 900-second timeout and batches of 64, so each call
+finishes in ~33 seconds even under load, with a shorter row-lock window per commit. **Worth noting
+this was fixed rather than worked around** — `sudo systemctl stop harvester.timer` was unavailable,
+which forced the better outcome: a rebuild that survives alongside a live pipeline rather than one
+that requires the pipeline to be stopped.
+
+Result: 6,601/6,601, every row carrying `…|norm=1|text=title_desc`.
+
+### A model is stale when its coordinates move, not only when labels arrive
+
+Both retrains then went dead with *"not enough new labels since the active artifact"* — while the
+active artifacts were already unusable and the scorer was failing closed on the version mismatch.
+
+`should_retrain` compared label counts only, which assumes the one thing that can go stale is the
+evidence. It can also be **the coordinates**. Re-embedding moves every vector, and a model fitted in
+the old space cannot read the new one: its weights are indexed to axes that no longer mean what they
+meant. None of that arrives as a new label. The guard now reads `embedding_version` off the corpus
+rows the fit would actually train on — the vectors are the ground truth about which space they are
+in — and retrains when it differs from the active artifact's recorded `embedder_version`.
+
+First result, on Andras's 945 labels: **histgbm selected**, cross-validated average precision 0.622
+against svc 0.610, logreg 0.468 and linsvc 0.467; test AP 0.545, AUC 0.79.
+
 ### The schema CV renderer, deleted, and five functions nothing called
 
 A scan of every module-level function against every mention of its name in the tree, plus an import

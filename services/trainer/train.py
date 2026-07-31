@@ -236,11 +236,26 @@ def _bake_off(data: TrainingSet, labels, positives: int, negatives: int) -> dict
     # the target recall: higher means fewer and better flags, and the sweep walks up rather than
     # down so the answer is the strictest one that still catches what the user came for.
     actual = y_train.astype(bool)
-    cutoff = int(FIT_THRESHOLD)
-    for threshold in range(20, 91):
-        _precision, recall, _f1 = _precision_recall(actual, best["oof"] >= threshold / 100)
-        if recall >= TARGET_RECALL:
-            cutoff = threshold
+    sweep = [(threshold, *_precision_recall(actual, best["oof"] >= threshold / 100))
+             for threshold in range(20, 91)]
+    holds_recall = [row for row in sweep if row[2] >= TARGET_RECALL]
+
+    if holds_recall:
+        cutoff = holds_recall[-1][0]
+        recall_met = True
+    else:
+        # **No threshold reaches the target, so pick the best available point — never fall back to
+        # `FIT_THRESHOLD`.** That constant is the *label* threshold, and quietly reusing it as an
+        # operating point is precisely the conflation that emptied this platform's feed once
+        # already: a model asked for 60 when its own evidence says otherwise delivers almost
+        # nothing, and nothing says why. Best F1 is a defensible answer to "we cannot have the
+        # recall we wanted, so what is the least bad trade" — and `recall_met` records that the
+        # target was missed, so a thin feed is attributable rather than mysterious.
+        cutoff = max(sweep, key=lambda row: row[3])[0]
+        recall_met = False
+        logger.warning("trainer: no cutoff in 20-90 reaches %.0f%% recall out of fold; using %d, "
+                       "the best-F1 point", TARGET_RECALL * 100, cutoff)
+
     precision, recall, f1 = _precision_recall(actual, best["oof"] >= cutoff / 100)
 
     # Refit on everything, including the held-out split. That split existed to produce an honest
@@ -258,6 +273,10 @@ def _bake_off(data: TrainingSet, labels, positives: int, negatives: int) -> dict
             "test_ap": round(best["test_ap"], 3), "test_auc": round(best["test_auc"], 3),
             "cutoff": cutoff, "oof_precision": round(precision, 3),
             "oof_recall": round(recall, 3), "oof_f1": round(f1, 3),
+            # False means the cutoff is the best-F1 compromise rather than the recall target, which
+            # is the difference between "this feed is thin by design" and "this feed is thin and
+            # nobody knows why".
+            "recall_target_met": recall_met,
             "positives": positives, "negatives": negatives,
             "candidates": {name: round(row["cv_ap"], 3) for name, row in scored.items()},
         },
