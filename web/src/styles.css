@@ -905,9 +905,20 @@ td.num {
  * one action is the only control, and the rest is quiet text underneath.
  */
 
+/* **The column is the page's, the measure is the prose's.** A single 34rem cap on the whole
+   section made Model and Profile visibly narrower than every other page and cut the version-history
+   table off at its right edge. Reading width is a property of paragraphs, so it is applied to
+   paragraphs — tables and grids get the full column. */
 .overview {
-  max-width: 34rem;
+  max-width: 100%;
   padding-top: 4vh;
+}
+
+.overview > p,
+.overview > h1,
+.overview > .kicker,
+.overview > .lede {
+  max-width: 34rem;
 }
 
 .overview h1 {
@@ -2059,7 +2070,10 @@ td.num {
    thread rather than a dot floating beside a stripe. */
 .step-dot {
   position: absolute;
-  left: -1.4rem;
+  /* Centred *on* the line, not beside it. The offset carries the card's 1px border because an
+     absolutely positioned child is placed against the padding box, which that border shifts —
+     which is exactly the one pixel that had every dot sitting off the rail. */
+  left: calc(-1.4rem - 1px);
   top: 1.1rem;
   width: 7px;
   height: 7px;

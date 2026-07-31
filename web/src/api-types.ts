@@ -148,6 +148,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/users/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * User Detail
+         * @description One account, for the two questions an operator actually has.
+         *
+         *     **"Why is this person's feed bad" and "did their setup finish"** — both answerable here, and
+         *     neither answerable from the list. The model history is the same builder the user's own Model
+         *     page reads, so an operator and the person they are helping are looking at the same numbers.
+         *
+         *     **Read-only, and no credential material of any kind** — not even `last_4`, on the same
+         *     reasoning as the list: an operator does not need it to answer either question, and a support
+         *     view that shows a fragment of a key is one that leaks it over somebody's shoulder. An operator
+         *     who could *edit* a user's model or profile from here is a different product with a different
+         *     consent story.
+         */
+        get: operations["user_detail_admin_users__user_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/forgot": {
         parameters: {
             query?: never;
@@ -637,6 +667,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/notifications/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Delete Notifications
+         * @description Dismiss notifications for good.
+         *
+         *     **A real delete, not a hidden flag.** These are transient operational messages — a proxy
+         *     quarantined, a delivery failed, a model trained — and once a user has acted on one there is no
+         *     later question that a kept row answers. Keeping them would mean a table that only grows and a
+         *     panel whose "clear" button is a lie.
+         *
+         *     Scoped to `user_id` in the same statement as the id filter, so a guessed id belonging to another
+         *     account deletes nothing rather than deleting theirs. Unread state is irrelevant here: dismissing
+         *     something without opening it is a legitimate way to say it does not matter.
+         */
+        post: operations["delete_notifications_notifications_delete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/notifications/read": {
         parameters: {
             query?: never;
@@ -1080,6 +1139,65 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/setup/message/{message_id}/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stop Turn
+         * @description Ask the running turn to stop.
+         *
+         *     **A request, not a kill.** The turn is on a worker that is usually mid-call to Anthropic, and
+         *     that call cannot be interrupted without abandoning a response already paid for. So this flips
+         *     the row to `cancelling` and the worker notices between tool steps, where everything so far is
+         *     committed and the next call has not been made. The user sees "stopping…" until it does, which
+         *     is honest — claiming it had stopped while it was still writing files would be a lie the file
+         *     panel would immediately contradict.
+         *
+         *     Idempotent, and safe on a turn that has already finished: a stop arriving one second after the
+         *     reply landed is the normal race, not an error, and answering it with a 409 would put a red
+         *     banner on a screen where nothing went wrong.
+         */
+        post: operations["stop_turn_setup_message__message_id__stop_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/setup/progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Setup Progress
+         * @description Is setup finished, what is left, and which command produces each missing piece.
+         *
+         *     **The success criterion lives here rather than in a prompt.** An agent asked to decide whether
+         *     it has finished will either stop early or polish forever, and the ported director's gates read
+         *     a filesystem this platform does not have. This answers from the database: a file exists and is
+         *     filled, or it does not.
+         *
+         *     It is also what unblocks training. `train_user` refuses while anything here is outstanding, so
+         *     "setup complete" and "may train" are the same sentence rather than two rules that can disagree.
+         */
+        get: operations["setup_progress_setup_progress_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/setup/start": {
         parameters: {
             query?: never;
@@ -1243,6 +1361,16 @@ export interface components {
         DeleteBody: {
             /** Password */
             password: string;
+        };
+        /** Discard */
+        Discard: {
+            /**
+             * All
+             * @default false
+             */
+            all: boolean;
+            /** Ids */
+            ids?: number[] | null;
         };
         /** Education */
         Education: {
@@ -1851,6 +1979,39 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    user_detail_admin_users__user_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -2533,6 +2694,41 @@ export interface operations {
             };
         };
     };
+    delete_notifications_notifications_delete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Discard"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     mark_read_notifications_read_post: {
         parameters: {
             query?: never;
@@ -3152,6 +3348,61 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stop_turn_setup_message__message_id__stop_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                message_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    setup_progress_setup_progress_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };

@@ -151,6 +151,9 @@ class CorpusJob(Base):
         # The per-user match pass: "recent rows from sources this user can see".
         Index("ix_corpus_source_first_seen", "source", "first_seen_at"),
         # Finds rows still awaiting an embedding, without scanning the whole corpus.
+        # Every read of `closed_at` asks for the rows where it is NULL — nearly all of them early on
+        # and a shrinking share later — so the partial index covers the open ones, not the closed.
+        Index("ix_corpus_open", "id", postgresql_where=text("closed_at IS NULL")),
         Index("ix_corpus_unembedded", "id",
               postgresql_where=text("embedding IS NULL AND description IS NOT NULL")),
         # Drives the retention sweep.

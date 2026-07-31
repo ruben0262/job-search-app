@@ -310,12 +310,19 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
         <p className="kicker">Your profile</p>
         <div className="spread">
           <h1>Build your profile</h1>
-          {state.ready ? (
+          {/* {state.ready ? (
             <span className="small muted">
               Ready — <a href="#/model">train your model</a> when you like
             </span>
-          ) : null}
+          ) : null} */}
         </div>
+
+        <p className="muted" style={{ maxWidth: "44rem" }}>
+          {state.messages.length === 0
+            ? "A conversation about your career. Everything you say here is sorted into your profile — the files every CV, cover letter and job match is built from."
+            : "Talk to it like you would to a person: new roles, corrections, changes of direction. It knows where things belong. Each chat remembers only itself; your profile is shared across all of them. Training the model that ranks your jobs happens on the Model page, not here."}
+        </p>
+
         {/* The chat switcher. Every chat has its own memory; the profile underneath is shared,
             which is what makes starting a fresh one cheap rather than a loss. */}
         <div className="chat-tabs">
@@ -361,12 +368,6 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
           )}
         </div>
         <Error>{openChat.error ?? newChat.error ?? deleteChat.error}</Error>
-
-        <p className="muted" style={{ maxWidth: "44rem" }}>
-          {state.messages.length === 0
-            ? "A conversation about your career. Everything you say here is sorted into your profile — the files every CV, cover letter and job match is built from."
-            : "Talk to it like you would to a person: new roles, corrections, changes of direction. It knows where things belong. Each chat remembers only itself; your profile is shared across all of them. Training the model that ranks your jobs happens on the Model page, not here."}
-        </p>
 
         {/* **Success is stated, not inferred.** An agent that has finished and a user who believes
             it has finished are different things, and the gap between them is where "why is my feed

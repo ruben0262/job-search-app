@@ -143,6 +143,18 @@ def _delivery(db: Session, user: User, now: datetime) -> dict:
         return _entry("delivery", "Delivery", "off",
                       "Connect Telegram and matches will start arriving.")
 
+    # **A pause is a decision, not a fault.** Without this the checks below see matches piling up
+    # with nothing sent and correctly conclude "stalled" — reporting a red light for the switch the
+    # user themselves turned off, on the one page that exists to say what is genuinely wrong.
+    # `dispatch_due_notifications` filters on the same flag, so this and the pipeline agree.
+    #
+    # Onboarding is checked too because `active` starts **false**: on an unfinished account the flag
+    # means "not started yet", not "switched off", and telling somebody mid-signup that they paused
+    # something would be a confident lie about a thing they never did.
+    if not user.active and user.onboarding_completed_at is not None:
+        return _entry("delivery", "Delivery", "off",
+                      "Paused by you — nothing is being sent. Turn messages back on in Settings.")
+
     cutoff = cutoff_for(db, user.id)
     waiting = db.scalar(
         select(func.count()).select_from(UserJobState)

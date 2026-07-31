@@ -137,3 +137,50 @@ def test_a_broken_bot_is_red_with_the_fix_in_words(api):
     bot = next(c for c in http.get("/status").json()["components"] if c["key"] == "telegram_bot")
     assert bot["state"] == "down"
     assert "token" in bot["detail"]
+
+
+def test_pausing_delivery_is_reported_as_paused_not_broken(api):
+    """**A pause is a decision, not a fault.**
+
+    With messages off, matches pile up and nothing is sent — which is exactly the shape the stall
+    check looks for. Without knowing about the switch, the page would show a red light for the
+    thing the user themselves turned off, on the one screen that exists to say what is genuinely
+    wrong. `dispatch_due_notifications` filters on the same flag, so the page and the pipeline
+    cannot disagree about whether anything is being sent.
+    """
+    from datetime import timedelta
+
+    from libs.db.models import CorpusJob, UserJobState
+
+    http, session, user = api
+    # A finished account with messages on. `active` starts false and means "not started yet" until
+    # onboarding completes — which is why the check reads both.
+    user.active = True
+    user.onboarding_completed_at = datetime.now(UTC)
+    job = CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test", title="Backend Engineer",
+                    first_seen_at=datetime.now(UTC))
+    session.add(job)
+    session.flush()
+    session.add(UserJobState(user_id=user.id, job_id=job.id, score=95.0,
+                             scored_at=datetime.now(UTC),
+                             notified_at=datetime.now(UTC) - timedelta(hours=48)))
+    # A match still waiting behind it — without one, two days of quiet is an account with nothing
+    # to send rather than a stall, which is the distinction the check is built on.
+    waiting = CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
+                        title="Platform Engineer", first_seen_at=datetime.now(UTC))
+    session.add(waiting)
+    session.flush()
+    session.add(UserJobState(user_id=user.id, job_id=waiting.id, score=95.0,
+                             scored_at=datetime.now(UTC), notified_at=None))
+    session.flush()
+
+    # Running: a backlog with nothing sent for two days is a stall, and says so.
+    assert next(c for c in http.get("/status").json()["components"]
+                if c["key"] == "delivery")["state"] == "down"
+
+    user.active = False
+    session.flush()
+
+    delivery = next(c for c in http.get("/status").json()["components"] if c["key"] == "delivery")
+    assert delivery["state"] == "off", "a paused feed is not a broken one"
+    assert "Paused by you" in delivery["detail"]

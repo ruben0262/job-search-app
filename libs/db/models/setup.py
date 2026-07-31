@@ -94,7 +94,10 @@ class SetupMessage(Base):
     # It lives on the message rather than in the queue because the transcript is what the page
     # reads, and a pending row *is* the thinking state — so a worker that dies mid-turn leaves
     # something the reader can be told about rather than a gap nothing explains.
-    status: Mapped[str] = mapped_column(String(16), default="done")
+    # `server_default` as well as the Python default: a row inserted by anything other than
+    # this mapper — a migration backfill, a psql statement during an incident — still lands in
+    # a valid state rather than violating the check constraint below.
+    status: Mapped[str] = mapped_column(String(16), default="done", server_default="done")
     # Why it failed, in the words the reader gets. Null unless `status = 'failed'`.
     error: Mapped[str | None] = mapped_column(Text)
 

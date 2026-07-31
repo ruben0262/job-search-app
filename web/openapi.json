@@ -258,6 +258,31 @@
         "title": "DeleteBody",
         "type": "object"
       },
+      "Discard": {
+        "properties": {
+          "all": {
+            "default": false,
+            "title": "All",
+            "type": "boolean"
+          },
+          "ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ids"
+          }
+        },
+        "title": "Discard",
+        "type": "object"
+      },
       "Education": {
         "additionalProperties": false,
         "properties": {
@@ -1438,6 +1463,52 @@
         ]
       }
     },
+    "/admin/users/{user_id}": {
+      "get": {
+        "description": "One account, for the two questions an operator actually has.\n\n**\"Why is this person's feed bad\" and \"did their setup finish\"** \u2014 both answerable here, and\nneither answerable from the list. The model history is the same builder the user's own Model\npage reads, so an operator and the person they are helping are looking at the same numbers.\n\n**Read-only, and no credential material of any kind** \u2014 not even `last_4`, on the same\nreasoning as the list: an operator does not need it to answer either question, and a support\nview that shows a fragment of a key is one that leaks it over somebody's shoulder. An operator\nwho could *edit* a user's model or profile from here is a different product with a different\nconsent story.",
+        "operationId": "user_detail_admin_users__user_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response User Detail Admin Users  User Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "User Detail",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/auth/forgot": {
       "post": {
         "description": "Email a reset link. Always answers the same way, whatever actually happened.\n\nThe other half of a flow whose libs half (`reset_password` tokens, the mail template) shipped\nin Phase 3 with nothing calling it \u2014 until now a forgotten password was a locked account.\nAnswering opaquely for an unknown address is the same no-oracle rule login follows; issuing a\nfresh token revokes the previous link (`issue_token` does), so the newest email is always the\none that counts.",
@@ -2404,6 +2475,50 @@
         ]
       }
     },
+    "/notifications/delete": {
+      "post": {
+        "description": "Dismiss notifications for good.\n\n**A real delete, not a hidden flag.** These are transient operational messages \u2014 a proxy\nquarantined, a delivery failed, a model trained \u2014 and once a user has acted on one there is no\nlater question that a kept row answers. Keeping them would mean a table that only grows and a\npanel whose \"clear\" button is a lie.\n\nScoped to `user_id` in the same statement as the id filter, so a guessed id belonging to another\naccount deletes nothing rather than deleting theirs. Unread state is irrelevant here: dismissing\nsomething without opening it is a legitimate way to say it does not matter.",
+        "operationId": "delete_notifications_notifications_delete_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Discard"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Delete Notifications Notifications Delete Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Notifications",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
     "/notifications/read": {
       "post": {
         "operationId": "mark_read_notifications_read_post",
@@ -3157,6 +3272,75 @@
           }
         },
         "summary": "Send",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/setup/message/{message_id}/stop": {
+      "post": {
+        "description": "Ask the running turn to stop.\n\n**A request, not a kill.** The turn is on a worker that is usually mid-call to Anthropic, and\nthat call cannot be interrupted without abandoning a response already paid for. So this flips\nthe row to `cancelling` and the worker notices between tool steps, where everything so far is\ncommitted and the next call has not been made. The user sees \"stopping\u2026\" until it does, which\nis honest \u2014 claiming it had stopped while it was still writing files would be a lie the file\npanel would immediately contradict.\n\nIdempotent, and safe on a turn that has already finished: a stop arriving one second after the\nreply landed is the normal race, not an error, and answering it with a 409 would put a red\nbanner on a screen where nothing went wrong.",
+        "operationId": "stop_turn_setup_message__message_id__stop_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "message_id",
+            "required": true,
+            "schema": {
+              "title": "Message Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Stop Turn Setup Message  Message Id  Stop Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stop Turn",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/setup/progress": {
+      "get": {
+        "description": "Is setup finished, what is left, and which command produces each missing piece.\n\n**The success criterion lives here rather than in a prompt.** An agent asked to decide whether\nit has finished will either stop early or polish forever, and the ported director's gates read\na filesystem this platform does not have. This answers from the database: a file exists and is\nfilled, or it does not.\n\nIt is also what unblocks training. `train_user` refuses while anything here is outstanding, so\n\"setup complete\" and \"may train\" are the same sentence rather than two rules that can disagree.",
+        "operationId": "setup_progress_setup_progress_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Setup Progress Setup Progress Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Setup Progress",
         "tags": [
           "setup"
         ]
