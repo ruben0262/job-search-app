@@ -164,6 +164,8 @@ export type Dashboard =
       telegram: string;
       notifications: { per_day_cap: number; interval_min: number };
       banners: { level: "error" | "warning" | "info"; key: string; text: string }[];
+      // Whether to render the operator panel. A hint, not the access control.
+      is_admin?: boolean;
     };
 
 export type Salary = {

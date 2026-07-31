@@ -908,7 +908,7 @@
           },
           "password": {
             "maxLength": 256,
-            "minLength": 12,
+            "minLength": 9,
             "title": "Password",
             "type": "string"
           }
@@ -2130,7 +2130,7 @@
     },
     "/feed": {
       "get": {
-        "description": "The ranked jobs \u2014 a page of them, with the filters the table offers.\n\nThe stage is in the response because a feed that silently changes how it ranks is one nobody can\nreason about \u2014 and a new account's first feed *is* the keyword one, which is worth saying rather\nthan passing off as the model's work.\n\n**The age filter keeps undated rows.** Same rule as delivery: a missing `posted_at` is unknown,\nnot old, and a preference filter fails open. `total` and `sources` are for the table's pager and\nsource dropdown \u2014 computed under the same filters as the page, or the counts would lie.",
+        "description": "The ranked jobs \u2014 a page of them, with the filters the table offers.\n\nThe stage is in the response because a feed that silently changes how it ranks is one nobody can\nreason about \u2014 and a new account's first feed *is* the keyword one, which is worth saying rather\nthan passing off as the model's work.\n\n**The age filter keeps undated rows.** Same rule as delivery: a missing `posted_at` is unknown,\nnot old, and a preference filter fails open. `total` and `sources` are for the table's pager and\nsource dropdown \u2014 computed under the same filters as the page, or the counts would lie.\n\n**`min_score` defaults to the delivery cutoff, not to zero.** The corpus is shared and the\nharvest is broad, so most of what is scored for any given user is not for them: a page showing\neverything is a page of other people's jobs with a number beside them. The default is the same\nthreshold that decides what reaches Telegram, so the table and the channel agree about what\ncounts as a match. Passing `min_score=0` explicitly widens it, which is a thing a user may\ngenuinely want and should have to ask for.",
         "operationId": "feed_feed_get",
         "parameters": [
           {
@@ -2238,6 +2238,24 @@
                 }
               ],
               "title": "Max Age Days"
+            }
+          },
+          {
+            "in": "query",
+            "name": "min_score",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Min Score"
             }
           },
           {

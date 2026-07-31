@@ -148,7 +148,7 @@ they are burning subscription quota with no visibility at all.
 
 **Recommendation:** record token usage per call (already logged in the reference instance) into a
 per-user usage table; show today/this-month on the dashboard. The ledger design in
-`POOLED_CLAUDE_ACCOUNT_PLAN.md` §2 is over-engineered for BYOK, but its **integer-nanoUSD, never
+The deleted pooled-account plan's ledger was over-engineered for BYOK, but its **integer-nanoUSD, never
 floats** rule is worth taking.
 
 **Resolve in:** Phase 3.

@@ -14,6 +14,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { ApiError, api, type Dashboard } from "./api";
 import { Landing } from "./landing/Landing";
+import { AdminPage } from "./pages/AdminPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { DataPage } from "./pages/DataPage";
 import { clearFeedCache } from "./pages/FeedPage";
@@ -113,13 +114,15 @@ export function App() {
             ? "data"
             : hash.startsWith("/settings")
               ? "settings"
-              : "overview";
+              : hash.startsWith("/admin")
+                ? "admin"
+                : "overview";
 
   return (
     <>
       <div className="backdrop" aria-hidden="true" />
       <div className="app">
-        <Nav current={hash} />
+        <Nav current={hash} isAdmin={dashboard.is_admin === true} />
         <div className="page-in" key={section}>
           {section === "feed" ? (
             <FeedPage />
@@ -131,6 +134,8 @@ export function App() {
             <ProcessPage onChanged={reload} />
           ) : section === "data" ? (
             <DataPage onChanged={reload} />
+          ) : section === "admin" ? (
+            <AdminPage />
           ) : section === "settings" ? (
             <SettingsPage onSignedOut={reload} />
           ) : (
@@ -142,7 +147,7 @@ export function App() {
   );
 }
 
-function Nav({ current }: { current: string }) {
+function Nav({ current, isAdmin }: { current: string; isAdmin: boolean }) {
   const links = [
     ["/", "Overview"],
     ["/feed", "Jobs"],
@@ -150,6 +155,9 @@ function Nav({ current }: { current: string }) {
     ["/model", "Model"],
     ["/data", "Your details"],
     ["/settings", "Settings"],
+    // Only for whoever `ADMIN_EMAILS` names. The API refuses `/admin/*` regardless; this keeps the
+    // link out of everybody else's navigation rather than out of their reach.
+    ...(isAdmin ? ([["/admin", "Platform"]] as const) : []),
   ] as const;
   return (
     <nav>

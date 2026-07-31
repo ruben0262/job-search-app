@@ -1,5 +1,27 @@
 # Profile capture — how a new user becomes a configured tenant
 
+## Implementation status — audited 2026-07-31
+
+**Half of this shipped and half of it was reversed, and the split is clean: §3 and §4 are dead,
+§5 §6 §7 are alive.** Cited by 27 modules, almost all for §6.4 and §5 — which is why the document
+stays rather than being retired with the mechanism it opens with.
+
+| Section | State |
+|---|---|
+| §1 why this is not a signup form | ✅ **still the argument.** A form cannot ask the follow-up question, and the follow-up is where a career actually is |
+| §2 agent captures, code renders | ✅ **holds**, with a different agent — see below |
+| §3 **why Managed Agents** | ❌ **reversed 2026-07-28.** Managed Agents authenticates by API key only, so the sandboxed design would have silently excluded every OAuth user, and it put a beta on the onboarding critical path. `libs/llm/client.py` makes plain Messages calls |
+| §4 the capture session | ❌ **superseded** by `REBUILD_PLAN.md`'s setup chat. The one-shot schema extraction it describes spent a call on a schema and produced a profile with no career in it; the chat writes the profile files directly, over several turns, and a turn now runs as a queue job (`services/setupagent`) rather than inside the request |
+| §5 **confirmation must not be skipped** | ✅ **built and load-bearing.** An uploaded CV is untrusted text: `confirmed` is stripped from the schema the model is shown, forced false on the way out, and `TenantRepository.save_profile` refuses an unconfirmed profile as the third layer |
+| §6 deterministic rendering | ✅ **built.** §6.3–6.4's rubric and feature extractor are `libs/scoring/` — the workstream this document correctly called the largest hidden task |
+| §7 profile changes | ✅ **built.** `profile_generation` bumps, labels at an older generation are excluded from training, and the platform *says* a relabel is needed rather than queueing one behind the user's back |
+| §8 cost and timing | 🟡 **unmeasured**, as it warns. Still the honest gap — nothing meters spend (G9) |
+
+The part worth carrying forward if this document is ever retired: **§5's confirmation boundary and
+§7's one-directional coupling between a profile edit and its labels.** Both are enforced in code
+with tests, and both would be easy to weaken by someone who had not read why they exist.
+
+
 **Status:** design, 2026-07-26. Closes gap **G1** (`GAPS_REVIEW.md`), which blocks Phase 2.
 **Resolves:** the forms-vs-interview question raised in `SAAS_PLATFORM_PLAN.md` §2 and left open.
 **Decided 2026-07-26:** capture runs as a **Managed Agents** session (Anthropic hosts the loop and a

@@ -44,7 +44,7 @@ operating point.
 | [TEST_STRATEGY.md](TEST_STRATEGY.md) | The ≥6/10 behaviour tests, anti-flake rules, write-order |
 | [CODE_STRUCTURE.md](CODE_STRUCTURE.md) | Repo layout, module boundaries, the migration map from the reference instance, and how a one-service deploy stays safe |
 | [AUTH_REUSE.md](AUTH_REUSE.md) | What to lift from the FlowSolutions Go auth system, and what to fix rather than copy |
-| [PROFILE_CAPTURE_PLAN.md](PROFILE_CAPTURE_PLAN.md) | **Superseded in mechanism, current in intent.** How a signup becomes a configured tenant. The Managed Agents sandbox it specifies was dropped (`libs/llm/client.py`: plain Messages, because Managed Agents is API-key-only and would have silently excluded every OAuth user), and the interview is now the setup chat of `REBUILD_PLAN.md`. §5's confirmation boundary and §6.3–6.4's rubric work still hold |
+| [PROFILE_CAPTURE_PLAN.md](PROFILE_CAPTURE_PLAN.md) | **§3–§4 reversed, §5–§7 built and load-bearing.** How a signup becomes a configured tenant. The Managed Agents sandbox it specifies was dropped (`libs/llm/client.py`: plain Messages, because Managed Agents is API-key-only and would have silently excluded every OAuth user), and the interview is now the setup chat of `REBUILD_PLAN.md`. §5's confirmation boundary and §6.3–6.4's rubric work still hold |
 | [OPERATIONS_PLAN.md](OPERATIONS_PLAN.md) | **Half built, still relevant.** Health, alerts, email and backup are live; the admin console is read-only and the runbooks are unwritten |
 | [GAPS_REVIEW.md](GAPS_REVIEW.md) | The 12-gap review, **re-audited 2026-07-31**. Two gaps it calls closed are implemented, tested and called by nothing |
 | [ROADMAP.md](ROADMAP.md) | Phasing to first users, and what is deliberately deferred |
@@ -55,7 +55,6 @@ operating point.
 |---|---|
 | [MODEL_SELECTION_RESEARCH.md](MODEL_SELECTION_RESEARCH.md) | **Current.** Model/pricing ladder for scoring vs writing. Unchanged by the multi-tenant design |
 | [`services/embedder/docs/PLAN.md`](../../services/embedder/docs/PLAN.md) | **Current and maintained.** The embedder's real design — measured numbers, the bge-small → bge-base reversal, and the corrections the VPS run forced. The service is built and deployed |
-| [POOLED_CLAUDE_ACCOUNT_PLAN.md](POOLED_CLAUDE_ACCOUNT_PLAN.md) | **Deferred.** Assumes the platform resells Claude access via a prepaid wallet. Current design is bring-your-own-credential (decision D2). Revisit only if BYOK proves too much onboarding friction — the ledger design in §2 is good and worth keeping on the shelf |
 | [SAAS_PLATFORM_PLAN.md](SAAS_PLATFORM_PLAN.md) | **Partly superseded.** §4's Model 1 (one container stack per user) is **rejected** — see `PLATFORM_ARCHITECTURE.md` §2 for the measured reasons. §7's open decisions are resolved. §5a (legal/ToS), §5f (operational burden), §5g (framework constraints) still stand |
 
 ## Decisions resolved 2026-07-26

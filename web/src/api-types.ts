@@ -553,6 +553,13 @@ export interface paths {
          *     **The age filter keeps undated rows.** Same rule as delivery: a missing `posted_at` is unknown,
          *     not old, and a preference filter fails open. `total` and `sources` are for the table's pager and
          *     source dropdown — computed under the same filters as the page, or the counts would lie.
+         *
+         *     **`min_score` defaults to the delivery cutoff, not to zero.** The corpus is shared and the
+         *     harvest is broad, so most of what is scored for any given user is not for them: a page showing
+         *     everything is a page of other people's jobs with a number beside them. The default is the same
+         *     threshold that decides what reaches Telegram, so the table and the channel agree about what
+         *     counts as a match. Passing `min_score=0` explicitly widens it, which is a thing a user may
+         *     genuinely want and should have to ask for.
          */
         get: operations["feed_feed_get"];
         put?: never;
@@ -2417,6 +2424,7 @@ export interface operations {
                 remote?: boolean | null;
                 applied?: boolean | null;
                 max_age_days?: number | null;
+                min_score?: number | null;
                 sort?: string;
                 direction?: string;
             };

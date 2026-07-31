@@ -11,16 +11,14 @@ delivery is Telegram and a user who stops receiving jobs cannot tell "nothing ma
 | §2 per-user health | ✅ built | `GET /status` derives each component from the data (bot, channel, harvester freshness, scorer, docgen), rendered as a dot list on Overview. Plus the notification bell for events the user would otherwise never see |
 | §3 platform health | ✅ built | `libs/ops/alerts.py` — `PlatformHealth`, `evaluate()`, `render()` |
 | §4 alerts | ✅ built | `deploy/scripts/check_health.py` on `health.timer`, emailing the operator only when something is wrong. Exit code is the interface. A **missing timer pages**, because a timer that was never installed is invisible from inside the application — which is how `notify-dispatch` was absent for weeks while the stack looked healthy |
-| §5 admin console | 🟠 **read-only, not action-capable** | `services/api/admin_routes.py` is two endpoints, `GET /admin/health` and `GET /admin/users`, gated on `ADMIN_EMAILS`. There is no admin page in the SPA and **nothing acts** — the section's whole point was a console that can suspend, requeue and resend with an audit trail. What exists is the read half |
+| §5 admin console | 🟠 **read half built 2026-07-31, still does not act** | `GET /admin/health` and `GET /admin/users`, gated on `ADMIN_EMAILS`, now rendered by `web/src/pages/AdminPage.tsx` — alerts first, then corpus/queue/accounts. The **Platform** nav link appears only for an admin (`is_admin` on `/dashboard`, a rendering hint; the API refuses `/admin/*` on its own). Suspending, requeueing and resending are still `deploy/scripts/` over SSH — at two accounts a shell covers it, and this section is honest that the console is for when that stops being true |
 | §6 transactional email | ✅ built | `libs/mail` — SMTP sender, daily cap, plain-text templates. Verification and reset proven end to end in a browser |
 | §7 backup/restore | ✅ built | `backup.py` on a timer, `restore_drill.py` beside it |
-| §8 embedder SPOF | 🟠 **partly** | Deployed on both boxes, but `check_health.py` checks timers and queue state and does **not** probe the embedder. Its death surfaces as jobs failing to score rather than an alert naming it |
+| §8 embedder SPOF | ✅ **closed 2026-07-31** | `check_health.py::embedder_down()` probes `EMBEDDER_URL/health` and **pages** — it is not a degraded state that recovers, since every job harvested while it is down stays unscored and the backlog only grows. Probed in the script rather than in `libs/ops`, because the alerts there are computed from the database and cannot see a network service. Unset URL is skipped, not failed: this also runs on a laptop |
 | §9 runbooks | ❌ **not written** | No `runbooks/` anywhere. The operational knowledge is in `CHANGELOG.md` entries and commit bodies, which is findable by whoever wrote it and nobody else |
 
-**The two worth doing next**, in order: probe the embedder in `check_health.py` (small, and it
-closes G10 properly), then decide whether the admin console earns its build — at two accounts,
-`deploy/scripts/` covers the same ground from a shell, and §5 is honest that the console is for
-when that stops being true.
+**What is left here is §9's runbooks**, which remain unwritten — the operational knowledge lives
+in `CHANGELOG.md` entries and commit bodies, findable by whoever wrote it and nobody else.
 
 
 **Status:** design, 2026-07-26. Closes gaps **G2** (observability), **G3** (transactional email),
