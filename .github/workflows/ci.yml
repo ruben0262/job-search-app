@@ -94,6 +94,14 @@ jobs:
           fi
           rm -f "$generated"
           echo "no drift: models and migrations agree"
+
+      # The runner ships Chrome, so the one test that drives a real browser runs here rather than
+      # skipping — but a headless Chrome with no fonts installed rasterises nothing, and the PDF
+      # came back with 34 extractable characters. Fonts are what make that test meaningful instead
+      # of a check that Chrome exits zero.
+      - name: fonts, so the PDF test renders text a reader could extract
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq fonts-liberation
+
       - run: pytest tests/ -v
 
   embedder-tests:

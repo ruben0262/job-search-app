@@ -49,3 +49,11 @@ PyJWT>=2.9
 pypdf>=5.1
 python-docx>=1.1
 python-multipart>=0.0.20
+
+# libs/corpus's posting fetcher and language filter. Both fail open by design — a page it cannot
+# parse is "no signal", a language it cannot detect is "keep the job" — which is right in
+# production and wrong in CI: without these installed the tests did not skip, they asserted the
+# fallback and failed. Declared here so the root suite exercises the real parsers; the notifier
+# and harvester images pin their own copies.
+beautifulsoup4>=4.12
+langdetect>=1.0.9
