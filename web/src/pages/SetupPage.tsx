@@ -325,7 +325,10 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
               className={`chat-tab${chat.id === state.conversation_id ? " on" : ""}`}
             >
               <button type="button" onClick={() => void openChat.run(chat.id)}>
-                {chat.title}
+                {/* The title truncates on its own element. On the button it did not: a flex item
+                    with padding kept its full text width and the pill clipped it at the border,
+                    losing the first character as well as the last. */}
+                <span className="chat-tab-title">{chat.title}</span>
               </button>
               <button
                 type="button"

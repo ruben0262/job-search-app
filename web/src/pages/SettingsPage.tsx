@@ -212,7 +212,7 @@ function DeliveryCard({
               : "Nothing is being sent. Everything else keeps running, so turning it back on delivers a warm feed."}
           </span>
         </span>
-        <button
+        <button style={{ marginTop: "1.15rem" }}
           className={active ? "secondary" : ""}
           disabled={toggle.busy}
           onClick={() => void toggle.run()}
