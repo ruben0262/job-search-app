@@ -57,12 +57,28 @@ def ctx():
         conn.close()
 
 
-def _user(s, *, generation: int = 1, **kw) -> User:
+def _user(s, *, generation: int = 1, setup: bool = True, **kw) -> User:
     user = User(email=f"{uuid.uuid4()}@example.test", password_hash="x",
                 profile=PROFILE, profile_generation=generation, **kw)
     s.add(user)
     s.flush()
+    if setup:
+        # Training refuses on an unfinished profile, so the default account here is one that has
+        # finished setup. `setup=False` gets the other case, which its own test exercises.
+        _complete_setup(s, user)
     return user
+
+
+def _complete_setup(s, user) -> None:
+    """Fill every file the setup agent owns, so this account may be trained."""
+    from libs.profiles import setup_files
+    from libs.profiles.repository import ProfileFiles
+
+    files = ProfileFiles(s, user.id)
+    files.seed()
+    for name in setup_files():
+        files.write(name, f"# {name}\n\nReal content for this account.")
+    s.flush()
 
 
 def _job(s, *, embedded: bool = True, version: str = VERSION) -> CorpusJob:
@@ -212,6 +228,59 @@ def test_a_trivial_change_does_not_earn_a_retrain(ctx, tmp_path):
     assert should_retrain(ctx, user.id) is False
     _labelled(ctx, user, 5)
     assert should_retrain(ctx, user.id) is True
+
+
+def test_training_is_refused_while_setup_is_unfinished(ctx, tmp_path):
+    """**A model must not be built from a half-written profile.**
+
+    The failure is silent, which is why it needs a gate rather than care: the labels look like
+    labels, the metrics look reasonable, and the feed is quietly wrong for as long as the artifact
+    lives. Found in production on 2026-07-31 — an account with four unfilled profile files and five
+    missing ones had 945 labels and an active model.
+    """
+    from libs.profiles.repository import ProfileFiles
+
+    user = _user(ctx, setup=False)
+    _labelled(ctx, user, 30)
+    files = ProfileFiles(ctx, user.id)
+    files.seed()
+    ctx.flush()
+
+    with pytest.raises(NotEnoughData, match="setup is unfinished"):
+        train_user(ctx, user.id, artifact_dir=tmp_path, fit=_fit)
+
+    _complete_setup(ctx, user)
+
+    assert files.missing_setup() == []
+    assert train_user(ctx, user.id, artifact_dir=tmp_path, fit=_fit) == 1
+
+
+def test_a_flag_that_drifted_from_its_content_is_repairable(ctx, tmp_path):
+    """`filled` is derived data living in a column, so it can disagree with what it describes.
+
+    It did, in production on 2026-07-31: an account held four files of real, marker-free content —
+    13k to 32k characters each — every one flagged unfilled. **What that breaks is the setup
+    agent's own view of its work.** `grounding()` and `missing_setup()` read the content and are
+    immune, but `listing()` reports the column, so the agent is told a finished file is "still the
+    empty scaffold" and may set about writing it again. The content is the authority, so the flag
+    is repairable rather than a support ticket.
+    """
+    from libs.profiles.repository import ProfileFiles
+
+    user = _user(ctx)
+    files = ProfileFiles(ctx, user.id)
+    assert all(row["filled"] for row in files.listing() if row["name"] == "context.md")
+
+    ctx.execute(text("UPDATE user_profile_files SET filled = false "
+                     "WHERE user_id = :u AND name = 'context.md'").bindparams(u=user.id))
+    ctx.flush()
+    listed = {row["name"]: row["filled"] for row in files.listing()}
+    assert listed["context.md"] is False, "the agent is now told a finished file is empty"
+    assert files.missing_setup() == [], "the content-based checks are unaffected by the flag"
+
+    assert files.repair_filled_flags() == ["context.md"]
+    ctx.flush()
+    assert {row["name"]: row["filled"] for row in files.listing()}["context.md"] is True
 
 
 def test_a_re_embedded_corpus_earns_a_retrain_with_no_new_labels(ctx, tmp_path):

@@ -116,6 +116,30 @@ def platform_file(name: str) -> str:
     return (_PROMPTS / name).read_text(encoding="utf-8").replace("\r\n", "\n")
 
 
+def setup_files() -> tuple[str, ...]:
+    """The files the setup agent is responsible for producing, and a user must have before training.
+
+    Everything seeded as a placeholder — so the task prompts and the CV framework, which ship usable
+    and only want tuning, are excluded. What remains is the account's own substance: who they are,
+    how they behave, how their roles are judged, and the base CV.
+    """
+    return tuple(name for name, _kind in SEED_FILES if not ships_usable(name))
+
+
+def missing_setup(files: dict[str, str]) -> list[str]:
+    """Which setup files are absent or still a scaffold. Empty means the account is ready.
+
+    **The predicate training is gated on.** A model fitted while the profile is half-written is
+    fitted against a rubric that answers a different question from the one the finished profile
+    would ask, and nothing downstream reveals it: the labels look like labels, the metrics look
+    reasonable, and the feed is quietly wrong for as long as the artifact lives. Observed on
+    2026-07-31 — an account with four unfilled files and five missing ones had 945 labels and an
+    active model.
+    """
+    return [name for name in setup_files()
+            if name not in files or not is_filled(files[name])]
+
+
 def is_filled(content: str) -> bool:
     """Whether a file has been populated, by the same test `/setup` applies to itself.
 

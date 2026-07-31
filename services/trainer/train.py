@@ -31,6 +31,7 @@ import libs.notify as notifylib
 from libs.contracts.embedder import unpack_vector
 from libs.contracts.profile import ProfileSchema
 from libs.db.models import CorpusJob, User, UserLabel, UserModel
+from libs.profiles.repository import ProfileFiles
 from libs.scoring.features import FEATURE_SCHEMA_VERSION, feature_spec, job_features
 
 logger = logging.getLogger(__name__)
@@ -296,6 +297,19 @@ def train_user(session: Session, user_id: _uuid.UUID, *,
     user = session.get(User, user_id)
     if user is None:
         raise NotEnoughData(f"no such user: {user_id}")
+
+    # **Setup must be finished before an artifact is built from it.** A model fitted on a
+    # half-written profile is fitted against a rubric answering a different question from the one
+    # the finished profile would ask, and nothing downstream reveals it — the labels look like
+    # labels, the metrics look reasonable, and the feed is quietly wrong for as long as the model
+    # lives. Found on 2026-07-31: an account with four unfilled files and five missing ones had 945
+    # labels and an active model. Refused here rather than in the queue handler so every caller —
+    # the worker, a script, a future manual retrain button — is behind the same gate.
+    missing = ProfileFiles(session, user_id).missing_setup()
+    if missing:
+        raise NotEnoughData(
+            f"setup is unfinished — {len(missing)} profile file(s) still missing or unfilled: "
+            f"{', '.join(missing)}. Finish setup before training a model.")
 
     data = build_training_set(session, user_id)
     blob = dict(fit(data))

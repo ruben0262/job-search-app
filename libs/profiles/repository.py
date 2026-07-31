@@ -18,6 +18,7 @@ from libs.profiles import (
     ProfileIncomplete,
     grounding,
     is_filled,
+    missing_setup,
     seed_files,
     ships_usable,
 )
@@ -116,3 +117,30 @@ class ProfileFiles:
         except ProfileIncomplete:
             return False
         return True
+
+    def missing_setup(self) -> list[str]:
+        """Setup files still absent or unfilled. Empty means the setup agent finished its job.
+
+        Stricter than `is_ready`, deliberately: generating a document needs `context.md`, while
+        *training* commits an artifact that scores everything the user will ever be shown, and that
+        should not be built from a half-written profile.
+        """
+        return missing_setup(self.all())
+
+    def repair_filled_flags(self) -> list[str]:
+        """Recompute `filled` from content. Returns the names whose flag was wrong.
+
+        **`filled` is derived data in a column, which means it can drift from the thing it
+        describes.** It did: on 2026-07-31 an account held four files of real, marker-free content —
+        13k to 32k characters each — every one flagged unfilled, which silently denied that account
+        document generation. Recomputing is cheap and the content is the authority, so a drifted
+        flag is a repairable inconsistency rather than a support ticket.
+        """
+        repaired = []
+        for row in self._s.scalars(
+                select(UserProfileFile).where(UserProfileFile.user_id == self._user)):
+            correct = is_filled(row.content)
+            if row.filled != correct:
+                row.filled = correct
+                repaired.append(row.name)
+        return repaired
