@@ -558,6 +558,24 @@ doing — the shape Claude Code uses for tool calls. **Identical whether the acc
 API key**: the transport is not a thing a user should be able to infer from the layout. Not a
 redesign, just the containers, the sides, and the activity rail.
 
+### 6k — the chat surface, after the setup flow works (added 2026-07-31)
+
+Deliberately queued *behind* 6h: polishing a flow that cannot complete is the wrong order. Recorded
+here so it is not lost once setup runs end to end.
+
+1. **Per-step containers with a dot rail.** One container per step of the agent's reply rather than
+   one block per turn, with a dot on a vertical line down the left — the shape a coding agent uses.
+   A reply that alternates one line, several lines, one line currently reads as one undifferentiated
+   wall.
+2. **A processing indicator in the bottom-left**, so a user watching a long turn can tell the
+   difference between working and stuck without scrolling to find the caret.
+3. **Stop.** A running turn cannot currently be cancelled. It is queued work on a worker, so the
+   stop is a state flip the worker checks between tool steps rather than a killed request.
+4. **Model version history**, for the user on the Model page and for an operator on a per-user admin
+   page reached by clicking a user in the list. Every version with its head, CV-AP, test-AP, tuned
+   cutoff and out-of-fold precision/recall — the data already exists in `models.metrics`, and today
+   the only way to see v2 → v3 → v4 improve was to run SQL by hand.
+
 ### 6b — close the feedback loop
 
 `record()` writes a `feedback` label at weight 5 and the webhook calls it, and production has

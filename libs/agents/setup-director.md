@@ -33,9 +33,14 @@ files exist and none still contains a placeholder. That is a fact you read with
 
 | # | Step | Files it must produce |
 |---|------|------------------------|
-| 1 | **Your profile** (`/setup`) | `01-candidate-profile.md`, `02-behavioral-profile.md`, `04-job-evaluation.md`, `07-interview-prep.md`, `base_cv.html` |
-| 2 | **Your context and angles** (`/setup-role-angles`) | `context.md`, `08-role-angles.md` |
-| 3 | **Your scoring rubric** (`/setup-scorer`) | `label.md` |
+| 1 | **Your background** (`/setup-context`) | `context.md` |
+| 2 | **Your profile** (`/setup`) | `01-candidate-profile.md`, `02-behavioral-profile.md`, `04-job-evaluation.md`, `07-interview-prep.md`, `base_cv.html` |
+| 3 | **Your role angles** (`/setup-role-angles`) | `08-role-angles.md` |
+| 4 | **Your scoring rubric** (`/setup-scorer`) | `label.md` |
+
+**The order is not a preference.** `context.md` is the foundation the other three read — step 3
+states outright that it must already be written — so running them out of order produces files
+grounded on nothing. Never start a step before the one before it has passed its gate.
 
 **This is the whole gate. There is nothing else to verify and nothing else to optimise.**
 
@@ -80,9 +85,9 @@ does> — now?"*
 
 ## Step 2: Ask for what a CV cannot show
 
-**Do this once, during step 1, after their documents have been read.** A CV is a summary written for
-a hiring manager; the profile is written for a system that has to recognise a good role. Those are
-different, and the gap is where the useful material lives.
+**Do this during step 1, after their documents have been read** — it is what makes `context.md`
+worth having. A CV is a summary written for a hiring manager; this is written for a system that has
+to recognise a good role. Those are different, and the gap is where the useful material lives.
 
 Ask, one at a time, and only for the ones their documents have not already answered:
 
@@ -105,11 +110,11 @@ is a fine answer — move on rather than pressing.
   you talked your way past becomes a refusal they cannot explain later.
 - **A step errors:** show the real error, say whether it is fatal for this step, and offer the
   options. Never paper over it.
-- **They want to skip a step:** none of the three is optional — each produces files the scorer or the
-  document builder reads. Say what breaks: skipping step 2 means no `context.md`, so every CV is
-  written from a summary; skipping step 3 means no rubric, so the model learns from a generic one.
-  If they still want to stop, let them — they can resume any time, and a user pushed through a step
-  they did not want gives worse answers anyway.
+- **They want to skip a step:** none of the four is optional — each produces files the scorer or the
+  document builder reads. Say what breaks: skipping step 1 leaves every later step grounded on
+  nothing and it cannot be skipped at all; skipping step 4 means no rubric, so their jobs are scored
+  against a generic one. If they still want to stop, let them — they can resume any time, and a user
+  pushed through a step they did not want gives worse answers anyway.
 - **They are lost or overwhelmed:** stop, restate where they are on the map, and offer to continue
   another day. Their progress is saved after every file.
 

@@ -36,6 +36,17 @@ def _text(name: str) -> str:
     return command(name)
 
 
+def _prose(name: str) -> str:
+    """The text with wrapping collapsed. A phrase assertion must not depend on where markdown
+    happened to break the line — that tests the formatter, not the instruction."""
+    return " ".join(command(name).split()).lower()
+
+
+# Both drafts are reviewed and approved together: the director hands off to `/setup-context`, and
+# approving one without the other leaves the gap that motivated them.
+DRAFT_COMMANDS = {"setup-director", "setup-context"}
+
+
 # ── the defect that motivated the rewrite ─────────────────────────────────────────────────────
 
 def test_the_draft_names_nothing_that_does_not_exist_on_this_platform():
@@ -87,7 +98,7 @@ def test_every_command_the_draft_tells_a_user_to_run_is_one_that_exists():
     """
     referenced = set(re.findall(r"/([a-z][a-z-]+)", _text(DRAFT)))
     # Words that look like commands but are prose or paths, not handoffs.
-    referenced -= {"setup-director"}
+    referenced -= DRAFT_COMMANDS
     startable = set(STARTABLE) | set(SETUP_AGENTS)
 
     unknown = {name for name in referenced if name.startswith("setup") and name not in startable}
@@ -150,3 +161,52 @@ def test_the_draft_is_not_obviously_truncated(name):
 
     assert text.rstrip().endswith("."), "ends mid-sentence"
     assert len(text) > 2_000, "too short to be a director"
+
+
+# ── the command that fills the hole the audit found ───────────────────────────────────────────
+
+CONTEXT = "setup-context"
+
+
+def test_the_context_command_is_also_a_draft():
+    """It owns `context.md`, which nothing currently writes. Inert until reviewed, like the
+    director — approving one without the other leaves the same gap."""
+    assert CONTEXT not in SETUP_AGENTS
+    assert "DRAFT" in _text(CONTEXT).split("\n")[0].upper()
+
+
+def test_the_context_command_names_nothing_local_only():
+    found = [marker for marker in LOCAL_ONLY if marker in _text(CONTEXT)]
+
+    assert not found, f"the context draft names local-checkout things: {found}"
+
+
+def test_the_context_command_asks_for_what_a_cv_drops():
+    """The reason this file exists rather than being derived from a CV."""
+    text = _prose(CONTEXT)
+
+    for topic in ("internship", "volunteer", "contract", "another field"):
+        assert topic in text, f"the context draft never asks about {topic}"
+
+
+def test_the_context_command_refuses_to_guess_between_conflicting_documents():
+    """Two CVs and a LinkedIn export disagree on titles and dates — observed on a real account.
+    A guess here becomes a fabricated claim on an application."""
+    text = _text(CONTEXT).lower()
+
+    assert "conflict" in text
+    assert "never pick for them" in text or "never invent" in text
+
+
+def test_the_context_command_forbids_placeholders():
+    """`is_filled` treats a bracket as unfinished, so a stub would leave the account unable to
+    train — the failure would surface as a refusal nobody could explain."""
+    assert "placeholder" in _text(CONTEXT).lower()
+
+
+def test_the_director_runs_context_first():
+    """`setup-role-angles` states that `context.md` must already be written, so an order that runs
+    it later produces files grounded on nothing."""
+    text = _text(DRAFT)
+    assert text.index("/setup-context") < text.index("/setup-role-angles")
+    assert "The order is not a preference" in text
