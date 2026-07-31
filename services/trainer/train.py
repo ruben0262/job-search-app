@@ -319,6 +319,14 @@ def should_retrain(session: Session, user_id: _uuid.UUID, *,
 
     The queue's `dedup_key` collapses a burst into one job; this is the other half — a job that
     fires anyway when only one label arrived would spend a training slot on nothing.
+
+    **A changed vector space overrides the label count.** Counting new labels assumes the only thing
+    that can go stale is the evidence; it can also be the coordinates. When the corpus is re-embedded
+    — a different model, or the same model given different text — every stored vector moves, and a
+    model fitted in the old space cannot read the new one. Its weights are indexed to axes that no
+    longer mean what they meant. Nothing about that shows up as a new label, so on 2026-07-31 a
+    retrain after a full re-embed was refused as "not enough new labels" while the active artifact
+    was already unusable, and the scorer was failing closed on the version mismatch.
     """
     active = session.scalar(
         select(UserModel).where(UserModel.user_id == user_id, UserModel.is_active.is_(True)))
@@ -326,6 +334,19 @@ def should_retrain(session: Session, user_id: _uuid.UUID, *,
         select(func.count()).select_from(UserLabel).where(UserLabel.user_id == user_id)) or 0
     if active is None:
         return labelled >= MIN_LABELS
+
+    # What the training rows are actually in now, read from the corpus rather than from config:
+    # the vectors are the ground truth about which space they belong to.
+    current = session.scalar(
+        select(CorpusJob.embedding_version)
+        .join(UserLabel, UserLabel.job_id == CorpusJob.id)
+        .where(UserLabel.user_id == user_id, CorpusJob.embedding.is_not(None))
+        .limit(1))
+    if current and current != active.embedder_version:
+        logger.info("trainer: %s was fitted in %r and the corpus is now %r — retraining regardless "
+                    "of label count", user_id, active.embedder_version, current)
+        return True
+
     return labelled - (active.n_labels or 0) >= min_new
 
 

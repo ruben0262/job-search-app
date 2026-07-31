@@ -1,8 +1,41 @@
 # Claude API Backend — Design Plan
 
-**Status:** planning only, no code yet. This is an experiment proposal: add a **direct Anthropic
-API** backend alongside the OAuth (`claude -p`) backend the pipeline uses today, with a hard budget
-cap and a one-flag switch between the two. Keep OAuth fully working; make API opt-in.
+## Implementation status — audited 2026-07-31
+
+**Read this doc as reference-instance history plus one still-live conclusion.** It was written for
+`d:\Projects\job-search` — `pipeline/lib/claudecli.py`, `pipeline/config.yaml`, `scorer/label.py` —
+and this platform never had that shape.
+
+**§3's premise does not apply here.** There is no `claude -p` subprocess backend to switch away
+from: `libs/llm/client.py` has made plain Messages calls since the first line of it, on the
+**user's own credential** (D2, BYOK). So `claudecli.py` / `claudeapi.py` / `claudeback.py`, the
+`CLAUDE_BACKEND` flag and the per-workload override are all moot — there is one backend and
+nothing to dispatch between. Also note the platform reversed the *other* direction from what §1
+assumes: Managed Agents was dropped precisely because it is API-key-only, which would have
+excluded every OAuth user.
+
+**§8b is the part that carried, and it is load-bearing.** Its verdict — batch discount, prompt
+cache and rate limits are scoped per organisation, so cross-user pooling under BYOK saves nothing
+— is why the platform pools the *embedder* (a deterministic artifact) and not Claude calls, and it
+is the reasoning behind `POOLED_CLAUDE_ACCOUNT_PLAN.md` staying deferred. That conclusion needs no
+change.
+
+**Two real savings named here are unclaimed, and both still apply per user:**
+
+| Lever | State |
+|---|---|
+| **Batch API (-50%)** | **Not implemented.** `services/labeller` chunks 50 jobs into one *synchronous* Haiku call (`label.py::BATCH_SIZE`) — that is request-level chunking, not `messages.batches`. Cold-start labelling is exactly the offline, latency-insensitive workload §5 says should use it |
+| **Prompt caching** | **Not implemented.** No `cache_control` anywhere in the tree. §5's caveat still governs whether it is worth anything: measure the rubric prefix against Haiku's 4096-token floor first, and verify `cache_read_input_tokens > 0` rather than assuming |
+| **Budget cap / ledger** | **Not implemented.** No client-side spend ledger. Less pressing than in the reference, because under BYOK the spend is the user's own and a Console limit is theirs to set — but there is no cost visibility in the product either, which `GAPS_REVIEW.md` G9 already tracks |
+
+§7's rollout gates (score A/B before flipping, measure the real multiple rather than assuming
+"120x") remain the right way to do it if the batch path is ever built.
+
+---
+
+**Original status:** planning only, no code yet. This is an experiment proposal: add a **direct
+Anthropic API** backend alongside the OAuth (`claude -p`) backend the pipeline uses today, with a
+hard budget cap and a one-flag switch between the two. Keep OAuth fully working; make API opt-in.
 
 **Change-control note:** the document-generation prompts and the scoring rubric are SACRED (see
 `CLAUDE.md` → Prompt & Rule Change Control). This plan does **not** touch any prompt. It changes only

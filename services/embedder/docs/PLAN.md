@@ -221,21 +221,32 @@ truncated at the same length) — the embedder does not know or care about a pro
 `build_text` conventions; that logic stays on the CALLER side, unchanged. The embedder only turns
 whatever text string it's given into a vector.
 
-## 8. Open questions / next steps before implementation
+## 8. Open questions — all closed (audited 2026-07-31)
+
+The service is built and deployed on both boxes; this section is kept for the record rather than
+as work outstanding.
 
 1. ~~Which embedding model(s) need serving — one or multi-model?~~ **Settled (§10, 2026-07-25):**
    one model, **bge-base (768d)**, every tenant retrains onto it. No multi-model serving.
-2. Decide the batching window size and max batch size empirically once real traffic patterns are
-   known (start with TEI's sane defaults, tune from there).
-3. Decide where this service actually runs — same VPS as `andras-job-search`, or its own
-   lightweight host — and how `andras-job-search`'s `scorer`/`scorer-service` point at it
-   (an env var like `EMBEDDER_URL`, mirroring the existing `SCORER_URL` pattern already used for
-   `andras-job-search`'s own scorer-service).
-4. Migration plan for `andras-job-search`: replace `scorer/score.py`'s `TextEmbedding(...)`
-   instantiation and `scorer/train.py`'s equivalent with an HTTP client call to this service;
-   keep a fallback/local-load path only if the shared service must be optional.
-5. Only after (1)-(4) are settled and same-project sharing is proven stable: revisit whether to
-   expose this to the other tenant's stack, with their explicit agreement.
+2. ~~Decide the batching window and max batch size empirically.~~ **Tuned and in
+   `deploy/compose.embedder.yml`:** `--max-batch-tokens=16384`, `--max-concurrent-requests=512`,
+   `--max-client-batch-size=32` with `--auto-truncate`. The client batch size feeds the gateway's
+   chunk size from the same variable, so the two cannot drift into a 413.
+3. ~~Decide where the service runs and how consumers point at it.~~ **Two deployments, on
+   purpose** (D6, parallel until the platform provably matches): one on the platform box, one on
+   the legacy box still serving `job-search` and `andras-job-search`. Consumers use `EMBEDDER_URL`
+   over the local `embedder-net`; a cross-host arrangement would need an auth token and TLS for no
+   benefit, since vectors are a deterministic function of the text.
+4. ~~Migration plan for `andras-job-search`.~~ Moot for this repository — that is the legacy
+   single-tenant instance on the other box, and the platform is the consumer that matters here.
+   The platform's own path is `libs/contracts/embedder.py` plus the harvester's embed step.
+5. ~~Revisit exposing this to another tenant's stack.~~ Answered by the platform existing: it *is*
+   the multi-tenant consumer, and every user's jobs are embedded through one shared service.
+
+**What is live and worth knowing instead**, because it is what actually bites: the embedding text
+mode is part of `EmbedderVersion.version`, and it changed from `desc` to `title_desc` on
+2026-07-31. Every vector written before that is refused rather than silently mis-scored, which is
+why a full re-embed is in progress — see `CHANGELOG.md` and `docs/saas/HANDOVER.md`.
 
 ## 9. Current wiring on the consumer side (verified against the job-search code, 2026-07-24)
 

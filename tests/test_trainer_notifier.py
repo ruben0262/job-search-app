@@ -214,6 +214,30 @@ def test_a_trivial_change_does_not_earn_a_retrain(ctx, tmp_path):
     assert should_retrain(ctx, user.id) is True
 
 
+@db_required
+def test_a_re_embedded_corpus_earns_a_retrain_with_no_new_labels(ctx, tmp_path):
+    """**The label count is not the only thing that can go stale — the coordinates can too.**
+
+    Re-embedding moves every vector, and a model fitted in the old space cannot read the new one:
+    its weights are indexed to axes that no longer mean the same thing. None of that arrives as a
+    new label. On 2026-07-31 exactly this refused a retrain after a full corpus re-embed, as "not
+    enough new labels", while the active artifact was already unusable and the scorer was failing
+    closed on the mismatch.
+    """
+    user = _user(ctx)
+    _labelled(ctx, user, 30)
+    train_user(ctx, user.id, artifact_dir=tmp_path, fit=_fit)
+    ctx.flush()
+    assert should_retrain(ctx, user.id) is False
+
+    ctx.execute(text("UPDATE corpus SET embedding_version = :v WHERE embedding IS NOT NULL")
+                .bindparams(v="BAAI/bge-base-en-v1.5|dim=768|norm=1|text=title_desc"))
+    ctx.flush()
+
+    assert should_retrain(ctx, user.id) is True, (
+        "a model fitted in a vector space the corpus has left must be retrained")
+
+
 # ── delivery ──────────────────────────────────────────────────────────────────────────────────
 
 def _scored(s, user, *, score: float = 90.0) -> CorpusJob:
