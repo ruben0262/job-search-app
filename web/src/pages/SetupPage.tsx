@@ -395,10 +395,21 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
                   {message.status === "failed" && message.error ? (
                     <span className="turn-error">{message.error}</span>
                   ) : null}
+                  {/* **What it did, as a list of steps rather than a sentence.** A turn can write
+                      several files and the old single line ran them together with separators, which
+                      reads as one event. A rail with a dot per step says how many things happened
+                      and lets a reader check the one they care about. */}
                   {message.files_written.length > 0 ? (
-                    <span className="saved">
-                      Updated: {message.files_written.map((name) => NAMES[name] ?? name).join(" · ")}
-                    </span>
+                    <ul className="activity">
+                      {message.files_written.map((name) => (
+                        <li key={name}>
+                          <span className="activity-dot" aria-hidden="true" />
+                          <span>
+                            Updated <strong>{NAMES[name] ?? name}</strong>
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
                   ) : null}
                 </div>
               ) : (

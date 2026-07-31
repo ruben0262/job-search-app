@@ -116,6 +116,63 @@ matches sat one page further down. The pool is ordered by score and the age filt
 selection, so a backlog of month-old high scorers took every slot. The filter runs in the query
 now; undated rows still come through, because they are what the pre-send dating exists to resolve.
 
+### Applications are training data now, and a draft director that can actually run here
+
+**98 real applications became labels.** They had been sitting as `applied_at` timestamps since the
+import while the trainer ran on 3,498 Haiku guesses — the strongest signal the platform will ever
+get about what this person wants, unused. Only 7 of the 98 had ever been labelled at all, and the
+LLM had *rejected* 4 of those: jobs he cared enough about to apply to, scored below the keep
+threshold. Written at weight 5 against the LLM's weight 1, so 490 weighted true positives now
+outrank the guesswork. A script rather than a migration, because it is a judgement someone should be
+able to run for one account and inspect.
+
+### The setup path could not complete, and nothing said so
+
+Walking it before testing with a real user, which is the whole reason to walk it. **Three of the
+eight required profile files belonged to steps nothing could start.** The chat sent no command name,
+so every turn ran `setup` — which writes five. `context.md`, `08-role-angles.md` and `label.md`
+belong to `setup-role-angles` and `setup-scorer`; the API accepted both and the UI never offered
+them. Combined with the training gate added the same day, **a new account could not finish setup and
+could therefore never train** — and the two failures would have looked unrelated.
+
+Fixed: a leading `/command` selects the step, the empty chat opens with a **Start** button rather
+than a blank box, and `GET /setup/progress` answers what is missing and which command produces it.
+**The success criterion lives in code**, and it is the same check `train_user` refuses on, so the
+page and the trainer cannot disagree about whether an account is ready.
+
+### A draft director, measured rather than asserted
+
+`setup-all.md` is a verbatim port of the reference instance's local director. Its gates verify
+`pipeline/config.yaml`, `scorer/models/scorer.joblib` and `.env` — **none of which exist here.** An
+agent told to "verify mechanically" against paths that are not there either invents a pass or never
+stops, which is exactly the runaway the owner asked to design out.
+
+`setup-director.md` is the platform rewrite, shipped **as a draft**: it is not in `SETUP_AGENTS`, so
+nothing can start it until it has been reviewed. Two properties are checkable without spending a
+credential, and the test asserts both — including that the *current* file fails them, so if somebody
+fixes it in place the test says the draft is redundant:
+
+| | `setup-all` | `setup-director` |
+|---|---|---|
+| References to things this platform does not have | **11** | **0** |
+| Required files never mentioned | **6 of 8** | **0** |
+
+It also carries what the old one had no notion of: an explicit **stop** condition (a finished profile
+is finished — no fourth pass, because every extra pass spends the user's own credential and looks
+identical to progress), and a pass that asks for the experience a CV leaves out — internships, side
+projects, volunteering — which goes into `context.md` rather than onto a CV.
+
+Writing it caught one defect in itself: the draft's header originally explained what the old one got
+wrong, naming those dead paths *inside the prompt the model reads*. That rationale lives here and in
+the test instead.
+
+### The chat reads like a conversation
+
+The assistant now answers inside a container on the left, the user's bubble stays on the right, and
+what a turn *did* is a rail of dots — one step per file — rather than a single line running several
+writes together with separators. Before this a long reply and the page around it were hard to tell
+apart, and a turn that wrote three files had nowhere to show it.
+
 ### A model may no longer be built from a half-written profile
 
 **The failure this prevents is silent, which is why it needed a gate rather than care.** A model

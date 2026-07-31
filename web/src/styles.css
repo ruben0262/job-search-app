@@ -975,10 +975,53 @@ td.num {
   white-space: pre-wrap;
 }
 
+/* The assistant answers inside a container of its own, on the left — the shape a reader already
+   knows from a coding agent. Before this it was bare prose on the page, which made a long reply
+   and the page around it hard to tell apart, and gave a multi-file turn nowhere to show its work. */
 .turn-body {
-  max-width: 100%;
+  max-width: 90%;
+  padding: 0.85rem 1.1rem;
+  border: 1px solid var(--faint);
+  border-radius: 16px;
+  border-bottom-left-radius: 4px;
+  background: var(--bg-raised);
   font-size: 0.9375rem;
   line-height: 1.65;
+}
+
+/* What the turn did, one step per line, on a rail. The line is drawn on the list and the dots sit
+   on top of it, so the steps read as a sequence rather than as three unrelated notes. */
+.activity {
+  position: relative;
+  margin: 0.9rem 0 0;
+  padding: 0 0 0 0.9rem;
+  list-style: none;
+  border-left: 1px solid var(--hairline);
+}
+
+.activity li {
+  position: relative;
+  padding: 0.15rem 0;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.activity li strong {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.activity-dot {
+  position: absolute;
+  left: -1.19rem;
+  top: 0.55rem;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--score);
+  /* Sits on the rail rather than beside it: the ring hides the line behind the dot, so the
+     sequence reads as beads on a thread instead of a column of dots next to a stripe. */
+  box-shadow: 0 0 0 3px var(--bg-raised);
 }
 
 .turn-body p {
@@ -1448,12 +1491,6 @@ td.num {
 
 /* What the assistant wrote down, under the message that wrote it. Quiet on purpose: the user is
    having a conversation, and the filing is incidental to them. */
-.saved {
-  display: block;
-  margin-top: 0.45rem;
-  color: var(--muted);
-  font-size: 0.8125rem;
-}
 
 /* ── the profile file list ───────────────────────────────────────────────────────────────── */
 
