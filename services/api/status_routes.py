@@ -21,6 +21,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from libs.db.models import CorpusJob, QueueJob, User, UserJobState, UserModel
+from libs.scoring.thresholds import cutoff_for
 from services.api.deps import current_user, get_db
 
 logger = logging.getLogger(__name__)
@@ -30,6 +31,12 @@ router = APIRouter(tags=["status"])
 # an hour of silence is three missed cycles, which is a fact worth a yellow, and four hours is red.
 HARVEST_WARN = timedelta(hours=1)
 HARVEST_DOWN = timedelta(hours=4)
+
+# How long matches may sit undelivered before it stops being quiet and starts being broken. Wider
+# than the harvest thresholds on purpose: delivery is bounded by the user's own notify interval and
+# daily cap, so a few hours of silence with a backlog is plausible and six is not.
+DELIVERY_WARN_HOURS = 3
+DELIVERY_DOWN_HOURS = 6
 
 
 def _entry(key: str, label: str, state: str, detail: str) -> dict:
@@ -48,6 +55,7 @@ def status(db: Session = Depends(get_db),
         _telegram_channel(user),
         _harvester(db, now),
         _scorer(db, user, now),
+        _delivery(db, user, now),
         _docgen(db, user_id),
     ], "checked_at": now.isoformat()}
 
@@ -115,6 +123,60 @@ def _scorer(db: Session, user: User, now: datetime) -> dict:
                       f"Last score {hours} hours ago — slower than the usual cycle.")
     return _entry("scorer", "Scoring", "ok",
                   f"Model v{model.version}, scoring new jobs as they arrive.")
+
+
+def _delivery(db: Session, user: User, now: datetime) -> dict:
+    """Is anything actually arriving — the question every other check assumes and none of them ask.
+
+    **Added because the page was all green through a six-hour delivery outage** (2026-07-31).
+    Collection was running, scoring was running, the bot and channel were connected, and the
+    notifier was completing its jobs successfully while sending nothing: it selected fifty
+    candidates a run and dropped all fifty as too old or closed. Every component reported healthy
+    and the product was not working, which is the exact failure a status page exists to prevent.
+
+    So this compares two facts the database already holds: whether matches are waiting, and when
+    something was last sent. Either alone is misleading — no deliveries is normal for an account
+    with nothing to deliver, and a backlog is normal for one that was just topped up — but *matches
+    waiting and nothing sent* is the shape of a stall, and it is reported as one.
+    """
+    if user.telegram_status != "connected":
+        return _entry("delivery", "Delivery", "off",
+                      "Connect Telegram and matches will start arriving.")
+
+    cutoff = cutoff_for(db, user.id)
+    waiting = db.scalar(
+        select(func.count()).select_from(UserJobState)
+        .join(CorpusJob, CorpusJob.id == UserJobState.job_id)
+        .where(UserJobState.user_id == user.id,
+               UserJobState.notified_at.is_(None),
+               UserJobState.score >= cutoff,
+               CorpusJob.closed_at.is_(None))) or 0
+    last_sent = db.scalar(
+        select(func.max(UserJobState.notified_at)).where(UserJobState.user_id == user.id))
+    if last_sent is not None and last_sent.tzinfo is None:
+        last_sent = last_sent.replace(tzinfo=UTC)
+
+    if last_sent is None:
+        # Never delivered. Only a problem once there is something to deliver.
+        if waiting:
+            return _entry("delivery", "Delivery", "down",
+                          f"{waiting} matches are waiting and none have been sent yet.")
+        return _entry("delivery", "Delivery", "off",
+                      "Nothing sent yet — no matches have cleared your score cutoff.")
+
+    hours = int((now - last_sent).total_seconds() // 3600)
+    if waiting and hours >= DELIVERY_DOWN_HOURS:
+        return _entry("delivery", "Delivery", "down",
+                      f"{waiting} matches waiting and nothing sent for {hours} hours.")
+    if waiting and hours >= DELIVERY_WARN_HOURS:
+        return _entry("delivery", "Delivery", "warn",
+                      f"{waiting} matches waiting; last delivery {hours} hours ago.")
+    if hours >= 24:
+        # Quiet, but nothing is queued behind it — a thin week, not a broken pipeline.
+        return _entry("delivery", "Delivery", "ok",
+                      f"Nothing new to send. Last delivery {hours // 24} day(s) ago.")
+    return _entry("delivery", "Delivery", "ok",
+                  f"Sending. Last delivery {hours} hour{'s' if hours != 1 else ''} ago.")
 
 
 def _docgen(db: Session, user_id: _uuid.UUID) -> dict:

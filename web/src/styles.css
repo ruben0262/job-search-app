@@ -1684,57 +1684,108 @@ td.num {
   background: var(--bg-raised);
 }
 
-.bell-mark {
+/* The two header affordances. Icons, because "Mark all read" and "Delete all" side by side are
+   wider than the panel they sit in. */
+.bell-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.bell-act {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   background: none;
   border: none;
-  padding: 0;
+  border-radius: 4px;
+  padding: 0.25rem;
   color: var(--muted);
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
   cursor: pointer;
 }
 
-.bell-mark:hover:not([disabled]) {
+.bell-act:hover:not([disabled]) {
+  background: var(--bg);
   color: var(--ink);
   transform: none;
 }
 
+.bell-act.danger:hover:not([disabled]) {
+  color: var(--danger);
+}
+
+/* The row owns the rules and the level colour; the button inside it owns the text. Split because a
+   dismiss control cannot be nested inside another button. */
+.bell-row {
+  display: flex;
+  align-items: flex-start;
+  border-bottom: 1px solid var(--hairline);
+  border-left: 3px solid transparent;
+}
+
+.bell-row:last-child {
+  border-bottom: none;
+}
+
+.bell-row:hover {
+  background: var(--bg);
+}
+
 .bell-item {
   display: block;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   text-align: left;
   background: none;
   border: none;
-  border-bottom: 1px solid var(--hairline);
-  border-left: 3px solid transparent;
   border-radius: 0;
-  padding: 0.85rem 1.2rem;
+  padding: 0.85rem 0.4rem 0.85rem 1.2rem;
   color: inherit;
   font-weight: 400;
   cursor: pointer;
 }
 
 .bell-item:hover:not([disabled]) {
-  background: var(--bg);
+  background: none;
   transform: none;
 }
 
-.bell-item:last-child {
-  border-bottom: none;
+/* Present but quiet until the row is hovered or the button is focused — a column of ×s down the
+   panel reads as clutter, and keyboard users must still be able to reach it. */
+.bell-x {
+  flex: none;
+  align-self: center;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  padding: 0.3rem;
+  margin-right: 0.6rem;
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.bell-row:hover .bell-x,
+.bell-x:focus-visible {
+  opacity: 1;
+}
+
+.bell-x:hover:not([disabled]) {
+  background: var(--bg-raised);
+  color: var(--danger);
+  transform: none;
 }
 
 /* Unread carries the ink; read fades. The level is a left rule, same grammar as banners. */
-.bell-item.unread.error {
+.bell-row.unread.error {
   border-left-color: var(--danger);
 }
 
-.bell-item.unread.warning {
+.bell-row.unread.warning {
   border-left-color: var(--ink);
 }
 
-.bell-item.unread.info {
+.bell-row.unread.info {
   border-left-color: var(--dim);
 }
 
@@ -1744,7 +1795,7 @@ td.num {
   font-size: 0.9rem;
 }
 
-.bell-item:not(.unread) .bell-title {
+.bell-row:not(.unread) .bell-title {
   font-weight: 400;
   color: var(--muted);
 }

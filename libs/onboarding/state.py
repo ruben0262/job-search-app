@@ -96,8 +96,14 @@ def onboarding_state(session: Session, user_id: _uuid.UUID) -> OnboardingState:
         PageState(
             # `connected` rather than "a token is stored": a saved token with no chat id delivers
             # nothing, and the failure would look like a delivery bug months later.
-            "telegram", "Telegram", user.telegram_status == "connected",
-            "Save your bot token, then press Start in the bot so it can message you."),
+            #
+            # **And a channel, not only the bot.** The channel was optional and that was the wrong
+            # call: delivery is the product, and the private bot chat is where commands and finished
+            # documents go — a feed nobody scrolls is not a feed. Requiring it here means an account
+            # cannot finish onboarding with a working pipeline and nowhere to put its output.
+            "telegram", "Telegram",
+            user.telegram_status == "connected" and bool(user.telegram_routes),
+            "Save your bot token, press Start in the bot, then point your job stream at a channel."),
         PageState(
             "claude", "Claude", bool(secrets & set(CLAUDE_KINDS)),
             "An API key or an OAuth token — either one works."),

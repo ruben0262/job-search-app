@@ -189,15 +189,36 @@ def list_credentials(db: Session = Depends(get_db),
 
     stored = TenantRepository(db).secret_metadata(user_id)
     kinds = {row.kind for row in stored}
+    user = db.get(User, user_id)
+
+    # Where the jobs actually go. Every route is set to the same channel by `set_channel`, so the
+    # first value is the channel; `None` means the private bot chat is still the destination.
+    routes = user.telegram_routes or {}
+    channel_id = next(iter(routes.values()), None) if routes else None
+
     return {
         "credentials": [
             {"kind": row.kind, "last_4": row.last_4,
              "validated": row.validated_at is not None,
              "updated_at": row.updated_at.isoformat() if row.updated_at else None}
             for row in stored],
+        # **The IDs are shown, not hidden.** A chat id and a channel id are addresses, not secrets —
+        # they are useless without the bot token, which is never returned here. Withholding them
+        # only stopped a user confirming that the thing they configured is the thing we will send
+        # to, which is the one question this page exists to answer.
+        "telegram": {
+            "status": user.telegram_status,
+            "chat_id": user.telegram_chat_id,
+            "channel_id": channel_id,
+            "destination": "channel" if channel_id else ("chat" if user.telegram_chat_id else None),
+        },
         "requirements": {
             "claude": bool(kinds & set(CLAUDE_KINDS)),
             "telegram_bot": "telegram_bot" in kinds,
+            # **The channel is required, not a nicety.** Delivery is the product — an account with
+            # no route has a working pipeline and nowhere to put its output — and the private chat
+            # is a fallback for commands, not a feed anyone scrolls.
+            "telegram_channel": channel_id is not None,
             "proxy": "proxy" in kinds,
         },
     }

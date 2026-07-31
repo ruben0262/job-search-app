@@ -72,6 +72,19 @@ export function NotificationBell() {
     load();
   };
 
+  const clearAll = async () => {
+    await api.post("/notifications/delete", { all: true }).catch(() => undefined);
+    load();
+  };
+
+  // Dismissing one must not also open it: the × sits inside the row, and without stopping
+  // propagation every delete would navigate to whatever the notification pointed at.
+  const dismiss = async (event: React.MouseEvent, id: number) => {
+    event.stopPropagation();
+    await api.post("/notifications/delete", { ids: [id] }).catch(() => undefined);
+    load();
+  };
+
   const openOne = async (item: Notification) => {
     if (!item.read) await api.post("/notifications/read", { ids: [item.id] }).catch(() => undefined);
     load();
@@ -99,11 +112,33 @@ export function NotificationBell() {
             <span className="kicker" style={{ margin: 0 }}>
               Notifications
             </span>
-            {feed.unread > 0 ? (
-              <button type="button" className="bell-mark" onClick={() => void markAll()}>
-                Mark all read
-              </button>
-            ) : null}
+            {/* Icons rather than words: two actions side by side as "Mark all read" and "Delete
+                all" pushed the panel header wider than the panel. Both keep an aria-label and a
+                title, so the meaning is available to a screen reader and on hover. */}
+            <div className="bell-actions">
+              {feed.unread > 0 ? (
+                <button
+                  type="button"
+                  className="bell-act"
+                  aria-label="Mark all as read"
+                  title="Mark all as read"
+                  onClick={() => void markAll()}
+                >
+                  <EyeIcon />
+                </button>
+              ) : null}
+              {feed.notifications.length > 0 ? (
+                <button
+                  type="button"
+                  className="bell-act danger"
+                  aria-label="Delete all notifications"
+                  title="Delete all"
+                  onClick={() => void clearAll()}
+                >
+                  <BinIcon />
+                </button>
+              ) : null}
+            </div>
           </div>
           {feed.notifications.length === 0 ? (
             <p className="muted small" style={{ padding: "1rem 1.2rem" }}>
@@ -111,21 +146,71 @@ export function NotificationBell() {
             </p>
           ) : (
             feed.notifications.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                className={`bell-item${item.read ? "" : " unread"} ${item.level}`}
-                onClick={() => void openOne(item)}
-              >
-                <span className="bell-title">{item.title}</span>
-                {item.body ? <span className="bell-body">{item.body}</span> : null}
-                <span className="bell-when">{ago(item.created_at)}</span>
-              </button>
+              // A row rather than one button: the dismiss control has to live inside the item, and
+              // a button nested in a button is invalid HTML that browsers resolve unpredictably.
+              <div key={item.id} className={`bell-row${item.read ? "" : " unread"} ${item.level}`}>
+                <button type="button" className="bell-item" onClick={() => void openOne(item)}>
+                  <span className="bell-title">{item.title}</span>
+                  {item.body ? <span className="bell-body">{item.body}</span> : null}
+                  <span className="bell-when">{ago(item.created_at)}</span>
+                </button>
+                <button
+                  type="button"
+                  className="bell-x"
+                  aria-label={`Dismiss: ${item.title}`}
+                  title="Dismiss"
+                  onClick={(event) => void dismiss(event, item.id)}
+                >
+                  <XIcon />
+                </button>
+              </div>
             ))
           )}
         </div>
       ) : null}
     </div>
+  );
+}
+
+function EyeIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6-10-6-10-6z"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinejoin="round"
+      />
+      <circle cx="12" cy="12" r="2.6" stroke="currentColor" strokeWidth="1.7" />
+    </svg>
+  );
+}
+
+function BinIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M4 7h16" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      <path
+        d="M9 7V5.5A1.5 1.5 0 0110.5 4h3A1.5 1.5 0 0115 5.5V7"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M6 7l.8 11.2A2 2 0 008.8 20h6.4a2 2 0 002-1.8L18 7"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function XIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
   );
 }
 

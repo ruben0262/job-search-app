@@ -201,7 +201,7 @@ function DeliveryCard({
 
   return (
     <Card title="Delivery">
-      <div className="spread" style={{ marginBottom: "1.25rem" }}>
+      <div style={{ marginBottom: "1.25rem" }}>
         <span>
           <span className="label" style={{ marginBottom: 0 }}>
             Job messages are {active ? "on" : "off"}
@@ -212,8 +212,6 @@ function DeliveryCard({
               : "Nothing is being sent. Everything else keeps running, so turning it back on delivers a warm feed."}
           </span>
         </span>
-      </div>
-      <div className="row">
         <button
           className={active ? "secondary" : ""}
           disabled={toggle.busy}

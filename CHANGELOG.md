@@ -116,6 +116,53 @@ matches sat one page further down. The pool is ordered by score and the age filt
 selection, so a backlog of month-old high scorers took every slot. The filter runs in the query
 now; undated rows still come through, because they are what the pre-send dating exists to resolve.
 
+### The status page slept through a six-hour outage, so it learned to watch delivery
+
+Every component was green while nothing was being delivered: collection running, scoring running,
+bot and channel connected, and the notifier completing its jobs having sent nothing for six hours.
+**That is the precise failure a status page exists to prevent**, and this one could not see it,
+because it checked whether each part was alive and never whether anything came out the end.
+
+There is now a `delivery` component, and what it reports is a *conjunction*: matches waiting **and**
+nothing sent. Either alone is meaningless — an account with nothing above its cutoff is quiet for
+good reasons, and a backlog straight after a harvest is normal — so only together do they mean
+stalled. Warn at 3 hours, down at 6, wider than the harvest thresholds because delivery is bounded
+by the user's own notify interval and daily cap. The test pins the exact shape of the outage.
+
+### Notifications can be dismissed, and Telegram's channel is no longer optional
+
+Per-item dismiss, mark-all-read and delete-all, the last two as an eye and a bin — two text buttons
+side by side were wider than the panel they sat in. Deletion is a real `DELETE`, not a hidden flag:
+these are transient operational messages, and once acted on there is no later question a kept row
+answers. The row markup had to split, because the dismiss control cannot be a button inside a button.
+
+**The Telegram channel is now required, in onboarding as well as in settings.** It was optional, and
+that was wrong: delivery is the product, and the private bot chat is for commands and finished
+documents — a feed nobody scrolls is not a feed. An account could previously finish onboarding with
+a working pipeline and nowhere to put its output, which surfaces months later as "it stopped sending
+me jobs", the least diagnosable shape a problem takes.
+
+The chat ID and channel ID are now displayed. **They are addresses, not secrets** — useless without
+the bot token, which is never returned — and withholding them only stopped a user confirming that
+the thing they configured is the thing we send to, which is the one question that page answers.
+
+### Verified rather than assumed
+
+Everything above ran against a real Postgres, not the 472 tests that skip without one: **1,034
+passed, 11 skipped.** That is also the answer to whether the auth flows work — signup, login,
+change password and email verification are covered across `test_api_auth.py`, `test_auth.py` and
+`test_gdpr.py`, including the ones that matter most (an unverified account cannot log in, a
+verification token is not a reset token, a reset ends every session, a changed password requires the
+current one).
+
+Delivery pause was traced end to end rather than eyeballed: the toggle writes `user.active`, and
+`dispatch_due_notifications` filters on it — so pausing stops jobs entering the lane at all, instead
+of enqueuing work that is dropped later.
+
+**One bug this caught in my own change:** requiring the channel broke `test_onboarding.py`'s fixture,
+which connected a bot without a route. It passed locally because those tests are DB-gated and skip
+without Postgres — it would have failed in CI. Fixed, and pinned with a test.
+
 ### Four bugs between a re-embed and a trained model, each hiding the next
 
 The corpus had to be rebuilt because the platform embedded `description` alone where the reference

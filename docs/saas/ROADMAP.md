@@ -457,16 +457,55 @@ Phases 1–5 built a platform that finds, ranks, delivers and writes. What it do
 learn from what the user does with a job — and that is the whole premise. This phase is short and
 ordered by what blocks what.
 
-### 6a — finish the re-embed, then retrain ⛔ blocks everything downstream
+### 6a — finish the re-embed, then retrain ✅ **done 2026-07-31**
 
-The corpus moved from embedding `description` alone to `title_desc` on 2026-07-31, which
-invalidated every existing vector by design. **3,136 of 6,601 rows re-embedded.** Both accounts'
-active models were fitted on the old vectors, so every score they produce is against a vector space
-the model was not trained in.
+The corpus moved from embedding `description` alone to `title_desc`, invalidating every existing
+vector by design. **All 6,601 rows re-embedded**, both accounts retrained on the new space, and the
+first delivery through it verified end to end (*Backend Engineer (Python/AWS)*, score 90, posted
+12:47 UTC and sent 13:47).
 
-Nothing about feed quality can be judged until this lands. Run `--embed-only` to completion, then
-retrain both accounts and let the new bake-off pick a head and a cutoff for the first time on real
-data.
+The owner's model: **svc**, 2,554 labels, CV-AP 0.663, cutoff **38 at 65% recall** — near the
+reference instance's 44, replacing a Ridge head reading a cutoff of 60 that was never tuned.
+
+Six bugs stood between the two, each hidden by the one in front of it: an hour-long embed
+transaction that committed nothing, a deadlock against the harvest cycle that discarded it, a raw
+`httpx` timeout escaping past every `EmbedderError` handler, contention mistaken for a broken
+gateway, a retrain guard that only counted labels and had no concept of the vector space moving,
+and a cutoff sweep that fell back to the label threshold. All fixed and changelogged.
+
+**Still open from this thread:** Andras's model kept the conservative best-F1 fallback cutoff (60 at
+37% recall) — his next natural retrain picks up the corrected logic. And the harvest timers cannot
+be paused for a rebuild without a sudo password, which is why the rebuild was made contention-proof
+instead.
+
+### 6f — the account surface, page by page (added 2026-07-31)
+
+Walked with the owner. Ticked off: **Jobs**, **Your details**, **Settings**, **Status**,
+**Notifications**, and the auth flows.
+
+- **Notifications** ✅ — per-item dismiss, mark-all-read (eye) and delete-all (bin), with a real
+  `DELETE`-shaped endpoint rather than a hidden flag.
+- **Status** ✅ — and it gained the check it was missing. The page was **all green through the
+  six-hour delivery outage on 2026-07-31**: collection fine, scoring fine, bot and channel fine,
+  notifier completing its jobs and sending nothing. A `delivery` component now reports the
+  conjunction that actually means "stalled" — matches waiting *and* nothing sent — because either
+  fact alone is normal.
+- **Your details** ✅ — the Telegram **channel is now required**, in onboarding as well as settings,
+  and the chat and channel IDs are displayed. They are addresses, not secrets, and hiding them only
+  stopped a user confirming where their jobs go.
+- **Settings** ✅ — delivery pause verified working end to end: the toggle writes `user.active` and
+  `dispatch_due_notifications` filters on it, so a pause stops jobs being enqueued at source rather
+  than dropping them later. On/off state is shown in the card and as a dashboard banner.
+- **Auth** ✅ — signup, login, change password and email verification are all covered and passing
+  (`test_api_auth.py`, `test_auth.py`, `test_gdpr.py`), verified against a real Postgres:
+  **1,034 passed, 11 skipped**.
+
+**Remaining pages: Profile, Model, Platform.** The most concrete gap found while walking these:
+**the Model page reports no results at all** — it shows "version N, live" and nothing else, while
+the training run measures CV average precision, test AP, AUC, the tuned cutoff, out-of-fold
+precision/recall/F1 and every losing candidate's score. All of it is already stored in
+`models.metrics`. Surfacing it is a read-only page, and it is what makes "did this retrain help"
+answerable by the person paying for it.
 
 ### 6b — close the feedback loop
 
@@ -502,8 +541,29 @@ Batch API (−50%) and prompt caching are both available per user under BYOK and
 cold-start labelling is exactly the offline workload the batch path is for. Measure the rubric
 against Haiku's 4096-token cache floor before assuming caching buys anything.
 
+### 6g — duplicate postings reach Telegram (added 2026-07-31)
+
+Of 14 cards delivered in the first hour after the retrain, **8 were repeats** — the same Golang role
+six times at six scores, one per Polish city. Corpus-wide: **589 redundant rows in 7 days** across
+296 groups, one at 22 copies.
+
+**Dedup is not broken.** It runs before insert and narrows url → canonical_url → apply_url →
+content_key. The copies survive because `content_key` is `company|title|location` *by design*, and a
+posting listed in 22 cities is 22 distinct keys.
+
+The differing scores are not a country preference: `job_features` takes only title and description,
+and the model has no location input. Each city's page carries its own wording, so the embedding
+reads different text — all six descriptions hit the 4,000-character ceiling and five of six differ.
+The 39–45 spread is noise on one job.
+
+**Decision taken:** keep the rows, collapse at delivery. Multi-location postings are legitimately
+distinct URLs a user may want, and rewriting the ingest key would discard genuinely separate city
+listings. One card per `(company, title)` group, highest score, is the smaller and more reversible
+change — and it is the user-facing problem.
+
 **Exit criteria for Phase 6:** the corpus is on one embedding version, both models are trained on
-it, and a tap in Telegram has produced a label that a retrain consumed.
+it, a tap in Telegram has produced a label that a retrain consumed, and no user receives the same
+role twice in one digest.
 
 ## Deliberately deferred
 

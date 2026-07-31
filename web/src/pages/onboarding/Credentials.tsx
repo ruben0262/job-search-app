@@ -212,15 +212,40 @@ function CredentialForm({
   );
 }
 
+type TelegramState = {
+  status: string;
+  chat_id: string | null;
+  channel_id: string | null;
+  destination: "channel" | "chat" | null;
+};
+
 export function TelegramStep({ onDone }: { onDone: () => void }) {
   const [status, setStatus] = useState<string | null>(null);
   const [channel, setChannel] = useState("");
   const [channelStatus, setChannelStatus] = useState<string | null>(null);
+  const [state, setState] = useState<TelegramState | null>(null);
+
+  // What is actually configured, read back from the server rather than inferred from what this
+  // form last submitted. The ids are the whole point: a user asking "is it connected, and where do
+  // jobs go" cannot answer it from a token field showing four characters.
+  const refresh = useCallback(() => {
+    api
+      .get<{ telegram?: TelegramState }>("/credentials")
+      .then((body) => setState(body?.telegram ?? null))
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => refresh(), [refresh]);
+
+  const reload = () => {
+    refresh();
+    onDone();
+  };
 
   const connect = useAction(async () => {
     const result = await api.post<{ status: string; detail?: string }>("/credentials/telegram/connect");
     setStatus(result.status === "connected" ? null : (result.detail ?? "Still waiting."));
-    onDone();
+    reload();
   });
 
   const saveChannel = useAction(async () => {
@@ -228,7 +253,7 @@ export function TelegramStep({ onDone }: { onDone: () => void }) {
       channel_id: channel.trim(),
     });
     setChannelStatus(result.detail);
-    onDone();
+    reload();
   });
 
   return (
@@ -246,14 +271,37 @@ export function TelegramStep({ onDone }: { onDone: () => void }) {
         </ol>
       </details>
 
-      <Stored kind="telegram_bot" onChanged={onDone} />
+      <Stored kind="telegram_bot" onChanged={reload} />
       <CredentialForm
         kind="telegram_bot"
         label="Bot token"
         hint="From BotFather. We read your chat id ourselves — you never have to find it."
         placeholder="123456:AA…"
-        onDone={onDone}
+        onDone={reload}
       />
+
+      {state ? (
+        <dl className="kv small" style={{ marginTop: "1rem" }}>
+          <dt>Status</dt>
+          <dd>{state.status}</dd>
+          <dt>Chat ID</dt>
+          <dd>
+            <code>{state.chat_id ?? "not connected yet"}</code>
+          </dd>
+          <dt>Channel ID</dt>
+          <dd>
+            <code>{state.channel_id ?? "not set"}</code>
+          </dd>
+          <dt>Jobs go to</dt>
+          <dd>
+            {state.destination === "channel"
+              ? "your channel"
+              : state.destination === "chat"
+                ? "your bot chat — set a channel below"
+                : "nowhere yet"}
+          </dd>
+        </dl>
+      ) : null}
 
       <p style={{ marginTop: "1rem" }}>
         <button className="secondary" disabled={connect.busy} onClick={() => void connect.run()}>
@@ -265,8 +313,9 @@ export function TelegramStep({ onDone }: { onDone: () => void }) {
 
       <div style={{ marginTop: "2rem" }}>
         <p className="small muted">
-          <strong>Optional: a channel for your job stream.</strong> Jobs land in a channel you can
-          scroll like a feed, and the bot chat stays for commands and your finished CVs.
+          <strong>Required: a channel for your job stream.</strong> Jobs land in a channel you can
+          scroll like a feed, and the bot chat stays for commands and your finished CVs. Without it
+          there is nowhere for matches to go.
         </p>
         <details className="howto">
           <summary>How to find your channel ID (2 minutes)</summary>

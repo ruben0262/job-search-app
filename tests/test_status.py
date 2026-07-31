@@ -58,7 +58,8 @@ def test_every_component_answers_with_a_state_and_a_sentence(api):
     body = http.get("/status").json()
     components = {c["key"]: c for c in body["components"]}
 
-    assert set(components) == {"telegram_bot", "telegram_channel", "harvester", "scorer", "docgen"}
+    assert set(components) == {"telegram_bot", "telegram_channel", "harvester", "scorer",
+                               "delivery", "docgen"}
     for component in components.values():
         assert component["state"] in ("ok", "warn", "down", "off")
         assert component["detail"], "a dot with no words is a support request"
@@ -67,6 +68,65 @@ def test_every_component_answers_with_a_state_and_a_sentence(api):
     assert components["harvester"]["state"] == "ok"
     # No model yet is off, not broken — the honest state for a new account.
     assert components["scorer"]["state"] == "off"
+
+
+def test_matches_waiting_and_nothing_sent_is_reported_as_broken(api):
+    """**The shape of the outage this page slept through** (2026-07-31).
+
+    Collection was running, scoring was running, the bot and channel were connected, and the
+    notifier was completing its jobs while delivering nothing — it selected fifty candidates a run
+    and dropped all fifty. Every component was green for six hours and the product was not working.
+
+    Neither fact alone means anything: an account with nothing to send is quiet for good reasons,
+    and a backlog right after a harvest is normal. The conjunction is the signal.
+    """
+    from datetime import timedelta
+
+    from libs.db.models import CorpusJob, UserJobState
+    from services.api.status_routes import DELIVERY_DOWN_HOURS
+
+    http, session, user = api
+
+    # Nothing to deliver: quiet is honest, not alarming.
+    assert next(c for c in http.get("/status").json()["components"]
+                if c["key"] == "delivery")["state"] == "off"
+
+    job = CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test", title="Backend Engineer",
+                    first_seen_at=datetime.now(UTC))
+    session.add(job)
+    session.flush()
+    session.add(UserJobState(user_id=user.id, job_id=job.id, score=95.0,
+                             scored_at=datetime.now(UTC), notified_at=None))
+    session.flush()
+
+    # A match is waiting and nothing has ever been sent.
+    delivery = next(c for c in http.get("/status").json()["components"] if c["key"] == "delivery")
+    assert delivery["state"] == "down"
+    assert "waiting" in delivery["detail"]
+
+    # Delivered recently, with the backlog behind it: working, not stalled.
+    session.query(UserJobState).filter(UserJobState.user_id == user.id).update(
+        {"notified_at": datetime.now(UTC)}, synchronize_session=False)
+    session.flush()
+    assert next(c for c in http.get("/status").json()["components"]
+                if c["key"] == "delivery")["state"] == "ok"
+
+    # A second match arrives, and the last delivery recedes past the threshold. Same components
+    # green as before — this is the conjunction the check exists for.
+    second = CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
+                       title="Platform Engineer", first_seen_at=datetime.now(UTC))
+    session.add(second)
+    session.flush()
+    session.add(UserJobState(user_id=user.id, job_id=second.id, score=95.0,
+                             scored_at=datetime.now(UTC), notified_at=None))
+    session.query(UserJobState).filter(UserJobState.job_id == job.id).update(
+        {"notified_at": datetime.now(UTC) - timedelta(hours=DELIVERY_DOWN_HOURS + 1)},
+        synchronize_session=False)
+    session.flush()
+
+    delivery = next(c for c in http.get("/status").json()["components"] if c["key"] == "delivery")
+    assert delivery["state"] == "down"
+    assert "nothing sent" in delivery["detail"]
 
 
 def test_a_broken_bot_is_red_with_the_fix_in_words(api):

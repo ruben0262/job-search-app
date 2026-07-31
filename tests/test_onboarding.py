@@ -116,6 +116,9 @@ def _finish_every_page(http, session, user):
     for kind in ("claude_api", "telegram_bot", "proxy"):
         session.add(UserSecret(user_id=user.id, kind=kind, ciphertext=b"x", nonce=b"n"))
     user.telegram_status = "connected"
+    # A connected bot is not a finished Telegram setup: the job stream needs a channel to land in,
+    # and the private chat is for commands and documents. See the test below.
+    user.telegram_routes = {"jobs": "-1001234567890"}
     session.flush()
 
 
@@ -182,6 +185,32 @@ def test_revoking_a_credential_reopens_its_page(api):
     body = http.get("/onboarding/state").json()
     assert body["complete"] is False
     assert body["next_page"] == "telegram"
+
+
+@pytestmark_db
+def test_a_connected_bot_without_a_channel_does_not_finish_telegram(api):
+    """**Delivery is the product, so the channel is a requirement rather than a nicety.**
+
+    A bot token plus a chat id proves the platform *can* message this person; it does not give the
+    job stream anywhere to land. The private chat carries commands and finished documents, and a
+    feed nobody scrolls is not a feed. Without this, an account could complete onboarding with a
+    working pipeline and no destination — which surfaces later as "it stopped sending me jobs",
+    the least diagnosable shape a problem can take.
+    """
+    http, session, user = api
+    _finish_every_page(http, session, user)
+
+    user.telegram_routes = None
+    session.flush()
+
+    body = http.get("/onboarding/state").json()
+    assert body["complete"] is False
+    assert body["next_page"] == "telegram"
+
+    user.telegram_routes = {"jobs": "-1001234567890"}
+    session.flush()
+
+    assert http.get("/onboarding/state").json()["complete"] is True
 
 
 @pytestmark_db

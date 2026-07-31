@@ -198,6 +198,10 @@ ignore = [
 # mutable default evaluated once; here that evaluation is the mechanism, and writing it any other
 # way would mean not using the framework.
 "services/api/*.py" = ["B008"]
+# Each status check is a chain of "if this condition holds, say this sentence", and the sentences
+# are the point — a reader opens this file to learn what the user is told and when. Collapsing the
+# branches behind a lookup to satisfy a return-count would hide exactly that.
+"services/api/status_routes.py" = ["B008", "PLR0911"]
 # Lazy module-level singletons behind an accessor. Deliberate: the engine must not be constructed at
 # import time, or importing anything would require DATABASE_URL to be set.
 "libs/db/session.py" = ["PLW0603"]
