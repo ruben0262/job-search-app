@@ -33,7 +33,7 @@ from libs.secrets import install
 from libs.tenant.repository import TenantRepository
 from services.harvester.cycle import run_cycle
 from services.harvester.describe import describe_linkedin_for_all
-from services.harvester.embedding import embed_all_pending
+from services.harvester.embedding import embed_pending
 from services.harvester.linkedin import run_for_due_users as run_linkedin
 from services.harvester.source_config import build_source_configs
 
@@ -81,13 +81,20 @@ def _embed_only() -> int:
     total = 0
     try:
         while True:
+            # **One batch per transaction, deliberately.** `embed_all_pending` drains up to fifty
+            # batches inside a single session, which for a full rebuild is an hour-long transaction
+            # that commits nothing until the end: a stop, a crash or an OOM at minute fifty-nine
+            # throws away fifty-nine minutes of paid embedding, and until it lands there is no way
+            # to tell a working run from a wedged one. Committing per batch makes the run
+            # interruptible and its progress readable from the database — which is what an operator
+            # asked to start and stop it actually needs.
             with session_scope() as session:
-                result = embed_all_pending(CorpusRepository(session), embedder,
-                                           expected=_expected_embedder())
+                result = embed_pending(CorpusRepository(session), embedder,
+                                       expected=_expected_embedder())
             total += result.embedded
-            logger.info("embed-only: %d this batch, %d total, %d remaining",
-                        result.embedded, total, result.remaining)
-            if not result.embedded:
+            logger.info("embed-only: %d embedded (%d superseded), %d total, %d remaining",
+                        result.embedded, result.skipped_stale, total, result.remaining)
+            if not result.did_work:
                 return 0
     finally:
         embedder.close()
