@@ -116,6 +116,31 @@ matches sat one page further down. The pool is ordered by score and the age filt
 selection, so a backlog of month-old high scorers took every slot. The filter runs in the query
 now; undated rows still come through, because they are what the pre-send dating exists to resolve.
 
+### A model may no longer be built from a half-written profile
+
+**The failure this prevents is silent, which is why it needed a gate rather than care.** A model
+fitted while setup is unfinished is fitted against a rubric answering a different question from the
+one the finished profile would ask — and nothing downstream reveals it. The labels look like labels,
+the metrics look reasonable, and the feed is quietly wrong for as long as the artifact lives.
+
+It was already live: one account holds four of its eight setup files and is missing `base_cv.html`,
+`label.md`, `04-job-evaluation.md` and `08-role-angles.md` — and has 945 labels and an active model
+trained from them.
+
+`train_user` now refuses unless every file the setup agent owns is present and filled. That set is
+the seeded scaffolds minus the ones that ship usable, so the task prompts and the CV framework —
+which are already good and only want tuning — gate nothing. The check lives in `train_user` rather
+than the queue handler, so every caller is behind it: the worker, a script, and the manual retrain
+button that does not exist yet. Six existing tests were training without a profile and now say so.
+
+**And the flag that describes all this had drifted.** `filled` is derived data living in a column,
+so it can disagree with the content it describes, and on a live account it did: four files of real,
+marker-free text — 13k to 32k characters each — every one flagged empty. `grounding()` and
+`missing_setup()` read the content and are immune, but `listing()` reports the column — so the
+*setup agent* was told its own finished files were still scaffolds, and might set about writing them
+again. `repair_filled_flags()` recomputes from content, which is the authority; both live accounts
+have been repaired.
+
 ### The status page slept through a six-hour outage, so it learned to watch delivery
 
 Every component was green while nothing was being delivered: collection running, scoring running,

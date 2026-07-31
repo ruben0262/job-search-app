@@ -507,15 +507,70 @@ precision/recall/F1 and every losing candidate's score. All of it is already sto
 `models.metrics`. Surfacing it is a read-only page, and it is what makes "did this retrain help"
 answerable by the person paying for it.
 
+**Model version history (decided 2026-07-31).** Not just the live model: every version, with its
+metrics, as a history the user scrolls. `models` already keeps superseded rows — `is_active` flips
+rather than deleting — so the data is there and the page is a read. What it buys is the only honest
+answer to "is this getting better": v2 was Ridge with an untuned cutoff of 60 and v3 is svc at 38
+with CV-AP 0.663, and a user should be able to see that happen rather than be told it did.
+
+**Admin (added to the phase-4 admin surface, not built yet).** The same history, per user, for an
+operator looking into an account — plus the setup-file completeness the training gate now computes.
+The two questions an operator actually has are "why is this person's feed bad" and "did their setup
+finish", and both are one page. Deliberately read-only: an operator reading a user's metrics is
+support, an operator editing them is a different product with a different consent story.
+
+### 6h — prove the setup chat, end to end ⬅ **next**
+
+The owner's call, and the right one: everything downstream is grounded on files the setup agent
+writes, and that agent has never been watched through a complete run on a fresh account. The
+evidence that it needs watching is already in production — one account finished with four of eight
+setup files written, four missing, and **trained a model anyway** (now blocked, 6i).
+
+1. **`/setup` as the entry point.** First visit shows the chat disabled behind a single **Start**
+   button that submits `/setup` for the user. A blank chat box asking a new user to invent the first
+   message is the least helpful screen the product has; one button that begins a guided run is the
+   most helpful.
+2. **An overseer, not a free-running agent.** Something must own the sequence: run each setup agent,
+   check its file landed and is filled, then move to the next. The failure to design out is the one
+   already seen — a run that completes 90% and stops, leaving no error and a half-built account.
+   The completeness predicate now exists (`libs.profiles.missing_setup`), so the overseer has a
+   definition of done to check against rather than a vibe.
+3. **Watch a real run on a fresh account**, and only then judge the prompts.
+
+### 6i — training is gated on a finished profile ✅ **done 2026-07-31**
+
+`train_user` refuses unless every file the setup agent owns is present and filled. A model fitted on
+a half-written profile is fitted against a rubric answering a different question, and nothing
+downstream reveals it — the labels look like labels and the metrics look reasonable. Six existing
+tests were training without a profile and now say so.
+
+Also: `filled` is derived data in a column and had drifted from its content on a live account —
+four files of real, marker-free text flagged empty. `grounding()` and `missing_setup()` read the
+content and are immune; `listing()` reports the column, so the *agent* was told its own finished
+files were still scaffolds. `repair_filled_flags()` recomputes from content; both accounts have been
+repaired.
+
+### 6j — the chat should look like a conversation (added 2026-07-31)
+
+Owner's design note, deliberately kept small: each message in its own container, the user's on the
+right and the model's on the left, with a rail of dots down the side showing what the agent is
+doing — the shape Claude Code uses for tool calls. **Identical whether the account is on OAuth or an
+API key**: the transport is not a thing a user should be able to infer from the layout. Not a
+redesign, just the containers, the sides, and the activity rail.
+
 ### 6b — close the feedback loop
 
 `record()` writes a `feedback` label at weight 5 and the webhook calls it, and production has
 **zero of them** against 3,499 `llm` labels. Two decisions:
 
-1. **The 98 imported applications.** Real applications the founder made, sitting as `applied_at`
-   timestamps that never became training data. Backfilling them is the single largest quality win
-   available — 98 true positives at 5× weight against a pool the LLM labelled — and the argument
-   against is that they predate the current profile generation. Decide, do not drift.
+1. **The 98 imported applications — decided 2026-07-31: do it.** Real applications the founder made,
+   sitting as `applied_at` timestamps that never became training data. 98 true positives at 5×
+   weight against a pool of 3,498 LLM guesses is the single largest quality win available. The
+   argument against was that they predate the current profile generation; the owner's answer is that
+   an application is the strongest signal the platform will ever get about what he actually wants,
+   and a rubric edit does not make it untrue. **A person applying to a job is ground truth; an LLM
+   scoring it is an estimate.** Backfill writes `source="feedback"` at `FEEDBACK_WEIGHT`, stamped at
+   the current generation, and the next retrain consumes them.
 2. **Prove one live tap**, end to end: tap Build CV in Telegram → a `feedback` label appears →
    a retrain consumes it. Until that has happened once, the flywheel is untested in production.
 
