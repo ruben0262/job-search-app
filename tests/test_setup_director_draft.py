@@ -210,3 +210,58 @@ def test_the_director_runs_context_first():
     text = _text(DRAFT)
     assert text.index("/setup-context") < text.index("/setup-role-angles")
     assert "The order is not a preference" in text
+
+
+# ── the context file, reverse-engineered from a real one ──────────────────────────────────────
+
+def test_the_context_draft_covers_what_a_real_context_file_contains():
+    """**Modelled on the owner's own file rather than on what seemed sensible.**
+
+    Reading its section headings found six things the first draft would have silently dropped —
+    certifications, publications, methodologies, research methods, and the per-person *rendering*
+    conventions that every CV must follow. The last group is the dangerous one: a missing header
+    location rule or spelling convention does not fail, it produces a confidently wrong document.
+    """
+    text = _prose(CONTEXT)
+
+    for topic in ("certification", "publication", "methodolog", "research method",
+                  "spelling", "header", "education is rendered", "application language"):
+        assert topic in text, f"a real context file has {topic} and the draft never asks"
+
+
+def test_the_context_draft_excludes_the_platforms_own_rules():
+    """A real context file mixes the person with the workflow, because in a checkout they live in
+    one document. Here the workflow half is the platform's and identical for everyone — writing it
+    per user would mean every account carrying its own copy of rules it cannot change."""
+    text = _prose(CONTEXT)
+
+    assert "not the place for how the platform works" in text
+
+
+# ── a scenario walked end to end ──────────────────────────────────────────────────────────────
+
+def test_the_directors_four_steps_produce_exactly_the_required_files():
+    """**Model the run before paying for one.** Every file the four steps claim to write, taken
+    together, must be exactly the set the trainer gates on — no more, no fewer.
+
+    A missing one strands the account at a gate it cannot pass; a spare one is a step nobody needs
+    that still costs a conversation.
+    """
+    claimed: set[str] = set()
+    for name in ("setup-context", "setup", "setup-role-angles", "setup-scorer"):
+        text = _text(name)
+        claimed |= {f for f in setup_files() if f in text}
+
+    assert claimed == set(setup_files()), (
+        f"steps claim {sorted(claimed)}; the trainer wants {sorted(setup_files())}")
+
+
+def test_the_director_never_promises_a_step_that_writes_nothing():
+    """Each step in the map must own at least one required file, or it is a conversation that
+    cannot move the account closer to being trainable."""
+    director = _text(DRAFT)
+
+    for name in ("setup-context", "setup", "setup-role-angles", "setup-scorer"):
+        assert f"/{name}" in director, f"{name} is not in the director's map"
+        owned = [f for f in setup_files() if f in _text(name)]
+        assert owned, f"/{name} is in the map but writes none of the required files"

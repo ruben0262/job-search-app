@@ -17,6 +17,7 @@
 import { useEffect, useState } from "react";
 
 import { api } from "../api";
+import { useAction } from "../ui";
 
 type Alert = {
   severity: "page" | "warn";
@@ -57,10 +58,29 @@ type AdminUser = {
   onboarded: boolean;
 };
 
+type UserDetail = {
+  user: AdminUser & { created_at: string | null; last_active_at: string | null;
+                      profile_generation: number };
+  setup: { missing: string[]; files: { name: string; kind: string; filled: boolean }[] };
+  models: {
+    version: number;
+    active: boolean;
+    n_labels: number | null;
+    trained_at: string | null;
+    metrics: { key: string; label: string; value: string | number }[];
+  }[];
+  counts: { labels: number; scored: number; applied: number; notified: number };
+};
+
 export function AdminPage() {
   const [health, setHealth] = useState<Health | null>(null);
   const [users, setUsers] = useState<AdminUser[] | null>(null);
+  const [detail, setDetail] = useState<UserDetail | null>(null);
   const [failed, setFailed] = useState(false);
+
+  const openUser = useAction(async (id: string) => {
+    setDetail(await api.get<UserDetail>(`/admin/users/${id}`));
+  });
 
   useEffect(() => {
     Promise.all([
@@ -119,6 +139,69 @@ export function AdminPage() {
       </dl>
 
       <p className="kicker">Queue</p>
+      {detail ? (
+        <div className="card" style={{ marginBottom: "1.5rem" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+            <h2 style={{ margin: 0 }}>{detail.user.email}</h2>
+            <button type="button" className="secondary small-btn" onClick={() => setDetail(null)}>
+              Close
+            </button>
+          </div>
+          <p className="facts">
+            {detail.user.status}
+            {detail.user.active ? "" : " · paused"} · telegram {detail.user.telegram} · profile
+            generation {detail.user.profile_generation} ·{" "}
+            {detail.counts.labels.toLocaleString()} labels ·{" "}
+            {detail.counts.scored.toLocaleString()} scored ·{" "}
+            {detail.counts.applied.toLocaleString()} applied ·{" "}
+            {detail.counts.notified.toLocaleString()} delivered
+          </p>
+
+          {/* Setup completeness by the same predicate the trainer refuses on, so "their setup looks
+              finished but training is refused" cannot happen without this saying why. */}
+          <p className={detail.setup.missing.length ? "error" : "facts"}>
+            {detail.setup.missing.length
+              ? `Setup incomplete — missing or unfilled: ${detail.setup.missing.join(", ")}. Training is refused until these exist.`
+              : "Setup complete — every required profile file is written."}
+          </p>
+
+          {detail.models[0] ? (
+            <div className="table-scroll">
+              <table className="history">
+                <thead>
+                  <tr>
+                    <th>Version</th>
+                    <th>Trained</th>
+                    <th>Labels</th>
+                    {detail.models[0].metrics.map((metric) => (
+                      <th key={metric.key}>{metric.label}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {detail.models.map((entry) => (
+                    <tr key={entry.version} className={entry.active ? "on" : undefined}>
+                      <td>
+                        v{entry.version}
+                        {entry.active ? <span className="pill">live</span> : null}
+                      </td>
+                      <td>{entry.trained_at ? new Date(entry.trained_at).toLocaleDateString() : "—"}</td>
+                      <td>{entry.n_labels?.toLocaleString() ?? "—"}</td>
+                      {detail.models[0]!.metrics.map((column) => {
+                        const cell = entry.metrics.find((metric) => metric.key === column.key);
+                        return <td key={column.key}>{cell ? String(cell.value) : "—"}</td>;
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="facts">No model has ever been trained for this account.</p>
+          )}
+        </div>
+      ) : null}
+
       <table>
         <thead>
           <tr>
@@ -164,7 +247,14 @@ export function AdminPage() {
         <tbody>
           {users.map((user) => (
             <tr key={user.id}>
-              <td>{user.email}</td>
+              <td>
+                {/* An operator's two questions -- "why is this person's feed bad" and "did their
+                    setup finish" -- are both one page down, and neither is answerable from this
+                    row. */}
+                <button type="button" className="linklike" onClick={() => void openUser.run(user.id)}>
+                  {user.email}
+                </button>
+              </td>
               <td className="job-sub">
                 {user.status}
                 {user.active ? "" : " · paused"}

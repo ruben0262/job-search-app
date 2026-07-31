@@ -111,6 +111,11 @@ class SetupMessage(Base):
         Index("ix_setup_messages_conversation", "conversation_id", "id"),
         Index("ix_setup_messages_user", "user_id", "id"),
         CheckConstraint("role IN ('user', 'assistant')", name="setup_messages_role"),
-        CheckConstraint("status IN ('pending', 'streaming', 'done', 'failed')",
-                        name="setup_messages_status"),
+        # `cancelling` is the user having asked to stop and the worker not having noticed yet — it
+        # checks between tool steps, which is the only safe seam in a turn that is mid-HTTP-call.
+        # `cancelled` is a finished state and deliberately not `failed`: nothing went wrong, and
+        # showing somebody their own decision as an error is untrue.
+        CheckConstraint(
+            "status IN ('pending', 'streaming', 'done', 'failed', 'cancelling', 'cancelled')",
+            name="setup_messages_status"),
     )

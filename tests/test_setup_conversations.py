@@ -360,3 +360,109 @@ def test_setup_progress_names_the_command_that_produces_each_missing_file(api):
     assert done["complete"] is True
     assert done["may_train"] is True
     assert done["missing"] == [] and done["next_command"] is None
+
+
+# ── stopping a turn ───────────────────────────────────────────────────────────────────────────
+
+def test_stopping_a_turn_asks_rather_than_kills(api):
+    """**A stop is a request, not a kill.**
+
+    The turn runs on a worker that is usually mid-call to Anthropic, and that call cannot be
+    interrupted without abandoning a response already paid for. So the API flips the row to
+    `cancelling` and the worker notices at its next safe seam. Claiming it had stopped while it was
+    still writing files would be a lie the file panel would immediately contradict.
+    """
+    from libs.db.models import SetupMessage
+
+    http, session, user = api
+    _with_claude(session, user)
+    reply_id = http.post("/setup/message", json={"message": "hi"}).json()["message_id"]
+
+    body = http.post(f"/setup/message/{reply_id}/stop").json()
+    assert body["status"] == "cancelling"
+    assert session.get(SetupMessage, reply_id).status == "cancelling"
+
+
+def test_stopping_a_finished_turn_is_not_an_error(api):
+    """A stop arriving a second after the reply landed is the normal race. Answering it with a 409
+    would put a red banner on a screen where nothing went wrong."""
+    from libs.db.models import SetupMessage
+
+    http, session, user = api
+    _with_claude(session, user)
+    reply_id = http.post("/setup/message", json={"message": "hi"}).json()["message_id"]
+    row = session.get(SetupMessage, reply_id)
+    row.status = "done"
+    session.flush()
+
+    response = http.post(f"/setup/message/{reply_id}/stop")
+    assert response.status_code == 200
+    assert response.json()["status"] == "done"
+    assert session.get(SetupMessage, reply_id).status == "done", "a finished turn is not reopened"
+
+
+def test_another_users_turn_cannot_be_stopped(api):
+    """Ownership is checked on the row, not inferred from the id being hard to guess."""
+    from libs.db.models import SetupConversation, SetupMessage, User
+
+    http, session, _ = api
+    stranger = User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active")
+    session.add(stranger)
+    session.flush()
+    chat = SetupConversation(user_id=stranger.id)
+    session.add(chat)
+    session.flush()
+    theirs = SetupMessage(user_id=stranger.id, conversation_id=chat.id, role="assistant",
+                          content="", agent="setup", status="pending")
+    session.add(theirs)
+    session.flush()
+
+    assert http.post(f"/setup/message/{theirs.id}/stop").status_code == 404
+    assert session.get(SetupMessage, theirs.id).status == "pending"
+
+
+def test_a_stopped_turn_keeps_what_it_had_already_written(api):
+    """**A stop is not a rollback.** Files the turn wrote before the stop are the user's — they were
+    written on their credential and are already in the profile — so the row keeps its text and its
+    tool calls, and lands in `cancelled` rather than `failed`: nothing went wrong."""
+    from sqlalchemy import text
+
+    from libs.agents.loop import run_turn
+    from libs.db.models import SetupMessage
+
+    http, session, user = api
+    _with_claude(session, user)
+    conversation_id = http.get("/setup").json()["conversation_id"]
+
+    reply = SetupMessage(user_id=user.id, conversation_id=uuid.UUID(conversation_id),
+                         role="assistant", content="", agent="setup", status="pending")
+    session.add(reply)
+    session.flush()
+
+    class StopsAfterOneTool:
+        """Writes a file, and the user presses stop while that call is still in flight — which is
+        when somebody actually presses it, having seen the reply start."""
+
+        def __init__(self):
+            self.calls = 0
+
+        def complete_tools(self, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                # The stop request arrives mid-call, from the API, in its own transaction.
+                session.execute(
+                    text("UPDATE setup_messages SET status = 'cancelling' WHERE id = :i")
+                    .bindparams(i=reply.id))
+                return {"text": "Writing your profile.",
+                        "content": [{"type": "text", "text": "Writing your profile."}],
+                        "tool_uses": [{"id": "t1", "name": "write_profile_file",
+                                       "input": {"name": "context.md",
+                                                 "content": "# Context\n\nReal content."}}]}
+            raise AssertionError("the loop called the model again after the stop")
+
+    result = run_turn(session, user.id, client=StopsAfterOneTool(), message="hi",
+                      conversation_id=uuid.UUID(conversation_id), reply_row=reply)
+
+    assert result["cancelled"] is True
+    assert session.get(SetupMessage, reply.id).status == "cancelled"
+    assert "context.md" in result["files_written"], "work done before the stop is kept"

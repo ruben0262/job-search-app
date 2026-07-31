@@ -2000,3 +2000,83 @@ td.num {
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
+
+/* ── chat: steps, working state ──────────────────────────────────────────────────────────────── */
+
+/* One container per step of a reply, on a rail. A turn that does three things reads as three
+   things rather than one paragraph that happens to be long. */
+.step {
+  position: relative;
+  padding-left: 1.1rem;
+}
+
+.step + .step {
+  margin-top: 0.55rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid var(--hairline);
+}
+
+/* The rail runs the height of the step; the dot sits on it. Drawn per step rather than once down
+   the message so a single-step reply gets no stray line. */
+.step::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 0.75rem;
+  bottom: 0;
+  width: 1px;
+  background: var(--hairline);
+}
+
+.step:last-child::before {
+  bottom: 0.4rem;
+}
+
+.step-dot {
+  position: absolute;
+  left: 0;
+  top: 0.55rem;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--dim);
+}
+
+/* Bottom-left, beside the composer: the one place that says something is running, and the one
+   place to end it. */
+.working {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin: 0 0 0.6rem;
+}
+
+.small-btn {
+  padding: 0.25rem 0.8rem;
+  font-size: 0.75rem;
+}
+
+.turn-stopped {
+  display: block;
+  margin-top: 0.6rem;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+/* A table cell that opens a detail view. A button for the semantics, a link for the look. */
+.linklike {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.linklike:hover:not([disabled]) {
+  color: var(--score);
+  transform: none;
+}

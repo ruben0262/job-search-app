@@ -29,15 +29,36 @@ sentence that reads well and says less.
    field entirely, the job they took to pay rent. State honestly which are minor; do not omit them.
 4. **Education**, including the thesis or final project if there was one, and what it was really
    about.
-5. **Projects, side work and open source** — what they built, why, what it taught them, whether it
+5. **Technical skills**, grouped the way they think about them — languages, frameworks, domains,
+   tools. Then, separately, **methodologies and ways of working** (Agile, TDD, code review, CI,
+   pair programming) and, if their field has them, **research methods and analysis techniques**.
+   These are separate lists because a posting asks for them separately.
+6. **Certifications and publications** — name, issuer and year for each; title, venue and year for
+   papers. Easy to forget in an interview and impossible to invent later, so capture them now even
+   if the person shrugs at them.
+7. **Projects, side work and open source** — what they built, why, what it taught them, whether it
    is still running.
-6. **Anything else with responsibility in it** — volunteering, teaching, mentoring, societies,
+8. **Anything else with responsibility in it** — volunteering, teaching, mentoring, societies,
    competitions, organising things.
-7. **What they are looking for** — role types in priority order, seniority, what "good" looks like
+9. **What they are looking for** — role types in priority order, seniority, what "good" looks like
    to them, and the deal-breakers. Be specific about the deal-breakers; they are what stop a bad
    match reaching them.
-8. **Constraints** — location, remote/hybrid, notice period, visa, salary expectations if they will
-   say, and anything they will not do.
+10. **Constraints** — location and geographic scope, remote/hybrid, notice period, visa, salary
+    expectations if they will say, and anything they will not do.
+11. **Document conventions — the rules every CV and cover letter must follow for this person.**
+    These are decisions, not facts, and each one silently produces a wrong document if it is
+    missing. Ask for each explicitly:
+    - **Spelling** — British or American, and any words they insist on.
+    - **What appears in the CV header as their location** — where they live, where they are
+      targeting, or nothing. A header naming the wrong city loses applications before anyone reads
+      further.
+    - **Which spoken languages are listed, and how** ("English (Native), German (C1)"), and whether
+      the list appears on the cover letter too.
+    - **How an experience entry's title is written** — role only, role and employer, and whether a
+      contract or a placement is labelled as one.
+    - **How education is rendered** — dates or no dates, thesis shown or not, grade shown or not.
+    - **The application language rule** — do they apply in English everywhere, or in the local
+      language when the posting is in it.
 
 ## How to get it
 
@@ -65,6 +86,13 @@ Documents disagree — different titles, different dates, a role on LinkedIn tha
 **Never pick for them.** List the conflicts plainly, ask which is right, and write the answer. A
 guess here becomes a fabricated claim on a real application, which is the one failure this whole
 system exists to prevent.
+
+## What does **not** go in it
+
+This file is about the person. It is not the place for how the platform works, how a CV is written,
+or what the pipeline does — those are the platform's own instructions and they are the same for
+everybody. If you find yourself writing a rule about *the system*, stop: the only rules that belong
+here are the ones in section 11, which are decisions about **this person's documents**.
 
 ## Rules
 

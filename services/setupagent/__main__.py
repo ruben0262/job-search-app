@@ -42,7 +42,9 @@ def handle(session, job: QueueJob) -> None:
         # broken — the user threw the question away themselves.
         logger.info("setup: reply row %s is gone; dropping the turn", reply_id)
         return
-    if reply_row.status in ("done", "failed"):
+    # `cancelled` joins the finished states: at-least-once delivery means a stopped turn can be
+    # redelivered, and re-running it would spend the credential the stop was pressed to save.
+    if reply_row.status in ("done", "failed", "cancelled"):
         # A retry after the turn already finished. At-least-once delivery means this is normal, and
         # re-running it would spend the user's money twice for one question.
         logger.info("setup: reply row %s is already %s; nothing to do", reply_id, reply_row.status)

@@ -19,6 +19,30 @@ import { api } from "../api";
 import { Markdown } from "../markdown";
 import { Error, useAction } from "../ui";
 
+/** Split a reply into the steps it is made of.
+ *
+ *  A blank line is what the model already uses to separate one thing it did from the next, so this
+ *  reads that rather than inventing a protocol. Fenced code blocks are left whole — a blank line
+ *  inside one is part of the code, not a boundary — which is the only case where the naive split
+ *  gets it wrong and produces a container holding half a snippet. */
+function steps(text: string): string[] {
+  const blocks: string[] = [];
+  let current: string[] = [];
+  let fenced = false;
+
+  for (const line of text.split("\n")) {
+    if (line.trimStart().startsWith("```")) fenced = !fenced;
+    if (!fenced && line.trim() === "") {
+      if (current.length) blocks.push(current.join("\n"));
+      current = [];
+      continue;
+    }
+    current.push(line);
+  }
+  if (current.length) blocks.push(current.join("\n"));
+  return blocks.length ? blocks : [text];
+}
+
 /** What setup still needs. Computed server-side from the files themselves, so "done" is a fact
  *  about the database rather than something an agent decided about itself. */
 type Progress = {
@@ -32,9 +56,12 @@ type Progress = {
 };
 
 type Message = {
+  id?: number;
   role: "user" | "assistant";
   content: string;
-  status: "pending" | "streaming" | "done" | "failed";
+  // `cancelling` is the stop requested and the worker not having noticed yet; `cancelled` is a
+  // finished state, deliberately not `failed` — nothing went wrong.
+  status: "pending" | "streaming" | "done" | "failed" | "cancelling" | "cancelled";
   error: string | null;
   files_written: string[];
   at: string | null;
@@ -170,9 +197,12 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
   // **The turn runs on a worker, so the page's job is to watch.** While any message is unfinished
   // this re-reads the transcript every second and a half, which is what makes a reply appear as it
   // is written — and what makes leaving and coming back show the same thing rather than nothing.
-  const inFlight = state?.messages.some(
-    (message) => message.status === "pending" || message.status === "streaming",
+  // `cancelling` counts as in flight: the worker has not noticed the stop yet, so the turn is
+  // still running and the page must keep polling until it settles.
+  const inFlight = state?.messages.some((message) =>
+    ["pending", "streaming", "cancelling"].includes(message.status),
   );
+  const stopping = state?.messages.some((message) => message.status === "cancelling");
   const openConversation = state?.conversation_id;
   useEffect(() => {
     if (!inFlight || !openConversation) return;
@@ -218,6 +248,18 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
     await load(state?.conversation_id);
     await loadProgress();
     onChanged();
+  });
+
+  // **Stopping is a request, not a kill.** The worker is usually mid-call and notices between tool
+  // steps, so the button reports "stopping" until the row actually settles — claiming otherwise
+  // would be contradicted by the file panel a second later.
+  const stop = useAction(async () => {
+    const running = state?.messages.find(
+      (message) => message.role === "assistant" && ["pending", "streaming"].includes(message.status),
+    );
+    if (!running?.id) return;
+    await api.post(`/setup/message/${running.id}/stop`).catch(() => undefined);
+    await load(state?.conversation_id);
   });
 
   const saveFile = useAction(async (name: string, content: string) => {
@@ -386,12 +428,26 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
                     </span>
                   ) : (
                     <>
-                      <Markdown text={message.content} />
+                      {/* **One container per step, not one per turn.** A reply that alternates a
+                          line, a paragraph and a line is several things the agent did, and running
+                          them together reads as an undifferentiated wall. The model separates them
+                          with blank lines already; this renders that separation. */}
+                      {steps(message.content).map((step, position) => (
+                        <div key={position} className="step">
+                          <span className="step-dot" aria-hidden="true" />
+                          <Markdown text={step} />
+                        </div>
+                      ))}
                       {/* A caret while text is still arriving: the difference between "writing" and
                           "stopped mid-sentence". */}
                       {message.status === "streaming" ? <span className="caret" /> : null}
                     </>
                   )}
+                  {message.status === "cancelled" ? (
+                    <span className="turn-stopped">
+                      You stopped this. Anything it had already written is saved.
+                    </span>
+                  ) : null}
                   {message.status === "failed" && message.error ? (
                     <span className="turn-error">{message.error}</span>
                   ) : null}
@@ -421,6 +477,28 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
         </div>
 
         <Error>{send.error}</Error>
+        {/* **Bottom-left, next to the composer, not up in the transcript.** A long turn's only
+            sign of life was a caret somewhere above the fold; a user who had scrolled could not
+            tell working from stuck. Stop lives here too, because the two belong together: this is
+            the one place that says something is running and the one place to end it. */}
+        {inFlight ? (
+          <div className="working">
+            <span className="typing" aria-hidden="true">
+              <i />
+              <i />
+              <i />
+            </span>
+            <span className="muted small">
+              {stopping ? "Stopping — it will finish the step it is on." : "Working…"}
+            </span>
+            {!stopping ? (
+              <button type="button" className="secondary small-btn"
+                      disabled={stop.busy} onClick={() => void stop.run()}>
+                Stop
+              </button>
+            ) : null}
+          </div>
+        ) : null}
         <form
           className="composer"
           onSubmit={(event) => {

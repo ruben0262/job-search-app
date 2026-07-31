@@ -138,6 +138,27 @@ def run_turn(session: Session, user_id: _uuid.UUID, *, client, message: str,
             on_text(chunk)
 
     for step in range(1, MAX_TOOL_ITERATIONS + 1):
+        # **The stop is checked here, between tool steps, and nowhere else.** Mid-call there is an
+        # open HTTP request to Anthropic that cannot be interrupted without abandoning a response
+        # the user has already paid for; between steps everything so far is committed and the next
+        # call has not been made. `session.refresh` because the API set the flag in a different
+        # transaction and this session would otherwise keep serving its own cached row.
+        session.refresh(reply_row)
+        if reply_row.status == "cancelling":
+            reply_row.content = "\n\n".join([*reply_parts, "".join(streaming)]).strip()
+            reply_row.tool_calls = executed or None
+            reply_row.status = "cancelled"
+            session.commit()
+            logger.info("setup: %s stopped by the user after %d step(s)", user_id, step - 1)
+            # Same shape as the normal return, plus the flag — a caller that ignores `cancelled`
+            # still gets the partial reply and the files that really were written, because they
+            # were: a stopped turn keeps its work rather than rolling it back.
+            return {"reply": reply_row.content,
+                    "tools_run": [call["name"] for call in executed],
+                    "files_written": _written(executed),
+                    "scoring_edits": tools.scoring_edits,
+                    "cancelled": True}
+
         streaming.clear()
         answer = client.complete_tools(model=SETUP_MODEL, system=prompt, messages=messages,
                                        tools=TOOLS, max_tokens=MAX_TOKENS, on_text=_stream)

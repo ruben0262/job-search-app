@@ -131,7 +131,8 @@ def conversation(db: Session = Depends(get_db),
         "max_conversations": MAX_CONVERSATIONS,
         # `status` is what tells the page whether to keep polling: a `pending` or `streaming` row
         # is a turn still running somewhere, and it renders as the thinking state.
-        "messages": [{"role": row.role, "content": row.content, "agent": row.agent,
+        # `id` so the page can name the running turn when the user presses stop.
+        "messages": [{"id": row.id, "role": row.role, "content": row.content, "agent": row.agent,
                       "status": row.status, "error": row.error,
                       "files_written": _written(row.tool_calls),
                       "at": row.created_at.isoformat() if row.created_at else None}
@@ -237,6 +238,34 @@ def send(body: Turn, db: Session = Depends(get_db),
                                            "agent": body.agent})
     audit(logger, "setup.turn_queued", user=user_id, agent=body.agent, conversation=current.id)
     return {"conversation_id": str(current.id), "message_id": reply.id, "status": "queued"}
+
+
+@router.post("/message/{message_id}/stop")
+def stop_turn(message_id: int, db: Session = Depends(get_db),
+              user_id: _uuid.UUID = Depends(current_user)) -> dict:
+    """Ask the running turn to stop.
+
+    **A request, not a kill.** The turn is on a worker that is usually mid-call to Anthropic, and
+    that call cannot be interrupted without abandoning a response already paid for. So this flips
+    the row to `cancelling` and the worker notices between tool steps, where everything so far is
+    committed and the next call has not been made. The user sees "stopping…" until it does, which
+    is honest — claiming it had stopped while it was still writing files would be a lie the file
+    panel would immediately contradict.
+
+    Idempotent, and safe on a turn that has already finished: a stop arriving one second after the
+    reply landed is the normal race, not an error, and answering it with a 409 would put a red
+    banner on a screen where nothing went wrong.
+    """
+    row = db.get(SetupMessage, message_id)
+    if row is None or row.user_id != user_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="no such message")
+
+    if row.status in ("done", "failed", "cancelled"):
+        return {"status": row.status, "detail": "That turn had already finished."}
+
+    row.status = "cancelling"
+    audit(logger, "setup.turn_stop_requested", user=user_id, message=message_id)
+    return {"status": "cancelling", "detail": "Stopping — it will finish the step it is on."}
 
 
 @router.get("/progress")
