@@ -14,6 +14,7 @@
 """
 from __future__ import annotations
 
+import logging
 import uuid as _uuid
 from collections.abc import Sequence
 from datetime import timedelta
@@ -25,10 +26,30 @@ from sqlalchemy.orm import Session
 from libs.db.models import QueueJob, User
 from libs.db.models.queue import CLAIM_TIMEOUT_MIN, LANES, MAX_ATTEMPTS
 
+logger = logging.getLogger(__name__)
+
 # Lanes where one user can enqueue a burst, so FIFO would let them occupy the pool
 # (`SCHEDULER_PLAN.md` §5). `notify` and `docgen` are naturally spread and stay FIFO — the fairness
 # subquery is not free, and paying for it where it changes nothing is just latency.
 FAIR_LANES = frozenset({"train", "label"})
+
+
+def lane_paused(session: Session, lane: str) -> bool:
+    """Whether an operator has paused this lane (`deploy/scripts/pipeline_switch.py`).
+
+    The table is created on demand by that script and will usually not exist, so a missing table is
+    "nothing is paused" rather than an error. Reading it must never be the thing that breaks
+    enqueuing — a switch whose absence stops the platform is worse than no switch.
+
+    **Asked with `to_regclass` rather than by catching the failure.** A missing relation aborts the
+    surrounding transaction in Postgres, and the obvious `except` then has to roll back to recover
+    — which throws away the caller's uncommitted work. That is not a hypothetical: it deleted the
+    user row out from under thirty-four tests before this was written the other way round.
+    """
+    if session.scalar(text("SELECT to_regclass('lane_pauses')")) is None:
+        return False
+    return session.scalar(
+        text("SELECT true FROM lane_pauses WHERE lane = :lane"), {"lane": lane}) is True
 
 
 def enqueue(session: Session, lane: str, user_id: _uuid.UUID, *,
@@ -41,6 +62,12 @@ def enqueue(session: Session, lane: str, user_id: _uuid.UUID, *,
     promise that.
     """
     _check_lane(lane)
+    if lane_paused(session, lane):
+        # Refused at the door rather than claimed and dropped. A paused lane must not accumulate
+        # work it will process in a burst on resume — that is how a pause turns into an incident of
+        # its own — and the caller treats `None` as "already pending", which is the right shape.
+        logger.info("queue: %s is paused, not enqueuing", lane)
+        return None
     result = session.execute(
         pg_insert(QueueJob)
         .values(lane=lane, user_id=user_id, dedup_key=dedup_key,

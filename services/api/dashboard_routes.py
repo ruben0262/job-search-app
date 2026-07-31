@@ -26,7 +26,7 @@ from libs.corpus import salary
 from libs.db.models import CorpusJob, User, UserDocument, UserJobState, UserLabel, UserModel
 from libs.onboarding import onboarding_state
 from libs.scoring.rules import score_job
-from libs.scoring.thresholds import DEFAULT_CUTOFF
+from libs.scoring.thresholds import cutoff_for
 from libs.tenant.repository import TenantRepository
 from services.api.deps import current_user, get_db
 
@@ -177,7 +177,7 @@ def feed(*, db: Session = Depends(get_db), user_id: _uuid.UUID = Depends(current
     sources = sorted(db.scalars(select(CorpusJob.source).distinct()).all())
 
     if model is not None:
-        floor = DEFAULT_CUTOFF if min_score is None else min_score
+        floor = cutoff_for(db, user_id) if min_score is None else min_score
         conditions = [UserJobState.user_id == user_id,
                       UserJobState.score.isnot(None),
                       UserJobState.score >= floor,

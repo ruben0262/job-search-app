@@ -108,18 +108,160 @@ def build_training_set(session: Session, user_id: _uuid.UUID) -> TrainingSet:
         embedder_version=rows[0].embedding_version)
 
 
-def _default_fit(data: TrainingSet) -> dict:
-    """Ridge regression over embedding + features. Deliberately unremarkable.
+# A label at or above this counts as "fit" when training. **Not the delivery cutoff** — the two
+# were conflated and it cost the platform its feed. This is the question the classifier is asked;
+# the operating point is tuned separately, below, and comes out lower.
+FIT_THRESHOLD = 60.0
 
-    The model class is not where the quality is — the rubric and the labels are. A linear head over
-    a good embedding is what the reference instance settled on, and it trains in seconds on a CPU
-    the notifier also has to share.
+# What fraction of the genuinely good jobs the operating point should catch. The reference's
+# default, and the reason its live cutoff is 44 rather than a round number: recall is what a job
+# seeker cares about, because a missed match is invisible while a weak one costs a glance.
+TARGET_RECALL = 0.65
+
+# Below this many labels, or with too few of either class, a bake-off is theatre: five-fold CV over
+# eight positives measures nothing. A new account uses the simple head until its cold-start pool
+# has been labelled.
+MIN_LABELS_FOR_BAKEOFF = 60
+MIN_PER_CLASS = 8
+
+
+def _classifiers() -> dict:
+    """The candidate heads, class-balanced and emitting calibrated probabilities.
+
+    Calibration is what makes a probability threshold mean anything: `SVC` and `LinearSVC` have no
+    native `predict_proba`, and `CalibratedClassifierCV` is the supported replacement for the
+    deprecated `probability=True`. Ported from the reference.
     """
-    from sklearn.linear_model import Ridge  # noqa: PLC0415 - only the trainer image has sklearn
+    from sklearn.calibration import CalibratedClassifierCV  # noqa: PLC0415
+    from sklearn.ensemble import HistGradientBoostingClassifier  # noqa: PLC0415
+    from sklearn.linear_model import LogisticRegression  # noqa: PLC0415
+    from sklearn.pipeline import make_pipeline  # noqa: PLC0415
+    from sklearn.preprocessing import StandardScaler  # noqa: PLC0415
+    from sklearn.svm import SVC, LinearSVC  # noqa: PLC0415
 
-    estimator = Ridge(alpha=1.0)
-    estimator.fit(data.matrix, data.targets, sample_weight=data.weights)
-    return {"model": estimator, "task": "regress", "model_type": "ridge"}
+    return {
+        "logreg": make_pipeline(StandardScaler(),
+                                LogisticRegression(max_iter=2000, class_weight="balanced")),
+        "linsvc": make_pipeline(StandardScaler(),
+                                CalibratedClassifierCV(LinearSVC(class_weight="balanced"), cv=3)),
+        "svc": make_pipeline(StandardScaler(),
+                             CalibratedClassifierCV(SVC(class_weight="balanced"), cv=3)),
+        "histgbm": HistGradientBoostingClassifier(class_weight="balanced"),
+    }
+
+
+def _precision_recall(actual, predicted) -> tuple[float, float, float]:
+    """Precision, recall and F1 for one boolean prediction. Ported rather than imported so a
+    zero-denominator is a zero rather than a warning and a NaN."""
+    tp = int((actual & predicted).sum())
+    fp = int((~actual & predicted).sum())
+    fn = int((actual & ~predicted).sum())
+    precision = tp / (tp + fp) if (tp + fp) else 0.0
+    recall = tp / (tp + fn) if (tp + fn) else 0.0
+    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) else 0.0
+    return precision, recall, f1
+
+
+def _default_fit(data: TrainingSet) -> dict:
+    """Bake off the candidate heads and deploy the winner, as the reference does.
+
+    **This replaced a fixed `Ridge` regressor, and the difference was the platform having a feed.**
+    A regression fitted on labels that are mostly low pulls every prediction toward the mean, so
+    almost nothing reached the delivery cutoff — and that cutoff had itself been taken from the
+    *label* threshold rather than tuned. The reference does neither: it selects among four
+    calibrated classifiers and reports a probability, which spreads across the range.
+
+    Selection is on **cross-validated average precision**, not ROC-AUC and never the test score. At
+    roughly a quarter positives ROC-AUC is optimistic and rewards ranking nobody exploits, while
+    average precision is the honest imbalanced-retrieval number. Choosing on the held-out split
+    would be selection-on-test, so that split is read once, for the winner, as an honest estimate.
+
+    Falls back to the simple head when there is too little to bake off. That path is a new account's
+    first train, and it is not a degraded mode so much as the only defensible one.
+    """
+    import numpy as np  # noqa: PLC0415
+    from sklearn.linear_model import Ridge  # noqa: PLC0415
+
+    targets = np.asarray(data.targets, dtype=np.float64)
+    labels = (targets >= FIT_THRESHOLD).astype(int)
+    positives, negatives = int(labels.sum()), int(len(labels) - labels.sum())
+
+    if (len(targets) < MIN_LABELS_FOR_BAKEOFF
+            or positives < MIN_PER_CLASS or negatives < MIN_PER_CLASS):
+        estimator = Ridge(alpha=1.0)
+        estimator.fit(data.matrix, targets, sample_weight=data.weights)
+        return {"model": estimator, "task": "regress", "model_type": "ridge",
+                "decision_cutoff": int(FIT_THRESHOLD), "keep_cutoff": 45,
+                "metrics": {"note": "too few labels to bake off",
+                            "positives": positives, "negatives": negatives}}
+
+    return _bake_off(data, labels, positives, negatives)
+
+
+def _bake_off(data: TrainingSet, labels, positives: int, negatives: int) -> dict:
+    """Select a head on CV average precision, then tune the cutoff on out-of-fold probabilities."""
+    import numpy as np  # noqa: PLC0415
+    from sklearn.metrics import average_precision_score, roc_auc_score  # noqa: PLC0415
+    from sklearn.model_selection import cross_val_predict, train_test_split  # noqa: PLC0415
+
+    matrix = np.asarray(data.matrix)
+    train_idx, test_idx = train_test_split(
+        np.arange(len(labels)), test_size=0.2, random_state=42, stratify=labels)
+    y_train, y_test = labels[train_idx], labels[test_idx]
+
+    scored: dict[str, dict] = {}
+    for name, estimator in _classifiers().items():
+        try:
+            oof = cross_val_predict(estimator, matrix[train_idx], y_train,
+                                    cv=5, method="predict_proba")[:, 1]
+            fitted = estimator.fit(matrix[train_idx], y_train)
+            proba = fitted.predict_proba(matrix[test_idx])[:, 1]
+        except Exception as exc:                                  # noqa: BLE001
+            # One head failing to converge is not the bake-off failing. Logged, so a candidate that
+            # never wins because it never ran is visible rather than quietly absent.
+            logger.warning("trainer: %s failed to fit (%s)", name, type(exc).__name__)
+            continue
+        scored[name] = {"oof": oof, "proba": proba,
+                        "cv_ap": float(average_precision_score(y_train, oof)),
+                        "test_ap": float(average_precision_score(y_test, proba)),
+                        "test_auc": float(roc_auc_score(y_test, proba))}
+
+    if not scored:
+        raise NotEnoughData("no classifier could be fitted on this label set")
+
+    best_name = max(scored, key=lambda name: scored[name]["cv_ap"])
+    best = scored[best_name]
+
+    # The operating point, from out-of-fold probabilities only. The highest cutoff that still holds
+    # the target recall: higher means fewer and better flags, and the sweep walks up rather than
+    # down so the answer is the strictest one that still catches what the user came for.
+    actual = y_train.astype(bool)
+    cutoff = int(FIT_THRESHOLD)
+    for threshold in range(20, 91):
+        _precision, recall, _f1 = _precision_recall(actual, best["oof"] >= threshold / 100)
+        if recall >= TARGET_RECALL:
+            cutoff = threshold
+    precision, recall, f1 = _precision_recall(actual, best["oof"] >= cutoff / 100)
+
+    # Refit on everything, including the held-out split. That split existed to produce an honest
+    # estimate, and a deployed model that never saw a fifth of the labels is worse for no reason.
+    final = _classifiers()[best_name].fit(matrix, labels)
+    logger.info("trainer: %s selected (cv-AP %.2f, test-AP %.2f), cutoff %d at recall %.0f%%",
+                best_name, best["cv_ap"], best["test_ap"], cutoff, recall * 100)
+
+    return {
+        "model": final, "task": "classify", "model_type": best_name,
+        "decision_cutoff": cutoff,
+        "keep_cutoff": max(cutoff - 15, 1),
+        "metrics": {
+            "model_type": best_name, "cv_ap": round(best["cv_ap"], 3),
+            "test_ap": round(best["test_ap"], 3), "test_auc": round(best["test_auc"], 3),
+            "cutoff": cutoff, "oof_precision": round(precision, 3),
+            "oof_recall": round(recall, 3), "oof_f1": round(f1, 3),
+            "positives": positives, "negatives": negatives,
+            "candidates": {name: round(row["cv_ap"], 3) for name, row in scored.items()},
+        },
+    }
 
 
 def train_user(session: Session, user_id: _uuid.UUID, *,
@@ -139,8 +281,11 @@ def train_user(session: Session, user_id: _uuid.UUID, *,
     data = build_training_set(session, user_id)
     blob = dict(fit(data))
     blob.setdefault("task", "regress")
-    blob["decision_cutoff"] = cutoff
-    blob["keep_cutoff"] = max(cutoff - 15, 1)
+    # **The cutoff comes from the fit, not from a constant.** It is an operating point tuned on
+    # out-of-fold predictions; the reference instance runs at 44, nowhere near the 60 this defaulted
+    # to — which was the label threshold wearing the wrong hat.
+    blob.setdefault("decision_cutoff", cutoff)
+    blob.setdefault("keep_cutoff", max(int(blob["decision_cutoff"]) - 15, 1))
     blob["n_train"] = len(data.targets)
 
     version = (user.model_version or 0) + 1
@@ -157,7 +302,10 @@ def train_user(session: Session, user_id: _uuid.UUID, *,
         embedder_model=data.embedder_model, embedder_dim=data.embedder_dim,
         embedder_version=data.embedder_version,
         n_labels=len(data.targets), is_active=True,
-        metrics={"n_train": len(data.targets)}))
+        # Everything the fit measured, so "did this retrain help" is answerable from the row rather
+        # than from a training log nobody kept.
+        metrics={"n_train": len(data.targets), "decision_cutoff": blob["decision_cutoff"],
+                 "task": blob["task"], **(blob.get("metrics") or {})}))
     user.model_version = version
     notifylib.notify(session, user_id, notifylib.MODEL_TRAINED,
                      f"Version {version}, trained on {len(data.targets)} of your decisions. "

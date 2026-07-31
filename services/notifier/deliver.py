@@ -33,7 +33,7 @@ import libs.notify as notifylib
 from libs.contracts.config import migrate_config
 from libs.db.models import CorpusJob, User, UserConfig, UserJobState
 from libs.obs import audit
-from libs.scoring.thresholds import DEFAULT_CUTOFF
+from libs.scoring.thresholds import DEFAULT_CUTOFF, cutoff_for
 from libs.secrets import SecretsError, SecretStore, redacting
 from services.notifier.buttons import keyboard
 from services.notifier.card import FeedItem
@@ -194,6 +194,8 @@ def deliver(session: Session, user_id: _uuid.UUID, *,
     if user is None or user.telegram_status != "connected" or not user.telegram_chat_id:
         return 0
 
+    cutoff = _operating_point(session, user_id, cutoff)
+
     # **The user's own cap, not the platform ceiling.** `max_notifications_per_day` is in the config
     # schema, is shown on the dashboard ("At most 20 messages a day"), and was read by nothing: the
     # default parameter meant every account was capped at 100 regardless. One account asked for 20
@@ -256,6 +258,19 @@ def deliver(session: Session, user_id: _uuid.UUID, *,
 
     _log_freshness(session, user_id, items)
     return len(items)
+
+
+def _operating_point(session: Session, user_id: _uuid.UUID, requested: float) -> float:
+    """The score this user's jobs are sent at.
+
+    The model's own tuned value, not the platform constant — a caller that passed something else
+    explicitly still wins, which is how a test pins one. The constant is the label threshold that
+    decides what counts as "fit" while *training*, and using it to decide delivery is what emptied
+    the feed: a model asked for 60 when its tuned answer was 44 sends almost nothing.
+    """
+    if requested != DEFAULT_CUTOFF:
+        return requested
+    return cutoff_for(session, user_id)
 
 
 def _log_freshness(session: Session, user_id: _uuid.UUID, items: list[FeedItem]) -> None:
