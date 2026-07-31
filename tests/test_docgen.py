@@ -249,14 +249,26 @@ def test_a_missing_pdf_is_a_compile_failure_not_a_silent_empty_file(tmp_path, mo
 def test_a_real_chrome_turns_the_rendered_cv_into_a_readable_pdf(tmp_path):
     """The one test that exercises the actual browser. Skipped where there is none, and the docgen
     image is built with one — so this is the gate that says the layout survives a real render
-    rather than that the strings were assembled correctly."""
+    rather than that the strings were assembled correctly.
+
+    **It renders a finished document, not the bare template.** It used to render whatever
+    `base_document()` produced, which was a CV filled from a schema; when that renderer was deleted
+    on 2026-07-31 the helper started returning the *unfilled* layout — markers, no prose — and the
+    PDF came back with 34 extractable characters. It failed only in CI, because a machine without
+    Chrome skips this and never sees it. A document with real text in it is the point: extracting
+    nothing from an empty page proves nothing about whether a real CV reads.
+    """
     source = tmp_path / "cv.html"
-    source.write_text(base_document(), encoding="utf-8")
+    source.write_text(build.tailor(FakeClient(), PROFILE, base_document(),
+                                   build.job_context(FakeJob())), encoding="utf-8")
 
     report = pdf.inspect_pdf(pdf.compile_pdf(source, tmp_path / "cv.pdf"))
 
     assert report.pages == 1
-    assert report.chars > 100
+    assert report.chars > 100, "the rendered page produced no extractable text"
+    # `issues` is the ATS readability check; an empty page trips several of them, so a clean report
+    # is a stronger statement than the character count alone.
+    assert report.ats_ok, report.issues
 
 
 def test_an_unparseable_pdf_reports_no_page_count_rather_than_raising(tmp_path):
