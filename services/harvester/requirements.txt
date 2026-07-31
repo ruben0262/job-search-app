@@ -12,8 +12,11 @@ SQLAlchemy>=2.0
 psycopg[binary]>=3.2
 pydantic>=2.10         # libs/contracts config schema
 
-# Added with the source adapters in step 4c, not before:
-#   jobspy             LinkedIn / Indeed / Google tier
+# The JobSpy tier — LinkedIn, Indeed, Google Jobs. Listed as "added with the source adapters in
+# step 4c, not before" and then not added, which is why those three sources could not run at all:
+# the adapters were ported, the config existed, and the import would have failed on first call.
+# Same pin as the reference.
+python-jobspy>=1.1.80
 
 # The description pass (`libs/corpus/postings.py`). It degrades to a regex tag-strip without this,
 # which is not good enough to ship: the JSON-LD path is what gets the clean JD instead of the page's
