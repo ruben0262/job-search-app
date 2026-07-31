@@ -25,6 +25,8 @@ import logging
 import os
 import sys
 
+from sqlalchemy.exc import OperationalError
+
 from libs.contracts.embedder import EmbedderClient, EmbedderVersion
 from libs.corpus.repository import CorpusRepository
 from libs.db.session import session_scope
@@ -38,6 +40,11 @@ from services.harvester.linkedin import run_for_due_users as run_linkedin
 from services.harvester.source_config import build_source_configs
 
 logger = logging.getLogger("harvester")
+
+# Consecutive failed batches before `--embed-only` stops. High enough to ride out a burst of lock
+# contention with the shared cycle, low enough that a genuinely broken embedder — or a database that
+# is refusing every write — does not spin for hours producing nothing.
+MAX_EMBED_BATCH_FAILURES = 5
 
 
 def _configure_logging(verbose: bool) -> None:
@@ -79,6 +86,7 @@ def _embed_only() -> int:
 
     embedder = EmbedderClient(base_url=embedder_url)
     total = 0
+    consecutive_failures = 0
     try:
         while True:
             # **One batch per transaction, deliberately.** `embed_all_pending` drains up to fifty
@@ -88,9 +96,28 @@ def _embed_only() -> int:
             # to tell a working run from a wedged one. Committing per batch makes the run
             # interruptible and its progress readable from the database — which is what an operator
             # asked to start and stop it actually needs.
-            with session_scope() as session:
-                result = embed_pending(CorpusRepository(session), embedder,
-                                       expected=_expected_embedder())
+            try:
+                with session_scope() as session:
+                    result = embed_pending(CorpusRepository(session), embedder,
+                                           expected=_expected_embedder())
+            except OperationalError as exc:
+                # **A deadlock is expected here, and it must not end the run.** The shared harvest
+                # cycle writes the same table — ingesting rows, refreshing descriptions, trimming
+                # cold ones — and Postgres resolves a lock cycle by killing one side. On 2026-07-31
+                # that victim was a sixty-minute re-embed, which rolled back every vector it had
+                # paid for. The rows in this batch stay pending and are simply picked up again, so
+                # the cost of losing one is one batch. Retrying rather than aborting is what makes
+                # the rebuild survive running alongside a live pipeline.
+                consecutive_failures += 1
+                logger.warning("embed-only: batch failed (%s), retrying — %d in a row",
+                               type(exc).__name__, consecutive_failures)
+                if consecutive_failures >= MAX_EMBED_BATCH_FAILURES:
+                    logger.error("embed-only: %d batches failed in a row, giving up with %d "
+                                 "embedded", consecutive_failures, total)
+                    return 1
+                continue
+
+            consecutive_failures = 0
             total += result.embedded
             logger.info("embed-only: %d embedded (%d superseded), %d total, %d remaining",
                         result.embedded, result.skipped_stale, total, result.remaining)
