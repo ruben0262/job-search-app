@@ -23,7 +23,7 @@ quarantine every healthy user.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
@@ -186,9 +186,3 @@ def _tz(session: Session, user_id: UUID) -> ZoneInfo:
         logger.warning("user %s has an unusable timezone %r; daily caps will reset at UTC "
                        "midnight until it is corrected", user_id, name)
         return ZoneInfo("UTC")
-
-
-def next_local_midnight(now: datetime, tz: ZoneInfo) -> datetime:
-    """When this user's counters next reset. Used for the "resets at midnight your time" message."""
-    local = now.astimezone(tz)
-    return (local + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)

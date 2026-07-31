@@ -14,6 +14,50 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-07-31
+
+### The schema CV renderer, deleted, and five functions nothing called
+
+A scan of every module-level function against every mention of its name in the tree, plus an import
+graph over the 233 modules and 56 test files. Two categories came out of it, and only one of them
+was safe to act on — the distinction is the useful part of this entry.
+
+**Genuinely dead: the CV renderer.** `libs/templates/cv.py` filled the base layout from a
+`ProfileSchema`, and `services/docgen/build.py::base_document()` was its only caller — which had
+been labelled *Deprecated* in its own docstring since the base CV became a per-user file. Nothing in
+the platform reached either. A real build reads the user's `base_cv.html` out of `user_profile_files`
+— the document the setup agent wrote, with their actual experience in it, where the renderer could
+only emit what a schema had fields for. `run.py` already raises `NotBuildable` when that file is
+missing, so the renderer was not even a fallback.
+
+607 lines gone (renderer plus its tests). **What was kept is the point:** the layout itself is still
+live — docgen hands it to the tailoring prompt as the BASE TEMPLATE — so the five tests that cover
+*the file on disk* moved to `tests/test_cv_template.py`, including the `@page` margin check that
+caught a real bug (body padding gives page 1 a top margin and page 2 none, which is what a recruiter
+sees past the fold). The seven `test_docgen.py` tests that called the renderer never wanted a
+rendered CV; they wanted *a* base document, and now load the template directly.
+
+**Five functions nothing named, removed** with the imports they orphaned:
+`features.feature_matrix`, `build.prompt_text` (its docstring said "exposed so a test can assert
+this" — no test ever did), `deliver.render_digest`, `eligibility.worth_applying_now`,
+`proxy_usage.next_local_midnight`. `render_digest` is the interesting one: it documented itself as
+superseded, because a Telegram keyboard attaches to *a message* and so a digest structurally cannot
+carry per-job buttons. That reasoning is worth keeping — which is what this entry is for, and why
+the code did not need to stay to hold it.
+
+**Deliberately not deleted, and why.** `libs/corpus/postings.py::fetch_apply_url` is unused but sits
+in a file `pyproject.toml` pins as kept diffable against the reference instance; deleting parts of a
+ported file destroys the one property that makes it reviewable. And the whole **document-capture
+flow** — `services/capture`, the `process` lane, `/process`, `ProcessPage.tsx`, `libs/scoring/facts`
+and the `users.facts_md` it writes — is *superseded but wired end-to-end and passing its tests*.
+That is not dead code, it is the previous product surface still reachable from the dashboard, and
+retiring it is the `REBUILD_PLAN.md` phase-5 cutover rather than a cleanup. Noted here so the next
+scan does not have to re-derive it. One genuine orphan found and left alone: `users.profile_context`
+is declared on the model and never read or written by anything, but dropping a column is a migration
+and the corpus is mid-re-embed.
+
+567 tests pass, ruff clean.
+
 ## 2026-07-30
 
 ### A chat turn that survives the browser, and the cap that was never enforced

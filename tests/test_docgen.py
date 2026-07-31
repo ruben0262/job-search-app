@@ -19,7 +19,20 @@ import uuid
 import pytest
 
 from libs.contracts.profile import ProfileSchema
+from libs.templates import BASE_CV_TEMPLATE, load
 from services.docgen import build, pdf, run
+
+
+def base_document() -> str:
+    """The document handed to the tailoring call.
+
+    In production this is the user's own `base_cv.html` out of `user_profile_files`; these tests
+    only need *a* base document with the hand-tuned layout in it, so they use the layout on disk.
+    It used to call a renderer in `services.docgen.build` that built one from a `ProfileSchema` —
+    deleted on 2026-07-31, because nothing in the platform renders a CV from a schema any more.
+    """
+    return load(BASE_CV_TEMPLATE)
+
 
 PROFILE = ProfileSchema.model_validate({
     "identity": {"name": "Alice Example", "location": "Berlin, Germany",
@@ -93,7 +106,7 @@ def test_the_call_is_grounded_on_the_user_s_own_facts():
     """The reference instance measured what happens without grounding: the model invented an
     employer and fabricated metrics. In a hosted product that lands on a real application."""
     client = FakeClient()
-    build.tailor(client, PROFILE, build.base_document(PROFILE),
+    build.tailor(client, PROFILE, base_document(),
                  build.job_context(FakeJob()), facts_md="# Facts about Alice Example")
 
     assert client.calls[0]["system"].startswith("# Facts about Alice Example")
@@ -103,13 +116,13 @@ def test_a_profile_with_no_facts_block_still_gets_a_grounding_instruction():
     """Nobody should reach this — a confirmed profile always renders one — but an empty system
     prompt would be the one call where the model is free to invent."""
     client = FakeClient()
-    build.tailor(client, PROFILE, build.base_document(PROFILE), build.job_context(FakeJob()))
+    build.tailor(client, PROFILE, base_document(), build.job_context(FakeJob()))
 
     assert "Never invent" in client.calls[0]["system"]
 
 
 def test_the_prompt_carries_the_candidate_the_posting_and_the_base_document():
-    prompt = build.build_prompt(PROFILE, build.base_document(PROFILE),
+    prompt = build.build_prompt(PROFILE, base_document(),
                                 build.job_context(FakeJob()))
 
     assert "Alice Example" in prompt              # filled by render_cv_prompt
@@ -122,7 +135,7 @@ def test_the_model_never_sees_the_stylesheet():
     """It is told CSS is managed externally. Sending it anyway costs ~700 tokens each way and
     invites an edit that is then silently discarded."""
     client = FakeClient()
-    build.tailor(client, PROFILE, build.base_document(PROFILE), build.job_context(FakeJob()))
+    build.tailor(client, PROFILE, base_document(), build.job_context(FakeJob()))
 
     assert "@page" not in client.calls[0]["messages"][0]["content"]
 
@@ -145,7 +158,7 @@ def test_a_posting_with_no_description_still_produces_a_context():
 def test_the_layout_is_restored_from_the_template_whatever_came_back():
     """The one guarantee that makes 'the model only changes text' true rather than requested."""
     client = FakeClient(TAILORED.replace("<head>", "<head><style>body{font-size:4pt}</style>"))
-    html = build.tailor(client, PROFILE, build.base_document(PROFILE),
+    html = build.tailor(client, PROFILE, base_document(),
                         build.job_context(FakeJob()))
 
     assert "@page" in html and "size: A4" in html
@@ -154,7 +167,7 @@ def test_the_layout_is_restored_from_the_template_whatever_came_back():
 
 def test_commentary_around_the_document_is_discarded():
     client = FakeClient(f"Here is the tailored CV:\n\n{TAILORED}\n\nLet me know if…")
-    html = build.tailor(client, PROFILE, build.base_document(PROFILE),
+    html = build.tailor(client, PROFILE, base_document(),
                         build.job_context(FakeJob()))
 
     assert html.lstrip().startswith("<!DOCTYPE html")
@@ -165,7 +178,7 @@ def test_a_reply_with_no_document_is_a_build_failure():
     client = FakeClient("I cannot help with that.")
 
     with pytest.raises(build.BuildFailed):
-        build.tailor(client, PROFILE, build.base_document(PROFILE), build.job_context(FakeJob()))
+        build.tailor(client, PROFILE, base_document(), build.job_context(FakeJob()))
 
 
 def test_em_dashes_are_stripped_from_prose_and_kept_in_entry_titles():
@@ -238,7 +251,7 @@ def test_a_real_chrome_turns_the_rendered_cv_into_a_readable_pdf(tmp_path):
     image is built with one — so this is the gate that says the layout survives a real render
     rather than that the strings were assembled correctly."""
     source = tmp_path / "cv.html"
-    source.write_text(build.base_document(PROFILE), encoding="utf-8")
+    source.write_text(base_document(), encoding="utf-8")
 
     report = pdf.inspect_pdf(pdf.compile_pdf(source, tmp_path / "cv.pdf"))
 

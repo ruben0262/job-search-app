@@ -153,14 +153,6 @@ def job_features(spec: FeatureSpec, title: str, description: str) -> list[float]
     ]
 
 
-def feature_matrix(spec: FeatureSpec, rows: list[dict]):
-    """Feature matrix for label/job dicts (`title` + `description`). numpy, imported lazily."""
-    import numpy as np  # noqa: PLC0415 - keeps libs.scoring importable without numpy
-
-    return np.array([job_features(spec, r.get("title", ""), r.get("description", ""))
-                     for r in rows], dtype=np.float32)
-
-
 # ── term extraction ───────────────────────────────────────────────────────────────────────────
 
 def _terms(phrases: list[str]) -> list[str]:

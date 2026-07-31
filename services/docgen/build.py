@@ -2,9 +2,9 @@
 
 **Python does the mechanics, Claude makes one call.** The reference instance measured the
 alternative: an agentic build re-reading the profile, the skills and the template every turn, where
-that loop rather than the writing was most of the cost. Here the renderer fills the base document
-(`libs.templates.cv`), this module hands it to the model with the posting, and the model returns a
-tailored copy of it.
+that loop rather than the writing was most of the cost. Here the user's own base CV — the
+`base_cv.html` the setup agent wrote, with their real experience in it — is handed to the model with
+the posting, and the model returns a tailored copy of it.
 
 **Three things are enforced mechanically after generation, not asked for.** Every one of them is a
 rule the prompt already states and the model still breaks intermittently, and asking twice is not a
@@ -29,11 +29,10 @@ import logging
 import re
 
 from libs.contracts.profile import ProfileSchema
-from libs.profiles import PLACEHOLDER_MARKERS, scaffold
+from libs.profiles import PLACEHOLDER_MARKERS
 from libs.scoring.docprompt import render_cover_prompt, render_cv_prompt
 from libs.templates import BASE_CV_TEMPLATE
 from libs.templates import load as load_template
-from libs.templates.cv import render_cv
 
 logger = logging.getLogger(__name__)
 
@@ -86,17 +85,6 @@ _HIDE_STYLE = re.compile(
 
 class BuildFailed(RuntimeError):
     """The model did not return a usable document. Retryable; the worker decides."""
-
-
-def base_document(profile: ProfileSchema) -> str:
-    """**Deprecated — the base CV is now a per-user file** (`libs/profiles`, `base_cv.html`).
-
-    Kept only until the schema machinery is deleted in the last phase of `REBUILD_PLAN.md`; the
-    tests that still exercise the renderer call it. A caller wanting the document a user actually
-    applies with should read their `base_cv.html` instead: the setup agent writes their real
-    experience into it, where this can only emit what a schema has fields for.
-    """
-    return render_cv(profile)
 
 
 def job_context(job, *, score: float | None = None, description: str | None = None,
@@ -476,10 +464,3 @@ def template_base() -> str:
     return load_template(BASE_CV_TEMPLATE)
 
 
-def prompt_text() -> str:
-    """The shipped CV prompt, unfilled. Exposed so a test can assert what reaches the model.
-
-    The *scaffold*, not what any given run uses: since the task prompts became per-user, a real
-    build passes the user's own `tailor_cv.md` as `template=`. This is the default it starts from.
-    """
-    return scaffold("tailor_cv.md")

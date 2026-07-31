@@ -322,26 +322,6 @@ def render_job(item: FeedItem, salary_bands: dict | None = None,
     return render_card(item, salary_bands=salary_bands, high_fit=cutoff)
 
 
-def render_digest(items: list[FeedItem]) -> str:
-    """The header, and the jobs that carry no buttons of their own.
-
-    **This used to be the whole delivery, and the reasoning changed.** Batching everything into one
-    message avoided a burst of notifications — a good argument, and it lost to a better one: a
-    Telegram keyboard attaches to *a message*, so a digest structurally cannot offer per-job
-    buttons. Acting on a match is worth more than saving nine notifications, and the reference
-    instance's watcher sends per-job cards for exactly this reason.
-
-    The burst is still bounded, by `MAX_ITEMS_PER_DIGEST` and the user's own daily cap.
-    """
-    lines = [f"{len(items)} new match{'es' if len(items) != 1 else ''}:", ""]
-    for item in items:
-        company = f" — {item.company}" if item.company else ""
-        lines.append(f"{int(item.score)}  {item.title}{company}")
-        lines.append(item.url)
-        lines.append("")
-    return "\n".join(lines).strip()
-
-
 def _is_terminal(exc: Exception) -> bool:
     message = str(exc).casefold()
     return any(marker in message for marker in TERMINAL_ERRORS)

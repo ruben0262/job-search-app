@@ -27,7 +27,7 @@ from datetime import UTC, datetime
 
 from libs.contracts.config import migrate_config
 from libs.corpus import langfilter, workfilter
-from libs.corpus.ranking import applicant_glut, opportunity_score, priority_key
+from libs.corpus.ranking import applicant_glut, priority_key
 
 logger = logging.getLogger(__name__)
 
@@ -207,11 +207,3 @@ def select(items: list, rules: Eligibility, *, limit: int,
         else:
             dropped[reason] = dropped.get(reason, 0) + 1
     return rank(kept, first_seen=first_seen, now=now)[:limit], dropped
-
-
-def worth_applying_now(item, *, first_seen: object | None = None,
-                       accepting: bool | None = None) -> int:
-    """The 0–100 opportunity score for one item, for display and for `/rate` ordering."""
-    return opportunity_score(posted_at=item.posted_at, first_seen_at=first_seen,
-                             applicants=item.applicants, reposted=item.reposted,
-                             accepting=accepting)
