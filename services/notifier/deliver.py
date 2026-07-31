@@ -23,7 +23,7 @@ import statistics
 import uuid as _uuid
 from collections.abc import Callable
 from contextlib import contextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import httpx
 from sqlalchemy import func, select
@@ -88,6 +88,20 @@ def pending_feed(session: Session, user_id: _uuid.UUID, *, cutoff: float,
     The pool is `CANDIDATE_MULTIPLIER` times the digest so that filtering cannot starve it: taking
     ten and then dropping four for language would send six when forty were eligible.
     """
+    if rules is None:
+        config = session.scalar(select(UserConfig.config).where(UserConfig.user_id == user_id))
+        rules = Eligibility.from_config(config)
+
+    # **The age filter belongs in the query, not only after it.** The pool is ordered by score, so
+    # without this a backlog of stale high-scoring rows fills every candidate slot and is then
+    # dropped for being old — leaving nothing to send while hundreds of fresh, eligible jobs sit
+    # one page further down. That is precisely what happened: 50 candidates, 50 dropped, zero sent,
+    # with 25 fresh matches waiting.
+    #
+    # Undated rows still come through. They are the ones `date_candidates` exists to resolve, and
+    # excluding them here would drop every LinkedIn row before anything could look at it.
+    cutoff_at = datetime.now(UTC) - timedelta(hours=rules.max_age_hours)
+
     rows = session.execute(
         select(UserJobState.job_id, CorpusJob.url, CorpusJob.title, CorpusJob.company,
                UserJobState.score, CorpusJob.source, CorpusJob.location, CorpusJob.is_remote,
@@ -101,15 +115,13 @@ def pending_feed(session: Session, user_id: _uuid.UUID, *, cutoff: float,
                CorpusJob.closed_at.is_(None),
                UserJobState.notified_at.is_(None),
                UserJobState.score.is_not(None),
-               UserJobState.score >= cutoff)
+               UserJobState.score >= cutoff,
+               CorpusJob.posted_at.is_(None) | (CorpusJob.posted_at >= cutoff_at))
         .order_by(UserJobState.score.desc())
         .limit(limit * CANDIDATE_MULTIPLIER)).all()
 
     items = [FeedItem(*row[:-1]) for row in rows]
     first_seen = {row[0]: row[-1] for row in rows}
-    if rules is None:
-        config = session.scalar(select(UserConfig.config).where(UserConfig.user_id == user_id))
-        rules = Eligibility.from_config(config)
 
     # **Date the front of the queue before filtering it.** The age filter can only drop what it can
     # date, and LinkedIn reports no posted time to the listing API at all — so the filter was

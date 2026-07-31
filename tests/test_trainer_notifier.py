@@ -400,3 +400,42 @@ def test_a_v1_config_cap_is_honoured_too(ctx):
 
     sent: list[str] = []
     assert deliver(ctx, user.id, store=store, send=lambda t, c, m, k=None: sent.append(m)) == 1
+
+
+def test_stale_high_scorers_do_not_crowd_fresh_jobs_out_of_the_pool(ctx):
+    """**Fifty candidates, fifty dropped, zero sent — with twenty-five fresh matches waiting.**
+
+    The pool is ordered by score, so a backlog of stale high-scoring rows filled every candidate
+    slot and was then dropped for age. Filtering age only *after* selection means the fresh jobs
+    one page further down are never looked at.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from libs.db.models import CorpusJob, UserJobState
+    from services.notifier.deliver import pending_feed
+    from services.notifier.eligibility import Eligibility
+
+    user = _connected(ctx)
+    now = datetime.now(UTC)
+
+    # A month-old backlog that scores well, and one fresh job that scores less.
+    for index in range(12):
+        stale = CorpusJob(url=f"https://example.com/stale-{uuid.uuid4()}", source="linkedin",
+                          title=f"Stale {index}", description="x" * 400,
+                          posted_at=now - timedelta(days=30))
+        ctx.add(stale)
+        ctx.flush()
+        ctx.add(UserJobState(user_id=user.id, job_id=stale.id, score=95.0))
+
+    fresh = CorpusJob(url=f"https://example.com/fresh-{uuid.uuid4()}", source="linkedin",
+                      title="Fresh Backend Engineer", description="x" * 400,
+                      posted_at=now - timedelta(hours=1))
+    ctx.add(fresh)
+    ctx.flush()
+    ctx.add(UserJobState(user_id=user.id, job_id=fresh.id, score=65.0))
+    ctx.flush()
+
+    rules = Eligibility.from_config({"sections": [{"posted_within_hours": 6}]})
+    items, _dropped = pending_feed(ctx, user.id, cutoff=60.0, limit=5, rules=rules)
+
+    assert [item.title for item in items] == ["Fresh Backend Engineer"]
