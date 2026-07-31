@@ -1,8 +1,9 @@
 # Pooled Claude Account — Shared Broker + Prepaid Wallet Plan
 
-**Status:** planning only, no code yet. Extends [CLAUDE_API_BACKEND_PLAN.md](CLAUDE_API_BACKEND_PLAN.md)
+**Status:** planning only, no code yet, and **deferred** — the platform is bring-your-own-key
+(D2). Extended the Claude API backend plan (deleted 2026-07-31)
 §8b (the "one shared org key" branch) and mirrors the ops pattern in
-[EMBEDDER_SHARING_PLAN.md](EMBEDDER_SHARING_PLAN.md).
+`services/embedder/docs/PLAN.md`.
 
 **What this is:** one Anthropic org/API key funds all users. A shared Docker **broker service** (own
 HTTP API) accepts scoring requests from every instance, batches them, calls Haiku once per batch,
@@ -281,7 +282,7 @@ on how much users' searches and rubrics overlap.
 - **Drift / money bugs.** The whole of §2 exists to prevent these; §5 catches what slips through; §8
   proves it before real money.
 - **Non-goal:** replacing BYOK for people who prefer their own key/account — the pooled broker is an
-  *option*, not a forced migration. The per-instance API backend (CLAUDE_API_BACKEND_PLAN.md) still
+  *option*, not a forced migration. A per-instance API backend still
   stands on its own.
 - **Non-goal:** touching any scoring rubric or writing prompt (SACRED; transport/metering only).
 

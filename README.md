@@ -76,8 +76,7 @@ one index, so it cannot go stale in two places.
 
 ⚠ These were copied from `job-search/docs/saas/`, which still has its own copies. Treat **this** as
 the source of truth going forward and let the ones in `job-search` go stale, or they will drift.
-`EMBEDDER_SHARING_PLAN.md` in particular is superseded by
-[`services/embedder/docs/PLAN.md`](services/embedder/docs/PLAN.md), which is the one that has been
+The embedder's maintained design is [`services/embedder/docs/PLAN.md`](services/embedder/docs/PLAN.md),
 kept current against the running service.
 
 ## Development

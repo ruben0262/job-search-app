@@ -67,7 +67,7 @@ completely different performance profiles:
 |---|---|---|
 | Web app requests (signup, dashboard, config forms) | Low request volume at realistic early user counts (tens-hundreds) | **No** — any modern backend (Node, Python, Go) is more than fast enough here. This is CRUD-shaped, not compute-shaped. |
 | Background job orchestration (per-user scrape/score cycles, spinning up Docker per tenant) | External I/O latency (network scraping, Claude API round-trips, Docker daemon calls) | **Marginal** — the wait is on the network/Docker, not the orchestrator's own CPU. Concurrency model matters more than raw language speed (can the orchestrator handle many simultaneous long-running background jobs without blocking). |
-| ML scoring (embedding + classifier) | Genuinely CPU-bound | **Already being solved separately** — see `EMBEDDER_SHARING_PLAN.md`. The plan already centralizes this into a purpose-built service (recommending HuggingFace TEI, written in Rust) regardless of what the main backend is written in. This is the ONE part of the system where "Python is slow" is actually true and actually matters, and it's already being architected around. |
+| ML scoring (embedding + classifier) | Genuinely CPU-bound | **Solved** — `services/embedder/docs/PLAN.md`. Centralized into a purpose-built service (HuggingFace TEI, Rust), built and deployed, regardless of what the main backend is written in. This is the ONE part of the system where "Python is slow" is actually true and actually matters, and it's already being architected around. |
 
 **Honest conclusion:** the case for abandoning Python specifically *for speed* is weak once the
 CPU-bound part (embedding) is already being offloaded to a dedicated Rust-based service. The
@@ -127,7 +127,7 @@ runs today, alongside `job-search`, on the same VPS).
 - **Cons:** doesn't scale to hundreds/thousands of users on one VPS (each tenant needs their own
   `scorer-service` + `watcher` + `notifier` — RAM/CPU multiply per tenant, exactly the shared-VPS
   pressure problem from this whole conversation, just at bigger scale). The embedder-sharing plan
-  (`EMBEDDER_SHARING_PLAN.md`) becomes load-bearing here, not optional — without it, N tenants
+  (`services/embedder/docs/PLAN.md`) becomes load-bearing here, not optional — without it, N tenants
   means N copies of the embedding model in RAM, which won't scale past a handful of users on any
   single box.
 
@@ -221,7 +221,7 @@ change needed there regardless of which model above is chosen.
 
 ## 6. Recommended phased approach
 
-1. **Ship the embedder-sharing service first** (`EMBEDDER_SHARING_PLAN.md`) — it's a prerequisite
+1. ~~**Ship the embedder-sharing service first**~~ **Done** (`services/embedder/docs/PLAN.md`) — it was a prerequisite
    for Model 1 scaling past a couple of tenants, and it's already scoped and lower-risk than
    anything in this document.
 2. **Decide the backend language** using §3's honest trade-off table, not a "Python is slow"

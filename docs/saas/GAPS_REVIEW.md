@@ -249,6 +249,43 @@ it no longer represents. Key on `text_sha256`.
 **All blocking gaps are now designed.** The four still open (G8, G9, G11, G12) are small, well
 understood, and belong inside their phase's implementation rather than in a document of their own.
 
+## Implementation status — re-audited 2026-07-31
+
+Every gap checked against the tree again, four days on. Most have gone from designed to built. Two
+that this document called **closed** are not closed, and both fail the same way.
+
+### Two gaps are implemented, tested, and never run
+
+`mark_dormant` (G11) and `prune_model_artifacts` (G12) both exist on `TenantRepository`, both have
+tests, and **neither is called by anything outside those tests.** A full-tree search finds the
+definition and the test, and no production caller — no timer, no worker, no route.
+
+So the code is right, the tests are green, and the behaviour has never happened once: dormant
+accounts keep consuming harvest budget and running their own LinkedIn tier, and every model
+artifact ever trained is still on disk. G12's row below says "Trainer calls it when it writes",
+which is the thing to fix — it does not.
+
+This is the same shape as three bugs already in `CHANGELOG.md` — `max_notifications_per_day` read
+by nothing, the LinkedIn loop missing between parts that all existed, `jobspy` never installed for
+sources that were never enabled. **A method with a passing test is not a running feature**, and
+"closed" in this document has twice meant the former. Worth a rule: a gap closes when something
+calls it on a schedule, not when it is importable.
+
+### The rest, as of 2026-07-31
+
+| Gap | State | Evidence |
+|---|---|---|
+| **G15 LinkedIn loop** | ✅ **now closed** — was "loop deferred" | Built 2026-07-31. `--linkedin` pass in `services/harvester/__main__.py`, on its own 15-minute `linkedin.timer`. 212 rows in the last 24h against a corpus where every previous LinkedIn row shared one `first_seen_at` |
+| **G3 transactional email** | ✅ built | `libs/mail` — SMTP sender, daily cap, plain-text templates. Verification and reset both proven end to end in a browser |
+| **G6 Telegram failure** | ✅ built | `BotRevoked` is terminal rather than retried, the account is flagged `broken`, and the dashboard says so in words |
+| **G2 observability** | ✅ built | `deploy/scripts/check_health.py` pages on a missing timer, plus the in-app notification bell and the status readout on Overview |
+| **G4 backup/restore** | ✅ built | `backup.py` on a timer, `restore_drill.py` beside it |
+| **G8 document lifecycle** | ✅ closed by D9 | `services/docgen/run.py` builds into a scratch directory; the durable half is the record, not the file |
+| **G9 cost visibility** | 🟡 **still open** | Nothing meters spend. `libs/llm` does not read `usage` from a response, and no ledger exists. Under BYOK the money is the user's, which lowers the urgency but does not answer "what did this cost me" — still the honest gap |
+| **G10 embedder SPOF** | 🟡 **partly** | The service is deployed on both boxes, but `check_health.py` checks timers and queue state and **does not probe the embedder**. Its death is visible as jobs failing to score rather than as an alert naming it |
+
+---
+
 ## Implementation status — audited 2026-07-27
 
 Designed and *built* are different things. This tracks the second, for the gaps Phase 1 owns.

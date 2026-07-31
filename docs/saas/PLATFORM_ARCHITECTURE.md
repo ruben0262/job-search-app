@@ -348,7 +348,7 @@ decision most worth keeping.
 
 - **Comfortable** → proceed exactly as specced.
 - **Tight** → run the platform's embedder as the *only* embedder and point the legacy stacks at it
-  (`EMBEDDER_SHARING_PLAN.md` was written for precisely this), reclaiming ~1.9 GB per stack.
+  (`services/embedder/docs/PLAN.md` is the maintained design), reclaiming ~1.9 GB per stack.
 - **Insufficient** → revisit D4 rather than discovering it under load.
 
 **Postgres discipline is now entirely yours.** Nightly `pg_dump` + WAL archiving to an **EU**

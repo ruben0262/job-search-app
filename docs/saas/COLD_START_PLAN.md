@@ -1,5 +1,23 @@
 # Cold start — from signup to a working feed
 
+## Implementation status — audited 2026-07-31
+
+**Built.** Signup → working feed exists end to end and is the flow both live accounts went
+through. The labeller still cites this document for its live numbers, which is why it is kept
+rather than retired: `services/labeller/label.py::BATCH_SIZE` and `coldstart.ready_to_train` are
+this plan's thresholds, and changing them means changing this text too.
+
+What differs from the plan as written, and why:
+
+- **The interview is the setup chat, not a capture call.** `REBUILD_PLAN.md` replaced the
+  one-shot schema extraction with a conversation that writes the profile files directly — the
+  earlier design spent one call on a schema and produced a profile with no career in it.
+- **Labelling is per-user Haiku on the user's own key**, chunked 50 to a call. The Batch API's
+  50% discount is available and unclaimed; nothing on this path is latency-sensitive.
+- **The cutoff is no longer 60.** The trainer picks a classifier by bake-off and tunes its own
+  decision cutoff (2026-07-31); 60 was the *label* threshold and was never an operating point.
+
+
 **Status:** design, 2026-07-26. The highest-churn-risk part of the product: a new user with no labels
 has no model, and a product that does nothing useful for three days loses them.
 

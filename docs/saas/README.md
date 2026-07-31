@@ -6,13 +6,36 @@ Design for turning the single-tenant job-search pipeline into a multi-user platf
 `docs/PROJECT_STATE.md` is the spec for pipeline behaviour; these documents describe how that
 behaviour becomes multi-tenant. Nothing here is green-field.
 
+## Where the platform is — 2026-07-31
+
+`CHANGELOG.md` is the history and its newest entries are the detail; this is the one-paragraph
+version, and it lives here because the separate handover document was deleted on 2026-07-31 rather
+than kept in sync with the changelog.
+
+**Live:** `https://mahoraga-app.rubenlekli.com` on `169.58.16.241`, ten containers plus the
+embedder stack, six systemd timers, 1,014 tests green. Two accounts. The whole web layer, auth,
+onboarding, the setup chat, the jobs table and Telegram delivery are built and verified in a
+browser.
+
+**The one thing to know before touching scoring:** a full re-embed is half done. The corpus moved
+from embedding `description` alone to `title_desc`, which invalidated every existing vector by
+design — the mode is part of `EmbedderVersion.version`, so stale rows are refused rather than
+silently mis-scored. Both users' active models were fitted on the old vectors. **Finish the
+re-embed, then retrain, before judging anything downstream of the feed.**
+
+**Recently closed:** the LinkedIn tier now runs (it never had, which was the real cause of "my feed
+is quiet"), the enabled source list was replaced with the reference's own, and the trainer picks a
+classifier by bake-off instead of using a fixed regression against a threshold that was never an
+operating point.
+
+---
+
 ## Read in this order
 
 | Doc | What it settles |
 |---|---|
 | **[PLATFORM_ARCHITECTURE.md](PLATFORM_ARCHITECTURE.md)** | The shared/per-user boundary, container topology, storage sizing, database choice, open decisions. The design |
 | [HARVESTER_PLAN.md](HARVESTER_PLAN.md) | One shared scrape for all users: query-set dedup, fan-out budget, proxy ownership, embed-once |
-| **[HANDOVER.md](HANDOVER.md)** | **Start here.** Where the platform is now, what is left, and the decisions not to re-litigate |
 | [SCHEDULER_PLAN.md](SCHEDULER_PLAN.md) | One queue, one lane per kind of work: fairness, restart safety, debounce. Written for four; there are seven now (`notify train docgen label process score setup`) — the design is unchanged, the list grew |
 | [COLD_START_PLAN.md](COLD_START_PLAN.md) | Signup → working feed: three-stage onboarding, per-user rubric, backfill labelling, API vs OAuth |
 | [TENANT_SAFETY.md](TENANT_SAFETY.md) | Isolation, secrets, plan-scoped quotas, bounded config schema, onboarding order, deletion |
@@ -28,9 +51,8 @@ behaviour becomes multi-tenant. Nothing here is green-field.
 
 | Doc | Status |
 |---|---|
-| [EMBEDDER_SHARING_PLAN.md](EMBEDDER_SHARING_PLAN.md) | **Historical.** Superseded by [`services/embedder/docs/PLAN.md`](../../services/embedder/docs/PLAN.md), which is the maintained plan with measured numbers and the decisions the VPS run reversed. The service is built and deployed in [`services/embedder/`](../../services/embedder/) (relocated there in Phase 1 step 0a — `CODE_STRUCTURE.md` §6) |
 | [MODEL_SELECTION_RESEARCH.md](MODEL_SELECTION_RESEARCH.md) | **Current.** Model/pricing ladder for scoring vs writing. Unchanged by the multi-tenant design |
-| [CLAUDE_API_BACKEND_PLAN.md](CLAUDE_API_BACKEND_PLAN.md) | **Current** for the API-backend mechanics |
+| [`services/embedder/docs/PLAN.md`](../../services/embedder/docs/PLAN.md) | **Current and maintained.** The embedder's real design — measured numbers, the bge-small → bge-base reversal, and the corrections the VPS run forced. The service is built and deployed |
 | [POOLED_CLAUDE_ACCOUNT_PLAN.md](POOLED_CLAUDE_ACCOUNT_PLAN.md) | **Deferred.** Assumes the platform resells Claude access via a prepaid wallet. Current design is bring-your-own-credential (decision D2). Revisit only if BYOK proves too much onboarding friction — the ledger design in §2 is good and worth keeping on the shelf |
 | [SAAS_PLATFORM_PLAN.md](SAAS_PLATFORM_PLAN.md) | **Partly superseded.** §4's Model 1 (one container stack per user) is **rejected** — see `PLATFORM_ARCHITECTURE.md` §2 for the measured reasons. §7's open decisions are resolved. §5a (legal/ToS), §5f (operational burden), §5g (framework constraints) still stand |
 

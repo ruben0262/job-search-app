@@ -1,6 +1,8 @@
 # Model Selection Research — Scoring & CV/Cover Generation
 
-**Status:** research for the [Claude API Backend plan](CLAUDE_API_BACKEND_PLAN.md). Planning only.
+**Status:** research that fed the Claude API backend plan (deleted 2026-07-31 — it was written
+for the reference instance's `claude -p` path, which this platform never had). The model and
+pricing ladder below is still the current answer for scoring vs writing.
 Prices are per **million tokens (MTok), input / output, standard tier**, gathered 2026-07-24 (see
 Sources). Prices move monthly — re-check before committing.
 
