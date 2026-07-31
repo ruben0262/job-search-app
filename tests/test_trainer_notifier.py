@@ -214,7 +214,6 @@ def test_a_trivial_change_does_not_earn_a_retrain(ctx, tmp_path):
     assert should_retrain(ctx, user.id) is True
 
 
-@db_required
 def test_a_re_embedded_corpus_earns_a_retrain_with_no_new_labels(ctx, tmp_path):
     """**The label count is not the only thing that can go stale — the coordinates can too.**
 
