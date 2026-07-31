@@ -21,7 +21,14 @@ from collections.abc import Callable, Sequence
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from libs.agents import MAX_TOKENS, MAX_TOOL_ITERATIONS, SETUP_MODEL, TOOLS, system_prompt
+from libs.agents import (
+    COMMAND_TITLES,
+    MAX_TOKENS,
+    MAX_TOOL_ITERATIONS,
+    SETUP_MODEL,
+    TOOLS,
+    system_prompt,
+)
 from libs.agents.tools import SetupTools
 from libs.db.models import DEFAULT_TITLE, SetupConversation, SetupMessage
 from libs.db.models.setup import SETUP_AGENTS
@@ -170,6 +177,11 @@ def touch_conversation(session: Session, user_id: _uuid.UUID, conversation_id: _
     The title is the first thing the user said, trimmed — no model call, because naming a chat is
     not worth a request that can fail, and the first sentence is what somebody would have typed
     anyway.
+
+    **Except when the first thing they said was a command.** Since the empty chat opens with a Start
+    button, the opening message is now usually `/setup` — and a tab reading "/setup" names the
+    machinery rather than the conversation, which is the one thing this page tries never to do.
+    A command gets the step's plain-English name instead.
     """
     row = session.get(SetupConversation, conversation_id)
     if row is None or row.user_id != user_id:
@@ -177,7 +189,11 @@ def touch_conversation(session: Session, user_id: _uuid.UUID, conversation_id: _
     row.last_message_at = func.now()
     if row.title == DEFAULT_TITLE:
         first = " ".join(message.split())
-        row.title = (first[:57] + "…") if len(first) > 58 else first or DEFAULT_TITLE
+        named = COMMAND_TITLES.get(first.lstrip("/").split()[0]) if first.startswith("/") else None
+        if named:
+            row.title = named
+        else:
+            row.title = (first[:57] + "…") if len(first) > 58 else first or DEFAULT_TITLE
 
 
 def _written(executed: Sequence[dict]) -> list[str]:

@@ -1352,6 +1352,10 @@ td.num {
   font-size: 0.85rem;
   font-weight: 400;
   max-width: 15rem;
+  /* **A flex item will not shrink below its content without this**, so the ellipsis never
+     appeared: the button kept its full text width and the pill clipped it mid-word at the border,
+     losing the first character rather than the last. */
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

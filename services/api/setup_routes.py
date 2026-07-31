@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from libs.agents import FILE_OWNERS, STARTABLE
+from libs.agents import FILE_OWNERS, STARTABLE, UNOWNED_FILES
 from libs.agents.loop import touch_conversation
 from libs.db.models import (
     MAX_CONVERSATIONS,
@@ -259,8 +259,13 @@ def setup_progress(db: Session = Depends(get_db),
 
     missing = files.missing_setup()
     outstanding: dict[str, list[str]] = {}
+    # Files nothing can currently produce are reported as such rather than attributed to a command
+    # that would not fix them — being told to run the wrong thing is worse than being told the truth.
+    blocked = {name: UNOWNED_FILES[name] for name in missing if name in UNOWNED_FILES}
     for name in missing:
-        outstanding.setdefault(FILE_OWNERS.get(name, "setup"), []).append(name)
+        if name in UNOWNED_FILES:
+            continue
+        outstanding.setdefault(FILE_OWNERS[name], []).append(name)
 
     return {
         "complete": not missing,
@@ -269,6 +274,7 @@ def setup_progress(db: Session = Depends(get_db),
         # What to run next, and why — the client shows one button rather than a command palette.
         "next_command": next((command for command in STARTABLE if command in outstanding), None),
         "outstanding_by_command": outstanding,
+        "blocked": blocked,
         "commands": list(STARTABLE),
         "may_train": not missing,
     }

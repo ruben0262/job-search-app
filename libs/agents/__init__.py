@@ -115,15 +115,45 @@ FILE_OWNERS: dict[str, str] = {
     "04-job-evaluation.md": "setup",
     "07-interview-prep.md": "setup",
     "base_cv.html": "setup",
-    "context.md": "setup-role-angles",
     "08-role-angles.md": "setup-role-angles",
     "label.md": "setup-scorer",
+}
+
+# **`context.md` has no owner, and that is the single biggest hole in setup.**
+#
+# It is the per-user equivalent of a `CLAUDE.md`: the foundation every other file, every generated
+# document and the scoring rubric are written against — and the largest file an account holds (the
+# owner's is ~48,000 characters). `setup-role-angles` names it twice and both are *reads*; its
+# instructions state plainly that `context.md` "must be written" before it runs. Nothing writes it.
+#
+# The two accounts that have one got it by importing a reference checkout. **A brand-new user
+# cannot obtain one at all**, which means `setup-role-angles` has an unmeetable precondition and
+# setup can never complete for them.
+#
+# Deliberately left unowned rather than pointed at a command that would not produce it: a user told
+# to run something that cannot fix their problem is worse off than one told the truth. Writing the
+# command that owns this is prompt work and needs the owner's approval.
+UNOWNED_FILES: dict[str, str] = {
+    "context.md": (
+        "No setup command writes this yet. It is the foundation file every other one is written "
+        "against, and it needs a command of its own — see the roadmap."
+    ),
 }
 
 # The commands a user may start from the chat, in the order they should run. `setup` first because
 # everything else reads what it writes; `setup-all` is deliberately absent until its gates are
 # rewritten for this platform rather than a local checkout.
 STARTABLE: tuple[str, ...] = ("setup", "setup-role-angles", "setup-scorer")
+
+# What a chat started by a command is called. A tab reading "/setup-role-angles" names the machinery
+# rather than the conversation, which is the one thing this page tries never to do.
+COMMAND_TITLES: dict[str, str] = {
+    "setup": "Your profile",
+    "setup-role-angles": "Your role angles",
+    "setup-scorer": "Your scoring rubric",
+    "setup-prompts": "Your document style",
+    "setup-director": "Guided setup",
+}
 
 
 # The tools, in the shape the API takes them. This is `/setup`'s own tool list — Read, Write, Glob,
