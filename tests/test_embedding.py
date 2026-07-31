@@ -242,7 +242,12 @@ def test_provenance_is_recorded_with_every_vector(ctx):
     job = s.get(CorpusJob, job_id)
     assert job.embedding_model == SERVED["model"]
     assert job.embedding_dim == DIM
-    assert job.embedding_version == SERVED["version"]
+    # The text mode is folded in, because a vector's provenance is not only which model produced it
+    # but which text it was given: two 768-dim vectors, one from `title+description` and one from
+    # `description` alone, are indistinguishable by inspection and mean different things.
+    from libs.corpus.embedtext import embedding_version
+
+    assert job.embedding_version == embedding_version(SERVED["version"])
     assert job.text_sha256 is not None
 
 

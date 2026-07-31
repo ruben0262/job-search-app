@@ -38,6 +38,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy import or_, select
 
+from libs.contracts.config import location_search_name
 from libs.corpus.repository import CorpusRepository
 from libs.db.models import User, UserConfig
 from libs.obs import audit
@@ -104,7 +105,9 @@ def queries_for(session, user: User) -> list[dict]:
         return []
 
     keys = build_query_set({user.id: config}, sources=("linkedin",))
-    queries = [{"search_term": key.keyword_norm, "location": key.location_norm or None,
+    # The board wants a place name, not the slug we store. `european_union` resolves to nothing.
+    queries = [{"search_term": key.keyword_norm,
+                "location": location_search_name(key.location_norm) or None,
                 "is_remote": key.is_remote, "hours_old": key.max_age_hours}
                for key in keys]
     return queries[:MAX_QUERIES_PER_RUN]

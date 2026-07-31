@@ -376,3 +376,49 @@ def test_a_closed_posting_found_at_send_time_is_dropped_and_not_failed_open():
     item = Item()
     item.closed = True
     assert is_eligible(item, rules(), now=NOW) == (False, "closed")
+
+
+# ── what a job is embedded from ───────────────────────────────────────────────────────────────
+
+def test_the_title_leads_the_embedded_text():
+    """**The single strongest statement of what a job is**, and the part that survives the
+    encoder's truncation — but only if it leads. `bge-base` reads about 2,000 characters and some
+    boards average 6,662, so a title appended at the end would be cut off every time."""
+    from libs.corpus.embedtext import build_text
+
+    text = build_text("Backend Engineer", "We need Python and Postgres.")
+    assert text.startswith("Backend Engineer")
+
+
+def test_the_embedded_text_carries_no_employer_or_geography():
+    """The reference's reason, and it is about generalisation: a model that has seen the employer
+    name learns employers, scores unseen companies badly, and encodes geography as fit."""
+    from libs.corpus.embedtext import build_text
+
+    text = build_text("Backend Engineer", "Work on our platform.")
+    assert "Acme" not in text and "Berlin" not in text
+
+
+def test_the_text_is_capped():
+    from libs.corpus.embedtext import MAX_CHARS, build_text
+
+    assert len(build_text("Engineer", "x" * 50_000)) == MAX_CHARS
+
+
+def test_a_job_with_no_description_still_embeds_its_title():
+    """Most ATS boards give a title and a link and nothing else on the first pass. Embedding an
+    empty string would put every one of them at the same point in the space."""
+    from libs.corpus.embedtext import build_text
+
+    assert build_text("Backend Engineer", None) == "Backend Engineer"
+    assert build_text("Backend Engineer", "") == "Backend Engineer"
+
+
+def test_the_text_mode_is_recorded_in_the_embedding_version():
+    """**Two vectors of the same width built from different text are indistinguishable by
+    inspection.** Folding the mode into the version makes a stale vector refuse to be scored rather
+    than score confidently and wrongly."""
+    from libs.corpus.embedtext import embedding_version
+
+    assert embedding_version("dim=768|norm=1") == "dim=768|norm=1|text=title_desc"
+    assert embedding_version("dim=768|norm=1", mode="desc").endswith("|text=desc")

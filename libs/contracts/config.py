@@ -130,6 +130,37 @@ class Location(StrEnum):
     COPENHAGEN = "copenhagen"
 
 
+# What each location is called when it is handed to a job board.
+#
+# **The stored value is a slug and no board understands one.** LinkedIn was being sent
+# `european_union` and `united_kingdom` as geo strings; it resolves neither, and one query died
+# outright with `Invalid country string`. The reference sends `"European Union"` — the human
+# readable name — because that is what the search box takes.
+#
+# Anything absent falls back to the slug with underscores replaced and words capitalised, which is
+# right for every city (`budapest` → `Budapest`) and is why cities are not listed here.
+LOCATION_SEARCH_NAMES = {
+    "european_union": "European Union",
+    "united_kingdom": "United Kingdom",
+    "remote_worldwide": "Worldwide",
+    "remote_eu": "European Union",
+    "remote_uk": "United Kingdom",
+    "remote_us": "United States",
+}
+
+
+def location_search_name(value: str) -> str:
+    """The name a job board will recognise for a stored location slug.
+
+    Empty in, empty out: `""` means "wherever" in a `QueryKey` and must stay that way, or a query
+    meant to be unconstrained acquires a location nobody asked for.
+    """
+    slug = (value or "").strip().lower()
+    if not slug:
+        return ""
+    return LOCATION_SEARCH_NAMES.get(slug, slug.replace("_", " ").title())
+
+
 class Language(StrEnum):
     """ISO 639-1 codes the platform offers. Also a controlled list, for the same reason."""
 

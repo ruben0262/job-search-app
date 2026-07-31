@@ -27,6 +27,7 @@ import logging
 from dataclasses import dataclass
 
 from libs.contracts.embedder import EmbedderClient, EmbedderVersion, pack_vector
+from libs.corpus.embedtext import build_text, embedding_version
 from libs.corpus.repository import CorpusRepository
 
 logger = logging.getLogger(__name__)
@@ -73,7 +74,11 @@ def embed_pending(
     # Digests are captured BEFORE the call, so the write can tell whether the text moved underneath
     # a vector that took minutes to compute.
     digests = {job.id: job.text_sha256 for job in pending}
-    texts = [job.description or "" for job in pending]
+    # **Title first, then description.** Embedding the description alone was the reference's
+    # non-default mode and it discarded the single strongest statement of what a job is — which
+    # also happens to be the part that survives the encoder's 512-token truncation, but only if it
+    # leads (`libs/corpus/embedtext.py`).
+    texts = [build_text(job.title, job.description) for job in pending]
 
     vectors = client.embed_bulk(texts)
 
@@ -84,7 +89,7 @@ def embed_pending(
                 f"embedder returned a {len(values)}-dim vector while reporting dim={version.dim}")
         accepted = corpus.set_embedding(
             job.id, vector=pack_vector(values), text_sha256=digests[job.id],
-            model=version.model, dim=version.dim, version=version.version)
+            model=version.model, dim=version.dim, version=embedding_version(version))
         if accepted:
             embedded += 1
         else:

@@ -172,3 +172,23 @@ def test_the_tier_can_be_killed_globally(db, monkeypatch):
 
     report = linkedin.run_for_due_users(db, now=NOW, gather=lambda *a, **k: [])
     assert report.considered == 0
+
+
+def test_locations_reach_the_board_as_place_names_not_slugs(db):
+    """**No job board understands `european_union`.** LinkedIn was being sent the stored slug as a
+    geo string; it resolves neither that nor `united_kingdom`, and one query died outright with
+    `Invalid country string`. The reference sends "European Union" because that is what the search
+    box takes."""
+    user = _user(db)
+    db.execute(UserConfig.__table__.update()
+               .where(UserConfig.user_id == user.id)
+               .values(config={"sections": [{"keywords": ["python developer"],
+                                             "locations": ["european_union", "budapest"],
+                                             "platform": "all", "remote_policy": "any",
+                                             "posted_within_hours": 6}]}))
+    db.flush()
+
+    locations = {q["location"] for q in linkedin.queries_for(db, user)}
+    assert "European Union" in locations
+    assert "Budapest" in locations
+    assert not any("_" in (loc or "") for loc in locations)
