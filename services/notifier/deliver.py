@@ -117,7 +117,19 @@ def pending_feed(session: Session, user_id: _uuid.UUID, *, cutoff: float,
                UserJobState.score.is_not(None),
                UserJobState.score >= cutoff,
                CorpusJob.posted_at.is_(None) | (CorpusJob.posted_at >= cutoff_at))
-        .order_by(UserJobState.score.desc())
+        # **Known-fresh first, then undated, and only then by score.** The age filter above lets
+        # undated rows through because it must — LinkedIn reports no posted time and dating them is
+        # what `date_candidates` is for — but ordering the pool by score alone let them take every
+        # slot: they are the bulk of the corpus, they are indistinguishable from fresh until
+        # somebody fetches them, and only a handful can be dated per run. Observed on 2026-07-31,
+        # after the model was fixed and 26 genuinely fresh matches were waiting: 50 candidates
+        # selected, 50 dropped as `{'too_old': 28, 'closed': 22}`, zero sent, twice in a row.
+        #
+        # Every *dated* row here already passed the freshness window in SQL, so preferring them
+        # costs nothing and guarantees the pool contains the jobs we can prove are recent. Undated
+        # rows still fill the rest and are still dated — they are ranked behind certainty, not
+        # excluded by it.
+        .order_by(CorpusJob.posted_at.is_(None), UserJobState.score.desc())
         .limit(limit * CANDIDATE_MULTIPLIER)).all()
 
     items = [FeedItem(*row[:-1]) for row in rows]

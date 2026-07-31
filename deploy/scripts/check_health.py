@@ -35,6 +35,11 @@ logger = logging.getLogger("health")
 REQUIRED_TIMERS = ("harvester", "linkedin", "notify-dispatch", "linkedin-describe",
                    "health", "backup")
 
+# How long the embedder gets to answer before it counts as down. Generous: the encoder is
+# single-threaded and a harvest cycle embedding at the same time will queue this behind it, and a
+# slow answer is a working service.
+EMBEDDER_TIMEOUT_SEC = 20.0
+
 
 def missing_timers() -> list[str]:
     """Which required timers are not enabled. Empty when systemd cannot be asked at all.
@@ -56,6 +61,33 @@ def missing_timers() -> list[str]:
     return missing
 
 
+def embedder_down() -> str | None:
+    """Why the embedder is unreachable, or `None` if it answers.
+
+    **The second single point of failure** (`OPERATIONS_PLAN.md` §8, G10) and the only one nothing
+    else reports: without it a harvest cycle embeds nothing and every new job stays unscored, which
+    from inside the application is indistinguishable from a quiet day. The alerts in `libs/ops` are
+    computed from the database and cannot see it, so it is probed here — the same reason the timer
+    check lives in this file rather than in the evaluator.
+
+    Skipped, not failed, when no URL is configured: this script is also run by hand on a laptop.
+    """
+    url = os.environ.get("EMBEDDER_URL")
+    if not url:
+        return None
+    try:
+        import httpx
+    except ImportError:
+        return None
+    try:
+        response = httpx.get(f"{url.rstrip('/')}/health", timeout=EMBEDDER_TIMEOUT_SEC)
+    except Exception as exc:
+        return f"{type(exc).__name__} reaching {url}"
+    if response.status_code != 200:
+        return f"answered {response.status_code}"
+    return None
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--email-on", choices=("never", "page", "warn"), default="page",
@@ -74,7 +106,18 @@ def main(argv: list[str] | None = None) -> int:
         alerts = evaluate(state)
 
     absent = missing_timers()
+    embedder = embedder_down()
     summary = render(alerts)
+    if embedder:
+        # Same reasoning as the timer block: this is the finding that explains the others. An
+        # unreachable embedder is why nothing is being embedded and therefore why nothing is being
+        # scored, and reading it the other way round wastes an hour.
+        summary = (
+            f"EMBEDDER UNREACHABLE: {embedder}\n"
+            "  Without it no new job gets a vector, so nothing is scored and the feed goes quiet\n"
+            "  with no other symptom.\n"
+            "  Check: docker compose -f deploy/compose.embedder.yml ps\n\n"
+            + summary)
     if absent:
         # Prepended rather than appended: it is the finding that explains the others. A missing
         # `notify-dispatch` is why the notify lane is empty, and reading that the other way round
@@ -90,12 +133,17 @@ def main(argv: list[str] | None = None) -> int:
     print(summary)
 
     paging = [alert for alert in alerts if alert.pages]
+    if embedder:
+        # Pages. It is not degraded-but-recovering: every job harvested while it is down stays
+        # unscored, and the backlog only grows until somebody acts.
+        paging.append(f"embedder unreachable: {embedder}")
     if absent:
         # A missing timer pages. It is not a degraded state that recovers on its own — the work it
         # schedules is simply never happening, and it will keep not happening until somebody acts.
         paging.append(f"timers not enabled: {', '.join(absent)}")
     audit(logger, "health.checked", alerts=len(alerts), paging=len(paging),
-          corpus=state.corpus_rows, timers_missing=len(absent))
+          corpus=state.corpus_rows, timers_missing=len(absent),
+          embedder_down=bool(embedder))
 
     threshold_met = (args.email_on == "warn" and alerts) or (args.email_on == "page" and paging)
     if threshold_met and args.to:
