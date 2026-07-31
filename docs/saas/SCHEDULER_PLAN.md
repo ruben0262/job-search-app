@@ -1,5 +1,28 @@
 # Scheduler — one work queue, four lanes
 
+## Implementation status — audited 2026-07-31
+
+**Fully implemented, and the platform has gone past it.** Every mechanism in this document is in
+`libs/queue`, and nothing here has needed revising — which is unusual enough among these plans to
+be worth saying.
+
+- **§3 `FOR UPDATE SKIP LOCKED`** is the claim protocol, exactly as specified.
+- **§3's `dedup_key`** is a partial unique index over `(lane, user_id, dedup_key)` where the state
+  is `ready` or `claimed` — a *constraint*, not an application check, because five labels arriving
+  at once must produce one retrain even when they race.
+- **§4 restart safety** — `CLAIM_TIMEOUT_MIN` per lane, swept on every worker loop. A test now
+  pins that the lane list and the timeout map agree by construction, after `setup` was added
+  without one and crash-looped its worker on the first sweep rather than the first job.
+- **§5 fairness** — `finished_at` per user per lane, which is why the column exists.
+- **§7 trigger policy** — `trainer.should_retrain`, the other half of the dedup key.
+
+**Where it has grown:** four lanes were designed (`notify train docgen label`); there are seven.
+`process` and `score` were added in Phase 2–4, and `setup` on 2026-07-30 — a chat turn takes
+minutes on a frontier model, so running it inside the HTTP request meant switching tabs killed it.
+Each addition needed a compose service, a claim timeout and a migration to the lane constraint, and
+nothing else: the design absorbed them, which is the strongest thing that can be said about it.
+
+
 **Status:** design, 2026-07-26. Covers training, notification delivery, document generation, and
 backfill labelling. **These are the same problem** — bounded work items, per-user fairness, must not
 starve each other, must survive a container restart — so they get one mechanism, not four.

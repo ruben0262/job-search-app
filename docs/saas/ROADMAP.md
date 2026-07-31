@@ -371,9 +371,11 @@ Every service is containerised and the API is **live at `mahoraga-app.rubenlekli
 tunnel, with port 22 the only thing listening publicly on the box. The `score` lane closed a gap
 that had frozen both feeds silently.
 
-**Not done, and both deliberate:** transactional email (above) and the first invited cohort, which
-depends on it. `notifier` and `trainer` are built and not started — starting the notifier messages
-real people, and that is a decision rather than a deployment step.
+~~**Not done, and both deliberate:** transactional email and the first invited cohort.~~
+**Superseded 2026-07-31.** Email is live and proven by real sends. `notifier` and `trainer` are
+started — the notifier has delivered **153 digests** and the trainer has produced models for both
+accounts. Phase 4 is closed; the first *external* invited cohort is a business decision, not an
+engineering one.
 
 ## Phase 5 — the generation and feedback half (added 2026-07-28)
 
@@ -431,13 +433,77 @@ The mechanical guarantees are in the changelog; the one worth repeating here is 
 hidden content is not delivered at all.** Invisible keyword stuffing looks perfect and gets the
 person filtered out by the system it was aimed at.
 
-**What remains:** build the image on the box, start it under the `full` profile, and watch one real
-tap through. Cover letters are deliberately not wired — `tailor_cover.md` is generalised and ready,
-and nothing yet says *when* a posting wants one.
+~~**What remains:** build the image on the box, start it under the `full` profile, and watch one
+real tap through.~~ **Deployed and exercised 2026-07-31:** `docgen` is running under the `full`
+profile and **three CVs have been built end to end**. `libs/templates/cv.py` was deleted the same
+day — a real build reads the user's own `base_cv.html`, which the schema renderer could never have
+produced.
 
-**Exit criteria:** a user taps Apply on a job, their model learns from it, and a retrain uses it.
-A user taps Build CV and receives a tailored PDF that names nothing the facts block does not
-support.
+Cover letters are still deliberately not wired — `tailor_cover.md` is generalised and ready, and
+nothing yet says *when* a posting wants one.
+
+**Exit criteria, honestly scored:**
+
+- *"A user taps Build CV and receives a tailored PDF"* — ✅ **met.** Three docgen jobs done.
+- *"A user taps Apply, their model learns from it, and a retrain uses it"* — ❌ **not met.**
+  Production holds 3,499 `llm` labels and **zero `feedback` labels**. The path exists
+  (`libs/feedback/actions.record` → `user_labels` at weight 5, called by the Telegram webhook) and
+  is tested; it has simply never fired. The 98 `applied_at` rows on the founder account were
+  imported from the reference instance and never went through it.
+
+## Phase 6 — make the loop turn (added 2026-07-31)
+
+Phases 1–5 built a platform that finds, ranks, delivers and writes. What it does **not** yet do is
+learn from what the user does with a job — and that is the whole premise. This phase is short and
+ordered by what blocks what.
+
+### 6a — finish the re-embed, then retrain ⛔ blocks everything downstream
+
+The corpus moved from embedding `description` alone to `title_desc` on 2026-07-31, which
+invalidated every existing vector by design. **3,136 of 6,601 rows re-embedded.** Both accounts'
+active models were fitted on the old vectors, so every score they produce is against a vector space
+the model was not trained in.
+
+Nothing about feed quality can be judged until this lands. Run `--embed-only` to completion, then
+retrain both accounts and let the new bake-off pick a head and a cutoff for the first time on real
+data.
+
+### 6b — close the feedback loop
+
+`record()` writes a `feedback` label at weight 5 and the webhook calls it, and production has
+**zero of them** against 3,499 `llm` labels. Two decisions:
+
+1. **The 98 imported applications.** Real applications the founder made, sitting as `applied_at`
+   timestamps that never became training data. Backfilling them is the single largest quality win
+   available — 98 true positives at 5× weight against a pool the LLM labelled — and the argument
+   against is that they predate the current profile generation. Decide, do not drift.
+2. **Prove one live tap**, end to end: tap Build CV in Telegram → a `feedback` label appears →
+   a retrain consumes it. Until that has happened once, the flywheel is untested in production.
+
+### 6c — the two sweeps that never run
+
+`mark_dormant` and `prune_model_artifacts` are implemented, tested, and called by nothing. Dormant
+accounts keep consuming harvest budget and their own LinkedIn tier; every model artifact ever
+trained is still on disk. Both want a caller on a schedule — a small unit, or a step in an existing
+timer.
+
+### 6d — the cheap operational debts
+
+- **Security headers and `allowed_hosts`** (`AUTH_REUSE.md` §5). No CSP, HSTS, `X-Frame-Options` or
+  `TrustedHostMiddleware`. The tunnel being the only way in is why nothing has broken, which is not
+  the same as having decided.
+- **Runbooks** (`OPERATIONS_PLAN.md` §9), still unwritten.
+- **Five dead-lettered jobs** on the box — 3 `train`, 1 `label`, 1 `process` — nobody has read.
+- **Cover letters have no trigger.** The prompt is ready; nothing says when a posting wants one.
+
+### 6e — the unclaimed 2x
+
+Batch API (−50%) and prompt caching are both available per user under BYOK and neither is used;
+cold-start labelling is exactly the offline workload the batch path is for. Measure the rubric
+against Haiku's 4096-token cache floor before assuming caching buys anything.
+
+**Exit criteria for Phase 6:** the corpus is on one embedding version, both models are trained on
+it, and a tap in Telegram has produced a label that a retrain consumed.
 
 ## Deliberately deferred
 
@@ -462,7 +528,7 @@ Do not build these before Phase 4, regardless of how appealing they look mid-bui
    gate every user's scoring quality, they inherit the generation prompts' change-control rules, and
    splitting them risks labels and model artifacts drifting out of step (`PROFILE_CAPTURE_PLAN.md`
    §6.4).
-4. **Managed Agents is beta and sits on the onboarding path.** Pin the beta header; expect one
-   contract change during the build.
+4. ~~**Managed Agents is beta and sits on the onboarding path.**~~ **Retired 2026-07-28** — plain
+   Messages calls, no beta on the onboarding path.
 3. **Being your own first user (Phase 1 exit) is the cheapest bug-finding available.** Resist
    onboarding a second person early.

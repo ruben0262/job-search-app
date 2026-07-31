@@ -1,5 +1,28 @@
 # Rebuild — markdown profiles, setup agents, and the reference instance's actual behaviour
 
+## Implementation status — audited 2026-07-31
+
+**Steps 1–4 of the order of work are done; step 5 is part done and is the only thing left here.**
+
+| Step | State |
+|---|---|
+| 1. Storage and import | ✅ `user_profile_files`, and the founder's own `CLAUDE.md`, skill files and base CV imported directly |
+| 2. Chat and the agent loop | ✅ Built, then rebuilt twice: a real chat UI on 2026-07-30, and the turn moved off the request path into the `setup` lane the same day. **One setup turn has run in production** |
+| 3. Scoring and the feed | ✅ `fetch_desc`, shadow scores, refresh, `opportunity_score`, `/rate` — all present. The feed is a real table with filters and pagination |
+| 4. Applications page and the retrain popup | ✅ The jobs table carries applied state and filters on it; the Model page owns training and says a retrain is needed rather than running one |
+| 5. Delete the schema machinery | 🟡 **part done.** `templates/cv.py` and `docprompt.py` deleted 2026-07-31. `rubric.py`, `facts.py`, `services/capture`, the `process` lane, `ProcessPage.tsx`, the confirmation form and the generated types remain — that flow is *superseded but wired end to end and passing its tests*, so retiring it is a product cutover rather than a cleanup |
+
+**The two buttons work and the loop is not closed.** `libs/feedback/actions.record` writes a
+`user_labels` row with `source='feedback'` and `weight=5`, and the Telegram webhook calls it — but
+production holds **3,499 `llm` labels and zero `feedback` labels**. The founder account carries 98
+`applied_at` timestamps, all imported from the reference instance between 27 and 29 July, which
+never went through `record()` and so never became training data.
+
+So the flywheel this document is built around — *every CV you build is a positive label at 5×
+weight* — has never turned in production. Two separate things to decide: whether to backfill
+labels from those 98 real applications, and proving one live tap end to end.
+
+
 Decided 2026-07-29. This supersedes the parts of `PROFILE_CAPTURE_PLAN.md` that describe a JSON
 profile schema as the source of truth, and it is the plan the next session should follow.
 
