@@ -33,6 +33,7 @@ from libs.scoring.thresholds import cutoff_for
 from libs.tenant.repository import TenantRepository
 from services.api.admin_routes import admin_emails
 from services.api.deps import current_user, get_db
+from services.api.status_routes import DEFAULT_NOTIFICATIONS_PER_DAY
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["dashboard"])
@@ -127,7 +128,10 @@ def _stale_reason(user: User, model: UserModel | None) -> str:
 
 def _cap(db: Session, user_id: _uuid.UUID) -> int:
     config = TenantRepository(db).get_config(user_id) or {}
-    return migrate_config(config).get("max_notifications_per_day", 20)
+    # The same default the notifier enforces. It read 20 here and 100 there, so the dashboard
+    # told a user their cap was a fifth of what it was.
+    return migrate_config(config).get("max_notifications_per_day",
+                                      DEFAULT_NOTIFICATIONS_PER_DAY)
 
 
 def _banners(user: User, servable: bool, onboarding) -> list[dict]:

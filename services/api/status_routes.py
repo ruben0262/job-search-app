@@ -222,7 +222,7 @@ def _docgen(db: Session, user_id: _uuid.UUID) -> dict:
 # `services.notifier` (the boundary contract), and the notifier owns the number it enforces.
 # Duplicating a constant is the smaller evil compared with two services importing each other, and a
 # test pins the two together so they cannot drift apart unnoticed.
-DEFAULT_NOTIFICATIONS_PER_DAY = 20
+DEFAULT_NOTIFICATIONS_PER_DAY = 100
 
 
 def _daily_cap(db: Session, user_id: _uuid.UUID) -> int:
