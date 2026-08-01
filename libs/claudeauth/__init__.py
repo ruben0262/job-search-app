@@ -29,6 +29,7 @@ onto OAuth.
 from __future__ import annotations
 
 import errno
+import logging
 import os
 import re
 import secrets
@@ -48,7 +49,10 @@ import uuid as _uuid
 # hyperlink escape (`ESC ] 8 ; id=… ; <url> BEL`). **Taking the visible text instead would capture a
 # truncated URL**, since the CLI word-wraps what it displays but not what it links.
 _URL = re.compile(r"https://[^\s\x07\x1b]+/oauth/authorize\?[^\s\x07\x1b]+")
-_TOKEN = re.compile(r"sk-ant-oat\d{2}-[A-Za-z0-9_-]{20,}")
+# Deliberately loose on the middle segment. `sk-ant-oat01-` is what 2.1.220 mints, but the
+# version and the prefix are Anthropic's to change, and failing to recognise a token we
+# have successfully been given is the worst way to lose one.
+_TOKEN = re.compile(r"sk-ant-[A-Za-z0-9]{2,12}-[A-Za-z0-9_-]{20,}")
 
 # What the CLI says when Claude turns the code down. Matched alongside the token so a rejection is
 # noticed the moment it is printed rather than after the full read timeout: waiting sixty seconds to
@@ -77,6 +81,8 @@ TOKEN_WAIT_SEC = 60.0
 MAX_LIVE_SESSIONS = 24
 
 CLI = os.environ.get("CLAUDE_CLI", "claude")
+
+logger = logging.getLogger(__name__)
 
 
 class OAuthError(RuntimeError):
@@ -285,11 +291,18 @@ def finish(session_id: str, user_id: _uuid.UUID, code: str) -> str:
         _kill(session)
         raise OAuthError("the Claude sign-in closed before it finished") from exc
     except OAuthError:
+        # **Say what the CLI actually printed.** This failure has now been diagnosed wrongly twice
+        # from the outside, because the only evidence was a user-facing sentence that deliberately
+        # carries no process output. So the transcript is logged here instead, with anything
+        # token-shaped replaced first -- the log is the one place it is safe to describe, and only
+        # because it never contains the credential.
+        transcript = _TOKEN.sub("<token>", session.text(strip=True))[-1200:]
+        logger.warning("setup-token produced no recognised outcome; tail=%r", transcript)
         _SESSIONS.pop(session_id, None)
         _kill(session)
         raise OAuthError("the Claude sign-in did not answer, please start again") from None
 
-    if not token.startswith("sk-ant-oat"):
+    if not token.startswith("sk-ant-"):
         # Claude rejected it. Clear the prompt so the same session can take another attempt, and
         # say which code to use: the usual cause is a code copied from a tab opened by an earlier
         # attempt, which belongs to a challenge that no longer exists.
