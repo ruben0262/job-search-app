@@ -1,0 +1,40 @@
+# What must never reach a build context.
+#
+# **`__pycache__` is the one that actually bit.** Every image is built with `context: ..`, so a
+# `COPY libs /app/libs` copied the host's compiled bytecode in alongside the source. Python loads a
+# `.pyc` whenever it considers it current, so a container could execute stale bytecode while the
+# `.py` beside it was correct — which is precisely what happened four times on 2026-08-01: a build
+# reported success, the source in the image was right, and the running service still had a column
+# that had been dropped. `--no-cache` "fixed" it only because it discarded the bytecode too.
+#
+# The rest is size. The context was the whole repository: a virtualenv, the git history, and
+# node_modules, re-sent on every build of every service.
+__pycache__/
+*.py[cod]
+*$py.class
+
+# The host's virtualenv. Linux-or-Windows, wrong Python, and irrelevant: each image installs from
+# its own requirements.txt.
+.venv/
+venv/
+
+.git/
+.github/
+
+# Installed and built on the host. The api image runs `npm ci` and `npm run build` itself, and
+# copying either of these over the top would replace what it just built with whatever the host had.
+web/node_modules/
+web/dist/
+node_modules/
+
+# Test and tooling artefacts.
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+
+# Local operator state that is not part of any image.
+*.log
+logs/
+scratch/
