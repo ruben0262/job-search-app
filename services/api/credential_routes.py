@@ -18,7 +18,10 @@ API credit or hold a subscription.
 from __future__ import annotations
 
 import logging
+import os
 import uuid as _uuid
+
+import httpx
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
@@ -29,7 +32,6 @@ from libs.db.models import ProxyCredential, User
 from libs.db.models.user import SECRET_KINDS, TELEGRAM_ROUTE_KEYS
 from libs.obs import audit
 from libs.secrets import SecretStore, redacting
-from services.api import claude_oauth
 from services.api.deps import current_user, get_db, get_store, rate_limit
 
 logger = logging.getLogger(__name__)
@@ -225,18 +227,39 @@ def list_credentials(db: Session = Depends(get_db),
     }
 
 
+# The broker owns the sign-in processes; see `services/oauthbroker`. Reached on the compose
+# network only, which is why these calls carry no credential of their own.
+BROKER = os.environ.get("OAUTH_BROKER_URL", "http://oauthbroker:8100")
+# Longer than the broker's own read waits, so a broker timeout surfaces as the broker's message
+# rather than as a client timeout that says nothing useful.
+BROKER_TIMEOUT = 75.0
+
+
+def _broker(path: str, payload: dict) -> dict:
+    """Call the broker, turning its failures into ones a user can act on.
+
+    A transport error here means the broker is down or missing the Claude CLI. That is a service
+    problem and says so; it must not surface as a 500, because the user would retry forever.
+    """
+    try:
+        response = httpx.post(f"{BROKER}{path}", json=payload, timeout=BROKER_TIMEOUT)
+    except httpx.HTTPError as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
+                            detail="Claude sign-in is unavailable right now") from exc
+    if response.status_code >= 400:
+        detail = response.json().get("detail", "the Claude sign-in failed")
+        raise HTTPException(response.status_code, detail=detail)
+    return response.json()
+
+
 @router.post("/claude/oauth/start")
 def claude_oauth_start(request: Request, *,
                        user_id: _uuid.UUID = Depends(current_user)) -> dict:
-    """Begin a sign-in and hand back the URL to open. See `services.api.claude_oauth` for why a
-    process has to stay alive between this call and the next one."""
+    """Begin a sign-in and hand back the URL to open."""
     rate_limit(request, f"oauth:{user_id}", limit=10, per_seconds=3600)
-    try:
-        session_id, url = claude_oauth.start(user_id)
-    except claude_oauth.OAuthError as exc:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    body = _broker("/start", {"user_id": str(user_id)})
     audit(logger, "credentials.oauth_started", user=user_id)
-    return {"session_id": session_id, "url": url}
+    return {"session_id": body["session_id"], "url": body["url"]}
 
 
 class OAuthFinishBody(BaseModel):
@@ -256,11 +279,8 @@ def claude_oauth_finish(body: OAuthFinishBody, *,
     browser flow completed, not that the credential can reach the model, and those come apart on an
     account with no active subscription.
     """
-    try:
-        token = claude_oauth.finish(body.session_id, user_id, body.code)
-    except claude_oauth.OAuthError as exc:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-
+    token = _broker("/finish", {"user_id": str(user_id),
+                                "session_id": body.session_id, "code": body.code})["token"]
     with redacting(token):
         result = validate_credential("claude_oauth", token)
         store.put(user_id, "claude_oauth", token, validated=result.ok)
@@ -268,12 +288,15 @@ def claude_oauth_finish(body: OAuthFinishBody, *,
     return {"status": "saved", "validated": result.ok, "detail": result.detail}
 
 
+class OAuthCancelBody(BaseModel):
+    session_id: str = Field(min_length=8, max_length=128)
+
+
 @router.post("/claude/oauth/cancel")
-def claude_oauth_cancel(body: dict, user_id: _uuid.UUID = Depends(current_user)) -> dict:
+def claude_oauth_cancel(body: OAuthCancelBody,
+                        user_id: _uuid.UUID = Depends(current_user)) -> dict:
     """Back out. Cheap, and it frees the process instead of leaving it to the TTL."""
-    session_id = str(body.get("session_id", ""))
-    if session_id:
-        claude_oauth.cancel(session_id)
+    _broker("/cancel", {"session_id": body.session_id})
     return {"status": "cancelled"}
 
 

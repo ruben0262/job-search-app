@@ -22,7 +22,7 @@ COMPOSE="docker compose -f deploy/compose.yml -p job-search-platform"
 
 # Every service, named. `up -d` with no arguments skips anything behind a profile, which is how four
 # workers stayed on old images while reporting healthy.
-ALL_SERVICES="api notifier scorer trainer labeller docgen setupagent capture"
+ALL_SERVICES="api oauthbroker notifier scorer trainer labeller docgen setupagent capture"
 SERVICES="${*:-$ALL_SERVICES}"
 
 say() { printf '\n\033[1m== %s\033[0m\n' "$1"; }

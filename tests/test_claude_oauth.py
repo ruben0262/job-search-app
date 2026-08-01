@@ -15,7 +15,7 @@ import time
 
 import pytest
 
-from services.api import claude_oauth
+from libs import claudeauth as claude_oauth
 
 pytestmark = pytest.mark.skipif(not hasattr(os, "fork"), reason="pty.fork is POSIX only")
 

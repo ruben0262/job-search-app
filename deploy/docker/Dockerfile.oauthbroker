@@ -1,0 +1,36 @@
+# The Claude sign-in broker. See `services/oauthbroker/__main__.py` for why it is its own process.
+#
+# **The only image with node in the final layer.** `claude setup-token` is the Claude Code CLI, so
+# this image needs it at runtime rather than at build time, which is the opposite of the API image
+# (there node builds the SPA and is thrown away). Keeping that in one small service is most of the
+# reason this is a service.
+FROM node:22-slim
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends python3 python3-pip python3-venv ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+# Pinned. An unpinned global install means the flow can change under us on any rebuild, and the two
+# things this depends on — the URL it prints and the prompt it blocks on — are exactly what a CLI
+# release is free to reword.
+ARG CLAUDE_CODE_VERSION=latest
+RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
+
+WORKDIR /app
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PATH="/opt/venv/bin:$PATH"
+
+RUN python3 -m venv /opt/venv
+COPY services/oauthbroker/requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
+
+COPY libs /app/libs
+COPY services/oauthbroker /app/services/oauthbroker
+
+# A non-root user, because this image runs a CLI that opens network connections on a user's behalf
+# and writes to its own config directory.
+RUN useradd --create-home --uid 10001 broker && chown -R broker /app /home/broker
+USER broker
+ENV HOME=/home/broker
+
+EXPOSE 8100
+ENTRYPOINT ["python", "-m", "services.oauthbroker"]

@@ -295,6 +295,31 @@ services:
     mem_limit: 1g
     cpus: 2
 
+  # Claude sign-in sessions. **Exactly one replica, and that is a correctness constraint, not a
+  # sizing one**: `claude setup-token` blocks on stdin between the request that hands the user a URL
+  # and the request that brings the code back, so both must reach the same process. A second replica
+  # would answer for sessions it has never heard of and tell users their sign-in expired.
+  #
+  # That constraint used to sit inside the API, where it silently capped the API at one worker.
+  # Moving it here is what lets the API scale.
+  #
+  # No ports published: it authenticates nobody and takes a user id as an argument, so it is
+  # reachable on the compose network and nowhere else. The API is the thing that authenticates.
+  oauthbroker:
+    build:
+      context: ..
+      dockerfile: deploy/docker/Dockerfile.oauthbroker
+    profiles: ["full"]
+    environment:
+      LOG_DIR: /var/log/jobsearch
+    volumes:
+      - ../logs:/var/log/jobsearch
+    restart: always
+    # Small: it holds pty file descriptors and a dict. The ceiling that matters is
+    # `MAX_LIVE_SESSIONS`, not memory.
+    mem_limit: 512m
+    cpus: 1
+
   # The only way in. **The VPS has no open inbound port** — cloudflared makes an outbound connection
   # to Cloudflare and traffic arrives back down it (D7), so there is nothing on this box to
   # portscan and no certificate to renew.

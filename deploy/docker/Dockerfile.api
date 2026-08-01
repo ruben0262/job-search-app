@@ -32,8 +32,11 @@ COPY --from=web /web/dist /app/web
 
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 WEB_DIR=/app/web
 
-# One worker. The box has eight cores but Postgres is the bottleneck long before uvicorn is, and a
+# Four workers. **It was one, and one of the reasons was a bug**: Claude sign-in sessions used to
+# live in this process, so a second worker would have answered for sessions it had never heard of.
+# Those moved to `oauthbroker`, which frees this to scale. Postgres is still the bottleneck long
+# before uvicorn is, so this is modest rather than one-per-core, and a
 # second worker would double the connection pool for a cohort that will not notice.
 # No published port: reached through the Cloudflare Tunnel (D7), so the VPS needs none open.
 EXPOSE 8000
-ENTRYPOINT ["uvicorn", "services.api.app:app", "--host", "0.0.0.0", "--port", "8000"]
+ENTRYPOINT ["uvicorn", "services.api.app:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]

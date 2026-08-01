@@ -10,6 +10,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 
+import { ClaudeConnect } from "../../components/ClaudeConnect";
 import { api } from "../../api";
 import { Error, Field, useAction } from "../../ui";
 
@@ -374,6 +375,18 @@ export function ClaudeStep({ onDone }: { onDone: () => void }) {
         </select>
       </Field>
       <Stored key={`stored-${kind}`} kind={kind} onChanged={onDone} />
+      {/* **The subscription path is a button, not a paste field.** It used to say "From your
+          Claude subscription", which left the user to discover the CLI, the command, and the copy
+          themselves — the step people abandoned. The paste field stays underneath for anyone who
+          already has a token or whose browser blocks the popup. */}
+      {kind === "claude_oauth" ? (
+        <>
+          <ClaudeConnect onConnected={onDone} />
+          <p className="small muted" style={{ marginTop: "1rem" }}>
+            Already have a token from <code>claude setup-token</code>? Paste it instead.
+          </p>
+        </>
+      ) : null}
       <CredentialForm
         key={kind}
         kind={kind}
@@ -381,7 +394,7 @@ export function ClaudeStep({ onDone }: { onDone: () => void }) {
         hint={
           kind === "claude_api"
             ? "From console.anthropic.com. It needs credit, we check that it works before saving."
-            : "From your Claude subscription."
+            : "A token you already generated with the Claude Code CLI."
         }
         placeholder="sk-ant-…"
         onDone={onDone}
