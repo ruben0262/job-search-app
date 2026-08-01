@@ -38,8 +38,21 @@ import uuid as _uuid
 
 # The URL the CLI prints, and the token it prints at the end. Both are matched rather than parsed:
 # the surrounding prose is decoration the CLI is free to change, these two shapes are the contract.
-_URL = re.compile(r"https://\S*claude\.ai/oauth/authorize\?\S+")
+#
+# **The host is `claude.com/cai/`, not `claude.ai/`.** Assuming the latter cost a deploy: the regex
+# never matched, the read ran to its timeout, and every sign-in returned 503 with no URL to open.
+# Matched loosely on the path so a host change does not repeat that.
+#
+# The class excludes BEL and ESC because the complete URL arrives inside an OSC-8
+# hyperlink escape (`ESC ] 8 ; id=… ; <url> BEL`). **Taking the visible text instead would capture a
+# truncated URL**, since the CLI word-wraps what it displays but not what it links.
+_URL = re.compile(r"https://[^\s\x07\x1b]+/oauth/authorize\?[^\s\x07\x1b]+")
 _TOKEN = re.compile(r"sk-ant-oat\d{2}-[A-Za-z0-9_-]{20,}")
+
+# Cursor moves, colours, and OSC sequences. Stripped before the token is matched: the CLI decorates
+# and re-positions as it draws, and an escape landing mid-token would break the match.
+_ESCAPES = re.compile(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)"
+                      r"|\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b[@-Z\\-_]")
 
 # How long a user has between "open this link" and pasting the code back. Generous because it spans
 # a browser login and possibly a 2FA prompt, bounded because each waiting session is a live process.
@@ -78,7 +91,8 @@ class _Session:
 _SESSIONS: dict[str, _Session] = {}
 
 
-def _read_until(fd: int, pattern: re.Pattern[str], deadline: float) -> tuple[str, str]:
+def _read_until(fd: int, pattern: re.Pattern[str], deadline: float, *,
+                strip: bool = False) -> tuple[str, str]:
     """Read from the pty until `pattern` matches. Returns (match, everything read).
 
     The full buffer comes back so the caller can close over it and wipe it; it is never returned to
@@ -97,7 +111,7 @@ def _read_until(fd: int, pattern: re.Pattern[str], deadline: float) -> tuple[str
         if not chunk:
             break
         buffer += chunk.decode("utf-8", "replace")
-        found = pattern.search(buffer)
+        found = pattern.search(_ESCAPES.sub("", buffer) if strip else buffer)
         if found:
             return found.group(0), buffer
     raise OAuthError("the Claude sign-in did not respond in time, please try again")
@@ -154,12 +168,24 @@ def start(user_id: _uuid.UUID) -> tuple[str, str]:
         env = {k: v for k, v in os.environ.items()
                if k not in ("CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")}
         env["TERM"] = "dumb"
+        env["COLUMNS"] = "500"
+        env["NO_COLOR"] = "1"
         try:
             os.execvpe(CLI, [CLI, "setup-token"], env)
         finally:
             os._exit(127)
 
     os.set_blocking(fd, False)
+    # **A wide terminal, so the CLI never wraps.** At the default 80 columns it breaks the token
+    # across lines mid-string, and no amount of escape-stripping reassembles that reliably.
+    try:
+        import fcntl  # noqa: PLC0415
+        import struct  # noqa: PLC0415
+        import termios  # noqa: PLC0415
+
+        fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 100, 500, 0, 0))
+    except (ImportError, OSError):  # pragma: no cover - best effort, stripping still helps
+        pass
     session = _Session(pid, fd, user_id)
     try:
         url, _ = _read_until(fd, _URL, time.monotonic() + URL_WAIT_SEC)
@@ -191,7 +217,8 @@ def finish(session_id: str, user_id: _uuid.UUID, code: str) -> str:
     buffer = ""
     try:
         os.write(session.fd, code.strip().encode() + b"\r")
-        token, buffer = _read_until(session.fd, _TOKEN, time.monotonic() + TOKEN_WAIT_SEC)
+        token, buffer = _read_until(session.fd, _TOKEN, time.monotonic() + TOKEN_WAIT_SEC,
+                                    strip=True)
     except OSError as exc:
         raise OAuthError("the Claude sign-in closed before it finished") from exc
     except OAuthError:
