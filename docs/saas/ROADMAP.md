@@ -576,6 +576,45 @@ here so it is not lost once setup runs end to end.
    cutoff and out-of-fold precision/recall — the data already exists in `models.metrics`, and today
    the only way to see v2 → v3 → v4 improve was to run SQL by hand.
 
+### 6l — one fetch per job, one cadence for everyone (decided 2026-08-01) ⬅ **next**
+
+**The premise: this app streams the newest postings.** Everything below follows from taking that
+literally rather than making it configurable.
+
+**1. LinkedIn fetches the whole posting on first sight.** Today the link pass stores a *snippet*,
+the row is embedded and scored on that, and an hourly `linkedin-describe` replaces it with the real
+JD — which invalidates the vector and triggers a rescore. That self-heal is not a safety net, it is
+a wrong score that exists for up to an hour and a job that may have been silently rejected on a
+preview nobody re-examines.
+
+The fix is the owner's, and it is cheaper than either alternative: **links → dedup → fetch the full
+JD only for the rows that are new → store complete → embed → score.** The objection to inline
+fetching was that the same posting would be fetched once per interested user; dedup *before* the
+fetch removes it, because a job already in the corpus is never fetched again by anyone. One proxy
+hit per new job, not per user, and not per user per hour.
+
+Asking jobspy for descriptions directly (`linkedin_fetch_description: True`) is **not** the way to
+do it — it would fetch every result including the ones already held. The dedup has to sit between
+the listing and the description fetch.
+
+`linkedin-describe.timer` is deleted with it.
+
+**2. Freshness becomes admin-set, per source.** Sites differ in how fast they list and how far back
+their filters reach, so the value is per source and set once by the operator — not per user. The
+per-user field is dropped, not merely unread.
+
+**3. One delivery cadence: 15 minutes, for everyone.** `users.notify_interval_min` goes. A user
+choosing "every 4 hours" is a user asking to be told about a two-hour-old job, which contradicts
+the product. The only thing left that a user tunes is their keywords and locations.
+
+**4. Latency is a requirement, not a side effect.** Found → described → embedded → scored →
+delivered has to complete quickly enough that a posting inside a 4-hour window still arrives with
+most of that window left. Worth measuring end to end rather than assuming: the stages are already
+timed (`libs.obs.timed`), so the number exists once somebody reads it.
+
+**Open:** what happens to a row whose JD fetch fails permanently — never scored, or scored on what
+little there is after N attempts. Not yet decided.
+
 ### 6b — close the feedback loop
 
 `record()` writes a `feedback` label at weight 5 and the webhook calls it, and production has
