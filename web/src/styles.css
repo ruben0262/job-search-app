@@ -166,8 +166,14 @@ nav {
   gap: 1.6rem;
   border-bottom: 1px solid var(--hairline);
   margin-bottom: 2.5rem;
-  /* Sticky and **opaque**. The dot-grid backdrop is fixed, so a translucent bar showed the page
-     sliding underneath it — legible for a moment and then not. */
+}
+
+/* **Sticky only inside the signed-in shell.** The rule was on every `nav`, and the auth pages have
+   one too — so sign-in, signup, verify and forgot-password each got an opaque bar pinned at
+   `z-index: 20`, which is the dark box in the corner of an otherwise empty screen.
+   Opaque where it does apply: the dot-grid backdrop is fixed, so a translucent bar shows the page
+   sliding underneath it, legible for a moment and then not. */
+.app nav {
   position: sticky;
   top: 0;
   z-index: 20;
