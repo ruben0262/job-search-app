@@ -96,7 +96,7 @@ export function SettingsPage({ onSignedOut }: { onSignedOut: () => void }) {
               Withdraw my agreement
             </button>
             <p className="small muted">
-              Processing becomes unavailable. Your existing profile is unchanged — deleting your
+              Processing becomes unavailable. Your existing profile is unchanged, deleting your
               account is what removes everything.
             </p>
           </>
@@ -177,7 +177,7 @@ function DeliveryCard({
           </span>
           <span className="hint" style={{ marginBottom: 0 }}>
             {active
-              ? "Pausing stops Telegram messages. Collection and scoring keep running, and the bot stays on — resuming picks up where you left off."
+              ? "Pausing stops Telegram messages. Collection and scoring keep running, and the bot stays on, resuming picks up where you left off."
               : "Nothing is being sent. Everything else keeps running, so turning it back on delivers a warm feed."}
           </span>
         </span>
@@ -192,11 +192,11 @@ function DeliveryCard({
       <Error>{toggle.error}</Error>
 
       {/* **The cadence and the freshness window are the platform's** (2026-08-01), so they are
-          not here any more — a user choosing "every four hours" was choosing to hear about a
+          not here any more, a user choosing "every four hours" was choosing to hear about a
           two-hour-old job, which is the opposite of what this product is. What remains is the one
           real choice: whether messages are sent at all. */}
       <p className="facts">
-        Jobs are sent as soon as they are found — every {interval} minutes, when there is something
+        Jobs are sent as soon as they are found, every {interval} minutes, when there is something
         new that matches you. How recent a posting has to be is set per job board by the platform.
       </p>
     </Card>
@@ -222,7 +222,7 @@ function PasswordCard({ onChanged }: { onChanged: () => void }) {
     return (
       <Card title="Password">
         <p className="small muted">
-          Changed. Every session is signed out, including this one — sign back in with the new
+          Changed. Every session is signed out, including this one, sign back in with the new
           password.
         </p>
       </Card>

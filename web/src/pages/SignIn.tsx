@@ -47,7 +47,7 @@ export function SignIn({
           on this device and you land back here, signed up and ready.
         </p>
         <p className="facts">
-          Nothing arriving? Check spam, or sign up again for a fresh link — the newest one is the
+          Nothing arriving? Check spam, or sign up again for a fresh link, the newest one is the
           one that counts.
         </p>
       </AuthShell>

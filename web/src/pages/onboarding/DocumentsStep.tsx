@@ -75,7 +75,7 @@ export function DocumentsStep({ onDone }: { onDone: () => void }) {
       </Field>
       <Error>{upload.error ?? remove.error}</Error>
 
-      {/* The history is its own page with its own single file — listing it here as one more row
+      {/* The history is its own page with its own single file, listing it here as one more row
           would invite deleting or duplicating it from the wrong place. */}
       {list?.documents.filter((document) => document.kind !== "history").length ? (
         <table>
@@ -129,7 +129,7 @@ export function HistoryStep({ onDone }: { onDone: () => void }) {
     if (
       text.trim().length > 0 &&
       !window.confirm(
-        "This replaces your current history — what is written there now disappears. Replace it?",
+        "This replaces your current history, what is written there now disappears. Replace it?",
       )
     ) {
       return;

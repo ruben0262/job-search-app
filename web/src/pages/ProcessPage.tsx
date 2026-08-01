@@ -89,7 +89,7 @@ export function ProcessPage({ onChanged }: { onChanged: () => void }) {
           <Card title="We could not work these out">
             {draft.conflicts.map((conflict, index) => (
               <p key={index} className="small">
-                <strong>{conflict.field}:</strong> {conflict.value_a} — or — {conflict.value_b}
+                <strong>{conflict.field}:</strong> {conflict.value_a}, or, {conflict.value_b}
               </p>
             ))}
           </Card>
@@ -98,7 +98,7 @@ export function ProcessPage({ onChanged }: { onChanged: () => void }) {
         <Card title="What you are not a fit for">
           <p className="small muted">
             Each line here is a <strong>hard rule</strong>: jobs whose core requirement is one of
-            these will never be shown to you. Delete anything you disagree with — a wrong line
+            these will never be shown to you. Delete anything you disagree with, a wrong line
             silently hides work you would have wanted.
           </p>
           <Field label="One per line">
@@ -109,7 +109,7 @@ export function ProcessPage({ onChanged }: { onChanged: () => void }) {
         <Error>{confirm.error ?? discard.error}</Error>
         <div className="row">
           <button disabled={confirm.busy} onClick={() => void confirm.run()}>
-            {confirm.busy ? "Saving…" : "This is right — use it"}
+            {confirm.busy ? "Saving…" : "This is right, use it"}
           </button>
           <button className="danger" disabled={discard.busy} onClick={() => void discard.run()}>
             Throw it away
@@ -194,7 +194,7 @@ function Consent({ onGranted }: { onGranted: () => void }) {
       </table>
       <Error>{grant.error}</Error>
       <button disabled={grant.busy} onClick={() => void grant.run()}>
-        I understand — go ahead
+        I understand, go ahead
       </button>
     </Card>
   );

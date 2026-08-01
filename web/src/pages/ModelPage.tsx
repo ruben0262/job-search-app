@@ -38,7 +38,7 @@ export function ModelPage({
   const columns = model.history?.[0]?.metrics ?? [];
 
   const headline = model.servable
-    ? `Your model is live — version ${model.version}`
+    ? `Your model is live, version ${model.version}`
     : feed.labels > 0
       ? "Your model is being built"
       : "Your model does not exist yet";
@@ -50,7 +50,7 @@ export function ModelPage({
       <p className="lede">
         {model.servable
           ? "Every job is ranked by a model trained on your own decisions. It keeps learning: every CV you build and every rating you give becomes training data."
-          : "Until it is trained, your feed is ranked by your keywords. The model needs labelled jobs to learn from — that is what scoring is."}
+          : "Until it is trained, your feed is ranked by your keywords. The model needs labelled jobs to learn from, that is what scoring is."}
       </p>
 
       <dl className="stats">
@@ -77,11 +77,11 @@ export function ModelPage({
       ) : null}
 
       {/* The one action. Labelling is the expensive step (it runs on your Claude key), so it is a
-          button rather than a side effect — and retraining afterwards is free and automatic. */}
+          button rather than a side effect, and retraining afterwards is free and automatic. */}
       <div style={{ marginTop: "1.5rem" }}>
         {next.action === "confirm" || next.action === "process" || next.action === "upload" ? (
           <p className="facts">
-            Scoring needs a finished profile first —{" "}
+            Scoring needs a finished profile first, {" "}
             <a href={next.action === "confirm" ? "#/process" : "#/profile"}>
               {next.action === "confirm" ? "review your profile" : "build your profile"}
             </a>{" "}
@@ -114,7 +114,7 @@ export function ModelPage({
           <h2>Version history</h2>
           <p className="facts">
             What each training run measured. <strong>Cutoff</strong> is the score a job must beat to
-            reach you — tuned on held-out predictions rather than picked, so it moves between
+            reach you, tuned on held-out predictions rather than picked, so it moves between
             versions.
           </p>
           <div className="table-scroll">
@@ -161,7 +161,7 @@ export function ModelPage({
         <h2>How it learns</h2>
         <ol className="loop">
           <li>
-            <strong>Label.</strong> Claude reads jobs against your profile and scores them — these
+            <strong>Label.</strong> Claude reads jobs against your profile and scores them, these
             are the examples the model learns from.
           </li>
           <li>
@@ -170,12 +170,12 @@ export function ModelPage({
           </li>
           <li>
             <strong>Rank.</strong> Every new job is scored by your model the moment it is
-            collected. Building a CV counts as a strong yes; skipping counts as a no — the model
+            collected. Building a CV counts as a strong yes; skipping counts as a no, the model
             retrains on your behaviour.
           </li>
         </ol>
         <p className="facts">
-          Changing your profile makes old labels stale — the platform tells you when that happens,
+          Changing your profile makes old labels stale, the platform tells you when that happens,
           and relabelling is offered rather than run behind your back, because it costs real money.
         </p>
       </div>

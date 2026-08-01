@@ -100,12 +100,12 @@ export function AdminUserPage({ userId }: { userId: string }) {
       <h2>Setup</h2>
       {setup.missing.length ? (
         <p className="error">
-          Incomplete — {setup.missing.length} file(s) missing or unfilled:{" "}
+          Incomplete, {setup.missing.length} file(s) missing or unfilled:{" "}
           {setup.missing.join(", ")}. Training is refused until these exist.
         </p>
       ) : (
         <p className="facts" style={{ color: "var(--score)" }}>
-          Complete — every required profile file is written.
+          Complete, every required profile file is written.
         </p>
       )}
       <div className="sources" style={{ marginBottom: "2rem" }}>

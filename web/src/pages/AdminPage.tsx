@@ -204,7 +204,7 @@ export function AdminPage() {
 
           <label className="label" htmlFor="cadence">Delivery cadence</label>
           <span className="hint">
-            How often every user&apos;s feed is sent. The same for everyone — a longer cadence
+            How often every user&apos;s feed is sent. The same for everyone, a longer cadence
             spends the lead time this product exists to give.
           </span>
           <select
@@ -342,7 +342,7 @@ export function AdminPage() {
               <td className="num job-sub">{user.model_version ? `v${user.model_version}` : "—"}</td>
               <td className="job-sub">{user.onboarded ? "yes" : "no"}</td>
               {/* Both controls stop the click reaching the row, or granting access would also
-                  navigate — and a delete that opens a page underneath its own dialog is worse. */}
+                  navigate, and a delete that opens a page underneath its own dialog is worse. */}
               <td onClick={(event) => event.stopPropagation()}>
                 <label className="switch" title="Operator access">
                   <input

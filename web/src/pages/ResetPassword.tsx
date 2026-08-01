@@ -26,7 +26,7 @@ export function ForgotPassword() {
       <AuthShell kicker="One more step" title="Check your email">
         <p className="muted">
           If <strong>{email}</strong> has an account, a reset link is on its way. It works once and
-          expires in an hour — the newest one is the one that counts.
+          expires in an hour, the newest one is the one that counts.
         </p>
       </AuthShell>
     );

@@ -111,7 +111,7 @@ const NAMES: Record<string, string> = {
 };
 
 const DESCRIPTIONS: Record<string, string> = {
-  "context.md": "Who you are — the summary every document is written from",
+  "context.md": "Who you are, the summary every document is written from",
   "01-candidate-profile.md": "Your full history: roles, education, projects",
   "02-behavioral-profile.md": "How you answer questions about how you work",
   "04-job-evaluation.md": "What makes a job a good fit for you",
@@ -297,8 +297,8 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
           </button>
         </div>
         <p className="facts" style={{ marginTop: "1rem" }}>
-          Editing by hand is fine for a quick correction. For anything larger — a new role, a change
-          of direction — tell the assistant instead: it knows where things belong.
+          Editing by hand is fine for a quick correction. For anything larger, a new role, a change
+          of direction, tell the assistant instead: it knows where things belong.
         </p>
       </div>
     );
@@ -312,14 +312,14 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
           <h1>Build your profile</h1>
           {/* {state.ready ? (
             <span className="small muted">
-              Ready — <a href="#/model">train your model</a> when you like
+              Ready, <a href="#/model">train your model</a> when you like
             </span>
           ) : null} */}
         </div>
 
         <p className="muted" style={{ maxWidth: "44rem" }}>
           {state.messages.length === 0
-            ? "A conversation about your career. Everything you say here is sorted into your profile — the files every CV, cover letter and job match is built from."
+            ? "A conversation about your career. Everything you say here is sorted into your profile, the files every CV, cover letter and job match is built from."
             : "Talk to it like you would to a person: new roles, corrections, changes of direction. It knows where things belong. Each chat remembers only itself; your profile is shared across all of them. Training the model that ranks your jobs happens on the Model page, not here."}
         </p>
 
@@ -376,7 +376,7 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
         {progress ? (
           progress.complete ? (
             <p className="small" style={{ color: "var(--score)" }}>
-              Setup complete — all {progress.required.length} profile files are written. Your model
+              Setup complete, all {progress.required.length} profile files are written. Your model
               can be trained from the Model page.
             </p>
           ) : (
@@ -427,7 +427,7 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
                         <i />
                         <i />
                       </span>
-                      Thinking. This can take a couple of minutes — you can leave this page and come
+                      Thinking. This can take a couple of minutes, you can leave this page and come
                       back, the answer will be here.
                     </span>
                   ) : (
@@ -493,7 +493,7 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
               <i />
             </span>
             <span className="muted small">
-              {stopping ? "Stopping — it will finish the step it is on." : "Working…"}
+              {stopping ? "Stopping, it will finish the step it is on." : "Working…"}
             </span>
             {!stopping ? (
               <button type="button" className="secondary small-btn"

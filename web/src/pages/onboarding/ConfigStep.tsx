@@ -207,7 +207,7 @@ export function ConfigStep({ onDone }: { onDone: () => void }) {
       {/* {preview ? (
         <p className={preview.matches === 0 ? "error" : "muted"}>
           <strong>{preview.matches}</strong> matching jobs in the last {preview.window_days} days
-          {preview.examples.length ? ` — e.g. ${preview.examples.slice(0, 2).join("; ")}` : ""}.
+          {preview.examples.length ? `, e.g. ${preview.examples.slice(0, 2).join("; ")}` : ""}.
           <br />
           <span className="small">{preview.detail}</span>
         </p>
@@ -226,7 +226,7 @@ export function ConfigStep({ onDone }: { onDone: () => void }) {
         <span className="label">Where would you work?</span>
         <span className="hint">
           Tick everything that applies. Picking a country includes its cities, and "remote from the
-          EU" is not the same as "in the EU" — it means the company hires people living there.
+          EU" is not the same as "in the EU", it means the company hires people living there.
         </span>
         {grouped.map((group) =>
           group.values.length ? (
@@ -266,7 +266,7 @@ export function ConfigStep({ onDone }: { onDone: () => void }) {
           </fieldset>
         ) : null}
         {section.locations.length === 0 ? (
-          <p className="facts">Nothing picked yet — we will search everywhere.</p>
+          <p className="facts">Nothing picked yet, we will search everywhere.</p>
         ) : null}
       </div>
 

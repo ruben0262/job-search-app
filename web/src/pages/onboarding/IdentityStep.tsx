@@ -82,7 +82,7 @@ export function IdentityStep({ onDone }: { onDone: () => void }) {
                 setLinks(next);
               }}
             />
-            {/* Every row can be removed, including the last — which leaves one empty row rather
+            {/* Every row can be removed, including the last, which leaves one empty row rather
                 than none, so there is always somewhere to type. */}
             <button
               type="button"

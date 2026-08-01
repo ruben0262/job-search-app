@@ -28,7 +28,7 @@ const CONFIRM: Record<string, string> = {
     "Remove your Claude token? The profile chat and CV building stop working until you add "
     + "another one.",
   proxy:
-    "Remove your proxy? LinkedIn jobs stop being collected for you — every other source keeps "
+    "Remove your proxy? LinkedIn jobs stop being collected for you, every other source keeps "
     + "working.",
   default: "Remove this credential? Whatever depends on it stops working until you add another.",
 };
@@ -88,8 +88,8 @@ function Stored({ kind, onChanged }: { kind: string; onChanged: () => void }) {
         >
           {copied ? <CheckIcon /> : <CopyIcon />}
         </button>
-        {/* **Asked, not assumed.** Removing a credential stops whatever depends on it — delivery,
-            document generation, LinkedIn — and it cannot be undone from here: the value is gone and
+        {/* **Asked, not assumed.** Removing a credential stops whatever depends on it, delivery,
+            document generation, LinkedIn, and it cannot be undone from here: the value is gone and
             has to be pasted again. A one-click destructive control next to a copy button is a
             mis-click waiting to happen. */}
         <button
@@ -199,7 +199,7 @@ function CredentialForm({
       {save.error ? (
         <p className="small">
           <button type="button" className="secondary" onClick={() => void save.run(true)}>
-            Save it anyway — I know it is right
+            Save it anyway. I know it is right
           </button>
         </p>
       ) : null}
@@ -264,7 +264,7 @@ export function TelegramStep({ onDone }: { onDone: () => void }) {
           <li>Open Telegram and search for <strong>@BotFather</strong> (blue tick).</li>
           <li>Press Start, then send the message <code>/newbot</code>.</li>
           <li>Give it any name, then any username ending in "bot".</li>
-          <li>BotFather replies with a token that looks like <code>123456:AA…</code> — copy it and
+          <li>BotFather replies with a token that looks like <code>123456:AA…</code>, copy it and
               paste it below.</li>
           <li>Open your new bot's chat and press <strong>Start</strong>, then use the "I pressed
               Start" button underneath.</li>
@@ -275,7 +275,7 @@ export function TelegramStep({ onDone }: { onDone: () => void }) {
       <CredentialForm
         kind="telegram_bot"
         label="Bot token"
-        hint="From BotFather. We read your chat id ourselves — you never have to find it."
+        hint="From BotFather. We read your chat id ourselves, you never have to find it."
         placeholder="123456:AA…"
         onDone={reload}
       />
@@ -297,7 +297,7 @@ export function TelegramStep({ onDone }: { onDone: () => void }) {
             {state.destination === "channel"
               ? "your channel"
               : state.destination === "chat"
-                ? "your bot chat — set a channel below"
+                ? "your bot chat, set a channel below"
                 : "nowhere yet"}
           </dd>
         </dl>
@@ -323,16 +323,16 @@ export function TelegramStep({ onDone }: { onDone: () => void }) {
             <li>In Telegram, create a channel (New message → New channel). Private is fine.</li>
             <li>Open the channel's settings → Administrators → Add admin → pick <strong>your
                 bot</strong>, and allow it to post messages.</li>
-            <li>Post any message in the channel — "hello" works.</li>
+            <li>Post any message in the channel, "hello" works.</li>
             <li>Forward that message to <strong>@getidsbot</strong>. It replies with a "forwarded
                 from" ID starting with <code>-100</code>.</li>
-            <li>Paste that ID below. We send a test message to prove it works — you will see it in
+            <li>Paste that ID below. We send a test message to prove it works, you will see it in
                 the channel.</li>
           </ol>
         </details>
         <Field
           label="Channel ID"
-          hint="Starts with -100. Every job goes to this one channel — if you already have separate channels set up, this replaces that split."
+          hint="Starts with -100. Every job goes to this one channel, if you already have separate channels set up, this replaces that split."
         >
           <input
             value={channel}
@@ -380,7 +380,7 @@ export function ClaudeStep({ onDone }: { onDone: () => void }) {
         label={kind === "claude_api" ? "API key" : "OAuth token"}
         hint={
           kind === "claude_api"
-            ? "From console.anthropic.com. It needs credit — we check that it works before saving."
+            ? "From console.anthropic.com. It needs credit, we check that it works before saving."
             : "From your Claude subscription."
         }
         placeholder="sk-ant-…"

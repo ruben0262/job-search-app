@@ -173,7 +173,7 @@ export function FeedPage() {
       {feed.jobs.length === 0 ? (
         <p className="muted">
           {feed.total === 0 && !query && !source && !maxAgeDays && !remote && applied === "any"
-            ? "Nothing yet. If this stays empty, your search terms may be narrower than you meant — check them in settings."
+            ? "Nothing yet. If this stays empty, your search terms may be narrower than you meant, check them in settings."
             : "Nothing matches these filters."}
         </p>
       ) : (
