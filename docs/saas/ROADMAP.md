@@ -615,6 +615,28 @@ timed (`libs.obs.timed`), so the number exists once somebody reads it.
 **Open:** what happens to a row whose JD fetch fails permanently — never scored, or scored on what
 little there is after N attempts. Not yet decided.
 
+### 6m — a monitor that survives the thing it monitors (added 2026-08-01)
+
+**Owner's observation, and it is the right one: a status page hosted on the box it reports about
+tells you nothing at the only moment you need it.** If the VPS is down, Netdata is down, the admin
+panel is down, and the site is down — so the reader sees a connection error and cannot tell a dead
+host from a dead network from a dead browser tab.
+
+What that implies, in order of cost:
+
+1. **An external check that is not on the VPS.** A third-party pinger (Better Stack, Healthchecks,
+   UptimeRobot) hitting `/health` from outside, alerting by email or Telegram. Cheapest possible
+   fix and it covers the actual question — is the box reachable.
+2. **A dead-man's switch**, which catches the failure a pinger cannot: the platform *appearing* up
+   while the pipeline has stopped. The dispatcher checks in on every pass; a missed check-in is an
+   alert. The inverse of a ping, and it catches a stuck worker on a healthy host.
+3. **Metrics that outlive the host.** Pushing latency and queue depth somewhere off-box so the last
+   known state is readable when the box is not. Only worth doing once 1 and 2 exist — an operator
+   who knows the machine is down does not usually need its metrics from ten minutes ago.
+
+Deliberately not built yet. Netdata is deferred with it: per-second host metrics are useful and
+neither of them answers "is it up" from outside.
+
 ### 6b — close the feedback loop
 
 `record()` writes a `feedback` label at weight 5 and the webhook calls it, and production has
