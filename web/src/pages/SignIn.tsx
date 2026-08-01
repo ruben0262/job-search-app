@@ -11,6 +11,7 @@ import { useState } from "react";
 
 import { api } from "../api";
 import { Error, Field, useAction } from "../ui";
+import { ThemeToggle } from "../theme";
 
 export function SignIn({
   onSignedIn,
@@ -128,9 +129,8 @@ export function AuthShell({
   return (
     <>
       <div className="backdrop" aria-hidden="true" />
-      {/* No floating theme toggle here. It rendered as a dark disc in the top-right corner of an
-          otherwise empty page, and these two screens have one job. */}
       <main className="wizard page-in">
+        <ThemeToggle floating />
         <nav style={{ border: "none", marginBottom: "0" }}>
           <a className="brand" href="#/">
             Mahoraga
