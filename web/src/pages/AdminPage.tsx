@@ -75,20 +75,6 @@ type Settings = {
 
 type Source = { name: string; hours: number };
 
-type UserDetail = {
-  user: AdminUser & { created_at: string | null; last_active_at: string | null;
-                      profile_generation: number };
-  setup: { missing: string[]; files: { name: string; kind: string; filled: boolean }[] };
-  models: {
-    version: number;
-    active: boolean;
-    n_labels: number | null;
-    trained_at: string | null;
-    metrics: { key: string; label: string; value: string | number }[];
-  }[];
-  counts: { labels: number; scored: number; applied: number; notified: number };
-};
-
 function BinIcon() {
   return (
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -104,7 +90,6 @@ function BinIcon() {
 export function AdminPage() {
   const [health, setHealth] = useState<Health | null>(null);
   const [users, setUsers] = useState<AdminUser[] | null>(null);
-  const [detail, setDetail] = useState<UserDetail | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [sources, setSources] = useState<Source[] | null>(null);
   // The account being deleted, held until the typed address matches. `null` closes the dialog.
@@ -112,8 +97,6 @@ export function AdminPage() {
   const [typed, setTyped] = useState("");
   const [failed, setFailed] = useState(false);
 
-  // Freshness is edited as JSON rather than a row per source: the set of sources changes, and a
-  // form that has to be rebuilt every time one is added is a form that goes stale.
   // One source, one number. Written as a whole map because that is what the setting is — reading
   // it back from the response keeps the panel honest about what was actually stored.
   const saveFreshness = useAction(async (name: string, hours: number) => {
@@ -136,7 +119,6 @@ export function AdminPage() {
     setUsers(fresh.users);
     setDoomed(null);
     setTyped("");
-    setDetail(null);
   });
 
   const saveCadence = useAction(async (minutes: number) => {
@@ -145,8 +127,11 @@ export function AdminPage() {
     setSettings(body.settings);
   });
 
+  // **The account opens as its own page, at its own address.** It used to unfold inside this
+  // list, which meant no link to send anybody, no back button, and the thing you opened rendering
+  // underneath the table you opened it from.
   const openUser = useAction(async (id: string) => {
-    setDetail(await api.get<UserDetail>(`/admin/users/${id}`));
+    window.location.hash = `/admin/users/${id}`;
   });
 
   useEffect(() => {
@@ -298,68 +283,6 @@ export function AdminPage() {
         </div>
       ) : null}
 
-      {detail ? (
-        <div className="card" style={{ marginBottom: "1.5rem" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-            <h2 style={{ margin: 0 }}>{detail.user.email}</h2>
-            <button type="button" className="secondary small-btn" onClick={() => setDetail(null)}>
-              Close
-            </button>
-          </div>
-          <p className="facts">
-            {detail.user.status}
-            {detail.user.active ? "" : " · paused"} · telegram {detail.user.telegram} · profile
-            generation {detail.user.profile_generation} ·{" "}
-            {detail.counts.labels.toLocaleString()} labels ·{" "}
-            {detail.counts.scored.toLocaleString()} scored ·{" "}
-            {detail.counts.applied.toLocaleString()} applied ·{" "}
-            {detail.counts.notified.toLocaleString()} delivered
-          </p>
-
-          {/* Setup completeness by the same predicate the trainer refuses on, so "their setup looks
-              finished but training is refused" cannot happen without this saying why. */}
-          <p className={detail.setup.missing.length ? "error" : "facts"}>
-            {detail.setup.missing.length
-              ? `Setup incomplete — missing or unfilled: ${detail.setup.missing.join(", ")}. Training is refused until these exist.`
-              : "Setup complete — every required profile file is written."}
-          </p>
-
-          {detail.models[0] ? (
-            <div className="table-scroll">
-              <table className="history">
-                <thead>
-                  <tr>
-                    <th>Version</th>
-                    <th>Trained</th>
-                    <th>Labels</th>
-                    {detail.models[0].metrics.map((metric) => (
-                      <th key={metric.key}>{metric.label}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {detail.models.map((entry) => (
-                    <tr key={entry.version} className={entry.active ? "on" : undefined}>
-                      <td>
-                        v{entry.version}
-                        {entry.active ? <span className="pill">live</span> : null}
-                      </td>
-                      <td>{entry.trained_at ? new Date(entry.trained_at).toLocaleDateString() : "—"}</td>
-                      <td>{entry.n_labels?.toLocaleString() ?? "—"}</td>
-                      {detail.models[0]!.metrics.map((column) => {
-                        const cell = entry.metrics.find((metric) => metric.key === column.key);
-                        return <td key={column.key}>{cell ? String(cell.value) : "—"}</td>;
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <p className="facts">No model has ever been trained for this account.</p>
-          )}
-        </div>
-      ) : null}
 
       <table>
         <thead>

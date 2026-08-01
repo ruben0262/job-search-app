@@ -54,6 +54,11 @@ _SPAN_SQL = """
           JOIN corpus c ON c.id = s.job_id
          WHERE {end} IS NOT NULL AND {start} IS NOT NULL
            AND {end} >= now() - make_interval(hours => :hours)
+           -- **The posting has to be recent too, not just the timestamp being measured.** Without
+           -- this, a rescore of the whole corpus — which happens on every retrain — reports the
+           -- age of every old row as pipeline latency: a median of 3,759 minutes, describing a
+           -- backfill rather than how fast a new job reaches somebody.
+           AND c.first_seen_at >= now() - make_interval(hours => :hours)
            -- A negative span is a clock change or a backfill, not a delivery. Excluded rather than
            -- averaged in, where it would quietly drag the median down.
            AND {end} >= {start}

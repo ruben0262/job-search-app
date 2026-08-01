@@ -15,6 +15,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ApiError, api, type Dashboard } from "./api";
 import { Landing } from "./landing/Landing";
 import { AdminPage } from "./pages/AdminPage";
+import { AdminUserPage } from "./pages/AdminUserPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { DataPage } from "./pages/DataPage";
 import { clearFeedCache } from "./pages/FeedPage";
@@ -135,7 +136,14 @@ export function App() {
           ) : section === "data" ? (
             <DataPage onChanged={reload} />
           ) : section === "admin" ? (
-            <AdminPage />
+            // `#/admin/users/<id>` is its own page, not a panel that unfolds inside the list.
+            // A detail view rendered in place has no address to link, no back button, and puts the
+            // thing you opened underneath the table you opened it from.
+            hash.startsWith("/admin/users/") ? (
+              <AdminUserPage userId={hash.slice("/admin/users/".length)} />
+            ) : (
+              <AdminPage />
+            )
           ) : section === "settings" ? (
             <SettingsPage onSignedOut={reload} />
           ) : (

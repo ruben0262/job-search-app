@@ -94,6 +94,7 @@ def users(db: Session = Depends(get_db), admin: User = Depends(require_admin)) -
     view that shows a fragment of a key is a support view that leaks one over somebody's shoulder.
     """
     audit(logger, "admin.users", user=admin.id)
+    allowed = admin_emails()
     return {
         "users": [
             {
@@ -105,7 +106,13 @@ def users(db: Session = Depends(get_db), admin: User = Depends(require_admin)) -
                 "telegram": row.telegram_status,
                 "profile_generation": row.profile_generation,
                 "model_version": row.model_version,
-                "is_admin": row.is_admin,
+                # **Effective access, not just the column.** An address in `ADMIN_EMAILS` is an
+                # operator whether or not anybody ticked the box, and showing the box unticked for
+                # somebody who plainly has access is the panel contradicting itself.
+                "is_admin": row.is_admin or row.email.lower() in allowed,
+                # Whether the flag can be changed here at all. The env var cannot be revoked from a
+                # browser, so the control is shown but locked rather than silently ineffective.
+                "admin_locked": row.email.lower() in allowed,
                 "onboarded": row.onboarding_completed_at is not None,
                 "processed_at": row.processed_at.isoformat() if row.processed_at else None,
                 "created_at": row.created_at.isoformat() if row.created_at else None,
