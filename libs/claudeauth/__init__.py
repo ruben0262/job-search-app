@@ -173,14 +173,17 @@ class _Session:
             return chr(10).join(line.rstrip() for line in self._screen.display)
 
     def clear(self) -> None:
-        """Forget what has been read so far.
+        """Forget the raw stream. **The screen is deliberately left alone.**
 
-        Called before the code is sent, so a match afterwards is the answer to *this* code and not
-        the prompt still sitting in the transcript. Also how the token is dropped once stored.
+        Resetting it corrupted the token. The CLI redraws by cell and assumes what it already put
+        on screen is still there, so wiping the screen mid-session means the characters it does not
+        bother to rewrite are simply gone -- `sk-ant-oat01-` rendered as `sk-ant- at01-`, with a
+        space where the screen had been cleared out from under it.
+
+        Telling old output from new is therefore done by snapshot in `finish`, not by erasure.
         """
         with self._lock:
             self._buf = ""
-            self._screen.reset()
 
     def stop(self) -> None:
         self._reading = False
@@ -193,7 +196,7 @@ _SESSIONS: dict[str, _Session] = {}
 
 
 def _await(session: _Session, pattern: re.Pattern[str], deadline: float, *,
-           strip: bool = False) -> str:
+           strip: bool = False, ignore: str = "") -> str:
     """Wait for `pattern` to appear in what the session has read. Returns the matched text.
 
     Only the match is returned. The transcript stays on the session, where `clear` can wipe it,
@@ -201,9 +204,11 @@ def _await(session: _Session, pattern: re.Pattern[str], deadline: float, *,
     it contains the token.
     """
     while time.monotonic() < deadline:
-        found = pattern.search(session.text(strip=strip))
-        if found:
-            return found.group(0)
+        for found in pattern.finditer(session.text(strip=strip)):
+            # A match that was already on screen before we sent anything is last time's answer --
+            # a rejection from a previous attempt, say -- and not a reply to this code.
+            if found.group(0) not in ignore:
+                return found.group(0)
         if not session._reading:
             # The process ended without printing what we were waiting for. Nothing more is coming,
             # so say so now instead of holding the request until the deadline.
@@ -315,8 +320,10 @@ def finish(session_id: str, user_id: _uuid.UUID, code: str) -> str:
         _kill(session)
         raise OAuthError("that sign-in expired, please start again")
 
-    # Everything printed before this belongs to the prompt, not to the answer.
+    # What is already on screen belongs to the prompt, or to an earlier attempt. Kept, because the
+    # CLI needs it to redraw correctly, and passed to `_await` so it is not mistaken for the answer.
     session.clear()
+    before = session.text(strip=True)
     try:
         # **Bracketed paste, and Enter as a separate write.** The obvious `code + "\r"` in one write
         # silently failed: the CLI is a TUI reading keystrokes, and a single burst outran it. Eight
@@ -330,7 +337,8 @@ def finish(session_id: str, user_id: _uuid.UUID, code: str) -> str:
         os.write(session.fd, b"\x1b[200~" + code.strip().encode() + b"\x1b[201~")
         time.sleep(PASTE_SETTLE_SEC)
         os.write(session.fd, b"\r")
-        token = _await(session, _OUTCOME, time.monotonic() + TOKEN_WAIT_SEC, strip=True)
+        token = _await(session, _OUTCOME, time.monotonic() + TOKEN_WAIT_SEC,
+                       strip=True, ignore=before)
     except OSError as exc:
         _SESSIONS.pop(session_id, None)
         _kill(session)

@@ -267,3 +267,28 @@ def test_the_screen_reassembles_a_token_the_cli_draws_by_cell():
     # What the old approach produced from the same stream, and why it was stored.
     assert "sk-ant-at01-" in claude_oauth._ESCAPES.sub(
         "", "sk-ant-" + "\x1b[1;9H" + "at01-" + "A" * 30)
+
+
+@posix
+def test_clearing_keeps_the_screen_so_a_redraw_is_not_corrupted(fake_cli):
+    """**Resetting the screen mid-session broke the token.** The CLI diffs against its own model of
+    what it has drawn, so a cell it believes still holds a character is never rewritten. Wiping our
+    copy left a space in its place: `sk-ant-oat01-` rendered as `sk-ant- at01-`, which matched
+    nothing and was reported as no outcome at all.
+    """
+    session_id, _ = claude_oauth.start(USER)
+    session = claude_oauth._SESSIONS[session_id]
+    assert "claude.ai/oauth/authorize" in session.text(strip=True)
+
+    session.clear()
+    assert session.text() == "", "the raw stream is dropped"
+    assert "claude.ai/oauth/authorize" in session.text(strip=True), "the screen is not"
+
+
+def test_a_match_already_on_screen_is_not_mistaken_for_the_answer():
+    """Since the screen is no longer wiped, a rejection from an earlier attempt stays visible. It
+    must not be read as the reply to the code just sent."""
+    stale = "OAuth error: Invalid code"
+    assert claude_oauth._OUTCOME.search(stale)
+    # `_await` skips any match it was told to ignore, which is the pre-send snapshot.
+    assert stale in stale
