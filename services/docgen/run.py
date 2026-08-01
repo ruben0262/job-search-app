@@ -132,7 +132,7 @@ def run_build(session, user_id: _uuid.UUID, job_id: int, *,
         source = scratch / f"{kind}.html"
         source.write_text(html, encoding="utf-8")
         document = pdf.compile_pdf(source, scratch / _filename(profile, kind))
-        report = pdf.inspect_pdf(document)
+        report = pdf.inspect_pdf(document, kind=kind)
 
         # **The personal chat, never a feed channel.** The channels may have other members in them,
         # and this document is the most personal artifact the platform produces.

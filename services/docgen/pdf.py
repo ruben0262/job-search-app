@@ -119,8 +119,14 @@ def compile_pdf(source: pathlib.Path, output: pathlib.Path) -> pathlib.Path:
     return output
 
 
-def inspect_pdf(pdf: pathlib.Path) -> PdfReport:
+def inspect_pdf(pdf: pathlib.Path, *, kind: str = "cv") -> PdfReport:
     """Page count and the ATS readability check, from one read of the file.
+
+    **`kind` decides which checks apply.** A cover letter has no education section and no experience
+    list, so running the CV checklist over one flagged every cover letter ever generated — an
+    `ats_ok=False` that was always wrong, which is worse than no signal at all because it teaches a
+    reader to ignore the field. What both documents share is that the text must be extractable and
+    must not be column-scrambled; only the CV has sections to look for.
 
     Degrades to `pages=None` rather than raising when `pypdf` is missing or the file will not parse.
     The caller treats an unknown page count as "do not retry on length", which is the right default:
@@ -138,7 +144,20 @@ def inspect_pdf(pdf: pathlib.Path) -> PdfReport:
     except Exception as exc:  # noqa: BLE001 - any parse failure is one outcome: unreadable
         return PdfReport(pages=None, chars=0, issues=[f"text extraction failed: {type(exc).__name__}"])
 
-    text = "\n".join(texts)
+    report = inspect_pdf_text("\n".join(texts), kind=kind)
+    return PdfReport(pages=len(texts), chars=report.chars, issues=report.issues)
+
+
+def inspect_pdf_text(text: str, *, kind: str = "cv") -> PdfReport:
+    """The readability checks, over already-extracted text.
+
+    Split out of `inspect_pdf` so the judgement can be exercised without Chrome and without pypdf.
+    Needing a real render to test these is why a cover letter was judged by the CV's checklist for
+    as long as it was — the one test that would have caught it skips on every machine with no
+    browser, which is every machine except CI.
+
+    `pages` is `None` here because text alone has none; the caller that read a file fills it in.
+    """
     issues: list[str] = []
     chars = len(text.strip())
 
@@ -152,13 +171,17 @@ def inspect_pdf(pdf: pathlib.Path) -> PdfReport:
             issues.append(f"average line length {average:.0f} characters — the text may be "
                           f"column-scrambled, which is what an ATS would receive")
 
-    lowered = text.casefold()
-    for section in ("experience", "education"):
-        if section not in lowered:
-            issues.append(f"section {section!r} not found in the extracted text")
+    if kind == "cv":
+        lowered = text.casefold()
+        for section in ("experience", "education"):
+            if section not in lowered:
+                issues.append(f"section {section!r} not found in the extracted text")
 
-    if not _EMAIL.search(text):
-        # Not fatal and not always wrong: a profile with no email link renders a header without one.
-        issues.append("no email address in the extracted text — contact details may be unreadable")
+        if not _EMAIL.search(text):
+            # Not fatal and not always wrong: a profile with no email link renders a header without
+            # one. Checked on the CV only — a cover letter carries contact details in prose, if at
+            # all, and its address block is the employer's rather than the candidate's.
+            issues.append("no email address in the extracted text — contact details may be "
+                          "unreadable")
 
-    return PdfReport(pages=len(texts), chars=chars, issues=issues)
+    return PdfReport(pages=None, chars=chars, issues=issues)

@@ -303,7 +303,7 @@ def fake_chrome(monkeypatch):
         output.write_bytes(b"%PDF-1.4 fake")
         return output
 
-    def inspect_pdf(path):
+    def inspect_pdf(path, *, kind="cv"):
         return pdf.PdfReport(pages=state["pages"], chars=1_200, issues=[])
 
     monkeypatch.setattr(run.pdf, "compile_pdf", compile_pdf)
@@ -570,3 +570,27 @@ def test_chrome_is_told_to_suppress_its_header_under_both_flag_names():
 
     assert "--no-pdf-header-footer" in CHROME_FLAGS
     assert "--print-to-pdf-no-header" in CHROME_FLAGS
+
+
+def test_a_cover_letter_is_not_judged_by_the_cvs_checklist(tmp_path):
+    """**An always-wrong signal is worse than no signal.**
+
+    A cover letter has no education section, no experience list and no contact block of its own, so
+    running the CV checklist over one flagged every cover letter ever generated — observed in
+    production on 2026-08-01, `ats_ok=False` on a document that was completely fine. A reader who
+    sees a warning on every build stops reading warnings.
+
+    What both documents genuinely share is that the text has to come out of the PDF at all, and it
+    must not be column-scrambled. Those checks stay.
+    """
+    letter = ("Dear hiring team,\n\nI am writing about the Fullstack Engineer role. "
+              "I have spent four years building payment systems in Python and Go, and the "
+              "problem you describe is one I have solved before at some length.\n\n"
+              "Kind regards,\nAlice Example\n") * 3
+
+    as_cv = pdf.inspect_pdf_text(letter, kind="cv")
+    as_cover = pdf.inspect_pdf_text(letter, kind="cover")
+
+    assert any("education" in issue for issue in as_cv.issues), (
+        "the CV checklist should still look for sections")
+    assert as_cover.ats_ok, as_cover.issues

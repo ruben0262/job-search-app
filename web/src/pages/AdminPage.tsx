@@ -383,12 +383,6 @@ export function AdminPage() {
           ))}
         </tbody>
       </table>
-
-      <p className="facts" style={{ marginTop: "2rem" }}>
-        Read-only. Suspending, requeueing and resending are still `deploy/scripts/` over SSH — see
-        `OPERATIONS_PLAN.md` §5 for the console that acts, and why it has not earned its build at
-        this size yet.
-      </p>
     </>
   );
 }
