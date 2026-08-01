@@ -244,3 +244,26 @@ def test_the_code_is_delivered_as_a_bracketed_paste(fake_cli, monkeypatch):
     assert b"goodcode" in writes[0]
     # Enter is its own write. Bundled into the burst above, the CLI's paste debounce ate it.
     assert writes[1] == b"\r"
+
+
+def test_the_screen_reassembles_a_token_the_cli_draws_by_cell():
+    """**The bug that stored a broken credential.** The CLI renders by cell: it writes `sk-ant-o`,
+    jumps the cursor, writes the rest, and leaves characters an earlier draw already placed. Deleting
+    the escape sequences concatenated only what was written, so `sk-ant-oat01-...` was captured as
+    `sk-ant-at01-...` -- plausible, pattern-matching, and rejected by Anthropic.
+
+    Rendered on a screen that holds state, the character is where the user can see it.
+    """
+    import pyte
+
+    screen = pyte.Screen(120, 8)
+    stream = pyte.Stream(screen)
+    # A full line, then a redraw that repositions over it rather than rewriting every cell.
+    stream.feed("sk-ant-oat01-" + "A" * 30 + "\r\n")
+    stream.feed("\x1b[1;1H" + "sk-ant-" + "\x1b[1;9H" + "at01-" + "A" * 30)
+
+    rendered = "\n".join(line.rstrip() for line in screen.display)
+    assert "sk-ant-oat01-" in rendered, rendered[:60]
+    # What the old approach produced from the same stream, and why it was stored.
+    assert "sk-ant-at01-" in claude_oauth._ESCAPES.sub(
+        "", "sk-ant-" + "\x1b[1;9H" + "at01-" + "A" * 30)

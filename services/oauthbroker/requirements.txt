@@ -11,3 +11,4 @@ cryptography>=44.0
 # connection and is given no DATABASE_URL -- this is an import-time dependency of the logging setup,
 # not a sign that this service talks to Postgres.
 SQLAlchemy>=2.0
+pyte>=0.8

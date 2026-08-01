@@ -38,6 +38,8 @@ import threading
 import time
 import uuid as _uuid
 
+import pyte
+
 # The URL the CLI prints, and the token it prints at the end. Both are matched rather than parsed:
 # the surrounding prose is decoration the CLI is free to change, these two shapes are the contract.
 #
@@ -100,6 +102,11 @@ class OAuthError(RuntimeError):
 # so this is mostly discarded redraw; the tail is what any match needs.
 MAX_BUFFER = 64 * 1024
 
+# The emulated terminal. Wide enough that nothing the CLI prints wraps, and matching the window size
+# set on the pty so the CLI lays out for the screen we are actually rendering.
+SCREEN_COLS = 500
+SCREEN_ROWS = 100
+
 
 class _Session:
     """A live `setup-token` process, with something continuously reading its output.
@@ -112,7 +119,8 @@ class _Session:
     sign in, the more certain the failure -- which is exactly how it behaved.
     """
 
-    __slots__ = ("pid", "fd", "started_at", "user_id", "_buf", "_lock", "_reading")
+    __slots__ = ("pid", "fd", "started_at", "user_id", "_buf", "_lock", "_reading",
+                 "_screen", "_stream")
 
     def __init__(self, pid: int, fd: int, user_id: _uuid.UUID) -> None:
         self.pid = pid
@@ -120,6 +128,14 @@ class _Session:
         self.started_at = time.monotonic()
         self.user_id = user_id
         self._buf = ""
+        # **A real terminal, because deleting the escapes silently corrupts the text.** The CLI
+        # renders by cell: it writes `c`, jumps the cursor, writes `de`, and the `o` between them is
+        # simply left where an earlier draw already put it. Stripping the escape sequences
+        # concatenates what remains, so `code` became `cde` -- and `sk-ant-oat01-…` was stored as
+        # `sk-ant-at01-…`, a token that looked plausible, matched the pattern, and was rejected by
+        # Anthropic. Only a screen that holds state can reassemble what the user is actually shown.
+        self._screen = pyte.Screen(SCREEN_COLS, SCREEN_ROWS)
+        self._stream = pyte.Stream(self._screen)
         self._lock = threading.Lock()
         self._reading = True
         threading.Thread(target=self._drain, daemon=True).start()
@@ -136,14 +152,25 @@ class _Session:
                 break
             if not chunk:
                 break
+            text = chunk.decode("utf-8", "replace")
             with self._lock:
-                self._buf = (self._buf + chunk.decode("utf-8", "replace"))[-MAX_BUFFER:]
+                # Raw, for the URL: it arrives inside an OSC-8 hyperlink, which is addressed to the
+                # terminal rather than drawn on it, so the screen never sees it.
+                self._buf = (self._buf + text)[-MAX_BUFFER:]
+                self._stream.feed(text)
         self._reading = False
 
     def text(self, *, strip: bool = False) -> str:
+        """The raw stream, or what the terminal is actually displaying.
+
+        `strip` is the rendered screen. The name is kept because every caller means the same thing
+        by it -- "the text a person would see" -- which is exactly what deleting escape sequences
+        failed to produce.
+        """
         with self._lock:
-            raw = self._buf
-        return _ESCAPES.sub("", raw) if strip else raw
+            if not strip:
+                return self._buf
+            return chr(10).join(line.rstrip() for line in self._screen.display)
 
     def clear(self) -> None:
         """Forget what has been read so far.
@@ -153,6 +180,7 @@ class _Session:
         """
         with self._lock:
             self._buf = ""
+            self._screen.reset()
 
     def stop(self) -> None:
         self._reading = False

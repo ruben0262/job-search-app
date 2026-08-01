@@ -362,6 +362,14 @@ export function TelegramStep({ onDone }: { onDone: () => void }) {
 
 export function ClaudeStep({ onDone }: { onDone: () => void }) {
   const [kind, setKind] = useState<"claude_api" | "claude_oauth">("claude_api");
+  // **What makes the saved credential appear without a reload.** `Stored` fetches once on mount, so
+  // connecting or pasting left the page insisting nothing was stored until the user refreshed it.
+  // Bumping this remounts it, which re-reads `/credentials`.
+  const [saved, setSaved] = useState(0);
+  const refresh = () => {
+    setSaved((n) => n + 1);
+    onDone();
+  };
   return (
     <>
       <p className="small muted">
@@ -374,14 +382,14 @@ export function ClaudeStep({ onDone }: { onDone: () => void }) {
           <option value="claude_oauth">A Claude subscription token</option>
         </select>
       </Field>
-      <Stored key={`stored-${kind}`} kind={kind} onChanged={onDone} />
+      <Stored key={`stored-${kind}-${saved}`} kind={kind} onChanged={refresh} />
       {/* **The subscription path is a button, not a paste field.** It used to say "From your
           Claude subscription", which left the user to discover the CLI, the command, and the copy
           themselves — the step people abandoned. The paste field stays underneath for anyone who
           already has a token or whose browser blocks the popup. */}
       {kind === "claude_oauth" ? (
         <>
-          <ClaudeConnect onConnected={onDone} />
+          <ClaudeConnect onConnected={refresh} />
           <p className="small muted" style={{ marginTop: "1rem" }}>
             Already have a token from <code>claude setup-token</code>? Paste it instead.
           </p>
@@ -397,7 +405,7 @@ export function ClaudeStep({ onDone }: { onDone: () => void }) {
             : "A token you already generated with the Claude Code CLI."
         }
         placeholder="sk-ant-…"
-        onDone={onDone}
+        onDone={refresh}
       />
     </>
   );
