@@ -69,6 +69,16 @@ echo "libs $EXPECTED"
 
 failed=0
 for service in $SERVICES; do
+  # **Running, before anything else.** A container that is restart-looping still has the right
+  # files on disk, so the hash below would have called `oauthbroker` correct while it crashed on
+  # an import error every two seconds. State first, contents second.
+  state=$($COMPOSE ps "$service" --format '{{.State}}' 2>/dev/null | head -1)
+  if [ "$state" != "running" ]; then
+    printf '  %-12s \033[31mnot running (%s)\033[0m\n' "$service" "${state:-absent}"
+    $COMPOSE logs --tail 5 "$service" 2>&1 | sed 's/^/      /'
+    failed=1
+    continue
+  fi
   running=$($COMPOSE exec -T "$service" python -c "$HASH" 2>/dev/null | tr -d '
 
 ' || echo unreachable)

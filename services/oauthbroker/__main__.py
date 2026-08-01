@@ -32,10 +32,10 @@ from fastapi import FastAPI, HTTPException, status
 from pydantic import BaseModel, Field
 
 from libs import claudeauth
-from libs.obs import audit, setup_logging
+from libs.obs import audit, configure
 
 logger = logging.getLogger(__name__)
-setup_logging("oauthbroker")
+configure("oauthbroker")
 
 app = FastAPI(title="oauth broker", docs_url=None, redoc_url=None)
 
