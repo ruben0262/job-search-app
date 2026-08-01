@@ -27,12 +27,18 @@ FAKE_CLI = """#!/usr/bin/env python3
 import sys
 print("Open this URL: https://claude.ai/oauth/authorize?code=1&state=abc")
 sys.stdout.flush()
-line = sys.stdin.readline().strip()
-if line == "goodcode":
-    print("Token: sk-ant-oat01-" + "x" * 40)
-else:
-    print("Invalid code supplied")
-sys.stdout.flush()
+while True:
+    line = sys.stdin.readline().strip()
+    if not line:
+        continue
+    if line == "goodcode":
+        print("Token: sk-ant-oat01-" + "x" * 40)
+        sys.stdout.flush()
+        break
+    # What the real CLI does: report and stay up for another attempt.
+    print("OAuth error: Invalid code. Please make sure the full code was copied")
+    print("Press Enter to retry.")
+    sys.stdout.flush()
 """
 
 
@@ -139,3 +145,26 @@ def test_a_token_split_by_cursor_moves_is_still_found():
     noisy = "Token:\x1b[12G sk-ant-oat01-" + "A" * 20 + "\x1b[2G\x1b[K" + "B" * 20 + "\r\n"
     cleaned = claude_oauth._ESCAPES.sub("", noisy)
     assert claude_oauth._TOKEN.search(cleaned).group(0) == "sk-ant-oat01-" + "A" * 20 + "B" * 20
+
+
+def test_a_rejection_is_recognised_from_what_the_cli_really_prints():
+    """Verbatim from claude-code 2.1.220 answering a bad code, escapes and all. Matched so the
+    rejection is reported the moment it appears rather than after the read timeout."""
+    rejected = ("\x1b[1A\rOAuth error: Invalid\x1b[23Gcode. Please make\x1b[41Gsure the full"
+                "\x1b[55Gc\x1b[57Gde was\x1b[64Gcopied\r\x1b[2B\x1b[K\rPress\x1b[8GEnter"
+                "\x1b[14Gto\x1b[17Gretry.\r")
+    cleaned = claude_oauth._ESCAPES.sub("", rejected)
+    found = claude_oauth._OUTCOME.search(cleaned)
+    assert found and not found.group(0).startswith("sk-ant-oat")
+
+
+@posix
+def test_a_rejected_code_keeps_the_session_so_the_same_link_still_works(fake_cli):
+    """**The bug this replaces made the flow unescapable.** A wrong code killed the session, the
+    next attempt minted a new PKCE challenge, and the code in the tab the user had already
+    authorized in could then never be accepted."""
+    session_id, first_url = claude_oauth.start(USER)
+    with pytest.raises(claude_oauth.OAuthError, match="did not accept"):
+        claude_oauth.finish(session_id, USER, "wrongcode")
+    assert session_id in claude_oauth._SESSIONS, "the link the user holds must stay valid"
+    assert first_url

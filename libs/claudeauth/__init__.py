@@ -49,6 +49,14 @@ import uuid as _uuid
 _URL = re.compile(r"https://[^\s\x07\x1b]+/oauth/authorize\?[^\s\x07\x1b]+")
 _TOKEN = re.compile(r"sk-ant-oat\d{2}-[A-Za-z0-9_-]{20,}")
 
+# What the CLI says when Claude turns the code down. Matched alongside the token so a rejection is
+# noticed the moment it is printed rather than after the full read timeout: waiting sixty seconds to
+# report a mistyped paste reads as the platform being broken.
+_REJECTED = re.compile(r"OAuth error:|Invalid code|Press\s+Enter\s+to\s+retry")
+
+# Either outcome. `finish` decides which happened by looking at what matched.
+_OUTCOME = re.compile(_TOKEN.pattern + "|" + _REJECTED.pattern)
+
 # Cursor moves, colours, and OSC sequences. Stripped before the token is matched: the CLI decorates
 # and re-positions as it draws, and an escape landing mid-token would break the match.
 _ESCAPES = re.compile(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)"
@@ -201,35 +209,53 @@ def start(user_id: _uuid.UUID) -> tuple[str, str]:
 def finish(session_id: str, user_id: _uuid.UUID, code: str) -> str:
     """Feed the browser's code to the waiting process and return the token it prints.
 
-    The session is consumed either way. A wrong code is not retryable against the same process — the
-    CLI exits on a failed exchange — so the user starts again from a fresh URL, which is also what
-    keeps a guessing attack from having anything to guess against.
+    **A rejected code keeps the session alive.** The CLI does not exit on a bad exchange; it prints
+    `OAuth error: …` and offers `Press Enter to retry`, and the link the user already has in their
+    browser stays valid. Killing the session here forced them back to a fresh URL, and the fresh URL
+    carried a new PKCE challenge — so the code sitting in the tab they had open could then never
+    work. That turned one mistyped paste into a loop nobody could escape.
+
+    Only a session that actually produced a token, or one the user abandoned, is consumed.
     """
-    session = _SESSIONS.pop(session_id, None)
+    session = _SESSIONS.get(session_id)
     if session is None:
         raise OAuthError("that sign-in expired, please start again")
     if session.user_id != user_id:
         # Cannot happen through the routes, which look the session up for the caller. Checked
         # anyway: handing one user's token to another is the worst bug this file could have.
+        _SESSIONS.pop(session_id, None)
         _kill(session)
         raise OAuthError("that sign-in expired, please start again")
 
     buffer = ""
     try:
         os.write(session.fd, code.strip().encode() + b"\r")
-        token, buffer = _read_until(session.fd, _TOKEN, time.monotonic() + TOKEN_WAIT_SEC,
+        token, buffer = _read_until(session.fd, _OUTCOME, time.monotonic() + TOKEN_WAIT_SEC,
                                     strip=True)
     except OSError as exc:
+        _SESSIONS.pop(session_id, None)
+        _kill(session)
         raise OAuthError("the Claude sign-in closed before it finished") from exc
     except OAuthError:
-        # The CLI printed something that was not a token, which in practice means the code was
-        # mistyped or already used. The output is *not* included: it is the one place a partial
-        # token could reach a user-visible string.
-        raise OAuthError("that code was not accepted, please start again") from None
-    finally:
-        del buffer
+        _SESSIONS.pop(session_id, None)
         _kill(session)
+        raise OAuthError("the Claude sign-in did not answer, please start again") from None
 
+    if not token.startswith("sk-ant-oat"):
+        # Claude rejected it. Clear the prompt so the same session can take another attempt, and
+        # say which code to use: the usual cause is a code copied from a tab opened by an earlier
+        # attempt, which belongs to a challenge that no longer exists.
+        del buffer
+        try:
+            os.write(session.fd, b"\r")
+        except OSError:
+            pass
+        raise OAuthError("Claude did not accept that code. Copy it again from the tab you just "
+                         "authorized in, and paste the whole thing.")
+
+    del buffer
+    _SESSIONS.pop(session_id, None)
+    _kill(session)
     return token
 
 

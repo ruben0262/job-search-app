@@ -68,11 +68,11 @@ export function ClaudeConnect({ onConnected }: { onConnected: () => void }) {
         onConnected();
       }, 900);
     } catch (caught) {
-      // A rejected code kills the session server side, so the honest next move is a fresh link
-      // rather than another attempt at the same one.
+      // **The link stays.** A rejected code leaves the session alive server side, still on the
+      // same challenge, so the user can correct the paste against the tab they already have open.
+      // Clearing the URL here used to strand them: a new link, a new challenge, and the code in
+      // front of them permanently invalid.
       setPhase("waiting");
-      setSession(null);
-      setUrl(null);
       setError(caught instanceof Error ? caught.message : "that code was not accepted");
     }
   };
@@ -93,9 +93,13 @@ export function ClaudeConnect({ onConnected }: { onConnected: () => void }) {
       </button>
       {error && !open ? <p className="error">{error}</p> : null}
 
+      {/* **The backdrop does not close this one.** Elsewhere a stray click costs nothing; here it
+          cancelled the sign-in, and the next attempt minted a fresh URL with a new PKCE challenge,
+          so the code sitting in the tab the user had already authorized in could never work again.
+          Leaving is deliberate, through Cancel. */}
       {open ? (
-        <div className="modal-backdrop" onClick={close}>
-          <div className="modal" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-backdrop">
+          <div className="modal">
             {phase === "done" ? (
               <>
                 <h2>Connected</h2>
