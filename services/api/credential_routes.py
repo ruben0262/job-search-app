@@ -273,19 +273,39 @@ class OAuthFinishBody(BaseModel):
 def claude_oauth_finish(body: OAuthFinishBody, *,
                         store: SecretStore = Depends(get_store),
                         user_id: _uuid.UUID = Depends(current_user)) -> dict:
-    """Exchange the code for a token and store it.
+    """Exchange the code for a token, and store it **only if it works**.
 
     The token goes through `validate_credential` like a pasted one: the CLI minting it proves the
     browser flow completed, not that the credential can reach the model, and those come apart on an
     account with no active subscription.
+
+    **Unlike a pasted credential, a failure here is never stored.** Everywhere else the platform
+    keeps an unvalidated value, because the user typed something they believe is right and a
+    provider outage must not block them. Nothing about that applies to a token this service minted
+    itself: there is no typo to preserve, and if it does not authenticate then either Anthropic
+    turned it down or we mishandled it on the way out of the CLI. Both are ours to fix.
+
+    Storing it anyway is what hid a real bug (2026-08-01). A rendering fault dropped one character
+    from the token, and the flow reported success while the account held a credential that could not
+    make a single request -- indistinguishable, on the page, from a temporary API blip.
+
+    A previously stored credential survives, because nothing is written on this path unless the new
+    one is proven. Re-connecting with a subscription that has lapsed cannot cost somebody the
+    working token they already had.
     """
     token = _broker("/finish", {"user_id": str(user_id),
                                 "session_id": body.session_id, "code": body.code})["token"]
     with redacting(token):
         result = validate_credential("claude_oauth", token)
-        store.put(user_id, "claude_oauth", token, validated=result.ok)
-    audit(logger, "credentials.oauth_stored", user=user_id, validated=result.ok)
-    return {"status": "saved", "validated": result.ok, "detail": result.detail}
+        if not result.ok:
+            audit(logger, "credentials.oauth_refused", user=user_id)
+            raise HTTPException(
+                status.HTTP_502_BAD_GATEWAY,
+                detail=("Claude signed you in, but the token it returned could not make a request: "
+                        f"{result.detail} Nothing was saved. Please try connecting again."))
+        store.put(user_id, "claude_oauth", token, validated=True)
+    audit(logger, "credentials.oauth_stored", user=user_id, validated=True)
+    return {"status": "saved", "validated": True, "detail": result.detail}
 
 
 class OAuthCancelBody(BaseModel):

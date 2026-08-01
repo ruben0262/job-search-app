@@ -365,3 +365,55 @@ def test_reveal_needs_the_password_and_returns_the_value_once(api, monkeypatch):
 
     nothing = http.post("/credentials/telegram_bot/reveal", json={"password": "correct horse battery staple"})
     assert nothing.status_code == 404
+
+
+@pytestmark_db
+def test_an_oauth_token_that_does_not_work_is_never_stored(api, monkeypatch):
+    """**Unlike a pasted credential, this one is refused rather than kept unvalidated.**
+
+    A rendering fault once dropped a character from the minted token, and because the route stored
+    it anyway the account ended up holding a credential that could not make a single request while
+    the page said it was connected. There is no typo to preserve here: the platform produced this
+    value itself, so a token that does not authenticate is a bug on our side, not a user's guess.
+    """
+    from libs.credentials import ValidationResult
+    from libs.tenant.repository import TenantRepository
+
+    http, session, user, _ = api
+    monkeypatch.setattr("services.api.credential_routes._broker",
+                        lambda path, payload: {"token": "sk-ant-at01-" + "x" * 40})
+    monkeypatch.setattr("services.api.credential_routes.validate_credential",
+                        lambda kind, value, **kw: ValidationResult(False, "Anthropic rejected it."))
+
+    refused = http.post("/credentials/claude/oauth/finish",
+                        json={"session_id": "s" * 12, "code": "abcd1234"})
+    assert refused.status_code == 502
+    assert "Nothing was saved" in refused.json()["detail"]
+    session.flush()
+    assert not [row for row in TenantRepository(session).secret_metadata(user.id)
+                if row.kind == "claude_oauth"]
+
+
+@pytestmark_db
+def test_a_failed_reconnect_leaves_the_working_token_alone(api, monkeypatch):
+    """Re-connecting with a lapsed subscription must not cost somebody the credential they had."""
+    from libs.credentials import ValidationResult
+    from libs.tenant.repository import TenantRepository
+
+    http, session, user, _ = api
+    monkeypatch.setattr("services.api.credential_routes.validate_credential",
+                        lambda kind, value, **kw: ValidationResult(True))
+    http.put("/credentials/claude_oauth", json={"value": "sk-ant-oat01-" + "w" * 40})
+    session.flush()
+
+    monkeypatch.setattr("services.api.credential_routes._broker",
+                        lambda path, payload: {"token": "sk-ant-oat01-" + "n" * 40})
+    monkeypatch.setattr("services.api.credential_routes.validate_credential",
+                        lambda kind, value, **kw: ValidationResult(False, "no active subscription."))
+    assert http.post("/credentials/claude/oauth/finish",
+                     json={"session_id": "s" * 12, "code": "abcd1234"}).status_code == 502
+    session.flush()
+
+    stored = [row for row in TenantRepository(session).secret_metadata(user.id)
+              if row.kind == "claude_oauth"]
+    assert stored and stored[0].validated_at is not None, "the working credential must survive"
