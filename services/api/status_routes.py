@@ -20,8 +20,10 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from libs.contracts.config import migrate_config
 from libs.db.models import CorpusJob, QueueJob, User, UserJobState, UserModel
 from libs.scoring.thresholds import cutoff_for
+from libs.tenant.repository import TenantRepository
 from services.api.deps import current_user, get_db
 
 logger = logging.getLogger(__name__)
@@ -155,6 +157,16 @@ def _delivery(db: Session, user: User, now: datetime) -> dict:
         return _entry("delivery", "Delivery", "off",
                       "Paused by you — nothing is being sent. Turn messages back on in Settings.")
 
+    # **Today's allowance, spent, is not a fault.** The notifier defers once an account has had its
+    # daily cap and logs exactly that; without knowing it, the checks below see matches piling up
+    # with nothing sent and report a stall. Observed on 2026-08-01: 802 waiting, "last delivery 4
+    # hours ago", and the real answer was simply that the day's jobs had already arrived.
+    sent_today = _sent_today(db, user)
+    cap = _daily_cap(db, user.id)
+    if sent_today >= cap:
+        return _entry("delivery", "Delivery", "ok",
+                      f"Today's {cap} jobs have been sent. More arrive tomorrow.")
+
     cutoff = cutoff_for(db, user.id)
     waiting = db.scalar(
         select(func.count()).select_from(UserJobState)
@@ -204,3 +216,31 @@ def _docgen(db: Session, user_id: _uuid.UUID) -> dict:
     if last.state in ("ready", "claimed"):
         return _entry("docgen", "CV & cover letters", "ok", "A build is in progress right now.")
     return _entry("docgen", "CV & cover letters", "ok", "Working. The last build finished cleanly.")
+
+
+# The platform default, mirrored rather than imported: `services.api` may not import
+# `services.notifier` (the boundary contract), and the notifier owns the number it enforces.
+# Duplicating a constant is the smaller evil compared with two services importing each other, and a
+# test pins the two together so they cannot drift apart unnoticed.
+DEFAULT_NOTIFICATIONS_PER_DAY = 20
+
+
+def _daily_cap(db: Session, user_id: _uuid.UUID) -> int:
+    """This account's own cap, or the platform default. The same number the notifier enforces."""
+    config = TenantRepository(db).get_config(user_id) or {}
+    return int(migrate_config(config).get("max_notifications_per_day",
+                                          DEFAULT_NOTIFICATIONS_PER_DAY))
+
+
+def _sent_today(db: Session, user: User) -> int:
+    """Deliveries since this user's local midnight, counted the way the notifier counts them.
+
+    In `users.timezone` rather than UTC: "resets at midnight your time" has to keep meaning the same
+    thing in November, and the accounts are spread across zones.
+    """
+    local_midnight = func.date_trunc("day", func.timezone(user.timezone or "UTC", func.now()))
+    return db.scalar(
+        select(func.count()).select_from(UserJobState)
+        .where(UserJobState.user_id == user.id,
+               UserJobState.notified_at.is_not(None),
+               func.timezone(user.timezone or "UTC", UserJobState.notified_at) >= local_midnight)) or 0

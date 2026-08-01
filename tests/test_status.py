@@ -184,3 +184,48 @@ def test_pausing_delivery_is_reported_as_paused_not_broken(api):
     delivery = next(c for c in http.get("/status").json()["components"] if c["key"] == "delivery")
     assert delivery["state"] == "off", "a paused feed is not a broken one"
     assert "Paused by you" in delivery["detail"]
+
+
+def test_the_mirrored_daily_cap_matches_the_notifier(api):
+    """`services.api` may not import `services.notifier`, so the default cap is written in both.
+    Duplicating a constant is the smaller evil next to two services importing each other, but only
+    if something notices when they drift."""
+    from services.api.status_routes import DEFAULT_NOTIFICATIONS_PER_DAY
+    from services.notifier.deliver import MAX_NOTIFICATIONS_PER_DAY
+
+    assert DEFAULT_NOTIFICATIONS_PER_DAY == MAX_NOTIFICATIONS_PER_DAY
+
+
+def test_spending_the_daily_allowance_is_not_a_stall(api):
+    """**Today's jobs having already arrived is the system working, not failing.**
+
+    The notifier defers once an account is at its cap and logs exactly that. Without knowing it, the
+    stall check sees matches piling up with nothing sent and reports a warning: observed live on
+    2026-08-01 as "802 matches waiting; last delivery 4 hours ago", where the real answer was that
+    the day's jobs had been delivered hours earlier.
+    """
+    from datetime import timedelta
+
+    from libs.db.models import CorpusJob, UserJobState
+    from services.api.status_routes import DEFAULT_NOTIFICATIONS_PER_DAY
+
+    http, session, user = api
+    user.active = True
+    user.onboarding_completed_at = datetime.now(UTC)
+    session.flush()
+
+    # The day's allowance, all delivered a few hours ago, with more still waiting behind it.
+    for index in range(DEFAULT_NOTIFICATIONS_PER_DAY + 1):
+        job = CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
+                        title="Backend Engineer", first_seen_at=datetime.now(UTC))
+        session.add(job)
+        session.flush()
+        session.add(UserJobState(
+            user_id=user.id, job_id=job.id, score=95.0, scored_at=datetime.now(UTC),
+            notified_at=(datetime.now(UTC) - timedelta(hours=4)
+                         if index < DEFAULT_NOTIFICATIONS_PER_DAY else None)))
+    session.flush()
+
+    delivery = next(c for c in http.get("/status").json()["components"] if c["key"] == "delivery")
+    assert delivery["state"] == "ok", delivery
+    assert "Today's" in delivery["detail"]
