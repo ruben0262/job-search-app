@@ -393,8 +393,18 @@ def test_the_daily_cap_defers_rather_than_dropping(ctx):
     job = _scored(ctx, user)
     ctx.flush()
 
-    assert deliver(ctx, user.id, store=store, send=lambda *a: None, daily_cap=0) == 0
-    assert ctx.get(UserJobState, (user.id, job.id)).notified_at is None
+    from libs import limits
+
+    limits.set_limit(ctx, user.id, "notifications_per_day", 1)
+    ctx.flush()
+    # Already at their ceiling for today, so this run has nothing left to spend.
+    ctx.get(UserJobState, (user.id, job.id))
+    assert deliver(ctx, user.id, store=store, send=lambda *a: None) == 1
+    ctx.flush()
+    second = _scored(ctx, user)
+    ctx.flush()
+    assert deliver(ctx, user.id, store=store, send=lambda *a: None) == 0
+    assert ctx.get(UserJobState, (user.id, second.id)).notified_at is None
 
 
 def test_the_token_reaches_the_transport_and_nothing_else(ctx):
@@ -453,45 +463,48 @@ def test_a_job_below_the_cutoff_still_reads_as_borderline():
     assert "🟡" in render_job(item, cutoff=60.0)
 
 
-def test_the_users_own_cap_is_what_is_enforced(ctx):
-    """**`max_notifications_per_day` was read by nothing.** It is in the config schema and on the
-    dashboard ("At most 20 messages a day"), and `deliver` used its own 100 regardless — so an
-    account that asked for 20 received 160 in sixteen hours (found on the box, 2026-07-30)."""
-    from libs.db.models import UserConfig
+def test_the_operators_ceiling_is_what_is_enforced(ctx):
+    """**The cap moved owner on 2026-08-01.** It was `max_notifications_per_day` in the user's own
+    config, which is the wrong hands: somebody who can raise their own delivery ceiling can get
+    their own Telegram bot rate-limited. It is an operator-set limit now (`libs.limits`), and
+    `null` means unlimited because sending is paced rather than capped.
+    """
+    from libs import limits
 
     user = _connected(ctx)
     store = _store(ctx)
     store.put(user.id, "telegram_bot", BOT_TOKEN)
-    ctx.add(UserConfig(user_id=user.id, schema_version=2,
-                       config={"sections": [{"platform": "all", "keywords": ["engineer"]}],
-                               "max_notifications_per_day": 1}))
+    limits.set_limit(ctx, user.id, "notifications_per_day", 1)
     for _ in range(3):
         _scored(ctx, user)
     ctx.flush()
 
     sent: list[str] = []
     assert deliver(ctx, user.id, store=store,
-                   send=lambda t, c, m, k=None: sent.append(m)) == 1, "their cap of 1, not our 100"
+                   send=lambda t, c, m, k=None: sent.append(m)) == 1, "the ceiling set for them"
     ctx.flush()
     assert deliver(ctx, user.id, store=store, send=lambda t, c, m, k=None: sent.append(m)) == 0
 
 
-def test_a_v1_config_cap_is_honoured_too(ctx):
-    """A flat v1 row keeps the cap at the top level like everything else, and `migrate_config`
-    is what makes both shapes readable — the same gap that swallowed the age window."""
-    from libs.db.models import UserConfig
+def test_unlimited_delivery_sends_everything_waiting(ctx):
+    """`null` is a real setting, not an absent one. It is safe because the send loop paces itself
+    to Telegram's 20-per-minute channel limit rather than relying on a daily cap to stay under it."""
+    from libs import limits
 
     user = _connected(ctx)
     store = _store(ctx)
     store.put(user.id, "telegram_bot", BOT_TOKEN)
-    ctx.add(UserConfig(user_id=user.id, schema_version=1,
-                       config={"keywords": ["engineer"], "max_notifications_per_day": 1}))
-    for _ in range(2):
+    limits.set_limit(ctx, user.id, "notifications_per_day", None)
+    limits.set_limit(ctx, user.id, "items_per_run", 5)
+    # No gap in the test: the pacing is Telegram's concern and a real sleep would just be slow.
+    limits.set_limit(ctx, user.id, "send_gap_seconds", 1)
+    for _ in range(5):
         _scored(ctx, user)
     ctx.flush()
 
     sent: list[str] = []
-    assert deliver(ctx, user.id, store=store, send=lambda t, c, m, k=None: sent.append(m)) == 1
+    assert deliver(ctx, user.id, store=store,
+                   send=lambda t, c, m, k=None: sent.append(m)) == 5
 
 
 def test_stale_high_scorers_do_not_crowd_fresh_jobs_out_of_the_pool(ctx):
