@@ -111,18 +111,42 @@ export function SettingsPage({ onSignedOut }: { onSignedOut: () => void }) {
           destroyed in the same request, so anything in a backup taken minutes ago is unreadable
           rather than merely deleted. This cannot be undone.
         </p>
-        {confirming ? (
-          <>
-            <Field label="Your password">
+        <button className="danger" onClick={() => setConfirming(true)}>
+          Delete my account
+        </button>
+      </Card>
+
+      {/* **A modal, not an inline panel.** The password field used to unfold inside the card, a few
+          millimetres below the button that revealed it, so a second stray click landed on a form
+          that had appeared under the cursor. A backdrop puts the choice in front of the page and
+          nothing destructive sits where the previous click was. Clicking the backdrop or Escape
+          cancels; only the password submits. */}
+      {confirming ? (
+        <div className="modal-backdrop" onClick={() => setConfirming(false)}>
+          <div className="modal" onClick={(event) => event.stopPropagation()}>
+            <h2>Delete your account?</h2>
+            <p className="small muted">
+              This erases your profile, documents, labels, model and credentials, and destroys your
+              encryption key. It cannot be undone.
+            </p>
+            <Field label="Type your password to confirm">
               <input
                 type="password"
                 value={password}
+                autoFocus
                 autoComplete="current-password"
                 onChange={(event) => setPassword(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") setConfirming(false);
+                  if (event.key === "Enter" && password && !remove.busy) void remove.run();
+                }}
               />
             </Field>
             <Error>{remove.error}</Error>
             <div className="row">
+              <button className="secondary" onClick={() => setConfirming(false)}>
+                Keep it
+              </button>
               <button
                 className="danger"
                 disabled={remove.busy || !password}
@@ -130,17 +154,10 @@ export function SettingsPage({ onSignedOut }: { onSignedOut: () => void }) {
               >
                 {remove.busy ? "Deleting…" : "Delete my account permanently"}
               </button>
-              <button className="secondary" onClick={() => setConfirming(false)}>
-                Keep it
-              </button>
             </div>
-          </>
-        ) : (
-          <button className="danger" onClick={() => setConfirming(true)}>
-            Delete my account
-          </button>
-        )}
-      </Card>
+          </div>
+        </div>
+      ) : null}
 
       <p>
         <button className="secondary" disabled={signOut.busy} onClick={() => void signOut.run()}>
