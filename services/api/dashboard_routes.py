@@ -26,6 +26,7 @@ from libs.contracts.config import migrate_config
 from libs.corpus import salary
 from libs.db.models import CorpusJob, User, UserDocument, UserJobState, UserLabel, UserModel
 from libs.onboarding import onboarding_state
+from libs.profiles.repository import ProfileFiles
 from libs.scoring.history import model_history
 from libs.scoring.rules import score_job
 from libs.scoring.thresholds import cutoff_for
@@ -95,6 +96,11 @@ def dashboard(db: Session = Depends(get_db),
             # the sequence, and it is the question a user paying for their own training has.
             "history": model_history(db, user_id),
         },
+        # **Whether a model can be trained, by the same predicate the trainer refuses on.** The
+        # Model page used to gate on `next.action`, which belongs to the superseded capture flow and
+        # knows nothing about the setup files — so an account with all eight written was told to go
+        # and build a profile it had already finished.
+        "may_train": not ProfileFiles(db, user_id).missing_setup(),
         "feed": {"scored": scored, "labels": labels, "applied": applied},
         "documents": db.scalar(select(func.count()).select_from(UserDocument)
                                .where(UserDocument.user_id == user_id)) or 0,

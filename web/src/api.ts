@@ -174,6 +174,8 @@ export type Dashboard =
           metrics: { key: string; label: string; value: string | number }[];
         }[];
       };
+      /** Whether setup is finished, by the same check the trainer refuses on. */
+      may_train: boolean;
       feed: { scored: number; labels: number; applied: number };
       documents: number;
       telegram: string;

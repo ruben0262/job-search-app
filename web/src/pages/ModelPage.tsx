@@ -31,7 +31,7 @@ export function ModelPage({
   });
 
   if (dashboard.stage === "onboarding") return null;
-  const { model, feed, next } = dashboard;
+  const { model, feed } = dashboard;
 
   // The columns come from the newest run: it measured the most, and an older row simply leaves the
   // cells it has no answer for empty rather than the table losing a column for everyone.
@@ -79,13 +79,14 @@ export function ModelPage({
       {/* The one action. Labelling is the expensive step (it runs on your Claude key), so it is a
           button rather than a side effect, and retraining afterwards is free and automatic. */}
       <div style={{ marginTop: "1.5rem" }}>
-        {next.action === "confirm" || next.action === "process" || next.action === "upload" ? (
+        {/* **Gated on setup, not on the old capture flow's state.** This used to read `next.action`,
+            which belongs to the superseded document-processing step and knows nothing about the
+            profile files, so an account with all eight written was told to go and build a profile
+            it had already finished. `may_train` is the same check the trainer itself refuses on. */}
+        {!dashboard.may_train ? (
           <p className="facts">
-            Scoring needs a finished profile first, {" "}
-            <a href={next.action === "confirm" ? "#/process" : "#/profile"}>
-              {next.action === "confirm" ? "review your profile" : "build your profile"}
-            </a>{" "}
-            and come back.
+            Scoring needs a finished profile first.{" "}
+            <a href="#/profile">Build your profile</a> and come back.
           </p>
         ) : (
           <>
