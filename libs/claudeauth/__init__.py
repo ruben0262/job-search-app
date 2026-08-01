@@ -57,7 +57,8 @@ _TOKEN = re.compile(r"sk-ant-[A-Za-z0-9]{2,12}-[A-Za-z0-9_-]{20,}")
 # What the CLI says when Claude turns the code down. Matched alongside the token so a rejection is
 # noticed the moment it is printed rather than after the full read timeout: waiting sixty seconds to
 # report a mistyped paste reads as the platform being broken.
-_REJECTED = re.compile(r"OAuth error:|Invalid code|Press\s+Enter\s+to\s+retry")
+_REJECTED = re.compile(r"OAuth error:|Invalid code|Request failed"
+                       r"|Press\s+Enter\s+to\s+retry")
 
 # Either outcome. `finish` decides which happened by looking at what matched.
 _OUTCOME = re.compile(_TOKEN.pattern + "|" + _REJECTED.pattern)
@@ -75,6 +76,11 @@ SESSION_TTL_SEC = 15 * 60
 # round trip. Neither should be able to wedge a request thread.
 URL_WAIT_SEC = 45.0
 TOKEN_WAIT_SEC = 60.0
+
+# How long the CLI is given to take the pasted run in before Enter is delivered. Tuned by
+# experiment: without a gap the submit is swallowed, and this is short enough that a user does not
+# notice it.
+PASTE_SETTLE_SEC = 0.8
 
 # A ceiling on live sessions so a scripted caller cannot fork the API host to death. Small on
 # purpose: these are humans in a browser, and the reaper frees them as they expire.
@@ -284,7 +290,18 @@ def finish(session_id: str, user_id: _uuid.UUID, code: str) -> str:
     # Everything printed before this belongs to the prompt, not to the answer.
     session.clear()
     try:
-        os.write(session.fd, code.strip().encode() + b"\r")
+        # **Bracketed paste, and Enter as a separate write.** The obvious `code + "\r"` in one write
+        # silently failed: the CLI is a TUI reading keystrokes, and a single burst outran it. Eight
+        # of ninety-two characters were dropped and the trailing carriage return was swallowed by
+        # its paste debounce, so the code sat half-entered on the prompt and nothing was ever
+        # submitted. It looked exactly like a hang, because it was one -- the CLI was still waiting
+        # for input we thought we had sent.
+        #
+        # Wrapping in `ESC [ 200 ~ … ESC [ 201 ~` tells it a paste is arriving, so it takes the run
+        # whole; the pause then lets it settle before Enter is delivered as a keypress of its own.
+        os.write(session.fd, b"\x1b[200~" + code.strip().encode() + b"\x1b[201~")
+        time.sleep(PASTE_SETTLE_SEC)
+        os.write(session.fd, b"\r")
         token = _await(session, _OUTCOME, time.monotonic() + TOKEN_WAIT_SEC, strip=True)
     except OSError as exc:
         _SESSIONS.pop(session_id, None)

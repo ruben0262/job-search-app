@@ -214,3 +214,41 @@ def test_a_chatty_cli_does_not_wedge_while_the_user_is_in_the_browser(tmp_path, 
     token = claude_oauth.finish(session_id, USER, "goodcode")
     assert token.startswith("sk-ant-oat01-")
     assert time.monotonic() - started < 15, "the code must be answered promptly, not after a timeout"
+
+
+# A CLI that only accepts a bracketed paste, which is what the real one turned out to require. A
+# plain `code + "\r"` write leaves it waiting forever, exactly as claude-code 2.1.220 did.
+STRICT_CLI = '''#!/usr/bin/env python3
+import sys
+print("Open this URL: https://claude.ai/oauth/authorize?code=1&state=abc")
+sys.stdout.flush()
+seen = ""
+while True:
+    ch = sys.stdin.read(1)
+    if not ch:
+        break
+    seen += ch
+    if ch == "\r":
+        if seen.startswith("\x1b[200~") and "\x1b[201~" in seen:
+            print("Token: sk-ant-oat01-" + "x" * 40)
+        else:
+            print("OAuth error: Invalid code")
+        sys.stdout.flush()
+        seen = ""
+'''
+
+
+@posix
+def test_the_code_is_delivered_as_a_bracketed_paste(tmp_path, monkeypatch):
+    """**The failure that looked exactly like a hang.** Written as one burst of `code + "\r"`, the
+    real CLI dropped eight of ninety-two characters and swallowed the carriage return, so the code
+    sat half-entered on the prompt and nothing was ever submitted. Nothing timed out on its side and
+    nothing crashed -- it was still waiting for input we believed we had sent.
+    """
+    script = tmp_path / "strict"
+    script.write_text(STRICT_CLI.replace("#!/usr/bin/env python3", f"#!{sys.executable}"))
+    script.chmod(0o755)
+    monkeypatch.setattr(claude_oauth, "CLI", str(script))
+
+    session_id, _ = claude_oauth.start(USER)
+    assert claude_oauth.finish(session_id, USER, "x" * 92).startswith("sk-ant-oat01-")
