@@ -1555,7 +1555,12 @@ td.num {
 
 .file {
   display: flex;
-  align-items: flex-start;
+  /* **Both axes stated.** `button` is centred globally, and this never unset it — so the icon and
+     label sat in the middle of the tile with the empty space on the left, which is what made the
+     grid look ragged. `center` on the cross axis puts the icon against the two-line block rather
+     than against its first line, which is what the `margin-top` nudge underneath was faking. */
+  justify-content: flex-start;
+  align-items: center;
   gap: 0.8rem;
   padding: 0.9rem 1rem;
   border: 1px solid var(--hairline);
@@ -1578,7 +1583,6 @@ td.num {
 
 .file svg {
   flex-shrink: 0;
-  margin-top: 0.2rem;
   color: var(--dim);
 }
 
@@ -2164,4 +2168,18 @@ td.num {
 /* The corner where two bars meet, which otherwise renders as a light square in dark mode. */
 *::-webkit-scrollbar-corner {
   background: transparent;
+}
+
+/* Name over state, and a long name truncates rather than widening the tile — the grid tracks are
+   equal, so one long label would otherwise set the width for all of them. */
+.file > span:last-child {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.file .file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
