@@ -23,6 +23,7 @@ from sqlalchemy import func, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
+from libs import settings
 from libs.db.models import QueueJob, User
 from libs.db.models.queue import CLAIM_TIMEOUT_MIN, LANES, MAX_ATTEMPTS
 
@@ -198,10 +199,14 @@ def dispatch_due_notifications(session: Session) -> int:
                                 index_where=text("state IN ('ready','claimed')"))
         .returning(QueueJob.id)).scalars().all())
 
+    # **One cadence, the same for everyone.** It was a per-user column, and a user choosing four
+    # hours was choosing to hear about a two-hour-old job — which is the opposite of what this
+    # product is. The operator owns the number now (`libs.settings`).
+    interval = int(settings.get(session, "delivery_interval_min"))
     session.execute(
         update(User)
         .where(User.id.in_(due))
-        .values(next_run_at=_now_plus_column(User.notify_interval_min)))
+        .values(next_run_at=func.now() + timedelta(minutes=interval)))
     return enqueued
 
 

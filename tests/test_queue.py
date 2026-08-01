@@ -252,7 +252,7 @@ def test_the_feed_re_arms_at_enqueue_not_at_completion(ctx):
     one delivery errored. `next_run_at` advances when the job is *created*, so a failed or slow
     delivery cannot stall the next one (`SCHEDULER_PLAN.md` §4)."""
     user = _user(ctx, active=True, status="active", telegram_status="connected",
-                 notify_interval_min=60)
+                 )
     ctx.execute(text("UPDATE users SET next_run_at = now() - interval '1 minute' WHERE id = :i"),
                 {"i": user.id})
     ctx.expire(user)

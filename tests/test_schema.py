@@ -169,16 +169,17 @@ def test_a_finished_job_stops_blocking_the_next_one(session):
     session.flush()   # must not raise
 
 
-def test_notify_interval_is_bounded_by_the_database(session):
-    """TENANT_SAFETY.md §4 bounds this 15..1440. A 1-minute interval is a self-inflicted ban.
+def test_the_delivery_cadence_is_one_platform_setting(session):
+    """It was a bounded per-user column. The bound existed because a 1-minute interval is a
+    self-inflicted ban — and the column existed because delivery frequency was a preference. It is
+    not: the product streams the newest postings, so one operator-owned number replaces both."""
+    from libs import settings
 
-    The Pydantic schema validates it too; this asserts the database is the authority rather than
-    trusting that every write path went through the form.
-    """
-    u = _user(session)
-    u.notify_interval_min = 1
-    with pytest.raises(IntegrityError):
-        session.flush()
+    assert settings.get(session, "delivery_interval_min") == settings.DELIVERY_INTERVAL_MIN
+
+    settings.put(session, "delivery_interval_min", 30, by="operator@example.com")
+    session.flush()
+    assert settings.get(session, "delivery_interval_min") == 30
 
 
 def test_only_one_model_artifact_can_be_active_per_user(session):
@@ -220,3 +221,32 @@ def test_every_timestamp_column_is_timezone_aware(session):
           AND data_type NOT LIKE '%%with time zone'
     """)).fetchall()
     assert naive == [], f"naive timestamp columns: {naive}"
+
+
+def test_an_unknown_setting_key_is_refused_rather_than_stored(session):
+    """A typo that persists is a setting that silently never applies — the shape of failure this
+    whole module exists to prevent, since nothing downstream would ever report it."""
+    import pytest as _pytest
+
+    from libs import settings
+
+    with _pytest.raises(KeyError):
+        settings.put(session, "freshnes_hours", 4)
+    with _pytest.raises(KeyError):
+        settings.get(session, "freshnes_hours")
+
+
+def test_freshness_is_per_source_and_falls_back(session):
+    """Sites differ in how fast they list and how far back their filters reach, so the window is
+    per source. A source nobody has tuned gets the default rather than nothing."""
+    from libs import settings
+
+    assert settings.freshness_hours(session, "linkedin") == 4
+    assert settings.freshness_hours(session, "some-new-board") == settings.DEFAULT_FRESHNESS_HOURS
+
+    settings.put(session, "source_freshness_hours", {"linkedin": 2, "arbeitnow": 8})
+    session.flush()
+
+    assert settings.freshness_hours(session, "linkedin") == 2
+    assert settings.freshness_hours(session, "arbeitnow") == 8
+    assert settings.freshness_hours(session, "some-new-board") == settings.DEFAULT_FRESHNESS_HOURS

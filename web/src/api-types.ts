@@ -125,6 +125,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Settings
+         * @description What the operator controls, with the defaults filled in for anything unset.
+         *
+         *     **These are properties of the product, not preferences.** Freshness and delivery cadence used to
+         *     be per user, which meant every source had to be fetched at the widest window anybody asked for
+         *     and filtered back down per person — and a user choosing a four-hour cadence was choosing to hear
+         *     about a two-hour-old job. One number per source, one cadence, set here.
+         */
+        get: operations["read_settings_admin_settings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/settings/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Write Setting
+         * @description Set one. Unknown keys are refused rather than stored — a typo that persists is a setting
+         *     that silently never applies, which is the failure the key list exists to prevent.
+         */
+        put: operations["write_setting_admin_settings__key__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/users": {
         parameters: {
             query?: never;
@@ -1273,8 +1319,6 @@ export interface components {
         AccountPatch: {
             /** Active */
             active?: boolean | null;
-            /** Notify Interval Min */
-            notify_interval_min?: number | null;
         };
         /** Body_upload_documents_post */
         Body_upload_documents_post: {
@@ -1634,6 +1678,13 @@ export interface components {
          * @enum {string}
          */
         Seniority: "intern" | "junior" | "mid" | "senior" | "staff" | "principal" | "lead" | "manager";
+        /** SettingPatch */
+        SettingPatch: {
+            /** Value */
+            value: {
+                [key: string]: unknown;
+            } | unknown[] | number | string;
+        };
         /** SignupRequest */
         SignupRequest: {
             /**
@@ -1957,6 +2008,65 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    read_settings_admin_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    write_setting_admin_settings__key__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SettingPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

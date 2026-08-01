@@ -184,10 +184,10 @@ def delete_account(body: DeleteBody, db: Session = Depends(get_db),
 
 
 class AccountPatch(BaseModel):
-    # The delivery knobs that live on the user row rather than in the search config. Bounds mirror
-    # the DB constraint (`notify_interval_bounds`) so the error is a sentence rather than an
-    # IntegrityError.
-    notify_interval_min: int | None = Field(default=None, ge=15, le=1440)
+    # **How often the feed is sent is no longer here.** It was a per-user field, and a user setting
+    # four hours was asking to be told about a two-hour-old job; the operator owns one cadence for
+    # everyone now (`libs.settings`). What remains is the on/off switch, which is a real choice.
+    #
     # The feed's on/off switch. **Messages stop; nothing else does.** The dispatcher reads this
     # before queueing notify jobs, so pausing stops delivery while collection, scoring and the bot
     # itself keep running — resuming picks up a warm feed rather than a cold start.
@@ -199,14 +199,10 @@ def patch_account(body: AccountPatch, db: Session = Depends(get_db),
                   user_id: _uuid.UUID = Depends(current_user)) -> dict:
     """Settings the user may change directly. Only what is named is touched."""
     user = db.get(User, user_id)
-    if body.notify_interval_min is not None:
-        user.notify_interval_min = body.notify_interval_min
-        audit(logger, "account.notify_interval", user=user_id, minutes=body.notify_interval_min)
     if body.active is not None:
         user.active = body.active
         audit(logger, "account.delivery_toggled", user=user_id, active=body.active)
-    return {"status": "ok", "notify_interval_min": user.notify_interval_min,
-            "active": user.active}
+    return {"status": "ok", "active": user.active}
 
 
 @router.get("/account")
@@ -219,7 +215,6 @@ def account(db: Session = Depends(get_db), user_id: _uuid.UUID = Depends(current
         "links": user.links or [],
         "timezone": user.timezone,
         "active": user.active,
-        "notify_interval_min": user.notify_interval_min,
         "telegram_status": user.telegram_status,
         "plan": user.plan_id,
         "created_at": user.created_at.isoformat() if user.created_at else None,

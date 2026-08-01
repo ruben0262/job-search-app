@@ -245,14 +245,19 @@ def test_changing_the_password_refuses_a_wrong_current_or_a_weak_new_one(api):
     assert same.status_code == 400
 
 
-def test_the_delivery_interval_can_be_changed_within_the_db_bounds(api):
+def test_the_delivery_interval_is_not_a_user_setting(api):
+    """**The cadence belongs to the platform** (owner, 2026-08-01). A user choosing four hours was
+    choosing to hear about a two-hour-old job, which is the opposite of what this product is, so
+    the field is gone rather than merely ignored. What a user still controls is on/off."""
     http, session, user = api
+
+    # Ignored, not honoured: the field is not part of the request model any more.
     assert http.patch("/account", json={"notify_interval_min": 30}).status_code == 200
+    assert not hasattr(user, "notify_interval_min")
+
+    assert http.patch("/account", json={"active": False}).status_code == 200
     session.flush()
-    session.refresh(user)
-    assert user.notify_interval_min == 30
-    # Below the DB constraint's floor: refused as a sentence, not an IntegrityError.
-    assert http.patch("/account", json={"notify_interval_min": 5}).status_code == 422
+    assert user.active is False
 
 
 def test_the_settings_page_never_returns_a_credential(api):

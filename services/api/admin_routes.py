@@ -18,6 +18,7 @@ import os
 import uuid as _uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -26,6 +27,7 @@ from libs.obs import audit
 from libs.ops import evaluate, platform_health, render
 from libs.profiles.repository import ProfileFiles
 from libs.scoring.history import model_history
+from libs.settings import DEFAULTS, all_settings, put
 from services.api.deps import current_user, get_db
 
 logger = logging.getLogger(__name__)
@@ -158,3 +160,34 @@ def user_detail(user_id: _uuid.UUID, db: Session = Depends(get_db),
                                          UserJobState.notified_at.isnot(None))) or 0,
         },
     }
+
+
+class SettingPatch(BaseModel):
+    value: dict | list | int | str
+
+
+@router.get("/settings")
+def read_settings(db: Session = Depends(get_db), admin: User = Depends(require_admin)) -> dict:
+    """What the operator controls, with the defaults filled in for anything unset.
+
+    **These are properties of the product, not preferences.** Freshness and delivery cadence used to
+    be per user, which meant every source had to be fetched at the widest window anybody asked for
+    and filtered back down per person — and a user choosing a four-hour cadence was choosing to hear
+    about a two-hour-old job. One number per source, one cadence, set here.
+    """
+    audit(logger, "admin.settings_read", user=admin.id)
+    return {"settings": all_settings(db), "defaults": DEFAULTS}
+
+
+@router.put("/settings/{key}")
+def write_setting(key: str, body: SettingPatch, db: Session = Depends(get_db),
+                  admin: User = Depends(require_admin)) -> dict:
+    """Set one. Unknown keys are refused rather than stored — a typo that persists is a setting
+    that silently never applies, which is the failure the key list exists to prevent."""
+    try:
+        put(db, key, body.value, by=admin.email)
+    except KeyError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    audit(logger, "admin.settings_write", user=admin.id, setting=key)
+    return {"status": "ok", "settings": all_settings(db)}

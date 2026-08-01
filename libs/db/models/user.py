@@ -9,7 +9,7 @@ user data onto a corpus row.
 
     SELECT id FROM users WHERE active AND next_run_at <= now()
 
-Fields that loop touches — ``active``, ``next_run_at``, ``notify_interval_min``, ``timezone`` — are
+Fields that loop touches — ``active``, ``next_run_at``, ``timezone`` — are
 real columns with a real index. Everything else the config form collects (keywords, locations,
 seniority, salary floor …) is JSONB on ``user_config``, because it is read once per harvest match
 pass and never in a hot predicate. The split is by access pattern, not by importance, and the form in
@@ -128,7 +128,6 @@ class User(Base):
 
     # --- scheduling: read by the dispatcher every 60 s ---
     active: Mapped[bool] = mapped_column(Boolean, default=False)
-    notify_interval_min: Mapped[int] = mapped_column(Integer, default=60)
     next_run_at: Mapped[timestamptz | None]
     # The per-user LinkedIn loop runs on its own interval, deliberately slower than the 15-minute
     # shared harvest: a user on a 4-hour digest does not need LinkedIn scraped 96 times a day, and
@@ -228,7 +227,6 @@ class User(Base):
         # Bounds from TENANT_SAFETY.md §4. Enforced here as well as in the Pydantic schema on
         # purpose: the form is the usability layer, the database is the authority. A 1-minute
         # interval is a self-inflicted Telegram rate-limit ban.
-        CheckConstraint("notify_interval_min BETWEEN 15 AND 1440", name="notify_interval_bounds"),
         CheckConstraint("linkedin_interval_min BETWEEN 15 AND 1440",
                         name="linkedin_interval_bounds"),
         # The dispatcher's predicate, indexed. Partial, because rows that are not active are never

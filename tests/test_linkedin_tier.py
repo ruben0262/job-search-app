@@ -142,7 +142,7 @@ def test_the_next_run_respects_the_interval_floor(db):
     governor floors this tier at an hour because it is their bandwidth, not the platform's."""
     from services.harvester.governor import LINKEDIN_MIN_INTERVAL_MIN
 
-    user = _user(db, linkedin_next_run_at=None, notify_interval_min=15, linkedin_interval_min=15)
+    user = _user(db, linkedin_next_run_at=None, linkedin_interval_min=15)
     linkedin.run_for_due_users(db, now=NOW, gather=lambda *a, **k: [])
     db.flush()
 

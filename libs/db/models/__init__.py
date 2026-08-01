@@ -34,6 +34,7 @@ from libs.db.models.profile_file import (
 )
 from libs.db.models.proxy import PROXY_STATUSES, ProxyCredential
 from libs.db.models.queue import CLAIM_TIMEOUT_MIN, JOB_STATES, LANES, MAX_ATTEMPTS, QueueJob
+from libs.db.models.settings import PlatformSetting
 from libs.db.models.setup import (
     DEFAULT_TITLE,
     MAX_CONVERSATIONS,
@@ -78,6 +79,7 @@ __all__ = [
     "CorpusJob",
     "MailSend",
     "Plan",
+    "PlatformSetting",
     "ProxyCredential",
     "QueueJob",
     "SetupConversation",

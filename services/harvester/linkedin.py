@@ -44,6 +44,9 @@ from libs.db.models import User, UserConfig
 from libs.obs import audit
 from libs.secrets import SecretStore, redacting
 from libs.secrets.keyring import SecretsError
+from libs.settings import DELIVERY_INTERVAL_MIN
+from services.harvester.describe import describe_pending
+from services.harvester.fetch import make_client
 from services.harvester.governor import (
     LINKEDIN_MAX_CONCURRENT_USERS,
     linkedin_enabled,
@@ -60,6 +63,12 @@ logger = logging.getLogger(__name__)
 # reference's figure rather than a bigger number that would feel more thorough.
 RESULTS_WANTED = 30
 
+# How many postings one user's pass may fetch descriptions for. Bounded like every other proxy
+# pass: a keyword that suddenly matches four hundred new jobs should cost one capped run rather
+# than a user's whole daily allowance in a single cycle. What is left waits for the next run,
+# fifteen minutes later.
+DESCRIBE_LIMIT = 60
+
 # Queries one user contributes per run. `build_query_set` already caps a user's keywords; this
 # bounds the cross product with their locations, which is what actually multiplies.
 MAX_QUERIES_PER_RUN = 12
@@ -75,6 +84,7 @@ class LinkedInReport:
     skipped_no_lease: int = 0
     links_found: int = 0
     new_jobs: int = 0
+    described: int = 0
     failures: dict[str, str] = field(default_factory=dict)
 
 
@@ -141,7 +151,7 @@ def run_for_due_users(session, *, now: datetime | None = None,
         # want the same next run. Setting it at the end would skip it on the exception path and
         # leave the user re-attempted on every tick.
         user.linkedin_next_run_at = next_linkedin_run(
-            now, resolve_linkedin_interval(user.linkedin_interval_min or user.notify_interval_min))
+            now, resolve_linkedin_interval(user.linkedin_interval_min or DELIVERY_INTERVAL_MIN))
 
         queries = queries_for(session, user)
         if not queries:
@@ -198,14 +208,30 @@ def _run_one(user: User, queries: list[dict], *, corpus: CorpusRepository,
                        "linkedin_fetch_description": False}
                 links = gather(cfg, logger, lease=lease)
 
+                # **Dedup, then describe what is left — on this same lease, in this same pass.**
+                # The listing is one request for a page of results; a description is one request
+                # per posting, so asking jobspy for them (`linkedin_fetch_description`) would pay
+                # for every result including the ones already held. Deduping first means the
+                # per-posting cost is paid once per *new* job, by whoever finds it, and every other
+                # user reads it from the shared corpus for nothing.
+                #
+                # It used to run on its own hourly timer, which left rows scored on a snippet for
+                # up to an hour and then rescored underneath the user. There is no window now.
+                new_jobs = _ingest(corpus, links)
+                with make_client(lease) as client:
+                    described = describe_pending(corpus, client, linkedin=True,
+                                                 limit=DESCRIBE_LIMIT)
+
     except SecretsError:
         # The store could not answer. Not this user's fault and not a reason to stop the pass.
         report.skipped_no_lease += 1
         return False
 
     report.links_found += len(links)
-    report.new_jobs += _ingest(corpus, links)
-    logger.info("linkedin: %s ran %d quer(ies), %d link(s)", user.id, len(queries), len(links))
+    report.new_jobs += new_jobs
+    report.described += described.described
+    logger.info("linkedin: %s ran %d quer(ies), %d link(s), %d new, %d described",
+                user.id, len(queries), len(links), new_jobs, described.described)
     return True
 
 
@@ -226,8 +252,10 @@ def _ingest(corpus: CorpusRepository, links) -> int:
         if job_id is None:
             continue
         new += 1
-        if link.snippet:
-            corpus.set_description(job_id, link.snippet)
+        # **The snippet is not a description and is not stored as one.** A row described by its
+        # preview gets embedded and scored on a paragraph, and the full JD arriving later would
+        # silently change that score — a job rejected on a preview is never re-examined by anyone.
+        # A row with no description is simply not scored until the fetch below gives it one.
         if link.application_url:
             corpus.set_application_url(job_id, link.application_url)
     return new

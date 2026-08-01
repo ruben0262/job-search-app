@@ -21,6 +21,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from libs import settings
 from libs.contracts.config import migrate_config
 from libs.corpus import salary
 from libs.db.models import CorpusJob, User, UserDocument, UserJobState, UserLabel, UserModel
@@ -98,8 +99,10 @@ def dashboard(db: Session = Depends(get_db),
         "documents": db.scalar(select(func.count()).select_from(UserDocument)
                                .where(UserDocument.user_id == user_id)) or 0,
         "telegram": user.telegram_status,
+        # The cadence is the platform's, not this user's — reported so the page can say how
+        # often the feed arrives without implying it is theirs to change.
         "notifications": {"per_day_cap": _cap(db, user_id),
-                          "interval_min": user.notify_interval_min},
+                          "interval_min": int(settings.get(db, "delivery_interval_min"))},
         "banners": _banners(user, servable, onboarding),
         # **Whether to show the operator panel at all.** The API already refuses `/admin/*` to
         # anyone not in `ADMIN_EMAILS`, so this is a rendering hint and not the access control —
