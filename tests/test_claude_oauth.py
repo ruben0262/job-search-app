@@ -239,8 +239,8 @@ def test_the_code_is_delivered_as_a_bracketed_paste(fake_cli, monkeypatch):
     session_id, _ = claude_oauth.start(USER)
     claude_oauth.finish(session_id, USER, "goodcode")
 
-    assert writes[0].startswith(b"[200~"), "the code must be announced as a paste"
-    assert writes[0].endswith(b"[201~"), "and closed, or the CLI keeps waiting for more"
+    assert writes[0].startswith(b"\x1b[200~"), "the code must be announced as a paste"
+    assert writes[0].endswith(b"\x1b[201~"), "and closed, or the CLI keeps waiting for more"
     assert b"goodcode" in writes[0]
     # Enter is its own write. Bundled into the burst above, the CLI's paste debounce ate it.
-    assert writes[1] == b""
+    assert writes[1] == b"\r"
