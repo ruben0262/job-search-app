@@ -29,6 +29,7 @@ from libs.db.models import ProxyCredential, User
 from libs.db.models.user import SECRET_KINDS, TELEGRAM_ROUTE_KEYS
 from libs.obs import audit
 from libs.secrets import SecretStore, redacting
+from services.api import claude_oauth
 from services.api.deps import current_user, get_db, get_store, rate_limit
 
 logger = logging.getLogger(__name__)
@@ -222,6 +223,58 @@ def list_credentials(db: Session = Depends(get_db),
             "proxy": "proxy" in kinds,
         },
     }
+
+
+@router.post("/claude/oauth/start")
+def claude_oauth_start(request: Request, *,
+                       user_id: _uuid.UUID = Depends(current_user)) -> dict:
+    """Begin a sign-in and hand back the URL to open. See `services.api.claude_oauth` for why a
+    process has to stay alive between this call and the next one."""
+    rate_limit(request, f"oauth:{user_id}", limit=10, per_seconds=3600)
+    try:
+        session_id, url = claude_oauth.start(user_id)
+    except claude_oauth.OAuthError as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    audit(logger, "credentials.oauth_started", user=user_id)
+    return {"session_id": session_id, "url": url}
+
+
+class OAuthFinishBody(BaseModel):
+    session_id: str = Field(min_length=8, max_length=128)
+    # The short code the browser shows, not the token. Whitespace is stripped downstream because
+    # it is copied by hand and a trailing space is the most common way this fails.
+    code: str = Field(min_length=4, max_length=512)
+
+
+@router.post("/claude/oauth/finish")
+def claude_oauth_finish(body: OAuthFinishBody, *,
+                        store: SecretStore = Depends(get_store),
+                        user_id: _uuid.UUID = Depends(current_user)) -> dict:
+    """Exchange the code for a token and store it.
+
+    The token goes through `validate_credential` like a pasted one: the CLI minting it proves the
+    browser flow completed, not that the credential can reach the model, and those come apart on an
+    account with no active subscription.
+    """
+    try:
+        token = claude_oauth.finish(body.session_id, user_id, body.code)
+    except claude_oauth.OAuthError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    with redacting(token):
+        result = validate_credential("claude_oauth", token)
+        store.put(user_id, "claude_oauth", token, validated=result.ok)
+    audit(logger, "credentials.oauth_stored", user=user_id, validated=result.ok)
+    return {"status": "saved", "validated": result.ok, "detail": result.detail}
+
+
+@router.post("/claude/oauth/cancel")
+def claude_oauth_cancel(body: dict, user_id: _uuid.UUID = Depends(current_user)) -> dict:
+    """Back out. Cheap, and it frees the process instead of leaving it to the TTL."""
+    session_id = str(body.get("session_id", ""))
+    if session_id:
+        claude_oauth.cancel(session_id)
+    return {"status": "cancelled"}
 
 
 class RevealBody(BaseModel):
