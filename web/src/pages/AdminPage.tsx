@@ -17,7 +17,7 @@
 import { useEffect, useState } from "react";
 
 import { api } from "../api";
-import { useAction } from "../ui";
+import { Error, useAction } from "../ui";
 
 type Alert = {
   severity: "page" | "warn";
@@ -45,6 +45,12 @@ type Health = {
   postgres_bytes: number;
   connections: number;
   alerts: Alert[];
+  latency: {
+    window_hours: number;
+    found_to_scored: Span;
+    scored_to_delivered: Span;
+    found_to_delivered: Span;
+  };
 };
 
 type AdminUser = {
@@ -56,6 +62,14 @@ type AdminUser = {
   telegram: string;
   model_version: number | null;
   onboarded: boolean;
+};
+
+type Span = { p50: number | null; p90: number | null; p99: number | null; samples: number };
+
+type Settings = {
+  delivery_interval_min: number;
+  source_freshness_hours: Record<string, number>;
+  default_freshness_hours: number;
 };
 
 type UserDetail = {
@@ -76,7 +90,24 @@ export function AdminPage() {
   const [health, setHealth] = useState<Health | null>(null);
   const [users, setUsers] = useState<AdminUser[] | null>(null);
   const [detail, setDetail] = useState<UserDetail | null>(null);
+  const [settings, setSettings] = useState<Settings | null>(null);
+  const [draft, setDraft] = useState("");
   const [failed, setFailed] = useState(false);
+
+  // Freshness is edited as JSON rather than a row per source: the set of sources changes, and a
+  // form that has to be rebuilt every time one is added is a form that goes stale.
+  const saveFreshness = useAction(async () => {
+    const parsed = JSON.parse(draft) as Record<string, number>;
+    const body = await api.put<{ settings: Settings }>(
+      "/admin/settings/source_freshness_hours", { value: parsed });
+    setSettings(body.settings);
+  });
+
+  const saveCadence = useAction(async (minutes: number) => {
+    const body = await api.put<{ settings: Settings }>(
+      "/admin/settings/delivery_interval_min", { value: minutes });
+    setSettings(body.settings);
+  });
 
   const openUser = useAction(async (id: string) => {
     setDetail(await api.get<UserDetail>(`/admin/users/${id}`));
@@ -86,10 +117,13 @@ export function AdminPage() {
     Promise.all([
       api.get<Health>("/admin/health"),
       api.get<{ users: AdminUser[] }>("/admin/users"),
+      api.get<{ settings: Settings }>("/admin/settings"),
     ])
-      .then(([h, u]) => {
+      .then(([h, u, s]) => {
         setHealth(h);
         setUsers(u.users);
+        setSettings(s.settings);
+        setDraft(JSON.stringify(s.settings.source_freshness_hours, null, 2));
       })
       .catch(() => setFailed(true));
   }, []);
@@ -139,6 +173,89 @@ export function AdminPage() {
       </dl>
 
       <p className="kicker">Queue</p>
+      {/* **What the operator owns.** Freshness and cadence stopped being user preferences on
+          2026-08-01: the product streams the newest postings, so both are properties of what it is
+          rather than choices. Per source, because sites differ in how fast they list. */}
+      {settings ? (
+        <div className="card" style={{ marginBottom: "1.5rem" }}>
+          <h2 style={{ marginTop: 0 }}>Platform settings</h2>
+
+          <label className="label" htmlFor="cadence">Delivery cadence</label>
+          <span className="hint">
+            How often every user&apos;s feed is sent. The same for everyone — a longer cadence
+            spends the lead time this product exists to give.
+          </span>
+          <select
+            id="cadence"
+            value={settings.delivery_interval_min}
+            disabled={saveCadence.busy}
+            onChange={(event) => void saveCadence.run(Number(event.target.value))}
+            style={{ maxWidth: "18rem" }}
+          >
+            {[15, 30, 60].map((minutes) => (
+              <option key={minutes} value={minutes}>every {minutes} minutes</option>
+            ))}
+          </select>
+          <Error>{saveCadence.error}</Error>
+
+          <label className="label" style={{ marginTop: "1.5rem" }} htmlFor="freshness">
+            Job freshness, per source (hours)
+          </label>
+          <span className="hint">
+            How recent a posting must be to qualify. Anything not named here uses the default of{" "}
+            {settings.default_freshness_hours}h. LinkedIn lists within minutes; a slower board given
+            LinkedIn&apos;s window would never qualify at all.
+          </span>
+          <textarea
+            id="freshness"
+            value={draft}
+            spellCheck={false}
+            onChange={(event) => setDraft(event.target.value)}
+            style={{ minHeight: "8rem", fontFamily: "var(--font-mono)", fontSize: "0.85rem" }}
+          />
+          <Error>{saveFreshness.error}</Error>
+          <button disabled={saveFreshness.busy} onClick={() => void saveFreshness.run()}>
+            {saveFreshness.busy ? "Saving…" : "Save freshness"}
+          </button>
+        </div>
+      ) : null}
+
+      {/* **The claim this product makes, measured.** A four-hour freshness window means little if
+          the pipeline spends two of them. Percentiles rather than an average: the tail is what a
+          user experiences on the day their job was late. */}
+      {health.latency ? (
+        <div className="card" style={{ marginBottom: "1.5rem" }}>
+          <h2 style={{ marginTop: 0 }}>Pipeline latency</h2>
+          <p className="facts">
+            Minutes, over the last {health.latency.window_hours} hours.
+          </p>
+          <div className="table-scroll">
+            <table className="history">
+              <thead>
+                <tr>
+                  <th>Stage</th><th>Median</th><th>p90</th><th>p99</th><th>Samples</th>
+                </tr>
+              </thead>
+              <tbody>
+                {([
+                  ["Found → scored", health.latency.found_to_scored],
+                  ["Scored → delivered", health.latency.scored_to_delivered],
+                  ["Found → delivered", health.latency.found_to_delivered],
+                ] as [string, Span][]).map(([label, span]) => (
+                  <tr key={label} className={label.startsWith("Found → d") ? "on" : undefined}>
+                    <td>{label}</td>
+                    <td>{span.p50 ?? "—"}</td>
+                    <td>{span.p90 ?? "—"}</td>
+                    <td>{span.p99 ?? "—"}</td>
+                    <td>{span.samples.toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
+
       {detail ? (
         <div className="card" style={{ marginBottom: "1.5rem" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>

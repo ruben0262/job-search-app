@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 from libs.db.models import User, UserJobState, UserLabel
 from libs.obs import audit
 from libs.ops import evaluate, platform_health, render
+from libs.ops.latency import pipeline_latency
 from libs.profiles.repository import ProfileFiles
 from libs.scoring.history import model_history
 from libs.settings import DEFAULTS, all_settings, put
@@ -70,6 +71,10 @@ def health(db: Session = Depends(get_db), admin: User = Depends(require_admin)) 
     audit(logger, "admin.health", user=admin.id, alerts=len(alerts))
     return {
         **state.as_dict(),
+        # **How long a posting takes to reach somebody.** The product's claim is timeliness and
+        # nothing measured it: a four-hour freshness window means little if the pipeline itself
+        # spends two of them.
+        "latency": pipeline_latency(db),
         "alerts": [
             {"severity": alert.severity, "key": alert.key, "text": alert.text,
              "action": alert.action, "user_email": alert.user_email}
