@@ -75,6 +75,16 @@ type Settings = {
 
 type Source = { name: string; hours: number };
 
+/** The four questions an operator arrives with, in the order they ask them. */
+const TABS: [Tab, string][] = [
+  ["health", "Health"],
+  ["settings", "Settings"],
+  ["latency", "Latency"],
+  ["accounts", "Accounts"],
+];
+
+type Tab = "health" | "settings" | "latency" | "accounts";
+
 function BinIcon() {
   return (
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -95,6 +105,7 @@ export function AdminPage() {
   // The account being deleted, held until the typed address matches. `null` closes the dialog.
   const [doomed, setDoomed] = useState<AdminUser | null>(null);
   const [typed, setTyped] = useState("");
+  const [tab, setTab] = useState<Tab>("health");
   const [failed, setFailed] = useState(false);
 
   // One source, one number. Written as a whole map because that is what the setting is — reading
@@ -167,6 +178,29 @@ export function AdminPage() {
         </span>
       </div>
 
+      {/* **Tabs, because this page had six stacked sections and no shape.** An operator arrives
+          with one question at a time: is anything broken, what is the platform set to, how fast is
+          it, who are the accounts. Stacking them meant scrolling past four answers to reach the
+          fifth, and it had already produced a real defect: the "Queue" heading sat immediately
+          above the settings card rather than above its own table. */}
+      <nav className="tabs">
+        {TABS.map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            className={tab === key ? "tab on" : "tab"}
+            onClick={() => setTab(key)}
+          >
+            {label}
+            {key === "health" && health.alerts.length > 0 ? (
+              <span className="tab-count">{health.alerts.length}</span>
+            ) : null}
+          </button>
+        ))}
+      </nav>
+
+      {tab === "health" ? (
+        <>
       {/* What needs a person. Empty is the good state and says so, rather than rendering nothing
           and leaving the reader unsure whether it loaded. */}
       {health.alerts.length === 0 ? (
@@ -194,8 +228,39 @@ export function AdminPage() {
         <Stat value={`${(health.postgres_bytes / 1024 ** 3).toFixed(1)} GB`} label="postgres" />
       </dl>
 
-      <p className="kicker">Queue</p>
-      {/* **What the operator owns.** Freshness and cadence stopped being user preferences on
+          <p className="kicker" style={{ marginTop: "2.5rem" }}>Queue</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Lane</th>
+            <th>Ready</th>
+            <th>Claimed</th>
+            <th>Dead</th>
+            <th>Oldest</th>
+          </tr>
+        </thead>
+        <tbody>
+          {health.lanes.map((lane) => (
+            <tr key={lane.lane}>
+              <td>{lane.lane}</td>
+              <td className="num">{lane.ready}</td>
+              <td className="num">{lane.claimed}</td>
+              {/* Dead letters are the only number here worth a colour: everything else is a
+                  reading, and a dead job is work that has stopped and will not restart. */}
+              <td className="num" style={lane.dead ? { color: "var(--danger)" } : undefined}>
+                {lane.dead}
+              </td>
+              <td className="num job-sub">
+                {lane.oldest_ready_min ? `${Math.round(lane.oldest_ready_min)}m` : "—"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+        </>
+      ) : null}
+
+      {tab === "settings" ? <>      {/* **What the operator owns.** Freshness and cadence stopped being user preferences on
           2026-08-01: the product streams the newest postings, so both are properties of what it is
           rather than choices. Per source, because sites differ in how fast they list. */}
       {settings ? (
@@ -245,9 +310,9 @@ export function AdminPage() {
             ))}
           </div>
         </div>
-      ) : null}
+      ) : null}</> : null}
 
-      {/* **The claim this product makes, measured.** A four-hour freshness window means little if
+      {tab === "latency" ? <>      {/* **The claim this product makes, measured.** A four-hour freshness window means little if
           the pipeline spends two of them. Percentiles rather than an average: the tail is what a
           user experiences on the day their job was late. */}
       {health.latency ? (
@@ -281,39 +346,9 @@ export function AdminPage() {
             </table>
           </div>
         </div>
-      ) : null}
+      ) : null}</> : null}
 
-
-      <table>
-        <thead>
-          <tr>
-            <th>Lane</th>
-            <th>Ready</th>
-            <th>Claimed</th>
-            <th>Dead</th>
-            <th>Oldest</th>
-          </tr>
-        </thead>
-        <tbody>
-          {health.lanes.map((lane) => (
-            <tr key={lane.lane}>
-              <td>{lane.lane}</td>
-              <td className="num">{lane.ready}</td>
-              <td className="num">{lane.claimed}</td>
-              {/* Dead letters are the only number here worth a colour: everything else is a
-                  reading, and a dead job is work that has stopped and will not restart. */}
-              <td className="num" style={lane.dead ? { color: "var(--danger)" } : undefined}>
-                {lane.dead}
-              </td>
-              <td className="num job-sub">
-                {lane.oldest_ready_min ? `${Math.round(lane.oldest_ready_min)}m` : "—"}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-
-      <p className="kicker" style={{ marginTop: "2.5rem" }}>
+      {tab === "accounts" ? <>      <p className="kicker" style={{ marginTop: "2.5rem" }}>
         Accounts
       </p>
       <table>
@@ -369,6 +404,7 @@ export function AdminPage() {
           ))}
         </tbody>
       </table>
+      </> : null}
 
       {/* **The address has to be typed, and the server checks it too.** This destroys a person's
           profile, labels, documents and model with no undo, so a dialog somebody can dismiss by
@@ -409,6 +445,7 @@ export function AdminPage() {
     </>
   );
 }
+
 
 function Stat({ value, label }: { value: string; label: string }) {
   return (

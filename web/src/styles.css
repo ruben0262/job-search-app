@@ -2286,3 +2286,64 @@ td.num {
   border-radius: var(--radius-lg);
   background: var(--bg-raised);
 }
+
+/* ── admin tabs ──────────────────────────────────────────────────────────────────────────────── */
+
+/* Same grammar as the top navigation: mono, spaced, uppercase, with the active one carrying the
+   ink and a rule under it. A second visual language for a second row of links would read as a
+   different product. */
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.4rem;
+  align-items: center;
+  border-bottom: 1px solid var(--hairline);
+  margin: 1.75rem 0 2rem;
+  /* Not sticky, unlike the top bar: this one scrolls with the content it labels. */
+  position: static;
+  background: none;
+}
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: none;
+  border: none;
+  border-bottom: 1px solid transparent;
+  border-radius: 0;
+  margin-bottom: -1px;
+  padding: 0.7rem 0;
+  color: var(--dim);
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.tab:hover:not([disabled]) {
+  color: var(--muted);
+  background: none;
+  transform: none;
+}
+
+.tab.on {
+  color: var(--ink);
+  border-bottom-color: var(--ink);
+}
+
+/* How many things need a person, on the tab that holds them, so the count is visible from any
+   other tab. A number nobody can see until they navigate is a number that waits. */
+.tab-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.15rem;
+  height: 1.15rem;
+  padding: 0 0.3rem;
+  border-radius: 999px;
+  background: var(--danger);
+  color: var(--bg);
+  font-size: 0.62rem;
+  letter-spacing: 0;
+}
