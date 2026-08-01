@@ -171,6 +171,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Sources
+         * @description Every source the harvester collects from, with the freshness window each one is using.
+         *
+         *     Read from the harvester's own enabled list rather than from whatever happens to be in the
+         *     settings blob: a source nobody has tuned should still appear, with the default it is actually
+         *     running at, or the panel silently omits the boards most likely to need attention.
+         */
+        get: operations["sources_admin_sources_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/users": {
         parameters: {
             query?: never;
@@ -217,6 +241,46 @@ export interface paths {
          */
         get: operations["user_detail_admin_users__user_id__get"];
         put?: never;
+        post?: never;
+        /**
+         * Delete User
+         * @description Delete an account and everything belonging to it, immediately and permanently.
+         *
+         *     **The typed address is checked on the server, not only in the browser.** A confirmation enforced
+         *     only in the UI is a confirmation that a mis-aimed script skips entirely, and this endpoint
+         *     destroys a person's profile, labels, documents and model with no undo.
+         *
+         *     Deletion cascades from the row: every per-user table declares `ondelete="CASCADE"`, so this is
+         *     one statement rather than a list of tables somebody has to remember to extend. The shared corpus
+         *     is untouched — those rows belong to the platform, not to any account.
+         *
+         *     An operator cannot delete themselves. The account performing the deletion is the one that would
+         *     have to clean up afterwards.
+         */
+        delete: operations["delete_user_admin_users__user_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{user_id}/admin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Admin
+         * @description Grant or revoke operator access.
+         *
+         *     **An operator cannot revoke their own.** Not paternalism — `ADMIN_EMAILS` is the only route back
+         *     in, and an operator whose address is not in it could lock themselves out of their own platform
+         *     with one click, with a redeploy as the only fix. Granting to yourself is meaningless (you
+         *     already have it) and revoking is the dangerous direction, so the guard covers the whole action.
+         */
+        put: operations["set_admin_admin_users__user_id__admin_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1320,6 +1384,11 @@ export interface components {
             /** Active */
             active?: boolean | null;
         };
+        /** AdminFlag */
+        AdminFlag: {
+            /** Is Admin */
+            is_admin: boolean;
+        };
         /** Body_upload_documents_post */
         Body_upload_documents_post: {
             /** File */
@@ -1405,6 +1474,11 @@ export interface components {
         DeleteBody: {
             /** Password */
             password: string;
+        };
+        /** DeleteConfirmation */
+        DeleteConfirmation: {
+            /** Email */
+            email: string;
         };
         /** Discard */
         Discard: {
@@ -2071,6 +2145,28 @@ export interface operations {
             };
         };
     };
+    sources_admin_sources_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     users_admin_users_get: {
         parameters: {
             query?: never;
@@ -2103,6 +2199,80 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_user_admin_users__user_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeleteConfirmation"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_admin_admin_users__user_id__admin_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminFlag"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

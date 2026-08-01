@@ -28,7 +28,7 @@ from libs.ops import evaluate, platform_health, render
 from libs.ops.latency import pipeline_latency
 from libs.profiles.repository import ProfileFiles
 from libs.scoring.history import model_history
-from libs.settings import DEFAULTS, all_settings, put
+from libs.settings import DEFAULTS, HARVEST_SOURCES, all_settings, freshness_hours, put
 from services.api.deps import current_user, get_db
 
 logger = logging.getLogger(__name__)
@@ -52,7 +52,10 @@ def require_admin(db: Session = Depends(get_db),
     """
     user = db.get(User, user_id)
     allowed = admin_emails()
-    if user is None or not allowed or user.email.lower() not in allowed:
+    # **The env var or the row.** `ADMIN_EMAILS` remains the bootstrap and cannot be revoked from a
+    # browser; the flag is how access is granted without a deploy.
+    granted = user is not None and (user.is_admin or user.email.lower() in allowed)
+    if not granted:
         logger.warning("admin: refused %s", user_id)
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="not found")
     return user
@@ -102,6 +105,7 @@ def users(db: Session = Depends(get_db), admin: User = Depends(require_admin)) -
                 "telegram": row.telegram_status,
                 "profile_generation": row.profile_generation,
                 "model_version": row.model_version,
+                "is_admin": row.is_admin,
                 "onboarded": row.onboarding_completed_at is not None,
                 "processed_at": row.processed_at.isoformat() if row.processed_at else None,
                 "created_at": row.created_at.isoformat() if row.created_at else None,
@@ -196,3 +200,84 @@ def write_setting(key: str, body: SettingPatch, db: Session = Depends(get_db),
 
     audit(logger, "admin.settings_write", user=admin.id, setting=key)
     return {"status": "ok", "settings": all_settings(db)}
+
+
+class AdminFlag(BaseModel):
+    is_admin: bool
+
+
+@router.put("/users/{user_id}/admin")
+def set_admin(user_id: _uuid.UUID, body: AdminFlag, db: Session = Depends(get_db),
+              admin: User = Depends(require_admin)) -> dict:
+    """Grant or revoke operator access.
+
+    **An operator cannot revoke their own.** Not paternalism — `ADMIN_EMAILS` is the only route back
+    in, and an operator whose address is not in it could lock themselves out of their own platform
+    with one click, with a redeploy as the only fix. Granting to yourself is meaningless (you
+    already have it) and revoking is the dangerous direction, so the guard covers the whole action.
+    """
+    if user_id == admin.id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            detail="You cannot change your own operator access.")
+
+    target = db.get(User, user_id)
+    if target is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="no such user")
+
+    target.is_admin = body.is_admin
+    audit(logger, "admin.access_changed", user=admin.id, subject=user_id, granted=body.is_admin)
+    return {"status": "ok", "id": str(user_id), "is_admin": target.is_admin}
+
+
+class DeleteConfirmation(BaseModel):
+    # The typed address, which must match the account being deleted. A dialog somebody can dismiss
+    # by pressing return is not a confirmation.
+    email: str
+
+
+@router.delete("/users/{user_id}")
+def delete_user(user_id: _uuid.UUID, body: DeleteConfirmation, db: Session = Depends(get_db),
+                admin: User = Depends(require_admin)) -> dict:
+    """Delete an account and everything belonging to it, immediately and permanently.
+
+    **The typed address is checked on the server, not only in the browser.** A confirmation enforced
+    only in the UI is a confirmation that a mis-aimed script skips entirely, and this endpoint
+    destroys a person's profile, labels, documents and model with no undo.
+
+    Deletion cascades from the row: every per-user table declares `ondelete="CASCADE"`, so this is
+    one statement rather than a list of tables somebody has to remember to extend. The shared corpus
+    is untouched — those rows belong to the platform, not to any account.
+
+    An operator cannot delete themselves. The account performing the deletion is the one that would
+    have to clean up afterwards.
+    """
+    if user_id == admin.id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            detail="You cannot delete your own account from here.")
+
+    target = db.get(User, user_id)
+    if target is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="no such user")
+
+    if body.email.strip().lower() != target.email.lower():
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="That address does not match the account. Nothing was deleted.")
+
+    email = target.email
+    db.delete(target)
+    audit(logger, "admin.user_deleted", user=admin.id, subject=user_id)
+    logger.warning("admin: %s deleted account %s (%s)", admin.id, user_id, email)
+    return {"status": "deleted", "id": str(user_id)}
+
+
+@router.get("/sources")
+def sources(db: Session = Depends(get_db), admin: User = Depends(require_admin)) -> dict:
+    """Every source the harvester collects from, with the freshness window each one is using.
+
+    Read from the harvester's own enabled list rather than from whatever happens to be in the
+    settings blob: a source nobody has tuned should still appear, with the default it is actually
+    running at, or the panel silently omits the boards most likely to need attention.
+    """
+    return {"sources": [{"name": name, "hours": freshness_hours(db, name)}
+                        for name in HARVEST_SOURCES]}

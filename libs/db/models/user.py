@@ -128,6 +128,12 @@ class User(Base):
 
     # --- scheduling: read by the dispatcher every 60 s ---
     active: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # Operator access, grantable from the admin panel. **`ADMIN_EMAILS` is still the authority** —
+    # the two are ORed, so a flag can grant access but cannot revoke the bootstrap. That direction
+    # is deliberate: an operator who could untick their own row could lock themselves out of the
+    # platform from a browser, and the fix would be a deploy.
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     next_run_at: Mapped[timestamptz | None]
     # The per-user LinkedIn loop runs on its own interval, deliberately slower than the 15-minute
     # shared harvest: a user on a 4-hour digest does not need LinkedIn scraped 96 times a day, and

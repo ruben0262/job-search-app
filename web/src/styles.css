@@ -2183,3 +2183,99 @@ td.num {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ── admin: sources, rows, deletion ──────────────────────────────────────────────────────────── */
+
+/* A labelled row per board rather than a JSON blob. The set of sources changes, so the grid tracks
+   rather than a hand-written column per site. */
+.sources {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(14rem, 100%), 1fr));
+  gap: 0.35rem 1.2rem;
+  margin-top: 0.75rem;
+}
+
+.source-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.source-name {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.source-row select {
+  width: auto;
+  padding: 0.2rem 0.4rem;
+  font-size: 0.8rem;
+}
+
+/* The whole row opens the account — a click target the width of the table rather than the width of
+   an email address. */
+.row-link {
+  cursor: pointer;
+}
+
+.row-link:hover td {
+  color: var(--ink);
+  background: var(--bg-raised);
+}
+
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.switch input {
+  width: auto;
+  margin: 0;
+  cursor: pointer;
+}
+
+/* Deleting an account is the one irreversible thing in this panel, so it gets the only red button
+   in the product and a dialog that cannot be dismissed by pressing return. */
+.danger-btn {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--bg);
+}
+
+.danger-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background: rgba(0, 0, 0, 0.6);
+  animation: page-in 0.2s var(--ease) both;
+}
+
+.modal {
+  width: min(30rem, 100%);
+  padding: 1.5rem;
+  border: 1px solid var(--faint);
+  border-radius: var(--radius-lg);
+  background: var(--bg-raised);
+}

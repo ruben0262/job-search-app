@@ -18,6 +18,19 @@
         "title": "AccountPatch",
         "type": "object"
       },
+      "AdminFlag": {
+        "properties": {
+          "is_admin": {
+            "title": "Is Admin",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "is_admin"
+        ],
+        "title": "AdminFlag",
+        "type": "object"
+      },
       "Body_upload_documents_post": {
         "properties": {
           "file": {
@@ -243,6 +256,19 @@
           "password"
         ],
         "title": "DeleteBody",
+        "type": "object"
+      },
+      "DeleteConfirmation": {
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "DeleteConfirmation",
         "type": "object"
       },
       "Discard": {
@@ -1533,6 +1559,30 @@
         ]
       }
     },
+    "/admin/sources": {
+      "get": {
+        "description": "Every source the harvester collects from, with the freshness window each one is using.\n\nRead from the harvester's own enabled list rather than from whatever happens to be in the\nsettings blob: a source nobody has tuned should still appear, with the default it is actually\nrunning at, or the panel silently omits the boards most likely to need attention.",
+        "operationId": "sources_admin_sources_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Sources Admin Sources Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Sources",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/admin/users": {
       "get": {
         "description": "The account list, with **no credential material of any kind**.\n\nNot even `last_4`. An operator does not need it to answer any question they have, and a support\nview that shows a fragment of a key is a support view that leaks one over somebody's shoulder.",
@@ -1558,6 +1608,60 @@
       }
     },
     "/admin/users/{user_id}": {
+      "delete": {
+        "description": "Delete an account and everything belonging to it, immediately and permanently.\n\n**The typed address is checked on the server, not only in the browser.** A confirmation enforced\nonly in the UI is a confirmation that a mis-aimed script skips entirely, and this endpoint\ndestroys a person's profile, labels, documents and model with no undo.\n\nDeletion cascades from the row: every per-user table declares `ondelete=\"CASCADE\"`, so this is\none statement rather than a list of tables somebody has to remember to extend. The shared corpus\nis untouched \u2014 those rows belong to the platform, not to any account.\n\nAn operator cannot delete themselves. The account performing the deletion is the one that would\nhave to clean up afterwards.",
+        "operationId": "delete_user_admin_users__user_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteConfirmation"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Delete User Admin Users  User Id  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete User",
+        "tags": [
+          "admin"
+        ]
+      },
       "get": {
         "description": "One account, for the two questions an operator actually has.\n\n**\"Why is this person's feed bad\" and \"did their setup finish\"** \u2014 both answerable here, and\nneither answerable from the list. The model history is the same builder the user's own Model\npage reads, so an operator and the person they are helping are looking at the same numbers.\n\n**Read-only, and no credential material of any kind** \u2014 not even `last_4`, on the same\nreasoning as the list: an operator does not need it to answer either question, and a support\nview that shows a fragment of a key is one that leaks it over somebody's shoulder. An operator\nwho could *edit* a user's model or profile from here is a different product with a different\nconsent story.",
         "operationId": "user_detail_admin_users__user_id__get",
@@ -1598,6 +1702,62 @@
           }
         },
         "summary": "User Detail",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/users/{user_id}/admin": {
+      "put": {
+        "description": "Grant or revoke operator access.\n\n**An operator cannot revoke their own.** Not paternalism \u2014 `ADMIN_EMAILS` is the only route back\nin, and an operator whose address is not in it could lock themselves out of their own platform\nwith one click, with a redeploy as the only fix. Granting to yourself is meaningless (you\nalready have it) and revoking is the dangerous direction, so the guard covers the whole action.",
+        "operationId": "set_admin_admin_users__user_id__admin_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminFlag"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Set Admin Admin Users  User Id  Admin Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Admin",
         "tags": [
           "admin"
         ]

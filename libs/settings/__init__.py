@@ -45,6 +45,27 @@ DEFAULT_SOURCE_FRESHNESS_HOURS: dict[str, int] = {
 # feed stays a stream of new postings rather than a backlog.
 DEFAULT_FRESHNESS_HOURS = 6
 
+# Every source the harvester collects from. **Here rather than in the harvester** because both the
+# harvester and the admin panel need it, and a service may not import another service — the panel
+# reading the harvester's list directly is exactly the coupling the boundary contract forbids.
+# `services/harvester/source_config.py` imports this as its enabled set.
+HARVEST_SOURCES: tuple[str, ...] = (
+    # Remote-work aggregators.
+    "remotive", "himalayas", "remoteok", "arbeitnow",
+    "weworkremotely", "workingnomads", "jobicy",
+    # ATS boards, polled directly per company.
+    "greenhouse", "ashby", "lever", "smartrecruiters", "recruitee",
+    "breezy", "workday", "personio", "workable",
+    # Aggregators and VC portfolio boards.
+    "hiringcafe", "consider", "getro", "themuse",
+    # European boards.
+    "nofluffjobs", "nofluffjobs_hu", "profession", "dreamjobs", "justjoinit",
+    # Key-gated, enabled only with a credential.
+    "jooble", "findwork", "adzuna",
+    # The per-user tier, on the user's own proxy.
+    "linkedin",
+)
+
 DEFAULTS: dict[str, object] = {
     "delivery_interval_min": DELIVERY_INTERVAL_MIN,
     "source_freshness_hours": DEFAULT_SOURCE_FRESHNESS_HOURS,

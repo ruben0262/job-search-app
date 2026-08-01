@@ -131,3 +131,120 @@ def test_the_user_list_shows_what_an_operator_actually_needs(api):
     rows = {row["email"]: row for row in http.get("/admin/users").json()["users"]}
     assert ordinary.email in rows
     assert {"status", "telegram", "model_version", "onboarded"} <= set(rows[ordinary.email])
+
+
+# ── operator access, granted from the panel ───────────────────────────────────────────────────
+
+def test_the_flag_grants_access_without_a_deploy(api):
+    """`ADMIN_EMAILS` is the bootstrap and needs a container restart to change, which makes "give
+    this person access" a deploy. The row is how it is granted at the speed the question is asked."""
+    http, session, operator, ordinary, sign_in = api
+    sign_in(http, ordinary)
+    assert http.get("/admin/users").status_code == 404, "not an operator yet"
+
+    sign_in(http, operator)
+    assert http.put(f"/admin/users/{ordinary.id}/admin", json={"is_admin": True}).status_code == 200
+    session.flush()
+
+    sign_in(http, ordinary)
+    assert http.get("/admin/users").status_code == 200
+
+
+def test_an_operator_cannot_change_their_own_access(api):
+    """**The one click that could lock somebody out of their own platform.** `ADMIN_EMAILS` is the
+    only route back in, so an operator not named in it who revoked their own row would need a
+    redeploy to undo it."""
+    http, _session, operator, _ordinary, sign_in = api
+    sign_in(http, operator)
+
+    refused = http.put(f"/admin/users/{operator.id}/admin", json={"is_admin": False})
+    assert refused.status_code == 400
+    assert "your own" in refused.json()["detail"]
+
+
+def test_the_env_var_still_wins_over_a_revoked_flag(api):
+    """A flag cannot revoke the bootstrap. The two are ORed, and that direction is the safety."""
+    http, session, operator, _ordinary, sign_in = api
+    operator.is_admin = False
+    session.flush()
+
+    sign_in(http, operator)
+    assert http.get("/admin/users").status_code == 200
+
+
+# ── deletion, which has no undo ───────────────────────────────────────────────────────────────
+
+def test_deleting_requires_the_address_typed_correctly(api):
+    """**Checked on the server, not only in the browser.** A confirmation enforced in the UI alone
+    is one a mis-aimed script skips entirely, and this destroys a person's profile, labels,
+    documents and model with no undo."""
+    from libs.db.models import User
+
+    http, session, operator, ordinary, sign_in = api
+    sign_in(http, operator)
+
+    wrong = http.request("DELETE", f"/admin/users/{ordinary.id}",
+                         json={"email": "not-their-address@example.com"})
+    assert wrong.status_code == 400
+    assert "does not match" in wrong.json()["detail"]
+    assert session.get(User, ordinary.id) is not None, "a mistyped confirmation deleted an account"
+
+
+def test_deleting_takes_the_account_and_everything_belonging_to_it(api):
+    """Cascade from the row rather than a list of tables somebody has to remember to extend."""
+    from libs.db.models import User, UserProfileFile
+    from libs.profiles.repository import ProfileFiles
+
+    http, session, operator, ordinary, sign_in = api
+    ProfileFiles(session, ordinary.id).seed()
+    session.flush()
+    assert session.query(UserProfileFile).filter_by(user_id=ordinary.id).count() > 0
+
+    sign_in(http, operator)
+    ok = http.request("DELETE", f"/admin/users/{ordinary.id}",
+                      json={"email": ordinary.email.upper()})
+    assert ok.status_code == 200, ok.text
+    session.flush()
+    session.expire_all()
+
+    assert session.get(User, ordinary.id) is None
+    assert session.query(UserProfileFile).filter_by(user_id=ordinary.id).count() == 0
+
+
+def test_an_operator_cannot_delete_themselves(api):
+    """The account doing the deleting is the one that would have to clean up afterwards."""
+    from libs.db.models import User
+
+    http, session, operator, _ordinary, sign_in = api
+    sign_in(http, operator)
+
+    refused = http.request("DELETE", f"/admin/users/{operator.id}",
+                           json={"email": operator.email})
+    assert refused.status_code == 400
+    assert session.get(User, operator.id) is not None
+
+
+def test_an_ordinary_user_cannot_delete_anybody(api):
+    """404 rather than 403, like every other admin route: probing should not confirm the endpoint."""
+    from libs.db.models import User
+
+    http, session, operator, ordinary, sign_in = api
+    sign_in(http, ordinary)
+
+    assert http.request("DELETE", f"/admin/users/{operator.id}",
+                        json={"email": operator.email}).status_code == 404
+    assert session.get(User, operator.id) is not None
+
+
+def test_the_source_list_names_every_board_with_its_window(api):
+    """A source nobody has tuned still appears, with the default it is actually running at —
+    otherwise the panel omits exactly the boards most likely to need attention."""
+    http, _session, operator, _ordinary, sign_in = api
+    sign_in(http, operator)
+
+    body = http.get("/admin/sources").json()["sources"]
+    names = {row["name"] for row in body}
+
+    assert "linkedin" in names and "arbeitnow" in names
+    assert all(isinstance(row["hours"], int) and row["hours"] > 0 for row in body)
+    assert next(row for row in body if row["name"] == "linkedin")["hours"] == 4

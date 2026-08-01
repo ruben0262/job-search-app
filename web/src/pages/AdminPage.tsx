@@ -62,6 +62,7 @@ type AdminUser = {
   telegram: string;
   model_version: number | null;
   onboarded: boolean;
+  is_admin: boolean;
 };
 
 type Span = { p50: number | null; p90: number | null; p99: number | null; samples: number };
@@ -71,6 +72,8 @@ type Settings = {
   source_freshness_hours: Record<string, number>;
   default_freshness_hours: number;
 };
+
+type Source = { name: string; hours: number };
 
 type UserDetail = {
   user: AdminUser & { created_at: string | null; last_active_at: string | null;
@@ -86,21 +89,54 @@ type UserDetail = {
   counts: { labels: number; scored: number; applied: number; notified: number };
 };
 
+function BinIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M4 7h16" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      <path d="M9 7V5.5A1.5 1.5 0 0110.5 4h3A1.5 1.5 0 0115 5.5V7"
+            stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+      <path d="M6 7l.8 11.2A2 2 0 008.8 20h6.4a2 2 0 002-1.8L18 7"
+            stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 export function AdminPage() {
   const [health, setHealth] = useState<Health | null>(null);
   const [users, setUsers] = useState<AdminUser[] | null>(null);
   const [detail, setDetail] = useState<UserDetail | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
-  const [draft, setDraft] = useState("");
+  const [sources, setSources] = useState<Source[] | null>(null);
+  // The account being deleted, held until the typed address matches. `null` closes the dialog.
+  const [doomed, setDoomed] = useState<AdminUser | null>(null);
+  const [typed, setTyped] = useState("");
   const [failed, setFailed] = useState(false);
 
   // Freshness is edited as JSON rather than a row per source: the set of sources changes, and a
   // form that has to be rebuilt every time one is added is a form that goes stale.
-  const saveFreshness = useAction(async () => {
-    const parsed = JSON.parse(draft) as Record<string, number>;
+  // One source, one number. Written as a whole map because that is what the setting is — reading
+  // it back from the response keeps the panel honest about what was actually stored.
+  const saveFreshness = useAction(async (name: string, hours: number) => {
+    const next = { ...(settings?.source_freshness_hours ?? {}), [name]: hours };
     const body = await api.put<{ settings: Settings }>(
-      "/admin/settings/source_freshness_hours", { value: parsed });
+      "/admin/settings/source_freshness_hours", { value: next });
     setSettings(body.settings);
+    setSources((rows) => rows?.map((row) => (row.name === name ? { ...row, hours } : row)) ?? rows);
+  });
+
+  const toggleAdmin = useAction(async (user: AdminUser) => {
+    await api.put(`/admin/users/${user.id}/admin`, { is_admin: !user.is_admin });
+    const fresh = await api.get<{ users: AdminUser[] }>("/admin/users");
+    setUsers(fresh.users);
+  });
+
+  const removeUser = useAction(async (user: AdminUser, email: string) => {
+    await api.del(`/admin/users/${user.id}`, { email });
+    const fresh = await api.get<{ users: AdminUser[] }>("/admin/users");
+    setUsers(fresh.users);
+    setDoomed(null);
+    setTyped("");
+    setDetail(null);
   });
 
   const saveCadence = useAction(async (minutes: number) => {
@@ -118,12 +154,13 @@ export function AdminPage() {
       api.get<Health>("/admin/health"),
       api.get<{ users: AdminUser[] }>("/admin/users"),
       api.get<{ settings: Settings }>("/admin/settings"),
+      api.get<{ sources: Source[] }>("/admin/sources"),
     ])
-      .then(([h, u, s]) => {
+      .then(([h, u, s, src]) => {
         setHealth(h);
         setUsers(u.users);
         setSettings(s.settings);
-        setDraft(JSON.stringify(s.settings.source_freshness_hours, null, 2));
+        setSources(src.sources);
       })
       .catch(() => setFailed(true));
   }, []);
@@ -198,25 +235,30 @@ export function AdminPage() {
           </select>
           <Error>{saveCadence.error}</Error>
 
-          <label className="label" style={{ marginTop: "1.5rem" }} htmlFor="freshness">
-            Job freshness, per source (hours)
-          </label>
+          <p className="label" style={{ marginTop: "1.5rem" }}>Job freshness, per source</p>
           <span className="hint">
-            How recent a posting must be to qualify. Anything not named here uses the default of{" "}
-            {settings.default_freshness_hours}h. LinkedIn lists within minutes; a slower board given
-            LinkedIn&apos;s window would never qualify at all.
+            How recent a posting must be to qualify, in hours. LinkedIn lists within minutes; a
+            slower board given LinkedIn&apos;s window would never qualify at all. Anything left at
+            the default runs at {settings.default_freshness_hours}h.
           </span>
-          <textarea
-            id="freshness"
-            value={draft}
-            spellCheck={false}
-            onChange={(event) => setDraft(event.target.value)}
-            style={{ minHeight: "8rem", fontFamily: "var(--font-mono)", fontSize: "0.85rem" }}
-          />
           <Error>{saveFreshness.error}</Error>
-          <button disabled={saveFreshness.busy} onClick={() => void saveFreshness.run()}>
-            {saveFreshness.busy ? "Saving…" : "Save freshness"}
-          </button>
+          <div className="sources">
+            {(sources ?? []).map((source) => (
+              <label key={source.name} className="source-row">
+                <span className="source-name">{source.name}</span>
+                <select
+                  value={source.hours}
+                  disabled={saveFreshness.busy}
+                  onChange={(event) =>
+                    void saveFreshness.run(source.name, Number(event.target.value))}
+                >
+                  {[1, 2, 4, 6, 12, 24, 48, 72].map((hours) => (
+                    <option key={hours} value={hours}>{hours}h</option>
+                  ))}
+                </select>
+              </label>
+            ))}
+          </div>
         </div>
       ) : null}
 
@@ -359,19 +401,16 @@ export function AdminPage() {
             <th>Telegram</th>
             <th>Model</th>
             <th>Onboarded</th>
+            <th>Access</th>
+            <th />
           </tr>
         </thead>
         <tbody>
           {users.map((user) => (
-            <tr key={user.id}>
-              <td>
-                {/* An operator's two questions -- "why is this person's feed bad" and "did their
-                    setup finish" -- are both one page down, and neither is answerable from this
-                    row. */}
-                <button type="button" className="linklike" onClick={() => void openUser.run(user.id)}>
-                  {user.email}
-                </button>
-              </td>
+            // **The whole row opens the account.** It used to be the email that was clickable,
+            // which is a target the width of the text and invisible until you find it.
+            <tr key={user.id} className="row-link" onClick={() => void openUser.run(user.id)}>
+              <td>{user.email}</td>
               <td className="job-sub">
                 {user.status}
                 {user.active ? "" : " · paused"}
@@ -379,10 +418,71 @@ export function AdminPage() {
               <td className="job-sub">{user.telegram}</td>
               <td className="num job-sub">{user.model_version ? `v${user.model_version}` : "—"}</td>
               <td className="job-sub">{user.onboarded ? "yes" : "no"}</td>
+              {/* Both controls stop the click reaching the row, or granting access would also
+                  navigate — and a delete that opens a page underneath its own dialog is worse. */}
+              <td onClick={(event) => event.stopPropagation()}>
+                <label className="switch" title="Operator access">
+                  <input
+                    type="checkbox"
+                    checked={user.is_admin}
+                    disabled={toggleAdmin.busy}
+                    onChange={() => void toggleAdmin.run(user)}
+                  />
+                  <span>admin</span>
+                </label>
+              </td>
+              <td onClick={(event) => event.stopPropagation()}>
+                <button
+                  type="button"
+                  className="bell-act danger"
+                  aria-label={`Delete ${user.email}`}
+                  title="Delete this account"
+                  onClick={() => { setDoomed(user); setTyped(""); }}
+                >
+                  <BinIcon />
+                </button>
+              </td>
             </tr>
           ))}
         </tbody>
       </table>
+
+      {/* **The address has to be typed, and the server checks it too.** This destroys a person's
+          profile, labels, documents and model with no undo, so a dialog somebody can dismiss by
+          pressing return is not a confirmation. */}
+      {doomed ? (
+        <div className="modal-backdrop" onClick={() => setDoomed(null)}>
+          <div className="modal" onClick={(event) => event.stopPropagation()}>
+            <h2 style={{ marginTop: 0 }}>Delete this account?</h2>
+            <p className="facts">
+              Everything belonging to <strong>{doomed.email}</strong> goes: their profile files,
+              labels, documents, models and history. It happens immediately and cannot be undone.
+              The shared job corpus is not affected.
+            </p>
+            <label className="label" htmlFor="confirm-email">Type the address to confirm</label>
+            <input
+              id="confirm-email"
+              value={typed}
+              autoComplete="off"
+              placeholder={doomed.email}
+              onChange={(event) => setTyped(event.target.value)}
+            />
+            <Error>{removeUser.error}</Error>
+            <div style={{ display: "flex", gap: "0.6rem", marginTop: "1rem" }}>
+              <button
+                className="danger-btn"
+                disabled={
+                  removeUser.busy || typed.trim().toLowerCase() !== doomed.email.toLowerCase()
+                }
+                onClick={() => void removeUser.run(doomed, typed.trim())}
+              >
+                {removeUser.busy ? "Deleting…" : "Delete permanently"}
+              </button>
+              <button className="secondary" onClick={() => setDoomed(null)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </>
   );
 }
