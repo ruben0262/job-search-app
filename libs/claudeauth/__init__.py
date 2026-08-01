@@ -33,6 +33,7 @@ import os
 import re
 import secrets
 import signal
+import threading
 import time
 import uuid as _uuid
 
@@ -83,14 +84,66 @@ class OAuthError(RuntimeError):
     never carry process output — that output is where the token would be."""
 
 
+# The most a session's transcript is allowed to grow to. The CLI animates a spinner while it waits,
+# so this is mostly discarded redraw; the tail is what any match needs.
+MAX_BUFFER = 64 * 1024
+
+
 class _Session:
-    __slots__ = ("pid", "fd", "started_at", "user_id")
+    """A live `setup-token` process, with something continuously reading its output.
+
+    **The reader thread is the point.** Without it nothing drained the pty between the request that
+    took the URL and the request that brought the code back, and the CLI's spinner kept writing the
+    whole time the user was in their browser. Once the kernel's pty buffer filled, the CLI blocked
+    in `write` and stopped reading its input, so the code we sent was never processed and the read
+    that followed waited its full minute for output that could not come. The longer the user took to
+    sign in, the more certain the failure -- which is exactly how it behaved.
+    """
+
+    __slots__ = ("pid", "fd", "started_at", "user_id", "_buf", "_lock", "_reading")
 
     def __init__(self, pid: int, fd: int, user_id: _uuid.UUID) -> None:
         self.pid = pid
         self.fd = fd
         self.started_at = time.monotonic()
         self.user_id = user_id
+        self._buf = ""
+        self._lock = threading.Lock()
+        self._reading = True
+        threading.Thread(target=self._drain, daemon=True).start()
+
+    def _drain(self) -> None:
+        while self._reading:
+            try:
+                chunk = os.read(self.fd, 4096)
+            except OSError as exc:
+                # EIO is the normal end of a pty whose child has exited; EAGAIN means nothing yet.
+                if exc.errno == errno.EAGAIN:
+                    time.sleep(0.05)
+                    continue
+                break
+            if not chunk:
+                break
+            with self._lock:
+                self._buf = (self._buf + chunk.decode("utf-8", "replace"))[-MAX_BUFFER:]
+        self._reading = False
+
+    def text(self, *, strip: bool = False) -> str:
+        with self._lock:
+            raw = self._buf
+        return _ESCAPES.sub("", raw) if strip else raw
+
+    def clear(self) -> None:
+        """Forget what has been read so far.
+
+        Called before the code is sent, so a match afterwards is the answer to *this* code and not
+        the prompt still sitting in the transcript. Also how the token is dropped once stored.
+        """
+        with self._lock:
+            self._buf = ""
+
+    def stop(self) -> None:
+        self._reading = False
 
 
 # Process-local. The API runs one worker per container today; if that ever changes this needs to
@@ -99,34 +152,29 @@ class _Session:
 _SESSIONS: dict[str, _Session] = {}
 
 
-def _read_until(fd: int, pattern: re.Pattern[str], deadline: float, *,
-                strip: bool = False) -> tuple[str, str]:
-    """Read from the pty until `pattern` matches. Returns (match, everything read).
+def _await(session: _Session, pattern: re.Pattern[str], deadline: float, *,
+           strip: bool = False) -> str:
+    """Wait for `pattern` to appear in what the session has read. Returns the matched text.
 
-    The full buffer comes back so the caller can close over it and wipe it; it is never returned to
-    an HTTP client, because after `finish` it contains the token.
+    Only the match is returned. The transcript stays on the session, where `clear` can wipe it,
+    rather than being handed to a caller that might put it in an error message -- after `finish`
+    it contains the token.
     """
-    buffer = ""
     while time.monotonic() < deadline:
-        try:
-            chunk = os.read(fd, 4096)
-        except OSError as exc:
-            # EIO is the normal end of a pty whose child has exited. EAGAIN means nothing yet.
-            if exc.errno == errno.EAGAIN:
-                time.sleep(0.1)
-                continue
-            break
-        if not chunk:
-            break
-        buffer += chunk.decode("utf-8", "replace")
-        found = pattern.search(_ESCAPES.sub("", buffer) if strip else buffer)
+        found = pattern.search(session.text(strip=strip))
         if found:
-            return found.group(0), buffer
+            return found.group(0)
+        if not session._reading:
+            # The process ended without printing what we were waiting for. Nothing more is coming,
+            # so say so now instead of holding the request until the deadline.
+            break
+        time.sleep(0.1)
     raise OAuthError("the Claude sign-in did not respond in time, please try again")
 
 
 def _kill(session: _Session) -> None:
     """End a session's process and release its descriptor. Safe to call twice."""
+    session.stop()
     try:
         os.kill(session.pid, signal.SIGKILL)
     except (ProcessLookupError, PermissionError):
@@ -196,7 +244,7 @@ def start(user_id: _uuid.UUID) -> tuple[str, str]:
         pass
     session = _Session(pid, fd, user_id)
     try:
-        url, _ = _read_until(fd, _URL, time.monotonic() + URL_WAIT_SEC)
+        url = _await(session, _URL, time.monotonic() + URL_WAIT_SEC)
     except OAuthError:
         _kill(session)
         raise
@@ -227,11 +275,11 @@ def finish(session_id: str, user_id: _uuid.UUID, code: str) -> str:
         _kill(session)
         raise OAuthError("that sign-in expired, please start again")
 
-    buffer = ""
+    # Everything printed before this belongs to the prompt, not to the answer.
+    session.clear()
     try:
         os.write(session.fd, code.strip().encode() + b"\r")
-        token, buffer = _read_until(session.fd, _OUTCOME, time.monotonic() + TOKEN_WAIT_SEC,
-                                    strip=True)
+        token = _await(session, _OUTCOME, time.monotonic() + TOKEN_WAIT_SEC, strip=True)
     except OSError as exc:
         _SESSIONS.pop(session_id, None)
         _kill(session)
@@ -245,7 +293,6 @@ def finish(session_id: str, user_id: _uuid.UUID, code: str) -> str:
         # Claude rejected it. Clear the prompt so the same session can take another attempt, and
         # say which code to use: the usual cause is a code copied from a tab opened by an earlier
         # attempt, which belongs to a challenge that no longer exists.
-        del buffer
         try:
             os.write(session.fd, b"\r")
         except OSError:
@@ -253,7 +300,8 @@ def finish(session_id: str, user_id: _uuid.UUID, code: str) -> str:
         raise OAuthError("Claude did not accept that code. Copy it again from the tab you just "
                          "authorized in, and paste the whole thing.")
 
-    del buffer
+    # The transcript holds the token now, so it goes before anything else can read it.
+    session.clear()
     _SESSIONS.pop(session_id, None)
     _kill(session)
     return token

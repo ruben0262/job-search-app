@@ -38,6 +38,15 @@ export function ClaudeConnect({ onConnected }: { onConnected: () => void }) {
   const begin = async () => {
     setError(null);
     setPhase("starting");
+    setOpen(true);
+
+    // **Opened in the click, not after the await.** The server takes a few seconds to get a URL out
+    // of the CLI, and a tab opened after that await is no longer part of a user gesture -- browsers
+    // block it, and the ones that allow it left the user staring at nothing meanwhile. So the tab
+    // is claimed immediately and pointed at the URL when it arrives.
+    const tab = window.open("", "_blank");
+    if (tab) tab.opener = null;
+
     try {
       const body = await api.post<{ session_id: string; url: string }>(
         "/credentials/claude/oauth/start",
@@ -46,11 +55,11 @@ export function ClaudeConnect({ onConnected }: { onConnected: () => void }) {
       setSession(body.session_id);
       setUrl(body.url);
       setPhase("waiting");
-      setOpen(true);
-      // Opened only after the URL exists, so the new tab never lands on a blank page.
-      window.open(body.url, "_blank", "noopener,noreferrer");
+      if (tab && !tab.closed) tab.location.replace(body.url);
     } catch (caught) {
+      tab?.close();
       setPhase("idle");
+      setOpen(false);
       setError(caught instanceof Error ? caught.message : "could not start the sign-in");
     }
   };
@@ -100,7 +109,14 @@ export function ClaudeConnect({ onConnected }: { onConnected: () => void }) {
       {open ? (
         <div className="modal-backdrop">
           <div className="modal">
-            {phase === "done" ? (
+            {phase === "starting" ? (
+              <>
+                <h2>Opening Claude…</h2>
+                <p className="small muted">
+                  Getting your sign-in link ready. This takes a few seconds.
+                </p>
+              </>
+            ) : phase === "done" ? (
               <>
                 <h2>Connected</h2>
                 <p className="small muted">

@@ -168,3 +168,49 @@ def test_a_rejected_code_keeps_the_session_so_the_same_link_still_works(fake_cli
         claude_oauth.finish(session_id, USER, "wrongcode")
     assert session_id in claude_oauth._SESSIONS, "the link the user holds must stay valid"
     assert first_url
+
+
+# A CLI that keeps writing while it waits, which is what the real one does: it animates a spinner
+# the entire time the user is in their browser.
+CHATTY_CLI = """#!/usr/bin/env python3
+import sys, threading, time
+print("Open this URL: https://claude.ai/oauth/authorize?code=1&state=abc")
+sys.stdout.flush()
+
+def spin():
+    while True:
+        sys.stdout.write("." * 512)
+        sys.stdout.flush()
+        time.sleep(0.01)
+
+threading.Thread(target=spin, daemon=True).start()
+line = sys.stdin.readline().strip()
+if line == "goodcode":
+    print("Token: sk-ant-oat01-" + "x" * 40)
+sys.stdout.flush()
+time.sleep(5)
+"""
+
+
+@posix
+def test_a_chatty_cli_does_not_wedge_while_the_user_is_in_the_browser(tmp_path, monkeypatch):
+    """**The bug this pins down.** Nothing drained the pty between `start` and `finish`, so a CLI
+    that writes while it waits filled the kernel buffer, blocked in `write`, and stopped reading its
+    input. The code we sent was never processed and the wait ran to its full timeout -- and the
+    longer the user spent signing in, the more certain that became.
+
+    Without the reader thread this test hangs until the deadline and fails; with it, it passes in
+    about a second.
+    """
+    script = tmp_path / "chatty"
+    script.write_text(CHATTY_CLI.replace("#!/usr/bin/env python3", f"#!{sys.executable}"))
+    script.chmod(0o755)
+    monkeypatch.setattr(claude_oauth, "CLI", str(script))
+
+    session_id, _ = claude_oauth.start(USER)
+    # Long enough that the pty buffer is well past full if nothing is reading it.
+    time.sleep(2.0)
+    started = time.monotonic()
+    token = claude_oauth.finish(session_id, USER, "goodcode")
+    assert token.startswith("sk-ant-oat01-")
+    assert time.monotonic() - started < 15, "the code must be answered promptly, not after a timeout"
