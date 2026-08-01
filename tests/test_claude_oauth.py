@@ -218,37 +218,29 @@ def test_a_chatty_cli_does_not_wedge_while_the_user_is_in_the_browser(tmp_path, 
     assert time.monotonic() - started < 15, "the code must be answered promptly, not after a timeout"
 
 
-# A CLI that only accepts a bracketed paste, which is what the real one turned out to require. A
-# plain `code + "\r"` write leaves it waiting forever, exactly as claude-code 2.1.220 did.
-STRICT_CLI = '''#!/usr/bin/env python3
-import sys
-print("Open this URL: https://claude.ai/oauth/authorize?code=1&state=abc")
-sys.stdout.flush()
-while True:
-    line = sys.stdin.readline()
-    if not line:
-        break
-    line = line.rstrip("\r\n")
-    # Only a bracketed paste counts. A plain burst is what the real CLI silently dropped.
-    if line.startswith("\x1b[200~") and line.endswith("\x1b[201~"):
-        print("Token: sk-ant-oat01-" + "x" * 40)
-    else:
-        print("OAuth error: Invalid code")
-    sys.stdout.flush()
-'''
-
-
 @posix
-def test_the_code_is_delivered_as_a_bracketed_paste(tmp_path, monkeypatch):
+def test_the_code_is_delivered_as_a_bracketed_paste(fake_cli, monkeypatch):
     """**The failure that looked exactly like a hang.** Written as one burst of `code + "\r"`, the
     real CLI dropped eight of ninety-two characters and swallowed the carriage return, so the code
     sat half-entered on the prompt and nothing was ever submitted. Nothing timed out on its side and
-    nothing crashed -- it was still waiting for input we believed we had sent.
-    """
-    script = tmp_path / "strict"
-    script.write_text(STRICT_CLI.replace("#!/usr/bin/env python3", f"#!{sys.executable}"))
-    script.chmod(0o755)
-    monkeypatch.setattr(claude_oauth, "CLI", str(script))
+    nothing crashed; it was still waiting for input we believed we had sent.
 
+    Asserted on the bytes rather than against a stand-in CLI, because what has to hold is the wire
+    protocol: the value arrives announced as a paste, and Enter arrives as a keypress of its own.
+    """
+    writes: list[bytes] = []
+    real_write = os.write
+
+    def record(fd, data):
+        writes.append(data)
+        return real_write(fd, data)
+
+    monkeypatch.setattr(claude_oauth.os, "write", record)
     session_id, _ = claude_oauth.start(USER)
-    assert claude_oauth.finish(session_id, USER, "x" * 92).startswith("sk-ant-oat01-")
+    claude_oauth.finish(session_id, USER, "goodcode")
+
+    assert writes[0].startswith(b"[200~"), "the code must be announced as a paste"
+    assert writes[0].endswith(b"[201~"), "and closed, or the CLI keeps waiting for more"
+    assert b"goodcode" in writes[0]
+    # Enter is its own write. Bundled into the burst above, the CLI's paste debounce ate it.
+    assert writes[1] == b""
