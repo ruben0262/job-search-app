@@ -10,10 +10,11 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends python3 python3-pip python3-venv ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
-# Pinned. An unpinned global install means the flow can change under us on any rebuild, and the two
-# things this depends on — the URL it prints and the prompt it blocks on — are exactly what a CLI
-# release is free to reword.
-ARG CLAUDE_CODE_VERSION=latest
+# **Pinned, and the pin is load-bearing.** This service scrapes two things out of the CLI's output:
+# the authorization URL it prints, and the prompt it blocks on. Both are prose a release is free to
+# reword, so `latest` means a routine rebuild can break sign-in for every new user with nothing in
+# this repository having changed. Raise it deliberately and re-run tests/test_claude_oauth.py.
+ARG CLAUDE_CODE_VERSION=2.1.220
 RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
 
 WORKDIR /app
