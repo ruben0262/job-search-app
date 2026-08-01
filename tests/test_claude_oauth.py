@@ -224,19 +224,17 @@ STRICT_CLI = '''#!/usr/bin/env python3
 import sys
 print("Open this URL: https://claude.ai/oauth/authorize?code=1&state=abc")
 sys.stdout.flush()
-seen = ""
 while True:
-    ch = sys.stdin.read(1)
-    if not ch:
+    line = sys.stdin.readline()
+    if not line:
         break
-    seen += ch
-    if ch == "\r":
-        if seen.startswith("\x1b[200~") and "\x1b[201~" in seen:
-            print("Token: sk-ant-oat01-" + "x" * 40)
-        else:
-            print("OAuth error: Invalid code")
-        sys.stdout.flush()
-        seen = ""
+    line = line.rstrip("\r\n")
+    # Only a bracketed paste counts. A plain burst is what the real CLI silently dropped.
+    if line.startswith("\x1b[200~") and line.endswith("\x1b[201~"):
+        print("Token: sk-ant-oat01-" + "x" * 40)
+    else:
+        print("OAuth error: Invalid code")
+    sys.stdout.flush()
 '''
 
 
