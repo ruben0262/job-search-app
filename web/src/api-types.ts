@@ -125,6 +125,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/limits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Limit Catalogue
+         * @description What can be set, what it defaults to, and what each one means.
+         *
+         *     Served rather than hardcoded in the panel so adding a ceiling is one entry in `libs.limits`
+         *     rather than an entry plus a form field plus a label somebody has to keep in step.
+         */
+        get: operations["limit_catalogue_admin_limits_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/settings": {
         parameters: {
             query?: never;
@@ -281,6 +304,31 @@ export interface paths {
          *     already have it) and revoking is the dangerous direction, so the guard covers the whole action.
          */
         put: operations["set_admin_admin_users__user_id__admin_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{user_id}/limits/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set User Limit
+         * @description Set one ceiling on one account, or clear it to unlimited.
+         *
+         *     **The operator owns these, including their own.** A user who could raise their own delivery
+         *     ceiling could get their own Telegram bot rate-limited, and the rest are spend. There is no
+         *     self-protection here as there is for operator access and deletion: raising your own limits is
+         *     not a way to lock yourself out, and an operator is exactly who should be able to.
+         */
+        put: operations["set_user_limit_admin_users__user_id__limits__key__put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1588,6 +1636,11 @@ export interface components {
          * @enum {string}
          */
         Language: "en" | "de" | "fr" | "es" | "nl" | "hu" | "pl" | "pt" | "it" | "sv" | "da";
+        /** LimitPatch */
+        LimitPatch: {
+            /** Value */
+            value?: number | null;
+        };
         /**
          * LinkPlatform
          * @description What kind of link it is. `OTHER` is the escape hatch, not a failure.
@@ -2086,6 +2139,28 @@ export interface operations {
             };
         };
     };
+    limit_catalogue_admin_limits_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     read_settings_admin_settings_get: {
         parameters: {
             query?: never;
@@ -2271,6 +2346,44 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["AdminFlag"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_user_limit_admin_users__user_id__limits__key__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LimitPatch"];
             };
         };
         responses: {

@@ -558,6 +558,23 @@
         "title": "Language",
         "type": "string"
       },
+      "LimitPatch": {
+        "properties": {
+          "value": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "title": "LimitPatch",
+        "type": "object"
+      },
       "LinkPlatform": {
         "description": "What kind of link it is. `OTHER` is the escape hatch, not a failure.",
         "enum": [
@@ -1480,6 +1497,30 @@
         ]
       }
     },
+    "/admin/limits": {
+      "get": {
+        "description": "What can be set, what it defaults to, and what each one means.\n\nServed rather than hardcoded in the panel so adding a ceiling is one entry in `libs.limits`\nrather than an entry plus a form field plus a label somebody has to keep in step.",
+        "operationId": "limit_catalogue_admin_limits_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Limit Catalogue Admin Limits Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Limit Catalogue",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/admin/settings": {
       "get": {
         "description": "What the operator controls, with the defaults filled in for anything unset.\n\n**These are properties of the product, not preferences.** Freshness and delivery cadence used to\nbe per user, which meant every source had to be fetched at the widest window anybody asked for\nand filtered back down per person \u2014 and a user choosing a four-hour cadence was choosing to hear\nabout a two-hour-old job. One number per source, one cadence, set here.",
@@ -1758,6 +1799,71 @@
           }
         },
         "summary": "Set Admin",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/users/{user_id}/limits/{key}": {
+      "put": {
+        "description": "Set one ceiling on one account, or clear it to unlimited.\n\n**The operator owns these, including their own.** A user who could raise their own delivery\nceiling could get their own Telegram bot rate-limited, and the rest are spend. There is no\nself-protection here as there is for operator access and deletion: raising your own limits is\nnot a way to lock yourself out, and an operator is exactly who should be able to.",
+        "operationId": "set_user_limit_admin_users__user_id__limits__key__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "title": "Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LimitPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Set User Limit Admin Users  User Id  Limits  Key  Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set User Limit",
         "tags": [
           "admin"
         ]

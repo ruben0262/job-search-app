@@ -2347,3 +2347,42 @@ td.num {
   font-size: 0.62rem;
   letter-spacing: 0;
 }
+
+/* ── admin: per-user limits ──────────────────────────────────────────────────────────────────── */
+
+.limits {
+  display: grid;
+  gap: 0.2rem;
+  margin: 1rem 0 2rem;
+}
+
+.limit-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--hairline);
+}
+
+/* The label carries its own explanation: these are judgements about somebody's account, and an
+   operator setting one should not have to remember what it does. */
+.limit-label {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-size: 0.9rem;
+}
+
+.limit-label .hint {
+  margin: 0.15rem 0 0;
+  font-size: 0.78rem;
+}
+
+.limit-row select {
+  width: auto;
+  flex: none;
+  min-width: 9rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.85rem;
+}

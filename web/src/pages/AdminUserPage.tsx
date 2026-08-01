@@ -20,6 +20,15 @@ import { api } from "../api";
 
 type Span = { key: string; label: string; value: string | number };
 
+type LimitSpec = {
+  key: string;
+  label: string;
+  default: number | null;
+  unit: string;
+  detail: string;
+  allow_unlimited: boolean;
+};
+
 type UserDetail = {
   user: {
     id: string;
@@ -43,18 +52,57 @@ type UserDetail = {
     metrics: Span[];
   }[];
   counts: { labels: number; scored: number; applied: number; notified: number };
+  /** `null` is unlimited and is a real value, not a missing one. */
+  limits: Record<string, number | null>;
+};
+
+/** The values an operator picks from, plus Unlimited where the ceiling allows it. Coarse on
+ *  purpose: these are judgements about a person's account, not a tuning dial. */
+const CHOICES: Record<string, number[]> = {
+  notifications_per_day: [25, 50, 100, 250, 500, 1000],
+  items_per_run: [5, 10, 15, 20, 30, 50],
+  send_gap_seconds: [3, 4, 5, 8, 12, 20],
+  proxy_mb_per_day: [100, 200, 500, 1000, 2000],
+  linkedin_interval_min: [15, 30, 60, 120],
+  describe_per_run: [20, 40, 60, 100, 200],
+  keywords: [10, 25, 50, 100],
+  documents: [10, 25, 50, 100],
+  conversations: [1, 3, 5, 10],
+  label_pool: [100, 300, 500, 1000],
 };
 
 export function AdminUserPage({ userId }: { userId: string }) {
   const [detail, setDetail] = useState<UserDetail | null>(null);
+  const [specs, setSpecs] = useState<LimitSpec[]>([]);
+  const [saving, setSaving] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    api
-      .get<UserDetail>(`/admin/users/${userId}`)
-      .then(setDetail)
+    Promise.all([
+      api.get<UserDetail>(`/admin/users/${userId}`),
+      api.get<{ limits: LimitSpec[] }>("/admin/limits"),
+    ])
+      .then(([body, catalogue]) => {
+        setDetail(body);
+        setSpecs(catalogue.limits);
+      })
       .catch(() => setFailed(true));
   }, [userId]);
+
+  // The catalogue drives the form, so adding a ceiling is one entry in `libs.limits` rather than
+  // an entry plus a field plus a label somebody has to keep in step.
+  const save = async (key: string, raw: string) => {
+    setSaving(key);
+    try {
+      const body = await api.put<{ limits: Record<string, number | null> }>(
+        `/admin/users/${userId}/limits/${key}`,
+        { value: raw === "unlimited" ? null : Number(raw) },
+      );
+      setDetail((current) => (current ? { ...current, limits: body.limits } : current));
+    } finally {
+      setSaving(null);
+    }
+  };
 
   if (failed) return <p className="error">Could not read that account.</p>;
   if (!detail) return <p className="muted">Loading…</p>;
@@ -119,7 +167,45 @@ export function AdminUserPage({ userId }: { userId: string }) {
         ))}
       </div>
 
-      <h2>Model history</h2>
+      {/* **Set here, and nowhere the user can reach.** Somebody who could raise their own delivery
+          ceiling could get their own Telegram bot rate-limited by Telegram, and the rest are spend.
+          Unlimited is a real value, stored as null, and is safe on delivery because sending is
+          paced — the cap used to be the only guard against rate limits, and it guarded them by
+          withholding jobs the user had matched. */}
+      <h2>Limits</h2>
+      <p className="facts">
+        Blank means the platform default. Sending is paced at the gap below, so an unlimited daily
+        ceiling drains a backlog slowly rather than getting the bot restricted.
+      </p>
+      <div className="limits">
+        {specs.map((spec) => {
+          const current = detail.limits[spec.key];
+          return (
+            <label key={spec.key} className="limit-row">
+              <span className="limit-label">
+                {spec.label}
+                <span className="hint">{spec.detail}</span>
+              </span>
+              <select
+                value={current === null ? "unlimited" : String(current)}
+                disabled={saving === spec.key}
+                onChange={(event) => void save(spec.key, event.target.value)}
+              >
+                {(CHOICES[spec.key] ?? []).map((choice) => (
+                  <option key={choice} value={choice}>
+                    {choice} {spec.unit}
+                  </option>
+                ))}
+                {/* Only where the ceiling allows it. `send_gap_seconds` never does: that one is
+                    Telegram's rule rather than ours. */}
+                {spec.allow_unlimited ? <option value="unlimited">Unlimited</option> : null}
+              </select>
+            </label>
+          );
+        })}
+      </div>
+
+      <h2 style={{ marginTop: "2.5rem" }}>Model history</h2>
       {models[0] ? (
         <div className="table-scroll">
           <table className="history">
