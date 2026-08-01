@@ -59,7 +59,7 @@ h=hashlib.sha256()
 for f in sorted(pathlib.Path("/app/libs").rglob("*.py")):
     h.update(f.read_bytes())
 print(h.hexdigest()[:12])'
-EXPECTED=$(python -c "
+EXPECTED=$(.venv/bin/python -c "
 import hashlib,pathlib
 h=hashlib.sha256()
 for f in sorted(pathlib.Path('libs').rglob('*.py')):
