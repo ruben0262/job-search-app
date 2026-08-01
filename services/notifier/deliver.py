@@ -24,13 +24,14 @@ import uuid as _uuid
 from collections.abc import Callable
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
+from time import sleep
 
 import httpx
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 import libs.notify as notifylib
-from libs.contracts.config import migrate_config
+from libs import limits
 from libs.db.models import CorpusJob, User, UserConfig, UserJobState
 from libs.obs import audit
 from libs.scoring.thresholds import DEFAULT_CUTOFF, cutoff_for
@@ -208,26 +209,25 @@ def deliver(session: Session, user_id: _uuid.UUID, *,
 
     cutoff = _operating_point(session, user_id, cutoff)
 
-    # **The user's own cap, not the platform ceiling.** `max_notifications_per_day` is in the config
-    # schema, is shown on the dashboard ("At most 20 messages a day"), and was read by nothing: the
-    # default parameter meant every account was capped at 100 regardless. One account asked for 20
-    # and received 160 in sixteen hours (found 2026-07-30). The parameter stays as the ceiling for a
-    # caller with no user config in hand — a test, or an account that never answered.
-    config = session.scalar(select(UserConfig.config).where(UserConfig.user_id == user_id))
-    if config:
-        asked = migrate_config(config).get("max_notifications_per_day")
-        if isinstance(asked, int) and asked > 0:
-            daily_cap = min(daily_cap, asked)
+    # **The operator's ceilings for this account, and `None` means unlimited** (`libs.limits`). It
+    # used to be a user-editable config value, which was the wrong owner: somebody who can raise
+    # their own delivery ceiling can get their own Telegram bot rate-limited. Unlimited is safe now
+    # only because sending is paced below — the cap used to be the sole guard against that, and it
+    # guarded by withholding jobs the user had matched.
+    per_day = limits.resolve(user, "notifications_per_day")
+    gap = limits.resolve(user, "send_gap_seconds") or limits.DEFAULT_SEND_GAP_SECONDS
+    per_run = limits.resolve(user, "items_per_run") or MAX_ITEMS_PER_DIGEST
 
-    remaining = daily_cap - notifications_today(session, user_id)
-    if remaining <= 0:
-        # Over cap is not an error and not a silent drop: the items keep `notified_at IS NULL` and
-        # go out in the next window.
-        logger.info("notify: %s is at their daily cap, deferring", user_id)
-        return 0
+    if per_day is not None:
+        remaining = per_day - notifications_today(session, user_id)
+        if remaining <= 0:
+            # Over cap is not an error and not a silent drop: the items keep `notified_at IS NULL`
+            # and go out in the next window.
+            logger.info("notify: %s is at their daily cap, deferring", user_id)
+            return 0
+        per_run = min(per_run, remaining)
 
-    items, dropped = pending_feed(session, user_id, store=store,
-                                  cutoff=cutoff, limit=min(remaining, MAX_ITEMS_PER_DIGEST))
+    items, dropped = pending_feed(session, user_id, store=store, cutoff=cutoff, limit=per_run)
     if dropped:
         # Counted by reason, because "delivered 2" is alarming and unactionable while "dropped 38
         # for language" is a config problem somebody can fix in a minute.
@@ -248,7 +248,14 @@ def deliver(session: Session, user_id: _uuid.UUID, *,
                 # **Cards only, no header.** The reference feed posts one card per job and nothing
                 # else; a "10 new matches" line above them was a platform addition that turns a
                 # channel you scroll into a channel you have to read the top of.
-                for item in batch:
+                for position, item in enumerate(batch):
+                    # **Paced, because Telegram allows 20 messages a minute to a channel.** The
+                    # gap is what makes an unlimited daily ceiling safe: the old guard against
+                    # rate limits was a cap, which protected the bot by withholding jobs the user
+                    # had matched. This protects it by taking longer instead. No sleep before the
+                    # first message — a run that sends one card should not wait to send it.
+                    if position:
+                        sleep(gap)
                     send(token.reveal(), chat_id, render_job(item, cutoff=cutoff),
                          keyboard(item.job_id))
             except Exception as exc:

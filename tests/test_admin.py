@@ -248,3 +248,83 @@ def test_the_source_list_names_every_board_with_its_window(api):
     assert "linkedin" in names and "arbeitnow" in names
     assert all(isinstance(row["hours"], int) and row["hours"] > 0 for row in body)
     assert next(row for row in body if row["name"] == "linkedin")["hours"] == 4
+
+
+# ── per-user ceilings ─────────────────────────────────────────────────────────────────────────
+
+def test_a_limit_is_absent_default_or_unlimited_and_they_are_three_things(api):
+    """**Absent, `null` and a number mean different things.**
+
+    Absent follows the platform default as that default changes; `null` is an operator choosing no
+    ceiling; a number is that number. Storing a huge value for unlimited would collapse the first
+    two and make a misconfiguration indistinguishable from an intention.
+    """
+    from libs import limits
+
+    _http, session, _operator, ordinary, _sign_in = api
+
+    assert limits.resolve(ordinary, "items_per_run") == limits.BY_KEY["items_per_run"].default
+
+    limits.set_limit(session, ordinary.id, "notifications_per_day", None)
+    session.flush()
+    assert limits.resolve(ordinary, "notifications_per_day") is None, "null means unlimited"
+
+    limits.set_limit(session, ordinary.id, "notifications_per_day", 40)
+    session.flush()
+    assert limits.resolve(ordinary, "notifications_per_day") == 40
+
+
+def test_the_send_gap_cannot_be_removed(api):
+    """It is Telegram's rule, not ours: 20 messages a minute to a channel, 429 above it. An
+    operator who could set it to unlimited could get a user's bot restricted."""
+    import pytest as _pytest
+
+    from libs import limits
+
+    _http, session, _operator, ordinary, _sign_in = api
+
+    with _pytest.raises(ValueError):
+        limits.set_limit(session, ordinary.id, "send_gap_seconds", None)
+
+
+def test_an_operator_sets_limits_through_the_panel_and_they_persist(api):
+    """The whole point: changing a ceiling is an UPDATE, not a deploy."""
+    http, session, operator, ordinary, sign_in = api
+    sign_in(http, operator)
+
+    body = http.put(f"/admin/users/{ordinary.id}/limits/items_per_run", json={"value": 25})
+    assert body.status_code == 200, body.text
+    assert body.json()["limits"]["items_per_run"] == 25
+    session.flush()
+
+    unlimited = http.put(f"/admin/users/{ordinary.id}/limits/notifications_per_day",
+                         json={"value": None})
+    assert unlimited.json()["limits"]["notifications_per_day"] is None
+
+    refused = http.put(f"/admin/users/{ordinary.id}/limits/send_gap_seconds", json={"value": None})
+    assert refused.status_code == 400
+
+    unknown = http.put(f"/admin/users/{ordinary.id}/limits/not_a_limit", json={"value": 1})
+    assert unknown.status_code == 404
+
+
+def test_an_operator_can_set_their_own_limits(api):
+    """Unlike operator access and deletion, there is no self-guard here: raising your own ceiling
+    is not a way to lock yourself out, and an operator is exactly who should be able to."""
+    http, _session, operator, _ordinary, sign_in = api
+    sign_in(http, operator)
+
+    body = http.put(f"/admin/users/{operator.id}/limits/items_per_run", json={"value": 50})
+    assert body.status_code == 200
+    assert body.json()["limits"]["items_per_run"] == 50
+
+
+def test_an_ordinary_user_cannot_change_any_limit(api):
+    """They are the operator's, entirely. A user who could raise their own delivery ceiling could
+    get their own bot rate-limited by Telegram."""
+    http, _session, _operator, ordinary, sign_in = api
+    sign_in(http, ordinary)
+
+    assert http.put(f"/admin/users/{ordinary.id}/limits/items_per_run",
+                    json={"value": 999}).status_code == 404
+    assert http.get("/admin/limits").status_code == 404

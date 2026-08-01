@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
+import time
 
 import httpx
 
@@ -23,6 +24,15 @@ from libs.secrets import SecretStore, install
 from services.notifier.deliver import BotRevoked, deliver
 
 TELEGRAM_TIMEOUT_SEC = 20.0
+
+# How many times one message may be re-offered after a 429 before it waits for the next cycle.
+# Telegram's own answer is obeyed each time, so this bounds the wait rather than the politeness.
+RATE_LIMIT_RETRIES = 3
+
+# The longest a single 429 may hold a worker. Telegram occasionally answers with minutes during a
+# flood-wait; holding the queue slot that long starves every other user of this worker, and the
+# undelivered rows are simply picked up on the next run.
+MAX_RATE_LIMIT_WAIT_SEC = 60.0
 
 logger = logging.getLogger(__name__)
 
@@ -40,12 +50,28 @@ def send(token: str, chat_id: str, message: str, keyboard: dict | None = None) -
                "parse_mode": "HTML"}
     if keyboard:
         payload["reply_markup"] = keyboard
-    response = httpx.post(
-        f"https://api.telegram.org/bot{token}/sendMessage",
-        json=payload,
-        timeout=TELEGRAM_TIMEOUT_SEC)
-    if response.status_code >= 400:
-        raise RuntimeError(response.json().get("description", response.text)[:300])
+    for attempt in range(1, RATE_LIMIT_RETRIES + 1):
+        response = httpx.post(
+            f"https://api.telegram.org/bot{token}/sendMessage",
+            json=payload,
+            timeout=TELEGRAM_TIMEOUT_SEC)
+
+        # **429 is Telegram telling us how long to wait, not a failure.** It answers with
+        # `parameters.retry_after` in seconds; obeying it turns a burst into "slower", while
+        # ignoring it is how a bot gets restricted. Read rather than guessed: a fixed backoff is
+        # either too short to help or longer than it had to be.
+        if response.status_code == 429:
+            body = response.json() if response.content else {}
+            wait = float((body.get("parameters") or {}).get("retry_after", 1))
+            logger.warning("telegram: rate limited, waiting %.0fs (attempt %d)", wait, attempt)
+            time.sleep(min(wait, MAX_RATE_LIMIT_WAIT_SEC))
+            continue
+
+        if response.status_code >= 400:
+            raise RuntimeError(response.json().get("description", response.text)[:300])
+        return
+
+    raise RuntimeError("Telegram kept rate limiting this bot; the rest will go out next cycle")
 
 
 def handle(session, job: QueueJob) -> None:

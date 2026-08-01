@@ -23,6 +23,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from libs.db.models import User, UserJobState, UserLabel
+from libs.limits import all_for, describe, set_limit
 from libs.obs import audit
 from libs.ops import evaluate, platform_health, render
 from libs.ops.latency import pipeline_latency
@@ -161,6 +162,7 @@ def user_detail(user_id: _uuid.UUID, db: Session = Depends(get_db),
         "setup": {"missing": files.missing_setup(),
                   "files": [{"name": row["name"], "kind": row["kind"], "filled": row["filled"]}
                             for row in files.listing()]},
+        "limits": all_for(user),
         "models": model_history(db, user_id),
         "counts": {
             "labels": db.scalar(select(func.count()).select_from(UserLabel)
@@ -288,3 +290,45 @@ def sources(db: Session = Depends(get_db), admin: User = Depends(require_admin))
     """
     return {"sources": [{"name": name, "hours": freshness_hours(db, name)}
                         for name in HARVEST_SOURCES]}
+
+
+class LimitPatch(BaseModel):
+    # `None` is unlimited and is a real, storable answer — not a missing field. The catalogue says
+    # which keys accept it.
+    value: int | None = None
+
+
+@router.get("/limits")
+def limit_catalogue(admin: User = Depends(require_admin)) -> dict:
+    """What can be set, what it defaults to, and what each one means.
+
+    Served rather than hardcoded in the panel so adding a ceiling is one entry in `libs.limits`
+    rather than an entry plus a form field plus a label somebody has to keep in step.
+    """
+    return {"limits": describe()}
+
+
+@router.put("/users/{user_id}/limits/{key}")
+def set_user_limit(user_id: _uuid.UUID, key: str, body: LimitPatch,
+                   db: Session = Depends(get_db),
+                   admin: User = Depends(require_admin)) -> dict:
+    """Set one ceiling on one account, or clear it to unlimited.
+
+    **The operator owns these, including their own.** A user who could raise their own delivery
+    ceiling could get their own Telegram bot rate-limited, and the rest are spend. There is no
+    self-protection here as there is for operator access and deletion: raising your own limits is
+    not a way to lock yourself out, and an operator is exactly who should be able to.
+    """
+    target = db.get(User, user_id)
+    if target is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="no such user")
+
+    try:
+        set_limit(db, user_id, key, body.value)
+    except KeyError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    audit(logger, "admin.limit_set", user=admin.id, subject=user_id, limit=key, value=body.value)
+    return {"status": "ok", "limits": all_for(target)}

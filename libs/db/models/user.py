@@ -134,6 +134,12 @@ class User(Base):
     # is deliberate: an operator who could untick their own row could lock themselves out of the
     # platform from a browser, and the fix would be a deploy.
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+
+    # Per-account ceilings, set by an operator (`libs.limits`). **Absent means the platform
+    # default, `null` means unlimited, a number means that number** — three distinct states, which
+    # is why a large sentinel would not do. Not editable by the user: somebody who could raise
+    # their own delivery ceiling could get their own Telegram bot rate-limited.
+    limits: Mapped[dict] = mapped_column(JSONB, default=dict, server_default=text("'{}'::jsonb"))
     next_run_at: Mapped[timestamptz | None]
     # The per-user LinkedIn loop runs on its own interval, deliberately slower than the 15-minute
     # shared harvest: a user on a 4-hour digest does not need LinkedIn scraped 96 times a day, and
