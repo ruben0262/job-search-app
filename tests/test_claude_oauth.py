@@ -29,6 +29,7 @@ print("Open this URL: https://claude.ai/oauth/authorize?code=1&state=abc")
 sys.stdout.flush()
 while True:
     line = sys.stdin.readline().strip()
+    line = line.replace("\x1b[200~", "").replace("\x1b[201~", "")
     if not line:
         continue
     if line == "goodcode":
@@ -185,6 +186,7 @@ def spin():
 
 threading.Thread(target=spin, daemon=True).start()
 line = sys.stdin.readline().strip()
+line = line.replace("\x1b[200~", "").replace("\x1b[201~", "")
 if line == "goodcode":
     print("Token: sk-ant-oat01-" + "x" * 40)
 sys.stdout.flush()
