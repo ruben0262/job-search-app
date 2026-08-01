@@ -1,3 +1,9 @@
 fastapi==0.115.6
 pydantic==2.10.4
 uvicorn==0.34.0
+# libs/secrets, reached from libs/obs — every service that logs needs it, including this one, which
+# imports `audit` and nothing else from the platform. The broker never decrypts anything itself: it
+# hands the token to the API and the API writes it. What this pulls in is the redaction filter that
+# `setup_logging` installs, which is exactly what must exist in the one service that holds a
+# credential in plaintext.
+cryptography>=44.0
