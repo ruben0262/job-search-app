@@ -32,6 +32,10 @@ export function SignIn({
       return;
     }
     await api.post("/auth/login", { email, password });
+    // **Land on the overview, not on `#/signin`.** The router falls through to the dashboard once
+    // signed in, but the hash stayed on the auth route — so the page was right and the navigation
+    // highlighted nothing, because no nav item matches `/signin`.
+    window.location.hash = "/";
     onSignedIn();
   });
 

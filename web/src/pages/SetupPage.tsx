@@ -437,8 +437,8 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
                           them together reads as an undifferentiated wall. The model separates them
                           with blank lines already; this renders that separation. */}
                       {steps(message.content).map((step, position) => (
-                        <div key={position} className="step">
-                          <span className="step-dot" aria-hidden="true" />
+                        <div key={position} className="turn-step">
+                          <span className="turn-step-dot" aria-hidden="true" />
                           <Markdown text={step} />
                         </div>
                       ))}

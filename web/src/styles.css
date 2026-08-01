@@ -2057,8 +2057,9 @@ td.num {
 
 /* One container per step of a reply, on a rail. A turn that does three things reads as three
    things rather than one paragraph that happens to be long. */
-/* One step, one container. */
-.step {
+/* One step of a reply, one container. **Named `turn-step`, not `step`** — the sign-in and signup
+   wizards already own `.step`, and taking it put a bordered card around the login form. */
+.turn-step {
   position: relative;
   padding: 0.7rem 1rem;
   border: 1px solid var(--hairline);
@@ -2066,13 +2067,13 @@ td.num {
   background: var(--bg-raised);
 }
 
-.step + .step {
+.turn-step + .turn-step {
   margin-top: 0.5rem;
 }
 
 /* Outside the card, on the line. The ring in the page colour is what makes it read as a bead on a
    thread rather than a dot floating beside a stripe. */
-.step-dot {
+.turn-step-dot {
   position: absolute;
   /* Centred *on* the line, not beside it. The offset carries the card's 1px border because an
      absolutely positioned child is placed against the padding box, which that border shifts —
@@ -2087,7 +2088,7 @@ td.num {
 }
 
 /* A step is a block, so the paragraph inside it should not add a trailing gap. */
-.step > :last-child {
+.turn-step > :last-child {
   margin-bottom: 0;
 }
 
