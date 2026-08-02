@@ -146,6 +146,44 @@ def conversation(db: Session = Depends(get_db),
     }
 
 
+
+def _refuse_misdirected_command(message: str, agent: str) -> None:
+    """Stop a slash command being delivered to an agent as ordinary text.
+
+    **A conversation runs one command, and a typed command was just words.** It reached the model as
+    a user message, which then did the reasonable thing with an instruction it could not carry out:
+    improvised. In a live run `/setup-boards` was typed into a `/setup` chat and the agent invented
+    a destination for it, announcing that it would write the search configuration into two profile
+    files instead -- files nothing reads as search configuration. Nothing was refused, nothing
+    errored, and the user was told a plausible sentence about work that could not happen.
+
+    So the command never gets that far. Three cases, all answered here rather than by the model:
+
+    - the conversation's own command, which is how a chat is kicked off, passes;
+    - another command this platform can run, which needs its own chat;
+    - a command this platform does not have, which is said plainly rather than improvised around.
+
+    Ported prompts mention commands that only ever existed on the single-tenant instance --
+    `/setup-boards`, `/setup-companies`, `/apply` -- so a user reading one will type them, and they
+    have to land somewhere honest.
+    """
+    text = message.strip()
+    if not text.startswith("/"):
+        return
+    name = text[1:].split()[0].strip().lower() if len(text) > 1 else ""
+    if not name or name == agent:
+        return
+
+    if name in SETUP_AGENTS:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail=(f"/{name} runs in its own chat. Start a new chat and choose it there, and "
+                    "this conversation will still be here when you come back."))
+    raise HTTPException(
+        status.HTTP_400_BAD_REQUEST,
+        detail=(f"There is no /{name} on this platform. What jobs to search for is set on your "
+                "Settings page rather than in a conversation."))
+
 @router.post("/conversations", status_code=status.HTTP_201_CREATED)
 def new_conversation(db: Session = Depends(get_db),
                      user_id: _uuid.UUID = Depends(current_user)) -> dict:
@@ -200,6 +238,8 @@ def send(body: Turn, db: Session = Depends(get_db),
     """
     if body.agent not in SETUP_AGENTS:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=f"no such step: {body.agent}")
+
+    _refuse_misdirected_command(body.message, body.agent)
 
     user = db.get(User, user_id)
     if user is None:

@@ -16,6 +16,24 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ## 2026-08-02
 
+### `/setup-boards` was answered by improvisation (`services/api/setup_routes.py`, `libs/agents`)
+
+Found in the live run. A typed slash command was never a command: it reached the model as ordinary
+text in whatever conversation was open. `/setup-boards` does not exist on this platform at all --
+`SETUP_AGENTS` is context, setup, role-angles, scorer, plus the director and prompts steps -- so the
+agent did the reasonable thing with an instruction it could not carry out and invented a
+destination, announcing it would write the search configuration into two profile files instead.
+
+Nothing errored. Nothing was refused. The user was told a plausible sentence about work that could
+not happen, and the "configuration" went somewhere nothing reads as configuration: what actually
+drives the harvest is `user_config`, written from the Settings page, and no agent tool touches it.
+
+Now refused before the model sees it, in three cases: the conversation's own command passes (that is
+how a chat starts), a real command names its own chat, and an absent one says so plainly. The prompt
+side is told which commands exist here and that search settings are not its to write -- both needed,
+since the ported bodies still name `/setup-boards` and friends and a user reading one will type it.
+
+
 ### Agent prompts: two guardrails on what the user is told (`libs/agents/__init__.py`)
 
 **Prompt change, made on the owner's explicit instruction** — the standing rule is that prompts are

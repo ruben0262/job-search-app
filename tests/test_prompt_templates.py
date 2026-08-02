@@ -234,3 +234,18 @@ def test_every_command_says_how_to_reach_another_one():
         prompt = system_prompt(name)
         assert "Open a new chat and run" in prompt, name
         assert "new chat, every time" in prompt, name
+
+
+def test_every_command_is_told_which_commands_exist_here():
+    """The ported instructions name commands from the single-user checkout -- /setup-boards,
+    /setup-companies, /apply. A user reading one types it, and an agent asked to honour one
+    improvises: in a live run it announced it would write search configuration into two profile
+    files, where nothing reads it as search configuration."""
+    from libs.agents import STARTABLE, system_prompt
+
+    for name in STARTABLE:
+        prompt = system_prompt(name)
+        assert "Only these commands exist here" in prompt, name
+        for absent in ("/setup-boards", "/setup-companies", "/apply"):
+            assert absent in prompt, f"{name} must name {absent} as unavailable"
+        assert "Which jobs get searched for is not yours to set" in prompt, name
