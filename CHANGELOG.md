@@ -14,6 +14,37 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-08-02
+
+### Agent prompts: two guardrails on what the user is told (`libs/agents/__init__.py`)
+
+**Prompt change, made on the owner's explicit instruction** — the standing rule is that prompts are
+not edited without one. Both rules were added to `ENVIRONMENT`, the block appended to every command,
+rather than to any individual prompt: the ported bodies stay byte-identical to the reference
+instance, and a command added later cannot be written without inheriting these.
+
+**Internals are never named to the user.** A real setup transcript ended with a summary table of
+`context.md`, `base_cv.html` and `08-role-angles.md`, and told the user to run
+`powershell -File cv/compile.ps1` and check whether Lato rendered instead of Arial. None of that is
+theirs: the filenames are the platform's names for its own storage, and the script does not exist on
+their machine. It reads as a demand to manage machinery they cannot see and are not responsible for.
+The prompt now requires plain terms — "your CV is written and ready" — and points at the file list
+on their own page, which is already labelled in words, when something must be pointed at.
+
+**A command that cannot run here is a new chat, said in those words.** One conversation runs one
+command and cannot hand off inside itself. The transcript said "start it as a new command", which a
+user reasonably read as "type it here" — and typing it there does nothing at all. The required shape
+is now literal: *"Open a new chat and run /setup-boards there."*
+
+`apply.md` and `setup.md` still contain the `cv/compile.ps1` lines they were ported with. They are
+left alone deliberately — divergence from the reference instance is the thing the porting rule
+exists to prevent — and `ENVIRONMENT` already overrides them, both by saying the model cannot run
+commands and now by forbidding it to pass one on.
+
+Tests assert both rules are present for every startable command, so dropping them fails the build.
+
+---
+
 ## 2026-07-31
 
 ### The password floor drops to nine

@@ -206,3 +206,31 @@ def test_a_platform_prompt_is_the_same_bytes_for_everyone(name):
     for specific in _REFERENCE_SPECIFICS:
         assert not re.search(rf"\b{re.escape(specific)}\b", body, re.IGNORECASE), (
             f"{name} still carries {specific!r} from the reference instance")
+
+
+def test_every_command_forbids_naming_internals_to_the_user():
+    """**One block, every command.** The rule lives in `ENVIRONMENT`, which is appended to each
+    prompt, so a new command cannot be added without it.
+
+    Written after a real setup transcript ended with a table of `context.md`, `base_cv.html` and
+    `08-role-angles.md`, plus an instruction to run `powershell -File cv/compile.ps1`. Those are the
+    platform's names for its own storage and a script that does not exist on the user's machine.
+    """
+    from libs.agents import STARTABLE, system_prompt
+
+    for name in STARTABLE:
+        prompt = system_prompt(name)
+        assert "Never name a file, path, script or tool" in prompt, name
+        assert "Never tell them to run a shell command" in prompt, name
+
+
+def test_every_command_says_how_to_reach_another_one():
+    """A conversation runs one command and cannot hand off inside itself. The transcript that
+    prompted this said "start it as a new command", which a user reasonably read as "type it here"
+    -- and typing it there does nothing."""
+    from libs.agents import STARTABLE, system_prompt
+
+    for name in STARTABLE:
+        prompt = system_prompt(name)
+        assert "Open a new chat and run" in prompt, name
+        assert "new chat, every time" in prompt, name
