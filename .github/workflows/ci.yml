@@ -180,6 +180,11 @@ jobs:
           - { service: capture, module: "services.capture.__main__" }
           - { service: labeller, module: "services.labeller.__main__" }
           - { service: notifier, module: "services.notifier.__main__" }
+          # **The one this check was made for.** Its requirements listed only what it imports by
+          # name, so the image crash-looped twice on transitive dependencies of `libs.obs`, once on
+          # cryptography and once on sqlalchemy, each found by watching a container restart in
+          # production rather than by anything here.
+          - { service: oauthbroker, module: "services.oauthbroker.__main__" }
           - { service: scorer, module: "services.scorer.__main__" }
           - { service: setupagent, module: "services.setupagent.__main__" }
           - { service: trainer, module: "services.trainer.__main__" }
