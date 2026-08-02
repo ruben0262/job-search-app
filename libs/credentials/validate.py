@@ -188,6 +188,47 @@ def telegram_channel_check(token: str, channel_id: str, *,
     return ValidationResult(False, redact(description)[:200])
 
 
+def telegram_chat_check(token: str, chat_id: str, *,
+                        client: httpx.Client | None = None) -> ValidationResult:
+    """Prove the bot can message this private chat — by messaging it.
+
+    **The counterpart to `telegram_chat_id`, for when reading it fails.** Auto-capture depends on
+    the update still being queued at Telegram and on nothing else having consumed it, neither of
+    which the platform controls, and when it comes back empty the user is left pressing Start again
+    with no way to proceed. A chat id they fetched themselves from @getidsbot always works.
+
+    A send rather than `getChat`, for the same reason the channel check sends: a bot can look up a
+    chat it is not allowed to write to, and writing is the only thing delivery needs. The message
+    is also the user's confirmation on their own phone.
+    """
+    owned = client is None
+    http = client or httpx.Client(timeout=TIMEOUT, trust_env=False)
+    try:
+        response = http.post(
+            TELEGRAM_URL.format(token=token, method="sendMessage"),
+            json={"chat_id": chat_id,
+                  "text": "Mahoraga connected — commands and your finished CVs arrive here. 🛞"})
+    except httpx.HTTPError as exc:
+        return ValidationResult(False, redact(f"could not reach Telegram: {exc!s}")[:200])
+    finally:
+        if owned:
+            http.close()
+
+    payload = response.json() if response.headers.get("content-type", "").startswith(
+        "application/json") else {}
+    if response.status_code == 200 and payload.get("ok"):
+        return ValidationResult(True)
+    description = str(payload.get("description", f"Telegram answered {response.status_code}"))
+    lowered = description.lower()
+    if "not found" in lowered:
+        return ValidationResult(False, "Telegram cannot find that chat — check the number, and "
+                                       "that it is your own chat id rather than the channel's")
+    if "blocked" in lowered or "forbidden" in lowered:
+        return ValidationResult(False, "the bot cannot message you — open the bot in Telegram and "
+                                       "press Start, then try again")
+    return ValidationResult(False, redact(description)[:200])
+
+
 def telegram_chat_id(token: str, *, client: httpx.Client | None = None) -> str | None:
     """The chat id of whoever last messaged this bot, or `None` if nobody has yet.
 

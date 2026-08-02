@@ -646,6 +646,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/credentials/telegram/chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Chat
+         * @description Set the chat id by hand, proven by messaging it.
+         *
+         *     **The way through when auto-capture cannot work.** `telegram/connect` reads whoever last
+         *     messaged the bot, which depends on the update still being queued at Telegram and on nothing
+         *     else having consumed it. Neither is something the platform controls, and when it comes back
+         *     empty there was nothing else to try: the page could not complete, so onboarding stopped dead at
+         *     a step whose only instruction was to press Start again.
+         *
+         *     A chat id is not a secret and not guessable-into-harm: writing somebody else's here only means
+         *     the bot cannot message them, which the send below catches immediately.
+         */
+        put: operations["set_chat_credentials_telegram_chat_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/credentials/telegram/connect": {
         parameters: {
             query?: never;
@@ -1542,6 +1571,11 @@ export interface components {
         ChannelBody: {
             /** Channel Id */
             channel_id: string;
+        };
+        /** ChatBody */
+        ChatBody: {
+            /** Chat Id */
+            chat_id: string;
         };
         /**
          * Conflict
@@ -2905,6 +2939,41 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    set_chat_credentials_telegram_chat_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

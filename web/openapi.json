@@ -106,6 +106,22 @@
         "title": "ChannelBody",
         "type": "object"
       },
+      "ChatBody": {
+        "properties": {
+          "chat_id": {
+            "maxLength": 32,
+            "minLength": 4,
+            "pattern": "^\\d{4,}$",
+            "title": "Chat Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "chat_id"
+        ],
+        "title": "ChatBody",
+        "type": "object"
+      },
       "Conflict": {
         "additionalProperties": false,
         "description": "Something the interview could not resolve. Surfaces in the form as an explicit either/or.",
@@ -2391,6 +2407,50 @@
           }
         },
         "summary": "Set Channel",
+        "tags": [
+          "credentials"
+        ]
+      }
+    },
+    "/credentials/telegram/chat": {
+      "put": {
+        "description": "Set the chat id by hand, proven by messaging it.\n\n**The way through when auto-capture cannot work.** `telegram/connect` reads whoever last\nmessaged the bot, which depends on the update still being queued at Telegram and on nothing\nelse having consumed it. Neither is something the platform controls, and when it comes back\nempty there was nothing else to try: the page could not complete, so onboarding stopped dead at\na step whose only instruction was to press Start again.\n\nA chat id is not a secret and not guessable-into-harm: writing somebody else's here only means\nthe bot cannot message them, which the send below catches immediately.",
+        "operationId": "set_chat_credentials_telegram_chat_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Set Chat Credentials Telegram Chat Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Chat",
         "tags": [
           "credentials"
         ]

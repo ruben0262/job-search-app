@@ -417,3 +417,61 @@ def test_a_failed_reconnect_leaves_the_working_token_alone(api, monkeypatch):
     stored = [row for row in TenantRepository(session).secret_metadata(user.id)
               if row.kind == "claude_oauth"]
     assert stored and stored[0].validated_at is not None, "the working credential must survive"
+
+
+@pytestmark_db
+def test_the_chat_id_can_be_set_by_hand_when_reading_it_fails(api, monkeypatch):
+    """**The way through when auto-capture cannot work.**
+
+    `telegram/connect` reads whoever last messaged the bot, which needs the update to still be
+    queued at Telegram and nothing else to have consumed it. When it comes back empty there was
+    previously nothing else to try: the page could not complete, and onboarding stopped at a step
+    whose only instruction was to press Start again -- which had already been done.
+    """
+    from libs.credentials import ValidationResult
+
+    http, session, user, _ = api
+    monkeypatch.setattr("services.api.credential_routes.validate_credential",
+                        lambda kind, value, **kw: ValidationResult(True))
+    monkeypatch.setattr("services.api.credential_routes.telegram_chat_id", lambda token, **kw: None)
+    http.put("/credentials/telegram_bot", json={"value": "123456:AAturtles"})
+    session.flush()
+    assert user.telegram_chat_id is None, "auto-capture found nothing, which is the premise"
+
+    monkeypatch.setattr("services.api.credential_routes.telegram_chat_check",
+                        lambda token, chat_id, **kw: ValidationResult(True))
+    saved = http.put("/credentials/telegram/chat", json={"chat_id": "123456789"})
+    assert saved.status_code == 200
+    session.flush()
+    assert user.telegram_chat_id == "123456789"
+    assert user.telegram_status == "connected"
+
+
+@pytestmark_db
+def test_a_chat_id_the_bot_cannot_reach_is_refused(api, monkeypatch):
+    """Proven by sending, like the channel. A bot can look up a chat it may not write to, and
+    writing is the only thing delivery needs."""
+    from libs.credentials import ValidationResult
+
+    http, session, user, _ = api
+    monkeypatch.setattr("services.api.credential_routes.validate_credential",
+                        lambda kind, value, **kw: ValidationResult(True))
+    monkeypatch.setattr("services.api.credential_routes.telegram_chat_id", lambda token, **kw: None)
+    http.put("/credentials/telegram_bot", json={"value": "123456:AAturtles"})
+    monkeypatch.setattr("services.api.credential_routes.telegram_chat_check",
+                        lambda token, chat_id, **kw: ValidationResult(False, "bot was blocked"))
+
+    refused = http.put("/credentials/telegram/chat", json={"chat_id": "123456789"})
+    assert refused.status_code == 400
+    session.flush()
+    assert user.telegram_chat_id is None
+    assert user.telegram_status != "connected"
+
+
+@pytestmark_db
+def test_a_channel_id_pasted_into_the_chat_field_is_caught_by_shape(api):
+    """The two numbers sit on the same page and the mistake is easy. A channel id is negative and
+    starts -100; a personal chat id never is."""
+    http, _session, _user, _ = api
+    assert http.put("/credentials/telegram/chat",
+                    json={"chat_id": "-1004454061394"}).status_code == 422

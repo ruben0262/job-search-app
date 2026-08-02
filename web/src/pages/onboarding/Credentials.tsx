@@ -235,6 +235,8 @@ export function TelegramStep({ onDone }: { onDone: () => void }) {
   const [status, setStatus] = useState<string | null>(null);
   const [channel, setChannel] = useState("");
   const [channelStatus, setChannelStatus] = useState<string | null>(null);
+  const [chat, setChat] = useState("");
+  const [chatStatus, setChatStatus] = useState<string | null>(null);
   const [state, setState] = useState<TelegramState | null>(null);
   const [saved, setSaved] = useState(0);
 
@@ -262,6 +264,14 @@ export function TelegramStep({ onDone }: { onDone: () => void }) {
     reload();
   });
 
+  const saveChat = useAction(async () => {
+    const result = await api.put<{ detail: string }>("/credentials/telegram/chat", {
+      chat_id: chat.trim(),
+    });
+    setChatStatus(result.detail);
+    reload();
+  });
+
   const saveChannel = useAction(async () => {
     const result = await api.put<{ detail: string }>("/credentials/telegram/channel", {
       channel_id: channel.trim(),
@@ -280,8 +290,7 @@ export function TelegramStep({ onDone }: { onDone: () => void }) {
           <li>Give it any name, then any username ending in "bot".</li>
           <li>BotFather replies with a token that looks like <code>123456:AA…</code>, copy it and
               paste it below.</li>
-          <li>Open your new bot's chat and press <strong>Start</strong>, then use the "I pressed
-              Start" button underneath.</li>
+          <li>Open your new bot's chat and press <strong>Start</strong>.</li>
         </ol>
       </details>
 
@@ -289,41 +298,74 @@ export function TelegramStep({ onDone }: { onDone: () => void }) {
       <CredentialForm
         kind="telegram_bot"
         label="Bot token"
-        hint="From BotFather. We read your chat id ourselves, you never have to find it."
+        hint="From BotFather, it looks like 123456:AA…"
         placeholder="123456:AA…"
         onDone={reload}
       />
 
-      {state ? (
-        <dl className="kv small" style={{ marginTop: "1rem" }}>
-          <dt>Status</dt>
-          <dd>{state.status}</dd>
-          <dt>Chat ID</dt>
-          <dd>
-            <code>{state.chat_id ?? "not connected yet"}</code>
-          </dd>
-          <dt>Channel ID</dt>
-          <dd>
-            <code>{state.channel_id ?? "not set"}</code>
-          </dd>
-          <dt>Jobs go to</dt>
-          <dd>
-            {state.destination === "channel"
-              ? "your channel"
-              : state.destination === "chat"
-                ? "your bot chat, set a channel below"
-                : "nowhere yet"}
-          </dd>
-        </dl>
-      ) : null}
+      {/* **A field, not a status readout.** This was four rows of state and an "I pressed Start"
+          button, which read the chat id from whoever last messaged the bot. That depends on the
+          update still being queued at Telegram and on nothing else having consumed it, and when it
+          came back empty there was nothing else to try: the page could not complete and onboarding
+          stopped at a step whose only instruction was to press Start again.
 
-      <p style={{ marginTop: "1rem" }}>
-        <button className="secondary" disabled={connect.busy} onClick={() => void connect.run()}>
-          {connect.busy ? "Looking…" : "I pressed Start"}
-        </button>
-      </p>
-      <Error>{connect.error}</Error>
-      {status ? <p className="small muted">{status}</p> : null}
+          The chat id is needed. Delivery refuses without it and finished CVs are sent to it, so a
+          channel alone is not enough however complete the page looks. */}
+      <div style={{ marginTop: "1.5rem" }}>
+        <p className="small muted">
+          <strong>Required: your own chat with the bot.</strong> Commands and your finished CVs
+          arrive here, separately from the job stream.
+        </p>
+        <details className="howto">
+          <summary>How to find your chat ID (1 minute)</summary>
+          <ol className="small muted">
+            <li>Open your new bot in Telegram and press <strong>Start</strong>.</li>
+            <li>Search for <strong>@getidsbot</strong> and press Start there too.</li>
+            <li>It replies with your details. The number next to <strong>Id</strong> is yours,
+                a positive number like <code>123456789</code>.</li>
+            <li>Paste it below. We send a test message to prove the bot can reach you.</li>
+          </ol>
+        </details>
+        <Field
+          label="Your chat ID"
+          hint="A positive number, yours rather than the channel's. The channel ID starts with -100 and goes in the box further down."
+        >
+          <input
+            value={chat}
+            inputMode="numeric"
+            placeholder="123456789"
+            onChange={(event) => setChat(event.target.value)}
+          />
+        </Field>
+        <Error>{saveChat.error}</Error>
+        {chatStatus ? <p className="small" style={{ color: "var(--score)" }}>{chatStatus}</p> : null}
+        <p>
+          <button
+            className="secondary"
+            disabled={saveChat.busy || !chat.trim()}
+            onClick={() => void saveChat.run()}
+          >
+            {saveChat.busy ? "Checking…" : "Connect my chat"}
+          </button>
+          {/* Kept as the shortcut for anyone who has just pressed Start: when it works it saves
+              them the trip to @getidsbot, and when it does not the field above still does. */}
+          <button
+            className="secondary"
+            style={{ marginLeft: "0.6rem" }}
+            disabled={connect.busy}
+            onClick={() => void connect.run()}
+          >
+            {connect.busy ? "Looking…" : "Read it for me"}
+          </button>
+        </p>
+        <Error>{connect.error}</Error>
+        {status ? <p className="small muted">{status}</p> : null}
+        {state?.chat_id ? (
+          <p className="small" style={{ color: "var(--score)" }}>
+            Connected to chat <code>{state.chat_id}</code>.
+          </p>
+        ) : null}
+      </div>
 
       <div style={{ marginTop: "2rem" }}>
         <p className="small muted">

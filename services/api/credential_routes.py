@@ -26,7 +26,12 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from libs.credentials import telegram_channel_check, telegram_chat_id, validate_credential
+from libs.credentials import (
+    telegram_channel_check,
+    telegram_chat_check,
+    telegram_chat_id,
+    validate_credential,
+)
 from libs.db.models import ProxyCredential, User
 from libs.db.models.user import SECRET_KINDS, TELEGRAM_ROUTE_KEYS
 from libs.obs import audit
@@ -137,6 +142,43 @@ def telegram_connect(db: Session = Depends(get_db),
     user.telegram_chat_id = chat_id
     user.telegram_status = "connected"
     return {"status": "connected"}
+
+
+class ChatBody(BaseModel):
+    # A personal chat id is a positive integer. Negative ones are groups and channels, and pasting
+    # the channel id here is the mistake worth catching by shape rather than by a failed send.
+    chat_id: str = Field(min_length=4, max_length=32, pattern=r"^\d{4,}$")
+
+
+@router.put("/telegram/chat")
+def set_chat(body: ChatBody, db: Session = Depends(get_db),
+             store: SecretStore = Depends(get_store),
+             user_id: _uuid.UUID = Depends(current_user)) -> dict:
+    """Set the chat id by hand, proven by messaging it.
+
+    **The way through when auto-capture cannot work.** `telegram/connect` reads whoever last
+    messaged the bot, which depends on the update still being queued at Telegram and on nothing
+    else having consumed it. Neither is something the platform controls, and when it comes back
+    empty there was nothing else to try: the page could not complete, so onboarding stopped dead at
+    a step whose only instruction was to press Start again.
+
+    A chat id is not a secret and not guessable-into-harm: writing somebody else's here only means
+    the bot cannot message them, which the send below catches immediately.
+    """
+    with store.use(user_id, "telegram_bot") as token:
+        if token is None:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="save your bot token first")
+        result = telegram_chat_check(token.reveal(), body.chat_id)
+
+    if not result.ok:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=result.detail)
+
+    user = db.get(User, user_id)
+    user.telegram_chat_id = body.chat_id
+    user.telegram_status = "connected"
+    audit(logger, "credentials.chat_set", user=user_id)
+    return {"status": "connected",
+            "detail": "A test message just landed in your chat with the bot."}
 
 
 class ChannelBody(BaseModel):
