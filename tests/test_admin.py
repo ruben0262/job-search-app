@@ -345,7 +345,9 @@ def test_granting_admin_also_shows_the_menu_item(api, monkeypatch):
     user.is_admin = False
     session.flush()
     assert http.get("/dashboard").json()["is_admin"] is False
-    assert http.get("/admin/users").status_code == 403
+    # 404 rather than 403, matching the rest of the panel: a non-admin is not told the endpoint
+    # exists at all.
+    assert http.get("/admin/users").status_code == 404
 
     user.is_admin = True
     session.flush()
