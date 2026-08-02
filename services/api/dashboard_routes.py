@@ -38,6 +38,17 @@ from services.api.status_routes import DEFAULT_NOTIFICATIONS_PER_DAY
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["dashboard"])
 
+
+def _is_admin(user: User) -> bool:
+    """The same rule `require_admin` enforces, in one place.
+
+    It was written inline, and only in the branch for a finished account, so the two paths disagreed
+    with each other and one of them disagreed with the gate. Both bugs were the same bug: a rule
+    with more than one copy.
+    """
+    return bool(user.is_admin) or user.email.lower() in admin_emails()
+
+
 # How many corpus rows the stage-0 feed ranks in Python. Bounded because this runs in a request and
 # the corpus keeps growing; a new account's feed does not get better for scanning ten thousand rows,
 # and the personal model takes over within the hour anyway.
@@ -61,7 +72,13 @@ def dashboard(db: Session = Depends(get_db),
     if user.onboarding_completed_at is None:
         # Nothing below is meaningful yet, and showing empty panels reads as a broken product
         # rather than an unfinished signup.
-        return {"stage": "onboarding", "onboarding": onboarding.as_dict()}
+        #
+        # **The operator hint is the exception, and it belongs here too.** An admin part-way through
+        # their own signup is still an admin, and this branch omitting the key hid the panel from
+        # them until they finished. That is precisely when an operator most wants it: a fresh
+        # account being set up is the thing they are usually watching.
+        return {"stage": "onboarding", "onboarding": onboarding.as_dict(),
+                "is_admin": _is_admin(user)}
 
     # Past this point the account **has** finished onboarding, and the branch above deliberately
     # tests the stored timestamp rather than live completeness. They differ: revoking a credential
@@ -119,7 +136,7 @@ def dashboard(db: Session = Depends(get_db),
         # `is_admin`, and the API duly started accepting that user's `/admin/*` calls -- while their
         # dashboard carried on hiding the menu item that leads there. The toggle appeared to do
         # nothing, because the only visible half of it did nothing.
-        "is_admin": user.is_admin or user.email.lower() in admin_emails(),
+        "is_admin": _is_admin(user),
     }
 
 

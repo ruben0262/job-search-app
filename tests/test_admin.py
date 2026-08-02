@@ -349,5 +349,6 @@ def test_granting_admin_also_shows_the_menu_item(api, monkeypatch):
 
     user.is_admin = True
     session.flush()
+    # Still mid-onboarding here, which is the branch that used to omit the key entirely.
     assert http.get("/dashboard").json()["is_admin"] is True, "the menu must appear"
     assert http.get("/admin/users").status_code == 200, "and lead somewhere"
