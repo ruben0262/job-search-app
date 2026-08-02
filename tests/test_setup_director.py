@@ -193,9 +193,12 @@ def test_the_context_command_forbids_placeholders():
 def test_the_director_runs_context_first():
     """`setup-role-angles` states that `context.md` must already be written, so an order that runs
     it later produces files grounded on nothing."""
-    text = _text(DRAFT)
-    assert text.index("/setup-context") < text.index("/setup-role-angles")
-    assert "The order is not a preference" in text
+    # Asserted on the order the steps are carried in, not on slash names in the prose: the director
+    # no longer sends anybody to a command, so its map names steps the way a user hears them.
+    from libs.agents import DIRECTOR_STEPS
+
+    assert DIRECTOR_STEPS.index("setup-context") < DIRECTOR_STEPS.index("setup-role-angles")
+    assert "The order is not a preference" in _text(DRAFT)
 
 
 # ── the context file, reverse-engineered from a real one ──────────────────────────────────────
@@ -247,7 +250,46 @@ def test_the_director_never_promises_a_step_that_writes_nothing():
     cannot move the account closer to being trainable."""
     director = _text(DRAFT)
 
-    for name in ("setup-context", "setup", "setup-role-angles", "setup-scorer"):
-        assert f"/{name}" in director, f"{name} is not in the director's map"
+    from libs.agents import DIRECTOR_STEPS
+
+    assert director  # the map itself still has to exist
+    for name in DIRECTOR_STEPS:
         owned = [f for f in setup_files() if f in _text(name)]
-        assert owned, f"/{name} is in the map but writes none of the required files"
+        assert owned, f"{name} is a step that writes none of the required files"
+
+
+def test_the_director_carries_every_step_it_has_to_run():
+    """**It used to be told to follow instructions it could not see.**
+
+    Its body says "follow that step's own instructions exactly", and one conversation runs one
+    prompt: there is no tool that fetches another. So it worked from the gist, which is what the
+    rest of that prompt exists to prevent. The four bodies are appended at read time rather than
+    pasted into the file, so they stay byte-identical to the reference instance.
+    """
+    from libs.agents import DIRECTOR_STEPS, command, system_prompt
+
+    prompt = system_prompt("setup-director")
+    for step in DIRECTOR_STEPS:
+        body = command(step)
+        # A distinctive run of the real body, not just its name in a heading.
+        assert body[200:600] in prompt, f"{step} is not carried in full"
+
+
+def test_the_director_is_startable_and_runs_first():
+    """It is what somebody setting up for the first time wants: one chat, four steps. The
+    individual commands stay startable for anyone redoing one of them."""
+    from libs.agents import DIRECTOR_STEPS, STARTABLE
+
+    assert STARTABLE[0] == "setup-director"
+    for step in DIRECTOR_STEPS:
+        assert step in STARTABLE
+
+
+def test_the_director_does_not_send_anybody_to_another_chat():
+    """The environment block tells every command to say "open a new chat" when it cannot do
+    something. The director can do all of it, and that sentence would strand the user."""
+    from libs.agents import command
+
+    body = command("setup-director")
+    assert "You are not handing off" in body
+    assert "no other chat to open" in body

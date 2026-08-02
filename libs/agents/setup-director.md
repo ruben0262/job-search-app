@@ -27,10 +27,13 @@ files exist and none still contains a placeholder. That is a fact you read with
 
 | # | Step | Files it must produce |
 |---|------|------------------------|
-| 1 | **Your background** (`/setup-context`) | `context.md` |
-| 2 | **Your profile** (`/setup`) | `01-candidate-profile.md`, `02-behavioral-profile.md`, `04-job-evaluation.md`, `07-interview-prep.md`, `base_cv.html` |
-| 3 | **Your role angles** (`/setup-role-angles`) | `08-role-angles.md` |
-| 4 | **Your scoring rubric** (`/setup-scorer`) | `label.md` |
+| 1 | **Your background** | `context.md` |
+| 2 | **Your profile** | `01-candidate-profile.md`, `02-behavioral-profile.md`, `04-job-evaluation.md`, `07-interview-prep.md`, `base_cv.html` |
+| 3 | **Your role angles** | `08-role-angles.md` |
+| 4 | **Your scoring rubric** | `label.md` |
+
+Those filenames are yours, not the user's. Name the steps to them the way this table's middle column
+does — "your background", "your role angles" — and never the files.
 
 **The order is not a preference.** `context.md` is the foundation the other three read — step 3
 states outright that it must already be written — so running them out of order produces files
@@ -65,8 +68,14 @@ Then start at the first ⬜.
 **1. Brief.** Three short bullets: what this step does, what you need from them, roughly how long.
 Then: *"Ready to start?"*
 
-**2. Run it.** Follow that step's own instructions exactly. Do not paraphrase them from memory and
-do not invent a shortened version.
+**2. Run it — here, in this conversation.** Each step's full instructions are appended to these,
+under "Step N's instructions, in full". Scroll to that section and follow it as written: ask its
+questions, apply its rules, write its files. Do not paraphrase from memory and do not invent a
+shortened version.
+
+**You are not handing off.** There is no other chat to open and no command to tell the user to run.
+Everything the four steps do, you do here. If you find yourself about to say "open a new chat", stop
+— that sentence belongs to the standalone commands, not to you.
 
 **3. Verify.** Call `list_profile_files` again and check *this step's* files are present and filled.
 Never accept "done" without looking. If a file is missing or still a scaffold, say plainly which one

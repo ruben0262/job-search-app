@@ -124,9 +124,31 @@ asks, send them to their Settings page rather than recording it somewhere that l
 """
 
 
+# The steps the director runs, in order. `context.md` first because the other three read it.
+DIRECTOR_STEPS: tuple[str, ...] = ("setup-context", "setup", "setup-role-angles", "setup-scorer")
+
+
 def system_prompt(name: str) -> str:
-    """A command plus the environment note — what the model is given as its system prompt."""
-    return command(name) + ENVIRONMENT
+    """A command plus the environment note — what the model is given as its system prompt.
+
+    **The director additionally gets the four steps' instructions inlined.** Its own body says to
+    follow each step's instructions exactly, and it had no way to: one conversation runs one prompt,
+    and there is no tool that fetches another. So it did what an agent does when told to follow
+    instructions it cannot see -- worked from the gist, which is precisely what the rest of that
+    prompt exists to prevent.
+
+    Composed here rather than by rewriting the director to contain them, because the four bodies are
+    ported from the reference instance and must stay byte-identical to it. Assembling them at read
+    time means a fix to any step reaches the director on the next turn with nothing to keep in sync.
+    """
+    body = command(name)
+    if name == "setup-director":
+        body += "".join(
+            f"\n\n---\n\n# Step {position}'s instructions, in full ({step})\n\n"
+            "Follow these as written when you run this step. They are the same instructions the "
+            f"standalone command uses.\n\n{command(step)}"
+            for position, step in enumerate(DIRECTOR_STEPS, 1))
+    return body + ENVIRONMENT
 
 
 # Which command produces which setup file. **Code owns the definition of done, not the prompt.**
@@ -163,7 +185,9 @@ UNOWNED_FILES: dict[str, str] = {}
 
 # The commands a user may start from the chat, in the order they should run. `setup-context` first because
 # every other command reads what it writes — `setup-role-angles` says so outright.
-STARTABLE: tuple[str, ...] = ("setup-context", "setup", "setup-role-angles",
+# `setup-director` first: it runs all four in one conversation, which is what somebody setting up
+# for the first time wants. The individual steps stay startable for anyone redoing just one.
+STARTABLE: tuple[str, ...] = ("setup-director", "setup-context", "setup", "setup-role-angles",
                               "setup-scorer")
 
 # What a chat started by a command is called. A tab reading "/setup-role-angles" names the machinery
