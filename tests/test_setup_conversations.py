@@ -547,3 +547,44 @@ def test_a_command_for_another_chat_is_refused_rather_than_improvised(api):
     mentions = http.post("/setup/message",
                          json={"message": "I ran /setup-boards yesterday", "agent": "setup"})
     assert "no /setup-boards" not in mentions.text
+
+
+def test_the_start_button_runs_the_director(api):
+    """**One button, one chat, the whole setup.**
+
+    `next_command` used to be the first command that *owned* an outstanding file, which could never
+    be the director: it owns none, because it writes nothing itself. So Start ran a single step, and
+    finishing that step offered a button for the next -- four chats to do what the director now does
+    in one, which is the thing it exists to avoid.
+    """
+    http, _session, _user = api
+
+    progress = http.get("/setup/progress").json()
+    assert progress["complete"] is False
+    assert progress["next_command"] == "setup-director"
+    # The per-step breakdown survives for anyone redoing one on its own.
+    assert progress["outstanding_by_command"]
+    assert "setup-director" in progress["commands"]
+
+    # And the command the button sends is accepted as its own agent rather than refused as a
+    # misdirected one -- the page reads the leading slash and sends it as the agent.
+    sent = http.post("/setup/message",
+                     json={"message": "/setup-director", "agent": "setup-director"})
+    assert "own chat" not in sent.text
+
+
+def test_a_finished_profile_offers_no_next_command(api):
+    """The director is told to stop rather than propose another pass; the button agrees with it."""
+    from libs.profiles import setup_files
+    from libs.profiles.repository import ProfileFiles
+
+    http, session, user = api
+    files = ProfileFiles(session, user.id)
+    for name in setup_files():
+        files.write(name, f"real content for {name}", kind="context")
+    session.flush()
+
+    progress = http.get("/setup/progress").json()
+    assert progress["complete"] is True
+    assert progress["next_command"] is None
+    assert progress["may_train"] is True

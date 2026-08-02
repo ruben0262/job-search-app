@@ -342,8 +342,19 @@ def setup_progress(db: Session = Depends(get_db),
         "complete": not missing,
         "missing": missing,
         "required": list(setup_files()),
-        # What to run next, and why — the client shows one button rather than a command palette.
-        "next_command": next((command for command in STARTABLE if command in outstanding), None),
+        # **What the Start button runs, and it is the director whenever anything is missing.**
+        #
+        # This used to pick the first command that owned an outstanding file, which could never be
+        # the director: it owns none of them, because it writes nothing itself. So the one button a
+        # new user presses started a single step, and finishing that step handed them a button for
+        # the next one — four chats to do what one now does, which is the thing the director exists
+        # to avoid.
+        #
+        # It is right for a partly-finished profile too. The director reads the file state before it
+        # says anything and starts at the first outstanding step, so pressing Start after stopping
+        # halfway resumes rather than repeats. `outstanding_by_command` below still says which step
+        # owns what, for anyone who wants to run one on its own.
+        "next_command": "setup-director" if missing else None,
         "outstanding_by_command": outstanding,
         "blocked": blocked,
         "commands": list(STARTABLE),
