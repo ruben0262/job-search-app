@@ -345,9 +345,13 @@ def test_setup_progress_names_the_command_that_produces_each_missing_file(api):
     assert body["complete"] is False
     assert body["may_train"] is False
     assert set(body["missing"]) == set(setup_files())
-    assert body["next_command"] == "setup-context", (
-        "the first command is the one everything else reads — `setup-role-angles` says outright "
-        "that context.md must already exist")
+    # The button runs the director, which does all four steps in one chat. The ordering this used
+    # to assert here -- context first, because `setup-role-angles` says outright that it must
+    # already exist -- now lives in `DIRECTOR_STEPS`, which is what the director works through.
+    assert body["next_command"] == "setup-director"
+    from libs.agents import DIRECTOR_STEPS
+
+    assert DIRECTOR_STEPS[0] == "setup-context"
 
     # Every outstanding file is attributed to a command a user can actually start.
     for command, names in body["outstanding_by_command"].items():
