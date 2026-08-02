@@ -967,7 +967,7 @@
             "items": {
               "$ref": "#/components/schemas/Location"
             },
-            "maxItems": 5,
+            "maxItems": 12,
             "title": "Locations",
             "type": "array"
           },
