@@ -27,6 +27,10 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "../../api";
 import { Error, useAction } from "../../ui";
 
+/** Mirrors `MAX_LOCATIONS_PER_USER` in libs/contracts/config.py. A test pins them together:
+ *  the form silently allowing one more than the schema accepts is how this surfaced. */
+const MAX_LOCATIONS = 12;
+
 type Section = {
   platform: string;
   keywords: string[];
@@ -181,12 +185,21 @@ export function ConfigStep({ onDone }: { onDone: () => void }) {
   const patch = (changes: Partial<Section>) =>
     setConfig({ ...config, sections: [{ ...section, ...changes }, ...config.sections.slice(1)] });
 
-  const toggleLocation = (value: string) =>
+  // **The schema's bound, enforced where the choices are made.** It used to be discovered by
+  // submitting: tick a sixth, press save, get "at most 5 items after validation, not 6" under a
+  // form with no indication which tick was the problem. The count is shown as it fills and further
+  // ticks stop responding, so the limit is a property of the list rather than a surprise.
+  const atLimit = section.locations.length >= MAX_LOCATIONS;
+
+  const toggleLocation = (value: string) => {
+    const chosen = section.locations.includes(value);
+    if (!chosen && atLimit) return;
     patch({
-      locations: section.locations.includes(value)
+      locations: chosen
         ? section.locations.filter((each) => each !== value)
         : [...section.locations, value],
     });
+  };
 
   return (
     <form
@@ -239,6 +252,7 @@ export function ConfigStep({ onDone }: { onDone: () => void }) {
                     <input
                       type="checkbox"
                       checked={section.locations.includes(value)}
+                      disabled={atLimit && !section.locations.includes(value)}
                       onChange={() => toggleLocation(value)}
                     />
                     <span>{title(value)}</span>
@@ -257,6 +271,7 @@ export function ConfigStep({ onDone }: { onDone: () => void }) {
                   <input
                     type="checkbox"
                     checked={section.locations.includes(value)}
+                    disabled={atLimit && !section.locations.includes(value)}
                     onChange={() => toggleLocation(value)}
                   />
                   <span>{title(value)}</span>
@@ -267,7 +282,12 @@ export function ConfigStep({ onDone }: { onDone: () => void }) {
         ) : null}
         {section.locations.length === 0 ? (
           <p className="facts">Nothing picked yet, we will search everywhere.</p>
-        ) : null}
+        ) : (
+          <p className={atLimit ? "pick-count full" : "pick-count"}>
+            {section.locations.length} of {MAX_LOCATIONS} places picked
+            {atLimit ? ". Untick one to choose somewhere else." : ""}
+          </p>
+        )}
       </div>
 
       <div className="field">

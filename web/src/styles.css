@@ -2422,3 +2422,56 @@ td.num {
 .back:hover svg { transform: translateX(-3px); }
 .wizard-nav .advance:not(:disabled):hover svg { transform: translateX(3px); }
 .wizard-nav .advance svg { transition: transform 0.15s ease; }
+
+/* **Radios drawn rather than accented.** `accent-color: var(--ink)` paints the selected dot in the
+   foreground colour, which in dark mode is near-white on a near-white control: the filled state was
+   there and invisible. Checkboxes survived it because a tick reads as a shape even at low contrast;
+   a dot does not. Drawn here so the selected one is unmistakable in either theme. */
+.pick input[type="radio"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 1.05rem;
+  height: 1.05rem;
+  border: 1.5px solid var(--hairline);
+  border-radius: 50%;
+  background: var(--surface);
+  display: grid;
+  place-content: center;
+  transition: border-color var(--fade) var(--ease), background var(--fade) var(--ease);
+}
+
+.pick input[type="radio"]::before {
+  content: "";
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  transform: scale(0);
+  background: var(--bg);
+  transition: transform var(--fade) var(--ease);
+}
+
+.pick input[type="radio"]:checked {
+  border-color: var(--ink);
+  background: var(--ink);
+}
+
+.pick input[type="radio"]:checked::before { transform: scale(1); }
+
+.pick:hover input[type="radio"]:not(:checked) { border-color: var(--muted); }
+
+.pick input[type="radio"]:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+/* A ticked option should look ticked from across the room, not only by its label shade. */
+.pick:has(input:checked) { font-weight: 500; }
+
+/* How many of a bounded list are spent. Sits with the group it counts, so the limit is visible
+   before it is hit rather than as a validation error afterwards. */
+.pick-count {
+  font-size: 0.78rem;
+  color: var(--dim);
+  margin: 0.5rem 0 0;
+}
+.pick-count.full { color: var(--warn, #d08a34); }

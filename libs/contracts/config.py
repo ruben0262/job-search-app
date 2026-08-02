@@ -57,6 +57,17 @@ CONFIG_SCHEMA_VERSION = 2
 # round-robin already provides that - the cap is a backstop against absurdity, not the mechanism.
 MAX_KEYWORDS_PER_USER = 25
 
+# **Locations multiply, which is why there is a cap at all**: queries are keywords x locations x
+# sources, and `build_query_set` caps the keywords before that cross product rather than after.
+#
+# It was 5, and the form offers about twenty choices across remote scopes, regions and cities. Any
+# honest answer to "tick everything that applies" went past it -- remote from the EU and the UK,
+# plus the EU, Europe and the UK, plus one city is six -- and the only thing that said so was a
+# validation error after the tick. Twelve leaves room for a real answer while still bounding the
+# fan-out, and the fold shares identical queries between users, so the marginal cost of a location
+# is only the combinations nobody else asked for.
+MAX_LOCATIONS_PER_USER = 12
+
 
 class Platform(StrEnum):
     """Which sources a search section targets.
@@ -238,7 +249,8 @@ class SearchSection(BaseModel):
     platform: Platform = Platform.ALL
     keywords: list[str] = Field(min_length=1, max_length=MAX_KEYWORDS_PER_USER)
     exclude_keywords: list[str] = Field(default_factory=list, max_length=10)
-    locations: list[Location] = Field(default_factory=list, max_length=5)
+    locations: list[Location] = Field(default_factory=list,
+                                  max_length=MAX_LOCATIONS_PER_USER)
     remote_policy: RemotePolicy = RemotePolicy.REMOTE_OR_HYBRID
     # 24 hours by default. The harvest runs every 15 minutes, so a wider window mostly re-reads
     # postings already deduplicated away — but a brand new account needs one wider pass or its first

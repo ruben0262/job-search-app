@@ -149,8 +149,15 @@ def test_the_boundaries_themselves_are_accepted(field, value):
 
 
 def test_too_many_locations_is_rejected():
+    """Bound at `MAX_LOCATIONS_PER_USER` rather than a literal, because the number moved: five was
+    fewer than an honest answer to the form's own question, and the picker offers about twenty
+    choices. The cap still exists -- queries are keywords x locations x sources -- so this asserts
+    that one more than the limit is refused, whatever the limit currently is."""
+    from libs.contracts.config import MAX_LOCATIONS_PER_USER
+
+    assert len(list(Location)) > MAX_LOCATIONS_PER_USER, "otherwise this proves nothing"
     with pytest.raises(ValidationError):
-        _valid(locations=list(Location)[:6])
+        _valid(locations=list(Location)[:MAX_LOCATIONS_PER_USER + 1])
 
 
 # ── controlled vocabularies ───────────────────────────────────────────────────────────────────
