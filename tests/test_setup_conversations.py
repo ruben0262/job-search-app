@@ -527,18 +527,20 @@ def test_a_command_for_another_chat_is_refused_rather_than_improvised(api):
     """
     http, _session, _user = api
 
-    other = http.post("/setup", json={"message": "/setup-scorer", "agent": "setup"})
+    other = http.post("/setup/message", json={"message": "/setup-scorer", "agent": "setup"})
     assert other.status_code == 400
     assert "own chat" in other.json()["detail"]
 
     # Ported prompts still name commands that only existed on the single-tenant instance, so a user
     # reading one will type them. They have to land somewhere honest.
-    absent = http.post("/setup", json={"message": "/setup-boards", "agent": "setup"})
+    absent = http.post("/setup/message", json={"message": "/setup-boards", "agent": "setup"})
     assert absent.status_code == 400
     assert "no /setup-boards" in absent.json()["detail"]
 
     # The conversation's own command is how a chat is kicked off, and still passes.
-    assert http.post("/setup", json={"message": "/setup", "agent": "setup"}).status_code == 200
+    assert http.post("/setup/message",
+                     json={"message": "/setup", "agent": "setup"}).status_code == 202
     # Ordinary messages are untouched, including one that merely mentions a command.
-    assert http.post("/setup", json={"message": "I ran /setup-boards yesterday",
-                                     "agent": "setup"}).status_code == 200
+    assert http.post("/setup/message",
+                     json={"message": "I ran /setup-boards yesterday",
+                           "agent": "setup"}).status_code == 202
