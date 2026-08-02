@@ -336,8 +336,11 @@ def test_granting_admin_also_shows_the_menu_item(api, monkeypatch):
     `ADMIN_EMAILS` alone and kept hiding the nav entry. Access with no way to reach it reads, to the
     person granted it, as a toggle that does nothing.
     """
+    # `ordinary` is nobody's bootstrap operator, which is the point: everything below has to come
+    # from the flag alone.
     monkeypatch.setenv("ADMIN_EMAILS", "")
-    http, session, user, _ = api
+    http, session, _operator, user, sign_in = api
+    sign_in(http, user)
 
     user.is_admin = False
     session.flush()
