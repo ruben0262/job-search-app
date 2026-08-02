@@ -69,6 +69,7 @@ type Span = { p50: number | null; p90: number | null; p99: number | null; sample
 
 type Settings = {
   delivery_interval_min: number;
+  profile_files_visible: boolean;
   source_freshness_hours: Record<string, number>;
   default_freshness_hours: number;
 };
@@ -130,6 +131,12 @@ export function AdminPage() {
     setUsers(fresh.users);
     setDoomed(null);
     setTyped("");
+  });
+
+  const saveFilesVisible = useAction(async (visible: boolean) => {
+    const body = await api.put<{ settings: Settings }>(
+      "/admin/settings/profile_files_visible", { value: visible });
+    setSettings(body.settings);
   });
 
   const saveCadence = useAction(async (minutes: number) => {
@@ -284,6 +291,30 @@ export function AdminPage() {
             ))}
           </select>
           <Error>{saveCadence.error}</Error>
+
+          {/* **Off closes the endpoint, not just the tiles.** The setup page stops offering them
+              and the read refuses, so a page somebody already had open cannot keep fetching. */}
+          <p className="label" style={{ marginTop: "1.5rem" }}>Users can read their profile files</p>
+          <span className="hint">
+            The files the setup agent writes about a person. On, they can read and correct them,
+            which is how a wrong fact the scorer is acting on gets fixed. Off while the wording is
+            still being settled: these are an assessment of somebody, and half a sentence read out
+            of context is worse than a page that says nothing yet.
+          </span>
+          <label className="pick" style={{ marginTop: "0.4rem" }}>
+            <input
+              type="checkbox"
+              checked={settings.profile_files_visible !== false}
+              disabled={saveFilesVisible.busy}
+              onChange={(event) => void saveFilesVisible.run(event.target.checked)}
+            />
+            <span>
+              {settings.profile_files_visible !== false
+                ? "Open, users can read their own files"
+                : "Closed, the files section is hidden and the read is refused"}
+            </span>
+          </label>
+          <Error>{saveFilesVisible.error}</Error>
 
           <p className="label" style={{ marginTop: "1.5rem" }}>Job freshness, per source</p>
           <span className="hint">

@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from libs import settings
 from libs.agents import FILE_OWNERS, STARTABLE, UNOWNED_FILES
 from libs.agents.loop import touch_conversation
 from libs.db.models import (
@@ -137,6 +138,7 @@ def conversation(db: Session = Depends(get_db),
                       "files_written": _written(row.tool_calls),
                       "at": row.created_at.isoformat() if row.created_at else None}
                      for row in rows],
+        "files_visible": bool(settings.get(db, "profile_files_visible")),
         "files": [{**row, "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None}
                   for row in files.listing()],
         "ready": files.is_ready(),
@@ -309,9 +311,22 @@ def setup_progress(db: Session = Depends(get_db),
     }
 
 
+def _require_files_visible(db: Session) -> None:
+    """Refuse when the operator has closed profile files.
+
+    **On the endpoint, not only on the page.** A setting that hid the tiles while this still
+    returned the contents would be a curtain: the URL is guessable, the response is JSON, and
+    anyone who had the page open before it was switched off would keep working.
+    """
+    if not settings.get(db, "profile_files_visible"):
+        raise HTTPException(status.HTTP_403_FORBIDDEN,
+                            detail="Your profile files are not available to read at the moment.")
+
+
 @router.get("/files/{name}")
 def read_file(name: str, db: Session = Depends(get_db),
               user_id: _uuid.UUID = Depends(current_user)) -> dict:
+    _require_files_visible(db)
     content = ProfileFiles(db, user_id).read(name)
     if content is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="not found")
@@ -327,6 +342,8 @@ def write_file(name: str, body: FileEdit, db: Session = Depends(get_db),
     new role belongs and what the surrounding structure expects. This exists because somebody who
     spots a wrong date should be able to fix it in ten seconds.
     """
+    # Editing implies reading: the form is filled with the current contents before it is saved.
+    _require_files_visible(db)
     if name not in WRITEABLE:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="not found")
     if not body.content.strip():

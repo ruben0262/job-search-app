@@ -87,6 +87,8 @@ type Conversation = {
   max_conversations: number;
   messages: Message[];
   files: ProfileFile[];
+  /** Operator-controlled. Absent on older responses, so only an explicit false hides them. */
+  files_visible?: boolean;
   ready: boolean;
 };
 
@@ -379,13 +381,7 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
               Setup complete, all {progress.required.length} profile files are written. Your model
               can be trained from the Model page.
             </p>
-          ) : (
-            <p className="small muted">
-              {progress.missing.length} of {progress.required.length} still to write:{" "}
-              {progress.missing.join(", ")}.
-              {progress.next_command ? ` Next step: /${progress.next_command}.` : ""}
-            </p>
-          )
+          ) : null
         ) : null}
 
         <div className="chat" ref={scroller}>
@@ -495,12 +491,6 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
             <span className="muted small">
               {stopping ? "Stopping, it will finish the step it is on." : "Working…"}
             </span>
-            {!stopping ? (
-              <button type="button" className="secondary small-btn"
-                      disabled={stop.busy} onClick={() => void stop.run()}>
-                Stop
-              </button>
-            ) : null}
           </div>
         ) : null}
         <form
@@ -534,17 +524,38 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
               }
             }}
           />
-          <button
-            type="submit"
-            className="composer-send"
-            aria-label="Send"
-            disabled={send.busy || inFlight || !draft.trim()}
-          >
-            <SendIcon />
-          </button>
+          {/* **One control, two jobs.** Stop used to sit up beside the working indicator while
+              the send button was greyed out next to it -- two controls, one of them dead, at the
+              moment there is exactly one thing a person wants to do. The button a user is already
+              looking at becomes the stop. */}
+          {inFlight ? (
+            <button
+              type="button"
+              className="composer-send stop"
+              aria-label="Stop"
+              title="Stop"
+              disabled={stop.busy || stopping}
+              onClick={() => void stop.run()}
+            >
+              <StopIcon />
+            </button>
+          ) : (
+            <button
+              type="submit"
+              className="composer-send"
+              aria-label="Send"
+              disabled={send.busy || !draft.trim()}
+            >
+              <SendIcon />
+            </button>
+          )}
         </form>
       </div>
 
+      {/* Offered only while the operator has profile files open. The endpoint refuses too, so this
+          is about not showing somebody a door that is locked. `state` is repolled, so switching it
+          off takes effect on this page without a reload. */}
+      {state.files_visible === false ? null : (
       <div style={{ marginTop: "3rem", maxWidth: "48rem" }}>
         <p className="kicker">Your files</p>
         <h2>What we have written down</h2>
@@ -566,7 +577,17 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
           ))}
         </div>
       </div>
+      )}
     </>
+  );
+}
+
+/** A square. Deliberately not a cross: stopping ends the turn, it does not undo or close. */
+function StopIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="6" y="6" width="12" height="12" rx="2.5" fill="currentColor" />
+    </svg>
   );
 }
 

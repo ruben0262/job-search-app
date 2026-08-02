@@ -2475,3 +2475,11 @@ td.num {
   margin: 0.5rem 0 0;
 }
 .pick-count.full { color: var(--warn, #d08a34); }
+
+/* The composer button while a turn is running. Same footprint as send so the control does not move
+   under the cursor when it changes job — only what it does changes. */
+.composer-send.stop {
+  background: var(--ink);
+  color: var(--bg);
+}
+.composer-send.stop:hover:not(:disabled) { opacity: 0.85; }

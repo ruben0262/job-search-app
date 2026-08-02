@@ -468,3 +468,29 @@ def test_a_stopped_turn_keeps_what_it_had_already_written(api):
     assert result["cancelled"] is True
     assert session.get(SetupMessage, reply.id).status == "cancelled"
     assert "context.md" in result["files_written"], "work done before the stop is kept"
+
+
+def test_profile_files_are_refused_when_the_operator_closes_them(api):
+    """**The setting has to bite on the endpoint, not only on the page.**
+
+    Hiding the tiles while this still returned the contents would be a curtain: the URL is
+    guessable, the response is JSON, and anyone with the page already open would keep reading it.
+    """
+    from libs import settings
+    from libs.profiles.repository import ProfileFiles
+
+    http, session, user = api
+    ProfileFiles(session, user.id).write("context.md", "a private fact about this person")
+    session.flush()
+    assert http.get("/setup/files/context.md").status_code == 200
+
+    settings.put(session, "profile_files_visible", False)
+    session.flush()
+
+    closed = http.get("/setup/files/context.md")
+    assert closed.status_code == 403
+    assert "a private fact about this person" not in closed.text
+    # Editing implies reading -- the form is filled with the contents before it is saved.
+    assert http.put("/setup/files/context.md", json={"content": "edited"}).status_code == 403
+    # And the page stops offering what it cannot open.
+    assert http.get("/setup").json()["files_visible"] is False
