@@ -155,6 +155,8 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
   const [fileText, setFileText] = useState("");
   const bottom = useRef<HTMLDivElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
+  // Whether the view should follow new output. True until the reader scrolls away.
+  const [pinned, setPinned] = useState(true);
   const box = useRef<HTMLTextAreaElement>(null);
 
   const load = async (id?: string) => {
@@ -192,9 +194,40 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
     await api.del(`/setup/conversations/${id}`);
     await load();
   });
+  /**
+   * Follow the reply as it is written.
+   *
+   * **The old effect keyed on the message count**, so it fired once when a reply appeared and then
+   * never again while that reply grew. A long turn wrote itself off the bottom of the viewport and
+   * the user scrolled by hand to watch it, which is the one thing a transcript should not ask for.
+   * Keying on the last message's length as well means every appended chunk brings the view with it.
+   *
+   * **Unless they have scrolled away.** Somebody reading back through what was written earlier is
+   * doing something deliberate, and yanking them to the bottom every second and a half would make
+   * the page unusable during exactly the turn they want to re-read. `pinned` goes false the moment
+   * they leave the bottom and true again when they return.
+   */
+  const messages = state?.messages;
+  const tail = messages?.length
+    ? `${messages.length}:${messages[messages.length - 1]!.content.length}`
+    : "";
+
   useEffect(() => {
-    bottom.current?.scrollIntoView({ behavior: "smooth" });
-  }, [state?.messages.length]);
+    const element = scroller.current;
+    if (!element) return;
+    const onScroll = () => {
+      // A margin rather than an exact match: smooth scrolling lands a pixel or two short, and
+      // rounding at fractional zoom levels means the exact bottom is rarely the exact bottom.
+      const gap = element.scrollHeight - element.scrollTop - element.clientHeight;
+      setPinned(gap < 120);
+    };
+    element.addEventListener("scroll", onScroll, { passive: true });
+    return () => element.removeEventListener("scroll", onScroll);
+  }, []);
+
+  useEffect(() => {
+    if (pinned) bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [tail, pinned]);
 
   // **The turn runs on a worker, so the page's job is to watch.** While any message is unfinished
   // this re-reads the transcript every second and a half, which is what makes a reply appear as it
