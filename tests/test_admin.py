@@ -330,7 +330,6 @@ def test_an_ordinary_user_cannot_change_any_limit(api):
     assert http.get("/admin/limits").status_code == 404
 
 
-@pytestmark_db
 def test_granting_admin_also_shows_the_menu_item(api, monkeypatch):
     """**The toggle has to move both halves.** `require_admin` reads the column, so granting from
     the panel opened the API immediately -- but the dashboard computed its `is_admin` hint from
