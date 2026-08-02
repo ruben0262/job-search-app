@@ -153,6 +153,7 @@ def user_detail(user_id: _uuid.UUID, db: Session = Depends(get_db),
             "telegram": user.telegram_status,
             "profile_generation": user.profile_generation,
             "model_version": user.model_version,
+            "profile_files_visible": bool(user.profile_files_visible),
             "onboarded": user.onboarding_completed_at is not None,
             "created_at": user.created_at.isoformat() if user.created_at else None,
             "last_active_at": user.last_active_at.isoformat() if user.last_active_at else None,
@@ -213,6 +214,29 @@ def write_setting(key: str, body: SettingPatch, db: Session = Depends(get_db),
 
 class AdminFlag(BaseModel):
     is_admin: bool
+
+
+class FilesFlag(BaseModel):
+    visible: bool
+
+
+@router.put("/users/{user_id}/files")
+def set_files_visible(user_id: _uuid.UUID, body: FilesFlag, db: Session = Depends(get_db),
+                      admin: User = Depends(require_admin)) -> dict:
+    """Open or close this account's profile files to the person they are about.
+
+    Per account rather than platform-wide: the judgement is about what a particular set of files
+    currently says, so one that has been read through can be opened without opening everyone's.
+    Closed until somebody decides otherwise -- these are written by an agent and reviewed by nobody,
+    and a half-settled sentence about a person is worse read than unread.
+    """
+    target = db.get(User, user_id)
+    if target is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="no such account")
+    target.profile_files_visible = body.visible
+    audit(logger, "admin.files_visibility_changed", user=admin.id, subject=user_id,
+          visible=body.visible)
+    return {"status": "saved", "profile_files_visible": body.visible}
 
 
 @router.put("/users/{user_id}/admin")

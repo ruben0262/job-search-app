@@ -39,6 +39,7 @@ type UserDetail = {
     telegram: string;
     profile_generation: number;
     model_version: number | null;
+    profile_files_visible: boolean;
     onboarded: boolean;
     created_at: string | null;
     last_active_at: string | null;
@@ -104,6 +105,17 @@ export function AdminUserPage({ userId }: { userId: string }) {
     }
   };
 
+  const setFilesVisible = async (visible: boolean) => {
+    setSaving("files");
+    try {
+      await api.put(`/admin/users/${userId}/files`, { visible });
+      setDetail((current) =>
+        current ? { ...current, user: { ...current.user, profile_files_visible: visible } } : current);
+    } finally {
+      setSaving(null);
+    }
+  };
+
   if (failed) return <p className="error">Could not read that account.</p>;
   if (!detail) return <p className="muted">Loading…</p>;
 
@@ -144,6 +156,25 @@ export function AdminUserPage({ userId }: { userId: string }) {
           <dd>delivered</dd>
         </div>
       </dl>
+
+      {/* **Per account, and closed until somebody opens it.** These files are an assessment of a
+          person written by an agent and reviewed by nobody, so this is a decision about what one
+          particular set of them currently says. The tiles stay on their page either way; what this
+          controls is whether opening one works, enforced on the read and not only in the page. */}
+      <h2>Profile files</h2>
+      <label className="pick">
+        <input
+          type="checkbox"
+          checked={user.profile_files_visible === true}
+          disabled={saving === "files"}
+          onChange={(event) => void setFilesVisible(event.target.checked)}
+        />
+        <span>
+          {user.profile_files_visible
+            ? "Open, this user can read and correct the files written about them"
+            : "Closed, the tiles are shown but cannot be opened"}
+        </span>
+      </label>
 
       <h2>Setup</h2>
       {setup.missing.length ? (

@@ -135,6 +135,14 @@ class User(Base):
     # platform from a browser, and the fix would be a deploy.
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
+    # Whether this user may read the profile files written about them. **Operator-owned, per
+    # account, and false until somebody opens it.** The files are an assessment of a person written
+    # by an agent and reviewed by nobody, so the default is closed while their wording is still
+    # being settled; an account whose setup has been read through can be opened without opening
+    # everyone's.
+    profile_files_visible: Mapped[bool] = mapped_column(Boolean, default=False,
+                                                        server_default="false")
+
     # Per-account ceilings, set by an operator (`libs.limits`). **Absent means the platform
     # default, `null` means unlimited, a number means that number** — three distinct states, which
     # is why a large sentinel would not do. Not editable by the user: somebody who could raise

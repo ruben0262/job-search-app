@@ -311,6 +311,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/users/{user_id}/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Files Visible
+         * @description Open or close this account's profile files to the person they are about.
+         *
+         *     Per account rather than platform-wide: the judgement is about what a particular set of files
+         *     currently says, so one that has been read through can be opened without opening everyone's.
+         *     Closed until somebody decides otherwise -- these are written by an agent and reviewed by nobody,
+         *     and a half-settled sentence about a person is worse read than unread.
+         */
+        put: operations["set_files_visible_admin_users__user_id__files_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/users/{user_id}/limits/{key}": {
         parameters: {
             query?: never;
@@ -1698,6 +1723,11 @@ export interface components {
             /** Content */
             content: string;
         };
+        /** FilesFlag */
+        FilesFlag: {
+            /** Visible */
+            visible: boolean;
+        };
         /** ForgotRequest */
         ForgotRequest: {
             /**
@@ -2470,6 +2500,43 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["AdminFlag"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_files_visible_admin_users__user_id__files_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FilesFlag"];
             };
         };
         responses: {

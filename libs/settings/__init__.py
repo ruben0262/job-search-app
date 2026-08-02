@@ -66,18 +66,7 @@ HARVEST_SOURCES: tuple[str, ...] = (
     "linkedin",
 )
 
-# **Whether a user may read the profile files written about them.** On by default, because the
-# files are theirs and reading them is how somebody corrects a wrong fact the scorer is acting on.
-# The operator can close it while the wording of those files is still being settled -- they contain
-# an assessment of a person, and one half-written sentence read out of context is worse than a page
-# that says nothing yet.
-#
-# **Enforced on the read, not only in the page.** Hiding the tiles while the endpoint still served
-# the contents would be a curtain, not a setting.
-PROFILE_FILES_VISIBLE = True
-
 DEFAULTS: dict[str, object] = {
-    "profile_files_visible": PROFILE_FILES_VISIBLE,
     "delivery_interval_min": DELIVERY_INTERVAL_MIN,
     "source_freshness_hours": DEFAULT_SOURCE_FRESHNESS_HOURS,
     "default_freshness_hours": DEFAULT_FRESHNESS_HOURS,

@@ -470,28 +470,47 @@ def test_a_stopped_turn_keeps_what_it_had_already_written(api):
     assert "context.md" in result["files_written"], "work done before the stop is kept"
 
 
-def test_profile_files_are_refused_when_the_operator_closes_them(api):
-    """**The setting has to bite on the endpoint, not only on the page.**
+def test_profile_files_are_closed_until_an_operator_opens_them(api):
+    """**Closed by default, and the gate is on the endpoint rather than the tiles.**
 
-    Hiding the tiles while this still returned the contents would be a curtain: the URL is
-    guessable, the response is JSON, and anyone with the page already open would keep reading it.
+    These files are an assessment of a person, written by an agent and reviewed by nobody, so a new
+    account cannot read its own until somebody has looked. Greying the tiles while this still
+    returned the contents would be a curtain: the URL is guessable and the response is JSON.
     """
-    from libs import settings
     from libs.profiles.repository import ProfileFiles
 
     http, session, user = api
     ProfileFiles(session, user.id).write("context.md", "a private fact about this person",
                                          kind="context")
     session.flush()
-    assert http.get("/setup/files/context.md").status_code == 200
 
-    settings.put(session, "profile_files_visible", False)
-    session.flush()
-
+    assert user.profile_files_visible is False, "a new account starts closed"
     closed = http.get("/setup/files/context.md")
     assert closed.status_code == 403
     assert "a private fact about this person" not in closed.text
     # Editing implies reading -- the form is filled with the contents before it is saved.
     assert http.put("/setup/files/context.md", json={"content": "edited"}).status_code == 403
-    # And the page stops offering what it cannot open.
-    assert http.get("/setup").json()["files_visible"] is False
+    # The tiles are still listed; what the flag controls is opening one.
+    body = http.get("/setup").json()
+    assert body["files_visible"] is False
+    assert any(row["name"] == "context.md" for row in body["files"])
+
+    user.profile_files_visible = True
+    session.flush()
+    opened = http.get("/setup/files/context.md")
+    assert opened.status_code == 200
+    assert opened.json()["content"] == "a private fact about this person"
+    assert http.get("/setup").json()["files_visible"] is True
+
+
+def test_one_account_being_opened_does_not_open_another(api):
+    """Per user, which is the whole point of moving it off the platform settings."""
+    from libs.db.models import User
+
+    http, session, user = api
+    user.profile_files_visible = True
+    other = User(email="someone-else@example.com", password_hash="x", status="active")
+    session.add(other)
+    session.flush()
+    assert other.profile_files_visible is False
+    assert http.get("/setup").json()["files_visible"] is True

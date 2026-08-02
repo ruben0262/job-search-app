@@ -552,20 +552,26 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
         </form>
       </div>
 
-      {/* Offered only while the operator has profile files open. The endpoint refuses too, so this
-          is about not showing somebody a door that is locked. `state` is repolled, so switching it
-          off takes effect on this page without a reload. */}
-      {state.files_visible === false ? null : (
       <div style={{ marginTop: "3rem", maxWidth: "48rem" }}>
         <p className="kicker">Your files</p>
         <h2>What we have written down</h2>
-        <p className="facts">Click one to read or correct it.</p>
+        {/* **Listed either way, openable only when the operator has said so.** Seeing that a file
+            exists is not the same as reading what it says about you, and hiding the tiles entirely
+            would leave somebody unable to tell whether their setup had produced anything. `state`
+            is repolled, so closing it reaches an open tab without a reload. */}
+        <p className="facts">
+          {state.files_visible === false
+            ? "These are being reviewed, so they cannot be opened yet."
+            : "Click one to read or correct it."}
+        </p>
         <div className="files">
           {state.files.map((file) => (
             <button
               key={file.name}
               type="button"
               className={`file${file.filled ? " filled" : ""}`}
+              disabled={state.files_visible === false}
+              title={state.files_visible === false ? "Not open for reading yet" : undefined}
               onClick={() => void openEditor(file.name)}
             >
               <FileIcon kind={file.kind} />
@@ -577,7 +583,6 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
           ))}
         </div>
       </div>
-      )}
     </>
   );
 }

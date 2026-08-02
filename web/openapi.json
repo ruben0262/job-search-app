@@ -445,6 +445,19 @@
         "title": "FileEdit",
         "type": "object"
       },
+      "FilesFlag": {
+        "properties": {
+          "visible": {
+            "title": "Visible",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "visible"
+        ],
+        "title": "FilesFlag",
+        "type": "object"
+      },
       "ForgotRequest": {
         "properties": {
           "email": {
@@ -1852,6 +1865,62 @@
           }
         },
         "summary": "Set Admin",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/users/{user_id}/files": {
+      "put": {
+        "description": "Open or close this account's profile files to the person they are about.\n\nPer account rather than platform-wide: the judgement is about what a particular set of files\ncurrently says, so one that has been read through can be opened without opening everyone's.\nClosed until somebody decides otherwise -- these are written by an agent and reviewed by nobody,\nand a half-settled sentence about a person is worse read than unread.",
+        "operationId": "set_files_visible_admin_users__user_id__files_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FilesFlag"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Set Files Visible Admin Users  User Id  Files Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Files Visible",
         "tags": [
           "admin"
         ]
