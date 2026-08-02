@@ -328,3 +328,24 @@ def test_an_ordinary_user_cannot_change_any_limit(api):
     assert http.put(f"/admin/users/{ordinary.id}/limits/items_per_run",
                     json={"value": 999}).status_code == 404
     assert http.get("/admin/limits").status_code == 404
+
+
+@pytestmark_db
+def test_granting_admin_also_shows_the_menu_item(api, monkeypatch):
+    """**The toggle has to move both halves.** `require_admin` reads the column, so granting from
+    the panel opened the API immediately -- but the dashboard computed its `is_admin` hint from
+    `ADMIN_EMAILS` alone and kept hiding the nav entry. Access with no way to reach it reads, to the
+    person granted it, as a toggle that does nothing.
+    """
+    monkeypatch.setenv("ADMIN_EMAILS", "")
+    http, session, user, _ = api
+
+    user.is_admin = False
+    session.flush()
+    assert http.get("/dashboard").json()["is_admin"] is False
+    assert http.get("/admin/users").status_code == 403
+
+    user.is_admin = True
+    session.flush()
+    assert http.get("/dashboard").json()["is_admin"] is True, "the menu must appear"
+    assert http.get("/admin/users").status_code == 200, "and lead somewhere"

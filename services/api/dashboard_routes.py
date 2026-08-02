@@ -111,11 +111,15 @@ def dashboard(db: Session = Depends(get_db),
         "notifications": {"per_day_cap": _cap(db, user_id),
                           "interval_min": int(settings.get(db, "delivery_interval_min"))},
         "banners": _banners(user, servable, onboarding),
-        # **Whether to show the operator panel at all.** The API already refuses `/admin/*` to
-        # anyone not in `ADMIN_EMAILS`, so this is a rendering hint and not the access control —
-        # but without it the SPA would have to probe an endpoint it expects to be denied, and a
-        # 403 on every dashboard load is indistinguishable from a real one in the console.
-        "is_admin": user.email.lower() in admin_emails(),
+        # **Whether to show the operator panel at all.** A rendering hint, not the access control:
+        # `require_admin` decides that, and this must agree with it or the panel is unreachable for
+        # somebody who is allowed in.
+        #
+        # It read `ADMIN_EMAILS` alone, which is half the rule. Granting admin from the panel sets
+        # `is_admin`, and the API duly started accepting that user's `/admin/*` calls -- while their
+        # dashboard carried on hiding the menu item that leads there. The toggle appeared to do
+        # nothing, because the only visible half of it did nothing.
+        "is_admin": user.is_admin or user.email.lower() in admin_emails(),
     }
 
 
