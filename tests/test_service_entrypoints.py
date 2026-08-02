@@ -24,9 +24,10 @@ _ROOT = pathlib.Path(services.__path__[0])
 # Whatever a container actually runs. Most services are `python -m services.<name>`, so their entry
 # point is `__main__`; the API is served by uvicorn from `app:app` and has no `__main__` at all.
 # Discovered rather than listed, so a new service is covered the day it is added.
-ENTRYPOINTS = sorted(
-    f"services.{path.parent.name}.__main__" for path in _ROOT.glob("*/__main__.py")
-) + ["services.api.app"]
+ENTRYPOINTS = [
+    *sorted(f"services.{path.parent.name}.__main__" for path in _ROOT.glob("*/__main__.py")),
+    "services.api.app",
+]
 
 
 def test_there_are_services_to_check():

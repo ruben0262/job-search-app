@@ -22,7 +22,6 @@ import os
 import uuid as _uuid
 
 import httpx
-
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session

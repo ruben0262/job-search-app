@@ -28,6 +28,7 @@ onto OAuth.
 """
 from __future__ import annotations
 
+import contextlib
 import errno
 import logging
 import os
@@ -119,8 +120,17 @@ class _Session:
     sign in, the more certain the failure -- which is exactly how it behaved.
     """
 
-    __slots__ = ("pid", "fd", "started_at", "user_id", "_buf", "_lock", "_reading",
-                 "_screen", "_stream")
+    __slots__ = (
+        "_buf",
+        "_lock",
+        "_reading",
+        "_screen",
+        "_stream",
+        "fd",
+        "pid",
+        "started_at",
+        "user_id",
+    )
 
     def __init__(self, pid: int, fd: int, user_id: _uuid.UUID) -> None:
         self.pid = pid
@@ -220,18 +230,14 @@ def _await(session: _Session, pattern: re.Pattern[str], deadline: float, *,
 def _kill(session: _Session) -> None:
     """End a session's process and release its descriptor. Safe to call twice."""
     session.stop()
-    try:
+    # Every step is best-effort and independent: the process may already be gone, reaped, or its
+    # descriptor closed by an earlier call. None of those is a reason to skip the rest.
+    with contextlib.suppress(ProcessLookupError, PermissionError):
         os.kill(session.pid, signal.SIGKILL)
-    except (ProcessLookupError, PermissionError):
-        pass
-    try:
+    with contextlib.suppress(ChildProcessError):
         os.waitpid(session.pid, os.WNOHANG)
-    except ChildProcessError:
-        pass
-    try:
+    with contextlib.suppress(OSError):
         os.close(session.fd)
-    except OSError:
-        pass
 
 
 def reap(now: float | None = None) -> int:
@@ -272,7 +278,9 @@ def start(user_id: _uuid.UUID) -> tuple[str, str]:
         env["COLUMNS"] = "500"
         env["NO_COLOR"] = "1"
         try:
-            os.execvpe(CLI, [CLI, "setup-token"], env)
+            # No shell, deliberately: the argument list is fixed here and nothing a user supplies
+            # reaches it. A shell would be the only way for one to.
+            os.execvpe(CLI, [CLI, "setup-token"], env)  # noqa: S606
         finally:
             os._exit(127)
 
@@ -359,10 +367,8 @@ def finish(session_id: str, user_id: _uuid.UUID, code: str) -> str:
         # Claude rejected it. Clear the prompt so the same session can take another attempt, and
         # say which code to use: the usual cause is a code copied from a tab opened by an earlier
         # attempt, which belongs to a challenge that no longer exists.
-        try:
+        with contextlib.suppress(OSError):
             os.write(session.fd, b"\r")
-        except OSError:
-            pass
         raise OAuthError("Claude did not accept that code. Copy it again from the tab you just "
                          "authorized in, and paste the whole thing.")
 

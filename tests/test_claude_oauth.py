@@ -289,6 +289,12 @@ def test_a_match_already_on_screen_is_not_mistaken_for_the_answer():
     """Since the screen is no longer wiped, a rejection from an earlier attempt stays visible. It
     must not be read as the reply to the code just sent."""
     stale = "OAuth error: Invalid code"
-    assert claude_oauth._OUTCOME.search(stale)
-    # `_await` skips any match it was told to ignore, which is the pre-send snapshot.
-    assert stale in stale
+    fresh = "sk-ant-oat01-" + "Z" * 40
+    # What the screen looks like on a retry: last attempt's rejection still there, this attempt's
+    # token underneath it. Taking the first match would report the old failure forever.
+    screen = f"{stale}\nPaste code here if prompted >\n{fresh}"
+
+    assert claude_oauth._OUTCOME.search(screen).group(0) == "OAuth error:", "first match is stale"
+    survivor = next(match.group(0) for match in claude_oauth._OUTCOME.finditer(screen)
+                    if match.group(0) not in stale)
+    assert survivor == fresh

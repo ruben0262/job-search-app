@@ -539,6 +539,84 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/credentials/claude/oauth/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Claude Oauth Cancel
+         * @description Back out. Cheap, and it frees the process instead of leaving it to the TTL.
+         */
+        post: operations["claude_oauth_cancel_credentials_claude_oauth_cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/credentials/claude/oauth/finish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Claude Oauth Finish
+         * @description Exchange the code for a token, and store it **only if it works**.
+         *
+         *     The token goes through `validate_credential` like a pasted one: the CLI minting it proves the
+         *     browser flow completed, not that the credential can reach the model, and those come apart on an
+         *     account with no active subscription.
+         *
+         *     **Unlike a pasted credential, a failure here is never stored.** Everywhere else the platform
+         *     keeps an unvalidated value, because the user typed something they believe is right and a
+         *     provider outage must not block them. Nothing about that applies to a token this service minted
+         *     itself: there is no typo to preserve, and if it does not authenticate then either Anthropic
+         *     turned it down or we mishandled it on the way out of the CLI. Both are ours to fix.
+         *
+         *     Storing it anyway is what hid a real bug (2026-08-01). A rendering fault dropped one character
+         *     from the token, and the flow reported success while the account held a credential that could not
+         *     make a single request -- indistinguishable, on the page, from a temporary API blip.
+         *
+         *     A previously stored credential survives, because nothing is written on this path unless the new
+         *     one is proven. Re-connecting with a subscription that has lapsed cannot cost somebody the
+         *     working token they already had.
+         */
+        post: operations["claude_oauth_finish_credentials_claude_oauth_finish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/credentials/claude/oauth/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Claude Oauth Start
+         * @description Begin a sign-in and hand back the URL to open.
+         */
+        post: operations["claude_oauth_start_credentials_claude_oauth_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/credentials/telegram/channel": {
         parameters: {
             query?: never;
@@ -1679,6 +1757,18 @@ export interface components {
             /** Ids */
             ids?: number[] | null;
         };
+        /** OAuthCancelBody */
+        OAuthCancelBody: {
+            /** Session Id */
+            session_id: string;
+        };
+        /** OAuthFinishBody */
+        OAuthFinishBody: {
+            /** Code */
+            code: string;
+            /** Session Id */
+            session_id: string;
+        };
         /** PasswordChange */
         PasswordChange: {
             /** Current Password */
@@ -2649,6 +2739,98 @@ export interface operations {
         };
     };
     list_credentials_credentials_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    claude_oauth_cancel_credentials_claude_oauth_cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OAuthCancelBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    claude_oauth_finish_credentials_claude_oauth_finish_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OAuthFinishBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    claude_oauth_start_credentials_claude_oauth_start_post: {
         parameters: {
             query?: never;
             header?: never;

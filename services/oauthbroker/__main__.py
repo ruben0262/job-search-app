@@ -99,4 +99,7 @@ if __name__ == "__main__":  # pragma: no cover
 
     # One worker, and here that is a correctness requirement rather than a sizing choice: a second
     # worker would own a different set of sessions and answer for sessions it does not have.
-    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", "8100")), workers=1)
+    # Bound to every interface because it is reachable only on the compose network: the service
+    # publishes no ports, so there is no host interface for this to be exposed on.
+    uvicorn.run(app, host="0.0.0.0",  # noqa: S104
+                port=int(os.environ.get("PORT", "8100")), workers=1)

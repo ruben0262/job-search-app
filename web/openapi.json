@@ -660,6 +660,43 @@
         "title": "MarkRead",
         "type": "object"
       },
+      "OAuthCancelBody": {
+        "properties": {
+          "session_id": {
+            "maxLength": 128,
+            "minLength": 8,
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id"
+        ],
+        "title": "OAuthCancelBody",
+        "type": "object"
+      },
+      "OAuthFinishBody": {
+        "properties": {
+          "code": {
+            "maxLength": 512,
+            "minLength": 4,
+            "title": "Code",
+            "type": "string"
+          },
+          "session_id": {
+            "maxLength": 128,
+            "minLength": 8,
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "code"
+        ],
+        "title": "OAuthFinishBody",
+        "type": "object"
+      },
       "PasswordChange": {
         "properties": {
           "current_password": {
@@ -2176,6 +2213,118 @@
           }
         },
         "summary": "List Credentials",
+        "tags": [
+          "credentials"
+        ]
+      }
+    },
+    "/credentials/claude/oauth/cancel": {
+      "post": {
+        "description": "Back out. Cheap, and it frees the process instead of leaving it to the TTL.",
+        "operationId": "claude_oauth_cancel_credentials_claude_oauth_cancel_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OAuthCancelBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Claude Oauth Cancel Credentials Claude Oauth Cancel Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Claude Oauth Cancel",
+        "tags": [
+          "credentials"
+        ]
+      }
+    },
+    "/credentials/claude/oauth/finish": {
+      "post": {
+        "description": "Exchange the code for a token, and store it **only if it works**.\n\nThe token goes through `validate_credential` like a pasted one: the CLI minting it proves the\nbrowser flow completed, not that the credential can reach the model, and those come apart on an\naccount with no active subscription.\n\n**Unlike a pasted credential, a failure here is never stored.** Everywhere else the platform\nkeeps an unvalidated value, because the user typed something they believe is right and a\nprovider outage must not block them. Nothing about that applies to a token this service minted\nitself: there is no typo to preserve, and if it does not authenticate then either Anthropic\nturned it down or we mishandled it on the way out of the CLI. Both are ours to fix.\n\nStoring it anyway is what hid a real bug (2026-08-01). A rendering fault dropped one character\nfrom the token, and the flow reported success while the account held a credential that could not\nmake a single request -- indistinguishable, on the page, from a temporary API blip.\n\nA previously stored credential survives, because nothing is written on this path unless the new\none is proven. Re-connecting with a subscription that has lapsed cannot cost somebody the\nworking token they already had.",
+        "operationId": "claude_oauth_finish_credentials_claude_oauth_finish_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OAuthFinishBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Claude Oauth Finish Credentials Claude Oauth Finish Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Claude Oauth Finish",
+        "tags": [
+          "credentials"
+        ]
+      }
+    },
+    "/credentials/claude/oauth/start": {
+      "post": {
+        "description": "Begin a sign-in and hand back the URL to open.",
+        "operationId": "claude_oauth_start_credentials_claude_oauth_start_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Claude Oauth Start Credentials Claude Oauth Start Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Claude Oauth Start",
         "tags": [
           "credentials"
         ]
