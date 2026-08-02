@@ -39,7 +39,18 @@ const CONFIRM: Record<string, string> = {
  * password, and a delete. The plaintext is fetched once at the moment of copying and handed to the
  * clipboard — it is never rendered, so it is on screen for exactly zero frames.
  */
-function Stored({ kind, onChanged }: { kind: string; onChanged: () => void }) {
+function Stored({
+  kind,
+  onChanged,
+  version = 0,
+}: {
+  kind: string;
+  onChanged: () => void;
+  /** Bumped by the caller whenever a credential is written. **This is what makes a saved value
+   *  appear without a page reload** -- the fetch used to run only on mount, so connecting or
+   *  pasting left the panel insisting nothing was stored until the user refreshed. */
+  version?: number;
+}) {
   const [stored, setStored] = useState<StoredCredential | null>(null);
   const [asking, setAsking] = useState(false);
   const [password, setPassword] = useState("");
@@ -54,7 +65,7 @@ function Stored({ kind, onChanged }: { kind: string; onChanged: () => void }) {
 
   useEffect(() => {
     load();
-  }, [load]);
+  }, [load, version]);
 
   const copy = useAction(async () => {
     const body = await api.post<{ value: string }>(`/credentials/${kind}/reveal`, { password });
@@ -225,6 +236,7 @@ export function TelegramStep({ onDone }: { onDone: () => void }) {
   const [channel, setChannel] = useState("");
   const [channelStatus, setChannelStatus] = useState<string | null>(null);
   const [state, setState] = useState<TelegramState | null>(null);
+  const [saved, setSaved] = useState(0);
 
   // What is actually configured, read back from the server rather than inferred from what this
   // form last submitted. The ids are the whole point: a user asking "is it connected, and where do
@@ -240,6 +252,7 @@ export function TelegramStep({ onDone }: { onDone: () => void }) {
 
   const reload = () => {
     refresh();
+    setSaved((n) => n + 1);
     onDone();
   };
 
@@ -272,7 +285,7 @@ export function TelegramStep({ onDone }: { onDone: () => void }) {
         </ol>
       </details>
 
-      <Stored kind="telegram_bot" onChanged={reload} />
+      <Stored kind="telegram_bot" onChanged={reload} version={saved} />
       <CredentialForm
         kind="telegram_bot"
         label="Bot token"
@@ -382,7 +395,7 @@ export function ClaudeStep({ onDone }: { onDone: () => void }) {
           <option value="claude_oauth">A Claude subscription token</option>
         </select>
       </Field>
-      <Stored key={`stored-${kind}-${saved}`} kind={kind} onChanged={refresh} />
+      <Stored key={`stored-${kind}`} kind={kind} onChanged={refresh} version={saved} />
       {/* **The subscription path is a button, not a paste field.** It used to say "From your
           Claude subscription", which left the user to discover the CLI, the command, and the copy
           themselves — the step people abandoned. The paste field stays underneath for anyone who
@@ -412,19 +425,24 @@ export function ClaudeStep({ onDone }: { onDone: () => void }) {
 }
 
 export function ProxyStep({ onDone }: { onDone: () => void }) {
+  const [saved, setSaved] = useState(0);
+  const refresh = () => {
+    setSaved((n) => n + 1);
+    onDone();
+  };
   return (
     <>
       <p className="small muted">
         LinkedIn is fetched through your own proxy and never a shared one, so one account's traffic
         can never be attributed to another's.
       </p>
-      <Stored kind="proxy" onChanged={onDone} />
+      <Stored kind="proxy" onChanged={refresh} version={saved} />
       <CredentialForm
         kind="proxy"
         label="Proxy URL"
         hint="Including the username and password, e.g. http://user:pass@host:port. We fetch a page through it to check it works."
         placeholder="http://user:pass@host:port"
-        onDone={onDone}
+        onDone={refresh}
       />
     </>
   );

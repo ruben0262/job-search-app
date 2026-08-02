@@ -10,9 +10,15 @@
  * say where it starts; the whitespace does that, and a container competes with the question for
  * attention. Title, at most one line of context, the field, and the way forward.
  *
- * **The way forward appears rather than sitting there greyed out.** A control that is present and
- * refuses to work invites clicking it to find out why; one that fades in when the page is satisfied
- * answers "what now" without anybody having to ask.
+ * **The way forward is always on the page, and pressing it is the user's job.** It used to be that
+ * saving a field moved you on by itself, and nothing else could: a page you had already finished
+ * had no control at all, so revisiting one from the rail was a dead end, and a page that saves more
+ * than once -- Telegram takes a token, then reads the chat id -- could vanish part-way through.
+ *
+ * So Continue is always present and disabled until the page is satisfied, which does mean a control
+ * you can see before you can use it. That is the lesser problem: a greyed button with "finish this
+ * step to continue" beside it explains itself, where an absent one leaves somebody hunting for the
+ * thing that is not there.
  */
 import { useState } from "react";
 
@@ -63,13 +69,27 @@ export function Onboarding({
     onChanged();
   });
 
+  /**
+   * Something on this page saved. **Refresh what is complete, and stay where we are.**
+   *
+   * It used to clear `viewing`, which handed the choice back to `next_page` and threw the user onto
+   * the following step the instant a field validated. Mid-sentence, sometimes: the Telegram page
+   * saves a token and then wants to read the chat id, and the page had already gone. Moving on is
+   * now something a person does, not something that happens to them.
+   */
   const done = (): void => {
-    setViewing(null);
+    setViewing(current);
     onChanged();
   };
 
   /** The page before this one, if it is finished — so back never lands somewhere unusable. */
   const previous = index > 0 ? state.pages[index - 1] : undefined;
+  const next = index >= 0 ? state.pages[index + 1] : undefined;
+  const ready = index >= 0 && state.pages[index]?.complete === true;
+
+  // Clearing `viewing` hands control back to `next_page`, which is what shows the finishing screen
+  // once the last page is done.
+  const advance = (): void => setViewing(next?.key ?? null);
 
   return (
     <>
@@ -106,9 +126,9 @@ export function Onboarding({
           {copy ? (
             <>
               {previous ? (
-                <a className="back" href="#/" onClick={() => setViewing(previous.key)}>
-                  ‹ Back
-                </a>
+                <button type="button" className="back" onClick={() => setViewing(previous.key)}>
+                  <Arrow /> {previous.title}
+                </button>
               ) : null}
               <p className="kicker">
                 Step {index + 1} of {state.pages.length}
@@ -116,6 +136,25 @@ export function Onboarding({
               <h1>{copy.title}</h1>
               {copy.lede ? <p className="lede">{copy.lede}</p> : null}
               <Step which={current} onDone={done} />
+
+              {/* **Always here, enabled once the page is satisfied.** Previously the only way
+                  forward was for a save to fire the jump itself, so a page that was already
+                  complete -- revisited from the rail, or finished a moment ago -- was a dead end
+                  with nothing to press. */}
+              <div className="wizard-nav">
+                <button
+                  type="button"
+                  className={ready ? "advance ready" : "advance"}
+                  disabled={!ready}
+                  onClick={advance}
+                >
+                  {next ? `Continue to ${next.title}` : "Continue"}
+                  <Arrow forward />
+                </button>
+                {!ready ? (
+                  <span className="small muted">Finish this step to continue.</span>
+                ) : null}
+              </div>
             </>
           ) : (
             <>
@@ -134,6 +173,28 @@ export function Onboarding({
         </div>
       </main>
     </>
+  );
+}
+
+/** One glyph, mirrored for the forward case, so back and continue read as a pair. */
+function Arrow({ forward }: { forward?: boolean }) {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+      style={forward ? { transform: "rotate(180deg)" } : undefined}
+    >
+      <path
+        d="M15 5l-7 7 7 7"
+        stroke="currentColor"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
 

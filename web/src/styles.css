@@ -2386,3 +2386,39 @@ td.num {
   padding: 0.25rem 0.5rem;
   font-size: 0.85rem;
 }
+
+/* The wizard's forward control. It sits below the step's own form rather than inside it, because
+   it is navigation and not a submit: several steps save more than once before they are complete. */
+.wizard-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  margin-top: 1.75rem;
+}
+.wizard-nav .advance {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+/* Back was a bare link, which read as "leave this page" rather than "the step before". Now a quiet
+   button naming where it goes, and the arrow slides on hover so the direction is felt. */
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: none;
+  border: none;
+  padding: 0;
+  margin-bottom: 1.1rem;
+  color: var(--dim);
+  font: inherit;
+  font-size: 0.86rem;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+.back:hover { color: var(--fg); }
+.back svg { transition: transform 0.15s ease; }
+.back:hover svg { transform: translateX(-3px); }
+.wizard-nav .advance:not(:disabled):hover svg { transform: translateX(3px); }
+.wizard-nav .advance svg { transition: transform 0.15s ease; }
