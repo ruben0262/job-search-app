@@ -537,10 +537,13 @@ def test_a_command_for_another_chat_is_refused_rather_than_improvised(api):
     assert absent.status_code == 400
     assert "no /setup-boards" in absent.json()["detail"]
 
-    # The conversation's own command is how a chat is kicked off, and still passes.
-    assert http.post("/setup/message",
-                     json={"message": "/setup", "agent": "setup"}).status_code == 202
-    # Ordinary messages are untouched, including one that merely mentions a command.
-    assert http.post("/setup/message",
-                     json={"message": "I ran /setup-boards yesterday",
-                           "agent": "setup"}).status_code == 202
+    # The conversation's own command is how a chat is kicked off, and this guard lets it by.
+    # Asserted on the reason rather than the status: the handler has its own preconditions -- a
+    # stored Claude credential, for one -- and this test is about which messages the guard stops.
+    own = http.post("/setup/message", json={"message": "/setup", "agent": "setup"})
+    assert "own chat" not in own.text and "no /setup" not in own.text
+
+    # Ordinary prose is untouched, including a message that merely mentions a command.
+    mentions = http.post("/setup/message",
+                         json={"message": "I ran /setup-boards yesterday", "agent": "setup"})
+    assert "no /setup-boards" not in mentions.text
