@@ -480,7 +480,8 @@ def test_profile_files_are_refused_when_the_operator_closes_them(api):
     from libs.profiles.repository import ProfileFiles
 
     http, session, user = api
-    ProfileFiles(session, user.id).write("context.md", "a private fact about this person")
+    ProfileFiles(session, user.id).write("context.md", "a private fact about this person",
+                                         kind="profile")
     session.flush()
     assert http.get("/setup/files/context.md").status_code == 200
 
