@@ -65,7 +65,18 @@ type AdminUser = {
   is_admin: boolean;
 };
 
-type Span = { p50: number | null; p90: number | null; p99: number | null; samples: number };
+/** One latency stage. `verdict` and the thresholds come from `libs.ops.latency`, so the page
+ *  renders a judgement rather than re-deriving one that could disagree with the API. Optional
+ *  because an older response carries the numbers without them. */
+type Span = {
+  p50: number | null;
+  p90: number | null;
+  p99: number | null;
+  samples: number;
+  verdict?: "ok" | "warn" | "down" | "unknown";
+  amber_after_min?: number;
+  red_after_min?: number;
+};
 
 type Settings = {
   delivery_interval_min: number;
@@ -74,6 +85,7 @@ type Settings = {
 };
 
 type Source = { name: string; hours: number };
+
 
 /** The four questions an operator arrives with, in the order they ask them. */
 const TABS: [Tab, string][] = [
@@ -348,13 +360,17 @@ export function AdminPage() {
         <div className="card" style={{ marginBottom: "1.5rem" }}>
           <h2 style={{ marginTop: 0 }}>Pipeline latency</h2>
           <p className="facts">
-            Minutes, over the last {health.latency.window_hours} hours.
+            Minutes, over the last {health.latency.window_hours} hours.{" "}
+            {/* **Judged on p90, not the median.** Half the jobs arriving promptly is not the claim
+                this product makes, and a median hides exactly the tail somebody loses a role in. */}
+            Each row is judged on its p90 against what that stage should cost.
           </p>
           <div className="table-scroll">
             <table className="history">
               <thead>
                 <tr>
                   <th>Stage</th><th>Median</th><th>p90</th><th>p99</th><th>Samples</th>
+                  <th>Verdict</th>
                 </tr>
               </thead>
               <tbody>
@@ -369,11 +385,31 @@ export function AdminPage() {
                     <td>{span.p90 ?? "—"}</td>
                     <td>{span.p99 ?? "—"}</td>
                     <td>{span.samples.toLocaleString()}</td>
+                    <td>
+                      <span className={`verdict ${span.verdict ?? "unknown"}`}>
+                        {span.verdict === "ok"
+                          ? "healthy"
+                          : span.verdict === "warn"
+                            ? `slow, over ${span.amber_after_min}m`
+                            : span.verdict === "down"
+                              ? `too slow, over ${span.red_after_min}m`
+                              : "not enough data"}
+                      </span>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          {/* **"Not enough data" is a real answer, not a failure.** Below the sample floor a
+              percentile is arithmetic rather than evidence, and colouring it invites somebody to
+              chase a number that three rows produced. */}
+          <p className="hint" style={{ marginTop: "0.7rem" }}>
+            A stage turns amber when its p90 passes what that stage should cost, and red at double.
+            Thresholds come from how the pipeline actually runs — a 15-minute harvest and a
+            15-minute delivery cadence — so amber means something worth looking at rather than
+            something to learn to ignore.
+          </p>
         </div>
       ) : null}</> : null}
 

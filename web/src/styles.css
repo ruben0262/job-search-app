@@ -2533,3 +2533,16 @@ td.num {
   gap: 0 1.5rem;
   max-width: 44rem;
 }
+
+/* A stage's verdict. Colour plus a word, never colour alone: a red pill nobody can read is a red
+   pill somebody guesses at, and 8% of men cannot reliably tell it from the green one. */
+.verdict {
+  font-size: 0.78rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.verdict.ok { color: var(--score); background: color-mix(in srgb, var(--score) 12%, transparent); }
+.verdict.warn { color: #d08a34; background: color-mix(in srgb, #d08a34 14%, transparent); }
+.verdict.down { color: #d4574e; background: color-mix(in srgb, #d4574e 14%, transparent); }
+.verdict.unknown { color: var(--dim); }
