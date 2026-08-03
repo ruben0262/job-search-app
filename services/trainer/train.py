@@ -30,6 +30,10 @@ from sqlalchemy.orm import Session
 import libs.notify as notifylib
 from libs.contracts.embedder import unpack_vector
 from libs.contracts.profile import ProfileSchema
+
+# The minimum the schema will construct: no skills, no experience, no exclusions, so
+# every derived term list comes out empty and only the embedding features remain.
+_EMPTY_PROFILE = ProfileSchema.model_validate({"identity": {"name": "unknown"}})
 from libs.db.models import CorpusJob, User, UserLabel, UserModel
 from libs.profiles.repository import ProfileFiles
 from libs.scoring.features import FEATURE_SCHEMA_VERSION, feature_spec, job_features
@@ -100,7 +104,14 @@ def build_training_set(session: Session, user_id: _uuid.UUID) -> TrainingSet:
             f"labels span {len(versions)} embedder versions: {sorted(versions)}. "
             f"Re-embed the corpus before retraining.")
 
-    spec = feature_spec(ProfileSchema.model_validate(user.profile))
+    # **The keyword features need the structured profile, and an account built by the setup
+    # conversation has none** -- those are prose files, not a schema. Rather than refuse, the spec
+    # falls back to empty term lists and the model trains on the embeddings alone.
+    #
+    # That is a real model, not a degraded one: the vectors carry the semantics and the term counts
+    # are an addition on top. Refusing instead is what dead-lettered a live training run five times
+    # over, with the account showing 241 labels and no model and nothing saying why.
+    spec = feature_spec(ProfileSchema.model_validate(user.profile)) if user.profile         else feature_spec(_EMPTY_PROFILE)
     vectors = [unpack_vector(r.embedding) for r in rows]
     features = [job_features(spec, r.title or "", r.description or "") for r in rows]
 
