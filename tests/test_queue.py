@@ -305,12 +305,18 @@ def test_a_finished_job_records_when_it_actually_finished(ctx):
     worse than no column, because somebody will read it.
     """
     import time
+    import uuid
 
+    from libs.db.models import User
     from libs.queue import claim, complete, enqueue
+
+    owner = User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active")
+    ctx.add(owner)
+    ctx.flush()
 
     # The fixture rolls back rather than commits, so this flushes: `clock_timestamp()` advances
     # within a transaction, which is the whole property under test.
-    enqueue(ctx, "score", None, payload={})
+    enqueue(ctx, "score", owner.id, payload={})
     ctx.flush()
 
     job = claim(ctx, "score", worker="test")
