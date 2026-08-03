@@ -699,6 +699,47 @@ change — and it is the user-facing problem.
 it, a tap in Telegram has produced a label that a retrain consumed, and no user receives the same
 role twice in one digest.
 
+### 6n — the corpus an operator can see and seed (added 2026-08-03)
+
+**Why.** A new user's training data is whatever the shared corpus already holds for their field, and
+the corpus only holds what previous users searched for. The second account on the platform found 240
+matching postings against 14,359 rows, labelled ten of them, and stalled — not through any bug, but
+because the corpus had accumulated for weeks against one software search and hours against a
+mechanical engineering one. Every user after the first inherits that shape.
+
+Four pieces, in this order. The first two are additive and safe; the fourth can silently cost people
+jobs and must not be built before it can be measured.
+
+**1. A corpus browser in the admin panel.** Search across every posting, without scores — scores are
+per user and this is the shared table. Source and date facets, so "what is actually in here" is a
+question an operator can answer. Today the only way to look is SQL.
+
+**2. Operator keywords.** Terms an operator injects into the query set to fill the corpus ahead of
+the users who will need it. **Stored separately from user keywords and visibly distinguished**: an
+operator may delete their own and must not be able to delete somebody's real search term, which is
+theirs and is the thing their feed depends on.
+
+**3. Latency thresholds in the admin panel.** `pipeline_latency()` already measures found → scored →
+delivered; what is missing is green/amber/red against thresholds so a number nobody reads becomes an
+alert somebody acts on. **Set from measured normal behaviour, not guessed** — this has already gone
+wrong once, when the found → scored median looked alarming and turned out to be measuring backlog
+age rather than pipeline latency. Colours nobody trusts are worse than no colours.
+
+**4. A prefilter before scoring — and not on keywords.** Every user currently scores every embedded
+corpus row: `score_lane` filters on `embedding IS NOT NULL` and the model version, and nothing else.
+Seed the corpus to 100k and each account does 100k scorings. **The obvious fix is one this project
+already measured as harmful**: only 239 of 376 jobs scoring ≥60 had a keyword in the title, so a
+keyword prefilter would have discarded a third of the good matches — the unusually worded ones, which
+are often the interesting ones. The lever is the embedding already on every row: cosine similarity
+against the user's profile vector, cheap in pgvector, and it keeps the job titled "Vehicle Dynamics
+Specialist" that no keyword list would catch. **Ship with a before/after count of how many ≥60 jobs
+the filter would have dropped**, or it is not shippable.
+
+**Also worth doing, unmeasured.** The query set is `keyword × location` and is naive about
+redundancy: `european_union`, `europe` and `budapest` are three stems returning largely the same
+postings, and a source like NoFluffJobs filters by city only, so a region-level stem is meaningless
+there. Collapsing subsumed locations per source would buy budget back. Nobody has measured how much.
+
 ## Deliberately deferred
 
 Do not build these before Phase 4, regardless of how appealing they look mid-build.
