@@ -79,11 +79,38 @@ type Source = { name: string; hours: number };
 const TABS: [Tab, string][] = [
   ["health", "Health"],
   ["settings", "Settings"],
+  ["corpus", "Corpus"],
   ["latency", "Latency"],
   ["accounts", "Accounts"],
 ];
 
-type Tab = "health" | "settings" | "latency" | "accounts";
+type Tab = "health" | "settings" | "corpus" | "latency" | "accounts";
+
+type CorpusJob = {
+  id: number;
+  title: string;
+  company: string | null;
+  location: string | null;
+  source: string | null;
+  is_remote: boolean;
+  embedded: boolean;
+  described: boolean;
+  url: string;
+  first_seen_at: string | null;
+};
+
+type CorpusPage = {
+  total: number;
+  offset: number;
+  page_size: number;
+  sources: { source: string; count: number }[];
+  jobs: CorpusJob[];
+};
+
+type Keywords = {
+  operator: { id: number; keyword: string; location: string | null; note: string | null }[];
+  users: { keyword: string; accounts: string[]; deletable: boolean }[];
+};
 
 function BinIcon() {
   return (
@@ -312,6 +339,8 @@ export function AdminPage() {
         </div>
       ) : null}</> : null}
 
+
+      {tab === "corpus" ? <CorpusTab /> : null}
       {tab === "latency" ? <>      {/* **The claim this product makes, measured.** A four-hour freshness window means little if
           the pipeline spends two of them. Percentiles rather than an average: the tail is what a
           user experiences on the day their job was late. */}
@@ -453,5 +482,212 @@ function Stat({ value, label }: { value: string; label: string }) {
       <dt>{value}</dt>
       <dd>{label}</dd>
     </div>
+  );
+}
+
+
+/**
+ * What the shared corpus actually holds, and the terms filling it.
+ *
+ * **No scores.** A score belongs to an account; this is the table every account draws from. The
+ * question this answers is "is there anything in here for the next person who signs up", and until
+ * now the only way to ask it was SQL — so nobody did, and the second account on the platform
+ * stalled at ten labels because the corpus had nothing in their field.
+ */
+function CorpusTab() {
+  const [page, setPage] = useState<CorpusPage | null>(null);
+  const [keywords, setKeywords] = useState<Keywords | null>(null);
+  const [q, setQ] = useState("");
+  const [source, setSource] = useState("");
+  const [term, setTerm] = useState("");
+  const [failed, setFailed] = useState<string | null>(null);
+
+  const load = async (offset = 0) => {
+    const query = new URLSearchParams({ q, source, days: "30", offset: String(offset) });
+    setPage(await api.get<CorpusPage>(`/admin/corpus?${query}`));
+  };
+  const loadKeywords = async () => setKeywords(await api.get<Keywords>("/admin/keywords"));
+
+  useEffect(() => {
+    void load().catch(() => setFailed("Could not read the corpus."));
+    void loadKeywords().catch(() => undefined);
+    // Deliberately once: searching is an explicit action, not something that fires per keystroke
+    // against a table this size.
+  }, []);
+
+  const addTerm = useAction(async () => {
+    await api.post("/admin/keywords", { keyword: term });
+    setTerm("");
+    await loadKeywords();
+  });
+
+  const dropTerm = useAction(async (id: number) => {
+    await api.del(`/admin/keywords/${id}`);
+    await loadKeywords();
+  });
+
+  return (
+    <>
+      <h2 style={{ marginTop: 0 }}>Corpus</h2>
+      <p className="hint">
+        Every posting the platform has collected, shared by all accounts. A new user can only train
+        on what is already in here for their field, which is why seeding it ahead of them matters.
+      </p>
+
+      <form
+        className="row"
+        style={{ margin: "1rem 0" }}
+        onSubmit={(event) => {
+          event.preventDefault();
+          void load().catch(() => setFailed("Could not read the corpus."));
+        }}
+      >
+        <input
+          value={q}
+          placeholder="Title or company"
+          onChange={(event) => setQ(event.target.value)}
+          style={{ maxWidth: "18rem" }}
+        />
+        <select value={source} onChange={(event) => setSource(event.target.value)}
+                style={{ maxWidth: "12rem" }}>
+          <option value="">Every source</option>
+          {(page?.sources ?? []).map((row) => (
+            <option key={row.source} value={row.source}>
+              {row.source} ({row.count.toLocaleString()})
+            </option>
+          ))}
+        </select>
+        <button type="submit" className="secondary">Search</button>
+      </form>
+
+      {failed ? <p className="error">{failed}</p> : null}
+
+      {page ? (
+        <>
+          <p className="facts">
+            {page.total.toLocaleString()} postings in the last 30 days
+            {q || source ? " matching this search" : ""}.
+          </p>
+          <div className="table-scroll">
+            <table className="history">
+              <thead>
+                <tr>
+                  <th>Title</th>
+                  <th>Company</th>
+                  <th>Where</th>
+                  <th>Source</th>
+                  <th>Seen</th>
+                  {/* An unembedded row is invisible to every user, and a corpus full of them looks
+                      healthy from a row count alone. */}
+                  <th>Usable</th>
+                </tr>
+              </thead>
+              <tbody>
+                {page.jobs.map((job) => (
+                  <tr key={job.id}>
+                    <td><a href={job.url} target="_blank" rel="noopener noreferrer">{job.title}</a></td>
+                    <td>{job.company ?? "—"}</td>
+                    <td>{job.is_remote ? "Remote" : (job.location ?? "—")}</td>
+                    <td>{job.source ?? "—"}</td>
+                    <td>
+                      {job.first_seen_at
+                        ? new Date(job.first_seen_at).toLocaleDateString()
+                        : "—"}
+                    </td>
+                    <td style={{ color: job.embedded ? "var(--score)" : "var(--dim)" }}>
+                      {job.embedded ? (job.described ? "yes" : "thin") : "not embedded"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {page.total > page.page_size ? (
+            <div className="row" style={{ marginTop: "0.8rem" }}>
+              <button
+                className="secondary"
+                disabled={page.offset === 0}
+                onClick={() => void load(Math.max(page.offset - page.page_size, 0))}
+              >
+                Previous
+              </button>
+              <button
+                className="secondary"
+                disabled={page.offset + page.page_size >= page.total}
+                onClick={() => void load(page.offset + page.page_size)}
+              >
+                Next
+              </button>
+            </div>
+          ) : null}
+        </>
+      ) : null}
+
+      <h2 style={{ marginTop: "2.5rem" }}>Search terms</h2>
+      <p className="hint">
+        What the harvest looks for. Add terms to fill the corpus for fields nobody has signed up for
+        yet, so the first person who does has something to train on.
+      </p>
+
+      <form
+        className="row"
+        style={{ margin: "0.8rem 0" }}
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (term.trim()) void addTerm.run();
+        }}
+      >
+        <input
+          value={term}
+          placeholder="e.g. stress engineer"
+          onChange={(event) => setTerm(event.target.value)}
+          style={{ maxWidth: "18rem" }}
+        />
+        <button type="submit" className="secondary" disabled={addTerm.busy || !term.trim()}>
+          {addTerm.busy ? "Adding…" : "Add term"}
+        </button>
+      </form>
+      <Error>{addTerm.error ?? dropTerm.error}</Error>
+
+      <div className="sources">
+        {(keywords?.operator ?? []).map((row) => (
+          <div key={row.id} className="source-row">
+            <span className="source-name">
+              {row.keyword}
+              {row.location ? <span className="small muted"> · {row.location}</span> : null}
+            </span>
+            <button
+              type="button"
+              className="icon-btn"
+              title="Remove this term"
+              aria-label={`Remove ${row.keyword}`}
+              disabled={dropTerm.busy}
+              onClick={() => void dropTerm.run(row.id)}
+            >
+              <BinIcon />
+            </button>
+          </div>
+        ))}
+        {keywords && !keywords.operator.length ? (
+          <p className="facts">No terms added yet. The harvest is searching for whatever users ask for.</p>
+        ) : null}
+      </div>
+
+      {/* **Shown, never removable.** Somebody's feed is built from these. An operator seeing them is
+          support; an operator able to delete one is an outage that looks like a setting, so there is
+          no control here and no route behind it. */}
+      <h2 style={{ marginTop: "2rem" }}>What users are searching for</h2>
+      <p className="hint">
+        Theirs, not yours. Listed so you can see what the harvest is spending its budget on.
+      </p>
+      <div className="sources">
+        {(keywords?.users ?? []).map((row) => (
+          <div key={row.keyword} className="source-row">
+            <span className="source-name">{row.keyword}</span>
+            <span className="small muted">{row.accounts.length} account(s)</span>
+          </div>
+        ))}
+      </div>
+    </>
   );
 }
