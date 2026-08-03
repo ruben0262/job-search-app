@@ -14,6 +14,68 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-08-03
+
+### Every account created on the platform was permanently silent (`libs/queue/queue.py`)
+
+Found by the alert, which is the first time one of these has been caught by the platform rather than
+by a person noticing. `andraslekli@gmail.com`: **73 matching jobs waiting, last delivery never.**
+
+Not the notifier and not Telegram. The bot was `connected`, the model trained, and all 15,094
+postings scored. **No `notify` job had ever been enqueued for that account, and none ever would
+be.** `dispatch_due_notifications` selected on `next_run_at IS NOT NULL AND next_run_at <= now()`,
+and nothing on this platform ever sets that column — the dispatcher only advances one that already
+has a value, and the LinkedIn loop owns a different one entirely. Signup, onboarding, and connecting
+the bot all leave it NULL.
+
+The first account works only because it was migrated from the reference instance with a value
+already in it. That is what hid this: the platform looked like it delivered, because the one account
+old enough to test with had been given its first slot by a migration script rather than by the
+product.
+
+NULL now means **due**, which is how `services/harvester/linkedin.py` has read the same shape since
+it was written. Fail-open is the only safe direction here: a missing schedule that produces a
+delivery is a delivery somebody can see, while a missing schedule that produces nothing is an
+account nobody hears from and no worker is failing over. Arming the column at signup instead would
+have left the same bug behind every future path that forgot to — which is how this one arrived.
+
+Every other gate is unchanged, and a test pins that, or "due when unscheduled" quietly becomes "due
+regardless of dormant, inactive, or a revoked bot".
+
+Deployed, and the next dispatch pass delivered 9 items to that account at 15:29 UTC. The alert
+cleared on the following health run.
+
+### Where the time goes: the latency tab, one row per zone (`libs/ops/latency.py`, `web/src/pages/AdminPage.tsx`)
+
+ROADMAP 6p. The end-to-end number is the one worth publishing and the one least useful for fixing
+anything: "a posting took 36 minutes" does not say which of six handoffs ate them, and a stuck
+describe worker, an embedder behind a flood, a score lane with no free worker and a delivery cadence
+are four unrelated problems wearing the same number. 6n gave that number a verdict; this gives it an
+address.
+
+A posting arrives as a link and leaves as a card, so the rows are the boundaries in between: posted
+→ found, found → described, described → embedded, embedded → scored, scored → delivered, and the
+whole journey. Collapsed, a row says *which* zone. Expanded, it says *why that zone* — waiting
+versus running from the queue's own timestamps, the backlog queued at that door, the hour-by-hour
+shape, and the threshold's reasoning in words. The detail is fetched on expansion: only one row is
+ever open, and running six drill-downs on a page load is six times the work to answer a question
+nobody asked.
+
+**`corpus.embedded_at` is new, and deliberately not backfilled** (migration `c4d8f1a2e7b6`). The
+middle of the pipeline had no clock — a row recorded when its text arrived and then jumped to having
+a vector — so described → embedded and embedded → scored were unmeasurable and both hid inside one
+found → scored number that could not say which was slow. Filling the column from `first_seen_at`
+would have invented a measurement, so historical rows stay NULL and those two rows read "not
+measured yet" until the corpus turns over.
+
+Two measurement rules that cost something and are worth it. **Shared work is measured on `corpus`
+alone**: a description is fetched once for everybody, so counting it through the per-user join would
+multiply every posting by the number of accounts holding it — a real percentile over a population
+that never existed, which is worse than a missing number because it looks right. And **posted →
+found is reported without a verdict**: sources round what they publish ("2 days ago"), so a
+threshold there judges their precision rather than our lag. `unjudged` is kept distinct from
+`unknown` for the same reason — a deliberate silence must not read as missing data.
+
 ## 2026-08-02
 
 ### `/setup-boards` was answered by improvisation (`services/api/setup_routes.py`, `libs/agents`)
