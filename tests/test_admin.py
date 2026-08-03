@@ -392,7 +392,7 @@ def test_the_corpus_browser_reports_what_is_actually_in_there(api):
 
 def test_operator_keywords_are_added_listed_and_removed(api):
     """Seeding the corpus ahead of the users who will need it."""
-    http, session, operator, _ordinary, sign_in = api
+    http, _session, operator, _ordinary, sign_in = api
     sign_in(http, operator)
 
     created = http.post("/admin/keywords",

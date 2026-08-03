@@ -23,7 +23,14 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from libs.db.models import User, UserJobState, UserLabel
+from libs.db.models import (
+    CorpusJob,
+    OperatorKeyword,
+    User,
+    UserConfig,
+    UserJobState,
+    UserLabel,
+)
 from libs.limits import all_for, describe, set_limit
 from libs.obs import audit
 from libs.ops import evaluate, platform_health, render
@@ -364,7 +371,7 @@ CORPUS_PAGE = 50
 
 
 @router.get("/corpus")
-def corpus(db: Session = Depends(get_db), admin: User = Depends(require_admin),
+def corpus(db: Session = Depends(get_db), admin: User = Depends(require_admin), *,
            q: str = "", source: str = "", days: int = 30,
            offset: int = 0) -> dict:
     """Search the shared corpus. **No scores** -- those are per user and this is the shared table.
@@ -377,8 +384,6 @@ def corpus(db: Session = Depends(get_db), admin: User = Depends(require_admin),
     Facets rather than a bare list: "what is in here" is answered by source and recency, and the
     counts are the answer an operator is actually looking for.
     """
-    from libs.db.models import CorpusJob
-
     window = datetime.now(UTC) - timedelta(days=max(days, 1))
     filters = [CorpusJob.first_seen_at >= window]
     if q.strip():
@@ -434,8 +439,6 @@ def keywords(db: Session = Depends(get_db), admin: User = Depends(require_admin)
     from; an operator seeing them is support, an operator able to remove them is an outage that
     looks like a setting.
     """
-    from libs.db.models import OperatorKeyword, UserConfig
-
     injected = db.scalars(select(OperatorKeyword).order_by(OperatorKeyword.keyword)).all()
 
     owned: dict[str, set[str]] = {}
@@ -464,8 +467,6 @@ def keywords(db: Session = Depends(get_db), admin: User = Depends(require_admin)
 def add_keyword(body: KeywordBody, db: Session = Depends(get_db),
                 admin: User = Depends(require_admin)) -> dict:
     """Inject a term into the harvest, to fill the corpus ahead of the users who will need it."""
-    from libs.db.models import OperatorKeyword
-
     term = " ".join(body.keyword.split()).lower()
     place = (body.location or "").strip() or None
     existing = db.scalar(
@@ -494,8 +495,6 @@ def remove_keyword(keyword_id: int, db: Session = Depends(get_db),
     addressable from here at all, which is why this takes a row id from that table rather than a
     string that could match either.
     """
-    from libs.db.models import OperatorKeyword
-
     row = db.get(OperatorKeyword, keyword_id)
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="no such keyword")
