@@ -303,6 +303,7 @@ def test_a_run_between_batches_still_reads_as_running(api):
     from libs.queue import enqueue
 
     http, session, user = api
+    user.rubric_md = "score jobs like this"
     job = enqueue(session, "label", user.id, payload={"kind": "cold_start"})
     session.flush()
 
@@ -363,9 +364,11 @@ def test_stopping_actually_stops_a_loop_that_re_enqueues_itself(api):
 def test_starting_again_clears_a_previous_stop(api):
     """Otherwise Stop is permanent, and a user who paused to think has bricked their own account."""
     http, session, user = api
+    user.rubric_md = "score jobs like this"
     user.labelling_paused = True
     session.flush()
 
-    http.post("/setup/start")
+    started = http.post("/setup/start")
+    assert started.status_code < 400, started.text
     session.flush()
     assert user.labelling_paused is False
