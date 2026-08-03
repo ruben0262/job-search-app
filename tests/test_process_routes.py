@@ -363,7 +363,15 @@ def test_stopping_actually_stops_a_loop_that_re_enqueues_itself(api):
 
 def test_starting_again_clears_a_previous_stop(api):
     """Otherwise Stop is permanent, and a user who paused to think has bricked their own account."""
+    from libs.profiles import setup_files
+    from libs.profiles.repository import ProfileFiles
+
     http, session, user = api
+    # `/setup/start` refuses an unfinished profile, which is the right refusal and not what this
+    # test is about, so the account is given the files it would have had.
+    files = ProfileFiles(session, user.id)
+    for name in setup_files():
+        files.write(name, f"real content for {name}", kind="context")
     user.rubric_md = "score jobs like this"
     user.labelling_paused = True
     session.flush()
