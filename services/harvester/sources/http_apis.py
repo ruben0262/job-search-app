@@ -98,9 +98,16 @@ def gather_remotive(cfg: dict[str, Any], logger) -> list[JobLink]:
 def gather_arbeitnow(cfg: dict[str, Any], logger) -> list[JobLink]:
     endpoint = cfg.get("endpoint", "https://www.arbeitnow.com/api/job-board-api")
     max_age = cfg.get("max_age_hours", 24)
+    # **Paced, because this loop used to run once.** It took one unfiltered feed request per cycle
+    # until the query set was connected to it; at 33 keywords in a burst the board answered 13 of
+    # them with something that is not JSON. The adapter read a delay from config and never applied
+    # one, so the setting looked present and did nothing.
+    delay = float(cfg.get("request_delay_s", 0))
     out: list[JobLink] = []
     with make_shared_client() as client:
-        for q in cfg.get("queries", []):
+        for i, q in enumerate(cfg.get("queries", [])):
+            if i and delay:
+                time.sleep(delay)
             params = {"search": q.get("search", "")}
             if q.get("remote"):
                 params["remote"] = "true"

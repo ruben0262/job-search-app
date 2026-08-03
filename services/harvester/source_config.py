@@ -137,7 +137,12 @@ PLATFORM_DEFAULTS: dict[str, dict] = {
     "himalayas": {"endpoint": "https://himalayas.app/jobs/api"},
     # RemoteOK rate-limits a burst from one IP; the delay is from the reference and is not a guess.
     "remoteok": {"endpoint": "https://remoteok.com/api", "request_delay_s": 2},
-    "arbeitnow": {"endpoint": "https://www.arbeitnow.com/api/job-board-api"},
+    # **A delay, because the query set now reaches it.** Arbeitnow used to get one unfiltered feed
+    # request per cycle and now gets one per keyword; the first live cycle at 33 queries had 13 of
+    # them answered with something that is not JSON, which is what this board does under a burst
+    # from one IP. Same treatment as RemoteOK, and for the same reason.
+    "arbeitnow": {"endpoint": "https://www.arbeitnow.com/api/job-board-api",
+                  "request_delay_s": 1},
     "weworkremotely": {"feeds": ["https://weworkremotely.com/categories/remote-programming-jobs.rss"]},
     "workingnomads": {"endpoint": "https://www.workingnomads.com/api/exposed_jobs/"},
     "jobicy": {"count": 50},
@@ -183,6 +188,8 @@ def union_keywords(configs: Mapping[UUID, Mapping]) -> list[str]:
     Order is sorted rather than insertion-based so a cycle is reproducible: the same active users
     produce the same filter, regardless of the order the database returned them.
     """
+    # Lowercased and nothing else. These are sent to a board verbatim, so the fold-key treatment in
+    # `normalise_keyword` — sorted tokens, accents stripped — would be actively wrong here.
     terms = {
         str(term).strip().lower()
         for config in configs.values()

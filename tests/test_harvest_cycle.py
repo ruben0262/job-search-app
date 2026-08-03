@@ -350,6 +350,42 @@ def test_a_board_with_no_geography_is_asked_once_per_keyword(ctx):
     assert per_source["hiringcafe"] == 4, "a source that can filter by place still gets all four"
 
 
+def test_a_board_is_asked_for_the_phrase_the_user_wrote(ctx):
+    """**The fold key is not a search term**, and sending it cost real quality on the first live
+    cycle: Arbeitnow was asked for `engineer stress` and `developer python`, and every Hungarian
+    keyword arrived truncated because the normaliser strips anything outside `a-z0-9+#`.
+
+    Sorting tokens and folding accents is right for deciding whether two users asked for the same
+    thing. It is wrong for asking a search engine, which is a different question about the same
+    string.
+    """
+    from services.harvester.query_set import normalise_keyword, original_terms
+
+    configs = {uuid.uuid4(): {"sections": [
+        {"keywords": ["stress engineer", "szoftverfejlesztő", "C++ developer"]}]}}
+    terms = original_terms(configs)
+
+    assert terms[normalise_keyword("stress engineer")] == "stress engineer"
+    assert terms[normalise_keyword("szoftverfejlesztő")] == "szoftverfejlesztő"
+    assert terms[normalise_keyword("C++ developer")] == "C++ developer"
+    # The key itself still folds, or the whole point of the fold is lost.
+    assert normalise_keyword("stress engineer") == normalise_keyword("Engineer, Stress")
+
+
+def test_one_folded_key_emits_the_same_term_however_users_phrased_it(ctx):
+    """Several users writing one search differently must not make the emitted term depend on which
+    of them the database returned first — a cycle has to be reproducible."""
+    from services.harvester.query_set import normalise_keyword, original_terms
+
+    key = normalise_keyword("python developer")
+    a = {uuid.uuid4(): {"sections": [{"keywords": ["python developer"]}]},
+         uuid.uuid4(): {"sections": [{"keywords": ["Developer Python"]}]}}
+    b = {uuid.uuid4(): {"sections": [{"keywords": ["Developer Python"]}]},
+         uuid.uuid4(): {"sections": [{"keywords": ["python developer"]}]}}
+
+    assert original_terms(a)[key] == original_terms(b)[key]
+
+
 def test_no_locating_sources_is_not_the_same_as_not_saying(ctx):
     """An empty iterable means "nothing locates"; `None` means "everything does". A falsy check
     would collapse every axis on the caller that simply did not pass the argument — which is the

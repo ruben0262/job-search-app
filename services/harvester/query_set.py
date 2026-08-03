@@ -78,9 +78,15 @@ class PlannedQuery:
 def normalise_keyword(term: str) -> str:
     """Lowercase, strip punctuation, drop stop-words, sort tokens.
 
-    Sorting is what makes `"developer python"` and `"python developer"` the same key. It is safe
-    here because these are bag-of-words search terms, not phrases — no source treats term order as
-    meaningful enough to justify fetching both.
+    Sorting is what makes `"developer python"` and `"python developer"` the same key.
+
+    **This is a fold key and must not be sent to a board.** It was, once the query set was connected
+    to real sources, and the first live cycle shows what that costs: Arbeitnow was asked for
+    `engineer stress` and `developer python`, and every Hungarian term arrived truncated —
+    `szoftverfejlesztő` as `szoftverfejleszt`, `programozó` as `programoz` — because `_NON_ALNUM`
+    strips anything outside `a-z0-9+#`, accented letters included. Both behaviours are correct for
+    deciding whether two users asked for the same thing and wrong for asking a search engine.
+    `original_terms` is the other half of this.
 
     `+` and `#` survive tokenisation on purpose: `c++` and `c#` are real, common search terms and
     stripping them would collapse both into `c`.
@@ -90,6 +96,32 @@ def normalise_keyword(term: str) -> str:
     # If a term is *entirely* stop-words, keep them rather than producing an empty key — an empty
     # key would fold every such term together into one meaningless query.
     return " ".join(sorted(kept or tokens))
+
+
+def original_terms(user_configs: Mapping[UUID, Mapping]) -> dict[str, str]:
+    """`normalised keyword -> the phrase a board should actually be asked for`.
+
+    The fold key answers "did two users ask for the same thing"; this answers "what do we type into
+    the search box", and they are not the same string. Sorting tokens and stripping accents is right
+    for the first and destructive for the second — `stress engineer` becomes `engineer stress`, and
+    a Hungarian term loses its ending and stops matching anything.
+
+    Ties are broken by taking the alphabetically first original, so a cycle is reproducible: several
+    users phrasing one search differently must not make the emitted term depend on which of them the
+    database returned first.
+    """
+    best: dict[str, str] = {}
+    for stored in user_configs.values():
+        config = migrate_config(stored or {})
+        for section in config.get("sections") or []:
+            for keyword in (section or {}).get("keywords") or []:
+                term = str(keyword or "").strip()
+                key = normalise_keyword(term)
+                if not key:
+                    continue
+                if key not in best or term.lower() < best[key].lower():
+                    best[key] = term
+    return best
 
 
 def bucket_age_hours(hours: int) -> int:

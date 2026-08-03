@@ -56,6 +56,7 @@ from services.harvester.query_set import (
     PlannedQuery,
     QueryKey,
     build_query_set,
+    original_terms,
     select_within_budget,
 )
 from services.harvester.source_config import QUERY_SHAPES, QUERY_TAKING_SOURCES
@@ -255,7 +256,8 @@ def run_cycle(
         # 3. Execute the shared tier. The per-user LinkedIn loop is deliberately absent: it runs on
         # its owner's schedule with their credential, and cannot be reached from here.
         with timed("gather", report.timings):
-            links = _gather(source_configs, planned, ats, run_source, report)
+            links = _gather(source_configs, planned, ats, run_source, report,
+                            terms=original_terms(configs))
         report.links_found = len(links)
 
         # 4-5. Dedup and upsert.
@@ -311,7 +313,8 @@ def run_cycle(
 
 
 def _gather(source_configs: dict[str, dict], planned: list[PlannedQuery], ats: AtsRepository,
-            run_source: Callable[..., list[JobLink]], report: CycleReport) -> list[JobLink]:
+            run_source: Callable[..., list[JobLink]], report: CycleReport,
+            *, terms: dict[str, str] | None = None) -> list[JobLink]:
     """Run every enabled shared source concurrently.
 
     `OUTER_CONCURRENCY` is capped at 8 from the 2026-07-24 incident: JobSpy sources open their own
@@ -341,8 +344,12 @@ def _gather(source_configs: dict[str, dict], planned: list[PlannedQuery], ats: A
             # indistinguishable from a deliberately broad search.
             shape = QUERY_SHAPES[source.key]
             cfg["queries"] = [
-                shape.render(term=q.key.keyword_norm, location=q.key.location_norm,
-                             is_remote=q.key.is_remote)
+                # **The phrase the user wrote, not the fold key.** `keyword_norm` sorts its tokens
+                # and strips accents so two users asking the same thing collapse to one query;
+                # typing that into a search box asks for `engineer stress` and truncates every
+                # Hungarian term. The key stays the identity, the original goes to the board.
+                shape.render(term=(terms or {}).get(q.key.keyword_norm, q.key.keyword_norm),
+                             location=q.key.location_norm, is_remote=q.key.is_remote)
                 for q in queries]
             cfg["hours_old"] = max(q.key.max_age_hours for q in queries)
         return cfg
