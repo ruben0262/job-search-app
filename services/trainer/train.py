@@ -29,19 +29,14 @@ from sqlalchemy.orm import Session
 
 import libs.notify as notifylib
 from libs.contracts.embedder import unpack_vector
-from libs.contracts.profile import ProfileSchema
 from libs.db.models import CorpusJob, User, UserLabel, UserModel
 from libs.profiles.repository import ProfileFiles
-from libs.scoring.features import FEATURE_SCHEMA_VERSION, feature_spec, job_features
+from libs.scoring.features import FEATURE_SCHEMA_VERSION, job_features, spec_for
 
 logger = logging.getLogger(__name__)
 
 # A model refit on one extra label is not worth the CPU (`SCHEDULER_PLAN.md` §7). This is the floor
 # below which a retrain is skipped rather than queued and immediately abandoned.
-# The minimum the schema will construct: no skills, no experience, no exclusions, so
-# every derived term list comes out empty and only the embedding features remain.
-_EMPTY_PROFILE = ProfileSchema.model_validate({"identity": {"name": "unknown"}})
-
 MIN_LABELS = 25
 MIN_NEW_LABELS = 5
 
@@ -111,8 +106,7 @@ def build_training_set(session: Session, user_id: _uuid.UUID) -> TrainingSet:
     # That is a real model, not a degraded one: the vectors carry the semantics and the term counts
     # are an addition on top. Refusing instead is what dead-lettered a live training run five times
     # over, with the account showing 241 labels and no model and nothing saying why.
-    spec = feature_spec(
-        ProfileSchema.model_validate(user.profile) if user.profile else _EMPTY_PROFILE)
+    spec = spec_for(user.profile)
     vectors = [unpack_vector(r.embedding) for r in rows]
     features = [job_features(spec, r.title or "", r.description or "") for r in rows]
 

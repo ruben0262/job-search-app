@@ -207,3 +207,26 @@ def _hits(patterns: tuple[re.Pattern[str], ...], text: str) -> int:
 def _max_years(text: str) -> float:
     years = [int(m) for m in _YEARS_RE.findall(text) if m.isdigit()]
     return float(min(max(years), 15)) if years else 0.0
+
+
+# The minimum `ProfileSchema` will construct: no skills, no experience, no exclusions, so every
+# derived term list comes out empty.
+_EMPTY_PROFILE = ProfileSchema.model_validate({"identity": {"name": "unknown"}})
+
+
+def spec_for(profile: dict | None) -> FeatureSpec:
+    """A feature spec from the capture flow's profile JSON, or an empty one when there is none.
+
+    **An account built by the setup conversation has no profile JSON at all** -- it has prose files.
+    Validating `None` into a `ProfileSchema` raises, and that exception dead-lettered a training run
+    five times and then every scoring job for the same account, each time as a pydantic error buried
+    in a queue row's `last_error`.
+
+    An empty spec means the keyword features contribute nothing and the embedding carries the whole
+    signal. That is a real model rather than a broken one, and it is strictly better than refusing
+    to score an account whose profile is perfectly complete in the form this platform now uses.
+
+    One helper because this is the sixth place the same assumption was made; the previous five were
+    each fixed on their own.
+    """
+    return feature_spec(ProfileSchema.model_validate(profile) if profile else _EMPTY_PROFILE)

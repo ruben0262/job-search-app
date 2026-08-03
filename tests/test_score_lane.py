@@ -160,3 +160,28 @@ def test_the_harvest_cycle_asks_every_active_account_to_catch_up(db):
     assert session.scalar(
         select(func.count()).select_from(QueueJob)
         .where(QueueJob.lane == "score", QueueJob.user_id == user.id)) == 1
+
+
+def test_an_account_without_the_old_profile_json_can_still_be_scored():
+    """**Sixth instance of one assumption, and the one that broke scoring outright.**
+
+    The keyword features are derived from `user.profile`, the JSON the capture flow wrote. An
+    account built by the setup conversation has prose files and no JSON at all, so validating it
+    into a `ProfileSchema` raised — dead-lettering the training run five times and then every
+    scoring job for that account, each as a pydantic error buried in a queue row.
+
+    An empty spec means the embedding carries the whole signal, which is a real model rather than a
+    broken one, and strictly better than refusing to score a profile that is perfectly complete in
+    the form the platform now uses.
+    """
+    from libs.scoring.features import spec_for
+
+    empty = spec_for(None)
+    assert empty is not None
+    # And it really is empty rather than accidentally carrying somebody else's terms.
+    assert not any(getattr(empty, field, None) for field in ("core_terms", "off_terms"))
+
+    real = spec_for({"identity": {"name": "Someone"},
+                     "skills": {"languages": ["python"], "frameworks": [], "domains": [],
+                                "tools": []}})
+    assert real is not None

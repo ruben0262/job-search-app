@@ -25,10 +25,9 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from libs.contracts.profile import ProfileSchema
 from libs.db.models import User, UserModel
 from libs.profiles.repository import ProfileFiles
-from libs.scoring.features import FEATURE_SCHEMA_VERSION, FeatureSpec, feature_spec
+from libs.scoring.features import FEATURE_SCHEMA_VERSION, FeatureSpec, spec_for
 
 logger = logging.getLogger(__name__)
 
@@ -186,7 +185,7 @@ class ModelRegistry:
             profile_generation=profile_generation,
             estimator=blob["model"],
             task=blob.get("task", "regress"),
-            features=feature_spec(ProfileSchema.model_validate(profile)),
+            features=spec_for(profile),
             embedder_model=artifact_row.embedder_model,
             embedder_dim=artifact_row.embedder_dim,
             embedder_version=artifact_row.embedder_version,
