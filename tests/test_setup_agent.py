@@ -353,3 +353,44 @@ def test_the_scaffold_says_one_angle_is_an_acceptable_answer():
 
     assert "one angle is the honest answer" in scaffold("08-role-angles.md")
     assert "one angle is the honest answer" in command("setup-role-angles")
+
+
+def test_writing_the_rubric_reaches_the_column_the_labeller_reads(session, user):
+    """**A finished rubric that nothing downstream could see.**
+
+    `label.md` is written as a profile file; cold start, relabelling and label scoping all read
+    `users.rubric_md`, which only the superseded capture flow ever populated. So an account set up
+    by the conversation had a complete rubric and a labeller answering "confirm_profile" forever:
+    no pool, no labels, no model, and nothing saying why.
+    """
+    from libs.agents.tools import SetupTools
+    from libs.scoring.rubric import profile_version
+
+    tools = SetupTools(session, user.id)
+    tools.run("write_profile_file", {"name": "label.md", "content": "score jobs like this"})
+    session.flush()
+
+    assert user.rubric_md == "score jobs like this"
+    assert user.profile_version == profile_version("score jobs like this")
+    # First write, so nothing was invalidated: there are no labels to make stale.
+    assert user.profile_generation == 0
+
+
+def test_rewriting_the_rubric_marks_existing_labels_stale(session, user):
+    """`profile_generation` is what makes a label stale, and a changed rubric asks a different
+    question of every job already judged. An identical rewrite must not, or a user is sent through
+    relabelling they did not need."""
+    from libs.agents.tools import SetupTools
+
+    tools = SetupTools(session, user.id)
+    tools.run("write_profile_file", {"name": "label.md", "content": "first rubric"})
+    session.flush()
+    assert user.profile_generation == 0
+
+    tools.run("write_profile_file", {"name": "label.md", "content": "first rubric"})
+    session.flush()
+    assert user.profile_generation == 0, "an identical rewrite changes nothing"
+
+    tools.run("write_profile_file", {"name": "label.md", "content": "a different rubric"})
+    session.flush()
+    assert user.profile_generation == 1

@@ -113,7 +113,38 @@ class SetupTools:
         if scoring and name not in self.scoring_edits:
             self.scoring_edits.append(name)
 
+        # **The rubric has to reach the column the labeller reads.** `label.md` is written here as
+        # a profile file, and everything downstream -- cold start, relabelling, which labels a
+        # training run may use -- reads `users.rubric_md`, which only the superseded capture flow
+        # ever populated. So an account set up by the conversation had a finished rubric and a
+        # labeller that answered "confirm_profile" forever: no pool, no labels, no model, and
+        # nothing anywhere saying why.
+        if name == "label.md":
+            self._sync_rubric(content)
+
         # Audited per call because each one is a write to somebody's profile, and "when did my
         # rubric change" is a question support will be asked.
         logger.info("setup: %s wrote %s (%d chars)", self._user, name, len(content))
         return f"Saved {name} ({len(content):,} chars)."
+
+    def _sync_rubric(self, content: str) -> None:
+        """Mirror the written rubric onto the user row, and version it.
+
+        `profile_version` is `sha256(rubric_md)[:8]` and scopes which labels a training run may use,
+        so it must move with the text. `profile_generation` advances only when the rubric actually
+        changed: it is what marks existing labels stale, and bumping it on an identical rewrite
+        would send a user back through relabelling they did not need.
+        """
+        from libs.db.models import User  # noqa: PLC0415 - avoids an import cycle at module load
+        from libs.scoring.rubric import profile_version  # noqa: PLC0415
+
+        user = self._s.get(User, self._user)
+        if user is None or (user.rubric_md or "") == content:
+            return
+        changed = bool(user.rubric_md)
+        user.rubric_md = content
+        user.profile_version = profile_version(content)
+        if changed:
+            user.profile_generation += 1
+        logger.info("setup: %s rubric synced (%d chars, generation %d)",
+                    self._user, len(content), user.profile_generation)
