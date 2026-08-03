@@ -234,7 +234,7 @@ def test_a_profile_built_by_the_conversation_is_not_offered_the_old_capture_flow
     from libs.profiles.repository import ProfileFiles
     from services.api.process_routes import state
 
-    http, session, user = api
+    _http, session, user = api
     files = ProfileFiles(session, user.id)
     for name in setup_files():
         files.write(name, f"real content for {name}", kind="context")
