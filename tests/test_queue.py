@@ -295,7 +295,7 @@ def test_every_lane_has_a_claim_timeout():
         "every lane needs a claim timeout and every timeout needs a lane")
 
 
-def test_a_finished_job_records_when_it_actually_finished(session):
+def test_a_finished_job_records_when_it_actually_finished(ctx):
     """**`now()` is transaction start time in Postgres**, and a worker claims and finishes inside
     one transaction -- so `finished_at` and `claimed_at` came back identical to the microsecond and
     every lane reported a run time of exactly zero.
@@ -308,14 +308,16 @@ def test_a_finished_job_records_when_it_actually_finished(session):
 
     from libs.queue import claim, complete, enqueue
 
-    enqueue(session, "score", None, payload={})
-    session.commit()
+    # The fixture rolls back rather than commits, so this flushes: `clock_timestamp()` advances
+    # within a transaction, which is the whole property under test.
+    enqueue(ctx, "score", None, payload={})
+    ctx.flush()
 
-    job = claim(session, "score", worker="test")
+    job = claim(ctx, "score", worker="test")
     assert job is not None
     time.sleep(0.05)
-    complete(session, job)
-    session.commit()
-    session.refresh(job)
+    complete(ctx, job)
+    ctx.flush()
+    ctx.refresh(job)
 
     assert job.finished_at > job.claimed_at, "a job that took time must record that it took time"
