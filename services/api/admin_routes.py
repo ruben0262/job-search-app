@@ -34,7 +34,7 @@ from libs.db.models import (
 from libs.limits import all_for, describe, set_limit
 from libs.obs import audit
 from libs.ops import evaluate, platform_health, render
-from libs.ops.latency import pipeline_latency
+from libs.ops.latency import lane_timings, latency_series, pipeline_latency
 from libs.profiles.repository import ProfileFiles
 from libs.scoring.history import model_history
 from libs.settings import DEFAULTS, HARVEST_SOURCES, all_settings, freshness_hours, put
@@ -501,4 +501,26 @@ def remove_keyword(keyword_id: int, db: Session = Depends(get_db),
     db.delete(row)
     audit(logger, "admin.keyword_removed", user=admin.id, keyword=row.keyword)
     return {"status": "removed", "keyword": row.keyword}
+
+@router.get("/latency")
+def latency(db: Session = Depends(get_db), admin: User = Depends(require_admin), *,
+            hours: int = 24) -> dict:
+    """The drill-down: the spans, then where the time actually went, then when.
+
+    The health page reports that a posting took 36 minutes end to end. That is the number worth
+    publishing and useless for fixing anything -- it does not say whether a worker was busy or the
+    work was slow, and those are repaired in completely different places. Nor does an average over a
+    day show the hour it was four times worse, which is the hour worth looking at.
+
+    Bounded window: a fortnight of hourly buckets is a chart nobody can read and a query nobody
+    should run on a page load.
+    """
+    window = max(1, min(hours, 24 * 7))
+    audit(logger, "admin.latency", user=admin.id, hours=window)
+    return {
+        "window_hours": window,
+        "spans": pipeline_latency(db, hours=window),
+        "lanes": lane_timings(db, hours=window),
+        "series": latency_series(db, hours=window),
+    }
 

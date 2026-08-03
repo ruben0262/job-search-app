@@ -171,3 +171,81 @@ def _worst(verdicts: list[str]) -> str:
         if level in verdicts:
             return level
     return "unknown"
+
+
+# Per-lane timing, from the queue's own timestamps. Two numbers per lane, because they fail for
+# different reasons and have different fixes: **waiting** means not enough workers or a lane behind
+# a long job, **running** means the work itself got slower. A single "how long did it take" hides
+# which, and they are fixed in completely different places.
+_LANE_SQL = """
+    SELECT lane,
+           count(*) AS n,
+           percentile_cont(0.50) WITHIN GROUP (
+               ORDER BY EXTRACT(EPOCH FROM (claimed_at - created_at))) AS wait_p50,
+           percentile_cont(0.90) WITHIN GROUP (
+               ORDER BY EXTRACT(EPOCH FROM (claimed_at - created_at))) AS wait_p90,
+           percentile_cont(0.50) WITHIN GROUP (
+               ORDER BY EXTRACT(EPOCH FROM (finished_at - claimed_at))) AS run_p50,
+           percentile_cont(0.90) WITHIN GROUP (
+               ORDER BY EXTRACT(EPOCH FROM (finished_at - claimed_at))) AS run_p90,
+           max(EXTRACT(EPOCH FROM (finished_at - claimed_at))) AS run_max
+      FROM jobs
+     WHERE finished_at IS NOT NULL AND claimed_at IS NOT NULL
+       AND finished_at >= now() - make_interval(hours => :hours)
+       AND claimed_at >= created_at AND finished_at >= claimed_at
+     GROUP BY lane
+     ORDER BY lane
+"""
+
+
+def lane_timings(session: Session, *, hours: int = WINDOW_HOURS) -> list[dict]:
+    """How long each lane waited and then ran, in seconds.
+
+    This is where an optimisation target actually comes from. The end-to-end spans say a posting
+    took 36 minutes; they do not say whether that was a worker being busy or the work being slow,
+    and those have nothing to do with each other.
+
+    `run_max` is carried because a lane whose p90 is fine and whose worst case is four minutes has a
+    tail worth looking at, and a percentile alone would never show it.
+    """
+    rows = session.execute(text(_LANE_SQL), {"hours": hours}).all()
+    return [
+        {"lane": row.lane, "samples": int(row.n),
+         "wait_p50": round(float(row.wait_p50 or 0), 1),
+         "wait_p90": round(float(row.wait_p90 or 0), 1),
+         "run_p50": round(float(row.run_p50 or 0), 1),
+         "run_p90": round(float(row.run_p90 or 0), 1),
+         "run_max": round(float(row.run_max or 0), 1)}
+        for row in rows]
+
+
+# The end-to-end span, bucketed by hour. **A snapshot cannot show a spike**, and a spike is the
+# thing worth chasing: a p90 of 36 minutes averaged over a day hides an hour where it was four.
+_SERIES_SQL = """
+    SELECT date_trunc('hour', s.notified_at) AS bucket,
+           count(*) AS n,
+           percentile_cont(0.50) WITHIN GROUP (ORDER BY minutes) AS p50,
+           percentile_cont(0.90) WITHIN GROUP (ORDER BY minutes) AS p90
+      FROM (
+        SELECT s.notified_at,
+               EXTRACT(EPOCH FROM (s.notified_at - c.first_seen_at)) / 60.0 AS minutes
+          FROM user_job_state s
+          JOIN corpus c ON c.id = s.job_id
+         WHERE s.notified_at IS NOT NULL
+           AND s.notified_at >= now() - make_interval(hours => :hours)
+           AND c.first_seen_at >= now() - make_interval(hours => :hours)
+           AND s.notified_at >= c.first_seen_at
+      ) s
+     GROUP BY bucket
+     ORDER BY bucket
+"""
+
+
+def latency_series(session: Session, *, hours: int = WINDOW_HOURS) -> list[dict]:
+    """Found → delivered per hour, so a spike has somewhere to show up."""
+    rows = session.execute(text(_SERIES_SQL), {"hours": hours}).all()
+    return [
+        {"at": row.bucket.isoformat(), "samples": int(row.n),
+         "p50": round(float(row.p50), 1) if row.p50 is not None else None,
+         "p90": round(float(row.p90), 1) if row.p90 is not None else None}
+        for row in rows]
