@@ -153,6 +153,62 @@ def test_emptying_a_file_is_refused(account):
         "write_profile_file", {"name": "context.md", "content": "   "})
 
 
+def test_the_written_rubric_reaches_the_column_the_labeller_reads(account):
+    """**Written here, read there — the family that cost this platform the most.**
+
+    `label.md` is a profile file; cold start, relabelling and label scoping all read
+    `users.rubric_md`, which only the superseded capture flow ever populated. An account set up by
+    the conversation therefore had a complete 13,809-character rubric and a labeller answering
+    `confirm_profile` forever: no pool, no labels, no model, and nothing anywhere saying why. It was
+    invisible on the founder's account because the old flow had filled that column before the
+    rebuild.
+
+    `profile_version` is `sha256(rubric_md)[:8]` and scopes which labels a training run may use, so
+    it has to move with the text or a retrain silently reads labels written against a different
+    rubric.
+    """
+    from libs.agents.tools import SetupTools
+    from libs.scoring.rubric import profile_version
+
+    session, user = account
+    rubric = "# Rubric\nScore seniority first, then domain."
+    SetupTools(session, user.id).run(
+        "write_profile_file", {"name": "label.md", "content": rubric})
+    session.flush()
+    session.refresh(user)
+
+    assert user.rubric_md == rubric, "the labeller reads the column, not the file"
+    assert user.profile_version == profile_version(rubric)
+
+
+def test_a_rewritten_rubric_only_stales_labels_when_it_actually_changed(account):
+    """`profile_generation` is what marks existing labels stale. Bumping it on an identical rewrite
+    would send somebody back through relabelling they did not need — and relabelling runs on their
+    own Claude credential, so that is their money."""
+    from libs.agents.tools import SetupTools
+
+    session, user = account
+    tools = SetupTools(session, user.id)
+    rubric = "# Rubric\nScore seniority first."
+
+    tools.run("write_profile_file", {"name": "label.md", "content": rubric})
+    session.flush()
+    session.refresh(user)
+    first = user.profile_generation
+
+    # The same text again: a rewrite that changed nothing must cost nothing.
+    tools.run("write_profile_file", {"name": "label.md", "content": rubric})
+    session.flush()
+    session.refresh(user)
+    assert user.profile_generation == first
+
+    tools.run("write_profile_file",
+              {"name": "label.md", "content": rubric + "\nThen location."})
+    session.flush()
+    session.refresh(user)
+    assert user.profile_generation == first + 1, "a changed rubric stales the labels under it"
+
+
 def test_a_scoring_relevant_write_is_reported_but_not_acted_on(account):
     """The whole retraining policy: the tool says the rubric moved and stops there. Relabelling
     3,310 jobs costs the user real money, so it is their decision (`REBUILD_PLAN.md`)."""

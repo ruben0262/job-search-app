@@ -519,23 +519,46 @@ The two questions an operator actually has are "why is this person's feed bad" a
 finish", and both are one page. Deliberately read-only: an operator reading a user's metrics is
 support, an operator editing them is a different product with a different consent story.
 
-### 6h — prove the setup chat, end to end ⬅ **next**
+### 6h — prove the setup chat, end to end ✅ **done 2026-08-03**
 
-The owner's call, and the right one: everything downstream is grounded on files the setup agent
-writes, and that agent has never been watched through a complete run on a fresh account. The
-evidence that it needs watching is already in production — one account finished with four of eight
-setup files written, four missing, and **trained a model anyway** (now blocked, 6i).
+Walked on a fresh second account: signup → onboarding → the setup chat with its prompts and commands
+→ training → a delivered job. **The owner's call was right, and the cost of not having done it
+earlier was fourteen defects, none of which any test could have found.** The platform passed its
+whole suite throughout and could not get a second person from signup to a delivered job.
 
-1. **`/setup` as the entry point.** First visit shows the chat disabled behind a single **Start**
-   button that submits `/setup` for the user. A blank chat box asking a new user to invent the first
-   message is the least helpful screen the product has; one button that begins a guided run is the
-   most helpful.
-2. **An overseer, not a free-running agent.** Something must own the sequence: run each setup agent,
-   check its file landed and is filled, then move to the next. The failure to design out is the one
-   already seen — a run that completes 90% and stops, leaving no error and a half-built account.
-   The completeness predicate now exists (`libs.profiles.missing_setup`), so the overseer has a
-   definition of done to check against rather than a vibe.
-3. **Watch a real run on a fresh account**, and only then judge the prompts.
+Not one of them was an exception. Every failure was a component doing something reasonable with a
+value nobody had written, or reading a different column from the one that had been. Three families,
+recorded in full in `CHANGELOG.md` (2026-08-03):
+
+1. **Two definitions of the same thing, disagreeing** — "profile ready", "is admin", "is a run in
+   progress", "is this account due". In every case one copy was the one enforced and the other was
+   the one the user could see, so the account looked finished and refused to work.
+2. **Written here, read there** — the conversation writes profile *files*; four consumers still read
+   columns only the superseded capture flow populated. The rubric was the expensive one: a complete
+   13,809-character rubric, and a labeller answering `confirm_profile` forever.
+3. **Nothing arms the first value** — delivery slots, and the rubric column before them. A field
+   only ever *advanced* by the thing that consumes it, with nothing anywhere setting it the first
+   time.
+
+**The lesson worth keeping: the founder's account cannot prove anything.** Every one of these was
+invisible on it, because a migration script filled its columns before the rebuild. A second fresh
+account is the only instrument that finds this class, and it found a class that no amount of unit
+testing was going to.
+
+Three of the four sub-goals below shipped as designed; the third is what did the finding.
+
+1. ✅ **`/setup` as the entry point.** Start submits `/setup` for the user, and the director runs the
+   whole sequence from that one button.
+2. ✅ **An overseer, not a free-running agent** — and the run found the reason it could never have
+   held on prompt wording alone. **Only a message opening with a slash command named an agent**, so a
+   chat started as the director ran the director exactly once and handled every reply afterwards with
+   `/setup`, a prompt told (correctly for itself) to send the user to a new chat for anything it
+   cannot do. That is why the handoff always landed at a step boundary. A conversation is now one
+   command from end to end, which was the assumption the whole design rested on and the one thing not
+   enforced.
+3. ✅ **Watched on a fresh account.** The prompts were the last thing judged, and they were mostly
+   not the problem: one real prompt defect (the environment block's handoff paragraph contradicting
+   the director's body, last word winning) against thirteen defects in the plumbing around them.
 
 ### 6i — training is gated on a finished profile ✅ **done 2026-07-31**
 
@@ -550,7 +573,7 @@ content and are immune; `listing()` reports the column, so the *agent* was told 
 files were still scaffolds. `repair_filled_flags()` recomputes from content; both accounts have been
 repaired.
 
-### 6j — the chat should look like a conversation (added 2026-07-31)
+### 6j — the chat should look like a conversation ✅ **done 2026-08-02**
 
 Owner's design note, deliberately kept small: each message in its own container, the user's on the
 right and the model's on the left, with a rail of dots down the side showing what the agent is
@@ -558,28 +581,31 @@ doing — the shape Claude Code uses for tool calls. **Identical whether the acc
 API key**: the transport is not a thing a user should be able to infer from the layout. Not a
 redesign, just the containers, the sides, and the activity rail.
 
-### 6k — the chat surface, after the setup flow works (added 2026-07-31)
+### 6k — the chat surface, after the setup flow works ✅ **done 2026-08-03**
 
-Deliberately queued *behind* 6h: polishing a flow that cannot complete is the wrong order. Recorded
-here so it is not lost once setup runs end to end.
+Deliberately queued *behind* 6h, and it stayed there: polishing a flow that cannot complete is the
+wrong order, so this shipped only once a fresh account had been through one.
 
-1. **Per-step containers with a dot rail.** One container per step of the agent's reply rather than
-   one block per turn, with a dot on a vertical line down the left — the shape a coding agent uses.
-   A reply that alternates one line, several lines, one line currently reads as one undifferentiated
-   wall.
-2. **A processing indicator in the bottom-left**, so a user watching a long turn can tell the
-   difference between working and stuck without scrolling to find the caret.
-3. **Stop.** A running turn cannot currently be cancelled. It is queued work on a worker, so the
-   stop is a state flip the worker checks between tool steps rather than a killed request.
-4. **Model version history**, for the user on the Model page and for an operator on a per-user admin
-   page reached by clicking a user in the list. Every version with its head, CV-AP, test-AP, tuned
-   cutoff and out-of-fold precision/recall — the data already exists in `models.metrics`, and today
-   the only way to see v2 → v3 → v4 improve was to run SQL by hand.
+1. ✅ **Per-step containers with a dot rail** — one container per step of the reply, dots down a
+   vertical line, the shape a coding agent uses.
+2. ✅ **A processing indicator**, and the send button *becomes* the stop while a turn runs. Two
+   controls with one of them dead, at the moment there is exactly one thing a person wants to do,
+   was the version that shipped first and was wrong.
+3. ✅ **Stop** — a state flip the worker checks between tool steps, not a killed request. The
+   training Stop needed the same treatment and did not get it until 2026-08-03: cancelling queued
+   rows could never end a loop that re-enqueues itself, so it kept spending the user's credential
+   while the page said it had stopped.
+4. ✅ **Model version history**, on the Model page and per user in the admin panel — every version
+   with its head, CV-AP, test-AP, tuned cutoff and out-of-fold precision/recall, which used to
+   require SQL by hand.
 
-### 6l — one fetch per job, one cadence for everyone (decided 2026-08-01) ⬅ **next**
+### 6l — one fetch per job, one cadence for everyone (decided 2026-08-01) ⬅ **next: item 1 only**
 
 **The premise: this app streams the newest postings.** Everything below follows from taking that
 literally rather than making it configurable.
+
+Items 2, 3 and 4 shipped 2026-08-03. **Item 1 is the whole remaining entry**, and it is the one with
+a proxy budget and a wrong-score window behind it.
 
 **1. LinkedIn fetches the whole posting on first sight.** Today the link pass stores a *snippet*,
 the row is embedded and scored on that, and an hourly `linkedin-describe` replaces it with the real
@@ -597,20 +623,25 @@ Asking jobspy for descriptions directly (`linkedin_fetch_description: True`) is 
 do it — it would fetch every result including the ones already held. The dedup has to sit between
 the listing and the description fetch.
 
-`linkedin-describe.timer` is deleted with it.
+`linkedin-describe.timer` is deleted with it. **Half-done and worth finishing properly**: the timer
+is *disabled* on the box, not removed, and `check_health.py` still reports it as
+`TIMERS NOT ENABLED` on every run — so the health check and the plan currently disagree, and an
+operator is being told to re-enable the thing this item exists to delete.
 
-**2. Freshness becomes admin-set, per source.** Sites differ in how fast they list and how far back
-their filters reach, so the value is per source and set once by the operator — not per user. The
-per-user field is dropped, not merely unread.
+**2. Freshness becomes admin-set, per source** ✅ **done 2026-08-03.** `source_freshness_hours` is an
+operator setting with a per-source table in the admin panel, and `default_freshness_hours` behind it.
+The per-user field is dropped rather than merely unread.
 
-**3. One delivery cadence: 15 minutes, for everyone.** `users.notify_interval_min` goes. A user
-choosing "every 4 hours" is a user asking to be told about a two-hour-old job, which contradicts
-the product. The only thing left that a user tunes is their keywords and locations.
+**3. One delivery cadence: 15 minutes, for everyone** ✅ **done 2026-08-03.** `delivery_interval_min`
+is operator-owned and `users.notify_interval_min` is no longer read anywhere. The only things a user
+tunes now are their keywords and locations.
 
-**4. Latency is a requirement, not a side effect.** Found → described → embedded → scored →
-delivered has to complete quickly enough that a posting inside a 4-hour window still arrives with
-most of that window left. Worth measuring end to end rather than assuming: the stages are already
-timed (`libs.obs.timed`), so the number exists once somebody reads it.
+**4. Latency is a requirement, not a side effect** ✅ **done 2026-08-03, and it needed a new column.**
+Measured per zone rather than end to end, which is 6p — the end-to-end number cannot say which of six
+handoffs ate the time. The middle of the pipeline turned out to have no clock at all: `corpus` went
+from `description_fetched_at` straight to having a vector, so two of the six handoffs were
+unmeasurable and both hid inside one found → scored number. `corpus.embedded_at` fixes that, and is
+deliberately not backfilled.
 
 **Open:** what happens to a row whose JD fetch fails permanently — never scored, or scored on what
 little there is after N attempts. Not yet decided.
@@ -642,7 +673,7 @@ neither of them answers "is it up" from outside.
 `record()` writes a `feedback` label at weight 5 and the webhook calls it, and production has
 **zero of them** against 3,499 `llm` labels. Two decisions:
 
-1. **The 98 imported applications — decided 2026-07-31: do it.** Real applications the founder made,
+1. ✅ **Done.** **The 98 imported applications — decided 2026-07-31: do it.** Real applications the founder made,
    sitting as `applied_at` timestamps that never became training data. 98 true positives at 5×
    weight against a pool of 3,498 LLM guesses is the single largest quality win available. The
    argument against was that they predate the current profile generation; the owner's answer is that
@@ -652,6 +683,11 @@ neither of them answers "is it up" from outside.
    the current generation, and the next retrain consumes them.
 2. **Prove one live tap**, end to end: tap Build CV in Telegram → a `feedback` label appears →
    a retrain consumes it. Until that has happened once, the flywheel is untested in production.
+
+   **Still open, and now measurable.** Production holds exactly **98 `feedback` labels against 2,788
+   `llm`** — 98 is the backfill count, so not one has come from a tap. The second account started
+   receiving jobs on 2026-08-03, which is the first time anyone but the founder has had a card to
+   tap, so this is finally testable rather than blocked.
 
 ### 6c — the two sweeps that never run
 
@@ -699,6 +735,19 @@ change — and it is the user-facing problem.
 it, a tap in Telegram has produced a label that a retrain consumed, and no user receives the same
 role twice in one digest.
 
+**Measured 2026-08-03 — two of four.**
+
+| Criterion | State |
+|---|---|
+| Corpus on one embedding version | ✅ `select count(distinct embedding_version)` = **1** |
+| Both models trained on it | ✅ owner v4, second account v1 |
+| A tap produced a label a retrain consumed | ❌ 98 `feedback` labels, all from the backfill (6b.2) |
+| No user gets the same role twice in a digest | ❌ not built — 6g's collapse-at-delivery is a decision, not code |
+
+The two outstanding are both in 6g/6b and both now *testable* rather than blocked: until 2026-08-03
+only one account received cards at all, so neither duplicate delivery nor a live tap could be
+observed on anybody but the founder.
+
 ### 6n — the corpus an operator can see and seed (added 2026-08-03)
 
 **Why.** A new user's training data is whatever the shared corpus already holds for their field, and
@@ -710,20 +759,24 @@ mechanical engineering one. Every user after the first inherits that shape.
 Four pieces, in this order. The first two are additive and safe; the fourth can silently cost people
 jobs and must not be built before it can be measured.
 
-**1. A corpus browser in the admin panel.** Search across every posting, without scores — scores are
-per user and this is the shared table. Source and date facets, so "what is actually in here" is a
-question an operator can answer. Today the only way to look is SQL.
+**1. A corpus browser in the admin panel** ✅ **done 2026-08-03.** Search across every posting,
+without scores — scores are per user and this is the shared table. Source and date facets, so "what
+is actually in here" is a question an operator can answer without SQL.
 
-**2. Operator keywords.** Terms an operator injects into the query set to fill the corpus ahead of
-the users who will need it. **Stored separately from user keywords and visibly distinguished**: an
-operator may delete their own and must not be able to delete somebody's real search term, which is
-theirs and is the thing their feed depends on.
+**2. Operator keywords** ✅ **done 2026-08-03.** Terms an operator injects into the query set to fill
+the corpus ahead of the users who will need it. **Stored separately from user keywords and visibly
+distinguished**: an operator may delete their own and must not be able to delete somebody's real
+search term, which is theirs and is the thing their feed depends on — so there is no control for it
+and no route behind it. Both lists are searchable and paged; twenty-odd terms in an unordered grid
+read as a wall.
 
-**3. Latency thresholds in the admin panel.** `pipeline_latency()` already measures found → scored →
-delivered; what is missing is green/amber/red against thresholds so a number nobody reads becomes an
-alert somebody acts on. **Set from measured normal behaviour, not guessed** — this has already gone
-wrong once, when the found → scored median looked alarming and turned out to be measuring backlog
-age rather than pipeline latency. Colours nobody trusts are worse than no colours.
+**3. Latency thresholds in the admin panel** ✅ **done 2026-08-03**, and then extended into a
+per-zone drill-down (6p) because a judged end-to-end number still cannot say *where*. Green/amber/red
+on the **p90**, not the median — half the jobs arriving promptly is not the claim this product makes.
+Thresholds come from the cadences the pipeline actually runs on, and a test pins them to
+`DELIVERY_INTERVAL_MIN` rather than to literals, so changing the cadence fails the build instead of
+quietly making amber meaningless. Below 20 samples the verdict is "not enough data" rather than a
+colour: a percentile over three rows is arithmetic, not evidence.
 
 **4. A prefilter before scoring — and not on keywords.** Every user currently scores every embedded
 corpus row: `score_lane` filters on `embedding IS NOT NULL` and the model version, and nothing else.
@@ -766,7 +819,7 @@ filter on at all: NoFluffJobs takes `criteriaSearch.city` only, so a region-leve
 there and should be flattened or dropped rather than sent. Collapsing subsumed locations per source
 would hand budget back. How much is unknown.
 
-### 6p — the latency drill-down: one row per zone (added 2026-08-03)
+### 6p — the latency drill-down: one row per zone ✅ **done 2026-08-03**
 
 **The end-to-end number is the one worth publishing and the one least useful for fixing anything.**
 "A posting took 36 minutes" does not say which of six handoffs ate them, and each of those is
@@ -823,6 +876,8 @@ other five rows look like the whole story.
 
 **Done when** an operator can open Latency, see which of six zones is amber, expand it, and come
 away knowing whether to add a worker, chase a source, or leave it alone — without an SSH session.
+✅ Shipped. Two rows read "not measured yet" until the corpus turns over on the new column, which is
+the honest state rather than a backfilled number.
 
 ### 6q — document building still reads the profile the capture flow wrote (added 2026-08-03)
 

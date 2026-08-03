@@ -16,6 +16,27 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ## 2026-08-03
 
+**The whole workflow walked on a fresh account** — signup, onboarding, the setup chat with its
+prompts and commands, training, and delivery — which is ROADMAP 6h, and it was the right call. The
+platform passed every automated test throughout and could not get a second person from signup to a
+delivered job. Fourteen defects, and **not one of them was an exception**: every single failure was
+a component doing something reasonable with a value nobody had written, or reading a different
+column from the one that had been.
+
+Three families, each of which is a lesson rather than a bug:
+
+1. **Two definitions of the same thing, disagreeing.** "Profile ready", "is admin", "is a run in
+   progress", "is this account due" — each existed twice, and in every case one copy was the one
+   enforced and the other was the one the user could see. The visible half is what a person acts on,
+   so the account looked finished and refused to work.
+2. **Written here, read there.** The setup conversation replaced the capture flow and writes profile
+   *files*; four consumers still read columns only the old flow ever populated. Nothing errored —
+   the readers found NULL and did the sensible thing with it.
+3. **Nothing arms the first value.** Delivery slots, and before them the rubric column: a field that
+   only ever gets *advanced* by the thing that consumes it, with no code anywhere setting it the
+   first time. The founder's account hides every one of these, because a migration script filled its
+   columns before the rebuild.
+
 ### Every account created on the platform was permanently silent (`libs/queue/queue.py`)
 
 Found by the alert, which is the first time one of these has been caught by the platform rather than
@@ -76,7 +97,202 @@ found is reported without a verdict**: sources round what they publish ("2 days 
 threshold there judges their precision rather than our lag. `unjudged` is kept distinct from
 `unknown` for the same reason — a deliberate silence must not read as missing data.
 
+### The training run refused, then crashed, on a profile that was complete (`libs/scoring/features.py`, `services/trainer`, `services/scorer`)
+
+**The sixth place the same assumption was made, and the previous five were each fixed alone.**
+
+`ProfileSchema.model_validate(user.profile)` — the JSON the capture flow wrote and nothing sets any
+more. An account built by the setup conversation has prose files and no JSON, so this raised: it
+killed the training run five times, and once training was fixed it killed *every score job for the
+same account* instead. Both dead-lettered with a pydantic error that named a schema rather than the
+thing that was actually missing.
+
+`spec_for` is now one helper for all of it. An absent profile yields an empty spec, the keyword
+features contribute nothing, and the embedding carries the whole signal — a real model, and strictly
+better than refusing to score a profile that is complete in the form the platform now uses.
+
+`services/docgen/run.py` makes the same call and will fail the same way the first time this account
+builds a CV. **Deliberately not fixed here**: a document genuinely needs the person's details, so it
+has to read the profile files rather than fall back to an empty schema. That is ROADMAP 6q.
+
+### A job's finish time was when its transaction opened (`libs/queue/queue.py`)
+
+`finished_at` was set from the statement's own clock rather than the wall clock at completion, so
+every duration measured on the queue was short by however long the transaction had already been
+open. Harmless until something reads it — which the latency drill-down now does, per lane, as the
+number that separates "no free worker" from "the work got slower".
+
+### Stop did not stop, and the page could not tell a run from a gap (`libs/labels`, `services/api/process_routes.py`, `web`)
+
+Four defects in one surface, found by watching a real training run rather than by testing one.
+
+**Stop cancelled queued rows, which could never have ended it.** The labeller re-enqueues itself
+while work remains, so the deleted row came straight back and the run carried on spending the user's
+own Claude credential while the page reported it stopped. A flag the worker reads before it re-arms
+is the only thing that can end a self-perpetuating loop from outside it: `users.labelling_paused`,
+set by Stop, checked in the one place that keeps labelling alive, cleared when the user starts again
+— a pause, not a way to brick your own account.
+
+**A run between batches read as no run at all.** Labelling goes in batches, and between a worker
+finishing one and the dispatcher enqueuing the next the account has nothing queued. "Running" read
+only `ready` and `claimed`, so the page flipped back to its start button mid-run and told a user
+nothing was happening while ten jobs had just been judged. A recent finish now counts too, for as
+long as the phase has work left. The page had the mirror of the same bug — it polled only while
+running, so one idle moment ended the polling for good, and a page opened fresh mid-run never
+started at all if its first answer landed in a gap.
+
+**Nothing said the run survives the browser.** Pressing the button writes queue rows and the worker
+pools drain them, so closing the laptop changes nothing — but the page said "Starting…" once and
+then looked identical whether the run was halfway through or had failed an hour ago. It now derives
+the phase, a count against the target, and a bar from the queue rather than from a progress column,
+for the reason every other state here is derived: a counter that can disagree with the queue
+eventually will.
+
+**And the label budget an operator set was read by nothing.** `label_pool` was in the limits
+catalogue and rendered in the admin panel as "Jobs bought per labelling run" — a control that looked
+like a setting and behaved as decoration. It matters more than most, because labelling runs on the
+user's own credential: how many jobs to buy opinions on is a decision about their money.
+
+### A cold start stalled at ten labels because the corpus belongs to whoever harvests most (`services/labeller/pool.py`)
+
+The candidate window was the newest 5,000 rows **on the platform**, filtered against the user's
+config only afterwards. The corpus is shared, so recency belongs to whoever searches most: an
+account looking for mechanical engineering roles had 159 matching rows sitting in the corpus and saw
+none of them, because thousands of fresher software postings stood in front of them. Ten labels, a
+warning in a log nobody reads, and a page reporting "10 of 300" as though it were progressing.
+
+The user's own terms now narrow the query before the budget is spent. A share of the newest rows is
+kept alongside regardless of terms, because the rules score reads location and remoteness too and a
+pool drawn only from title matches would never surface a job worded in a way the user did not think
+of.
+
+**Not the harvester's query budget**, which was the first suspicion and turns out to be already fair
+— `select_within_budget` is round-robin with carry-over, so a niche search gets its first query
+before anyone gets their second. An earlier remark blaming the 24-hour freshness window was
+speculation and was wrong: `score_job` has no age term and the pool looks back 90 days.
+
+### Setup writes one place and three consumers read another (`services/api/setup_routes.py`, `process_routes.py`, `libs/profiles`)
+
+The family that cost the most, all three found on one account in one afternoon.
+
+**The rubric never reached the labeller.** `label.md` is written as a profile file; cold start,
+relabelling and label scoping all read `users.rubric_md`, which only the superseded capture flow
+ever populated. So an account with a complete 13,809-character rubric had a labeller answering
+`confirm_profile` forever — no pool, no labels, no model, and nothing anywhere saying why. Writing
+`label.md` now mirrors it onto the user row and re-derives `profile_version`, which is
+`sha256(rubric_md)[:8]` and scopes which labels a training run may use, so it has to move with the
+text. `profile_generation` advances only when the rubric actually changed, or an identical rewrite
+would send somebody back through relabelling they did not need.
+
+**A finished profile was offered the flow that would overwrite it.** An account that had just
+completed setup was told to "process your documents to build your profile" — the capture flow the
+conversation replaced, and running it would have overwritten a finished profile with a
+schema-derived one, the exact regression `REBUILD_PLAN.md` exists to prevent. Two definitions of
+"profile ready" that disagreed: `may_train` and the setup page read the files, this read
+`processed_at`, a column nothing sets any more.
+
+Found while checking a live account was ready to train, **not by a test** — which is the argument
+for checking before pressing the button rather than after.
+
+### The director handed the user back to itself (`libs/agents`, `services/api/setup_routes.py`)
+
+A live run ended by telling the user to open two more chats — for role angles and the scoring rubric
+— which that same conversation was carrying the instructions to do.
+
+Two causes, and the second is the real one. The director's body said it was not handing off; the
+environment block appended *after* it said the opposite, with the exact sentence to use. **Last word
+wins, and the last word was wrong.** The handoff paragraph is now a slot in that block: the four
+standalone steps still get it, the director gets the opposite instruction.
+
+But no wording would have held, **because after the first turn it was not the director**. Only a
+message opening with a slash command names an agent; every ordinary reply omits it and the field
+defaulted to `setup`. So a chat started as the director ran the director exactly once and handled
+every subsequent answer with a prompt that knows nothing about the four-step map and is told,
+correctly for itself, to send the user elsewhere for anything it cannot do. That is also why the
+handoff always arrived at a step boundary. **A conversation is one command from end to end** — the
+assumption the whole design rests on, and the one thing that was not enforced. The agent is now
+resolved from the conversation, per conversation, so redoing one step in a second chat cannot
+retarget the first.
+
+### The setup page withheld its own good news (`web/src/pages/SetupPage.tsx`)
+
+Progress was read on mount and when a message was sent. The turn that writes the last file is by
+definition one nobody sends a message after, so "setup complete, your model can be trained" waited
+for a reload — the single moment this page has good news and it was the moment it stayed quiet. It
+now re-reads the moment a turn stops running.
+
+Chat titles were generated and only generated, so three chats called "Your profile" told nobody
+which was which. A pencil beside the delete cross renames in the tab itself; auto-naming only ever
+fills a chat still holding the default, so a renamed one keeps its name.
+
+### The operator can now see the corpus, and seed it (`services/api/admin_routes.py`, `web`)
+
+ROADMAP 6n, first two pieces. A new user's training data is whatever the shared corpus already holds
+for their field, and the corpus only holds what previous users searched for — which is how the
+second account found 240 matching postings against 14,359 rows. Until now the only way to look was
+SQL, so nobody did.
+
+A Corpus tab searches every posting with source and date facets, and operator keywords inject terms
+into the query set to fill the corpus ahead of the people who will need it. **Stored separately from
+user keywords and visibly distinguished**: an operator may delete their own and must never be able
+to delete somebody's real search term, which is theirs and is what their feed depends on. Both lists
+are searchable and paged — twenty-odd terms in an unordered grid reads as a wall.
+
+Also fixed on the way: **a trained account was permanently "training"**, because the state was read
+from the presence of a model rather than from the queue.
+
 ## 2026-08-02
+
+### Onboarding could not be completed at all (`web/src/pages/onboarding/`, `services/api/onboarding_routes.py`)
+
+Three separate walls on the signup path, each of which stopped a real person.
+
+**The chat id could only be discovered, never supplied.** It was captured by reading whoever last
+messaged the bot, which needs the update to still be queued at Telegram and nothing else to have
+consumed it — neither of which the platform controls. When it came back empty there was nothing else
+to try: the page stayed incomplete and its only instruction was to press Start again, which the user
+had already done. The id is not optional — delivery returns early without it even when a channel is
+configured — so there is now a field for it, proven by *messaging* the chat rather than by looking
+it up, because a bot can read a chat it may not write to and writing is the only thing delivery
+needs. Auto-capture stays as "Read it for me"; what it can no longer be is the only way through. The
+bot-token hint promising "you never have to find it" is gone, being a promise the platform cannot
+keep.
+
+**Moving forward was a side effect of saving.** Nothing on the page moved you on, so a step already
+finished — revisited from the rail, or completed a moment earlier — had nothing to press, and a step
+that saves twice could disappear part-way through. Telegram is the clearest case: it takes a token,
+then wants the chat id, and the page had already gone. Continue is now always present and disabled
+until the step is satisfied. That is a control you can see before you can use it, which the previous
+design deliberately avoided; it is the lesser problem, since a greyed button explaining itself beats
+an absent one somebody hunts for.
+
+**The locations cap was five, and the radios were invisible.** The picker offers about twenty
+choices, so any honest answer to "tick everything that applies" went past the cap — and the only
+thing that said so was a validation failure after the tick, naming a count rather than a choice.
+Twelve now, counted as the form fills. `accent-color: var(--ink)` painted the selected dot near-white
+on a near-white control; checkboxes survived it because a tick reads as a shape at low contrast and a
+dot does not.
+
+### One admin rule, in three copies, disagreeing (`services/api/dashboard_routes.py`)
+
+Granting operator access from the panel set `is_admin` and the API began accepting that user's
+`/admin/*` calls straight away — while their dashboard carried on hiding the menu that leads there,
+because it computed its hint from `ADMIN_EMAILS` alone. **Access with no way to reach it**, which to
+the person granted it is a toggle that does nothing. The onboarding branch omitted the check
+entirely, so an operator part-way through their own signup saw no panel at all — exactly when they
+want one, since a fresh account being set up is usually the thing they are watching.
+
+Both branches now call the predicate `require_admin` enforces. The two sources stay ORed, so a flag
+can grant access but cannot revoke the bootstrap operator.
+
+### The CI check that would have caught two crash-loops existed, and the new service was not in it
+
+The OAuth broker crash-looped twice in production on transitive dependencies of `libs.obs` —
+cryptography, then sqlalchemy — each found by watching a container restart. Every other service has
+a job proving it starts from its own requirements alone; the broker was added without one.
+
+Also green again: the committed API contract was missing three credential routes, and a test ended
+with `assert stale in stale`, which is true of every string and tested nothing.
 
 ### `/setup-boards` was answered by improvisation (`services/api/setup_routes.py`, `libs/agents`)
 
