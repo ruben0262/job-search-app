@@ -16,10 +16,11 @@ from __future__ import annotations
 import logging
 import os
 import uuid as _uuid
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
-from sqlalchemy import func, select
+from pydantic import BaseModel, Field
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from libs.db.models import User, UserJobState, UserLabel
@@ -356,3 +357,149 @@ def set_user_limit(user_id: _uuid.UUID, key: str, body: LimitPatch,
 
     audit(logger, "admin.limit_set", user=admin.id, subject=user_id, limit=key, value=body.value)
     return {"status": "ok", "limits": all_for(target)}
+
+# What an operator can page through at once. The corpus is tens of thousands of rows and this runs
+# in a request; a browser that can return all of it is a browser that can time out.
+CORPUS_PAGE = 50
+
+
+@router.get("/corpus")
+def corpus(db: Session = Depends(get_db), admin: User = Depends(require_admin),
+           q: str = "", source: str = "", days: int = 30,
+           offset: int = 0) -> dict:
+    """Search the shared corpus. **No scores** -- those are per user and this is the shared table.
+
+    The only way to see what the corpus actually holds was SQL, which meant nobody looked. That
+    matters more than it sounds: a new account's training data is whatever this table already has
+    for their field, and the second account on this platform found 240 usable rows out of 14,359
+    because the corpus had accumulated for weeks against one search and hours against theirs.
+
+    Facets rather than a bare list: "what is in here" is answered by source and recency, and the
+    counts are the answer an operator is actually looking for.
+    """
+    from libs.db.models import CorpusJob
+
+    window = datetime.now(UTC) - timedelta(days=max(days, 1))
+    filters = [CorpusJob.first_seen_at >= window]
+    if q.strip():
+        needle = f"%{q.strip()}%"
+        filters.append(or_(CorpusJob.title.ilike(needle), CorpusJob.company.ilike(needle)))
+    if source.strip():
+        filters.append(CorpusJob.source == source.strip())
+
+    total = db.scalar(select(func.count()).select_from(CorpusJob).where(*filters)) or 0
+    rows = db.scalars(
+        select(CorpusJob).where(*filters)
+        .order_by(CorpusJob.first_seen_at.desc())
+        .offset(max(offset, 0)).limit(CORPUS_PAGE)).all()
+
+    by_source = db.execute(
+        select(CorpusJob.source, func.count())
+        .where(CorpusJob.first_seen_at >= window)
+        .group_by(CorpusJob.source).order_by(func.count().desc())).all()
+
+    audit(logger, "admin.corpus", user=admin.id, q=q[:60], total=total)
+    return {
+        "total": total,
+        "offset": max(offset, 0),
+        "page_size": CORPUS_PAGE,
+        "sources": [{"source": name or "unknown", "count": count} for name, count in by_source],
+        "jobs": [
+            {"id": row.id, "title": row.title, "company": row.company,
+             "location": row.location, "source": row.source, "is_remote": row.is_remote,
+             # Whether it can be scored at all. An unembedded row is invisible to every user, and
+             # a corpus full of them looks healthy from a row count alone.
+             "embedded": row.embedding is not None,
+             "described": bool(row.description and len(row.description) > 400),
+             "url": row.url,
+             "first_seen_at": row.first_seen_at.isoformat() if row.first_seen_at else None,
+             "posted_at": row.posted_at.isoformat() if row.posted_at else None}
+            for row in rows],
+    }
+
+
+class KeywordBody(BaseModel):
+    keyword: str = Field(min_length=2, max_length=100)
+    # Absent means every location the platform already searches, which is what seeding a field
+    # rather than a place wants.
+    location: str | None = Field(default=None, max_length=64)
+    note: str | None = Field(default=None, max_length=200)
+
+
+@router.get("/keywords")
+def keywords(db: Session = Depends(get_db), admin: User = Depends(require_admin)) -> dict:
+    """Every term the harvest currently searches, and who it belongs to.
+
+    **Users' terms are listed and are not deletable here.** They are what somebody's feed is built
+    from; an operator seeing them is support, an operator able to remove them is an outage that
+    looks like a setting.
+    """
+    from libs.db.models import OperatorKeyword, UserConfig
+
+    injected = db.scalars(select(OperatorKeyword).order_by(OperatorKeyword.keyword)).all()
+
+    owned: dict[str, set[str]] = {}
+    rows = db.execute(select(UserConfig.user_id, UserConfig.config)).all()
+    emails = dict(db.execute(select(User.id, User.email)).all())
+    for user_id, config in rows:
+        for section in (config or {}).get("sections") or []:
+            for term in section.get("keywords") or []:
+                owned.setdefault(str(term).strip().lower(), set()).add(
+                    emails.get(user_id, "unknown"))
+
+    return {
+        "operator": [
+            {"id": row.id, "keyword": row.keyword, "location": row.location, "note": row.note,
+             "created_by": row.created_by,
+             "created_at": row.created_at.isoformat() if row.created_at else None}
+            for row in injected],
+        # Read-only, and said so in the payload rather than only in the page, so a client that
+        # forgets cannot offer a delete that the server would refuse anyway.
+        "users": [{"keyword": term, "accounts": sorted(who), "deletable": False}
+                  for term, who in sorted(owned.items())],
+    }
+
+
+@router.post("/keywords", status_code=status.HTTP_201_CREATED)
+def add_keyword(body: KeywordBody, db: Session = Depends(get_db),
+                admin: User = Depends(require_admin)) -> dict:
+    """Inject a term into the harvest, to fill the corpus ahead of the users who will need it."""
+    from libs.db.models import OperatorKeyword
+
+    term = " ".join(body.keyword.split()).lower()
+    place = (body.location or "").strip() or None
+    existing = db.scalar(
+        select(OperatorKeyword).where(OperatorKeyword.keyword == term,
+                                      OperatorKeyword.location == place))
+    if existing is not None:
+        # Idempotent rather than a duplicate query stem: adding the same term twice is a person
+        # being unsure whether it took, not a request for two of them.
+        return {"id": existing.id, "keyword": existing.keyword, "location": existing.location,
+                "created": False}
+
+    row = OperatorKeyword(keyword=term, location=place, note=(body.note or "").strip() or None,
+                          created_by=admin.email)
+    db.add(row)
+    db.flush()
+    audit(logger, "admin.keyword_added", user=admin.id, keyword=term, location=place)
+    return {"id": row.id, "keyword": row.keyword, "location": row.location, "created": True}
+
+
+@router.delete("/keywords/{keyword_id}")
+def remove_keyword(keyword_id: int, db: Session = Depends(get_db),
+                   admin: User = Depends(require_admin)) -> dict:
+    """Remove an injected term.
+
+    **Only reaches `operator_keywords`.** A user's own search terms live on their config and are not
+    addressable from here at all, which is why this takes a row id from that table rather than a
+    string that could match either.
+    """
+    from libs.db.models import OperatorKeyword
+
+    row = db.get(OperatorKeyword, keyword_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="no such keyword")
+    db.delete(row)
+    audit(logger, "admin.keyword_removed", user=admin.id, keyword=row.keyword)
+    return {"status": "removed", "keyword": row.keyword}
+

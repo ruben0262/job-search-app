@@ -32,6 +32,7 @@ shared harvest wait on N users' models.
 from __future__ import annotations
 
 import logging
+import uuid as _uuid
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
@@ -146,6 +147,37 @@ def _run_source(source: Source, cfg: dict, repo: AtsRepository) -> list[JobLink]
     return source.adapter(cfg, logger, **kwargs)
 
 
+
+# The pseudo-account operator keywords are folded in under. A real UUID so `build_query_set` and the
+# round-robin treat it as one more user, and a fixed one so it does not fragment across cycles.
+OPERATOR_DEMAND_ID = _uuid.UUID("00000000-0000-0000-0000-0000000000ff")
+
+
+def _operator_demand(session) -> dict:
+    """Operator keywords, shaped like a user config so the fold needs no special case.
+
+    Returns `{}` when there are none, which is the normal state and costs nothing.
+
+    Grouped into one section per location so a term with no location contributes a "wherever" query
+    -- `build_query_set` already reads an empty location list that way, and that is the right
+    default for seeding a field rather than a place.
+    """
+    from libs.db.models import OperatorKeyword  # noqa: PLC0415 - avoids a cycle at import time
+
+    rows = session.scalars(select(OperatorKeyword)).all()
+    if not rows:
+        return {}
+
+    by_place: dict[str, list[str]] = {}
+    for row in rows:
+        by_place.setdefault(row.location or "", []).append(row.keyword)
+
+    sections = [{"keywords": sorted(set(terms)),
+                 "locations": [place] if place else [],
+                 "platform": "all"}
+                for place, terms in sorted(by_place.items())]
+    return {OPERATOR_DEMAND_ID: {"sections": sections}}
+
 def run_cycle(
     session: Session,
     *,
@@ -185,6 +217,14 @@ def run_cycle(
         # 1-2. Demand, folded and budgeted. Dormant and unverified accounts are excluded by
         # active_configs, so an abandoned account stops costing anything (G11).
         configs = tenant.active_configs()
+
+        # **Operator-injected demand, folded in as one more participant.** The corpus only holds
+        # what somebody has already searched for, so an account arriving in a field nobody has
+        # searched finds nothing to train on -- which is exactly what happened to the second
+        # account here. Seeding ahead of demand is the fix, and it belongs in the same fold as
+        # everybody else's terms so it competes for budget on the same round-robin footing rather
+        # than jumping the queue.
+        configs = {**configs, **_operator_demand(session)}
         query_set = build_query_set(configs, sources=("indeed", "google"))
         planned, deferred = select_within_budget(
             query_set, max_queries=max_queries, carried_over=carried_over)

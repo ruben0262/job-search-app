@@ -101,6 +101,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/corpus": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Corpus
+         * @description Search the shared corpus. **No scores** -- those are per user and this is the shared table.
+         *
+         *     The only way to see what the corpus actually holds was SQL, which meant nobody looked. That
+         *     matters more than it sounds: a new account's training data is whatever this table already has
+         *     for their field, and the second account on this platform found 240 usable rows out of 14,359
+         *     because the corpus had accumulated for weeks against one search and hours against theirs.
+         *
+         *     Facets rather than a bare list: "what is in here" is answered by source and recency, and the
+         *     counts are the answer an operator is actually looking for.
+         */
+        get: operations["corpus_admin_corpus_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/health": {
         parameters: {
             query?: never;
@@ -120,6 +148,58 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/keywords": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Keywords
+         * @description Every term the harvest currently searches, and who it belongs to.
+         *
+         *     **Users' terms are listed and are not deletable here.** They are what somebody's feed is built
+         *     from; an operator seeing them is support, an operator able to remove them is an outage that
+         *     looks like a setting.
+         */
+        get: operations["keywords_admin_keywords_get"];
+        put?: never;
+        /**
+         * Add Keyword
+         * @description Inject a term into the harvest, to fill the corpus ahead of the users who will need it.
+         */
+        post: operations["add_keyword_admin_keywords_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/keywords/{keyword_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove Keyword
+         * @description Remove an injected term.
+         *
+         *     **Only reaches `operator_keywords`.** A user's own search terms live on their config and are not
+         *     addressable from here at all, which is why this takes a row id from that table rather than a
+         *     string that could match either.
+         */
+        delete: operations["remove_keyword_admin_keywords__keyword_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1846,6 +1926,15 @@ export interface components {
             /** Links */
             links?: components["schemas"]["ProfileLink"][];
         };
+        /** KeywordBody */
+        KeywordBody: {
+            /** Keyword */
+            keyword: string;
+            /** Location */
+            location?: string | null;
+            /** Note */
+            note?: string | null;
+        };
         /**
          * Language
          * @description ISO 639-1 codes the platform offers. Also a controlled list, for the same reason.
@@ -2342,6 +2431,42 @@ export interface operations {
             };
         };
     };
+    corpus_admin_corpus_get: {
+        parameters: {
+            query?: {
+                q?: string;
+                source?: string;
+                days?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     health_admin_health_get: {
         parameters: {
             query?: never;
@@ -2360,6 +2485,96 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    keywords_admin_keywords_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    add_keyword_admin_keywords_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KeywordBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_keyword_admin_keywords__keyword_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                keyword_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

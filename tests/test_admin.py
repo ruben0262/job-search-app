@@ -354,3 +354,81 @@ def test_granting_admin_also_shows_the_menu_item(api, monkeypatch):
     # Still mid-onboarding here, which is the branch that used to omit the key entirely.
     assert http.get("/dashboard").json()["is_admin"] is True, "the menu must appear"
     assert http.get("/admin/users").status_code == 200, "and lead somewhere"
+
+
+def test_the_corpus_browser_reports_what_is_actually_in_there(api):
+    """**The only way to see the corpus was SQL, so nobody looked.**
+
+    That matters more than it sounds: a new account's training data is whatever this shared table
+    already holds for their field, and the second account here found 240 usable rows out of 14,359
+    because the corpus had accumulated for weeks against one search and hours against theirs.
+    """
+    from datetime import UTC, datetime
+
+    from libs.db.models import CorpusJob
+
+    http, session, operator, _ordinary, sign_in = api
+    sign_in(http, operator)
+    for i in range(3):
+        session.add(CorpusJob(content_key=f"c-{i}", title="Graduate Mechanical Engineer",
+                              company="Acme", location="United Kingdom", source="greenhouse",
+                              url=f"https://example.com/{i}", is_remote=False,
+                              first_seen_at=datetime.now(UTC)))
+    session.add(CorpusJob(content_key="c-other", title="Backend Engineer", company="Other",
+                          location="Remote", source="remotive", url="https://example.com/x",
+                          is_remote=True, first_seen_at=datetime.now(UTC)))
+    session.flush()
+
+    everything = http.get("/admin/corpus").json()
+    assert everything["total"] >= 4
+    assert any(row["source"] == "greenhouse" for row in everything["sources"])
+    # No per-user scores: this is the shared table and a score belongs to an account.
+    assert all("score" not in job for job in everything["jobs"])
+
+    searched = http.get("/admin/corpus?q=mechanical").json()
+    assert searched["total"] == 3
+    assert all("Mechanical" in job["title"] for job in searched["jobs"])
+
+
+def test_operator_keywords_are_added_listed_and_removed(api):
+    """Seeding the corpus ahead of the users who will need it."""
+    http, session, operator, _ordinary, sign_in = api
+    sign_in(http, operator)
+
+    created = http.post("/admin/keywords",
+                        json={"keyword": "  Stress   Engineer ", "location": "united_kingdom",
+                              "note": "seeding mech eng"})
+    assert created.status_code == 201
+    assert created.json()["keyword"] == "stress engineer", "whitespace and case are normalised"
+
+    # Adding it again is somebody unsure whether it took, not a request for two query stems.
+    again = http.post("/admin/keywords",
+                      json={"keyword": "stress engineer", "location": "united_kingdom"})
+    assert again.json()["created"] is False
+
+    listed = http.get("/admin/keywords").json()
+    assert any(row["keyword"] == "stress engineer" for row in listed["operator"])
+
+    removed = http.delete(f"/admin/keywords/{created.json()['id']}")
+    assert removed.status_code == 200
+    assert not http.get("/admin/keywords").json()["operator"]
+
+
+def test_a_users_own_search_terms_are_shown_but_never_deletable(api):
+    """**Their feed is built from these.** An operator seeing them is support; an operator able to
+    remove them is an outage that looks like a setting. There is no route that can reach them: the
+    delete takes a row id from `operator_keywords`, which a user's terms are not in."""
+    from libs.db.models import UserConfig
+
+    http, session, operator, ordinary, sign_in = api
+    sign_in(http, operator)
+    session.add(UserConfig(user_id=ordinary.id,
+                           config={"sections": [{"keywords": ["quantum welder"],
+                                                 "locations": ["europe"], "platform": "all"}]}))
+    session.flush()
+
+    listed = http.get("/admin/keywords").json()
+    theirs = [row for row in listed["users"] if row["keyword"] == "quantum welder"]
+    assert theirs, "an operator should be able to see what a user searches for"
+    assert theirs[0]["deletable"] is False
+    assert ordinary.email in theirs[0]["accounts"]

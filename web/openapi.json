@@ -584,6 +584,45 @@
         "title": "IdentitySchema",
         "type": "object"
       },
+      "KeywordBody": {
+        "properties": {
+          "keyword": {
+            "maxLength": 100,
+            "minLength": 2,
+            "title": "Keyword",
+            "type": "string"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "required": [
+          "keyword"
+        ],
+        "title": "KeywordBody",
+        "type": "object"
+      },
       "Language": {
         "description": "ISO 639-1 codes the platform offers. Also a controlled list, for the same reason.",
         "enum": [
@@ -1560,6 +1599,82 @@
         ]
       }
     },
+    "/admin/corpus": {
+      "get": {
+        "description": "Search the shared corpus. **No scores** -- those are per user and this is the shared table.\n\nThe only way to see what the corpus actually holds was SQL, which meant nobody looked. That\nmatters more than it sounds: a new account's training data is whatever this table already has\nfor their field, and the second account on this platform found 240 usable rows out of 14,359\nbecause the corpus had accumulated for weeks against one search and hours against theirs.\n\nFacets rather than a bare list: \"what is in here\" is answered by source and recency, and the\ncounts are the answer an operator is actually looking for.",
+        "operationId": "corpus_admin_corpus_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Q",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Source",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "title": "Days",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Corpus Admin Corpus Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Corpus",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/admin/health": {
       "get": {
         "description": "Every number, plus the conditions that currently need a person.\n\nThe alerts are computed here rather than left to the reader, because a page of numbers is\nsomething an operator scans and an alert list is something they act on \u2014 and the whole argument\nof `OPERATIONS_PLAN.md` \u00a71 is that a failure nobody is told about is a failure nobody fixes.",
@@ -1579,6 +1694,117 @@
           }
         },
         "summary": "Health",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/keywords": {
+      "get": {
+        "description": "Every term the harvest currently searches, and who it belongs to.\n\n**Users' terms are listed and are not deletable here.** They are what somebody's feed is built\nfrom; an operator seeing them is support, an operator able to remove them is an outage that\nlooks like a setting.",
+        "operationId": "keywords_admin_keywords_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Keywords Admin Keywords Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Keywords",
+        "tags": [
+          "admin"
+        ]
+      },
+      "post": {
+        "description": "Inject a term into the harvest, to fill the corpus ahead of the users who will need it.",
+        "operationId": "add_keyword_admin_keywords_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KeywordBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Add Keyword Admin Keywords Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Keyword",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/keywords/{keyword_id}": {
+      "delete": {
+        "description": "Remove an injected term.\n\n**Only reaches `operator_keywords`.** A user's own search terms live on their config and are not\naddressable from here at all, which is why this takes a row id from that table rather than a\nstring that could match either.",
+        "operationId": "remove_keyword_admin_keywords__keyword_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "keyword_id",
+            "required": true,
+            "schema": {
+              "title": "Keyword Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Remove Keyword Admin Keywords  Keyword Id  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Keyword",
         "tags": [
           "admin"
         ]
