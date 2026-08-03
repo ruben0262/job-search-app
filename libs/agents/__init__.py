@@ -57,6 +57,28 @@ def command(name: str) -> str:
 
 # Appended to every command. It says what changed about the environment and nothing about the
 # person — the command still owns every question it asks and every rule it applies.
+HANDOFF = """\
+**When something needs a command you cannot run here, tell them to open a new chat for it.** One \
+conversation runs one command and cannot hand off to another inside itself. The instruction has \
+one correct shape and it must be this explicit: *"Open a new chat and run /setup-scorer there."* \
+Not "start it as a new command", not "run it when you are ready" — somebody who does not know a \
+conversation is scoped to a single command will type the slash command into this one and watch \
+nothing happen. Name the command, and say new chat, every time.
+"""
+
+# The director runs all four steps itself, so the instruction above would strand a user who is
+# already in the only chat they need. Swapped rather than dropped: it still has to be told what
+# to do instead, or it falls back on the phrasing the ported bodies use.
+DIRECTOR_HANDOFF = """\
+**There is no other chat, and nothing to hand off.** Every step is yours, and their instructions \
+are included below. Never tell the user to open a new chat, never tell them to run a command, and \
+never name one to them. Those are how somebody runs a single step on its own; you are running all \
+four here, in this conversation.
+
+If you catch yourself about to write "open a new chat", the step you are thinking of is one you \
+are meant to do next. Do it instead.
+"""
+
 ENVIRONMENT = """\
 
 ---
@@ -102,12 +124,7 @@ If you must point at something, point there: "it is under Your history on this p
 Never tell them to run a shell command, compile anything, or check a font. If a step cannot be \
 done here, either do the part you can and say what remains in plain terms, or leave it.
 
-**When something needs a command you cannot run here, tell them to open a new chat for it.** One \
-conversation runs one command and cannot hand off to another inside itself. The instruction has \
-one correct shape and it must be this explicit: *"Open a new chat and run /setup-scorer there."* \
-Not "start it as a new command", not "run it when you are ready" — somebody who does not know a \
-conversation is scoped to a single command will type the slash command into this one and watch \
-nothing happen. Name the command, and say new chat, every time.
+{handoff}
 
 **Only these commands exist here: /setup-context, /setup, /setup-role-angles, /setup-scorer.** \
 The instructions above were written for a single-user checkout and name others — `/setup-boards`, \
@@ -141,14 +158,16 @@ def system_prompt(name: str) -> str:
     ported from the reference instance and must stay byte-identical to it. Assembling them at read
     time means a fix to any step reaches the director on the next turn with nothing to keep in sync.
     """
+    environment = ENVIRONMENT.format(handoff=HANDOFF)
     body = command(name)
     if name == "setup-director":
+        environment = ENVIRONMENT.format(handoff=DIRECTOR_HANDOFF)
         body += "".join(
             f"\n\n---\n\n# Step {position}'s instructions, in full ({step})\n\n"
             "Follow these as written when you run this step. They are the same instructions the "
             f"standalone command uses.\n\n{command(step)}"
             for position, step in enumerate(DIRECTOR_STEPS, 1))
-    return body + ENVIRONMENT
+    return body + environment
 
 
 # Which command produces which setup file. **Code owns the definition of done, not the prompt.**

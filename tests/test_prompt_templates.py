@@ -230,8 +230,15 @@ def test_every_command_says_how_to_reach_another_one():
     -- and typing it there does nothing."""
     from libs.agents import STARTABLE, system_prompt
 
+    # Every command except the director, which runs all four steps itself. Telling it to hand off
+    # would strand a user already sitting in the only chat they need -- and it did: a live run ended
+    # by sending somebody to open two more chats for work that conversation could have done.
     for name in STARTABLE:
         prompt = system_prompt(name)
+        if name == "setup-director":
+            assert "There is no other chat" in prompt
+            assert "Open a new chat and run" not in prompt
+            continue
         assert "Open a new chat and run" in prompt, name
         assert "new chat, every time" in prompt, name
 
