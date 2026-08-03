@@ -501,6 +501,11 @@ function CorpusTab() {
   const [source, setSource] = useState("");
   const [term, setTerm] = useState("");
   const [failed, setFailed] = useState<string | null>(null);
+  // Searching the term lists is a different thing from searching the corpus: these are short
+  // strings and the whole list is already in memory, so it filters as you type.
+  const [termQuery, setTermQuery] = useState("");
+  const [operatorPage, setOperatorPage] = useState(0);
+  const [userPage, setUserPage] = useState(0);
 
   const load = async (offset = 0) => {
     const query = new URLSearchParams({ q, source, days: "30", offset: String(offset) });
@@ -525,6 +530,17 @@ function CorpusTab() {
     await api.del(`/admin/keywords/${id}`);
     await loadKeywords();
   });
+
+  // **Filtered and paged in the browser.** Both lists are small enough to hold — a few hundred
+  // terms — and the point of the search box is to answer "is this already in here" before adding a
+  // duplicate, which wants an answer as you type rather than after a round trip.
+  const needle = termQuery.trim().toLowerCase();
+  const operatorTerms = (keywords?.operator ?? []).filter(
+    (row) => !needle || row.keyword.includes(needle));
+  const userTerms = (keywords?.users ?? []).filter((row) => !needle || row.keyword.includes(needle));
+  const operatorShown = operatorTerms.slice(operatorPage * TERMS_PER_PAGE,
+                                            (operatorPage + 1) * TERMS_PER_PAGE);
+  const userShown = userTerms.slice(userPage * TERMS_PER_PAGE, (userPage + 1) * TERMS_PER_PAGE);
 
   return (
     <>
@@ -629,6 +645,17 @@ function CorpusTab() {
         yet, so the first person who does has something to train on.
       </p>
 
+      <input
+        value={termQuery}
+        placeholder="Filter terms — check before adding a duplicate"
+        onChange={(event) => {
+          setTermQuery(event.target.value);
+          setOperatorPage(0);
+          setUserPage(0);
+        }}
+        style={{ maxWidth: "22rem", marginBottom: "0.8rem" }}
+      />
+
       <form
         className="row"
         style={{ margin: "0.8rem 0" }}
@@ -649,8 +676,8 @@ function CorpusTab() {
       </form>
       <Error>{addTerm.error ?? dropTerm.error}</Error>
 
-      <div className="sources">
-        {(keywords?.operator ?? []).map((row) => (
+      <div className="term-grid">
+        {operatorShown.map((row) => (
           <div key={row.id} className="source-row">
             <span className="source-name">
               {row.keyword}
@@ -668,10 +695,19 @@ function CorpusTab() {
             </button>
           </div>
         ))}
-        {keywords && !keywords.operator.length ? (
-          <p className="facts">No terms added yet. The harvest is searching for whatever users ask for.</p>
-        ) : null}
       </div>
+      {keywords && !operatorTerms.length ? (
+        <p className="facts">
+          {needle
+            ? "No added term matches that."
+            : "No terms added yet. The harvest is searching for whatever users ask for."}
+        </p>
+      ) : null}
+      <Pager
+        page={operatorPage}
+        total={operatorTerms.length}
+        onPage={setOperatorPage}
+      />
 
       {/* **Shown, never removable.** Somebody's feed is built from these. An operator seeing them is
           support; an operator able to delete one is an outage that looks like a setting, so there is
@@ -680,14 +716,57 @@ function CorpusTab() {
       <p className="hint">
         Theirs, not yours. Listed so you can see what the harvest is spending its budget on.
       </p>
-      <div className="sources">
-        {(keywords?.users ?? []).map((row) => (
-          <div key={row.keyword} className="source-row">
+      <div className="term-grid">
+        {userShown.map((row) => (
+          <div key={row.keyword} className="source-row" title={row.accounts.join(", ")}>
             <span className="source-name">{row.keyword}</span>
-            <span className="small muted">{row.accounts.length} account(s)</span>
+            <span className="small muted">{row.accounts.length}</span>
           </div>
         ))}
       </div>
+      {keywords && !userTerms.length ? (
+        <p className="facts">
+          {needle ? "No user term matches that." : "Nobody is searching for anything yet."}
+        </p>
+      ) : null}
+      <Pager page={userPage} total={userTerms.length} onPage={setUserPage} />
     </>
+  );
+}
+
+
+/** How many terms a page shows. Two columns of ten: the three-column grid put twenty-odd terms on
+ *  screen with no order anybody could see, which reads as a wall rather than a list. */
+const TERMS_PER_PAGE = 20;
+
+/** Previous/next for a list held in the browser. Renders nothing when everything already fits —
+ *  a pager under a list of six is furniture. */
+function Pager({
+  page,
+  total,
+  onPage,
+}: {
+  page: number;
+  total: number;
+  onPage: (page: number) => void;
+}) {
+  const pages = Math.ceil(total / TERMS_PER_PAGE);
+  if (pages <= 1) return null;
+  return (
+    <div className="row" style={{ marginTop: "0.6rem", alignItems: "center" }}>
+      <button className="secondary" disabled={page === 0} onClick={() => onPage(page - 1)}>
+        Previous
+      </button>
+      <span className="small muted">
+        {page + 1} of {pages} · {total.toLocaleString()} terms
+      </span>
+      <button
+        className="secondary"
+        disabled={page + 1 >= pages}
+        onClick={() => onPage(page + 1)}
+      >
+        Next
+      </button>
+    </div>
   );
 }

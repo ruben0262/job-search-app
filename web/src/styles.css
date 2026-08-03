@@ -2523,3 +2523,13 @@ td.num {
   background: var(--ink);
   transition: width 0.6s ease;
 }
+
+/* Search terms, two columns. The three-column source grid put twenty-odd short strings on screen
+   with no order anybody could follow — it read as a wall rather than a list, and a term you were
+   looking for was as hard to find as one you were not. */
+.term-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(20rem, 100%), 1fr));
+  gap: 0 1.5rem;
+  max-width: 44rem;
+}
