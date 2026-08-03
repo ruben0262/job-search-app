@@ -1998,11 +1998,8 @@ export interface components {
         };
         /** Turn */
         Turn: {
-            /**
-             * Agent
-             * @default setup
-             */
-            agent: string;
+            /** Agent */
+            agent?: string | null;
             /** Conversation Id */
             conversation_id?: string | null;
             /** Message */

@@ -49,8 +49,9 @@ WRITEABLE = {name for name, _kind in SEED_FILES}
 
 class Turn(BaseModel):
     message: str = Field(min_length=1, max_length=8_000)
-    # Which command is driving. Defaults to the one that has to run first.
-    agent: str = "setup"
+    # Which command is driving. **Absent means "whatever this conversation is already running"**,
+    # resolved below; only a message that opens with a slash command names one.
+    agent: str | None = None
     # Which chat this belongs to. Optional so an older client keeps working: absent means the most
     # recent conversation, which is what a single-threaded client always meant.
     conversation_id: _uuid.UUID | None = None
@@ -222,6 +223,30 @@ def delete_conversation(conversation_id: _uuid.UUID, db: Session = Depends(get_d
     return {"status": "deleted"}
 
 
+
+def _resolve_agent(db: Session, user_id: _uuid.UUID, conversation_id: _uuid.UUID,
+                   named: str | None) -> str:
+    """Which command handles this turn.
+
+    A named one wins: that is a user opening a chat with a slash command. Otherwise the conversation
+    keeps whatever it has been running, because a conversation is one command from end to end --
+    that is the assumption the whole design rests on, and it was the one thing not being enforced.
+
+    `setup` remains the fallback for a chat that has never had an agent, which is what a client
+    sending a bare message has always meant.
+    """
+    if named is not None:
+        return named
+    existing = db.scalar(
+        select(SetupMessage.agent)
+        .where(SetupMessage.user_id == user_id,
+               SetupMessage.conversation_id == conversation_id,
+               SetupMessage.agent.isnot(None))
+        .order_by(SetupMessage.id)
+        .limit(1))
+    return existing or "setup"
+
+
 @router.post("/message", status_code=status.HTTP_202_ACCEPTED)
 def send(body: Turn, db: Session = Depends(get_db),
          user_id: _uuid.UUID = Depends(current_user)) -> dict:
@@ -236,10 +261,8 @@ def send(body: Turn, db: Session = Depends(get_db),
     **On the user's own credential**, like every other call this platform makes. Their profile,
     their spend, no platform cost.
     """
-    if body.agent not in SETUP_AGENTS:
+    if body.agent is not None and body.agent not in SETUP_AGENTS:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=f"no such step: {body.agent}")
-
-    _refuse_misdirected_command(body.message, body.agent)
 
     user = db.get(User, user_id)
     if user is None:
@@ -262,14 +285,25 @@ def send(body: Turn, db: Session = Depends(get_db),
             status.HTTP_400_BAD_REQUEST,
             detail="Connect your Claude account first — setup runs on your own credential.")
 
+    # **Which command is driving, once the conversation has one.**
+    #
+    # Only a message that opens with a slash command names an agent; every ordinary reply omits it,
+    # and the field used to default to `setup`. So a chat started as the director ran the director
+    # for exactly one turn, and every answer the user typed after that was handled by `/setup` --
+    # a prompt that knows nothing about the four-step map and is told, correctly for itself, to send
+    # the user to a new chat for anything it cannot do. That is why the director kept handing off:
+    # after the first turn it was not the director any more.
+    agent = _resolve_agent(db, user_id, current.id, body.agent)
+    _refuse_misdirected_command(body.message, agent)
+
     # **Both rows before the queue sees anything.** The page renders the question and a thinking
     # reply the instant this returns, and the worker has a row to stream into rather than one to
     # invent.
     db.add(SetupMessage(user_id=user_id, conversation_id=current.id,
-                        role="user", content=body.message, agent=body.agent))
+                        role="user", content=body.message, agent=agent))
     touch_conversation(db, user_id, current.id, body.message)
     reply = SetupMessage(user_id=user_id, conversation_id=current.id,
-                         role="assistant", content="", agent=body.agent, status="pending")
+                         role="assistant", content="", agent=agent, status="pending")
     db.add(reply)
     db.flush()
 
@@ -277,8 +311,8 @@ def send(body: Turn, db: Session = Depends(get_db),
     # the second. The per-conversation guard is the pending row itself — the client will not send
     # again while one is open.
     enqueue(db, "setup", user_id, payload={"message_id": reply.id, "message": body.message,
-                                           "agent": body.agent})
-    audit(logger, "setup.turn_queued", user=user_id, agent=body.agent, conversation=current.id)
+                                           "agent": agent})
+    audit(logger, "setup.turn_queued", user=user_id, agent=agent, conversation=current.id)
     return {"conversation_id": str(current.id), "message_id": reply.id, "status": "queued"}
 
 

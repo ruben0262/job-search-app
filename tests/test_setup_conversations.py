@@ -592,3 +592,51 @@ def test_a_finished_profile_offers_no_next_command(api):
     assert progress["complete"] is True
     assert progress["next_command"] is None
     assert progress["may_train"] is True
+
+
+def test_a_conversation_keeps_the_command_it_started_with(api):
+    """**The bug that made the director hand off after one turn.**
+
+    Only a message opening with a slash names an agent; every ordinary reply omits it, and the field
+    defaulted to `setup`. So a chat started as the director ran the director once, and every answer
+    the user typed afterwards was handled by `/setup` -- which knows nothing about the four-step map
+    and is told, correctly for itself, to send the user elsewhere for anything it cannot do. It kept
+    handing off because after the first turn it was no longer the director.
+    """
+    from libs.db.models import SetupMessage
+
+    http, session, user = api
+    started = http.post("/setup/message",
+                        json={"message": "/setup-director", "agent": "setup-director"})
+    assert started.status_code == 202
+    conversation_id = started.json()["conversation_id"]
+
+    # An ordinary reply, exactly as the page sends one: no agent field at all.
+    http.post("/setup/message",
+              json={"message": "Yes, go ahead", "conversation_id": conversation_id})
+    session.flush()
+
+    agents = [row.agent for row in session.query(SetupMessage)
+              .filter(SetupMessage.user_id == user.id).order_by(SetupMessage.id).all()]
+    assert set(agents) == {"setup-director"}, f"the conversation drifted: {agents}"
+
+
+def test_a_different_conversation_keeps_its_own_command(api):
+    """Per conversation, not per account: somebody redoing one step in a second chat must not
+    retarget the director chat they left open."""
+    from libs.db.models import SetupMessage
+
+    http, session, user = api
+    first = http.post("/setup/message",
+                      json={"message": "/setup-director", "agent": "setup-director"}).json()
+    second_id = http.post("/setup/conversations").json()["id"]
+    http.post("/setup/message", json={"message": "/setup-scorer", "agent": "setup-scorer",
+                                      "conversation_id": second_id})
+    http.post("/setup/message", json={"message": "carry on", "conversation_id": second_id})
+    session.flush()
+
+    by_chat: dict[str, set] = {}
+    for row in session.query(SetupMessage).filter(SetupMessage.user_id == user.id).all():
+        by_chat.setdefault(str(row.conversation_id), set()).add(row.agent)
+    assert by_chat[first["conversation_id"]] == {"setup-director"}
+    assert by_chat[second_id] == {"setup-scorer"}

@@ -1150,9 +1150,15 @@
       "Turn": {
         "properties": {
           "agent": {
-            "default": "setup",
-            "title": "Agent",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent"
           },
           "conversation_id": {
             "anyOf": [
