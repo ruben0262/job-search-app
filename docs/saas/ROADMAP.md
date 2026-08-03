@@ -766,6 +766,98 @@ filter on at all: NoFluffJobs takes `criteriaSearch.city` only, so a region-leve
 there and should be flattened or dropped rather than sent. Collapsing subsumed locations per source
 would hand budget back. How much is unknown.
 
+### 6p — the latency drill-down: one row per zone (added 2026-08-03)
+
+**The end-to-end number is the one worth publishing and the one least useful for fixing anything.**
+"A posting took 36 minutes" does not say which of six handoffs ate them, and each of those is
+repaired somewhere different — a stuck describe worker, an embedder behind a flood, a score lane
+with no free worker, and a delivery cadence are four unrelated problems wearing the same number.
+6n item 3 gave the number a verdict; this gives it an address.
+
+A posting arrives as a **link** and leaves as a **card in Telegram**. Between those it crosses five
+boundaries, and each one is a place work is picked up, done, and handed on. Those boundaries are
+the rows:
+
+| Row | From → to | Whose work |
+|---|---|---|
+| Posted → found | the site published it → the harvest saw the link | harvester, 15-min cadence |
+| Found → described | link → the JD text is stored | describe pass (+ proxy for LinkedIn) |
+| Described → embedded | text → a vector | embedder gateway |
+| Embedded → scored | vector → this user's score | `score` lane, per account |
+| Scored → delivered | score → the card sends | `notify` lane, 15-min cadence |
+| **Found → delivered** | the whole thing | what the user actually waited |
+
+**Columns are the stats; the row expands to the diagnosis.** Collapsed, a row is median / p90 / p99
+/ worst / volume / verdict — enough to see *which* zone is the problem and nothing more. Expanded,
+it answers *why that zone*, and the four things that answer it are different in kind from
+percentiles, which is exactly why they belong behind a disclosure rather than in twelve more
+columns nobody reads:
+
+1. **Waiting versus running**, from the queue's own timestamps, wherever a lane does the work.
+   `created → claimed` is waiting and means too few workers; `claimed → finished` is running and
+   means the work itself got slower. One "how long did it take" hides which, and they are fixed in
+   completely different places.
+2. **The backlog right now** — how many rows are sitting at this zone's door, and how old the
+   oldest one is. A percentile describes what already got through; a queue of 4,000 describes what
+   has not, and only the second one predicts tomorrow.
+3. **An hourly series for that stage.** A snapshot cannot show a spike, and the spike is the thing
+   worth chasing: a p90 of 36 minutes over a day hides the hour it was four times that.
+4. **Why the threshold is where it is**, in words, next to the number it judges. A colour whose
+   reasoning lives in a Python constant is a colour an operator learns to ignore.
+
+**Two honesty constraints, both of which cost something.**
+
+*Embed had no timestamp at all.* `corpus` records `description_fetched_at` and then jumps straight
+to `embedding_version` — there was no way to ask when a vector was written, so described → embedded
+and embedded → scored were unmeasurable and the gap was hidden inside "found → scored". Adding
+`corpus.embedded_at` is the change that makes the middle of the pipeline visible. Historical rows
+are NULL and stay NULL: **backfilling it from `first_seen_at` would invent a measurement**, so
+those two rows read "not measured yet" until the column fills, and the expanded row says so rather
+than showing a zero.
+
+*Posted → found is reported and not judged.* Sources round `posted_at` — LinkedIn says "2 days
+ago" — so the number is real but its precision is a source's, not ours. It gets no threshold and no
+colour, because a red pill produced by rounding is the exact failure 6n warned about. It is on the
+page because harvest lag is genuinely part of what a user waits, and leaving it out would make the
+other five rows look like the whole story.
+
+**Done when** an operator can open Latency, see which of six zones is amber, expand it, and come
+away knowing whether to add a worker, chase a source, or leave it alone — without an SSH session.
+
+### 6p — document building still reads the profile the capture flow wrote (added 2026-08-03)
+
+**Blocking, and it sits directly between a trained account and a finished CV.**
+
+Two sites in `services/docgen/run.py`: **line 92** calls
+`ProfileSchema.model_validate(user.profile)`, and **line 245** is the same "no confirmed profile"
+gate the trainer had, which refuses before the build even starts. Fixing one without the other moves
+the failure rather than removing it. That JSON was
+written by the document-capture step the setup conversation replaced, and nothing sets it any more,
+so an account built the current way has `user.profile = None` and this raises. The first CV that
+account tries to build will dead-letter with a pydantic error in a queue row, which is exactly how
+the previous five instances of this presented: no error on any page, and a lane quietly failing.
+
+**Not fixable the way the scorer was.** Scoring could fall back to an empty feature spec because the
+embedding carries the signal and the keyword terms are an addition. A document cannot: it needs the
+person's name, their experience, their skills. Falling back to an empty schema would produce a CV
+about nobody, which is worse than a refusal.
+
+So docgen has to read the **profile files** — `01-candidate-profile.md`, `context.md`,
+`05-cv-templates.md`, `base_cv.html` — which is where that information now lives, and which is what
+`tailor_cv.md` and `tailor_cover.md` were written to consume. The prompts already assume those
+files; it is the code around them that still assumes the schema.
+
+Worth checking whether `ProfileSchema` is needed at all downstream or only as an accessor, because
+the answer decides whether this is a rewrite or an adapter.
+
+**This is the sixth and last known instance of one assumption**: setup writes one place, a consumer
+reads another. The others were the Model page gate, the process action, `users.rubric_md`, the
+trainer's gate, and the scorer's feature spec. Each was found by something failing in production
+rather than by a test, which is the argument for grepping the remaining callers of `user.profile`
+before the next user signs up rather than after. The survey as of 2026-08-03: `process_routes.py`
+lines 82/86/101 read it and are already correct — they treat a finished set of files as a profile —
+and `trainer/train.py` 77/109 are fixed. `docgen/run.py` 92 and 245 are what remain.
+
 ## Deliberately deferred
 
 Do not build these before Phase 4, regardless of how appealing they look mid-build.

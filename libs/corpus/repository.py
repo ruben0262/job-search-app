@@ -249,6 +249,10 @@ class CorpusRepository:
         job.embedding_model = None
         job.embedding_dim = None
         job.embedding_version = None
+        # The vector is gone, so the time it was written is no longer a fact about this row. Left
+        # behind it would date the *next* embed to before its own text arrived, and the latency
+        # page would read that as a negative span.
+        job.embedded_at = None
         return True
 
     def awaiting_description(self, *, limit: int = 200, linkedin: bool | None = None,
@@ -360,7 +364,11 @@ class CorpusRepository:
             update(CorpusJob)
             .where(CorpusJob.id == job_id, CorpusJob.text_sha256 == text_sha256)
             .values(embedding=vector, embedding_model=model, embedding_dim=dim,
-                    embedding_version=version))
+                    embedding_version=version,
+                    # Stamped here rather than at the gateway: this is the moment the vector became
+                    # readable by a scorer, and the gateway's own clock would count a write that
+                    # lost the `text_sha256` race as an embed that never landed.
+                    embedded_at=func.now()))
         return result.rowcount == 1
 
     # ── retention ────────────────────────────────────────────────────────────────────────────
@@ -393,5 +401,6 @@ class CorpusRepository:
             update(CorpusJob)
             .where(CorpusJob.id.in_(stale))
             .values(description=None, embedding=None, text_sha256=None, embedding_model=None,
-                    embedding_dim=None, embedding_version=None, trimmed_at=func.now()))
+                    embedding_dim=None, embedding_version=None, embedded_at=None,
+                    trimmed_at=func.now()))
         return result.rowcount

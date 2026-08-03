@@ -34,7 +34,13 @@ from libs.db.models import (
 from libs.limits import all_for, describe, set_limit
 from libs.obs import audit
 from libs.ops import evaluate, platform_health, render
-from libs.ops.latency import lane_timings, latency_series, pipeline_latency
+from libs.ops.latency import (
+    lane_timings,
+    latency_series,
+    pipeline_latency,
+    stage_breakdown,
+    stage_detail,
+)
 from libs.profiles.repository import ProfileFiles
 from libs.scoring.history import model_history
 from libs.settings import DEFAULTS, HARVEST_SOURCES, all_settings, freshness_hours, put
@@ -519,8 +525,33 @@ def latency(db: Session = Depends(get_db), admin: User = Depends(require_admin),
     audit(logger, "admin.latency", user=admin.id, hours=window)
     return {
         "window_hours": window,
+        # One row per zone the posting crosses, in pipeline order. This is what the table renders;
+        # everything below it predates the breakdown and is kept because the health summary and the
+        # end-to-end chart still read it.
+        "stages": stage_breakdown(db, hours=window),
         "spans": pipeline_latency(db, hours=window),
         "lanes": lane_timings(db, hours=window),
         "series": latency_series(db, hours=window),
     }
+
+
+@router.get("/latency/{key}")
+def latency_stage(key: str, db: Session = Depends(get_db),
+                  admin: User = Depends(require_admin), *, hours: int = 24) -> dict:
+    """One zone, expanded: waiting versus running, the backlog, and the hour-by-hour shape.
+
+    **Fetched on expansion rather than with the table.** Each of these costs a query and only one
+    row is ever open, so putting them on the page load would run six times the work to answer a
+    question nobody asked yet.
+
+    `key` is matched against the known stages rather than interpolated anywhere -- an unknown one is
+    a 404, and no part of it reaches SQL.
+    """
+    window = max(1, min(hours, 24 * 7))
+    try:
+        detail = stage_detail(db, key, hours=window)
+    except KeyError:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="no such stage") from None
+    audit(logger, "admin.latency_stage", user=admin.id, stage=key, hours=window)
+    return detail
 

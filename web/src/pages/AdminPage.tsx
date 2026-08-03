@@ -353,65 +353,7 @@ export function AdminPage() {
 
 
       {tab === "corpus" ? <CorpusTab /> : null}
-      {tab === "latency" ? <>      {/* **The claim this product makes, measured.** A four-hour freshness window means little if
-          the pipeline spends two of them. Percentiles rather than an average: the tail is what a
-          user experiences on the day their job was late. */}
-      {health.latency ? (
-        <div className="card" style={{ marginBottom: "1.5rem" }}>
-          <h2 style={{ marginTop: 0 }}>Pipeline latency</h2>
-          <p className="facts">
-            Minutes, over the last {health.latency.window_hours} hours.{" "}
-            {/* **Judged on p90, not the median.** Half the jobs arriving promptly is not the claim
-                this product makes, and a median hides exactly the tail somebody loses a role in. */}
-            Each row is judged on its p90 against what that stage should cost.
-          </p>
-          <div className="table-scroll">
-            <table className="history">
-              <thead>
-                <tr>
-                  <th>Stage</th><th>Median</th><th>p90</th><th>p99</th><th>Samples</th>
-                  <th>Verdict</th>
-                </tr>
-              </thead>
-              <tbody>
-                {([
-                  ["Found → scored", health.latency.found_to_scored],
-                  ["Scored → delivered", health.latency.scored_to_delivered],
-                  ["Found → delivered", health.latency.found_to_delivered],
-                ] as [string, Span][]).map(([label, span]) => (
-                  <tr key={label} className={label.startsWith("Found → d") ? "on" : undefined}>
-                    <td>{label}</td>
-                    <td>{span.p50 ?? "—"}</td>
-                    <td>{span.p90 ?? "—"}</td>
-                    <td>{span.p99 ?? "—"}</td>
-                    <td>{span.samples.toLocaleString()}</td>
-                    <td>
-                      <span className={`verdict ${span.verdict ?? "unknown"}`}>
-                        {span.verdict === "ok"
-                          ? "healthy"
-                          : span.verdict === "warn"
-                            ? `slow, over ${span.amber_after_min}m`
-                            : span.verdict === "down"
-                              ? `too slow, over ${span.red_after_min}m`
-                              : "not enough data"}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {/* **"Not enough data" is a real answer, not a failure.** Below the sample floor a
-              percentile is arithmetic rather than evidence, and colouring it invites somebody to
-              chase a number that three rows produced. */}
-          <p className="hint" style={{ marginTop: "0.7rem" }}>
-            A stage turns amber when its p90 passes what that stage should cost, and red at double.
-            Thresholds come from how the pipeline actually runs — a 15-minute harvest and a
-            15-minute delivery cadence — so amber means something worth looking at rather than
-            something to learn to ignore.
-          </p>
-        </div>
-      ) : null}</> : null}
+      {tab === "latency" ? <LatencyTab /> : null}
 
       {tab === "accounts" ? <>      <p className="kicker" style={{ marginTop: "2.5rem" }}>
         Accounts

@@ -111,6 +111,12 @@ class CorpusJob(Base):
     # original bound would have failed on the very first real embed. Its length is a function of the
     # model name, which is not ours to bound.
     embedding_version: Mapped[str | None] = mapped_column(Text)
+    # When the vector was written. **The middle of the pipeline had no clock.** A row recorded when
+    # its text arrived and then jumped to having an embedding, so "described → embedded" and
+    # "embedded → scored" were unmeasurable and both hid inside one found → scored number that could
+    # not say which of them was slow (ROADMAP 6p). Cleared by trimming with the vector it dates, so
+    # it never outlives the thing it describes.
+    embedded_at: Mapped[timestamptz | None]
 
     # ── what the feed card shows about a posting ─────────────────────────────────────────────
     # The reference's card answers "how contested, how fresh, one-click or not, and where" before
