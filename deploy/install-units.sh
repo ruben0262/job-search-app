@@ -22,11 +22,18 @@ UNIT_DIR=/etc/systemd/system
 # Every timer the platform runs, and what breaks when it is missing.
 #   harvester         — the shared cycle. Missing: no new jobs enter the corpus.
 #   notify-dispatch   — fills the notify lane. Missing: nothing is ever delivered.
-#   linkedin          — per-user LinkedIn fetch. Missing: no LinkedIn jobs enter the corpus at all.
-#   linkedin-describe — per-user proxied metadata. Missing: LinkedIn rows rank blind.
+#   linkedin          — per-user LinkedIn fetch, and the description pass with it. Missing: no
+#                       LinkedIn jobs enter the corpus at all.
 #   health            — the check that notices the above. Missing: nobody finds out.
 #   backup            — pg_dump. Missing: one bad day is unrecoverable.
-TIMERS=(harvester linkedin notify-dispatch linkedin-describe health backup)
+#
+# `linkedin-describe` was here until 2026-08-03. Describing moved inside the `linkedin` pass, which
+# dedups first and so pays the per-posting cost once per new job rather than once per result
+# (ROADMAP 6l.1). Remove the leftovers from a box that ran the old version:
+#
+#     sudo systemctl disable --now linkedin-describe.timer
+#     sudo rm -f /etc/systemd/system/linkedin-describe.{service,timer} && sudo systemctl daemon-reload
+TIMERS=(harvester linkedin notify-dispatch health backup)
 
 if [[ $EUID -ne 0 ]]; then
   echo "needs root: sudo $0" >&2

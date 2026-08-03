@@ -202,9 +202,9 @@ def _run_one(user: User, queries: list[dict], *, corpus: CorpusRepository,
 
                 cfg = {"queries": queries, "results_wanted": RESULTS_WANTED,
                        "hours_old": min(q["hours_old"] for q in queries),
-                       # The description is fetched later by the platform's own pass, which stores
-                       # it on the shared corpus row where every user gets it. Asking jobspy for it
-                       # here would fetch the same page again per user.
+                       # **Never from jobspy.** It would fetch a description for every result
+                       # including the ones already in the corpus; the dedup below is what makes the
+                       # per-posting cost land once per *new* job rather than once per result.
                        "linkedin_fetch_description": False}
                 links = gather(cfg, logger, lease=lease)
 

@@ -32,8 +32,14 @@ logger = logging.getLogger("health")
 # never installed is invisible from inside the application: the lane it feeds simply has no work,
 # which reads identically to a quiet day. `notify-dispatch` was missing for weeks in exactly that
 # way — the notifier container up, no errors, and nobody hearing from us.
-REQUIRED_TIMERS = ("harvester", "linkedin", "notify-dispatch", "linkedin-describe",
-                   "health", "backup")
+#
+# `linkedin-describe` was removed on 2026-08-03. The describe pass moved inside the per-user
+# LinkedIn run — dedup, then fetch the JD for what is left, on the same lease in the same pass
+# (ROADMAP 6l.1) — so the hourly timer had nothing to do, was disabled on the box, and this list
+# went on telling an operator to re-enable it. **A required-timer list that names a timer the design
+# deliberately deleted is worse than not checking**: it trains the reader to ignore the one alarm
+# here that has caught a real outage.
+REQUIRED_TIMERS = ("harvester", "linkedin", "notify-dispatch", "health", "backup")
 
 # How long the embedder gets to answer before it counts as down. Generous: the encoder is
 # single-threaded and a harvest cycle embedding at the same time will queue this behind it, and a

@@ -599,34 +599,35 @@ wrong order, so this shipped only once a fresh account had been through one.
    with its head, CV-AP, test-AP, tuned cutoff and out-of-fold precision/recall, which used to
    require SQL by hand.
 
-### 6l — one fetch per job, one cadence for everyone (decided 2026-08-01) ⬅ **next: item 1 only**
+### 6l — one fetch per job, one cadence for everyone ✅ **done 2026-08-03**
 
 **The premise: this app streams the newest postings.** Everything below follows from taking that
 literally rather than making it configurable.
 
-Items 2, 3 and 4 shipped 2026-08-03. **Item 1 is the whole remaining entry**, and it is the one with
-a proxy budget and a wrong-score window behind it.
+**1. LinkedIn fetches the whole posting on first sight** ✅. The link pass used to store a *snippet*,
+the row was embedded and scored on that, and an hourly `linkedin-describe` replaced it with the real
+JD — invalidating the vector and triggering a rescore. That self-heal was not a safety net: it was a
+wrong score that existed for up to an hour, and a job that may have been silently rejected on a
+preview nobody re-examined.
 
-**1. LinkedIn fetches the whole posting on first sight.** Today the link pass stores a *snippet*,
-the row is embedded and scored on that, and an hourly `linkedin-describe` replaces it with the real
-JD — which invalidates the vector and triggers a rescore. That self-heal is not a safety net, it is
-a wrong score that exists for up to an hour and a job that may have been silently rejected on a
-preview nobody re-examines.
-
-The fix is the owner's, and it is cheaper than either alternative: **links → dedup → fetch the full
-JD only for the rows that are new → store complete → embed → score.** The objection to inline
-fetching was that the same posting would be fetched once per interested user; dedup *before* the
-fetch removes it, because a job already in the corpus is never fetched again by anyone. One proxy
-hit per new job, not per user, and not per user per hour.
+**links → dedup → fetch the full JD only for the rows that are new → store complete → embed →
+score**, all on the same lease in the same pass (`services/harvester/linkedin.py`). The objection to
+inline fetching was that one posting would be fetched once per interested user; deduping *before*
+the fetch removes it, because a job already in the corpus is never fetched again by anyone. One
+proxy hit per new job — not per user, and not per user per hour. Measured on the live box: **4,989
+of 5,111 LinkedIn rows from the last seven days carry a description.**
 
 Asking jobspy for descriptions directly (`linkedin_fetch_description: True`) is **not** the way to
-do it — it would fetch every result including the ones already held. The dedup has to sit between
-the listing and the description fetch.
+do it — it would fetch every result including the ones already held, which is the cost the dedup
+exists to avoid.
 
-`linkedin-describe.timer` is deleted with it. **Half-done and worth finishing properly**: the timer
-is *disabled* on the box, not removed, and `check_health.py` still reports it as
-`TIMERS NOT ENABLED` on every run — so the health check and the plan currently disagree, and an
-operator is being told to re-enable the thing this item exists to delete.
+`linkedin-describe.timer` and its service are deleted, and **so is the entry that kept asking for
+them**: the timer was disabled on the box while `check_health.py` and `install-units.sh` both still
+listed it as required, so every health run told an operator to re-enable the pass this item exists
+to remove. A required-timer list naming a timer the design deliberately deleted is worse than not
+checking — it trains the reader to ignore the one alarm there that has caught a real outage.
+`--describe-linkedin` survives as a manual backfill for the rows a pass could not reach (122 of
+them today); what is gone is the schedule.
 
 **2. Freshness becomes admin-set, per source** ✅ **done 2026-08-03.** `source_freshness_hours` is an
 operator setting with a per-source table in the admin panel, and `default_freshness_hours` behind it.
@@ -643,8 +644,11 @@ from `description_fetched_at` straight to having a vector, so two of the six han
 unmeasurable and both hid inside one found → scored number. `corpus.embedded_at` fixes that, and is
 deliberately not backfilled.
 
-**Open:** what happens to a row whose JD fetch fails permanently — never scored, or scored on what
-little there is after N attempts. Not yet decided.
+**Still open, and now quantified:** what happens to a row whose JD fetch fails permanently — never
+scored, or scored on what little there is after N attempts. **122 rows are sitting in that state**
+(2.4% of seven days of LinkedIn), currently invisible to every user because an unembedded row is
+never a candidate. Small enough not to be urgent, large enough that "it self-heals" is not the
+answer. Not yet decided.
 
 ### 6m — a monitor that survives the thing it monitors (added 2026-08-01)
 
