@@ -220,3 +220,26 @@ def test_process_requires_signing_in(api):
     http, _, _ = api
     http.cookies.clear()
     assert http.get("/process/state").status_code == 401
+
+
+def test_a_profile_built_by_the_conversation_is_not_offered_the_old_capture_flow(api):
+    """**Two definitions of "profile ready" that disagreed.**
+
+    `may_train` reads the setup files; this read `processed_at`, a column belonging to the capture
+    flow the setup conversation replaced and which nothing sets any more. So an account that had
+    just finished setup was told to "process your documents to build your profile" -- which would
+    have run the superseded flow over a finished profile and replaced it.
+    """
+    from libs.profiles import setup_files
+    from libs.profiles.repository import ProfileFiles
+    from services.api.process_routes import state
+
+    http, session, user = api
+    files = ProfileFiles(session, user.id)
+    for name in setup_files():
+        files.write(name, f"real content for {name}", kind="context")
+    session.flush()
+
+    answer = state(session, user.id)
+    assert answer["action"] != "process", answer["message"]
+    assert answer["action"] == "ready"

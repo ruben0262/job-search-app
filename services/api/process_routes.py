@@ -24,6 +24,7 @@ from libs.contracts.profile import json_schema as profile_schema
 from libs.db.models import User, UserDocument, UserLabel
 from libs.obs import audit
 from libs.onboarding import CLAUDE_KINDS
+from libs.profiles.repository import ProfileFiles
 from libs.queue import enqueue
 from libs.tenant.repository import TenantRepository
 from services.api.account_routes import has_consented
@@ -56,7 +57,13 @@ def state(db: Session = Depends(get_db), user_id: _uuid.UUID = Depends(current_u
                        .where(UserLabel.user_id == user_id,
                               UserLabel.profile_generation == user.profile_generation)) or 0
 
-    never_processed = user.processed_at is None
+    # **A profile the setup agents finished is a built profile**, even though they never touch
+    # `processed_at` -- that column belongs to the capture flow they replaced (`REBUILD_PLAN.md`).
+    # Without this an account that has just completed setup was told to "process your documents to
+    # build your profile", which would have run the superseded flow over a finished profile and
+    # replaced it. The same predicate the trainer refuses on, so the two cannot disagree.
+    setup_done = not ProfileFiles(db, user_id).missing_setup()
+    never_processed = user.processed_at is None and not setup_done
     documents_changed = bool(
         user.documents_changed_at and user.processed_at
         and user.documents_changed_at > user.processed_at)
@@ -70,6 +77,10 @@ def state(db: Session = Depends(get_db), user_id: _uuid.UUID = Depends(current_u
     elif documents_changed:
         action = "process"
         message = "You have added documents since your profile was built. Process them to update it."
+    elif setup_done and not user.profile:
+        # Built by the conversation rather than the capture flow: nothing to process, and the next
+        # thing this account needs is labels and a model rather than another pass over documents.
+        action, message = "ready", "Your profile is ready. Scoring can be trained from here."
     elif not user.profile:
         action, message = "upload", "Upload your CV first — there is nothing to process yet."
     else:
