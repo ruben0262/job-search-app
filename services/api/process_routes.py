@@ -209,7 +209,10 @@ def _stored_kinds(db: Session, user_id: _uuid.UUID) -> set[str]:
 
 # The lanes that make up "training" from a user's point of view. Labelling is most of the wall
 # clock and the part that costs money; the fit at the end is seconds.
-TRAINING_LANES = ("label", "train", "score")
+# **Not the score lane.** Scoring runs continuously for every account with a model -- it is how new
+# corpus rows reach an existing feed -- so counting it made a trained account permanently look like
+# it was training. What a user means by "training" is buying labels and fitting on them.
+TRAINING_LANES = ("label", "train")
 
 # How long after a finished batch the run still counts as in progress. Comfortably longer than the
 # dispatcher's cycle, so an ordinary gap between batches never reads as "stopped", and short enough
@@ -262,7 +265,10 @@ def training_state(db: Session = Depends(get_db),
         latest and (datetime.now(UTC) - latest) < BETWEEN_BATCHES)
     user_paused = bool(getattr(db.get(User, user_id), "labelling_paused", False))
     labelling = labelling_state(db, user_id)
-    unfinished = labelling["action"] in ("cold_start", "relabel", "train")
+    # `train` is a readiness state, not work in progress: an account with enough labels sits in it
+    # for ever. Only the two states that have batches left count as unfinished, and an actual fit
+    # shows up as a queued row in the train lane rather than as a phase.
+    unfinished = labelling["action"] in ("cold_start", "relabel")
     running = in_queue or (recently_worked and unfinished)
     # A paused account is not running, whatever is still draining. Saying otherwise is what made
     # Stop look like it had done nothing.

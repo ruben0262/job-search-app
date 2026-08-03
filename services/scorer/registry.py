@@ -27,6 +27,7 @@ from sqlalchemy.orm import Session
 
 from libs.contracts.profile import ProfileSchema
 from libs.db.models import User, UserModel
+from libs.profiles.repository import ProfileFiles
 from libs.scoring.features import FEATURE_SCHEMA_VERSION, FeatureSpec, feature_spec
 
 logger = logging.getLogger(__name__)
@@ -172,9 +173,10 @@ class ModelRegistry:
                 f"artifact uses feature schema {artifact_row.feature_schema_version}, "
                 f"this build is {FEATURE_SCHEMA_VERSION}", retrainable=True)
 
+        # Either flow: the capture step's JSON, or the profile files the conversation writes.
         profile = self._s.scalar(select(User.profile).where(User.id == user_id))
-        if not profile:
-            raise ModelUnavailable("user has no confirmed profile", retrainable=False)
+        if not profile and ProfileFiles(self._s, user_id).missing_setup():
+            raise ModelUnavailable("user has no finished profile", retrainable=False)
 
         blob = self._load(artifact_row.path)
         cutoff = int(blob.get("decision_cutoff", blob.get("score_threshold", 60)))

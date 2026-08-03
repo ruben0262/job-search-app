@@ -72,7 +72,9 @@ export function ModelPage({
   const unfinished =
     training?.paused !== true &&
     (training?.running === true ||
-      ["cold_start", "relabel", "train"].includes(training?.phase ?? ""));
+      // `train` is a readiness state an account with labels sits in for ever, so polling on it
+      // meant a trained account polled this endpoint every three seconds indefinitely.
+      ["cold_start", "relabel"].includes(training?.phase ?? ""));
 
   useEffect(() => {
     if (!unfinished) return;

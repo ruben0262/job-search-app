@@ -380,3 +380,31 @@ def test_starting_again_clears_a_previous_stop(api):
     assert started.status_code < 400, started.text
     session.flush()
     assert user.labelling_paused is False
+
+
+def test_a_trained_account_is_not_permanently_training(api):
+    """**What made a finished account show "Fitting your model" and a Stop button.**
+
+    Scoring runs continuously for every account with a model -- it is how new corpus rows reach an
+    existing feed -- and the score lane was counted as training work. Combined with `train` being a
+    phase an account with enough labels sits in for ever, a routine score finish was enough to make
+    the page claim a run was in progress. Nothing was leaking between accounts; the data was the
+    user's own and the reading of it was wrong.
+    """
+    from datetime import UTC, datetime
+
+    from libs.db.models import QueueJob
+    from libs.queue import enqueue
+
+    http, session, user = api
+    user.rubric_md = "score jobs like this"
+    enqueue(session, "score", user.id, payload={})
+    session.flush()
+    row = session.query(QueueJob).filter(QueueJob.user_id == user.id).one()
+    row.state = "done"
+    row.finished_at = datetime.now(UTC)
+    session.flush()
+
+    body = http.get("/process/training").json()
+    assert body["running"] is False, "routine scoring is not a training run"
+    assert "score" not in body["lanes"], "the score lane is not part of what a user calls training"

@@ -69,8 +69,14 @@ def build_training_set(session: Session, user_id: _uuid.UUID) -> TrainingSet:
     import numpy as np  # noqa: PLC0415 - the trainer image has numpy; libs importers need not
 
     user = session.get(User, user_id)
-    if user is None or not user.profile:
-        raise NotEnoughData("user has no confirmed profile")
+    if user is None:
+        raise NotEnoughData("no such user")
+    # **Either flow counts as a profile.** `user.profile` is the JSON the capture step wrote and
+    # nothing sets any more; an account set up by the conversation has profile files instead. This
+    # refused a live account whose setup was complete and whose `may_train` said yes -- the training
+    # job dead-lettered with "no confirmed profile" and the page had no idea.
+    if not user.profile and ProfileFiles(session, user_id).missing_setup():
+        raise NotEnoughData("user has no finished profile")
 
     rows = session.execute(
         select(UserLabel.job_id, UserLabel.label, UserLabel.weight,
