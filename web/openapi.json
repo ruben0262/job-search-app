@@ -3672,6 +3672,54 @@
         ]
       }
     },
+    "/process/training": {
+      "get": {
+        "description": "What training is doing right now, for a page that polls.\n\n**The work does not live in the browser and never did.** Pressing the button enqueues rows in\nPostgres and the worker pools drain them, so closing the tab, switching pages or losing the\nlaptop changes nothing about whether it finishes. This endpoint exists because that was\ninvisible: the page said \"Starting\u2026\" once and then looked identical whether the run was halfway\nthrough or had died an hour ago.\n\nDerived on read rather than tracked in a column, for the reason every other state on this\nplatform is: a progress counter that can disagree with the queue eventually will.",
+        "operationId": "training_state_process_training_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Training State Process Training Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Training State",
+        "tags": [
+          "process"
+        ]
+      }
+    },
+    "/process/training/stop": {
+      "post": {
+        "description": "Cancel queued training work for this account.\n\n**Queued only.** A row a worker has already claimed is mid-call on the user's own credential;\ndeleting it here would not stop that call, it would only lose the record of it \u2014 so the batch\nin flight finishes and nothing new is taken. That is also why the button warns rather than\npromises: stopping is prompt, not instant.\n\nLabels already written are kept. They were paid for, they are still true, and throwing them\naway would make stopping expensive enough that nobody would risk it.",
+        "operationId": "stop_training_process_training_stop_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Stop Training Process Training Stop Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Stop Training",
+        "tags": [
+          "process"
+        ]
+      }
+    },
     "/setup": {
       "get": {
         "description": "One chat's transcript, the list of chats, the files, and whether documents can be built.\n\n**The chat list and the open chat come back together** because they are always rendered\ntogether, and two calls would let the switcher disagree with the transcript beneath it.\n\nWith no `conversation_id` this opens the most recent chat, creating the first one if the\naccount has none \u2014 so a new user lands in a conversation without pressing anything.",

@@ -243,3 +243,47 @@ def test_a_profile_built_by_the_conversation_is_not_offered_the_old_capture_flow
     answer = state(session, user.id)
     assert answer["action"] != "process", answer["message"]
     assert answer["action"] == "ready"
+
+
+def test_training_state_reports_what_is_running_and_why(api):
+    """**The work never lived in the browser**, and nothing said so. Pressing the button writes
+    queue rows that the worker pools drain, so closing the tab changes nothing about whether it
+    finishes -- but the page said "Starting…" once and then looked identical whether the run was
+    halfway through or had died an hour ago."""
+    from libs.queue import enqueue
+
+    http, session, user = api
+    idle = http.get("/process/training").json()
+    assert idle["running"] is False
+
+    enqueue(session, "label", user.id, payload={"kind": "cold_start"})
+    session.flush()
+    busy = http.get("/process/training").json()
+    assert busy["running"] is True
+    assert busy["lanes"]["label"]["ready"] == 1
+    assert busy["target"] > 0
+
+
+def test_stopping_cancels_queued_work_and_keeps_the_labels(api):
+    """**Queued only.** A row a worker has claimed is mid-call on the user's own credential;
+    deleting it here would not stop that call, only lose the record of it. Labels already written
+    are kept -- they were paid for and are still true, and throwing them away would make stopping
+    expensive enough that nobody would risk it."""
+    from libs.db.models import QueueJob
+    from libs.queue import enqueue
+
+    http, session, user = api
+    enqueue(session, "label", user.id, payload={"kind": "cold_start"})
+    claimed = enqueue(session, "train", user.id, payload={})
+    session.flush()
+    claimed_row = session.get(QueueJob, claimed) if isinstance(claimed, int) else None
+    if claimed_row is not None:
+        claimed_row.state = "claimed"
+        session.flush()
+
+    answer = http.post("/process/training/stop").json()
+    assert answer["cancelled"] >= 1
+    session.flush()
+
+    left = session.query(QueueJob).filter(QueueJob.user_id == user.id).all()
+    assert all(row.state != "ready" for row in left), "nothing queued should survive a stop"

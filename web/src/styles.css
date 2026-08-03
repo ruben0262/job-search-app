@@ -2506,3 +2506,20 @@ td.num {
   font-size: 0.82rem;
 }
 .chat-tab-rename:focus { outline: none; }
+
+/* How far a cold start has got. A bar rather than a number alone: 140 of 300 means little at a
+   glance, and this run takes long enough that "is it moving" is the actual question. */
+.progress-rail {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--hairline);
+  overflow: hidden;
+  margin: 0 0 1rem;
+  max-width: 26rem;
+}
+.progress-rail span {
+  display: block;
+  height: 100%;
+  background: var(--ink);
+  transition: width 0.6s ease;
+}

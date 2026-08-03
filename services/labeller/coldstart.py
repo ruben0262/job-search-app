@@ -26,6 +26,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from libs.db.models import CorpusJob, User, UserLabel
+from libs.labels import labelling_state
 from libs.llm import LlmClient, LlmError
 from libs.obs import audit
 from libs.tenant.repository import TenantRepository
@@ -38,35 +39,6 @@ logger = logging.getLogger(__name__)
 # partially fails, train on what succeeded provided there are at least this many, rather than
 # throwing away a nearly-complete pool because the last batch errored.
 MIN_LABELS_TO_TRAIN = 100
-
-
-def labelling_state(session: Session, user_id: _uuid.UUID) -> dict:
-    """What this account needs next from the `label` lane, and how far along it is.
-
-    Derived, like every other state on the platform, so it cannot disagree with reality.
-    """
-    user = session.get(User, user_id)
-    if user is None or not user.rubric_md:
-        return {"action": "confirm_profile", "labels": 0, "target": POOL_SIZE, "stale": 0}
-
-    labels = session.scalar(
-        select(func.count()).select_from(UserLabel)
-        .where(UserLabel.user_id == user_id,
-               UserLabel.profile_generation == user.profile_generation)) or 0
-    stale = session.scalar(
-        select(func.count()).select_from(UserLabel)
-        .where(UserLabel.user_id == user_id,
-               UserLabel.profile_generation < user.profile_generation)) or 0
-
-    if stale:
-        # Relabelling first, always. These are jobs the user already cared about, and carrying them
-        # forward is cheaper per unit of signal than buying opinions on new ones.
-        action = "relabel"
-    elif labels < POOL_SIZE:
-        action = "cold_start"
-    else:
-        action = "train"
-    return {"action": action, "labels": labels, "target": POOL_SIZE, "stale": stale}
 
 
 def cold_start_batch(session: Session, user_id: _uuid.UUID, client: LlmClient, *,

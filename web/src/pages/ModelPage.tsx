@@ -10,10 +10,29 @@
  * matching" has a three-step answer, and a user who can see which step they are on does not write
  * a support message.
  */
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { api, type Dashboard } from "../api";
 import { Error, useAction } from "../ui";
+
+
+type Training = {
+  running: boolean;
+  phase: string;
+  labels: number;
+  target: number;
+  stale_labels: number;
+  lanes: Record<string, { ready: number; claimed: number; done: number; failed: number }>;
+  failures: Record<string, string>;
+};
+
+/** What each phase is, in the user's terms. The lane names are ours. */
+const PHASE_TEXT: Record<string, string> = {
+  cold_start: "Reading job postings and deciding which ones suit you",
+  relabel: "Re-judging jobs you already had, against your updated profile",
+  train: "Fitting your model to what it learned",
+  confirm_profile: "Waiting on your profile",
+};
 
 export function ModelPage({
   dashboard,
@@ -24,9 +43,40 @@ export function ModelPage({
 }) {
   const [message, setMessage] = useState<string | null>(null);
 
+  const [training, setTraining] = useState<Training | null>(null);
+
+  /**
+   * Poll while anything is running.
+   *
+   * **The work never lived in the browser.** Pressing the button writes rows to Postgres and the
+   * worker pools drain them, so closing the tab or switching pages changes nothing about whether it
+   * finishes. What was missing was any way to see that: the page said "Starting…" once and then
+   * looked identical whether the run was halfway through or had failed an hour ago.
+   */
+  const readTraining = useCallback(async () => {
+    const body = await api.get<Training>("/process/training").catch(() => null);
+    if (body) setTraining(body);
+  }, []);
+
+  useEffect(() => {
+    void readTraining();
+  }, [readTraining]);
+
+  useEffect(() => {
+    if (!training?.running) return;
+    const timer = window.setInterval(() => void readTraining(), 3000);
+    return () => window.clearInterval(timer);
+  }, [training?.running, readTraining]);
+
+  const stop = useAction(async () => {
+    await api.post("/process/training/stop");
+    await readTraining();
+  });
+
   const start = useAction(async () => {
     const body = await api.post<{ message: string }>("/setup/start");
     setMessage(body.message);
+    await readTraining();
     onChanged();
   });
 
@@ -91,17 +141,79 @@ export function ModelPage({
         ) : (
           <>
             <Error>{start.error}</Error>
-            {message ? <p className="facts" style={{ color: "var(--score)" }}>{message}</p> : null}
-            <button disabled={start.busy} onClick={() => void start.run()}>
-              {start.busy
-                ? "Starting…"
-                : feed.labels > 0
-                  ? "Score more jobs"
-                  : "Score my first jobs"}
-            </button>
+            <Error>{stop.error}</Error>
+            {message && !training?.running ? (
+              <p className="facts" style={{ color: "var(--score)" }}>{message}</p>
+            ) : null}
+
+            {training?.running ? (
+              /* **Running, and saying so.** The three dots are the same signal the setup chat
+                 uses, because it means the same thing there: something is happening that this
+                 page did not have to be open for. */
+              <div className="working" style={{ marginBottom: "0.9rem" }}>
+                <span className="typing" aria-hidden="true">
+                  <i />
+                  <i />
+                  <i />
+                </span>
+                <span className="muted small">
+                  {PHASE_TEXT[training.phase] ?? "Working"}
+                  {training.phase === "cold_start" || training.phase === "relabel"
+                    ? ` — ${training.labels.toLocaleString()} of ${training.target.toLocaleString()} jobs judged`
+                    : ""}
+                </span>
+              </div>
+            ) : null}
+
+            {training?.running &&
+            (training.phase === "cold_start" || training.phase === "relabel") ? (
+              <div className="progress-rail" aria-hidden="true">
+                <span
+                  style={{
+                    width: `${Math.min(100, Math.round((training.labels / Math.max(training.target, 1)) * 100))}%`,
+                  }}
+                />
+              </div>
+            ) : null}
+
+            {training?.running ? (
+              <button
+                className="secondary"
+                disabled={stop.busy}
+                onClick={() => {
+                  /* Asked, because stopping is not free: the labels already bought are kept, but
+                     the run has to be started again from where it reached. */
+                  if (
+                    window.confirm(
+                      "Stop training? Nothing new will be picked up. A batch already running will "
+                        + "finish, and every job judged so far is kept — you can start again from here.",
+                    )
+                  )
+                    void stop.run();
+                }}
+              >
+                {stop.busy ? "Stopping…" : "Stop training"}
+              </button>
+            ) : (
+              <button disabled={start.busy} onClick={() => void start.run()}>
+                {start.busy
+                  ? "Starting…"
+                  : feed.labels > 0
+                    ? "Score more jobs"
+                    : "Score my first jobs"}
+              </button>
+            )}
+
+            {training && Object.keys(training.failures).length ? (
+              <p className="error" style={{ marginTop: "0.75rem" }}>
+                Something failed and has stopped: {Object.values(training.failures)[0]}
+              </p>
+            ) : null}
+
             <p className="facts" style={{ marginTop: "0.75rem" }}>
-              Runs on your own Claude key and takes a few minutes. Retraining afterwards is free
-              and happens by itself as labels accumulate.
+              Runs on your own Claude key. <strong>It keeps going if you close this page</strong> —
+              the work runs on the server, not in your browser. Retraining afterwards is free and
+              happens by itself as labels accumulate.
             </p>
           </>
         )}

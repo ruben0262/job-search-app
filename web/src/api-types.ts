@@ -1300,6 +1300,63 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/process/training": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Training State
+         * @description What training is doing right now, for a page that polls.
+         *
+         *     **The work does not live in the browser and never did.** Pressing the button enqueues rows in
+         *     Postgres and the worker pools drain them, so closing the tab, switching pages or losing the
+         *     laptop changes nothing about whether it finishes. This endpoint exists because that was
+         *     invisible: the page said "Starting…" once and then looked identical whether the run was halfway
+         *     through or had died an hour ago.
+         *
+         *     Derived on read rather than tracked in a column, for the reason every other state on this
+         *     platform is: a progress counter that can disagree with the queue eventually will.
+         */
+        get: operations["training_state_process_training_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/process/training/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stop Training
+         * @description Cancel queued training work for this account.
+         *
+         *     **Queued only.** A row a worker has already claimed is mid-call on the user's own credential;
+         *     deleting it here would not stop that call, it would only lose the record of it — so the batch
+         *     in flight finishes and nothing new is taken. That is also why the button warns rather than
+         *     promises: stopping is prompt, not instant.
+         *
+         *     Labels already written are kept. They were paid for, they are still true, and throwing them
+         *     away would make stopping expensive enough that nobody would risk it.
+         */
+        post: operations["stop_training_process_training_stop_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/setup": {
         parameters: {
             query?: never;
@@ -3863,6 +3920,50 @@ export interface operations {
         };
     };
     state_process_state_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    training_state_process_training_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    stop_training_process_training_stop_post: {
         parameters: {
             query?: never;
             header?: never;

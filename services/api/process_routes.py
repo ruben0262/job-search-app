@@ -16,12 +16,13 @@ import logging
 import uuid as _uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from libs.contracts.profile import ProfileSchema
 from libs.contracts.profile import json_schema as profile_schema
-from libs.db.models import User, UserDocument, UserLabel
+from libs.db.models import QueueJob, User, UserDocument, UserLabel
+from libs.labels import POOL_SIZE, labelling_state
 from libs.obs import audit
 from libs.onboarding import CLAUDE_KINDS
 from libs.profiles.repository import ProfileFiles
@@ -204,3 +205,81 @@ def _stored_kinds(db: Session, user_id: _uuid.UUID) -> set[str]:
     from libs.db.models import UserSecret  # noqa: PLC0415 - kept local to the one caller
 
     return set(db.scalars(select(UserSecret.kind).where(UserSecret.user_id == user_id)).all())
+
+# The lanes that make up "training" from a user's point of view. Labelling is most of the wall
+# clock and the part that costs money; the fit at the end is seconds.
+TRAINING_LANES = ("label", "train", "score")
+
+
+@router.get("/training")
+def training_state(db: Session = Depends(get_db),
+                   user_id: _uuid.UUID = Depends(current_user)) -> dict:
+    """What training is doing right now, for a page that polls.
+
+    **The work does not live in the browser and never did.** Pressing the button enqueues rows in
+    Postgres and the worker pools drain them, so closing the tab, switching pages or losing the
+    laptop changes nothing about whether it finishes. This endpoint exists because that was
+    invisible: the page said "Starting…" once and then looked identical whether the run was halfway
+    through or had died an hour ago.
+
+    Derived on read rather than tracked in a column, for the reason every other state on this
+    platform is: a progress counter that can disagree with the queue eventually will.
+    """
+    rows = db.execute(
+        select(QueueJob.lane, QueueJob.state, func.count(), func.max(QueueJob.last_error))
+        .where(QueueJob.user_id == user_id, QueueJob.lane.in_(TRAINING_LANES))
+        .group_by(QueueJob.lane, QueueJob.state)).all()
+
+    lanes: dict[str, dict] = {}
+    for lane, state_name, count, last_error in rows:
+        entry = lanes.setdefault(lane, {"ready": 0, "claimed": 0, "done": 0, "failed": 0,
+                                        "last_error": None})
+        entry[state_name] = entry.get(state_name, 0) + count
+        if state_name == "failed" and last_error:
+            entry["last_error"] = last_error[:400]
+
+    running = any(lane.get("ready", 0) or lane.get("claimed", 0) for lane in lanes.values())
+    labelling = labelling_state(db, user_id)
+    user = db.get(User, user_id)
+
+    return {
+        # **Whether anything is in flight**, which is what decides between a progress line and a
+        # button. Claimed counts as running: a worker holds it and will finish or time out.
+        "running": running,
+        "phase": labelling["action"],
+        "labels": labelling["labels"],
+        "target": POOL_SIZE,
+        "stale_labels": labelling["stale"],
+        "lanes": lanes,
+        "model_version": user.model_version if user else None,
+        # Surfaced rather than buried in a log: a failed lane is the one thing a user can act on,
+        # and "it stopped and nobody said why" is the state this endpoint exists to prevent.
+        "failures": {lane: data["last_error"] for lane, data in lanes.items()
+                     if data.get("failed") and data.get("last_error")},
+    }
+
+
+@router.post("/training/stop")
+def stop_training(db: Session = Depends(get_db),
+                  user_id: _uuid.UUID = Depends(current_user)) -> dict:
+    """Cancel queued training work for this account.
+
+    **Queued only.** A row a worker has already claimed is mid-call on the user's own credential;
+    deleting it here would not stop that call, it would only lose the record of it — so the batch
+    in flight finishes and nothing new is taken. That is also why the button warns rather than
+    promises: stopping is prompt, not instant.
+
+    Labels already written are kept. They were paid for, they are still true, and throwing them
+    away would make stopping expensive enough that nobody would risk it.
+    """
+    cancelled = db.execute(
+        delete(QueueJob)
+        .where(QueueJob.user_id == user_id,
+               QueueJob.lane.in_(TRAINING_LANES),
+               QueueJob.state == "ready")
+        .returning(QueueJob.id)).all()
+    audit(logger, "training.stopped", user=user_id, cancelled=len(cancelled))
+    return {"cancelled": len(cancelled),
+            "detail": ("Nothing new will be picked up. A batch already running will finish, and "
+                       "every label written so far is kept.")}
+
