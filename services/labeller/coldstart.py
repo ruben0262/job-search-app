@@ -26,7 +26,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from libs.db.models import CorpusJob, User, UserLabel
-from libs.labels import labelling_state
+from libs.labels import labelling_state, target_for
 from libs.llm import LlmClient, LlmError
 from libs.obs import audit
 from libs.tenant.repository import TenantRepository
@@ -75,7 +75,7 @@ def cold_start_batch(session: Session, user_id: _uuid.UUID, client: LlmClient, *
         select(func.count()).select_from(UserLabel)
         .where(UserLabel.user_id == user_id,
                UserLabel.profile_generation == user.profile_generation)) or 0
-    remaining = max(POOL_SIZE - labels, 0)
+    remaining = max(target_for(user) - labels, 0)
 
     audit(logger, "coldstart.batch", user=user_id, written=written, labels=labels,
           remaining=remaining)

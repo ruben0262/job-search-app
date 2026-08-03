@@ -274,3 +274,37 @@ def test_a_user_is_not_crowded_out_of_a_shared_corpus(db):
 
     assert any("Mechanical" in title for title in titles), (
         "a user's own matches must survive a corpus dominated by somebody else's search")
+
+
+@pytest.mark.skipif("DATABASE_URL" not in __import__("os").environ, reason="needs live Postgres")
+def test_the_label_budget_is_the_operators_to_set(db):
+    """**The catalogue entry existed and nothing read it.**
+
+    `label_pool` appeared in the admin panel as "Jobs bought per labelling run", and no code
+    consumed it -- a control that reads as a setting and behaves as decoration. Labelling runs on the
+    user's own credential, so how much of it to buy is a decision about their money.
+    """
+    from libs.labels import POOL_SIZE, labelling_state, target_for
+
+    session, user = db
+    user.rubric_md = "score jobs like this"
+    session.flush()
+    assert target_for(user) == POOL_SIZE
+    assert labelling_state(session, user.id)["target"] == POOL_SIZE
+
+    user.limits = {**(user.limits or {}), "label_pool": 1000}
+    session.flush()
+    assert target_for(user) == 1000
+    assert labelling_state(session, user.id)["target"] == 1000
+
+
+@pytest.mark.skipif("DATABASE_URL" not in __import__("os").environ, reason="needs live Postgres")
+def test_an_unlimited_label_budget_still_has_a_finish_line(db):
+    """Unlimited resolves to the default rather than to no target: a cold start with no finish line
+    would label the entire corpus on somebody else's card."""
+    from libs.labels import POOL_SIZE, target_for
+
+    session, user = db
+    user.limits = {**(user.limits or {}), "label_pool": None}
+    session.flush()
+    assert target_for(user) == POOL_SIZE
