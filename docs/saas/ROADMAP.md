@@ -824,7 +824,7 @@ other five rows look like the whole story.
 **Done when** an operator can open Latency, see which of six zones is amber, expand it, and come
 away knowing whether to add a worker, chase a source, or leave it alone — without an SSH session.
 
-### 6p — document building still reads the profile the capture flow wrote (added 2026-08-03)
+### 6q — document building still reads the profile the capture flow wrote (added 2026-08-03)
 
 **Blocking, and it sits directly between a trained account and a finished CV.**
 

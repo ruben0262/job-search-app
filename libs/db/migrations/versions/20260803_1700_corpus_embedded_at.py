@@ -32,5 +32,3 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_column("corpus", "embedded_at")
-</content>
-</invoke>

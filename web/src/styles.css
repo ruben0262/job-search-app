@@ -2546,3 +2546,128 @@ td.num {
 .verdict.warn { color: #d08a34; background: color-mix(in srgb, #d08a34 14%, transparent); }
 .verdict.down { color: #d4574e; background: color-mix(in srgb, #d4574e 14%, transparent); }
 .verdict.unknown { color: var(--dim); }
+.verdict.unjudged { color: var(--dim); font-style: italic; }
+
+/* ── the latency drill-down ─────────────────────────────────────────────────────────────────────
+   One row per zone the posting crosses. Collapsed it says which zone; expanded it says why that
+   zone, and the expansion is a panel inside the table rather than a page of its own — the reason
+   to open it is to compare it with the rows above and below. */
+.stages tr.row-link td:first-child {
+  width: 1.6rem;
+  padding-right: 0;
+}
+.caret-icon {
+  /* `--dim` is the de-emphasis step, and it made the only thing on the page saying "this opens"
+     nearly invisible. A disclosure control has to be findable before it can be restrained. */
+  color: var(--muted);
+  transition: transform var(--fade) var(--ease), color var(--fade) var(--ease);
+}
+.caret-icon.open {
+  transform: rotate(90deg);
+  color: var(--ink);
+}
+.row-link:hover .caret-icon {
+  color: var(--ink);
+}
+
+/* Raised rather than outlined. A border here would read as a second table; a change of surface
+   reads as the same row, opened. */
+.drill > td {
+  background: var(--bg-raised);
+  padding: 1.2rem 1.4rem 1.5rem;
+  /* The table is `nowrap` because its cells are numbers. This one holds sentences, and inheriting
+     that turned every explanation into one line wide enough to stretch the table past the page. */
+  white-space: normal;
+}
+.drill-body {
+  max-width: 52rem;
+}
+.drill-what {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+.drill-caveat {
+  margin: 0.6rem 0 0;
+  border-left: 1px solid var(--faint);
+  padding-left: 0.8rem;
+}
+.drill-why {
+  margin: 1.1rem 0 0;
+}
+.drill-why strong {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+/* Not a chart. Four numbers whose whole job is to be read at a glance and acted on, each carrying
+   the sentence that says what it means -- a tile whose meaning lives in a runbook is a tile an
+   operator has to already understand to use. */
+.stat-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(11rem, 100%), 1fr));
+  gap: 1rem;
+  margin-top: 1.2rem;
+}
+.stat-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  border-top: 1px solid var(--hairline);
+  padding-top: 0.7rem;
+  /* A grid item defaults to `min-width: auto`, which lets one long sentence widen its own track
+     and push the tiles beside it off the panel. */
+  min-width: 0;
+}
+.stat-label {
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.stat-value {
+  font-size: 1.45rem;
+  line-height: 1.2;
+  color: var(--ink);
+}
+.stat-sub {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.stat-note {
+  margin-top: 0.35rem;
+  font-size: 0.74rem;
+  line-height: 1.45;
+  color: var(--dim);
+}
+
+/* One series, one ink colour, thresholds as labelled dashed rules. A bar past the line is read by
+   position against a label rather than by turning a colour, which is the same rule the verdict
+   pills follow and the only version that survives print or a reader who cannot separate two hues. */
+.spark {
+  display: block;
+  width: 100%;
+  max-width: 46rem;
+  height: auto;
+  margin-top: 0.5rem;
+  overflow: visible;
+}
+.spark path {
+  transition: fill var(--fade) var(--ease);
+}
+.spark path:hover {
+  fill: var(--ink);
+}
+.spark-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  fill: var(--dim);
+}
+.spark-peak {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  fill: var(--muted);
+}

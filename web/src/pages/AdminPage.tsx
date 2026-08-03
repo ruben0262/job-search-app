@@ -14,7 +14,7 @@
  * Visible only when `/dashboard` says `is_admin`. That is a rendering hint — the API refuses
  * `/admin/*` on its own, from `ADMIN_EMAILS`, and this page could not read anything without it.
  */
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 
 import { api } from "../api";
 import { Error, useAction } from "../ui";
@@ -77,6 +77,59 @@ type Span = {
   amber_after_min?: number;
   red_after_min?: number;
 };
+
+/** One zone of the pipeline, as the table renders it collapsed. `judged` is separate from the
+ *  verdict on purpose: a stage can be measured and deliberately uncoloured, and that is not the
+ *  same thing as having too little data to say. */
+type StageRow = {
+  key: string;
+  label: string;
+  zone: string;
+  what: string;
+  scope: "corpus" | "user";
+  caveat: string | null;
+  p50: number | null;
+  p90: number | null;
+  p99: number | null;
+  worst: number | null;
+  samples: number;
+  verdict: "ok" | "warn" | "down" | "unknown" | "unjudged";
+  judged: boolean;
+  amber_after_min: number | null;
+  red_after_min: number | null;
+};
+
+type SeriesPoint = { at: string; samples: number; p50: number | null; p90: number | null };
+
+/** What one expanded row shows. Fetched on expansion rather than with the table — each piece costs
+ *  a query, and only one row is ever open. */
+type StageDetail = {
+  key: string;
+  label: string;
+  zone: string;
+  what: string;
+  caveat: string | null;
+  window_hours: number;
+  lane_name: string | null;
+  // Seconds, from the queue's own timestamps. Absent when no job in that lane finished in the
+  // window, and absent entirely for the stages that run on a timer rather than the queue.
+  lane: {
+    lane: string;
+    samples: number;
+    wait_p50: number;
+    wait_p90: number;
+    run_p50: number;
+    run_p90: number;
+    run_max: number;
+  } | null;
+  backlog: { waiting: number; oldest_min: number | null } | null;
+  series: SeriesPoint[];
+  reasoning: string | null;
+  amber_after_min: number | null;
+  red_after_min: number | null;
+};
+
+type LatencyReport = { window_hours: number; stages: StageRow[] };
 
 type Settings = {
   delivery_interval_min: number;
@@ -712,6 +765,402 @@ function CorpusTab() {
   );
 }
 
+
+/**
+ * Where the time goes, one row per zone the posting crosses.
+ *
+ * **The end-to-end number is the one worth publishing and the one least useful for fixing
+ * anything.** "A posting took 36 minutes" does not say which of six handoffs ate them, and a stuck
+ * describe worker, an embedder behind a flood, a score lane with no free worker and a delivery
+ * cadence are four unrelated problems wearing the same number.
+ *
+ * So a posting's journey is the table: it arrives as a link, leaves as a card, and each row is one
+ * boundary where work is picked up, done, and handed on. Collapsed, a row says *which* zone is the
+ * problem. Expanded, it says *why that zone* — and the things that answer that are different in
+ * kind from percentiles, which is exactly why they sit behind a disclosure rather than in six more
+ * columns nobody reads (ROADMAP 6p).
+ */
+function LatencyTab() {
+  const [report, setReport] = useState<LatencyReport | null>(null);
+  const [hours, setHours] = useState(24);
+  // One row open at a time. Two open drill-downs is a second table, and the reason to open one is
+  // to look at it rather than to compare it with another.
+  const [open, setOpen] = useState<string | null>(null);
+  // Kept per stage after the first fetch, so collapsing and reopening a row is instant and does not
+  // re-run three queries to show what is already on the page.
+  const [details, setDetails] = useState<Record<string, StageDetail>>({});
+  const [failed, setFailed] = useState<string | null>(null);
+
+  useEffect(() => {
+    setReport(null);
+    setDetails({});
+    setOpen(null);
+    void api
+      .get<LatencyReport>(`/admin/latency?hours=${hours}`)
+      .then(setReport)
+      .catch(() => setFailed("Could not read the pipeline timings."));
+  }, [hours]);
+
+  const toggle = (key: string) => {
+    if (open === key) {
+      setOpen(null);
+      return;
+    }
+    setOpen(key);
+    if (details[key]) return;
+    void api
+      .get<StageDetail>(`/admin/latency/${key}?hours=${hours}`)
+      .then((detail) => setDetails((held) => ({ ...held, [key]: detail })))
+      .catch(() => setFailed("Could not read that stage."));
+  };
+
+  return (
+    <>
+      <h2 style={{ marginTop: 0 }}>Where the time goes</h2>
+      <p className="hint">
+        A posting arrives as a link and leaves as a card in Telegram. Every row below is one
+        boundary in between — somewhere work is picked up, done, and handed on. Open a row for what
+        that zone is waiting on.
+      </p>
+
+      <div className="row" style={{ margin: "1rem 0", alignItems: "center" }}>
+        <span className="kicker" style={{ margin: 0 }}>Window</span>
+        {([[6, "6 hours"], [24, "24 hours"], [168, "7 days"]] as [number, string][]).map(
+          ([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              className={hours === value ? "chip on" : "chip"}
+              onClick={() => setHours(value)}
+            >
+              {label}
+            </button>
+          ))}
+      </div>
+
+      {failed ? <p className="error">{failed}</p> : null}
+      {!report && !failed ? <p className="facts">Measuring…</p> : null}
+
+      {report ? (
+        <div className="table-scroll">
+          <table className="history stages">
+            <thead>
+              <tr>
+                <th />
+                <th>Stage</th>
+                <th className="num">Median</th>
+                <th className="num">p90</th>
+                <th className="num">p99</th>
+                {/* A stage with a healthy p90 and a forty-minute tail has something worth looking
+                    at that no percentile would ever show. */}
+                <th className="num">Worst</th>
+                <th className="num">Volume</th>
+                <th>Verdict</th>
+              </tr>
+            </thead>
+            <tbody>
+              {report.stages.map((stage) => {
+                const isOpen = open === stage.key;
+                return (
+                  <Fragment key={stage.key}>
+                    <tr
+                      className={`row-link${stage.key === "found_to_delivered" ? " on" : ""}`}
+                      onClick={() => toggle(stage.key)}
+                      aria-expanded={isOpen}
+                    >
+                      <td className="caret">
+                        <Caret open={isOpen} />
+                      </td>
+                      <td>
+                        {stage.label}
+                        <span className="job-sub"> · {stage.zone}</span>
+                      </td>
+                      <td className="num">{minutes(stage.p50)}</td>
+                      <td className="num">{minutes(stage.p90)}</td>
+                      <td className="num">{minutes(stage.p99)}</td>
+                      <td className="num">{minutes(stage.worst)}</td>
+                      <td className="num">{stage.samples.toLocaleString()}</td>
+                      <td>
+                        <span className={`verdict ${stage.verdict}`}>{verdictWord(stage)}</span>
+                      </td>
+                    </tr>
+                    {isOpen ? (
+                      <tr className="drill">
+                        <td colSpan={8}>
+                          <StageDrill stage={stage} detail={details[stage.key]} />
+                        </td>
+                      </tr>
+                    ) : null}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+
+      {/* **"Not enough data" is a real answer, not a failure.** Below the sample floor a percentile
+          is arithmetic rather than evidence, and colouring it invites somebody to chase a number
+          that three rows produced. */}
+      <p className="hint" style={{ marginTop: "0.9rem" }}>
+        Every row is judged on its p90, not its median — half the jobs arriving promptly is not the
+        claim this product makes, and a median hides exactly the tail somebody loses a role in. A
+        row with too few completed examples says so rather than showing a colour.
+      </p>
+    </>
+  );
+}
+
+/** The zone, expanded: waiting versus running, what is queued behind it, and the last day's shape.
+ *
+ *  These are not more percentiles. Waiting and running fail for different reasons and are fixed in
+ *  different places; a backlog predicts the next hour where a percentile only describes the last
+ *  one; and a snapshot cannot show a spike, which is the hour worth chasing. */
+function StageDrill({ stage, detail }: { stage: StageRow; detail: StageDetail | undefined }) {
+  if (!detail) return <p className="facts">Reading this stage…</p>;
+
+  return (
+    <div className="drill-body">
+      <p className="drill-what">{stage.what}</p>
+      {stage.caveat ? <p className="hint drill-caveat">{stage.caveat}</p> : null}
+
+      <div className="stat-row">
+        {/* **Waiting and running are two different failures.** Too few workers is not the same
+            problem as work that got slower, and one "how long did it take" hides which. */}
+        {detail.lane ? (
+          <>
+            <Tile
+              label="Waiting for a worker"
+              value={seconds(detail.lane.wait_p90)}
+              sub={`p90 · median ${seconds(detail.lane.wait_p50)}`}
+              note="Long here means too few workers, or a lane stuck behind a long job."
+            />
+            <Tile
+              label="Doing the work"
+              value={seconds(detail.lane.run_p90)}
+              sub={`p90 · worst ${seconds(detail.lane.run_max)}`}
+              note="Long here means the work itself got slower, which is a different fix."
+            />
+          </>
+        ) : null}
+        {detail.lane_name && !detail.lane ? (
+          <Tile
+            label={`${detail.lane_name} lane`}
+            value="—"
+            sub="nothing completed"
+            note="No job in this lane finished inside the window."
+          />
+        ) : null}
+        {detail.backlog ? (
+          <Tile
+            label="Queued at this door"
+            value={detail.backlog.waiting.toLocaleString()}
+            sub={
+              detail.backlog.oldest_min !== null
+                ? `oldest waiting ${minutes(detail.backlog.oldest_min)}`
+                : "nothing waiting"
+            }
+            note="The percentiles describe what got through. This is what has not."
+          />
+        ) : null}
+        <Tile
+          label="Completed in window"
+          value={stage.samples.toLocaleString()}
+          sub={`last ${detail.window_hours} hours`}
+          note={stage.judged
+            ? `Amber over ${stage.amber_after_min}m, red over ${stage.red_after_min}m.`
+            : "Reported without a verdict."}
+        />
+      </div>
+
+      <p className="kicker" style={{ marginTop: "1.4rem" }}>Hour by hour</p>
+      <StageSeries series={detail.series} amber={stage.amber_after_min}
+                   red={stage.red_after_min} />
+
+      {detail.reasoning ? (
+        <p className="hint drill-why">
+          <strong>Why that threshold. </strong>
+          {detail.reasoning}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/** One number with the sentence that says what to do about it. A tile whose meaning lives in a
+ *  runbook is a tile an operator has to already understand to use. */
+function Tile({ label, value, sub, note }: {
+  label: string;
+  value: string;
+  sub: string;
+  note: string;
+}) {
+  return (
+    <div className="stat-tile">
+      <span className="stat-label">{label}</span>
+      <span className="stat-value">{value}</span>
+      <span className="stat-sub">{sub}</span>
+      <span className="stat-note">{note}</span>
+    </div>
+  );
+}
+
+/**
+ * The stage's p90 per hour, against its own thresholds.
+ *
+ * **A snapshot cannot show a spike**, and the spike is the hour worth chasing: a p90 of 36 minutes
+ * averaged over a day hides the hour it was four times that.
+ *
+ * Deliberately one series in one ink colour, with the thresholds as labelled dashed rules. A bar
+ * that has crossed the line is read by *position against a labelled line* rather than by turning a
+ * colour — which is the same rule the verdict pills follow, and the only version that survives
+ * being printed or read by somebody who cannot separate the two hues.
+ */
+function StageSeries({ series, amber, red }: {
+  series: SeriesPoint[];
+  amber: number | null;
+  red: number | null;
+}) {
+  const first = series[0];
+  if (!first) {
+    return <p className="facts">Nothing completed this stage in the window.</p>;
+  }
+  const last = series[series.length - 1] ?? first;
+
+  const width = 720;
+  const height = 132;
+  const padTop = 10;
+  const padBottom = 20;
+  const padRight = 58; // Room for the threshold labels, which sit outside the plot.
+  const plotWidth = width - padRight;
+  const plotHeight = height - padTop - padBottom;
+
+  const peak = Math.max(...series.map((point) => point.p90 ?? 0), red ?? 0, amber ?? 0, 1);
+  // Headroom, so the tallest bar and a threshold sitting near it are not touching the frame.
+  const ceiling = peak * 1.15;
+  const y = (value: number) => padTop + plotHeight - (value / ceiling) * plotHeight;
+
+  const gap = 2;
+  const barWidth = Math.max((plotWidth - gap * (series.length - 1)) / series.length, 1.5);
+  const tallest = series.reduce<SeriesPoint>(
+    (best, point) => ((point.p90 ?? 0) > (best.p90 ?? 0) ? point : best), first);
+
+  return (
+    <svg className="spark" viewBox={`0 0 ${width} ${height}`} role="img"
+         aria-label="Stage p90 by hour, in minutes">
+      {/* The baseline, and nothing else. A grid behind eighteen thin bars is furniture. */}
+      <line x1="0" y1={padTop + plotHeight} x2={plotWidth} y2={padTop + plotHeight}
+            stroke="var(--faint)" strokeWidth="1" />
+
+      {[["amber", amber, "#d08a34"], ["red", red, "#d4574e"]].map(([name, value, colour]) => {
+        const level = value as number | null;
+        if (level === null || level > ceiling) return null;
+        return (
+          <g key={name as string}>
+            <line x1="0" y1={y(level)} x2={plotWidth} y2={y(level)}
+                  stroke={colour as string} strokeWidth="1" strokeDasharray="3 4" opacity="0.7" />
+            <text x={plotWidth + 6} y={y(level) + 3.5} className="spark-label"
+                  fill={colour as string}>
+              {name === "amber" ? "amber" : "red"} {level}m
+            </text>
+          </g>
+        );
+      })}
+
+      {series.map((point, index) => {
+        const value = point.p90 ?? 0;
+        const x = index * (barWidth + gap);
+        const top = y(value);
+        const barHeight = padTop + plotHeight - top;
+        return (
+          <path key={point.at} d={bar(x, top, barWidth, barHeight, 4)} fill="var(--dim)">
+            {/* The hover layer an SVG chart owes the reader. `title` rather than a floating div:
+                one element, no positioning maths, and it survives keyboard focus. */}
+            <title>
+              {hourLabel(point.at)} · p90 {minutes(point.p90)} · median {minutes(point.p50)} ·{" "}
+              {point.samples.toLocaleString()} jobs
+            </title>
+          </path>
+        );
+      })}
+
+      {/* One direct label, on the worst hour. A number on every bar is eighteen numbers nobody
+          reads; the peak is the only one anybody came here for. */}
+      {tallest.p90 ? (
+        <text
+          x={Math.min(series.indexOf(tallest) * (barWidth + gap) + barWidth / 2, plotWidth - 24)}
+          y={y(tallest.p90) - 5}
+          className="spark-peak"
+          textAnchor="middle"
+        >
+          {minutes(tallest.p90)}
+        </text>
+      ) : null}
+
+      <text x="0" y={height - 6} className="spark-label">{hourLabel(first.at)}</text>
+      {series.length > 1 ? (
+        <text x={plotWidth} y={height - 6} className="spark-label" textAnchor="end">
+          {hourLabel(last.at)}
+        </text>
+      ) : null}
+    </svg>
+  );
+}
+
+/** A bar with its top corners rounded and its base square on the axis. `rx` on a rect would round
+ *  the end sitting on the baseline too, which reads as the bar floating. */
+function bar(x: number, y: number, width: number, height: number, radius: number): string {
+  const r = Math.min(radius, width / 2, Math.max(height, 0));
+  const base = y + Math.max(height, 0);
+  return `M${x},${base} L${x},${y + r} Q${x},${y} ${x + r},${y} `
+       + `L${x + width - r},${y} Q${x + width},${y} ${x + width},${y + r} `
+       + `L${x + width},${base} Z`;
+}
+
+function Caret({ open }: { open: boolean }) {
+  return (
+    <svg className={open ? "caret-icon open" : "caret-icon"} width="12" height="12"
+         viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M9 5l7 7-7 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round"
+            strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/** Minutes, in the unit a person would say them in. "94m" is a number to convert; "1h 34m" is a
+ *  number to react to, and this table exists to be reacted to. */
+function minutes(value: number | null | undefined): string {
+  if (value === null || value === undefined) return "—";
+  if (value < 1) return "<1m";
+  if (value < 90) return `${Math.round(value)}m`;
+  const whole = Math.floor(value / 60);
+  const rest = Math.round(value % 60);
+  return rest ? `${whole}h ${rest}m` : `${whole}h`;
+}
+
+/** Lane timings arrive in seconds — the work inside a lane is sub-minute when it is healthy, and
+ *  rounding it to minutes would report every well-behaved lane as zero. */
+function seconds(value: number | null | undefined): string {
+  if (value === null || value === undefined) return "—";
+  if (value < 1) return "<1s";
+  if (value < 90) return `${Math.round(value)}s`;
+  return minutes(value / 60);
+}
+
+function hourLabel(at: string): string {
+  return new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+/** Colour is never the only signal, so every pill carries its word — and an unjudged stage says
+ *  that it was not judged rather than borrowing "not enough data", which would make a deliberate
+ *  decision look like missing data. */
+function verdictWord(stage: StageRow): string {
+  if (!stage.judged) return "reported, not judged";
+  if (stage.verdict === "ok") return "healthy";
+  if (stage.verdict === "warn") return `slow, over ${stage.amber_after_min}m`;
+  if (stage.verdict === "down") return `too slow, over ${stage.red_after_min}m`;
+  return "not enough data";
+}
 
 /** How many terms a page shows. Two columns of ten: the three-column grid put twenty-odd terms on
  *  screen with no order anybody could see, which reads as a wall rather than a list. */
