@@ -642,3 +642,48 @@ def test_a_different_conversation_keeps_its_own_command(api):
         by_chat.setdefault(str(row.conversation_id), set()).add(row.agent)
     assert by_chat[first["conversation_id"]] == {"setup-director"}
     assert by_chat[second_id] == {"setup-scorer"}
+
+
+def test_a_chat_can_be_renamed_and_keeps_the_name(api):
+    """**Titles were generated and only generated** — the first thing said, or the step's name when
+    Start was pressed. A good default and a poor permanent label: three chats called "Your profile"
+    tell nobody which is which, and the switcher is how somebody finds the one they want.
+
+    Auto-naming only ever fills a chat still holding the default, so a renamed one keeps its name
+    however many messages follow it.
+    """
+    from libs.db.models import DEFAULT_TITLE, SetupConversation
+
+    http, session, user = api
+    _with_claude(session, user)
+    started = http.post("/setup/message",
+                        json={"message": "/setup-director", "agent": "setup-director"}).json()
+    chat_id = started["conversation_id"]
+
+    renamed = http.patch(f"/setup/conversations/{chat_id}", json={"title": "  Andras  test  "})
+    assert renamed.status_code == 200
+    assert renamed.json()["title"] == "Andras test", "whitespace is collapsed, not preserved"
+
+    http.post("/setup/message", json={"message": "another answer", "conversation_id": chat_id})
+    session.flush()
+    row = session.get(SetupConversation, uuid.UUID(chat_id))
+    assert row.title == "Andras test", "a later message must not rename a chat somebody named"
+    assert row.title != DEFAULT_TITLE
+
+
+def test_a_chat_belonging_to_somebody_else_cannot_be_renamed(api):
+    """Ownership is checked by the same helper every other conversation route uses, and answers 404
+    rather than 403: whether a stranger's chat exists is not this caller's business."""
+    from libs.db.models import SetupConversation, User
+
+    http, session, _user = api
+    stranger = User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active")
+    session.add(stranger)
+    session.flush()
+    theirs = SetupConversation(user_id=stranger.id)
+    session.add(theirs)
+    session.flush()
+
+    assert http.patch(f"/setup/conversations/{theirs.id}",
+                      json={"title": "mine now"}).status_code == 404
+    assert session.get(SetupConversation, theirs.id).title != "mine now"

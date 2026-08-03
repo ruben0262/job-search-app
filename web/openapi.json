@@ -225,6 +225,21 @@
         "title": "Constraints",
         "type": "object"
       },
+      "ConversationTitle": {
+        "properties": {
+          "title": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "title": "ConversationTitle",
+        "type": "object"
+      },
       "CredentialBody": {
         "properties": {
           "allow_unvalidated": {
@@ -3775,6 +3790,60 @@
           }
         },
         "summary": "Delete Conversation",
+        "tags": [
+          "setup"
+        ]
+      },
+      "patch": {
+        "description": "Rename a chat.\n\nTitles were generated and only generated: the first thing the user said, or the step's name when\nthey pressed Start. That is a good default and a poor permanent label -- three chats called\n\"Your profile\" tell nobody which was which, and the switcher is how somebody finds the one they\nwant. Renaming is the cheapest possible fix and there was no way to do it.\n\nAuto-naming is unaffected: it only ever fills a chat still holding the default, so a renamed one\nkeeps its name however many messages follow.",
+        "operationId": "rename_conversation_setup_conversations__conversation_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConversationTitle"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Rename Conversation Setup Conversations  Conversation Id  Patch",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rename Conversation",
         "tags": [
           "setup"
         ]

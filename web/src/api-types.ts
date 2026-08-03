@@ -1372,7 +1372,19 @@ export interface paths {
         delete: operations["delete_conversation_setup_conversations__conversation_id__delete"];
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Rename Conversation
+         * @description Rename a chat.
+         *
+         *     Titles were generated and only generated: the first thing the user said, or the step's name when
+         *     they pressed Start. That is a good default and a poor permanent label -- three chats called
+         *     "Your profile" tell nobody which was which, and the switcher is how somebody finds the one they
+         *     want. Renaming is the cheapest possible fix and there was no way to do it.
+         *
+         *     Auto-naming is unaffected: it only ever fills a chat still holding the default, so a renamed one
+         *     keeps its name however many messages follow.
+         */
+        patch: operations["rename_conversation_setup_conversations__conversation_id__patch"];
         trace?: never;
     };
     "/setup/files/{name}": {
@@ -1639,6 +1651,11 @@ export interface components {
             onsite_locations?: string[];
             /** Remote Policy */
             remote_policy?: string | null;
+        };
+        /** ConversationTitle */
+        ConversationTitle: {
+            /** Title */
+            title: string;
         };
         /** CredentialBody */
         CredentialBody: {
@@ -3932,6 +3949,43 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rename_conversation_setup_conversations__conversation_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConversationTitle"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

@@ -247,6 +247,32 @@ def _resolve_agent(db: Session, user_id: _uuid.UUID, conversation_id: _uuid.UUID
     return existing or "setup"
 
 
+
+class ConversationTitle(BaseModel):
+    # Trimmed rather than rejected when long: a name is a label, and truncating one is kinder than
+    # refusing a save somebody has already typed.
+    title: str = Field(min_length=1, max_length=80)
+
+
+@router.patch("/conversations/{conversation_id}")
+def rename_conversation(conversation_id: _uuid.UUID, body: ConversationTitle,
+                        db: Session = Depends(get_db),
+                        user_id: _uuid.UUID = Depends(current_user)) -> dict:
+    """Rename a chat.
+
+    Titles were generated and only generated: the first thing the user said, or the step's name when
+    they pressed Start. That is a good default and a poor permanent label -- three chats called
+    "Your profile" tell nobody which was which, and the switcher is how somebody finds the one they
+    want. Renaming is the cheapest possible fix and there was no way to do it.
+
+    Auto-naming is unaffected: it only ever fills a chat still holding the default, so a renamed one
+    keeps its name however many messages follow.
+    """
+    row = _owned(db, user_id, conversation_id)
+    row.title = " ".join(body.title.split())[:80]
+    audit(logger, "setup.conversation_renamed", user=user_id, conversation=conversation_id)
+    return {"id": str(row.id), "title": row.title}
+
 @router.post("/message", status_code=status.HTTP_202_ACCEPTED)
 def send(body: Turn, db: Session = Depends(get_db),
          user_id: _uuid.UUID = Depends(current_user)) -> dict:

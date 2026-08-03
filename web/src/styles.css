@@ -2492,3 +2492,17 @@ td.num {
   opacity: 0.5;
 }
 .file:disabled:hover { border-color: var(--hairline); transform: none; }
+
+/* Renaming a chat happens in the tab itself. Sized to the pill it replaces so the switcher does not
+   jump when an edit starts — a row of tabs that reflows on click is one people click twice. */
+.chat-tab-rename {
+  width: 9rem;
+  padding: 0.1rem 0.35rem;
+  border: 1px solid var(--ink);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.82rem;
+}
+.chat-tab-rename:focus { outline: none; }

@@ -159,6 +159,21 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
   const [pinned, setPinned] = useState(true);
   const box = useRef<HTMLTextAreaElement>(null);
 
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [draftTitle, setDraftTitle] = useState("");
+
+  /** Save the typed name, or quietly drop the edit if it is unchanged or empty. A rename that
+   *  failed silently would leave the old name on screen and look like nothing happened, so the
+   *  reload after it is what confirms the save. */
+  const commitRename = async (id: string) => {
+    const wanted = draftTitle.trim();
+    setRenaming(null);
+    const current = state?.conversations.find((chat) => chat.id === id)?.title;
+    if (!wanted || wanted === current) return;
+    await api.patch(`/setup/conversations/${id}`, { title: wanted });
+    await load(state?.conversation_id);
+  };
+
   const load = async (id?: string) => {
     const fresh = await api.get<Conversation>(id ? `/setup?conversation_id=${id}` : "/setup");
     cachedConversation = fresh;
@@ -246,6 +261,23 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
     }, 1500);
     return () => window.clearInterval(timer);
   }, [inFlight, openConversation]);
+
+  /**
+   * Re-read progress the moment a turn stops running.
+   *
+   * **It was only read on mount and when a message was sent**, so the turn that wrote the last file
+   * left "setup complete" unsaid until the page was reloaded — the one moment the page has good news
+   * and it withheld it. The turn that finishes setup is by definition one nobody sends a message
+   * after, so waiting for the next send was waiting forever.
+   */
+  const wasInFlight = useRef(false);
+  useEffect(() => {
+    if (wasInFlight.current && !inFlight) {
+      void loadProgress();
+      onChanged();
+    }
+    wasInFlight.current = Boolean(inFlight);
+  }, [inFlight]);
 
   const send = useAction(async (text: string) => {
     // Shown immediately: a message that vanishes for two minutes reads as a dropped message, and
@@ -366,11 +398,42 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
               key={chat.id}
               className={`chat-tab${chat.id === state.conversation_id ? " on" : ""}`}
             >
-              <button type="button" onClick={() => void openChat.run(chat.id)}>
-                {/* The title truncates on its own element. On the button it did not: a flex item
-                    with padding kept its full text width and the pill clipped it at the border,
-                    losing the first character as well as the last. */}
-                <span className="chat-tab-title">{chat.title}</span>
+              {renaming === chat.id ? (
+                /* **Editing in place, in the tab itself.** A dialog for a two-word label is more
+                   ceremony than the thing is worth, and the switcher is where somebody is looking
+                   when they decide a name is wrong. Enter saves, Escape abandons, and blurring
+                   saves too -- clicking away from a name you have just typed means you meant it. */
+                <input
+                  className="chat-tab-rename"
+                  value={draftTitle}
+                  autoFocus
+                  maxLength={80}
+                  onChange={(event) => setDraftTitle(event.target.value)}
+                  onBlur={() => void commitRename(chat.id)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") void commitRename(chat.id);
+                    if (event.key === "Escape") setRenaming(null);
+                  }}
+                />
+              ) : (
+                <button type="button" onClick={() => void openChat.run(chat.id)}>
+                  {/* The title truncates on its own element. On the button it did not: a flex item
+                      with padding kept its full text width and the pill clipped it at the border,
+                      losing the first character as well as the last. */}
+                  <span className="chat-tab-title">{chat.title}</span>
+                </button>
+              )}
+              <button
+                type="button"
+                className="chat-tab-x"
+                aria-label={`Rename ${chat.title}`}
+                title="Rename this chat"
+                onClick={() => {
+                  setDraftTitle(chat.title);
+                  setRenaming(chat.id);
+                }}
+              >
+                <PencilIcon />
               </button>
               <button
                 type="button"
@@ -625,6 +688,21 @@ function StopIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
       <rect x="6" y="6" width="12" height="12" rx="2.5" fill="currentColor" />
+    </svg>
+  );
+}
+
+/** A pencil, for renaming. Small and quiet: it sits beside the delete cross and must not compete
+ *  with it for attention -- one of the two is destructive and the other is not. */
+function PencilIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M4 20h4L19 9l-4-4L4 16v4z"
+        stroke="currentColor"
+        strokeWidth="1.9"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
