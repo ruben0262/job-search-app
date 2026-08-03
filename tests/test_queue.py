@@ -285,6 +285,42 @@ def test_a_dormant_user_is_not_enqueued(ctx):
     assert dispatch_due_notifications(ctx) == 0
 
 
+def test_an_account_that_has_never_been_dispatched_is_due_now(ctx):
+    """**A missing schedule means due, not never.**
+
+    Nothing on this platform arms `next_run_at` — the dispatcher only ever advances one that is
+    already set — so requiring it to be non-NULL made a new account permanently silent rather than
+    late. That is not hypothetical: the second account on the platform connected its bot, scored
+    15,094 postings, and sat on 73 undelivered matches with no queue entry ever created, because it
+    had no first slot and nothing existed to give it one.
+
+    Fail-open is the only safe direction here. A missing schedule that produces a delivery is a
+    delivery somebody can see; a missing schedule that produces nothing is an account nobody hears
+    from and no worker is failing over.
+    """
+    user = _user(ctx, active=True, status="active", telegram_status="connected")
+    assert user.next_run_at is None
+
+    assert dispatch_due_notifications(ctx) == 1
+    ctx.flush()
+    ctx.refresh(user)
+
+    # And having been dispatched once, it is on the cadence like everybody else rather than firing
+    # again on the next pass.
+    assert user.next_run_at is not None
+    assert dispatch_due_notifications(ctx) == 0
+
+
+def test_an_unscheduled_account_still_obeys_every_other_gate(ctx):
+    """Reading NULL as "due" must not become "due regardless of anything else" -- a dormant account
+    or a revoked bot is exactly as ineligible unscheduled as it is scheduled."""
+    _user(ctx, active=True, status="dormant", telegram_status="connected")
+    _user(ctx, active=True, status="active", telegram_status="broken")
+    _user(ctx, active=False, status="active", telegram_status="connected")
+
+    assert dispatch_due_notifications(ctx) == 0
+
+
 def test_every_lane_has_a_claim_timeout():
     """**A lane missing from the map crashes its worker on the first sweep**, not on the first job —
     so the container restarts forever and the lane never drains. `setup` was added without one and

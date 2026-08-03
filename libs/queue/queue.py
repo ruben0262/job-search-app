@@ -19,7 +19,7 @@ import uuid as _uuid
 from collections.abc import Sequence
 from datetime import timedelta
 
-from sqlalchemy import func, select, text, update
+from sqlalchemy import func, or_, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -181,11 +181,19 @@ def dispatch_due_notifications(session: Session) -> int:
 
     Users whose bot is `broken` are skipped: retrying a revoked token cannot succeed, and the fix is
     a reconnect email, not a queue entry.
+
+    **An unset `next_run_at` means due now, not never.** Nothing on the platform arms that column —
+    the dispatcher only ever advances one that is already set — so requiring it to be non-NULL made
+    a brand new account permanently silent: the second account signed up, connected its bot, scored
+    15,094 postings, and 73 matches sat undelivered because it had no first slot and nothing existed
+    to give it one. The LinkedIn loop already reads NULL as "due" for exactly this reason
+    (`services/harvester/linkedin.py`), and this is the fail-open half of the same idea: a missing
+    schedule must produce a delivery somebody can see, never a queue nobody is in.
     """
     due = select(User.id).where(
         User.active.is_(True), User.status == "active",
         User.telegram_status == "connected",
-        User.next_run_at.is_not(None), User.next_run_at <= func.now())
+        or_(User.next_run_at.is_(None), User.next_run_at <= func.now()))
 
     # `rowcount` is not dependable for INSERT ... SELECT ... RETURNING, so the returned ids are
     # counted directly. A dispatcher that reports a number it did not measure is worse than one
