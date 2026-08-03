@@ -62,11 +62,19 @@ export function ModelPage({
     void readTraining();
   }, [readTraining]);
 
+  // **Poll while there is work left, not only while a row happens to be queued.** Keying on
+  // `running` alone meant that once the page had seen an idle moment between batches it stopped
+  // asking and never noticed the run continuing -- and a page opened fresh mid-run never started
+  // polling at all, because its first answer arrived during one of those gaps.
+  const unfinished =
+    training?.running === true ||
+    ["cold_start", "relabel", "train"].includes(training?.phase ?? "");
+
   useEffect(() => {
-    if (!training?.running) return;
+    if (!unfinished) return;
     const timer = window.setInterval(() => void readTraining(), 3000);
     return () => window.clearInterval(timer);
-  }, [training?.running, readTraining]);
+  }, [unfinished, readTraining]);
 
   const stop = useAction(async () => {
     await api.post("/process/training/stop");

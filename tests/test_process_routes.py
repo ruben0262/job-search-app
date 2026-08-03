@@ -287,3 +287,50 @@ def test_stopping_cancels_queued_work_and_keeps_the_labels(api):
 
     left = session.query(QueueJob).filter(QueueJob.user_id == user.id).all()
     assert all(row.state != "ready" for row in left), "nothing queued should survive a stop"
+
+
+def test_a_run_between_batches_still_reads_as_running(api):
+    """**The gap that made the page look idle mid-run.**
+
+    Labelling goes in batches: a worker takes a job, writes a batch, finishes it, and the dispatcher
+    enqueues the next. Between those two moments this account has nothing queued, and reading only
+    `ready`/`claimed` flipped the page back to its start button while the run was plainly alive --
+    which is what a user saw after navigating away and returning.
+    """
+    from datetime import UTC, datetime
+
+    from libs.db.models import QueueJob
+    from libs.queue import enqueue
+
+    http, session, user = api
+    job = enqueue(session, "label", user.id, payload={"kind": "cold_start"})
+    session.flush()
+
+    row = session.query(QueueJob).filter(QueueJob.user_id == user.id).one()
+    row.state = "done"
+    row.finished_at = datetime.now(UTC)
+    session.flush()
+    assert job is not None
+
+    body = http.get("/process/training").json()
+    assert body["lanes"]["label"].get("ready", 0) == 0, "nothing is queued, which is the premise"
+    assert body["running"] is True, "a batch that just finished is a run still in progress"
+
+
+def test_an_abandoned_run_stops_claiming_to_be_alive(api):
+    """The other half: a finish long enough ago is a run nobody resumed, and saying "working" for
+    ever is worse than saying nothing."""
+    from datetime import UTC, datetime, timedelta
+
+    from libs.db.models import QueueJob
+    from libs.queue import enqueue
+
+    http, session, user = api
+    enqueue(session, "label", user.id, payload={"kind": "cold_start"})
+    session.flush()
+    row = session.query(QueueJob).filter(QueueJob.user_id == user.id).one()
+    row.state = "done"
+    row.finished_at = datetime.now(UTC) - timedelta(hours=3)
+    session.flush()
+
+    assert http.get("/process/training").json()["running"] is False

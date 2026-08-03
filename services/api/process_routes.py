@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import uuid as _uuid
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import delete, func, select
@@ -210,6 +211,11 @@ def _stored_kinds(db: Session, user_id: _uuid.UUID) -> set[str]:
 # clock and the part that costs money; the fit at the end is seconds.
 TRAINING_LANES = ("label", "train", "score")
 
+# How long after a finished batch the run still counts as in progress. Comfortably longer than the
+# dispatcher's cycle, so an ordinary gap between batches never reads as "stopped", and short enough
+# that a genuinely abandoned run stops claiming to be alive.
+BETWEEN_BATCHES = timedelta(minutes=10)
+
 
 @router.get("/training")
 def training_state(db: Session = Depends(get_db),
@@ -238,8 +244,25 @@ def training_state(db: Session = Depends(get_db),
         if state_name == "failed" and last_error:
             entry["last_error"] = last_error[:400]
 
-    running = any(lane.get("ready", 0) or lane.get("claimed", 0) for lane in lanes.values())
+    # **"Running" is not "a row is queued this instant".**
+    #
+    # Labelling goes in batches: a worker takes one job, writes a batch, finishes it, and the
+    # dispatcher enqueues the next. Between those two moments the queue for this account is empty,
+    # and reading only `ready`/`claimed` made the page flip back to its idle button mid-run -- so a
+    # user who navigated away and returned was told nothing was happening while it plainly was.
+    #
+    # So a recent finish counts too, for as long as the phase still has work left in it. That is
+    # also what makes this survive a refresh: it is derived from the queue and the label counts,
+    # neither of which cares whether anybody had the page open.
+    in_queue = any(lane.get("ready", 0) or lane.get("claimed", 0) for lane in lanes.values())
+    latest = db.scalar(
+        select(func.max(QueueJob.finished_at))
+        .where(QueueJob.user_id == user_id, QueueJob.lane.in_(TRAINING_LANES)))
+    recently_worked = bool(
+        latest and (datetime.now(UTC) - latest) < BETWEEN_BATCHES)
     labelling = labelling_state(db, user_id)
+    unfinished = labelling["action"] in ("cold_start", "relabel", "train")
+    running = in_queue or (recently_worked and unfinished)
     user = db.get(User, user_id)
 
     return {
