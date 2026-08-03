@@ -232,3 +232,45 @@ def test_a_partial_cold_start_still_trains(db):
 
     # 60 corpus rows in the fixture, so this asserts the threshold is *checked*, not that it passes.
     assert ready_to_train(session, user.id) is (len(jobs) >= MIN_LABELS_TO_TRAIN)
+
+
+@pytest.mark.skipif("DATABASE_URL" not in __import__("os").environ, reason="needs live Postgres")
+def test_a_user_is_not_crowded_out_of_a_shared_corpus(db):
+    """**The bug that stalled a live cold start at ten labels.**
+
+    The candidate window was the newest rows on the platform, filtered against the config only
+    afterwards. The corpus is shared, so whoever harvests most owns recency: an account searching
+    for mechanical engineering roles had matching rows sitting in the corpus and saw none of them,
+    because thousands of fresher software postings stood in front of them. It labelled ten jobs,
+    found nothing more, and stopped at a tenth of what training needs.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from libs.db.models import CorpusJob
+    from services.labeller.pool import MAX_CANDIDATES, select_pool
+
+    session, user = db
+    now = datetime.now(UTC)
+    # More fresh noise than the candidate budget, so the wanted rows cannot fit inside it.
+    for i in range(MAX_CANDIDATES + 100):
+        session.add(CorpusJob(
+            content_key=f"noise-{i}", title="Senior Software Engineer", company="N",
+            location="Remote", url=f"https://example.com/n{i}", source="test", is_remote=True,
+            description="python go kubernetes", first_seen_at=now - timedelta(minutes=i)))
+    # The user's own matches, older than every single one of them.
+    for i in range(40):
+        session.add(CorpusJob(
+            content_key=f"wanted-{i}", title="Graduate Mechanical Engineer", company="M",
+            location="United Kingdom", url=f"https://example.com/m{i}", source="test",
+            is_remote=False, description="solidworks fea design",
+            first_seen_at=now - timedelta(days=30, minutes=i)))
+    session.flush()
+
+    config = {"sections": [{"keywords": ["mechanical engineer"],
+                            "locations": ["united_kingdom"], "platform": "all"}]}
+    chosen = select_pool(session, user.id, config, size=50)
+    titles = {row.title for row in
+              session.query(CorpusJob).filter(CorpusJob.id.in_(chosen)).all()}
+
+    assert any("Mechanical" in title for title in titles), (
+        "a user's own matches must survive a corpus dominated by somebody else's search")

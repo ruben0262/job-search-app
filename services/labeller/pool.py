@@ -22,7 +22,7 @@ from __future__ import annotations
 import logging
 import uuid as _uuid
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from libs.contracts.config import migrate_config
@@ -47,6 +47,27 @@ LOOKBACK_DAYS = 90
 # that will keep growing, and the bands do not get better for having sorted ten times as many.
 MAX_CANDIDATES = 5_000
 
+# How many of the user's keywords narrow the candidate query. Each is an ILIKE, and the
+# keyword ceiling is 25, so this bounds the worst case without truncating a normal config.
+MAX_TERMS_IN_QUERY = 25
+
+
+
+def _config_terms(config: dict) -> list[str]:
+    """The user's own search words, for narrowing the candidate query.
+
+    Bounded and de-duplicated: this becomes an `ILIKE` per term, and a config with fifty near
+    identical keywords should not turn one query into fifty scans. Short fragments are dropped --
+    a two-letter term matches most of the corpus and narrows nothing.
+    """
+    terms: list[str] = []
+    for section in (config or {}).get("sections") or []:
+        for keyword in section.get("keywords") or []:
+            cleaned = " ".join(str(keyword).split()).strip().lower()
+            if len(cleaned) >= 3 and cleaned not in terms:
+                terms.append(cleaned)
+    return terms[:MAX_TERMS_IN_QUERY]
+
 
 def select_pool(session: Session, user_id: _uuid.UUID, config: dict, *,
                 size: int = POOL_SIZE) -> list[int]:
@@ -63,11 +84,44 @@ def select_pool(session: Session, user_id: _uuid.UUID, config: dict, *,
         select(UserLabel.job_id).where(UserLabel.user_id == user_id)).all())
 
     since = datetime.now(UTC) - timedelta(days=LOOKBACK_DAYS)
-    rows = session.scalars(
-        select(CorpusJob)
-        .where(CorpusJob.first_seen_at >= since)
-        .order_by(CorpusJob.first_seen_at.desc())
-        .limit(MAX_CANDIDATES)).all()
+
+    # **Drawn per user, not "the newest rows on the platform".**
+    #
+    # This took the newest `MAX_CANDIDATES` corpus rows and then filtered them against the config in
+    # Python. The corpus is shared, so whoever harvests most owns recency: an account searching for
+    # mechanical engineering roles had 159 matching rows in the corpus and saw none of them, because
+    # five thousand fresher software postings stood in front of them. Its cold start labelled ten
+    # jobs, found nothing further, and stopped forever at a tenth of what training needs -- with the
+    # only explanation a warning in a log nobody reads.
+    #
+    # So the user's own terms narrow the query first, and the budget is spent on rows that could
+    # plausibly be theirs. A share of the newest rows regardless of terms is kept alongside: the
+    # rules score reads location and remoteness too, and a pool drawn only from title matches would
+    # never surface a job whose title uses a word the user did not think of.
+    terms = _config_terms(config)
+    rows: list[CorpusJob] = []
+    seen_ids: set[int] = set()
+
+    if terms:
+        matched = session.scalars(
+            select(CorpusJob)
+            .where(CorpusJob.first_seen_at >= since,
+                   or_(*[CorpusJob.title.ilike(f"%{term}%") for term in terms]))
+            .order_by(CorpusJob.first_seen_at.desc())
+            .limit(MAX_CANDIDATES)).all()
+        rows.extend(matched)
+        seen_ids.update(row.id for row in matched)
+
+    # The remainder of the budget, newest first, so a config with no usable terms still works and a
+    # user whose next good match is worded unexpectedly can still be shown it.
+    spare = max(MAX_CANDIDATES - len(rows), MAX_CANDIDATES // 5)
+    for row in session.scalars(
+            select(CorpusJob)
+            .where(CorpusJob.first_seen_at >= since)
+            .order_by(CorpusJob.first_seen_at.desc())
+            .limit(spare)).all():
+        if row.id not in seen_ids:
+            rows.append(row)
 
     config = migrate_config(config)
     scored: list[tuple[int, int, str]] = []
