@@ -482,6 +482,11 @@ def start_search(db: Session = Depends(get_db),
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             detail="Finish building your profile first.")
 
+    # Starting again clears a previous stop, or Stop would be permanent rather than a pause.
+    user = db.get(User, user_id)
+    if user is not None and user.labelling_paused:
+        user.labelling_paused = False
+        db.flush()
     enqueue(db, "label", user_id, dedup_key="label")
     db.commit()
     audit(logger, "setup.search_started", user=user_id)

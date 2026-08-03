@@ -143,6 +143,13 @@ class User(Base):
     profile_files_visible: Mapped[bool] = mapped_column(Boolean, default=False,
                                                         server_default="false")
 
+    # **Set by Stop, read by the labeller before it re-arms.** Cancelling queued rows cannot end
+    # labelling on its own: the worker re-enqueues itself while work remains, so a deleted row came
+    # straight back and the run carried on spending the user's credential. Cleared when they start
+    # again, which is what makes Stop resumable rather than final.
+    labelling_paused: Mapped[bool] = mapped_column(Boolean, default=False,
+                                                   server_default="false")
+
     # Per-account ceilings, set by an operator (`libs.limits`). **Absent means the platform
     # default, `null` means unlimited, a number means that number** — three distinct states, which
     # is why a large sentinel would not do. Not editable by the user: somebody who could raise

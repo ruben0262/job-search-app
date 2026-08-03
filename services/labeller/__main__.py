@@ -22,7 +22,7 @@ from __future__ import annotations
 import logging
 import os
 
-from libs.db.models import QueueJob
+from libs.db.models import QueueJob, User
 from libs.db.session import session_scope
 from libs.llm import CLAUDE_KINDS, LlmError, client_for
 from libs.obs import audit, configure
@@ -73,6 +73,12 @@ def _queue_follow_up(session, job: QueueJob, did: str, remaining: int) -> None:
         # own money.
         job.dedup_key = None
         session.flush()
+        # **Checked before re-arming, which is the only place it can be checked.** This loop is
+        # what keeps labelling alive, so a stop that does not reach here does not stop anything.
+        user = session.get(User, job.user_id)
+        if user is not None and user.labelling_paused:
+            logger.info("cold_start: paused by the user, not re-arming for %s", job.user_id)
+            return
         enqueue(session, "label", job.user_id, dedup_key="label")
         return
 

@@ -24,6 +24,7 @@ type Training = {
   stale_labels: number;
   lanes: Record<string, { ready: number; claimed: number; done: number; failed: number }>;
   failures: Record<string, string>;
+  paused?: boolean;
 };
 
 /** What each phase is, in the user's terms. The lane names are ours. */
@@ -66,9 +67,12 @@ export function ModelPage({
   // `running` alone meant that once the page had seen an idle moment between batches it stopped
   // asking and never noticed the run continuing -- and a page opened fresh mid-run never started
   // polling at all, because its first answer arrived during one of those gaps.
+  // A stopped run has work left in it by definition, so the phase alone would keep the page
+  // polling for ever. Paused ends it.
   const unfinished =
-    training?.running === true ||
-    ["cold_start", "relabel", "train"].includes(training?.phase ?? "");
+    training?.paused !== true &&
+    (training?.running === true ||
+      ["cold_start", "relabel", "train"].includes(training?.phase ?? ""));
 
   useEffect(() => {
     if (!unfinished) return;
@@ -78,6 +82,10 @@ export function ModelPage({
 
   const stop = useAction(async () => {
     await api.post("/process/training/stop");
+    // **Reflected before the next poll.** The server has set the flag by the time this returns, so
+    // waiting three seconds to show it left the user pressing Stop and watching "Working…" — which
+    // reads as the button having done nothing, and is what made them press it again.
+    setTraining((current) => (current ? { ...current, running: false, paused: true } : current));
     await readTraining();
   });
 

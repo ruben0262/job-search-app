@@ -260,15 +260,21 @@ def training_state(db: Session = Depends(get_db),
         .where(QueueJob.user_id == user_id, QueueJob.lane.in_(TRAINING_LANES)))
     recently_worked = bool(
         latest and (datetime.now(UTC) - latest) < BETWEEN_BATCHES)
+    user_paused = bool(getattr(db.get(User, user_id), "labelling_paused", False))
     labelling = labelling_state(db, user_id)
     unfinished = labelling["action"] in ("cold_start", "relabel", "train")
     running = in_queue or (recently_worked and unfinished)
+    # A paused account is not running, whatever is still draining. Saying otherwise is what made
+    # Stop look like it had done nothing.
+    if user_paused:
+        running = False
     user = db.get(User, user_id)
 
     return {
         # **Whether anything is in flight**, which is what decides between a progress line and a
         # button. Claimed counts as running: a worker holds it and will finish or time out.
         "running": running,
+        "paused": user_paused,
         "phase": labelling["action"],
         "labels": labelling["labels"],
         "target": POOL_SIZE,
@@ -295,6 +301,14 @@ def stop_training(db: Session = Depends(get_db),
     Labels already written are kept. They were paid for, they are still true, and throwing them
     away would make stopping expensive enough that nobody would risk it.
     """
+    # **The flag first.** Deleting queued rows alone never stopped anything: the labeller
+    # re-enqueues itself while work remains, so a cancelled row was recreated a second later and
+    # the run carried on. Set before the delete, so a worker finishing mid-request sees it.
+    user = db.get(User, user_id)
+    if user is not None:
+        user.labelling_paused = True
+        db.flush()
+
     cancelled = db.execute(
         delete(QueueJob)
         .where(QueueJob.user_id == user_id,
@@ -302,7 +316,7 @@ def stop_training(db: Session = Depends(get_db),
                QueueJob.state == "ready")
         .returning(QueueJob.id)).all()
     audit(logger, "training.stopped", user=user_id, cancelled=len(cancelled))
-    return {"cancelled": len(cancelled),
+    return {"stopped": True, "cancelled": len(cancelled),
             "detail": ("Nothing new will be picked up. A batch already running will finish, and "
                        "every label written so far is kept.")}
 

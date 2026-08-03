@@ -334,3 +334,38 @@ def test_an_abandoned_run_stops_claiming_to_be_alive(api):
     session.flush()
 
     assert http.get("/process/training").json()["running"] is False
+
+
+def test_stopping_actually_stops_a_loop_that_re_enqueues_itself(api):
+    """**Cancelling queued rows could never have stopped this on its own.**
+
+    The labeller re-enqueues itself while work remains, so a deleted row came straight back and the
+    run carried on spending the user's own credential while the page reported it stopped. The flag
+    is what a self-perpetuating loop can be ended by from outside it.
+    """
+    from libs.queue import enqueue
+
+    http, session, user = api
+    enqueue(session, "label", user.id, payload={"kind": "cold_start"})
+    session.flush()
+    assert http.get("/process/training").json()["running"] is True
+
+    answer = http.post("/process/training/stop").json()
+    assert answer["stopped"] is True
+    session.flush()
+    assert user.labelling_paused is True
+
+    body = http.get("/process/training").json()
+    assert body["paused"] is True
+    assert body["running"] is False, "a paused account is not running, whatever is still draining"
+
+
+def test_starting_again_clears_a_previous_stop(api):
+    """Otherwise Stop is permanent, and a user who paused to think has bricked their own account."""
+    http, session, user = api
+    user.labelling_paused = True
+    session.flush()
+
+    http.post("/setup/start")
+    session.flush()
+    assert user.labelling_paused is False
