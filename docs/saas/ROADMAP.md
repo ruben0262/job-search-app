@@ -740,6 +740,32 @@ redundancy: `european_union`, `europe` and `budapest` are three stems returning 
 postings, and a source like NoFluffJobs filters by city only, so a region-level stem is meaningless
 there. Collapsing subsumed locations per source would buy budget back. Nobody has measured how much.
 
+### 6o — the harvest's own inefficiencies, measured before touched (added 2026-08-03)
+
+Three known-suboptimal things in how demand becomes queries. **None has been measured**, which is
+why they are one entry rather than three tasks: the first job in each case is to find out how much
+it actually costs, because the obvious fix to the first one was already measured as harmful.
+
+**1. Scoring has no prefilter.** `score_lane` selects every embedded corpus row the user's current
+model has not seen -- `embedding IS NOT NULL` and a version comparison, nothing else. A 100k corpus
+means 100k scorings per account. Free in money, not free in VPS. The keyword version of this filter
+would have dropped a third of the jobs scoring ≥60 (239 of 376 had a keyword in the title), so the
+lever is the embedding already on every row. **Not shippable without a before/after count of good
+matches lost** -- this is the change that can quietly cost somebody a job.
+
+**2. `select_within_budget` is fair but blunt.** Round-robin across users with carry-over, which is
+right, and it says nothing about whether a query is worth running. A stem that returned nothing but
+duplicates for ten cycles still gets its turn ahead of a fresh one. Something like a per-stem yield
+history would spend the same 60 queries better. Unmeasured: nobody knows the current hit rate per
+stem, and that number has to exist before the policy changes.
+
+**3. Stems are redundant across locations.** The query set is `keyword × location`, and a user
+picking `european_union`, `europe` and `budapest` produces three stems returning largely the same
+postings -- three times the budget for one set of jobs. Worse, sources differ in what they can
+filter on at all: NoFluffJobs takes `criteriaSearch.city` only, so a region-level stem is meaningless
+there and should be flattened or dropped rather than sent. Collapsing subsumed locations per source
+would hand budget back. How much is unknown.
+
 ## Deliberately deferred
 
 Do not build these before Phase 4, regardless of how appealing they look mid-build.
