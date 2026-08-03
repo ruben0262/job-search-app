@@ -278,13 +278,6 @@ def send(body: Turn, db: Session = Depends(get_db),
             db.add(current)
             db.flush()
 
-    # Refused here rather than in the worker: "connect your Claude account" is an answer the user
-    # can act on at the moment they pressed send, not a failed turn they find in the transcript.
-    if not _stored_claude_kinds(db, user_id):
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            detail="Connect your Claude account first — setup runs on your own credential.")
-
     # **Which command is driving, once the conversation has one.**
     #
     # Only a message that opens with a slash command names an agent; every ordinary reply omits it,
@@ -295,6 +288,13 @@ def send(body: Turn, db: Session = Depends(get_db),
     # after the first turn it was not the director any more.
     agent = _resolve_agent(db, user_id, current.id, body.agent)
     _refuse_misdirected_command(body.message, agent)
+
+    # Refused here rather than in the worker: "connect your Claude account" is an answer the user
+    # can act on at the moment they pressed send, not a failed turn they find in the transcript.
+    if not _stored_claude_kinds(db, user_id):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="Connect your Claude account first — setup runs on your own credential.")
 
     # **Both rows before the queue sees anything.** The page renders the question and a thinking
     # reply the instant this returns, and the worker has a row to stream into rather than one to

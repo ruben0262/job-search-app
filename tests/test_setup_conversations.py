@@ -606,6 +606,7 @@ def test_a_conversation_keeps_the_command_it_started_with(api):
     from libs.db.models import SetupMessage
 
     http, session, user = api
+    _with_claude(session, user)
     started = http.post("/setup/message",
                         json={"message": "/setup-director", "agent": "setup-director"})
     assert started.status_code == 202
@@ -627,6 +628,7 @@ def test_a_different_conversation_keeps_its_own_command(api):
     from libs.db.models import SetupMessage
 
     http, session, user = api
+    _with_claude(session, user)
     first = http.post("/setup/message",
                       json={"message": "/setup-director", "agent": "setup-director"}).json()
     second_id = http.post("/setup/conversations").json()["id"]
