@@ -148,8 +148,11 @@ def test_the_fan_out_budget_is_respected(ctx):
     for i in range(10):
         _active_user(s, keywords=[f"u{i}term{j}" for j in range(5)])
 
-    report, deferred = run_cycle(s, source_configs={}, max_queries=7,
-                                 run_source=lambda *a: [])
+    # **A source config, because the query set is built for the sources that are enabled.** It used
+    # to be built for a hardcoded pair that was enabled nowhere, so the budget could be exercised
+    # against `{}` -- which is precisely how the whole fold came to govern no requests at all.
+    report, deferred = run_cycle(s, source_configs=_sources(remotive={}, himalayas={}),
+                                 max_queries=7, run_source=lambda *a: [])
     assert report.queries_planned == 7
     assert report.queries_deferred > 0
     assert len(deferred) == report.queries_deferred
@@ -162,10 +165,11 @@ def test_deferred_queries_are_returned_for_the_next_cycle(ctx):
     for i in range(4):
         _active_user(s, keywords=[f"u{i}a", f"u{i}b"])
 
-    _, deferred = run_cycle(s, source_configs={}, max_queries=3, run_source=lambda *a: [])
+    asked = _sources(remotive={}, himalayas={})
+    _, deferred = run_cycle(s, source_configs=asked, max_queries=3, run_source=lambda *a: [])
     assert deferred
 
-    report2, _ = run_cycle(s, source_configs={}, max_queries=3,
+    report2, _ = run_cycle(s, source_configs=asked, max_queries=3,
                            carried_over=deferred, run_source=lambda *a: [])
     assert report2.queries_planned == 3
 
@@ -180,7 +184,7 @@ def test_a_dormant_user_costs_nothing(ctx):
     dormant.status, dormant.active = "dormant", False
     s.flush()
 
-    report, _ = run_cycle(s, source_configs={}, run_source=lambda *a: [])
+    report, _ = run_cycle(s, source_configs=_sources(remotive={}), run_source=lambda *a: [])
     assert report.queries_planned >= 1
     assert active.id and dormant.id
 
@@ -192,7 +196,7 @@ def test_an_unverified_signup_consumes_no_harvest_budget(ctx):
     pending.status, pending.active = "pending_verification", False
     s.flush()
 
-    report, _ = run_cycle(s, source_configs={}, run_source=lambda *a: [])
+    report, _ = run_cycle(s, source_configs=_sources(remotive={}), run_source=lambda *a: [])
     assert report.queries_planned == 0
 
 
@@ -276,6 +280,87 @@ def test_source_filters_come_from_the_union_of_users_not_one_person(ctx):
 
     built = build_source_configs(configs, env={})
     assert built["remotive"]["keywords"] == ["golang", "rust"]
+
+
+def test_the_filter_reads_the_sections_a_real_config_actually_stores(ctx):
+    """**Every test here wrote a flat config and every real one stores sections.**
+
+    That is the whole reason this survived: `union_keywords` and `union_locations` read
+    `config["keywords"]` at the top level, where the schema never puts it, so against production
+    they returned empty and every board on the free tier fetched its unfiltered recent feed while
+    the platform behaved as though nobody had signed up. The same mistake had already been found
+    and fixed for `posted_within_hours` four lines away.
+
+    The flat shape stays supported — older fixtures pass it — so this asserts both.
+    """
+    from services.harvester.source_config import union_keywords, union_locations
+
+    sectioned = {
+        uuid.uuid4(): {"sections": [{"keywords": ["Rust", "golang"],
+                                     "locations": ["Budapest"], "platform": "all"}]},
+    }
+    assert union_keywords(sectioned) == ["golang", "rust"]
+    assert union_locations(sectioned) == ["budapest"]
+
+    both = {uuid.uuid4(): {"keywords": ["flat"], "sections": [{"keywords": ["nested"]}]}}
+    assert union_keywords(both) == ["flat", "nested"], "neither shape may shadow the other"
+
+
+def test_each_board_is_asked_in_the_shape_it_reads(ctx):
+    """A query in the wrong shape is **silent**: the board answers its unfiltered feed and reports
+    success, which from outside is indistinguishable from a deliberately broad search.
+
+    One fixed dict used to go to all nine query-taking sources and only two of them read `search`.
+    """
+    from services.harvester.source_config import build_source_configs
+
+    built = build_source_configs(
+        {uuid.uuid4(): {"sections": [{"keywords": ["golang"]}]}}, env={})
+
+    assert built["remotive"]["queries"] == [{"search": "golang"}]
+    assert built["himalayas"]["queries"] == [{"query": "golang"}]
+    assert built["nofluffjobs"]["queries"] == [{"keyword": "golang"}]
+    assert built["hiringcafe"]["queries"] == [{"search_term": "golang"}]
+    # Consider and Getro iterate strings, not dicts, and use each one as `searchText`.
+    assert built["consider"]["queries"] == ["golang"]
+
+
+def test_a_board_with_no_geography_is_asked_once_per_keyword(ctx):
+    """**This is the redundancy, stated exactly.** Most boards take a search term and nothing else,
+    so crossing their keywords with four location slugs produces four byte-identical requests, four
+    times the budget, and one set of results.
+
+    Collapsing the axis is not a narrowing: the user still asked for those locations, and the source
+    was never going to apply them.
+    """
+    from services.harvester.query_set import build_query_set
+
+    config = {uuid.uuid4(): {"sections": [
+        {"keywords": ["golang"], "platform": "all",
+         "locations": ["european_union", "united_kingdom", "budapest", "europe"]}]}}
+
+    # `himalayas` has no location parameter at all; `hiringcafe` has a real one.
+    keys = build_query_set(config, sources=("himalayas", "hiringcafe"),
+                           locating_sources=("hiringcafe",))
+    per_source: dict[str, int] = {}
+    for key in keys:
+        per_source[key.source] = per_source.get(key.source, 0) + 1
+
+    assert per_source["himalayas"] == 1, "one keyword, one query, however many places were asked for"
+    assert per_source["hiringcafe"] == 4, "a source that can filter by place still gets all four"
+
+
+def test_no_locating_sources_is_not_the_same_as_not_saying(ctx):
+    """An empty iterable means "nothing locates"; `None` means "everything does". A falsy check
+    would collapse every axis on the caller that simply did not pass the argument — which is the
+    per-user LinkedIn pass, the one source where location is the whole point."""
+    from services.harvester.query_set import build_query_set
+
+    config = {uuid.uuid4(): {"sections": [
+        {"keywords": ["golang"], "platform": "all", "locations": ["london", "berlin"]}]}}
+
+    assert len(build_query_set(config, sources=("linkedin",))) == 2
+    assert len(build_query_set(config, sources=("linkedin",), locating_sources=())) == 1
 
 
 def test_a_dormant_users_keywords_leave_the_filter(ctx):

@@ -108,6 +108,9 @@ def bucket_age_hours(hours: int) -> int:
 def build_query_set(
     user_configs: Mapping[UUID, Mapping],
     sources: Iterable[str],
+    *,
+    locating_sources: Iterable[str] | None = None,
+    remote_aware_sources: Iterable[str] | None = None,
 ) -> dict[QueryKey, frozenset[UUID]]:
     """Fold every active user's config into `{QueryKey: users who want it}`.
 
@@ -122,8 +125,25 @@ def build_query_set(
 
     A config with no locations still produces queries: `location_norm=""` means "wherever", which is
     what the remote-only case actually wants.
+
+    **`locating_sources` is what stops the query set being mostly duplicates.** Most boards take a
+    search term and nothing else — no country, no city, no region — so crossing their keywords with
+    four location slugs produces four *byte-identical* requests, spends four times the budget, and
+    returns one set of results. A source not named there is asked once per keyword.
+
+    The two axes are separate because sources are: Arbeitnow has a remote flag and no geography at
+    all, so collapsing both together would either send it four identical searches or lose the one
+    filter it does support. Omit both arguments and every source is assumed to honour everything,
+    which is the old behaviour and what the per-user LinkedIn pass wants.
+
+    **Collapsing an axis is not a narrowing.** The user still asked for those locations; the source
+    was never going to apply them, and the local filters do that work either way.
     """
     sources = list(sources)
+    # `None` means "every source honours this". An empty iterable means "none does", and the two are
+    # very different answers — a falsy check here would silently collapse every axis.
+    locates = set(sources) if locating_sources is None else set(locating_sources)
+    remote_aware = set(sources) if remote_aware_sources is None else set(remote_aware_sources)
 
     # Age is deliberately NOT part of the fold key. It is resolved per group afterwards, as the
     # coarsest window any requesting user asked for — so a 24h user and a 48h user share one 72h
@@ -168,7 +188,12 @@ def build_query_set(
                     # it would lose real hybrid roles. Those are filtered locally instead.
                     is_remote = remote_policy == "remote_only" or location_norm.startswith("remote")
                     for source in section_sources:
-                        group = (source, keyword_norm, location_norm, is_remote)
+                        # Per axis, per source: a board with no geography is asked once per keyword,
+                        # and one with a remote flag and no geography keeps the flag.
+                        group = (source,
+                                 keyword_norm,
+                                 location_norm if source in locates else "",
+                                 is_remote and source in remote_aware)
                         demand[group].add(user_id)
                         widest_age[group] = max(widest_age.get(group, 0), age)
 

@@ -58,6 +58,7 @@ from services.harvester.query_set import (
     build_query_set,
     select_within_budget,
 )
+from services.harvester.source_config import QUERY_SHAPES, QUERY_TAKING_SOURCES
 from services.harvester.sources import OUTER_CONCURRENCY, JobLink, Source, Tier, sources_for
 
 logger = logging.getLogger(__name__)
@@ -225,7 +226,20 @@ def run_cycle(
         # everybody else's terms so it competes for budget on the same round-robin footing rather
         # than jumping the queue.
         configs = {**configs, **_operator_demand(session)}
-        query_set = build_query_set(configs, sources=("indeed", "google"))
+        # **The sources that are actually enabled and actually read a query set.** This was
+        # hardcoded to `("indeed", "google")`, and neither is enabled — nor are those even the
+        # registry's keys for them (`jobspy_indeed`, `jobspy_google`). So every planned query
+        # carried a source name that `_gather` could never match, and the whole budget — the fold,
+        # the round-robin, the carry-over — governed **zero requests** while nine boards that do
+        # read `cfg["queries"]` were handed one empty search each.
+        #
+        # Each axis is passed per source, so a board with no geography is asked once per keyword
+        # instead of once per keyword × location for identical results.
+        askable = tuple(sorted(QUERY_TAKING_SOURCES & set(source_configs)))
+        query_set = build_query_set(
+            configs, sources=askable,
+            locating_sources=[s for s in askable if QUERY_SHAPES[s].location_key],
+            remote_aware_sources=[s for s in askable if QUERY_SHAPES[s].remote_key])
         planned, deferred = select_within_budget(
             query_set, max_queries=max_queries, carried_over=carried_over)
         report.queries_planned = len(planned)
@@ -321,9 +335,14 @@ def _gather(source_configs: dict[str, dict], planned: list[PlannedQuery], ats: A
         cfg = dict(source_configs.get(source.key, {}))
         queries = queries_by_source.get(source.key)
         if queries:
+            # **Rendered in the shape this adapter reads.** One fixed dict used to be handed to
+            # every source; only two of the nine read `search_term`, and a query in the wrong shape
+            # is silent — the board answers its unfiltered feed and reports success, which is
+            # indistinguishable from a deliberately broad search.
+            shape = QUERY_SHAPES[source.key]
             cfg["queries"] = [
-                {"search_term": q.key.keyword_norm, "location": q.key.location_norm or None,
-                 "is_remote": q.key.is_remote}
+                shape.render(term=q.key.keyword_norm, location=q.key.location_norm,
+                             is_remote=q.key.is_remote)
                 for q in queries]
             cfg["hours_old"] = max(q.key.max_age_hours for q in queries)
         return cfg

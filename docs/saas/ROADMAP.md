@@ -816,12 +816,53 @@ duplicates for ten cycles still gets its turn ahead of a fresh one. Something li
 history would spend the same 60 queries better. Unmeasured: nobody knows the current hit rate per
 stem, and that number has to exist before the policy changes.
 
-**3. Stems are redundant across locations.** The query set is `keyword × location`, and a user
-picking `european_union`, `europe` and `budapest` produces three stems returning largely the same
-postings -- three times the budget for one set of jobs. Worse, sources differ in what they can
-filter on at all: NoFluffJobs takes `criteriaSearch.city` only, so a region-level stem is meaningless
-there and should be flattened or dropped rather than sent. Collapsing subsumed locations per source
-would hand budget back. How much is unknown.
+**Now the live constraint, since item 3 connected the budget to real requests.** 318 queries at 60
+per cycle is **six cycles, ~90 minutes, to serve every query once** — against a product whose whole
+claim is a 15-minute stream. Two things to settle, in this order:
+
+- **Is 60 still the right number?** It was sized for JobSpy ban risk and bandwidth on a proxied
+  scraper. The eight sources it now governs are cheap unproxied REST calls, and the cycle spends
+  most of its time in embed (78 s) and describe (39 s) rather than in gather (22 s). The budget may
+  simply be too tight for the tier it ended up governing.
+- **Nothing records which query found which row.** That is the instrumentation the yield history
+  needs and it does not exist; `corpus` has a `source` and no query. Until it does, "this stem
+  returns nothing but duplicates" is not a claim anybody can check.
+
+**3. Stems are redundant across locations** ✅ **measured and largely fixed 2026-08-03.**
+
+Measuring it first found something bigger than the redundancy: **the query set was wired to nothing
+at all.** `cycle.py` built the fold for `("indeed", "google")` — neither enabled, and not even the
+registry's keys for them (`jobspy_indeed`, `jobspy_google`) — so every planned query carried a source
+name `_gather` could never match. The whole apparatus, the fold, the round-robin, the carry-over,
+governed **zero requests**. Meanwhile `union_keywords` and `union_locations` read the top level of a
+config, where nothing has ever put them, so the nine boards that *do* read `cfg["queries"]` each got
+one empty search and fetched their unfiltered recent feed. And the query they got was
+`{"search": term}` — a shape only two of the nine read.
+
+Three defects, one symptom: a corpus filled by whichever board answers broadest.
+
+With that fixed, the redundancy is real and now quantified against the live configs:
+
+| | queries |
+|---|---|
+| Before — built for two sources that are not enabled | 234 (issuing nothing) |
+| Naively pointed at the eight real sources, every axis crossed | 936 |
+| **With each source's unusable axes collapsed** | **318** |
+
+**66% of the naive query set was byte-identical requests.** Most boards take a search term and
+nothing else, so crossing their keywords with six location slugs produces six identical HTTP calls,
+six times the budget, and one set of results. Each source now declares what it can filter on
+(`QUERY_SHAPES`), and the fold collapses the axes it cannot use. Per source: HiringCafe 117 (the one
+free-tier board with a real location model), Arbeitnow 33 (no geography, but a remote flag it does
+honour), everyone else 28 — one per keyword.
+
+Collapsing an axis is **not** a narrowing: the user still asked for those locations, and the source
+was never going to apply them.
+
+**What remains is exactly what the entry above predicts, now isolated to one source.** HiringCafe
+carries 117 of the 318 because `europe`, `european_union` and `budapest` are nested and it accepts
+all three. Subsumption is still deliberately unimplemented (result caps make a broader query a
+*truncated* superset), so this wants a per-source subsumption table rather than a general rule.
 
 ### 6p — the latency drill-down: one row per zone ✅ **done 2026-08-03**
 

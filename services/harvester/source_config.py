@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping
+from dataclasses import dataclass
 from uuid import UUID
 
 # Sources needing no API key and no credential.
@@ -56,6 +57,66 @@ QUERY_TAKING_SOURCES = frozenset({
     "remotive", "himalayas", "arbeitnow", "hiringcafe", "nofluffjobs", "nofluffjobs_hu",
     "jooble", "consider", "getro",
 })
+
+
+@dataclass(frozen=True)
+class QueryShape:
+    """What one source can be asked for, and under which keys.
+
+    **Every adapter reads a different key, and a query in the wrong shape is silent.** The board
+    answers the unfiltered feed and reports success, so a mis-shaped query is indistinguishable from
+    a broad one — which is how eight sources came to be fed `{"search": term}` when only two of them
+    read `search`.
+
+    `location_key` is the important one, and it is what makes the query set stop being redundant.
+    A source that cannot filter by place gets **one query per keyword**, not one per
+    keyword × location: sending it the same search four times under four location slugs is four
+    identical HTTP requests, four times the budget, and one set of results.
+    """
+
+    # Where the keyword goes. `None` with `bare` means the query *is* the term, as a plain string.
+    term_key: str | None
+    # Where the location goes, or `None` when the source has nowhere to put one.
+    location_key: str | None = None
+    remote_key: str | None = None
+    # Consider and Getro iterate a list of strings, not dicts, and use each one as `searchText`.
+    bare: bool = False
+
+    def render(self, *, term: str, location: str, is_remote: bool) -> dict | str:
+        """One planned query, in the shape this adapter reads."""
+        if self.bare:
+            return term
+        query: dict = {self.term_key: term} if self.term_key else {}
+        if self.location_key and location:
+            query[self.location_key] = location
+        if self.remote_key and is_remote:
+            query[self.remote_key] = True
+        return query
+
+
+# Grounded in what each adapter actually sends, not in what would be tidy. Read alongside the
+# `gather_*` functions in `sources/` — if one of those changes its parameter names, this is the
+# other half of that change.
+QUERY_SHAPES: dict[str, QueryShape] = {
+    # `params = {"limit": 100, "search": ...}` — no geography at all.
+    "remotive": QueryShape("search"),
+    # `params = {"search": ...}` plus a `remote` flag it filters on locally.
+    "arbeitnow": QueryShape("search", remote_key="remote"),
+    # `params["query"]`, and seniority. No location.
+    "himalayas": QueryShape("query"),
+    # The only free-tier source with a real location model: named regions plus workplace types.
+    "hiringcafe": QueryShape("search_term", location_key="location", remote_key="is_remote"),
+    # `criteriaSearch.requirement`. Geography is `criteriaSearch.city`, set per source from `cities`
+    # rather than per query — which is why a region-level stem is meaningless here and the axis is
+    # collapsed rather than sent.
+    "nofluffjobs": QueryShape("keyword"),
+    "nofluffjobs_hu": QueryShape("keyword"),
+    # POST {"keywords", "location"} — takes both.
+    "jooble": QueryShape("keywords", location_key="location"),
+    # A list of plain strings used as `searchText`.
+    "consider": QueryShape(None, bare=True),
+    "getro": QueryShape(None, bare=True),
+}
 
 # The recency window when no user has asked for one. Matches the config schema's default rather
 # than the adapters' internal 24h, which was fetching a much narrower slice than intended.
@@ -95,6 +156,24 @@ PLATFORM_DEFAULTS: dict[str, dict] = {
 }
 
 
+def _from_sections(config: Mapping, field: str) -> list[str]:
+    """One repeated field, from wherever a config actually keeps it.
+
+    **Both shapes, and the sections are the real one.** `SearchSection.keywords` is where the schema
+    puts a user's terms and where every stored config on the platform has them; the flat form is
+    what older callers and fixtures pass. Reading only the flat one is the bug this function exists
+    to stop repeating — it already happened to `posted_within_hours`, four lines below, and then
+    happened again to the two fields beside it: `union_keywords` and `union_locations` both read the
+    top level, both returned empty against every real config, and so **every board on the free tier
+    fetched its unfiltered recent feed** while the platform behaved as though nobody had signed up.
+    """
+    stored = config or {}
+    values = list(stored.get(field) or [])
+    for section in stored.get("sections") or []:
+        values += list((section or {}).get(field) or [])
+    return values
+
+
 def union_keywords(configs: Mapping[UUID, Mapping]) -> list[str]:
     """Every active user's keywords, deduplicated, lowercased.
 
@@ -105,9 +184,9 @@ def union_keywords(configs: Mapping[UUID, Mapping]) -> list[str]:
     produce the same filter, regardless of the order the database returned them.
     """
     terms = {
-        term.strip().lower()
+        str(term).strip().lower()
         for config in configs.values()
-        for term in (config.get("keywords") or [])
+        for term in _from_sections(config, "keywords")
         if str(term).strip()
     }
     return sorted(terms)
@@ -118,7 +197,7 @@ def union_locations(configs: Mapping[UUID, Mapping]) -> list[str]:
     locations = {
         str(loc).strip().lower()
         for config in configs.values()
-        for loc in (config.get("locations") or [])
+        for loc in _from_sections(config, "locations")
         if str(loc).strip()
     }
     return sorted(locations)
@@ -186,12 +265,12 @@ def build_source_configs(
         if locations:
             cfg["location_keywords"] = locations
         if source in QUERY_TAKING_SOURCES:
-            cfg["queries"] = _queries_for(keywords)
+            cfg["queries"] = _queries_for(source, keywords)
         out[source] = cfg
     return out
 
 
-def _queries_for(keywords: list[str]) -> list[dict]:
+def _queries_for(source: str, keywords: list[str]) -> list[dict | str]:
     """Query objects for board APIs that iterate `cfg["queries"]`.
 
     **Found on the first real cycle.** `remotive`, `himalayas` and `arbeitnow` loop over
@@ -199,8 +278,16 @@ def _queries_for(keywords: list[str]) -> list[dict]:
     made no HTTP request at all, logged nothing, and reported success. An adapter returning `[]` is
     the registry's contract, which is exactly why the silence was total.
 
-    The empty-search fallback is not a placeholder: with no users yet, `{"search": ""}` fetches the
+    The empty-search fallback is not a placeholder: with no users yet, an empty term fetches the
     board's unfiltered recent feed, which is precisely "harvest broadly, match per user"
     (`HARVESTER_PLAN.md` §1) and is what gives a brand-new user a non-empty first feed.
+
+    **Rendered per source.** This emitted `{"search": term}` for all nine, and only Remotive and
+    Arbeitnow read `search` — Himalayas wants `query`, NoFluffJobs `keyword`, HiringCafe
+    `search_term`, Jooble `keywords`, and Consider and Getro want a bare string. The other seven
+    therefore received a dict they ignored and fetched their unfiltered feed, silently, which is
+    what a mis-shaped query always looks like from outside.
     """
-    return [{"search": term} for term in keywords] or [{"search": ""}]
+    shape = QUERY_SHAPES[source]
+    return [shape.render(term=term, location="", is_remote=False)
+            for term in keywords] or [shape.render(term="", location="", is_remote=False)]
