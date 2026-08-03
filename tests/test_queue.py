@@ -293,3 +293,29 @@ def test_every_lane_has_a_claim_timeout():
 
     assert set(LANES) == set(CLAIM_TIMEOUT_MIN), (
         "every lane needs a claim timeout and every timeout needs a lane")
+
+
+def test_a_finished_job_records_when_it_actually_finished(session):
+    """**`now()` is transaction start time in Postgres**, and a worker claims and finishes inside
+    one transaction -- so `finished_at` and `claimed_at` came back identical to the microsecond and
+    every lane reported a run time of exactly zero.
+
+    That is not a cosmetic error in a dashboard: run time is how you tell a busy worker from slow
+    work, and those are fixed in completely different places. A column that always says zero is
+    worse than no column, because somebody will read it.
+    """
+    import time
+
+    from libs.queue import claim, complete, enqueue
+
+    enqueue(session, "score", None, payload={})
+    session.commit()
+
+    job = claim(session, "score", worker="test")
+    assert job is not None
+    time.sleep(0.05)
+    complete(session, job)
+    session.commit()
+    session.refresh(job)
+
+    assert job.finished_at > job.claimed_at, "a job that took time must record that it took time"

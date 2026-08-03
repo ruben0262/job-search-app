@@ -118,7 +118,7 @@ def complete(session: Session, job: QueueJob) -> None:
     (`SCHEDULER_PLAN.md` §4).
     """
     job.state = "done"
-    job.finished_at = func.now()
+    job.finished_at = func.clock_timestamp()
     job.last_error = None
 
 
@@ -132,7 +132,7 @@ def fail(session: Session, job: QueueJob, error: str, *,
     job.last_error = error[:2000]
     if job.attempts >= max_attempts:
         job.state = "dead"
-        job.finished_at = func.now()
+        job.finished_at = func.clock_timestamp()
         return "dead"
     job.state = "ready"
     job.claimed_at = None
@@ -149,7 +149,7 @@ def terminate(session: Session, job: QueueJob, reason: str) -> None:
     quiet anyway, which is the worst of both.
     """
     job.state = "dead"
-    job.finished_at = func.now()
+    job.finished_at = func.clock_timestamp()
     job.last_error = reason[:2000]
 
 
