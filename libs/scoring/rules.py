@@ -32,21 +32,24 @@ POOL_BANDS = ((0.40, "high"), (0.40, "mid"), (0.20, "low"))
 # A title match is worth far more than a description match. "Backend Engineer" in the title is what
 # the job *is*; the same words in the description are frequently "you will work with our backend
 # engineers", which is a different job entirely.
-TITLE_WEIGHT = 60
-DESCRIPTION_WEIGHT = 15
-LOCATION_WEIGHT = 25
+TITLE_WEIGHT = 75
+DESCRIPTION_WEIGHT = 25
+
+# **Location is not scored here any more** (2026-08-04). It never worked and could not: a region
+# selection matched nothing textually, so the code awarded *full marks to every posting* whenever a
+# user had picked one, on the stated grounds that "no posting spells `european_union` in its
+# location field". A user searching the EU therefore scored a London job exactly like a Berlin one,
+# and the quarter of the scale spent on it moved nothing.
+#
+# Where it went instead: country is a **hard filter** applied before scoring
+# (`libs.corpus.geo`), because eligibility is not a matter of degree — a job in a country somebody
+# cannot work in is not a worse match, it is not a match — and working arrangement is its own
+# filter (`libs.corpus.workfilter`). Both are facts about a posting rather than points on a scale,
+# which is why neither belongs in a score.
 
 # Only the first stretch of a description is read, for the same reason the labeller caps it:
 # requirements and stack sit at the top and the tail is benefits boilerplate.
 DESC_CHARS = 2_500
-
-# Location values that mean "delivery region", not a place on a map. A posting marked remote
-# satisfies these; a city name has to actually appear.
-_REMOTE_LOCATIONS = {"remote_worldwide", "remote_eu", "remote_uk", "remote_us"}
-
-# Region values that no posting's `location` string will ever spell the same way. Matching them
-# textually would reject almost everything, so a posting is given the benefit of the doubt.
-_REGION_LOCATIONS = {"european_union", "united_kingdom", "europe", "ireland"}
 
 
 @dataclass(frozen=True)
@@ -121,28 +124,4 @@ def _score_section(section: dict, *, title: str, body: str, haystack: str,
 
     score = TITLE_WEIGHT if in_title else 0
     score += DESCRIPTION_WEIGHT if in_body else 0
-    score += _location_points(section.get("locations") or [], location, is_remote)
     return RuleScore(min(score, 100))
-
-
-def _location_points(wanted: list[str], location: str | None, is_remote: bool | None) -> int:
-    """Points for the job being somewhere the user will work.
-
-    **Absence of evidence is not a mismatch.** Plenty of postings have no usable location string,
-    and scoring those to zero would bury them under worse jobs that happened to name a city.
-    """
-    if not wanted:
-        return LOCATION_WEIGHT
-    if is_remote and any(value in _REMOTE_LOCATIONS for value in wanted):
-        return LOCATION_WEIGHT
-    if any(value in _REGION_LOCATIONS for value in wanted):
-        # No posting spells "european_union" in its location field. Matching it textually would
-        # reject nearly everything, so the region is treated as satisfied and the model sorts it
-        # out later.
-        return LOCATION_WEIGHT
-    if not location:
-        return LOCATION_WEIGHT // 2
-    haystack = location.casefold()
-    if any(value.replace("_", " ") in haystack for value in wanted):
-        return LOCATION_WEIGHT
-    return 0

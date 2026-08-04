@@ -9,40 +9,38 @@ from __future__ import annotations
 
 import pytest
 
-from libs.corpus.geo import (
-    EU_COUNTRIES,
-    EUROPE_COUNTRIES,
-    allows,
-    read_country,
-    wanted_countries,
-)
+from libs.corpus.geo import EU_COUNTRIES, allows, read_country, wanted_countries
 
 # ── the trick: what a region selection actually admits ───────────────────────────────────────────
 
-def test_the_uk_is_not_in_the_european_union():
+def test_europe_means_the_union_and_the_uk_is_not_in_it():
     """**The case the owner raised, and the reason this module exists.**
 
-    A user searching the EU who receives London jobs is being shown work they cannot take, and no
-    ranking signal repairs a hard eligibility fact. Today nothing enforces this anywhere:
-    `_location_points` awards full marks to any posting once a region is selected, on the grounds
-    that no posting spells "european_union" in its location field.
+    A user searching Europe who receives London jobs is being shown work they cannot take, and no
+    ranking signal repairs a hard eligibility fact. Nothing enforced this before: the rules score
+    awarded full marks to any posting once a region was selected, on the stated grounds that no
+    posting spells the region's name in its location field.
+
+    **One slug, and it carries the union.** There were two — `european_union` and `europe` — a
+    distinction nobody reading a checkbox would draw correctly, and getting it wrong silently
+    changes which jobs somebody sees.
     """
     assert "GB" not in EU_COUNTRIES
-    eu = wanted_countries(["european_union"])
+    eu = wanted_countries(["europe"])
     assert eu is not None
     assert "GB" not in eu
     assert {"DE", "HU", "IE", "PL"} <= eu
     assert len(eu) == 27, "the union has 27 members; a wrong count here is a wrongly excluded user"
 
 
-def test_europe_is_wider_than_the_union_and_includes_the_uk():
-    """`europe` and `european_union` are separate slugs in the vocabulary precisely so a user can
-    mean one or the other. Collapsing them would silently widen or narrow somebody's search."""
-    europe = wanted_countries(["europe"])
-    assert europe is not None
-    assert "GB" in europe and "CH" in europe and "NO" in europe
-    assert europe >= EU_COUNTRIES
-    assert europe == EUROPE_COUNTRIES
+def test_a_non_eu_european_country_has_to_be_named():
+    """Switzerland and Norway are in Europe and not in the union. Under one slug that means naming
+    them, which is the honest cost of not having two words nobody can tell apart."""
+    assert wanted_countries(["europe"]) is not None
+    assert "CH" not in wanted_countries(["europe"])
+    with_swiss = wanted_countries(["europe", "switzerland"])
+    assert with_swiss is not None and "CH" in with_swiss
+    assert with_swiss >= EU_COUNTRIES
 
 
 def test_choosing_a_country_admits_that_country_and_no_other():
@@ -63,30 +61,24 @@ def test_naming_a_city_admits_the_country_around_it():
 def test_selections_add_up_rather_than_narrowing_each_other():
     """Picking more places can only ever mean *more* jobs. A user adding the UK to an EU search has
     widened it, and an intersection here would empty their feed."""
-    both = wanted_countries(["european_union", "united_kingdom"])
+    both = wanted_countries(["europe", "united_kingdom"])
     assert both is not None
     assert "GB" in both
     assert both >= EU_COUNTRIES
 
 
-@pytest.mark.parametrize("scope,expected", [
-    ("remote_eu", "DE"),
-    ("remote_uk", "GB"),
-    ("remote_us", "US"),
-])
-def test_a_remote_scope_is_a_set_of_countries(scope, expected):
-    """`REMOTE_EU` means remote work for an EU-region employer, so it constrains country the same
-    way the region does."""
-    wanted = wanted_countries([scope])
-    assert wanted is not None and expected in wanted
+def test_remoteness_is_not_a_place_and_has_no_entry_here():
+    """**Where and how are two questions.** The vocabulary carried `remote_eu`, `remote_uk`,
+    `remote_us` and `remote_worldwide`, which made them one question with answers that could
+    contradict each other — and duplicated a `remote_policy` field the config already had.
 
-
-def test_remote_worldwide_switches_the_filter_off_rather_than_listing_the_world():
-    """**`None`, not "every country".** The two behave differently against a posting whose country
-    we could not read, and a caller that forgets the difference quietly drops every unknown."""
+    Working arrangement is `libs.corpus.workfilter`'s job. This module answers only which country,
+    so a remote slug is an unrecognised one and contributes nothing.
+    """
+    assert wanted_countries(["remote_eu"]) is None
     assert wanted_countries(["remote_worldwide"]) is None
-    # Even alongside a narrow choice: the user said place does not matter, and it does not.
-    assert wanted_countries(["budapest", "remote_worldwide"]) is None
+    # And it cannot silently widen a real selection either.
+    assert wanted_countries(["budapest", "remote_worldwide"]) == frozenset({"HU"})
 
 
 def test_no_selection_at_all_is_not_a_filter():
@@ -162,7 +154,7 @@ def test_the_location_outranks_the_title():
 
 def test_a_uk_job_never_reaches_a_user_who_asked_for_the_eu():
     """The whole entry, in one assertion."""
-    eu = wanted_countries(["european_union"])
+    eu = wanted_countries(["europe"])
     assert not allows("GB", eu)
     assert allows("DE", eu)
 
@@ -171,7 +163,7 @@ def test_a_job_with_no_readable_country_is_kept():
     """**Absence of evidence is not evidence of absence**, which is the rule `workfilter` and
     `_location_points` already follow. Rejecting these would discard exactly the remote roles that
     suit somebody searching across a region."""
-    assert allows(None, wanted_countries(["european_union"]))
+    assert allows(None, wanted_countries(["europe"]))
     assert allows(None, wanted_countries(["budapest"]))
 
 
@@ -183,7 +175,7 @@ def test_a_user_who_filtered_nothing_gets_everything():
 def test_end_to_end_the_case_that_was_described():
     """A user searching the EU. A UK posting is dropped; a German one is kept; one that names
     nowhere is kept."""
-    wanted = wanted_countries(["european_union"])
+    wanted = wanted_countries(["europe"])
     postings = [
         ("London, United Kingdom", False),
         ("Berlin, Germany", True),

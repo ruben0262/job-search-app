@@ -35,20 +35,17 @@ import re
 # "Germany" / "Deutschland" / "DE" is not.
 
 # The 27 member states, 2026. **The UK is not among them and that is the point of this constant.**
-# Brexit is the case the owner raised: a user searching the EU who receives London jobs is being
+# Brexit is the case the owner raised: a user searching Europe who receives London jobs is being
 # shown work they cannot take, and no ranking signal fixes a hard eligibility fact.
+#
+# **One region slug, and it carries this set** (decided 2026-08-04). There used to be two —
+# `european_union` and `europe` — which is a distinction nobody reading a checkbox would draw
+# correctly, and getting it wrong silently changes which jobs somebody sees. So there is one, it is
+# called `europe`, and it means the union. Anyone wanting the UK, Switzerland or Norway names them.
 EU_COUNTRIES: frozenset[str] = frozenset({
     "AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU", "IE", "IT",
     "LV", "LT", "LU", "MT", "NL", "PL", "PT", "RO", "SK", "SI", "ES", "SE",
 })
-
-# Europe as a continent: the EU plus the states that are in Europe and not in the union. `europe`
-# and `european_union` are separate slugs in the config vocabulary precisely so a user can mean one
-# or the other, and collapsing them would silently widen or narrow somebody's search.
-NON_EU_EUROPE: frozenset[str] = frozenset({
-    "GB", "CH", "NO", "IS", "LI", "UA", "RS", "BA", "ME", "MK", "AL", "MD", "TR",
-})
-EUROPE_COUNTRIES: frozenset[str] = EU_COUNTRIES | NON_EU_EUROPE
 
 # Every city the config vocabulary offers, and the country it is in. Naming a city cannot exclude
 # the country around it: somebody who asked for Budapest has plainly not ruled out Hungary.
@@ -59,24 +56,18 @@ _CITY_COUNTRY: dict[str, str] = {
 }
 
 # Country-level slugs in the config vocabulary.
-_COUNTRY_SLUG: dict[str, str] = {"united_kingdom": "GB", "ireland": "IE"}
-
-# What a `remote_*` scope means as a set of countries. `remote_worldwide` is deliberately absent:
-# it does not expand to every country, it means the filter does not apply.
-_REMOTE_SCOPES: dict[str, frozenset[str]] = {
-    "remote_eu": EU_COUNTRIES,
-    "remote_uk": frozenset({"GB"}),
-    "remote_us": frozenset({"US"}),
+_COUNTRY_SLUG: dict[str, str] = {
+    "united_kingdom": "GB", "ireland": "IE", "switzerland": "CH", "norway": "NO",
 }
 
-# Anything selecting a whole region.
-_REGION_SLUGS: dict[str, frozenset[str]] = {
-    "european_union": EU_COUNTRIES,
-    "europe": EUROPE_COUNTRIES,
-}
+# The one region slug.
+_REGION_SLUGS: dict[str, frozenset[str]] = {"europe": EU_COUNTRIES}
 
-# The slug that switches the filter off entirely.
-UNRESTRICTED = "remote_worldwide"
+# **No `remote_*` slugs here, deliberately.** Remoteness is not a place. It used to be four entries
+# in this vocabulary — `remote_eu`, `remote_uk`, `remote_us`, `remote_worldwide` — which made
+# "where" and "how" one question with answers that could contradict each other, and duplicated a
+# `remote_policy` field the config already had. Working arrangement is its own filter now
+# (`libs.corpus.workfilter`), and this module answers only "which country".
 
 
 def wanted_countries(locations: list[str] | tuple[str, ...] | None) -> frozenset[str] | None:
@@ -96,12 +87,8 @@ def wanted_countries(locations: list[str] | tuple[str, ...] | None) -> frozenset
         slug = str(raw or "").strip().lower()
         if not slug:
             continue
-        if slug == UNRESTRICTED:
-            return None
         if slug in _REGION_SLUGS:
             allowed |= _REGION_SLUGS[slug]
-        elif slug in _REMOTE_SCOPES:
-            allowed |= _REMOTE_SCOPES[slug]
         elif slug in _COUNTRY_SLUG:
             allowed.add(_COUNTRY_SLUG[slug])
         elif slug in _CITY_COUNTRY:

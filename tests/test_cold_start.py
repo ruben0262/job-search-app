@@ -64,19 +64,26 @@ def test_remote_only_excludes_a_non_remote_job():
     assert not score_job(config, title="Engineer", is_remote=True).excluded
 
 
-def test_a_missing_location_is_not_treated_as_a_mismatch():
-    """Plenty of postings have no usable location string. Scoring those to zero buries them under
-    worse jobs that happened to name a city."""
-    unknown = score_job(CONFIG, title="Backend Engineer", location=None)
-    wrong = score_job(CONFIG, title="Backend Engineer", location="Sydney, Australia")
-    assert unknown.score > wrong.score
+def test_where_a_job_is_does_not_change_what_it_scores():
+    """**Location left the score on 2026-08-04, and it had never worked.**
 
+    A region selection matches nothing textually, so the old code awarded *full marks to every
+    posting* whenever a user had picked one — on the stated grounds that no posting spells
+    `european_union` in its location field. A user searching Europe scored a London job exactly like
+    a Berlin one, and a quarter of the scale moved nothing.
 
-def test_a_remote_job_satisfies_a_remote_region():
-    """`remote_eu` is a delivery region, not a place. A remote posting satisfies it without its
-    location string having to say so."""
+    Eligibility is not a matter of degree: a job in a country somebody cannot work in is not a worse
+    match, it is not a match. So country became a hard filter applied before scoring
+    (`libs.corpus.geo`) and working arrangement its own filter, and what remains here is what the
+    job *is*.
+    """
+    berlin = score_job(CONFIG, title="Backend Engineer", location="Berlin, Germany")
+    sydney = score_job(CONFIG, title="Backend Engineer", location="Sydney, Australia")
+    nowhere = score_job(CONFIG, title="Backend Engineer", location=None)
     remote = score_job(CONFIG, title="Backend Engineer", is_remote=True, location="Anywhere")
-    assert remote.score == TITLE_WEIGHT + 25
+
+    assert berlin.score == sydney.score == nowhere.score == remote.score
+    assert berlin.score == TITLE_WEIGHT, "the title is the whole of it when nothing else matches"
 
 
 def test_a_job_matching_any_section_is_included():

@@ -1168,6 +1168,91 @@ is a city with no country in it.
 Salary and contract type are deliberately **not** in this first cut. Country and job field are what
 make the scorer's cost stop scaling; the rest is a later addition once this one is proven.
 
+### 6w — a corpus row is a record, not a blob (added 2026-08-04)
+
+**The owner's design, and it reframes three separate problems as one.** A corpus row today is a
+link, a title, a free-text location and a wall of description. Everything anybody wants to know
+about a job — where it is, what field it is in, what it pays, whether it is a contract — is in that
+wall, and the only tool for reading it is a language model at scoring time. So the wall is read
+once per user per job, which is the cost that scales worst on this platform.
+
+**Extract at ingest, once, for everyone.** Country (6u) is the first field; `job_field` is the
+second and the more valuable. Then a row carries what it *is* beside what it says, and three things
+fall out of the same change:
+
+1. **Prefiltering costs a millisecond.** `country IN (...) AND job_field = ...` is an indexed
+   comparison. The alternative that was rejected — matching keywords against a title — cost a third
+   of the good matches (6o.1). A field and a country are facts; wording is not.
+2. **Training gets cleaner inputs.** The embedding is built from title + description
+   (`libs.corpus.embedtext`). Once the country lives in its own column it can be *stripped* from the
+   text rather than left in it, so the model stops seeing geography at all — which is what
+   `embedtext` already says it wants and cannot currently guarantee.
+3. **Reading the corpus becomes possible for a human.** The admin Corpus tab shows title, company,
+   a location string and a `usable` flag, because that is all a row holds.
+
+**`job_field` is a classifier, not a keyword list.** Clusters — software, engineering, law, civil
+service, hospitality, finance, healthcare — assigned once per row from the embedding the platform
+already computes, so it costs nothing per user and inherits the property 6o.1 argued for: it catches
+"Vehicle Dynamics Specialist" as engineering without anybody having written that phrase down. A
+user's field comes from their profile rather than their keyword list, for the same reason.
+
+**Open, and it is the interesting one: what does a mis-assigned field cost?** A wrong country is
+recoverable — the posting stays in the corpus and a user who widens their selection sees it. A wrong
+`job_field` hides a job from the only user who wanted it, permanently, with no symptom. So this
+ships behind the same before/after count as everything else here, and probably with a confidence
+floor below which the row is simply not filtered.
+
+**Also open: recycling.** The owner's concern is that a job filtered out for a user keeps being
+re-examined every cycle for ever. **The answer is that there is nothing to remember**, and it is
+worth writing down why. `score_lane` selects rows where `scored_model_version` is null or stale; a
+filter is a `WHERE` clause in that same statement, so a row that fails it is never scored and never
+written to `user_job_state`. Re-testing it next cycle is an indexed comparison, not a model call —
+microseconds against the thing that actually costs, which is scoring. Recording rejections would
+mean a row per user per rejected job (400k × every account), to save a cost that does not exist, and
+would then need invalidating every time somebody edited their countries. **Not remembering is
+strictly better**: a user who widens their search sees the previously-excluded jobs immediately,
+with no backfill and no stale exclusion to clear.
+
+### 6x — the filters a job can be judged on (added 2026-08-04)
+
+Extracted at ingest as 6w describes, then available as cheap pre-score filters. In priority order:
+
+1. **Country** — 6u, in progress.
+2. **Working arrangement** — remote / hybrid / on-site. **Already separate and staying that way.**
+   The location vocabulary used to carry `remote_eu`, `remote_uk`, `remote_us` and
+   `remote_worldwide`, which made "where" and "how" one question whose answers could contradict each
+   other, and duplicated the `remote_policy` field the config already had. Removed 2026-08-04;
+   `libs.corpus.workfilter` owns this.
+3. **Job field** — the classifier in 6w.
+4. **Contract type** — full-time, part-time, contract, internship, temporary. Stated in most
+   postings and currently discarded. A user wanting permanent work has no way to say so.
+5. **Salary** — already parsed by `libs.corpus.salary` for the feed card and not stored as a
+   filterable field. Deferred by the owner until country is proven.
+6. **Seniority** — junior / mid / senior / lead. The most frequently mis-stated field in any
+   posting, so the last one to trust and the one most likely to need a confidence floor.
+
+### 6y — should the employer's name leave the text? (added 2026-08-04)
+
+**Owner's question, and the answer is probably yes — but as a versioned change with an A/B, never a
+silent edit.**
+
+`libs.corpus.embedtext` already excludes the company *field* and says why: "a model that has seen
+the employer name learns employers, scores unseen companies badly, and quietly encodes geography as
+fit". But the name is still in the description prose, so the exclusion is a half measure — and the
+labeller reads that same text when it writes the labels the model is then trained on, so the leak
+enters twice.
+
+Against doing it: naive replacement mangles real words. "Apple" appears inside "Apple Pay", "Meta"
+inside "metadata", and a company called "Stripe" or "Block" or "Palantir" makes a mess of a sentence
+about payments, storage or data. So the strip has to be word-boundary, case-insensitive, and skipped
+for names under about four characters or matching a common-word list.
+
+The cost is the honest one `embedtext` already names: **the text is the input, so changing it
+invalidates every vector.** It is part of `EmbedderVersion.version`, `score_rows` refuses a
+mismatch, and the price is a full re-embed and a retrain per user. That is exactly why this wants an
+A/B rather than a decision — the machinery to run one exists (`deploy/scripts/ab_prompts.py`), and
+"does hiding the employer improve held-out AP" is a question with a measurable answer.
+
 ### 6v — every limit an operator can see and change (added 2026-08-04)
 
 **The rule: a number that governs how hard we hit a source belongs beside the other one that does.**
