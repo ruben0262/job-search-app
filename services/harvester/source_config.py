@@ -334,6 +334,13 @@ def build_source_configs(
         # operator narrowing a source has to narrow it here too or nothing changes.
         if "posted_within_hours" in cfg:
             cfg["posted_within_hours"] = window
+        # **And HiringCafe counts in days.** Its filter is server-side and reads `posted_within_days`
+        # alone, so setting the three keys above left it on the platform default of 3 days while an
+        # operator had asked for 48 hours — measured on the live box as 81-hour-old rows arriving
+        # into a 48-hour window. Rounded up, because a board that thinks in calendar days cannot
+        # honour "36 hours" and the wider of the two is the safe direction.
+        if "posted_within_days" in cfg:
+            cfg["posted_within_days"] = max(1, -(-window // 24))
         # **Two different consumers of the same word, and only one of them is safe.**
         # `KEYWORD_FILTER_SOURCES` read this themselves and match the whole posting;
         # `PREFILTER_SOURCES` hands it to `ats.JobFilter`, which matches a title alone and is empty

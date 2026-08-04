@@ -44,7 +44,7 @@ from libs.db.models import User, UserConfig
 from libs.obs import audit
 from libs.secrets import SecretStore, redacting
 from libs.secrets.keyring import SecretsError
-from libs.settings import DELIVERY_INTERVAL_MIN
+from libs.settings import DELIVERY_INTERVAL_MIN, freshness_hours
 from services.harvester.describe import describe_pending
 from services.harvester.fetch import make_client
 from services.harvester.governor import (
@@ -143,6 +143,8 @@ def run_for_due_users(session, *, now: datetime | None = None,
     now = now or datetime.now(UTC)
     corpus = CorpusRepository(session)
     usage = ProxyUsageRepository(session)
+    # Read once per pass rather than per user: it is a platform setting, not a per-account one.
+    window = freshness_hours(session, "linkedin")
     store = SecretStore(session)
 
     for user in due_users(session, now=now, limit=limit):
@@ -159,7 +161,7 @@ def run_for_due_users(session, *, now: datetime | None = None,
 
         try:
             ran = _run_one(user, queries, corpus=corpus, usage=usage, store=store,
-                           report=report, gather=gather)
+                           report=report, gather=gather, hours_old=window)
         except Exception as exc:                                    # noqa: BLE001
             # One user's LinkedIn failing is not the tier failing. Recorded and moved past, which
             # is the same contract every shared source adapter has.
@@ -177,7 +179,7 @@ def run_for_due_users(session, *, now: datetime | None = None,
 
 def _run_one(user: User, queries: list[dict], *, corpus: CorpusRepository,
              usage: ProxyUsageRepository, store: SecretStore,
-             report: LinkedInReport, gather) -> bool:
+             report: LinkedInReport, gather, hours_old: int) -> bool:
     """One user's fetch, inside their own credential's scope. Returns whether it ran.
 
     The proxy URL lives only inside `store.use`, and the whole fetch happens within that block —
@@ -201,7 +203,13 @@ def _run_one(user: User, queries: list[dict], *, corpus: CorpusRepository,
                     return False
 
                 cfg = {"queries": queries, "results_wanted": RESULTS_WANTED,
-                       "hours_old": min(q["hours_old"] for q in queries),
+                       # **The operator's window, not the user's.** This read the narrowest window
+                       # any of the user's own sections asked for, so the per-source setting in the
+                       # admin panel — which for LinkedIn is deliberately the tightest on the
+                       # platform, because it lists within minutes and a wide window is mostly
+                       # re-reading — reached everything except LinkedIn. Measured on the live box
+                       # as 23-hour-old postings arriving into a 2-hour window.
+                       "hours_old": hours_old,
                        # **Never from jobspy.** It would fetch a description for every result
                        # including the ones already in the corpus; the dedup below is what makes the
                        # per-posting cost land once per *new* job rather than once per result.

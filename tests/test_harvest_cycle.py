@@ -449,6 +449,32 @@ def test_a_source_whose_window_an_operator_narrowed_actually_narrows(ctx):
     assert narrowed["ashby"]["max_age_hours"] == default["ashby"]["max_age_hours"]
 
 
+def test_an_operators_window_reaches_a_source_under_every_key_it_reads(ctx):
+    """**Setting the window in three places was not enough, because a fourth exists.**
+
+    HiringCafe filters server-side and reads `posted_within_days` alone, so an operator asking for
+    48 hours left it on the platform default of three days — measured on the live box as 81-hour-old
+    postings arriving into a 48-hour window. Every adapter spells this differently and a window that
+    reaches only some of them is a setting that works only sometimes, which is worse than one that
+    never works because it looks correct.
+    """
+    from services.harvester.source_config import build_source_configs
+
+    built = build_source_configs({}, env={}, freshness={"hiringcafe": 48, "greenhouse": 3})
+
+    assert built["hiringcafe"]["max_age_hours"] == 48
+    assert built["hiringcafe"]["posted_within_days"] == 2, "48 hours is 2 days, rounded up"
+    assert built["greenhouse"]["posted_within_hours"] == 3
+
+    # Rounded **up**: a board that thinks in calendar days cannot honour "36 hours", and the wider
+    # of the two is the direction that loses nobody a job.
+    day_and_a_half = build_source_configs({}, env={}, freshness={"hiringcafe": 36})
+    assert day_and_a_half["hiringcafe"]["posted_within_days"] == 2
+    # And never zero, which would be "nothing qualifies".
+    assert build_source_configs(
+        {}, env={}, freshness={"hiringcafe": 1})["hiringcafe"]["posted_within_days"] == 1
+
+
 def test_the_union_is_asked_for_not_used_to_throw_away_what_a_board_sent(ctx):
     """**Six hours of zero ingestion from eleven sources.**
 
