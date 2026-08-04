@@ -135,8 +135,19 @@ class CorpusJob(Base):
     closed_at: Mapped[timestamptz | None]
 
     posted_at: Mapped[timestamptz | None]
-    first_seen_at: Mapped[timestamptz] = mapped_column(server_default=func.now())
-    last_seen_at: Mapped[timestamptz] = mapped_column(server_default=func.now())
+    # When the request that found this posting produced it — the adapter's own clock, at the moment
+    # it parsed the link out of a response. **`posted_at → first_seen_at` measures three things at
+    # once**: the board's publishing lag, up to fifteen minutes waiting for the next harvest tick,
+    # and our own fetch. Only the third is ours, and it was invisible under a p90 of thirteen hours
+    # belonging to the first (ROADMAP 6ab). This column is what splits them.
+    fetched_at: Mapped[timestamptz | None]
+    # **`clock_timestamp()`, not `now()`.** Postgres' `now()` is the *transaction* start, so every
+    # row a cycle inserted shared one timestamp taken before the cycle did any work — which made
+    # `fetched_at → first_seen_at` negative for rows found late in a pass. The same defect the queue
+    # had in `finished_at` and the embed step had in `embedded_at`.
+    first_seen_at: Mapped[timestamptz] = mapped_column(server_default=func.clock_timestamp())
+    last_seen_at: Mapped[timestamptz] = mapped_column(
+        server_default=func.clock_timestamp())
 
     # Set when any user acts on the row (applied, built a CV, labelled). Pinned rows survive
     # trimming forever — losing the text under a label would leave the label meaningless.

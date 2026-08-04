@@ -152,8 +152,12 @@ def test_the_feed_says_when_it_is_only_keyword_matching(api):
 
     assert body["stage"] == "rules"
     assert body["approximate"] is True
-    assert [job["title"] for job in body["jobs"]] == ["Backend Engineer",
-                                                      "Senior Backend Engineer"]
+    # **A set, not a sequence.** Both titles carry the keyword and nothing else separates them now
+    # that location has left the rules score (2026-08-04), so they genuinely tie — and asserting one
+    # arbitrary tie-break order would be testing how the query happens to sort rather than what the
+    # feed is for.
+    assert {job["title"] for job in body["jobs"]} == {"Backend Engineer",
+                                                      "Senior Backend Engineer"}
 
 
 def test_the_rules_feed_leaves_out_what_the_config_excludes(api):

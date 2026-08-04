@@ -60,6 +60,10 @@ class JobLink:
             # signal that makes the apply-URL dedup layer resolvable. Both were already on the
             # dataclass; this line is the whole fix.
             "posted_at": parse_date(self.date_posted),
+            # Already recorded when the adapter parsed this link out of a response, and until now
+            # thrown away at the corpus boundary — the same shape as `date_posted` and `easy_apply`
+            # before them.
+            "fetched_at": parse_date(self.found_at),
             "easy_apply": self.easy_apply,
             # Inferred from what the source gave us. The authoritative value — LinkedIn's own
             # workplace pill — arrives later with the description fetch and overwrites this.

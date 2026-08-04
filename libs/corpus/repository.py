@@ -186,7 +186,8 @@ class CorpusRepository:
     def add(self, *, url: str, source: str, title: str, company: str = "", location: str = "",
             is_remote: bool | None = None, posted_at: datetime | None = None,
             easy_apply: bool | None = None, applicants: int | None = None,
-            reposted: bool | None = None, workplace: str | None = None) -> int | None:
+            reposted: bool | None = None, workplace: str | None = None,
+            fetched_at: datetime | None = None) -> int | None:
         """Insert if absent. Returns the new row's id, or `None` if the url was already present.
 
         `ON CONFLICT DO NOTHING` is the port of the reference's `INSERT OR IGNORE`, and the property
@@ -207,6 +208,9 @@ class CorpusRepository:
                 location=location or None,
                 is_remote=is_remote,
                 posted_at=posted_at,
+                # When the fetch that found this row produced it, so how long *we* took is separable
+                # from how long the board took to publish (ROADMAP 6ab).
+                fetched_at=fetched_at,
                 # What the feed card reads. Opportunistic: a source that reports none of them still
                 # produces a row, and the card omits the elements rather than the job.
                 easy_apply=easy_apply,
@@ -224,7 +228,8 @@ class CorpusRepository:
         if not job_ids:
             return
         self._s.execute(
-            update(CorpusJob).where(CorpusJob.id.in_(job_ids)).values(last_seen_at=func.now()))
+            update(CorpusJob).where(CorpusJob.id.in_(job_ids))
+            .values(last_seen_at=func.clock_timestamp()))
 
     def set_description(self, job_id: int, description: str) -> bool:
         """Attach fetched description text. Returns True if the text changed.
@@ -239,12 +244,16 @@ class CorpusRepository:
             return False
         digest = text_digest(description)
         if job.text_sha256 == digest and job.description is not None:
-            job.description_fetched_at = datetime.now(UTC)
+            job.description_fetched_at = func.clock_timestamp()
             return False
 
         job.description = description
         job.text_sha256 = digest
-        job.description_fetched_at = datetime.now(UTC)
+        # **The same clock as `embedded_at`, deliberately.** This read Python's clock while the
+        # embed step read Postgres', so the two timestamps on one row came from two machines'
+        # ideas of the time and the span between them measured their disagreement as much as the
+        # pipeline. One clock, and it is the database's, because that is the one every row shares.
+        job.description_fetched_at = func.clock_timestamp()
         job.embedding = None
         job.embedding_model = None
         job.embedding_dim = None
@@ -368,7 +377,14 @@ class CorpusRepository:
                     # Stamped here rather than at the gateway: this is the moment the vector became
                     # readable by a scorer, and the gateway's own clock would count a write that
                     # lost the `text_sha256` race as an embed that never landed.
-                    embedded_at=func.now()))
+                    #
+                    # **`clock_timestamp()`, not `now()`.** Postgres' `now()` is the *transaction*
+                    # start, so every row embedded in one transaction was stamped with the moment
+                    # that transaction opened — before the describe pass inside it had run. Measured
+                    # on the live box, `embedded_at - description_fetched_at` came out **negative**
+                    # for most rows, which the latency query then discarded as a clock change. The
+                    # queue had this exact defect in `finished_at` and it is the same fix.
+                    embedded_at=func.clock_timestamp()))
         return result.rowcount == 1
 
     # ── retention ────────────────────────────────────────────────────────────────────────────
@@ -402,5 +418,5 @@ class CorpusRepository:
             .where(CorpusJob.id.in_(stale))
             .values(description=None, embedding=None, text_sha256=None, embedding_model=None,
                     embedding_dim=None, embedding_version=None, embedded_at=None,
-                    trimmed_at=func.now()))
+                    trimmed_at=func.clock_timestamp()))
         return result.rowcount

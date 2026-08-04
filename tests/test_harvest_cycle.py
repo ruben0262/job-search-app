@@ -768,3 +768,21 @@ def test_an_unset_ceiling_leaves_the_platform_default_alone(ctx):
     built = build_source_configs({}, env={})
     assert built["greenhouse"]["max_companies"] == PLATFORM_DEFAULTS["greenhouse"]["max_companies"]
     assert "limit" not in built["himalayas"], "no result key until somebody sets one"
+
+
+def test_a_removed_source_cannot_be_quietly_switched_back_on(ctx):
+    """`DEFERRED_SOURCES` records what was removed and why. **A record with no consumer is a comment
+    that drifts**, so it guards the list it describes: re-enabling one of these is a decision about
+    how to use a source that cannot be searched (ROADMAP 6t), not a config edit."""
+    from libs.settings import HARVEST_SOURCES, QUERY_TAKING_SOURCES
+    from services.harvester.source_config import (
+        DEFAULT_ENABLED,
+        DEFERRED_SOURCES,
+        KEYWORD_FILTER_SOURCES,
+    )
+
+    deferred = set(DEFERRED_SOURCES)
+    assert deferred & set(DEFAULT_ENABLED) == set()
+    assert deferred & set(HARVEST_SOURCES) == set(), "the admin panel would offer it a control"
+    assert deferred & QUERY_TAKING_SOURCES == set()
+    assert deferred & KEYWORD_FILTER_SOURCES == set()

@@ -234,3 +234,34 @@ def test_the_v1_flat_config_still_migrates_and_its_locations_move_too():
 
     migrated = migrate_config({"keywords": ["python"], "locations": ["european_union"]})
     assert migrated["sections"][0]["locations"] == ["europe"]
+
+
+def test_the_picker_offers_exactly_what_the_schema_allows():
+    """**The frontend and the schema are two lists of the same thing, and they drifted.**
+
+    `ConfigStep.tsx` groups places for the form; `Location` is what the server accepts. When the
+    vocabulary changed, the picker went on offering `european_union` and three `remote_*` slugs the
+    server had stopped accepting — a user picking one would have been refused on save, and one
+    already stored silently disabled their country filter.
+
+    Reading the component here rather than adding a JavaScript test runner: the two files are the
+    boundary, and the assertion is about them agreeing rather than about React.
+    """
+    import re
+    from pathlib import Path
+
+    from libs.contracts.config import Location
+
+    source = (Path(__file__).resolve().parents[1]
+              / "web" / "src" / "pages" / "onboarding" / "ConfigStep.tsx").read_text(
+        encoding="utf-8")
+    groups = re.search(r"const PLACE_GROUPS[^=]*=\s*\[(.*?)\n\];", source, re.S)
+    assert groups, "PLACE_GROUPS not found — has the component been restructured?"
+    offered = set(re.findall(r'"([a-z_]+)"', groups.group(1)))
+    # Group labels and hints are prose, not slugs; only values that look like enum members count.
+    allowed = {value.value for value in Location}
+
+    assert offered - allowed == set(), (
+        f"the picker offers places the server will refuse: {sorted(offered - allowed)}")
+    assert allowed - offered == set(), (
+        f"the schema allows places the picker never shows: {sorted(allowed - offered)}")

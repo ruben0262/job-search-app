@@ -383,3 +383,38 @@ def test_a_very_long_title_does_not_break_ingest(repo):
                    title="Senior " * 60 + "Engineer", company="A" * 300, location="B" * 300)
     s.flush()
     assert s.get(CorpusJob, job_id).content_key
+
+
+def test_every_corpus_timestamp_comes_from_one_clock_and_it_is_the_real_one(repo):
+    """**The defect that made an embed appear to finish before its description arrived.**
+
+    Postgres' `now()` is the *transaction* start, so every row a cycle touched carried a timestamp
+    taken before the cycle did any work. Measured on the live box, `embedded_at -
+    description_fetched_at` came out **negative** for most rows, and the latency query discarded
+    them as clock changes — which is why "described → embedded" reported nine minutes off the few
+    rows that straddled two transactions rather than the real figure off all of them.
+
+    `description_fetched_at` made it worse by reading Python's clock while its neighbour read
+    Postgres', so one row carried two machines' idea of the time and the span between them measured
+    their disagreement.
+
+    The queue had the same defect in `finished_at`. Three times is a rule.
+    """
+    corpus, s = repo
+    job_id = corpus.add(url=_u(), source="test", title="Engineer",
+                        fetched_at=datetime.now(UTC) - timedelta(seconds=1))
+    assert job_id is not None
+    corpus.set_description(job_id, "A real description. " * 40)
+    s.flush()
+    corpus.set_embedding(job_id, vector=bytes(8),
+                         text_sha256=s.get(CorpusJob, job_id).text_sha256,
+                         model="m", dim=8, version="v")
+    s.flush()
+
+    row = s.get(CorpusJob, job_id)
+    # Every one of these is written by a different statement, and they must be readable in order.
+    assert row.fetched_at <= row.first_seen_at <= row.last_seen_at
+    assert row.first_seen_at <= row.description_fetched_at <= row.embedded_at, (
+        "a corpus row's timestamps are out of order — something is still reading the transaction "
+        "clock instead of the wall clock")
+

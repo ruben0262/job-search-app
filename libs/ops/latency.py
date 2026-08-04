@@ -124,11 +124,13 @@ def pipeline_latency(session: Session, *, hours: int = WINDOW_HOURS) -> dict:
 # - found -> delivered: not the sum of the other two -- it is what the user experiences, and it is
 #   the only one of the three worth waking up for.
 #
-# **`posted_to_found` is deliberately absent, and that absence is the decision.** Sources round what
-# they publish — LinkedIn reports "2 days ago" — so a threshold on it would be judging their
+# **`posted_to_fetched` is deliberately absent, and that absence is the decision.** Sources round
+# what they publish — LinkedIn reports "2 days ago" — so a threshold on it would be judging their
 # rounding, and a red pill produced by rounding is exactly the colour an operator learns to ignore.
-# It is reported without a verdict rather than dropped, because harvest lag is part of what a user
-# waits and hiding it would make the judged rows look like the whole story.
+# It is reported without a verdict rather than dropped, because that wait is part of what a user
+# experiences and hiding it would make the judged rows look like the whole story.
+#
+# `fetched_to_stored` is the half that *is* ours, and it is judged tightly for exactly that reason.
 THRESHOLDS: dict[str, tuple[int, int]] = {
     "found_to_scored": (30, 60),
     "scored_to_delivered": (30, 60),
@@ -140,14 +142,22 @@ THRESHOLDS: dict[str, tuple[int, int]] = {
     # has no cadence to forgive: minutes here mean a queue, not a schedule.
     "described_to_embedded": (15, 45),
     "embedded_to_scored": (30, 60),
+    # **Ours, and tight on purpose.** Everything before it belongs to a board; this is four indexed
+    # lookups and an insert. One minute is already a symptom.
+    "fetched_to_stored": (1, 5),
 }
 
 # Why each threshold is where it is, in the words the expanded row shows. **A colour whose reasoning
 # lives only in a Python constant is a colour nobody trusts**, and this project has already had one
 # number turn out to be measuring something other than what its label claimed.
 THRESHOLD_REASONING: dict[str, str] = {
-    "posted_to_found": "Not judged. Sources round what they report, so this measures their "
-                       "precision as much as our lag.",
+    "posted_to_fetched": "Not judged. The board's own publishing lag plus our tick, and sources "
+                         "round what they report — so this measures their precision as much as "
+                         "anything we control.",
+    "fetched_to_stored": "Four dedup queries and an insert, against a gather stage that takes about "
+                         "twenty seconds for a whole cycle. Seconds is normal; a minute means a "
+                         "source is hanging or the ingest is contended, and both are worth a look "
+                         "today.",
     "found_to_described": "The harvest runs every 15 minutes and the describe pass drains behind "
                           "it, so one missed cycle is normal and two is a backlog worth seeing.",
     "described_to_embedded": "The embedder answers in milliseconds and drains continuously. There "
@@ -330,18 +340,34 @@ class Stage:
 # THRESHOLDS below for why it carries no colour.
 STAGES: tuple[Stage, ...] = (
     Stage(
-        key="posted_to_found",
-        label="Posted → found",
-        zone="harvester, every 15 minutes",
-        what="The site published the posting and the harvest saw the link. This is the part of the "
-             "wait that happens before the platform knows the job exists.",
+        key="posted_to_fetched",
+        label="Posted → fetched",
+        zone="the board, plus our 15-minute tick",
+        what="The site published the posting and our next harvest went looking. Almost none of this "
+             "is ours: it is how long the board took to list the job, plus up to one cycle waiting "
+             "for the next tick.",
         scope="corpus",
         start="c.posted_at",
-        end="c.first_seen_at",
+        end="c.fetched_at",
         caveat="Sources round what they report — LinkedIn says “2 days ago” — so this number's "
-               "precision is theirs, not ours. Shown because harvest lag is genuinely part of what "
-               "a user waits; unjudged because a colour produced by rounding is a colour nobody "
-               "should trust.",
+               "precision is theirs, not ours. Shown because it is genuinely part of what a user "
+               "waits; unjudged because a colour produced by somebody else's rounding is a colour "
+               "nobody should trust.",
+    ),
+    Stage(
+        key="fetched_to_stored",
+        label="Fetched → stored",
+        zone="dedup and insert",
+        what="We had the posting in hand and it became a corpus row: four dedup lookups and an "
+             "insert. **This is the only part of finding a job that is ours**, and it used to be "
+             "invisible — added to the board's own lag it sat under a p90 of thirteen hours that no "
+             "amount of work here would have moved.",
+        scope="corpus",
+        start="c.fetched_at",
+        end="c.first_seen_at",
+        caveat="`fetched_at` was added on 2026-08-04 and older rows were deliberately not "
+               "backfilled — nothing recorded when their request went out, so a filled-in value "
+               "would be a confident measurement of nothing.",
     ),
     Stage(
         key="found_to_described",

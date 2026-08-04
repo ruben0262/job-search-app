@@ -1372,7 +1372,7 @@ that "simplest" probably wins for now and the interface should make the other sw
 
 Wants a caller on a schedule, like 6c. Not urgent at 136 MB; not something to discover at 30 GB.
 
-### 6ab — split "posted → found" into their lag and ours (planned 2026-08-04)
+### 6ab — split "posted → found" into their lag and ours ✅ **done 2026-08-04**
 
 **The owner's observation, and it is correct: that row measures two different things and neither is
 readable.** `posted_at → first_seen_at` currently contains, added together:
@@ -1406,7 +1406,7 @@ Do this **after** 6aa, since that investigation may show the same thing: a row m
 shape rather than a stage's speed. If both turn out that way, the fix is one idea applied twice
 rather than two separate changes.
 
-### 6aa — why does embedding take nine to thirteen minutes? (added 2026-08-04)
+### 6aa — why does embedding take nine to thirteen minutes? ✅ **answered 2026-08-04**
 
 **A latency investigation, not a fix, because nobody knows the answer yet.**
 
@@ -1426,9 +1426,26 @@ Three candidates, in order of how cheap they are to rule out:
    already logs the embed stage per cycle, so this is readable from the logs before anything is
    changed.
 
-**The measurement to take first**: the gap between `description_fetched_at` and `embedded_at` broken
-down by where in the cycle the row arrived. If rows described at the start of a cycle wait longest,
-it is (1) and the row's threshold is simply wrong.
+**It was none of the three.** The measurement — the gap broken down by hour — came back **negative**
+for most rows: −0.7 to −1.3 minutes, an embed finishing before the description it was computed from
+arrived.
+
+Two clock defects, stacked:
+
+1. **`embedded_at` was `now()`**, which in Postgres is the *transaction* start. Every row a cycle
+   embedded carried a timestamp taken before that cycle had done any work — including before the
+   describe pass inside the same transaction. The queue had this exact defect in `finished_at`.
+2. **`description_fetched_at` read Python's clock** while its neighbour read Postgres'. One row
+   carried two machines' idea of the time, and the span between them measured their disagreement as
+   much as the pipeline.
+
+The latency query discards a negative span as a clock change, so those rows were silently dropped —
+and the nine minutes came from the few that straddled two transactions, which is a cycle gap rather
+than the embedder. **The number was never measuring what its label claimed.**
+
+Every corpus timestamp is `clock_timestamp()` now, `first_seen_at` and `last_seen_at` included, and
+a test asserts a single row's stamps are readable in order. Whether embedding is *actually* slow is
+now a question that can be asked for the first time.
 
 ### 6v — every limit an operator can see and change ✅ **done 2026-08-04**
 

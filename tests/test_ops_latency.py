@@ -93,7 +93,8 @@ def test_every_zone_the_posting_crosses_is_a_row_and_they_are_in_order():
     from libs.ops.latency import STAGES
 
     assert [stage.key for stage in STAGES] == [
-        "posted_to_found",
+        "posted_to_fetched",
+        "fetched_to_stored",
         "found_to_described",
         "described_to_embedded",
         "embedded_to_scored",
@@ -129,11 +130,14 @@ def test_harvest_lag_is_reported_and_deliberately_not_judged():
     what a user waits, and dropping it would make the judged rows look like the whole story."""
     from libs.ops.latency import STAGES, THRESHOLD_REASONING, THRESHOLDS
 
-    assert "posted_to_found" not in THRESHOLDS
+    assert "posted_to_fetched" not in THRESHOLDS
     # Unjudged is a decision, so it owes the reader the reason, in the same place the others do.
-    assert THRESHOLD_REASONING["posted_to_found"]
-    lag = next(stage for stage in STAGES if stage.key == "posted_to_found")
+    assert THRESHOLD_REASONING["posted_to_fetched"]
+    lag = next(stage for stage in STAGES if stage.key == "posted_to_fetched")
     assert lag.caveat
+
+    # And the half that *is* ours is judged, tightly — that is the whole point of the split.
+    assert THRESHOLDS["fetched_to_stored"][0] <= 5
 
 
 def test_every_judged_zone_says_why_its_threshold_is_where_it_is():
@@ -172,8 +176,8 @@ def test_an_unjudged_zone_is_not_the_same_answer_as_too_little_data(monkeypatch)
     monkeypatch.setattr(latency, "_stage_span", fake_span)
     rows = {row["key"]: row for row in latency.stage_breakdown(object(), hours=6)}
 
-    assert rows["posted_to_found"]["verdict"] == "unjudged"
-    assert rows["posted_to_found"]["judged"] is False
+    assert rows["posted_to_fetched"]["verdict"] == "unjudged"
+    assert rows["posted_to_fetched"]["judged"] is False
     # A judged stage with plenty of samples and a fast p90 is simply healthy.
     assert rows["found_to_described"]["verdict"] == "ok"
     assert rows["found_to_described"]["judged"] is True
