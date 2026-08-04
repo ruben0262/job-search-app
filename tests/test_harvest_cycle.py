@@ -278,8 +278,11 @@ def test_source_filters_come_from_the_union_of_users_not_one_person(ctx):
     configs = TenantRepository(s).active_configs()
     assert union_keywords(configs) == ["golang", "rust"], "deduplicated, lowercased, sorted"
 
+    # **Asserted on the queries, not on `keywords`.** The union drives what each board is *asked*
+    # for; it is deliberately no longer handed to the client-side `JobFilter`, which dropped every
+    # ATS and VC-board row for six hours the first time it ever actually ran (`PREFILTER_SOURCES`).
     built = build_source_configs(configs, env={})
-    assert built["remotive"]["keywords"] == ["golang", "rust"]
+    assert built["remotive"]["queries"] == [{"search": "golang"}, {"search": "rust"}]
 
 
 def test_the_filter_reads_the_sections_a_real_config_actually_stores(ctx):
@@ -350,6 +353,38 @@ def test_a_board_with_no_geography_is_asked_once_per_keyword(ctx):
     assert per_source["hiringcafe"] == 4, "a source that can filter by place still gets all four"
 
 
+def test_the_union_is_asked_for_not_used_to_throw_away_what_a_board_sent(ctx):
+    """**Six hours of zero ingestion from eleven sources.**
+
+    `ats.JobFilter` drops a row whose title carries none of `cfg["keywords"]` and whose location
+    string matches none of `cfg["location_keywords"]`. Both were always empty, because the union
+    readers read the wrong level of the config, so the filter had never once executed. Fixing the
+    readers switched it on across the whole ATS and VC-board family at the same moment and
+    ingestion from them went to **zero** — not reduced.
+
+    Two reasons it must stay off until measured: the locations are *slugs* (`european_union`)
+    matched against real location text ("Berlin, Germany"), and a title-keyword prefilter is the
+    change this project has already measured as harmful — 239 of 376 jobs scoring ≥60 had a keyword
+    in the title, so it discards a third of the good matches (ROADMAP 6o.1).
+
+    Asking a board for a term is a different mechanism and stays on: it costs one request and
+    returns fewer, better rows, rather than throwing away what already arrived.
+    """
+    from services.harvester.source_config import PREFILTER_SOURCES, build_source_configs
+
+    built = build_source_configs(
+        {uuid.uuid4(): {"sections": [{"keywords": ["golang"], "locations": ["european_union"]}]}},
+        env={})
+
+    assert not PREFILTER_SOURCES, (
+        "re-enabling one needs the before/after count of good matches lost that 6o.1 demands")
+    for source in ("greenhouse", "ashby", "consider", "getro", "remotive"):
+        assert "keywords" not in built[source], f"{source} would drop rows on title alone"
+        assert "location_keywords" not in built[source], f"{source} would drop rows on a slug"
+    # And the half that is worth having is still there.
+    assert built["remotive"]["queries"] == [{"search": "golang"}]
+
+
 def test_a_board_is_asked_for_the_phrase_the_user_wrote(ctx):
     """**The fold key is not a search term**, and sending it cost real quality on the first live
     cycle: Arbeitnow was asked for `engineer stress` and `developer python`, and every Hungarian
@@ -410,7 +445,7 @@ def test_a_dormant_users_keywords_leave_the_filter(ctx):
     s.flush()
 
     built = build_source_configs(TenantRepository(s).active_configs(), env={})
-    assert built["remotive"]["keywords"] == ["stillhere"]
+    assert built["remotive"]["queries"] == [{"search": "stillhere"}]
 
 
 def test_with_no_users_at_all_sources_stay_enabled_and_unfiltered(ctx):

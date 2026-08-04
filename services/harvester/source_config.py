@@ -59,6 +59,32 @@ QUERY_TAKING_SOURCES = frozenset({
 })
 
 
+# Sources whose rows are dropped client-side by `ats.JobFilter` when the title carries none of the
+# union's keywords and the location string matches none of the union's locations.
+#
+# **Empty, and that is the finding rather than a placeholder.** `union_keywords` and
+# `union_locations` returned nothing against every real config for as long as the platform has run,
+# so this filter has never actually executed. Fixing those readers on 2026-08-03 switched it on
+# across the whole ATS and VC-board family at once, and **ingestion from those eleven sources went
+# to zero for six hours** — not reduced, zero.
+#
+# Two reasons it cannot come back as it is:
+#
+# 1. **The location list is slugs.** `european_union`, `remote_eu` — matched as substrings against a
+#    posting's real location text, "Berlin, Germany". Almost nothing matches, and the remote escape
+#    hatch tests `"remote" in loc_kw`, which a list of `remote_eu`/`remote_uk` fails.
+# 2. **A title-keyword prefilter is the change this project has already measured as harmful.** Only
+#    239 of 376 jobs scoring ≥60 had a keyword in the title, so it discards a third of the good
+#    matches — the unusually worded ones, which are often the interesting ones (ROADMAP 6o.1).
+#
+# The server-side half is unaffected and is the half worth having: `cfg["queries"]` asks each board
+# for the terms users want, which costs one request and returns fewer, better rows. That is a
+# different mechanism from throwing away what a board already sent.
+#
+# Re-enabling any source here needs the before/after count of ≥60 matches lost that 6o.1 demands.
+PREFILTER_SOURCES: frozenset[str] = frozenset()
+
+
 @dataclass(frozen=True)
 class QueryShape:
     """What one source can be asked for, and under which keys.
@@ -267,9 +293,10 @@ def build_source_configs(
         # day of jobs, not the freshest slice."
         cfg["max_age_hours"] = max_age
         cfg["hours_old"] = max_age
-        if keywords:
+        # **Deliberately not handed to `JobFilter`.** See `PREFILTER_SOURCES`.
+        if keywords and source in PREFILTER_SOURCES:
             cfg["keywords"] = keywords
-        if locations:
+        if locations and source in PREFILTER_SOURCES:
             cfg["location_keywords"] = locations
         if source in QUERY_TAKING_SOURCES:
             cfg["queries"] = _queries_for(source, keywords)
