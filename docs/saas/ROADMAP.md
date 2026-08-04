@@ -1067,10 +1067,10 @@ server-side filter is a different mechanism from discarding what already arrived
 entries below were being treated as a menu; they are a chain, and doing a later one first means
 building on something unverified.
 
-> **Stage 1 — the queries are right.** Every source is asked in the shape it reads, with the
-> keywords a user actually typed and the time window an operator set, and each one returns results
-> we can see. Nothing downstream is worth building while a source is being asked a question it
-> ignores. → **6t**, and the verification below.
+> **Stage 1 — the queries are right.** ✅ **Done 2026-08-04.** Every source is asked in the shape it
+> reads, with the keywords a user actually typed and the time window an operator set, and each one
+> returns results we can see. Nothing downstream is worth building while a source is being asked a
+> question it ignores. → **6t**, **6v**, and the verification below.
 >
 > **Stage 2 — the corpus stores a record, not a blob.** Jobs arrive as structured rows: title,
 > description, country, field, and the rest. Extraction happens once at ingest, for everyone. →
@@ -1100,6 +1100,29 @@ work can quietly pile up:
 Neither can be built before the stage it measures, which is why they are recorded here rather than
 in 6p. The drill-down takes a new row by adding one entry to `STAGES`; forgetting to add it is how a
 stage ends up invisible.
+
+**Stage 1 closed 2026-08-04**, with what it cost written down because the pattern is the point:
+
+| Found | |
+|---|---|
+| The query set was wired to two sources that were not enabled | the fold, the budget and the carry-over governed **zero requests** |
+| `union_keywords` read the wrong level of a config | every board fetched its unfiltered feed |
+| Eight sources fed a query shape only two of them read | silently, since a mis-shaped query looks like a broad one |
+| Seven sources ignored the keyword entirely | ~35% of intake, removed |
+| The fold key was typed into search boxes | `engineer stress`, and every Hungarian term truncated |
+| Two sources ignored the operator's freshness window | 81-hour postings into a 48-hour window |
+| Six of ten operator limits governed nothing | including the one the owner reported |
+| LinkedIn searched 3 of an account's 23 keywords | on the source producing 337 of 348 matches |
+
+**Not one of these raised an error**, and the suite was green throughout every one of them. What
+now fails instead of shipping: a limit without a consumer, a window that misses a key an adapter
+reads, a filter that rejects an ordinary posting, a keyword-filtered source given a second thing to
+judge on, and a fold key emitted as a search term.
+
+**Deliberately left for after beta**, so the phase can close: the four LinkedIn scaling limits above
+(concurrency, no cross-user dedup), Arbeitnow and RemoteOK as pure feeds (6t), Consider and Getro's
+board lists, and JobSpy's Indeed and Google adapters. None of them blocks a working beta; all of
+them are volume rather than correctness.
 
 ### 6t — sources, and the seven taken out (decided 2026-08-04)
 
@@ -1349,7 +1372,7 @@ that "simplest" probably wins for now and the interface should make the other sw
 
 Wants a caller on a schedule, like 6c. Not urgent at 136 MB; not something to discover at 30 GB.
 
-### 6v — every limit an operator can see and change (added 2026-08-04)
+### 6v — every limit an operator can see and change ✅ **done 2026-08-04**
 
 **The rule: a number that governs how hard we hit a source belongs beside the other one that does.**
 The per-source freshness window is already an operator setting with a control in the admin panel;
@@ -1358,18 +1381,21 @@ Documentation and rate limits change over time, and the person who notices is th
 
 Moving into platform settings, per source, rendered next to the freshness column:
 
-1. **Queries per cycle, per source** — replacing `HARVEST_MAX_QUERIES_PER_CYCLE = 60`. That number
+1. ✅ **Queries per cycle, per source** — replaced `HARVEST_MAX_QUERIES_PER_CYCLE = 60`. That number
    was sized for the JobSpy tier's ban risk and now governs unproxied REST boards, where it means
    nothing (6r). Per source, it means what it says: this is how many times a cycle we are willing
    to ask this board. JobSpy/LinkedIn keeps a tight one for the reason the global number existed.
-2. **Results per query, per source** — today a scatter of adapter constants: `limit: 100` for
+2. ✅ **Results per query, per source** — was a scatter of adapter constants: `limit: 100` for
    Remotive and Himalayas, `pageSize: 100` for NoFluffJobs, three pages of 40 for HiringCafe,
-   `count: 50` for Jobicy. Each is a real ceiling on how deep one query reaches, and each is
-   currently invisible.
-3. **ATS companies per cycle**, with **the total we hold shown beside it.** `max_companies: 400` is
+   `count: 50` for Jobicy. Each is a real ceiling on how deep one query reaches, and each was
+   invisible. `RESULT_KEYS` maps a source to the key its adapter reads, the way `QUERY_SHAPES` does
+   for queries — every adapter spells "how many" differently and a value under the wrong key is
+   silent. Sources with no such key (Working Nomads returns its whole list, TheMuse counts pages)
+   show no control rather than a lever attached to nothing.
+3. ✅ **ATS companies per cycle**, with **the total we hold shown beside it.** `max_companies: 400` is
    a constant, and the token list grows on its own from harvested apply-URLs — so an operator
-   choosing that number needs to know whether it is 400 out of 500 or 400 out of 12,000. The count
-   is a query nobody currently runs.
+   choosing that number needs to know whether it is 400 out of 500 or 400 out of 12,000. The count is now
+   reported beside the control, and it was a query nobody ran.
 
 **Deleted rather than moved: `request_delay_s`.** It exists on two adapters, was applied by one, and
 the owner's call is that pacing is not something we should be doing by hand. If a board refuses a

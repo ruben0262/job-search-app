@@ -32,7 +32,13 @@ from libs.corpus.repository import CorpusRepository
 from libs.db.session import session_scope
 from libs.obs import configure
 from libs.secrets import install
-from libs.settings import HARVEST_SOURCES, freshness_hours, queries_per_cycle
+from libs.settings import (
+    HARVEST_SOURCES,
+    ats_companies_per_cycle,
+    freshness_hours,
+    queries_per_cycle,
+    results_per_query,
+)
 from libs.tenant.repository import TenantRepository
 from services.harvester.cycle import run_cycle
 from services.harvester.describe import describe_linkedin_for_all
@@ -213,7 +219,10 @@ def main(argv: list[str] | None = None) -> int:
             # went on computing its own window (ROADMAP 6l.2).
             source_configs = build_source_configs(
                 TenantRepository(session).active_configs(),
-                freshness={name: freshness_hours(session, name) for name in HARVEST_SOURCES})
+                freshness={name: freshness_hours(session, name) for name in HARVEST_SOURCES},
+                results={name: results_per_query(session, name) for name in HARVEST_SOURCES
+                         if results_per_query(session, name)},
+                ats_companies=ats_companies_per_cycle(session))
             # The operator's per-source query ceilings, read where the session is. `--max-queries`
             # flattens them to one number for a manual run and is not how the timer runs.
             limits = (dict.fromkeys(HARVEST_SOURCES, args.max_queries)

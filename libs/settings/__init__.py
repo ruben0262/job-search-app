@@ -136,11 +136,38 @@ DEFAULT_SOURCE_QUERIES_PER_CYCLE: dict[str, int] = {
 DEFAULT_QUERIES_PER_CYCLE = 40
 
 
+# How many results one query may bring back, per source. **Only the sources that actually take a
+# result count**: TheMuse and Profession take a *page* count and Working Nomads returns its whole
+# list, so a number here would be a lever attached to nothing — the same reason a feed source shows
+# no query ceiling.
+#
+# This is the other half of the query budget. Queries decide how many times we ask; this decides how
+# deep each ask reaches, and a board's own ceiling is usually the binding one — Getro returns 20 a
+# page, HiringCafe 40. Raising it past what the board serves changes nothing.
+DEFAULT_SOURCE_RESULTS_PER_QUERY: dict[str, int] = {
+    "himalayas": 100,
+    "justjoinit": 100,
+    "nofluffjobs": 100,
+    "jobicy": 50,
+    "hiringcafe": 40,
+    "linkedin": 30,
+}
+
+# How many company boards the ATS family polls in one cycle.
+#
+# **The token list grows on its own** from harvested apply-URLs, so this is the number that decides
+# whether a cycle reaches all of them or a fifth of them — and an operator setting it needs to know
+# how many we hold, which is why `/admin/sources` reports the total beside the control.
+DEFAULT_ATS_COMPANIES_PER_CYCLE = 400
+
+
 DEFAULTS: dict[str, object] = {
     "delivery_interval_min": DELIVERY_INTERVAL_MIN,
     "source_freshness_hours": DEFAULT_SOURCE_FRESHNESS_HOURS,
     "default_freshness_hours": DEFAULT_FRESHNESS_HOURS,
     "source_queries_per_cycle": DEFAULT_SOURCE_QUERIES_PER_CYCLE,
+    "source_results_per_query": DEFAULT_SOURCE_RESULTS_PER_QUERY,
+    "ats_companies_per_cycle": DEFAULT_ATS_COMPANIES_PER_CYCLE,
 }
 
 
@@ -189,6 +216,23 @@ def queries_per_cycle(session: Session, source: str) -> int:
     if source in DEFAULT_SOURCE_QUERIES_PER_CYCLE:
         return DEFAULT_SOURCE_QUERIES_PER_CYCLE[source]
     return DEFAULT_QUERIES_PER_CYCLE
+
+
+def results_per_query(session: Session, source: str) -> int | None:
+    """How deep one query to this source may reach, or `None` when the source has no such control.
+
+    Same override ladder as the rest. `None` is a real answer: Working Nomads returns its whole list
+    and TheMuse counts pages, so there is no result cap to set and the panel must not offer one.
+    """
+    stored = get(session, "source_results_per_query") or {}
+    if source in stored:
+        return int(stored[source])
+    return DEFAULT_SOURCE_RESULTS_PER_QUERY.get(source)
+
+
+def ats_companies_per_cycle(session: Session) -> int:
+    """How many company boards the ATS family polls in one cycle."""
+    return int(get(session, "ats_companies_per_cycle") or DEFAULT_ATS_COMPANIES_PER_CYCLE)
 
 
 def freshness_hours(session: Session, source: str) -> int:

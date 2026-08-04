@@ -731,3 +731,40 @@ def test_an_account_may_ask_for_a_window_as_tight_as_the_reference_watcher():
     from libs.contracts.config import SearchSection
 
     assert SearchSection(keywords=["python"], posted_within_hours=2).posted_within_hours == 2
+
+
+def test_the_operators_result_and_company_ceilings_reach_the_adapters(ctx):
+    """**Every adapter spells "how many" differently**, and a value under the wrong key is silent —
+    the board serves its own default and reports success, which is indistinguishable from the
+    setting having been applied.
+
+    Same shape as the freshness window that reached three keys and missed a fourth.
+    """
+    from services.harvester.source_config import RESULT_KEYS, build_source_configs
+
+    built = build_source_configs(
+        {}, env={},
+        results={"himalayas": 25, "nofluffjobs": 25, "jobicy": 25, "hiringcafe": 25},
+        ats_companies=750)
+
+    assert built["himalayas"]["limit"] == 25
+    assert built["nofluffjobs"]["page_size"] == 25
+    assert built["jobicy"]["count"] == 25
+    assert built["hiringcafe"]["results_wanted"] == 25
+    # One company ceiling across the whole ATS family, since they share a mechanism.
+    for name in ("greenhouse", "ashby", "workday"):
+        assert built[name]["max_companies"] == 750
+
+    # A source with no result key must not silently acquire one — Working Nomads returns its whole
+    # list and TheMuse counts pages, so there is nothing to cap.
+    assert "themuse" not in RESULT_KEYS
+    assert "workingnomads" not in RESULT_KEYS
+
+
+def test_an_unset_ceiling_leaves_the_platform_default_alone(ctx):
+    """An operator who has tuned nothing must get exactly the behaviour the code ships with."""
+    from services.harvester.source_config import PLATFORM_DEFAULTS, build_source_configs
+
+    built = build_source_configs({}, env={})
+    assert built["greenhouse"]["max_companies"] == PLATFORM_DEFAULTS["greenhouse"]["max_companies"]
+    assert "limit" not in built["himalayas"], "no result key until somebody sets one"

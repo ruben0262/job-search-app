@@ -24,6 +24,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from libs.db.models import (
+    AtsToken,
     CorpusJob,
     OperatorKeyword,
     User,
@@ -49,9 +50,11 @@ from libs.settings import (
     HARVEST_SOURCES,
     QUERY_TAKING_SOURCES,
     all_settings,
+    ats_companies_per_cycle,
     freshness_hours,
     put,
     queries_per_cycle,
+    results_per_query,
 )
 from libs.tenant.repository import TenantRepository
 from services.api.deps import current_user, get_db
@@ -345,11 +348,25 @@ def sources(db: Session = Depends(get_db), admin: User = Depends(require_admin))
     # once per distinct keyword. Feed-shaped and ATS sources take no query at all and report zero.
     wanted = len(distinct_keywords(TenantRepository(db).active_configs()))
     asked = QUERY_TAKING_SOURCES | {"linkedin"}
-    return {"sources": [{"name": name,
-                         "hours": freshness_hours(db, name),
-                         "queries_per_cycle": queries_per_cycle(db, name),
-                         "wanted": wanted if name in asked else 0}
-                        for name in HARVEST_SOURCES]}
+    return {
+        "sources": [{"name": name,
+                     "hours": freshness_hours(db, name),
+                     "queries_per_cycle": queries_per_cycle(db, name),
+                     # `None` where the source has no result cap to set at all — Working Nomads
+                     # returns its whole list, TheMuse counts pages. The panel shows no control
+                     # rather than one attached to nothing.
+                     "results_per_query": results_per_query(db, name),
+                     "wanted": wanted if name in asked else 0}
+                    for name in HARVEST_SOURCES],
+        # **The ATS ceiling, with the number it is a ceiling on.** The token list grows on its own
+        # from harvested apply-URLs, so 400 means nothing until you know whether we hold 500 or
+        # 12,000 — and that count is a query nobody was running.
+        "ats": {
+            "companies_per_cycle": ats_companies_per_cycle(db),
+            "companies_held": db.scalar(
+                select(func.count()).select_from(AtsToken)) or 0,
+        },
+    }
 
 
 class LimitPatch(BaseModel):

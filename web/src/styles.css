@@ -2199,7 +2199,7 @@ td.num {
   /* Two columns, not three. Four fields per row need the width, and `auto-fill` at 14rem gave
      three cramped ones with the header wrapped into the middle of the first. */
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(24rem, 100%), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(30rem, 100%), 1fr));
   gap: 0.35rem 2rem;
   margin-top: 0.75rem;
 }
@@ -2214,7 +2214,7 @@ td.num {
   /* A grid rather than space-between: four columns that have to line up down the list, and
      `justify-content` cannot align anything with the row above it. */
   display: grid;
-  grid-template-columns: 1fr auto auto 3.5rem;
+  grid-template-columns: 1fr auto auto auto 3.5rem;
   align-items: center;
   gap: 0.6rem;
   padding: 0.35rem 0;

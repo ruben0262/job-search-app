@@ -136,15 +136,23 @@ type Settings = {
   source_freshness_hours: Record<string, number>;
   default_freshness_hours: number;
   source_queries_per_cycle: Record<string, number>;
+  source_results_per_query: Record<string, number>;
+  ats_companies_per_cycle: number;
 };
 
 type Source = {
   name: string;
   hours: number;
   queries_per_cycle: number;
+  /** `null` where the source has no result cap to set — it serves a feed or counts pages. */
+  results_per_query: number | null;
   /** How many distinct queries this source currently has. 0 means it takes none. */
   wanted: number;
 };
+
+/** The ATS ceiling and the number it is a ceiling on. The token list grows from harvested
+ *  apply-URLs, so the limit means nothing without the total beside it. */
+type AtsInfo = { companies_per_cycle: number; companies_held: number };
 
 
 /** The four questions an operator arrives with, in the order they ask them. */
@@ -201,6 +209,7 @@ export function AdminPage() {
   const [users, setUsers] = useState<AdminUser[] | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [sources, setSources] = useState<Source[] | null>(null);
+  const [ats, setAts] = useState<AtsInfo | null>(null);
   // The account being deleted, held until the typed address matches. `null` closes the dialog.
   const [doomed, setDoomed] = useState<AdminUser | null>(null);
   const [typed, setTyped] = useState("");
@@ -211,6 +220,22 @@ export function AdminPage() {
   // it back from the response keeps the panel honest about what was actually stored.
   // Same shape as the freshness control beside it: write the whole map, read back what was
   // stored. One mechanism for both, because two would drift.
+  const saveResults = useAction(async (name: string, value: number) => {
+    const next = { ...(settings?.source_results_per_query ?? {}), [name]: value };
+    const body = await api.put<{ settings: Settings }>(
+      "/admin/settings/source_results_per_query", { value: next });
+    setSettings(body.settings);
+    setSources((rows) =>
+      rows?.map((row) => (row.name === name ? { ...row, results_per_query: value } : row)) ?? rows);
+  });
+
+  const saveAtsCompanies = useAction(async (value: number) => {
+    const body = await api.put<{ settings: Settings }>(
+      "/admin/settings/ats_companies_per_cycle", { value });
+    setSettings(body.settings);
+    setAts((row) => (row ? { ...row, companies_per_cycle: value } : row));
+  });
+
   const saveQueries = useAction(async (name: string, value: number) => {
     const next = { ...(settings?.source_queries_per_cycle ?? {}), [name]: value };
     const body = await api.put<{ settings: Settings }>(
@@ -260,13 +285,14 @@ export function AdminPage() {
       api.get<Health>("/admin/health"),
       api.get<{ users: AdminUser[] }>("/admin/users"),
       api.get<{ settings: Settings }>("/admin/settings"),
-      api.get<{ sources: Source[] }>("/admin/sources"),
+      api.get<{ sources: Source[]; ats: AtsInfo }>("/admin/sources"),
     ])
       .then(([h, u, s, src]) => {
         setHealth(h);
         setUsers(u.users);
         setSettings(s.settings);
         setSources(src.sources);
+        setAts(src.ats);
       })
       .catch(() => setFailed(true));
   }, []);
@@ -410,6 +436,7 @@ export function AdminPage() {
               <span className="source-name">source</span>
               <span>fresh</span>
               <span>queries</span>
+              <span>results</span>
               <span className="num">wanted</span>
             </div>
             {(sources ?? []).map((source) => (
@@ -442,6 +469,7 @@ export function AdminPage() {
                         <option key={n} value={n}>{n}</option>
                       ))}
                     </select>
+                    <Results source={source} save={saveResults} />
                     {/* Amber when the ceiling is below demand: that source is running behind and
                         the number beside it is why. */}
                     <span className={source.wanted > source.queries_per_cycle
@@ -461,12 +489,46 @@ export function AdminPage() {
                                    fetched once a cycle.">
                       <option value={1}>1</option>
                     </select>
+                    <Results source={source} save={saveResults} />
                     <span className="num muted">—</span>
                   </>
                 )}
               </div>
             ))}
           </div>
+
+          {/* **The ATS ceiling, with the number it is a ceiling on.** The token list grows on its
+              own from harvested apply-URLs, so 400 says nothing until you know whether we hold 500
+              or 12,000 — and that count was a query nobody ran. */}
+          {ats ? (
+            <>
+              <p className="label" style={{ marginTop: "1.5rem" }}>Company boards per cycle</p>
+              <span className="hint">
+                The ATS family polls one company board at a time. We hold{" "}
+                <strong>{ats.companies_held.toLocaleString()}</strong> company tokens, collected
+                automatically from apply links we have seen. A cycle that polls fewer than we hold
+                reaches the rest on later cycles.
+              </span>
+              <div className="row" style={{ marginTop: "0.6rem", alignItems: "center" }}>
+                <select
+                  value={ats.companies_per_cycle}
+                  disabled={saveAtsCompanies.busy}
+                  aria-label="ATS company boards per cycle"
+                  onChange={(event) => void saveAtsCompanies.run(Number(event.target.value))}
+                  style={{ maxWidth: "10rem" }}
+                >
+                  {[100, 200, 400, 800, 1500, 3000].map((n) => (
+                    <option key={n} value={n}>{n.toLocaleString()}</option>
+                  ))}
+                </select>
+                <span className={ats.companies_held > ats.companies_per_cycle
+                  ? "small behind" : "small muted"}>
+                  of {ats.companies_held.toLocaleString()} held
+                </span>
+              </div>
+              <Error>{saveAtsCompanies.error}</Error>
+            </>
+          ) : null}
         </div>
       ) : null}</> : null}
 
@@ -1224,6 +1286,30 @@ function verdictWord(stage: StageRow): string {
   if (stage.verdict === "warn") return `slow, over ${stage.amber_after_min}m`;
   if (stage.verdict === "down") return `too slow, over ${stage.red_after_min}m`;
   return "not enough data";
+}
+
+/** The result ceiling for one source, or nothing where the source has no such control — Working
+ *  Nomads returns its whole list and TheMuse counts pages, so a number there would be a lever
+ *  attached to nothing. */
+function Results({ source, save }: {
+  source: Source;
+  save: { busy: boolean; run: (name: string, value: number) => Promise<unknown> };
+}) {
+  if (source.results_per_query === null) {
+    return <span className="small muted">—</span>;
+  }
+  return (
+    <select
+      value={source.results_per_query}
+      disabled={save.busy}
+      aria-label={`${source.name} results per query`}
+      onChange={(event) => void save.run(source.name, Number(event.target.value))}
+    >
+      {[20, 30, 40, 50, 100, 200].map((n) => (
+        <option key={n} value={n}>{n}</option>
+      ))}
+    </select>
+  );
 }
 
 /** How many terms a page shows. Two columns of ten: the three-column grid put twenty-odd terms on

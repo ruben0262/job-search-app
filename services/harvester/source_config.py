@@ -119,6 +119,27 @@ KEYWORD_FILTER_SOURCES = frozenset({
 PREFILTER_SOURCES: frozenset[str] = frozenset()
 
 
+# The config key each adapter reads for "how many results". **One name per adapter, like
+# `QUERY_SHAPES`**, because they all spell it differently and a value under the wrong key is silent:
+# the board serves its own default and reports success.
+#
+# Absent means the source has no result cap to set — Working Nomads returns its whole list, TheMuse
+# and Profession count pages — and the panel must not offer a control for one.
+RESULT_KEYS: dict[str, str] = {
+    "himalayas": "limit",
+    "justjoinit": "per_page",
+    "nofluffjobs": "page_size",
+    "jobicy": "count",
+    "hiringcafe": "results_wanted",
+}
+
+# The ATS family polls company boards rather than issuing queries, so its ceiling is a company count.
+ATS_SOURCES: frozenset[str] = frozenset({
+    "greenhouse", "ashby", "lever", "smartrecruiters", "recruitee",
+    "breezy", "workday", "personio", "workable",
+})
+
+
 @dataclass(frozen=True)
 class QueryShape:
     """What one source can be asked for, and under which keys.
@@ -266,6 +287,8 @@ def build_source_configs(
     enabled: tuple[str, ...] | None = None,
     env: Mapping[str, str] | None = None,
     freshness: Mapping[str, int] | None = None,
+    results: Mapping[str, int] | None = None,
+    ats_companies: int | None = None,
 ) -> dict[str, dict]:
     """Platform defaults plus the union-derived filters, for every enabled source.
 
@@ -345,6 +368,13 @@ def build_source_configs(
         # honour "36 hours" and the wider of the two is the safe direction.
         if "posted_within_days" in cfg:
             cfg["posted_within_days"] = max(1, -(-window // 24))
+        # How deep one query reaches, under whichever key this adapter reads.
+        depth = (results or {}).get(source)
+        if depth and source in RESULT_KEYS:
+            cfg[RESULT_KEYS[source]] = int(depth)
+        # How many company boards one ATS cycle polls.
+        if ats_companies and source in ATS_SOURCES:
+            cfg["max_companies"] = int(ats_companies)
         # **Two different consumers of the same word, and only one of them is safe.**
         # `KEYWORD_FILTER_SOURCES` read this themselves and match the whole posting;
         # `PREFILTER_SOURCES` hands it to `ats.JobFilter`, which matches a title alone and is empty
