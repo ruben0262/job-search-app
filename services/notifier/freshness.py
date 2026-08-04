@@ -31,6 +31,7 @@ fresh".
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import replace
 
 from libs.corpus.postings import ProxyUnusable, fetch_meta, linkedin_id
@@ -38,9 +39,20 @@ from libs.corpus.repository import CorpusRepository
 
 logger = logging.getLogger(__name__)
 
-# About one digest's worth. The candidates are five times that, and dating a job nobody was going
-# to be sent spends the user's bandwidth on nothing.
+# About one digest's worth. The candidates are five times that, and refreshing a job nobody was
+# going to be sent spends the user's bandwidth on nothing.
 MAX_REFRESH = 12
+
+# **A wall-clock budget, and it is the limit that actually binds.** Each refresh is a proxied fetch
+# with retries and backoff, so twelve of them can take minutes — and the `notify` lane's claim
+# timeout is two. A job that overruns it is reclaimed mid-flight, re-runs, overruns again, and
+# `notified_at` is never committed: the account simply stops receiving anything, with every job
+# reported done. That is what happened the first hour this refresh was allowed to run at all.
+#
+# Thirty seconds leaves the rest of the two minutes for rendering and sending. Whatever is not
+# refreshed by then is passed through unchanged, which is the same fail-open rule a proxy error
+# already follows — a stale card is an annoyance, an empty feed reads as a broken product.
+REFRESH_BUDGET_SECONDS = 30.0
 
 
 def date_candidates(session, items: list, client) -> list:
@@ -63,6 +75,7 @@ def date_candidates(session, items: list, client) -> list:
     corpus = CorpusRepository(session)
     updated: list = []
     dated = 0
+    deadline = time.monotonic() + REFRESH_BUDGET_SECONDS
 
     for item in items:
         # **The gate used to be `item.posted_at is not None`, and it stopped this running at all.**
@@ -70,7 +83,7 @@ def date_candidates(session, items: list, client) -> list:
         # skipped everything — and with it went the closed-job check, the live applicant count and
         # the repost flag, which are the three things it is most worth asking about in the seconds
         # before a card is sent. A date was only ever one of the answers.
-        if dated >= MAX_REFRESH or not linkedin_id(item.url):
+        if dated >= MAX_REFRESH or time.monotonic() >= deadline or not linkedin_id(item.url):
             updated.append(item)
             continue
 
@@ -108,5 +121,6 @@ def date_candidates(session, items: list, client) -> list:
         dated += 1
 
     if dated:
-        logger.info("freshness: refreshed %d candidate(s) before selection", dated)
+        logger.info("freshness: refreshed %d candidate(s) in %.1fs before selection", dated,
+                    REFRESH_BUDGET_SECONDS - max(deadline - time.monotonic(), 0.0))
     return updated
