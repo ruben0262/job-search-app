@@ -344,9 +344,32 @@ class CorpusRepository:
         """
         values = {name: value for name, value in (
             ("applicants", applicants), ("easy_apply", easy_apply), ("reposted", reposted),
-            ("workplace", workplace), ("posted_at", posted_at)) if value is not None}
+            ("workplace", workplace)) if value is not None}
         if values:
             self._s.execute(update(CorpusJob).where(CorpusJob.id == job_id).values(**values))
+        if posted_at is not None:
+            self._set_posted_at(job_id, posted_at)
+
+    def _set_posted_at(self, job_id: int, posted_at: datetime) -> None:
+        """Record when a posting went up, **never later than the moment we first saw it**.
+
+        LinkedIn reports age relatively — "1 hour ago" — and the describe pass reads that caption
+        minutes or hours after the row was ingested, so the absolute time it computes is anchored to
+        *now* rather than to when we found the job. Every later re-read pushes `posted_at` forward.
+
+        Measured on the live box: `first_seen_at - posted_at` was **negative for nearly every
+        LinkedIn row**, by up to 162 minutes. A posting cannot have been published after we already
+        had it in the corpus, and the consequences were not cosmetic — the freshness filter, the
+        feed's recency ordering and the `posted → fetched` latency row all read this column, and the
+        latency query discards a negative span as a clock change.
+
+        Clamping rather than rejecting: the caption is still the best evidence of age we have, and
+        "no later than when we saw it" is the one thing about it that is certainly true.
+        """
+        self._s.execute(
+            update(CorpusJob)
+            .where(CorpusJob.id == job_id)
+            .values(posted_at=func.least(posted_at, CorpusJob.first_seen_at)))
 
     # ── embedding ────────────────────────────────────────────────────────────────────────────
 

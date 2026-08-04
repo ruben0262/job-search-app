@@ -248,3 +248,21 @@ def test_no_embedder_url_is_skipped_rather_than_failed(monkeypatch):
 
     monkeypatch.delenv("EMBEDDER_URL", raising=False)
     assert embedder_down() is None
+
+
+def test_a_stopped_feed_is_an_incident_within_the_hour_not_the_day():
+    """**The alarm that did not ring.** Delivery stopped for two and a half hours on 2026-08-04 —
+    a notify job overrunning its claim, being reclaimed, never committing — and the status page was
+    green the whole time, because the threshold was a full day.
+
+    A day is not a threshold for a product whose claim is fifteen minutes. Derived from the cadence
+    so it moves if the cadence does, rather than being a number somebody has to remember to change.
+    """
+    from libs.ops.alerts import SILENT_FEED_HOURS
+    from libs.settings import DELIVERY_INTERVAL_MIN
+
+    cycles_missed = SILENT_FEED_HOURS * 60 / DELIVERY_INTERVAL_MIN
+    assert 2 <= cycles_missed <= 8, (
+        f"{cycles_missed} missed cycles before anybody is told: under two cries wolf on one slow "
+        "run, over eight is most of a working morning")
+    assert SILENT_FEED_HOURS <= 2

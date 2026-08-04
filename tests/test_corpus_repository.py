@@ -418,3 +418,32 @@ def test_every_corpus_timestamp_comes_from_one_clock_and_it_is_the_real_one(repo
         "a corpus row's timestamps are out of order — something is still reading the transaction "
         "clock instead of the wall clock")
 
+
+
+def test_a_posting_is_never_recorded_as_published_after_we_found_it(repo):
+    """**LinkedIn reports age relatively and we read it late.**
+
+    "1 hour ago" is anchored to whenever the describe pass happened, which is minutes or hours after
+    ingest — so the absolute time computed from it drifts forward, and every re-read pushes it
+    further. Measured live, `first_seen_at - posted_at` was negative for nearly every LinkedIn row,
+    by as much as 162 minutes.
+
+    That is not cosmetic: the freshness filter, the feed's recency ordering and the
+    `posted → fetched` latency row all read this column, and a negative span is discarded as a clock
+    change rather than reported.
+    """
+    corpus, s = repo
+    job_id = corpus.add(url=_u(), source="linkedin", title="Engineer")
+    s.flush()
+    seen = s.get(CorpusJob, job_id).first_seen_at
+
+    # A caption read an hour after ingest, claiming the job went up "just now".
+    corpus.set_posting_metadata(job_id, posted_at=seen + timedelta(hours=1))
+    s.flush()
+    assert s.get(CorpusJob, job_id).posted_at <= seen
+
+    # A genuinely older timestamp is kept exactly as given — the clamp is a ceiling, not a rewrite.
+    older = seen - timedelta(days=2)
+    corpus.set_posting_metadata(job_id, posted_at=older)
+    s.flush()
+    assert s.get(CorpusJob, job_id).posted_at == older

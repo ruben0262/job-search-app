@@ -1372,6 +1372,35 @@ that "simplest" probably wins for now and the interface should make the other sw
 
 Wants a caller on a schedule, like 6c. Not urgent at 136 MB; not something to discover at 30 GB.
 
+### 6ac — LinkedIn's card signals, measured against live pages (added 2026-08-04)
+
+**Probed eight live postings through the owner's proxy rather than reasoning about regexes.** Three
+findings, and only one of them is a parser being wrong.
+
+**1. `applicants` parses correctly and means something else.** The captions read *"Be among the
+first 25 applicants"* and *"Over 200 applicants"*, and `parse_applicants` returns 25 and 200 —
+exactly right. But "be among the first 25" means **fewer than 25 have applied**, and "over 200" is a
+ceiling LinkedIn stops counting at. The card renders both as a bare `👥25` / `👥200`, which reads as
+a count. The owner's "the numbers are wrong most of the time" is correct and the fix is not in the
+parse: the **caption is the datum** and we throw it away. Store it, render `<25` and `200+`.
+
+**2. `reposted` is not on the page we read.** The word "repost" appears **nowhere** in the guest
+fragment on any of the eight samples, so `parse_reposted` returning False every time across 2,584
+rows is a true answer to the wrong question. The marker lives on the full `/jobs/view` page, like
+Easy Apply — which is the same 96 KB fetch, so the two should be read in one pass or not at all.
+
+**3. `posted_at` drifts forward every time we re-read it** ✅ **fixed.** LinkedIn reports age
+relatively and the describe pass reads the caption minutes or hours after ingest, so the absolute
+time is anchored to *now* rather than to when the job was found. Measured: `first_seen_at -
+posted_at` was negative for nearly every LinkedIn row, by up to 162 minutes. That column feeds the
+freshness filter, the feed's recency ordering and the `posted → fetched` latency row — and the
+latency query discards a negative span as a clock change, which is part of why that row read zero.
+`posted_at` is now clamped to never exceed `first_seen_at`: a posting cannot have been published
+after we already had it.
+
+**Still open**: 1 and 2. Both are small, and 2 costs a second page fetch per posting, so it belongs
+with the Easy Apply read rather than beside it.
+
 ### 6ab — split "posted → found" into their lag and ours ✅ **done 2026-08-04**
 
 **The owner's observation, and it is correct: that row measures two different things and neither is

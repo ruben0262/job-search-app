@@ -13,6 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from libs.ops.health import PlatformHealth
+from libs.settings import DELIVERY_INTERVAL_MIN
 
 # Disk headroom before a full disk stops being hypothetical. Postgres is the single point of
 # failure by design (`PLATFORM_ARCHITECTURE.md` §10.3), so this one is a page rather than a warning.
@@ -20,7 +21,21 @@ POSTGRES_DISK_BUDGET_BYTES = 60 * 1024**3
 POSTGRES_DISK_ALERT_FRACTION = 0.80
 
 # No delivery in this long, *with matches waiting*, is the silent-feed failure.
-SILENT_FEED_HOURS = 24
+#
+# **Was 24, cut to four cycles on 2026-08-04, because a day is not a threshold for a product that
+# promises fifteen minutes.** Delivery stopped for two and a half hours that afternoon — a notify
+# job overrunning its claim, being reclaimed, and never committing — and the status page stayed
+# entirely green throughout. The owner noticed before the platform did, which is the failure this
+# whole alert exists to prevent.
+#
+# Derived from the cadence rather than written as a number, so changing how often the feed is sent
+# moves the alarm with it. Four missed cycles is late enough that one slow run is not an incident
+# and early enough to matter on the day.
+#
+# The qualifier is what keeps it honest: this only fires when matches are **waiting**. A user with
+# nothing to send is not a broken feed, and without that half the alarm would ring for every quiet
+# account every hour.
+SILENT_FEED_HOURS = DELIVERY_INTERVAL_MIN * 4 / 60
 
 # Corpus growth past this multiple of projection means the retention trim is not running.
 CORPUS_GROWTH_ALERT_FACTOR = 1.5
