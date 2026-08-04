@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
+from libs import limits
 from libs.contracts.config import UserConfigSchema, migrate_config
 from libs.contracts.config import json_schema as config_schema
 from libs.contracts.onboarding import IdentitySchema
@@ -159,7 +160,22 @@ def put_config(body: UserConfigSchema, db: Session = Depends(get_db),
 
     Saving does not schedule anything. The harvester picks the config up on its next cycle by
     reading every active user's config — there is no per-user trigger to forget to fire.
+
+    **The keyword ceiling is checked here rather than in the schema**, because it is per account.
+    `UserConfigSchema` bounds each section at the platform maximum, which is the right hard stop for
+    everyone; the operator's `keywords` limit is what an individual account is allowed, and it went
+    unread until 2026-08-04 — the control existed, the panel rendered it, and the schema constant
+    was the only thing anybody was measured against. Counted **across sections**, matching the
+    harvester's own cap, or five sections would buy five times the allowance.
     """
+    ceiling = limits.resolve(db.get(User, user_id), "keywords")
+    total = sum(len(section.keywords) for section in body.sections)
+    if ceiling is not None and total > ceiling:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail=f"you have {total} search terms and the limit is {ceiling} — "
+                   "remove a few, or ask us to raise it")
+
     TenantRepository(db).save_config(user_id, body.model_dump())
     audit(logger, "onboarding.config", user=user_id,
           sections=len(body.sections),

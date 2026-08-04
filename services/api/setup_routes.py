@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from libs import limits
 from libs.agents import FILE_OWNERS, STARTABLE, UNOWNED_FILES
 from libs.agents.loop import touch_conversation
 from libs.db.models import (
@@ -196,10 +197,12 @@ def new_conversation(db: Session = Depends(get_db),
     refusal, because deleting one is the intended move.
     """
     existing = _conversations(db, user_id)
-    if len(existing) >= MAX_CONVERSATIONS:
+    # The admin panel's `conversations` limit, which until 2026-08-04 reached nothing.
+    ceiling = limits.resolve(db.get(User, user_id), "conversations") or MAX_CONVERSATIONS
+    if len(existing) >= ceiling:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
-            detail=f"You can keep {MAX_CONVERSATIONS} chats. Delete one to start another.")
+            detail=f"You can keep {ceiling} chats. Delete one to start another.")
 
     row = SetupConversation(user_id=user_id)
     db.add(row)

@@ -19,14 +19,28 @@ import os
 import random
 from datetime import datetime, timedelta
 
+from libs.settings import DELIVERY_INTERVAL_MIN
+
 # Global ceiling on simultaneous per-user LinkedIn loops. Becomes the `linkedin` lane's worker count.
 LINKEDIN_MAX_CONCURRENT_USERS = 4
 
-# The shared loop runs every 15 minutes because it costs nothing. The per-user tier does not: it
-# spends the user's own bandwidth, so its floor is an hour. A user on a 4-hour digest does not need
-# LinkedIn scraped 96 times a day, and this saving was not available under any shared design
-# (HARVESTER_PLAN.md §5.3).
-LINKEDIN_MIN_INTERVAL_MIN = 60
+# The floor under whatever an operator sets in the admin panel.
+#
+# **Was 60, lowered to the delivery cadence on 2026-08-04**, because at 60 the control was a lie:
+# `linkedin_interval_min` is a limit in the admin panel with a default of 15, and a floor above it
+# silently rewrote every value below an hour. Wiring the control without moving the floor would have
+# fixed the plumbing and left the behaviour exactly as it was.
+#
+# The floor existed because this tier spends a user's own bandwidth and carries ban risk. The first
+# argument is measurably weak — the cap is 200 MB a day and observed usage is 0.0 — and the second
+# is a **deliberate trade**: LinkedIn produced 337 of the founder's 348 jobs above the delivery
+# cutoff, and an hourly floor meant a posting there could be an hour old before the pipeline had
+# seen it at all, which is most of the lead time this product exists to sell.
+#
+# What still protects the tier: jitter below, the per-user proxy cap, the concurrency ceiling, and
+# quarantine on consecutive failures. What is gone is a blanket floor that also applied to accounts
+# using almost none of their allowance.
+LINKEDIN_MIN_INTERVAL_MIN = DELIVERY_INTERVAL_MIN
 
 # ±10% of the interval. Without it, every user created with the default interval fires at the same
 # instant forever — the thundering herd that per-user scheduling otherwise creates for free.

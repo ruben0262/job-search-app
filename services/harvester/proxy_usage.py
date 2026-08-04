@@ -30,6 +30,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from libs import limits
 from libs.db.models import ProxyCredential, User
 from services.harvester.fetch import ProxyCapExceeded, ProxyLease
 
@@ -65,7 +66,7 @@ class ProxyUsageRepository:
             return None
 
         self.roll_daily_window(user_id)
-        remaining = float(credential.daily_cap_mb) - float(credential.mb_used_today)
+        remaining = float(self._cap(user_id, credential)) - float(credential.mb_used_today)
         if remaining <= 0:
             return None
 
@@ -83,10 +84,21 @@ class ProxyUsageRepository:
         if credential is None:
             raise ProxyCapExceeded(f"user {user_id} has no proxy credential")
         used = float(credential.mb_used_today) + projected_mb
-        if used >= float(credential.daily_cap_mb):
+        cap = self._cap(user_id, credential)
+        if used >= float(cap):
             raise ProxyCapExceeded(
-                f"user {user_id} is at their daily proxy cap "
-                f"({used:.1f}/{credential.daily_cap_mb} MB)")
+                f"user {user_id} is at their daily proxy cap ({used:.1f}/{cap} MB)")
+
+    def _cap(self, user_id: UUID, credential: ProxyCredential) -> float:
+        """This account's daily ceiling, **from the admin panel first**.
+
+        `proxy_mb_per_day` is a limit an operator can set and it governed nothing: both readers used
+        `proxy_credentials.daily_cap_mb`, a column the panel does not write. The column stays as the
+        fallback, so an account nobody has tuned behaves exactly as it did.
+        """
+        user = self._s.get(User, user_id)
+        override = limits.resolve(user, "proxy_mb_per_day") if user is not None else None
+        return float(override if override is not None else credential.daily_cap_mb)
 
     # ── metering ─────────────────────────────────────────────────────────────────────────────
 

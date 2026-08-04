@@ -150,11 +150,21 @@ def test_the_gate_is_per_user_on_the_same_shared_row(ctx):
 
 # ── the governor ──────────────────────────────────────────────────────────────────────────────
 
-def test_the_linkedin_interval_is_floored_at_an_hour():
-    """The shared loop is free at 15 minutes; this tier is not, so it does not inherit that rate."""
-    assert resolve_linkedin_interval(15) == LINKEDIN_MIN_INTERVAL_MIN
-    assert resolve_linkedin_interval(30) == LINKEDIN_MIN_INTERVAL_MIN
+def test_the_floor_never_overrides_what_an_operator_asked_for():
+    """**The floor was 60 and the panel's own default is 15**, so an operator setting the documented
+    value silently got four times it — and wiring the control without moving the floor would have
+    fixed the plumbing while leaving the behaviour exactly as it was.
+
+    A floor still exists, at the delivery cadence: fetching a paid tier more often than the feed is
+    ever sent is spend with nowhere to go.
+    """
+    from libs.settings import DELIVERY_INTERVAL_MIN
+
+    assert LINKEDIN_MIN_INTERVAL_MIN == DELIVERY_INTERVAL_MIN
+    assert resolve_linkedin_interval(15) == 15
     assert resolve_linkedin_interval(240) == 240
+    # Below the cadence there is nothing to gain, so it still clamps.
+    assert resolve_linkedin_interval(5) == DELIVERY_INTERVAL_MIN
 
 
 def test_jitter_stays_within_ten_percent_and_never_goes_backwards():

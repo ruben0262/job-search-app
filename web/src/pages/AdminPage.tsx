@@ -451,7 +451,16 @@ export function AdminPage() {
                   </>
                 ) : (
                   <>
-                    <span className="small muted">feed</span>
+                    {/* **A feed source issues exactly one request a cycle**, so the honest value is
+                        1 rather than the word "feed" — which said "this control does not apply"
+                        without saying what happens instead. Disabled because there is nothing to
+                        choose: these boards have no search parameter, so a second request would
+                        fetch the same page again. */}
+                    <select value={1} disabled aria-label={`${source.name} queries per cycle`}
+                            title="This board serves a feed and takes no search term, so it is
+                                   fetched once a cycle.">
+                      <option value={1}>1</option>
+                    </select>
                     <span className="num muted">—</span>
                   </>
                 )}
@@ -1174,13 +1183,11 @@ function bar(x: number, y: number, width: number, height: number, radius: number
        + `L${x + width},${base} Z`;
 }
 
+/** The disclosure arrow. A character rather than an inline SVG: the SVG rendered as a grey block in
+ *  the row and flickered on every re-render as a 24-unit viewBox was re-rasterised to 12 pixels. */
 function Caret({ open }: { open: boolean }) {
   return (
-    <svg className={open ? "caret-icon open" : "caret-icon"} width="12" height="12"
-         viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M9 5l7 7-7 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round"
-            strokeLinejoin="round" />
-    </svg>
+    <span className={open ? "caret-icon open" : "caret-icon"} aria-hidden="true">›</span>
   );
 }
 

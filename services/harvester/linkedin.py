@@ -38,6 +38,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy import or_, select
 
+from libs import limits
 from libs.corpus.repository import CorpusRepository
 from libs.db.models import User, UserConfig
 from libs.obs import audit
@@ -163,8 +164,13 @@ def run_for_due_users(session, *, now: datetime | None = None,
         # Scheduled first, and deliberately: every path below either succeeds or fails, and both
         # want the same next run. Setting it at the end would skip it on the exception path and
         # leave the user re-attempted on every tick.
-        user.linkedin_next_run_at = next_linkedin_run(
-            now, resolve_linkedin_interval(user.linkedin_interval_min or DELIVERY_INTERVAL_MIN))
+        # **The operator's control, not the column beside it.** `linkedin_interval_min` is a limit
+        # in the admin panel and it reached nothing: this read `users.linkedin_interval_min`, a
+        # column the panel does not write, so moving the slider moved a number on a page. The column
+        # remains the fallback for an account nobody has tuned.
+        interval = (limits.resolve(user, "linkedin_interval_min")
+                    or user.linkedin_interval_min or DELIVERY_INTERVAL_MIN)
+        user.linkedin_next_run_at = next_linkedin_run(now, resolve_linkedin_interval(interval))
 
         queries = queries_for(session, user)
         if not queries:
@@ -238,8 +244,10 @@ def _run_one(user: User, queries: list[dict], *, corpus: CorpusRepository,
                 # up to an hour and then rescored underneath the user. There is no window now.
                 new_jobs = _ingest(corpus, links)
                 with make_client(lease) as client:
-                    described = describe_pending(corpus, client, linkedin=True,
-                                                 limit=DESCRIBE_LIMIT)
+                    described = describe_pending(
+                        corpus, client, linkedin=True,
+                        # Also an admin limit that reached nothing until 2026-08-04.
+                        limit=limits.resolve(user, "describe_per_run") or DESCRIBE_LIMIT)
 
     except SecretsError:
         # The store could not answer. Not this user's fault and not a reason to stop the pass.

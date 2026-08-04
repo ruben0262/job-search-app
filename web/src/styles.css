@@ -2196,10 +2196,18 @@ td.num {
 /* A labelled row per board rather than a JSON blob. The set of sources changes, so the grid tracks
    rather than a hand-written column per site. */
 .sources {
+  /* Two columns, not three. Four fields per row need the width, and `auto-fill` at 14rem gave
+     three cramped ones with the header wrapped into the middle of the first. */
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(14rem, 100%), 1fr));
-  gap: 0.35rem 1.2rem;
+  grid-template-columns: repeat(auto-fill, minmax(min(24rem, 100%), 1fr));
+  gap: 0.35rem 2rem;
   margin-top: 0.75rem;
+}
+
+/* The header is a row, not a cell. Without this it takes one grid slot and the first source lands
+   beside it, which is what made the list look shuffled. */
+.sources .source-head {
+  grid-column: 1 / -1;
 }
 
 .source-row {
@@ -2558,11 +2566,18 @@ td.num {
   width: 1.6rem;
   padding-right: 0;
 }
+/* **A text glyph, not an inline SVG.** The SVG rendered as a grey block in the row and flickered
+   on every re-render as the browser re-rasterised a 24-unit viewBox into 12 pixels. A character
+   cannot do either, needs no viewBox, and is one line instead of six. */
 .caret-icon {
-  /* `--dim` is the de-emphasis step, and it made the only thing on the page saying "this opens"
-     nearly invisible. A disclosure control has to be findable before it can be restrained. */
+  display: inline-block;
+  width: 0.75rem;
   color: var(--muted);
-  transition: transform var(--fade) var(--ease), color var(--fade) var(--ease);
+  font-size: 0.7rem;
+  line-height: 1;
+  /* Only the rotation animates. Transitioning colour as well is what made the hover read as a
+     flash rather than a change. */
+  transition: transform var(--fade) var(--ease);
 }
 .caret-icon.open {
   transform: rotate(90deg);

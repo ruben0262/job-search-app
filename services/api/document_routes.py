@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from libs import limits
 from libs.db.models import User, UserDocument
 from libs.db.models.document import DOCUMENT_KINDS
 from libs.documents import MAX_FILE_BYTES, SUPPORTED, UnsupportedDocument, extract_text
@@ -96,10 +97,13 @@ async def upload(request: Request, kind: str = Form(...), file: UploadFile = Fil
     total = db.scalar(
         select(func.count()).select_from(UserDocument)
         .where(UserDocument.user_id == user_id)) or 0
-    if total >= MAX_DOCUMENTS_PER_USER:
+    # The operator's ceiling first; the constant is the fallback for an account nobody has tuned.
+    # This read the constant alone, so the `documents` control in the admin panel governed nothing.
+    ceiling = limits.resolve(db.get(User, user_id), "documents") or MAX_DOCUMENTS_PER_USER
+    if total >= ceiling:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
-            detail=f"you have {total} documents, the limit is {MAX_DOCUMENTS_PER_USER} — "
+            detail=f"you have {total} documents, the limit is {ceiling} — "
                    f"remove one first")
 
     document = UserDocument(user_id=user_id, kind=kind, filename=file.filename or "upload",

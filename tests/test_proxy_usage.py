@@ -109,13 +109,31 @@ def test_an_unresolvable_secret_counts_as_a_failure(ctx):
 # ── admission ─────────────────────────────────────────────────────────────────────────────────
 
 def test_admission_raises_at_the_cap(ctx):
+    """**The operator's limit is the authority, not the column.** `proxy_mb_per_day` is rendered in
+    the admin panel and was read by nothing: both readers used `proxy_credentials.daily_cap_mb`,
+    which the panel does not write, so the control governed nothing."""
     repo, s = ctx
     user = _user(s)
+    user.limits = {"proxy_mb_per_day": 100}
     _credential(s, user, daily_cap_mb=100, mb_used_today=99)
+    s.flush()
 
     repo.check_admission(user.id)                      # still under
     with pytest.raises(ProxyCapExceeded, match="daily proxy cap"):
         repo.check_admission(user.id, projected_mb=5)  # this request would cross it
+
+
+def test_the_operators_cap_beats_the_column(ctx):
+    """Two values for one ceiling is how they disagree. The limit wins, and a lease is refused on
+    the operator's number rather than on whatever provisioning wrote."""
+    repo, s = ctx
+    user = _user(s)
+    user.limits = {"proxy_mb_per_day": 10}
+    _credential(s, user, daily_cap_mb=500, mb_used_today=12)
+    s.flush()
+
+    with pytest.raises(ProxyCapExceeded):
+        repo.check_admission(user.id)
 
 
 # ── metering ──────────────────────────────────────────────────────────────────────────────────

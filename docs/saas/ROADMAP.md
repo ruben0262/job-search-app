@@ -1080,8 +1080,26 @@ building on something unverified.
 > want reach their model. → **6u**, **6x**.
 
 Stage 1 is not "the code is written". It is: for **every enabled source**, we have seen that the
-keyword reaches it, the window reaches it, and rows come back. That check does not exist yet and is
-the immediate next piece of work.
+keyword reaches it, the window reaches it, and rows come back — **and every control in the admin
+panel that governs stage 1 has been shown to reach the thing it names.** Done 2026-08-04; six of the
+ten limits in the catalogue turned out to govern nothing, and a test now fails if a seventh is ever
+added without a consumer.
+
+**Each stage adds its own row to the latency drill-down**, and those rows are much of why the stages
+are worth doing. 6p measures six handoffs today; stages 2 and 3 add two more, and both are places
+work can quietly pile up:
+
+- **Stage 2 — "found → structured".** How long between a posting arriving and its country, field and
+  the rest being extracted. A row nobody has extracted yet is a row no filter can act on, so a
+  backlog here stalls everything behind it while every existing row still looks healthy.
+- **Stage 3 — "structured → filtered".** How long the pre-score filter takes per user and — more
+  useful than the duration — **how many rows it removed**. That is the number that says whether the
+  filter is earning its place or quietly costing somebody jobs, and it is the same before/after
+  count 6o.1 demands, reported continuously rather than once at ship time.
+
+Neither can be built before the stage it measures, which is why they are recorded here rather than
+in 6p. The drill-down takes a new row by adding one entry to `STAGES`; forgetting to add it is how a
+stage ends up invisible.
 
 ### 6t — sources, and the seven taken out (decided 2026-08-04)
 
@@ -1377,7 +1395,16 @@ limit, none is visible, and the first two are the ones that decide whether this 
    with a fifteen-minute timer, one full rotation takes over three hours regardless of what the
    per-user interval says.
 3. **`daily_cap_mb = 200` per user.** A hard stop — a user at their cap fetches nothing until
-   midnight, and the only symptom is an empty feed. Belongs in the panel beside the rest.
+   midnight, and the only symptom is an empty feed. ✅ The operator's `proxy_mb_per_day` limit is the
+   authority as of 2026-08-04; the column is now vestigial and should be dropped.
+
+   **Two things the *user* should get from this** (owner, 2026-08-04, and both are small):
+   a **bar in their settings showing today's LinkedIn proxy usage** against their allowance, and a
+   **notification when they reach it**. Today an account at its cap simply stops receiving LinkedIn
+   jobs with no explanation anywhere — the single most confusing possible symptom, because
+   everything else about the account looks healthy. The number is already metered
+   (`proxy_credentials.mb_used_today`) and rolls at the user's local midnight, so this is a read and
+   a progress element rather than new machinery.
 4. **No cross-user dedup on this tier** (`HARVESTER_PLAN.md` §5.3), by design: two users searching
    "python developer" both fetch it, because the alternative is spending one person's credential on
    another's query. It is the reason this tier's cost scales with **users × keywords** while the
