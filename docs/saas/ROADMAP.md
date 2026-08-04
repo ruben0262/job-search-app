@@ -1361,6 +1361,29 @@ delay never was.
 Keywords per user and locations per user stay where they are — they bound what one person can ask
 for rather than what we do to a source, and the config form already shows both.
 
+**Four more on the LinkedIn tier, found while raising its ceiling on 2026-08-04.** Each is a real
+limit, none is visible, and the first two are the ones that decide whether this tier scales:
+
+1. **`LINKEDIN_MIN_INTERVAL_MIN = 60`.** A user's LinkedIn is fetched **once an hour**, not every
+   fifteen minutes — the shared timer ticks four times per user run. Live: the two accounts are next
+   due at 13:05 and 14:16. **This is the single largest gap between the product's claim and its
+   behaviour**: LinkedIn produced 337 of 348 jobs above cutoff for the founder, and a posting found
+   there can be up to an hour old before the pipeline has seen it at all, before any of the
+   handoffs the latency drill-down measures. The floor exists because the tier spends a user's
+   bandwidth and carries ban risk, and both arguments are weaker than they were: the cap is 200 MB a
+   day and measured usage is **0.0**. Lowering it to the delivery cadence is the obvious move and it
+   is a **ban-risk decision**, so it wants a deliberate choice rather than a quiet edit.
+2. **`LINKEDIN_MAX_CONCURRENT_USERS = 4`.** Four users per pass. Harmless at two accounts; at fifty,
+   with a fifteen-minute timer, one full rotation takes over three hours regardless of what the
+   per-user interval says.
+3. **`daily_cap_mb = 200` per user.** A hard stop — a user at their cap fetches nothing until
+   midnight, and the only symptom is an empty feed. Belongs in the panel beside the rest.
+4. **No cross-user dedup on this tier** (`HARVESTER_PLAN.md` §5.3), by design: two users searching
+   "python developer" both fetch it, because the alternative is spending one person's credential on
+   another's query. It is the reason this tier's cost scales with **users × keywords** while the
+   shared cycle's scales with distinct keywords alone. Worth stating because it is the term that
+   grows, and no ceiling here changes it.
+
 ## Deliberately deferred
 
 Do not build these before Phase 4, regardless of how appealing they look mid-build.
