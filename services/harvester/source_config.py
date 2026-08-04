@@ -38,24 +38,54 @@ from uuid import UUID
 # handles) and plus the aggregators already running. The ATS boards are where employers post
 # directly and are the ones worth having; they need `ats_tokens` seeded or they iterate an empty
 # company list and return nothing, silently, because that is the adapter contract.
+# **Narrowed to sources that honour a keyword, 2026-08-04.** Every source was pinged from the
+# production box and asked the same question three ways — a real keyword, an unrelated keyword,
+# nonsense — and seven of them answered identically every time. A source that cannot be asked for
+# anything cannot be part of a targeted harvest; it is a feed we re-ingest and then filter after
+# the fact, which is a different design and one to revisit after beta (ROADMAP 6t).
 DEFAULT_ENABLED = (
-    # Remote-work aggregators — the original seven, kept.
-    "remotive", "himalayas", "remoteok", "arbeitnow",
-    "weworkremotely", "workingnomads", "jobicy",
+    # Remote-work aggregators that filter on what we ask for.
+    "himalayas", "weworkremotely", "workingnomads", "jobicy",
     # ATS boards: employers posting directly. Gated on `ats_tokens` having rows.
     "greenhouse", "ashby", "lever", "smartrecruiters",
     "recruitee", "breezy", "workday", "personio", "workable",
     # VC and aggregator boards the reference runs.
-    "hiringcafe", "consider", "getro", "themuse",
+    "hiringcafe", "themuse",
     # European boards, which is where this platform's users actually are.
-    "nofluffjobs", "nofluffjobs_hu", "profession", "dreamjobs", "justjoinit",
+    "nofluffjobs", "profession", "justjoinit",
 )
+
+# Removed 2026-08-04, with the measurement that removed them. Re-adding any of these is a decision
+# about *how* to use a source that cannot be searched, not a config change (ROADMAP 6t).
+#
+#   arbeitnow       identical 175 results for "engineer", "nurse", "zzqqxwv" and empty — `search`
+#                   is accepted and ignored. 4,236 rows in 7 days, the largest single contributor,
+#                   and every one of our 33 queries a cycle refetched the same page.
+#   remotive        identical 31 results for the same four. 2 rows in 7 days.
+#   remoteok        `/api` is a full dump with no search parameter at all. 233 rows in 7 days.
+#   dreamjobs       1 result, unchanged by any term.
+#   consider        iterates `cfg["boards"]`, which nothing sets. **0 rows, ever.**
+#   getro           the same. **0 rows, ever.**
+#   nofluffjobs_hu  identical config to `nofluffjobs`, so it issued the identical request and every
+#                   row it found was deduplicated away. 0 rows.
+DEFERRED_SOURCES = ("arbeitnow", "remotive", "remoteok", "dreamjobs",
+                    "consider", "getro", "nofluffjobs_hu")
 
 # Board APIs that iterate `cfg["queries"]` and do nothing without it. Getting this list wrong is
 # silent: the adapter makes no request, logs nothing, and returns [] - which is its contract.
-QUERY_TAKING_SOURCES = frozenset({
-    "remotive", "himalayas", "arbeitnow", "hiringcafe", "nofluffjobs", "nofluffjobs_hu",
-    "jooble", "consider", "getro",
+QUERY_TAKING_SOURCES = frozenset({"himalayas", "hiringcafe", "nofluffjobs", "jooble"})
+
+# Adapters that read `cfg["keywords"]` **themselves** and filter on title + description + tags.
+#
+# **Not the same mechanism as `PREFILTER_SOURCES`, and the difference is the one that cost us six
+# hours.** `ats.JobFilter` matches a *title alone* and then demands the location string match a
+# slug; that is the filter that took eleven sources to zero. These six read a wide haystack — the
+# whole posting — which is what makes a keyword filter here a targeting decision rather than a way
+# to lose the unusually worded jobs 6o.1 measured.
+#
+# `profession` is the odd one: it issues **one request per keyword**, so for it this is server-side.
+KEYWORD_FILTER_SOURCES = frozenset({
+    "jobicy", "justjoinit", "workingnomads", "themuse", "weworkremotely", "profession",
 })
 
 
@@ -123,25 +153,20 @@ class QueryShape:
 # Grounded in what each adapter actually sends, not in what would be tidy. Read alongside the
 # `gather_*` functions in `sources/` — if one of those changes its parameter names, this is the
 # other half of that change.
+# Only the sources that iterate `cfg["queries"]` and were measured to honour the term. `location_key`
+# is still declared where a board genuinely has one, but the cycle passes no location axis at all
+# (see `run_cycle`) — the declaration records the capability, the caller decides not to use it.
 QUERY_SHAPES: dict[str, QueryShape] = {
-    # `params = {"limit": 100, "search": ...}` — no geography at all.
-    "remotive": QueryShape("search"),
-    # `params = {"search": ...}` plus a `remote` flag it filters on locally.
-    "arbeitnow": QueryShape("search", remote_key="remote"),
-    # `params["query"]`, and seniority. No location.
+    # `params["query"]`, and seniority. No location. Measured: 6 hits for a real term, 0 for noise.
     "himalayas": QueryShape("query"),
-    # The only free-tier source with a real location model: named regions plus workplace types.
+    # The one free-tier source with a real location model: named regions plus workplace types.
+    # Measured: 40 for a real term, 0 for noise.
     "hiringcafe": QueryShape("search_term", location_key="location", remote_key="is_remote"),
     # `criteriaSearch.requirement`. Geography is `criteriaSearch.city`, set per source from `cities`
-    # rather than per query — which is why a region-level stem is meaningless here and the axis is
-    # collapsed rather than sent.
+    # rather than per query. Measured: 123 for a real term, 0 for noise.
     "nofluffjobs": QueryShape("keyword"),
-    "nofluffjobs_hu": QueryShape("keyword"),
-    # POST {"keywords", "location"} — takes both.
+    # POST {"keywords", "location"} — takes both. Key-gated, so unmeasured.
     "jooble": QueryShape("keywords", location_key="location"),
-    # A list of plain strings used as `searchText`.
-    "consider": QueryShape(None, bare=True),
-    "getro": QueryShape(None, bare=True),
 }
 
 # The recency window when no user has asked for one. Matches the config schema's default rather
@@ -314,8 +339,11 @@ def build_source_configs(
         # operator narrowing a source has to narrow it here too or nothing changes.
         if "posted_within_hours" in cfg:
             cfg["posted_within_hours"] = window
-        # **Deliberately not handed to `JobFilter`.** See `PREFILTER_SOURCES`.
-        if keywords and source in PREFILTER_SOURCES:
+        # **Two different consumers of the same word, and only one of them is safe.**
+        # `KEYWORD_FILTER_SOURCES` read this themselves and match the whole posting;
+        # `PREFILTER_SOURCES` hands it to `ats.JobFilter`, which matches a title alone and is empty
+        # for the reason written above it.
+        if keywords and (source in KEYWORD_FILTER_SOURCES or source in PREFILTER_SOURCES):
             cfg["keywords"] = keywords
         if locations and source in PREFILTER_SOURCES:
             cfg["location_keywords"] = locations

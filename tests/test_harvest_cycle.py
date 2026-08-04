@@ -94,7 +94,7 @@ def test_a_cycle_ingests_dedups_and_embeds(ctx):
     with _embedder() as embedder:
         report, _ = run_cycle(
             s, embedder=embedder, expected_embedder=EXPECTED,
-            source_configs=_sources(remotive={}),
+            source_configs=_sources(himalayas={}),
             run_source=lambda source, cfg, repo: list(found))
     s.flush()
 
@@ -113,11 +113,11 @@ def test_the_same_job_twice_is_ingested_once(ctx):
 
     with _embedder() as embedder:
         first, _ = run_cycle(s, embedder=embedder, expected_embedder=EXPECTED,
-                             source_configs=_sources(remotive={}),
+                             source_configs=_sources(himalayas={}),
                              run_source=lambda *a: [link])
         s.flush()
         second, _ = run_cycle(s, embedder=embedder, expected_embedder=EXPECTED,
-                              source_configs=_sources(remotive={}),
+                              source_configs=_sources(himalayas={}),
                               run_source=lambda *a: [link])
     s.flush()
 
@@ -133,7 +133,7 @@ def test_a_snippet_saves_the_description_fetch(ctx):
     _active_user(s)
     with _embedder() as embedder:
         run_cycle(s, embedder=embedder, expected_embedder=EXPECTED,
-                  source_configs=_sources(remotive={}),
+                  source_configs=_sources(himalayas={}),
                   run_source=lambda *a: [_link(snippet="A real description. " * 30)])
     s.flush()
 
@@ -152,7 +152,7 @@ def test_the_fan_out_budget_is_respected(ctx):
     # **A source config, because the query set is built for the sources that are enabled.** It used
     # to be built for a hardcoded pair that was enabled nowhere, so the budget could be exercised
     # against `{}` -- which is precisely how the whole fold came to govern no requests at all.
-    report, deferred = run_cycle(s, source_configs=_sources(remotive={}, himalayas={}),
+    report, deferred = run_cycle(s, source_configs=_sources(himalayas={}, nofluffjobs={}),
                                  max_queries=7, run_source=lambda *a: [])
     assert report.queries_planned == 7
     assert report.queries_deferred > 0
@@ -166,7 +166,7 @@ def test_deferred_queries_are_returned_for_the_next_cycle(ctx):
     for i in range(4):
         _active_user(s, keywords=[f"u{i}a", f"u{i}b"])
 
-    asked = _sources(remotive={}, himalayas={})
+    asked = _sources(himalayas={}, nofluffjobs={})
     _, deferred = run_cycle(s, source_configs=asked, max_queries=3, run_source=lambda *a: [])
     assert deferred
 
@@ -185,7 +185,7 @@ def test_a_dormant_user_costs_nothing(ctx):
     dormant.status, dormant.active = "dormant", False
     s.flush()
 
-    report, _ = run_cycle(s, source_configs=_sources(remotive={}), run_source=lambda *a: [])
+    report, _ = run_cycle(s, source_configs=_sources(himalayas={}), run_source=lambda *a: [])
     assert report.queries_planned >= 1
     assert active.id and dormant.id
 
@@ -197,7 +197,7 @@ def test_an_unverified_signup_consumes_no_harvest_budget(ctx):
     pending.status, pending.active = "pending_verification", False
     s.flush()
 
-    report, _ = run_cycle(s, source_configs=_sources(remotive={}), run_source=lambda *a: [])
+    report, _ = run_cycle(s, source_configs=_sources(himalayas={}), run_source=lambda *a: [])
     assert report.queries_planned == 0
 
 
@@ -211,17 +211,17 @@ def test_one_dead_source_cannot_sink_the_cycle(ctx):
     good = _link()
 
     def flaky(source, cfg, repo):
-        if source.key == "remotive":
+        if source.key == "himalayas":
             raise RuntimeError("upstream changed its JSON again")
         return [good]
 
     with _embedder() as embedder:
         report, _ = run_cycle(s, embedder=embedder, expected_embedder=EXPECTED,
-                              source_configs=_sources(remotive={}, himalayas={}),
+                              source_configs=_sources(himalayas={}, nofluffjobs={}),
                               run_source=flaky)
     s.flush()
 
-    assert "remotive" in report.source_failures
+    assert "himalayas" in report.source_failures
     assert report.new_jobs == 1, "the healthy source still delivered"
 
 
@@ -283,7 +283,7 @@ def test_source_filters_come_from_the_union_of_users_not_one_person(ctx):
     # for; it is deliberately no longer handed to the client-side `JobFilter`, which dropped every
     # ATS and VC-board row for six hours the first time it ever actually ran (`PREFILTER_SOURCES`).
     built = build_source_configs(configs, env={})
-    assert built["remotive"]["queries"] == [{"search": "golang"}, {"search": "rust"}]
+    assert built["himalayas"]["queries"] == [{"query": "golang"}, {"query": "rust"}]
 
 
 def test_the_filter_reads_the_sections_a_real_config_actually_stores(ctx):
@@ -321,12 +321,12 @@ def test_each_board_is_asked_in_the_shape_it_reads(ctx):
     built = build_source_configs(
         {uuid.uuid4(): {"sections": [{"keywords": ["golang"]}]}}, env={})
 
-    assert built["remotive"]["queries"] == [{"search": "golang"}]
+    assert built["himalayas"]["queries"] == [{"query": "golang"}]
     assert built["himalayas"]["queries"] == [{"query": "golang"}]
     assert built["nofluffjobs"]["queries"] == [{"keyword": "golang"}]
     assert built["hiringcafe"]["queries"] == [{"search_term": "golang"}]
     # Consider and Getro iterate strings, not dicts, and use each one as `searchText`.
-    assert built["consider"]["queries"] == ["golang"]
+    assert built["nofluffjobs"]["queries"] == [{"keyword": "golang"}]
 
 
 def test_a_board_with_no_geography_is_asked_once_per_keyword(ctx):
@@ -372,6 +372,10 @@ def test_a_job_a_board_returned_survives_every_enabled_source_s_own_filtering(ct
     from services.harvester.source_config import build_source_configs
     from services.harvester.sources.ats import JobFilter
 
+    # **A job the platform exists to catch and no keyword list would name.** This exact shape is
+    # the one 6o.1 measured: 239 of 376 jobs scoring >=60 had a keyword in the title, so a
+    # title-only match throws away a third of the good ones — and they are the unusually worded
+    # ones, which are often the interesting ones.
     ordinary = JobLink(
         url="https://boards.greenhouse.io/acme/jobs/1",
         title="Vehicle Dynamics Specialist",
@@ -383,10 +387,45 @@ def test_a_job_a_board_returned_survives_every_enabled_source_s_own_filtering(ct
             {"keywords": ["software engineer"], "locations": ["european_union"]}]}},
         env={})
 
-    rejected = [name for name, cfg in built.items() if not JobFilter(cfg).ok(ordinary)]
+    # Only the sources that route through `JobFilter` — the ATS family. The others run their own
+    # matching over the whole posting rather than the title, which is a targeting decision the
+    # operator makes and not the accident this test exists for.
+    routed = [name for name in built if name in
+              {"greenhouse", "ashby", "lever", "smartrecruiters", "recruitee",
+               "breezy", "workday", "personio", "workable"}]
+    assert routed, "the ATS family should be enabled; this test is empty without it"
+
+    rejected = [name for name in routed if not JobFilter(built[name]).ok(ordinary)]
     assert not rejected, (
         f"{rejected} would drop a real posting before it ever reached the corpus — the shape of "
         "the incident that zeroed eleven sources")
+
+
+def test_a_keyword_filtered_source_keeps_what_matches_and_judges_nothing_else(ctx):
+    """The six sources that filter on keywords do it over **the whole posting**, and that is what
+    makes it a targeting decision rather than the accident above.
+
+    A posting matching a user's term must survive; one matching nothing is correctly not ours to
+    keep, since these boards are only worth querying at all because they answer a search. What must
+    never happen is a *second* reason to drop it — a location slug, or a window a platform constant
+    overrode — creeping back in beside the keyword.
+    """
+    from services.harvester.source_config import (
+        KEYWORD_FILTER_SOURCES,
+        build_source_configs,
+    )
+
+    built = build_source_configs(
+        {uuid.uuid4(): {"sections": [
+            {"keywords": ["software engineer"], "locations": ["european_union"]}]}},
+        env={})
+
+    for name in KEYWORD_FILTER_SOURCES & set(built):
+        cfg = built[name]
+        assert cfg["keywords"] == ["software engineer"], f"{name} was asked for nothing"
+        # The keyword is the only filter these carry. A location list here would be the slug
+        # comparison that emptied the ATS family, arriving by a different door.
+        assert "location_keywords" not in cfg, f"{name} would also judge a posting on its location"
 
 
 def test_a_source_whose_window_an_operator_narrowed_actually_narrows(ctx):
@@ -435,11 +474,11 @@ def test_the_union_is_asked_for_not_used_to_throw_away_what_a_board_sent(ctx):
 
     assert not PREFILTER_SOURCES, (
         "re-enabling one needs the before/after count of good matches lost that 6o.1 demands")
-    for source in ("greenhouse", "ashby", "consider", "getro", "remotive"):
+    for source in ("greenhouse", "ashby", "lever", "workday"):
         assert "keywords" not in built[source], f"{source} would drop rows on title alone"
         assert "location_keywords" not in built[source], f"{source} would drop rows on a slug"
     # And the half that is worth having is still there.
-    assert built["remotive"]["queries"] == [{"search": "golang"}]
+    assert built["himalayas"]["queries"] == [{"query": "golang"}]
 
 
 def test_a_board_is_asked_for_the_phrase_the_user_wrote(ctx):
@@ -502,7 +541,7 @@ def test_a_dormant_users_keywords_leave_the_filter(ctx):
     s.flush()
 
     built = build_source_configs(TenantRepository(s).active_configs(), env={})
-    assert built["remotive"]["queries"] == [{"search": "stillhere"}]
+    assert built["himalayas"]["queries"] == [{"query": "stillhere"}]
 
 
 def test_with_no_users_at_all_sources_stay_enabled_and_unfiltered(ctx):
@@ -512,7 +551,7 @@ def test_with_no_users_at_all_sources_stay_enabled_and_unfiltered(ctx):
 
     built = build_source_configs({}, env={})
     assert built, "sources must still run"
-    assert "keywords" not in built["remotive"], "unfiltered rather than filtered to nothing"
+    assert "keywords" not in built["greenhouse"], "unfiltered rather than filtered to nothing"
 
 
 def test_key_gated_sources_stay_off_without_their_credential(ctx):
@@ -526,7 +565,7 @@ def test_key_gated_sources_stay_off_without_their_credential(ctx):
 def test_query_taking_sources_always_get_a_query(ctx):
     """**Found on the first real cycle against live sources.**
 
-    `remotive`, `himalayas` and `arbeitnow` loop over `cfg["queries"]` and return `[]` when it is
+    `himalayas`, `nofluffjobs` and `hiringcafe` loop over `cfg["queries"]` and return `[]` when it is
     absent — so they made no HTTP request, logged nothing, and the cycle reported success. An
     adapter returning `[]` is the registry's contract, which is exactly why the silence was total.
     """
@@ -542,7 +581,7 @@ def test_with_no_users_the_query_is_a_broad_feed_read(ctx):
     "harvest broadly, match per user" and is what gives a brand-new user a non-empty first feed."""
     from services.harvester.source_config import build_source_configs
 
-    assert build_source_configs({}, env={})["remotive"]["queries"] == [{"search": ""}]
+    assert build_source_configs({}, env={})["himalayas"]["queries"] == [{"query": ""}]
 
 
 def test_users_keywords_become_the_queries(ctx):
@@ -554,7 +593,7 @@ def test_users_keywords_become_the_queries(ctx):
     s.flush()
 
     built = build_source_configs(TenantRepository(s).active_configs(), env={})
-    assert built["remotive"]["queries"] == [{"search": "golang"}, {"search": "rust"}]
+    assert built["himalayas"]["queries"] == [{"query": "golang"}, {"query": "rust"}]
 
 
 def test_the_recency_window_is_the_widest_any_user_asked_for(ctx):
@@ -566,7 +605,8 @@ def test_the_recency_window_is_the_widest_any_user_asked_for(ctx):
     from services.harvester.source_config import DEFAULT_MAX_AGE_HOURS, build_source_configs
 
     s = ctx
-    assert build_source_configs({}, env={})["remotive"]["max_age_hours"] == DEFAULT_MAX_AGE_HOURS
+    # No operator freshness passed, so the fallback ladder ends at the module default.
+    assert build_source_configs({}, env={})["lever"]["max_age_hours"] == DEFAULT_MAX_AGE_HOURS
 
     a = _active_user(s)
     b = _active_user(s)
@@ -576,7 +616,7 @@ def test_the_recency_window_is_the_widest_any_user_asked_for(ctx):
     s.flush()
 
     built = build_source_configs(t.active_configs(), env={})
-    assert built["remotive"]["max_age_hours"] == 168
+    assert built["himalayas"]["max_age_hours"] == 168
 
 
 # ── the age window actually reaching the sources ──────────────────────────────────────────────

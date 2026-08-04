@@ -245,7 +245,9 @@ def test_the_source_list_names_every_board_with_its_window(api):
     body = http.get("/admin/sources").json()["sources"]
     names = {row["name"] for row in body}
 
-    assert "linkedin" in names and "arbeitnow" in names
+    assert "linkedin" in names and "himalayas" in names
+    # A source the platform no longer harvests must not offer a control that changes nothing.
+    assert "arbeitnow" not in names, "removed 2026-08-04 — it ignores the search parameter"
     assert all(isinstance(row["hours"], int) and row["hours"] > 0 for row in body)
     assert next(row for row in body if row["name"] == "linkedin")["hours"] == 4
 

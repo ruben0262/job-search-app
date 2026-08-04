@@ -1061,6 +1061,86 @@ which is what "harvest broadly, match per user" has always said. Worth checking 
 an unused upstream parameter exists — Jobicy takes a `tag`, TheMuse takes categories — since a
 server-side filter is a different mechanism from discarding what already arrived.
 
+### 6t — sources, and the seven taken out (decided 2026-08-04)
+
+**Every source was pinged from the production box** with a real keyword, an unrelated keyword and
+nonsense, and asked whether the answer changed. Seven answered identically to all three. A source
+that cannot be asked for anything is not part of a targeted harvest — it is a feed we re-ingest and
+filter afterwards, which is a different design and a post-beta decision.
+
+| Source | Why it went | Cost |
+|---|---|---|
+| **arbeitnow** | identical 175 results for `engineer` / `nurse` / `zzqqxwv` / empty | 4,236 rows in 7 days, the largest single contributor — and all 33 of our queries a cycle refetched one page |
+| **remotive** | identical 31 results for the same four | 2 rows |
+| **remoteok** | `/api` is a full dump, no search parameter exists | 233 rows |
+| **dreamjobs** | 1 result, unchanged by any term | 0 rows |
+| **consider** | iterates `cfg["boards"]`, which nothing sets | **0 rows, ever** |
+| **getro** | the same | **0 rows, ever** |
+| **nofluffjobs_hu** | identical config to `nofluffjobs`, so the identical request | 0 rows — every one deduplicated away |
+
+Roughly 35% of intake, almost all of it Arbeitnow. **Accepted deliberately**: the owner's call is
+that sources and queries have to be correct before volume is worth anything, and a feed we cannot
+target is volume rather than coverage.
+
+**What remains, and how each is asked:**
+
+| | keyword | measured |
+|---|---|---|
+| himalayas, nofluffjobs, hiringcafe | server-side, via `cfg["queries"]` | 6/0, 123/0, 40/0 |
+| profession | server-side, one request per keyword | 15/0 |
+| justjoinit, jobicy, themuse, workingnomads, weworkremotely | client-side over **title + description + tags** | 4→1, 17→13, 24→21, 28→5, 18→9, all 0 on nonsense |
+| ATS ×9 | none — a company board has no search API | filtered only by time |
+| linkedin | JobSpy, a real keyword search | per-user, own proxy |
+
+**Post-beta, in this order.** 1. Arbeitnow and RemoteOK back as *pure feeds* — one unqueried fetch
+per cycle each, targeted by the corpus filter in 6u rather than by a query. That is 4,469 rows for
+two requests. 2. Consider and Getro need board lists before they can return anything. 3. JobSpy
+already reaches **Indeed and Google** through the same adapter as LinkedIn, which is the cheapest
+real coverage increase available and needs only enabling and measuring.
+
+**Two rules now settled for the query set:** keyword and time are the only axes. Time comes from the
+operator's per-source setting in the admin panel and nothing else. Location is gone from queries
+entirely — one board has a location model worth the name, every location a user picks multiplies
+that board's query count, and a posting's country is on the posting.
+
+### 6u — the corpus knows what a job is, so the scorer stops reading all of it (added 2026-08-04)
+
+**Owner's design, and it replaces the prefilter argument in 6n.4 / 6o.1 with something safe.**
+
+Today `score_lane` selects **every embedded corpus row** the user's current model has not seen —
+`embedding IS NOT NULL` and a version comparison, nothing else. Every account scores the whole
+corpus. At 15k rows that is merely wasteful; at the 400k projection it is the platform's largest
+recurring cost, and it is paid per user.
+
+The rejected fix was a keyword prefilter, and it was rejected on measurement: 239 of 376 jobs
+scoring ≥60 had a keyword in the title, so it discards a third of the good matches — the unusually
+worded ones, which are often the interesting ones. **The owner's version avoids that entirely,
+because it filters on facts rather than on wording.**
+
+**At ingest, strip and store what a job factually is.** Country, region and city; salary and its
+currency and period; contract type; seniority where the posting states it. These are already in the
+text and are thrown away today — `corpus` keeps a free-text `location` string and nothing
+structured. Stored as columns beside the link, title and description, they make the cheap questions
+cheap:
+
+- **Country.** The largest and safest cut. A user searching Hungary and the EU has no use for a
+  Texas posting, and no amount of good wording changes that — unlike a job title, a country is not
+  a matter of phrasing.
+- **Job field**, from the user's own profile rather than their keyword list, so it stays the
+  embedding-based judgement 6o.1 argued for rather than a term match.
+
+Then scoring reads a filtered set: **only the rows a user could plausibly want**, which is also what
+makes the per-user cost stop scaling with the whole corpus.
+
+**Same shipping condition as 6o.1, and it is not negotiable:** ship with a before/after count of how
+many ≥60 jobs the filter would have dropped. A country filter is much easier to defend than a
+keyword one — a posting's country is a fact, and the failure mode is a mis-parsed location rather
+than an unusual phrasing — but "easier to defend" is not "measured".
+
+**This also gives the location axis a home.** It came out of the queries in 6t precisely because
+this is where it belongs: asked once against the corpus, per user, on a parsed field — rather than
+multiplied into every board's query set to be applied by boards that mostly cannot apply it.
+
 ## Deliberately deferred
 
 Do not build these before Phase 4, regardless of how appealing they look mid-build.

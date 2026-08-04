@@ -237,10 +237,13 @@ def run_cycle(
         # Each axis is passed per source, so a board with no geography is asked once per keyword
         # instead of once per keyword × location for identical results.
         askable = tuple(sorted(QUERY_TAKING_SOURCES & set(source_configs)))
-        query_set = build_query_set(
-            configs, sources=askable,
-            locating_sources=[s for s in askable if QUERY_SHAPES[s].location_key],
-            remote_aware_sources=[s for s in askable if QUERY_SHAPES[s].remote_key])
+        # **No location axis at all, decided 2026-08-04.** Only one free-tier board has a location
+        # model worth the name, every location a user picks multiplies that board's query count,
+        # and a posting's country is recoverable from the posting — so it is a filter to apply
+        # against the corpus before scoring, not a question to ask a job board. `remote` goes with
+        # it for the same reason: it is on the row already.
+        query_set = build_query_set(configs, sources=askable,
+                                    locating_sources=(), remote_aware_sources=())
         planned, deferred = select_within_budget(
             query_set, max_queries=max_queries, carried_over=carried_over)
         report.queries_planned = len(planned)

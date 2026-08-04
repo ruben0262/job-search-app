@@ -54,19 +54,19 @@ DEFAULT_SOURCE_FRESHNESS_HOURS: dict[str, int] = {
     "indeed": 6,
     "google": 6,
     # Feed-shaped aggregators: what they publish is what is new.
-    "arbeitnow": 12,
     "himalayas": 12,
-    "remotive": 12,
     "justjoinit": 12,
+    "weworkremotely": 24,
+    "workingnomads": 24,
+    "jobicy": 24,
+    "themuse": 24,
     # Search-shaped boards, relevance-sorted rather than date-sorted.
     "hiringcafe": 48,
     "nofluffjobs": 48,
-    "nofluffjobs_hu": 48,
     "profession": 24,
     # Company boards, reached when our token list gets there.
     "greenhouse": 72, "ashby": 72, "lever": 72, "smartrecruiters": 72,
     "recruitee": 168, "breezy": 72, "workday": 168, "personio": 72, "workable": 72,
-    "consider": 72, "getro": 72,
 }
 
 # Anything not named above. Wide enough that a slow board still contributes, narrow enough that the
@@ -77,20 +77,24 @@ DEFAULT_FRESHNESS_HOURS = 6
 # harvester and the admin panel need it, and a service may not import another service — the panel
 # reading the harvester's list directly is exactly the coupling the boundary contract forbids.
 # `services/harvester/source_config.py` imports this as its enabled set.
+# **Narrowed 2026-08-04 to sources that answer a keyword.** Seven were pinged from the production
+# box with a real term, an unrelated term and nonsense, answered identically to all three, and were
+# removed (`services/harvester/source_config.DEFERRED_SOURCES`, ROADMAP 6t). This list is what the
+# admin panel offers a freshness control for, so a source that is not harvested must not appear.
 HARVEST_SOURCES: tuple[str, ...] = (
     # Remote-work aggregators.
-    "remotive", "himalayas", "remoteok", "arbeitnow",
-    "weworkremotely", "workingnomads", "jobicy",
+    "himalayas", "weworkremotely", "workingnomads", "jobicy",
     # ATS boards, polled directly per company.
     "greenhouse", "ashby", "lever", "smartrecruiters", "recruitee",
     "breezy", "workday", "personio", "workable",
     # Aggregators and VC portfolio boards.
-    "hiringcafe", "consider", "getro", "themuse",
+    "hiringcafe", "themuse",
     # European boards.
-    "nofluffjobs", "nofluffjobs_hu", "profession", "dreamjobs", "justjoinit",
+    "nofluffjobs", "profession", "justjoinit",
     # Key-gated, enabled only with a credential.
     "jooble", "findwork", "adzuna",
-    # The per-user tier, on the user's own proxy.
+    # The per-user tier, on the user's own proxy. JobSpy, so a real keyword search — and the same
+    # adapter reaches Indeed and Google, which is the cheapest way to widen coverage after beta.
     "linkedin",
 )
 
