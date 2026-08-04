@@ -138,6 +138,8 @@ type Settings = {
   source_queries_per_cycle: Record<string, number>;
   source_results_per_query: Record<string, number>;
   ats_companies_per_cycle: number;
+  describe_per_cycle: number;
+  linkedin_concurrent_users: number;
 };
 
 type Source = {
@@ -220,6 +222,12 @@ export function AdminPage() {
   // it back from the response keeps the panel honest about what was actually stored.
   // Same shape as the freshness control beside it: write the whole map, read back what was
   // stored. One mechanism for both, because two would drift.
+  // One writer for the plain scalar settings. Two would drift, and these behave identically.
+  const savePlatform = useAction(async (key: string, value: number) => {
+    const body = await api.put<{ settings: Settings }>(`/admin/settings/${key}`, { value });
+    setSettings(body.settings);
+  });
+
   const saveResults = useAction(async (name: string, value: number) => {
     const next = { ...(settings?.source_results_per_query ?? {}), [name]: value };
     const body = await api.put<{ settings: Settings }>(
@@ -415,8 +423,16 @@ export function AdminPage() {
             onChange={(event) => void saveCadence.run(Number(event.target.value))}
             style={{ maxWidth: "18rem" }}
           >
-            {[15, 30, 60].map((minutes) => (
-              <option key={minutes} value={minutes}>every {minutes} minutes</option>
+            {[5, 10, 15, 20, 30, 45, 60, 90, 120, 180, 240, 360, 480, 720, 1440].map((minutes) => (
+              <option key={minutes} value={minutes}>
+                {minutes < 60
+                  ? `every ${minutes} minutes`
+                  : minutes === 60
+                    ? "every hour"
+                    : minutes % 60 === 0
+                      ? `every ${minutes / 60} hours`
+                      : `every ${Math.floor(minutes / 60)}h ${minutes % 60}m`}
+              </option>
             ))}
           </select>
           <Error>{saveCadence.error}</Error>
@@ -529,6 +545,46 @@ export function AdminPage() {
               <Error>{saveAtsCompanies.error}</Error>
             </>
           ) : null}
+
+          <p className="label" style={{ marginTop: "1.5rem" }}>Descriptions fetched per cycle</p>
+          <span className="hint">
+            A posting with no description cannot be embedded, so it cannot be scored or delivered.
+            This is what decides how fast a backlog of thin rows clears.
+          </span>
+          <select
+            value={settings.describe_per_cycle}
+            disabled={savePlatform.busy}
+            aria-label="Descriptions fetched per cycle"
+            onChange={(event) =>
+              void savePlatform.run("describe_per_cycle", Number(event.target.value))}
+            style={{ maxWidth: "10rem", marginTop: "0.5rem" }}
+          >
+            {[50, 100, 200, 400, 800].map((n) => (
+              <option key={n} value={n}>{n}</option>
+            ))}
+          </select>
+
+          <p className="label" style={{ marginTop: "1.5rem" }}>LinkedIn accounts per tick</p>
+          <span className="hint">
+            How many users&apos; LinkedIn passes run at once. Not a per-user setting — each account
+            uses its own proxy, so this is the platform not issuing hundreds of LinkedIn requests
+            simultaneously. At this rate a full rotation of every account takes{" "}
+            {Math.ceil((users?.length ?? 1) / Math.max(settings.linkedin_concurrent_users, 1))}{" "}
+            tick(s).
+          </span>
+          <select
+            value={settings.linkedin_concurrent_users}
+            disabled={savePlatform.busy}
+            aria-label="LinkedIn accounts per tick"
+            onChange={(event) =>
+              void savePlatform.run("linkedin_concurrent_users", Number(event.target.value))}
+            style={{ maxWidth: "10rem", marginTop: "0.5rem" }}
+          >
+            {[2, 4, 8, 16, 32].map((n) => (
+              <option key={n} value={n}>{n}</option>
+            ))}
+          </select>
+          <Error>{savePlatform.error}</Error>
         </div>
       ) : null}</> : null}
 

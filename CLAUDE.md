@@ -45,6 +45,30 @@ The roadmap's own rule, generalised: no optimisation, filter or removal ships wi
 was justified by. "This will be faster" and "this cannot lose anything" are claims, and both have
 been wrong here.
 
+## 5. Raise hardcoded and unstable implementations, unprompted
+
+**Do not wait to be asked.** When a change touches a constant that governs behaviour an operator or
+a user would reasonably want to control, say so in the response — even if the task was something
+else, and even if leaving it alone is the right call for now.
+
+What counts:
+
+- **A number in the code that decides how the product behaves.** Ceilings, windows, intervals,
+  batch sizes, retry counts. If somebody might one day need it different, it belongs in platform
+  settings or the limits catalogue, and if it does not go there now, say why.
+- **A second source of truth.** A constant beside a setting that names the same thing is the defect
+  this project has shipped most often, and it is invisible: the panel shows a value, the code reads
+  the constant, and nothing errors.
+- **A value with no consumer** — a setting, timer, column or list nothing reads.
+- **A fallback that swallows a real answer.** `resolve(...) or DEFAULT` cannot express "unlimited",
+  and an account set to Unlimited silently ran at the default for as long as that line existed.
+- **Anything load-bearing that only works by luck**: an order dependency, a shared mutable, a
+  hardcoded id, a path that assumes one tenant.
+
+Report them as a short list with a recommendation each — expose it, delete it, or leave it and why.
+The owner decides; the job is to make sure the decision is available rather than discovered later in
+production.
+
 ## Practical
 
 - Full suite against a real Postgres before pushing — ~290 tests skip silently without

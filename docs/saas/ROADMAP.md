@@ -1372,6 +1372,30 @@ that "simplest" probably wins for now and the interface should make the other sw
 
 Wants a caller on a schedule, like 6c. Not urgent at 136 MB; not something to discover at 30 GB.
 
+### 6aa — why does embedding take nine to thirteen minutes? (added 2026-08-04)
+
+**A latency investigation, not a fix, because nobody knows the answer yet.**
+
+`Described → embedded` reads **median 9m, p90 13m** over 24 hours, against a threshold of 15/45.
+Green, and it should not be: the embedder answers in milliseconds and the drill-down's own threshold
+note says so — "there is no cadence to wait for here, so minutes mean a queue". Nine minutes is a
+queue nobody has looked at.
+
+Three candidates, in order of how cheap they are to rule out:
+
+1. **It is the cycle, not the embedder.** Embedding runs as a stage inside the 15-minute harvest, so
+   a row described early in a cycle waits for that cycle's embed step. If so the median is *the
+   cycle's own shape* and the honest fix is to say so in the row rather than to speed anything up.
+2. **Batching.** `EMBED_BATCH_SIZE = 200` with a single-threaded encoder: 200 texts is a real wait,
+   and a row at the back of a batch inherits all of it.
+3. **Contention.** The gateway is single-threaded and the re-embed path shares it. `stage.timed`
+   already logs the embed stage per cycle, so this is readable from the logs before anything is
+   changed.
+
+**The measurement to take first**: the gap between `description_fetched_at` and `embedded_at` broken
+down by where in the cycle the row arrived. If rows described at the start of a cycle wait longest,
+it is (1) and the row's threshold is simply wrong.
+
 ### 6v — every limit an operator can see and change ✅ **done 2026-08-04**
 
 **The rule: a number that governs how hard we hit a source belongs beside the other one that does.**

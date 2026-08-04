@@ -68,3 +68,44 @@ def test_the_linkedin_interval_floor_cannot_silently_rewrite_the_operators_value
     assert documented >= LINKEDIN_MIN_INTERVAL_MIN, (
         "the floor is above the catalogue's own default, so the panel's default is unreachable")
     assert resolve_linkedin_interval(documented) == documented
+
+
+def test_no_limit_is_read_with_an_or_fallback():
+    """**`None` means Unlimited, and `resolve(...) or DEFAULT` turns that choice back into a cap.**
+
+    Reported from the panel: an account set to *Unlimited* jobs per delivery run was still receiving
+    ten. `resolve` already returns the catalogue default for a limit nobody has set, so a `None` it
+    returns is only ever the operator having explicitly chosen no ceiling — and `or` cannot tell
+    that apart from zero or from unset.
+
+    The one exception is `send_gap_seconds`, which forbids unlimited because the rule is Telegram's
+    rather than ours, so its `or` can never fire.
+    """
+    offenders = []
+    for path, body in ((p, p.read_text(encoding="utf-8")) for p in _sources()):
+        for number, line in enumerate(body.splitlines(), start=1):
+            stripped = line.strip()
+            # Comments explaining the rule are not violations of it.
+            if stripped.startswith("#"):
+                continue
+            if "resolve(" not in line or " or " not in line:
+                continue
+            if "send_gap_seconds" in line:
+                continue
+            offenders.append(f"{path.relative_to(ROOT)}:{number}: {line.strip()}")
+
+    assert not offenders, (
+        "a limit read with an `or` fallback cannot express Unlimited:\n  " + "\n  ".join(offenders))
+
+
+def test_a_limit_that_cannot_be_unlimited_says_so():
+    """A dropdown offering Unlimited for a value that has no unlimited meaning invites somebody to
+    switch off their own feed. `linkedin_interval_min` is minutes between runs; unlimited is not a
+    slower cadence, it is never."""
+    from libs.limits import BY_KEY
+
+    assert BY_KEY["linkedin_interval_min"].allow_unlimited is False
+    assert BY_KEY["send_gap_seconds"].allow_unlimited is False
+    # And the ones where unlimited is a real, useful answer keep it.
+    assert BY_KEY["notifications_per_day"].allow_unlimited is True
+    assert BY_KEY["items_per_run"].allow_unlimited is True

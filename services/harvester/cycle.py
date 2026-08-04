@@ -48,6 +48,7 @@ from libs.db.models import User
 from libs.obs import Timings, audit, report_timings, timed
 from libs.queue import enqueue
 from libs.tenant.repository import TenantRepository
+from services.harvester.describe import SHARED_LIMIT as DESCRIBE_PER_CYCLE_DEFAULT
 from services.harvester.describe import describe_pending
 from services.harvester.embedding import embed_all_pending
 from services.harvester.fetch import make_shared_client
@@ -187,6 +188,7 @@ def run_cycle(
     source_configs: dict[str, dict] | None = None,
     carried_over: Iterable[QueryKey] = (),
     limits: dict[str, int] | None = None,
+    describe_limit: int = DESCRIBE_PER_CYCLE_DEFAULT,
     run_source: Callable[[Source, dict, AtsRepository], list[JobLink]] = _run_source,
     describe: bool = True,
 ) -> tuple[CycleReport, list[QueryKey]]:
@@ -276,7 +278,8 @@ def run_cycle(
         # per-user pass that holds a lease. A shared cycle must never reach for a user's proxy.
         if describe:
             with timed("describe", report.timings), make_shared_client() as client:
-                described = describe_pending(corpus, client, linkedin=False)
+                described = describe_pending(corpus, client, linkedin=False,
+                                             limit=describe_limit)
             report.described = described.described
             report.describe_outcomes = described.outcomes
 

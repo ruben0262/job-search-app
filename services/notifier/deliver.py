@@ -50,6 +50,10 @@ logger = logging.getLogger(__name__)
 # One digest message per delivery keeps this simple; the cap is the per-day one below.
 MAX_ITEMS_PER_DIGEST = 10
 
+# What "unlimited jobs per run" means to a query that needs a number. Large enough to be no ceiling
+# in practice, small enough that a runaway cannot ask Postgres for the whole corpus in one go.
+UNLIMITED_ITEMS = 10_000
+
 # `TENANT_SAFETY.md` §3. Resets at the user's local midnight, which is why it is counted against
 # `notified_at` in their timezone rather than against a counter column.
 MAX_NOTIFICATIONS_PER_DAY = 100
@@ -214,9 +218,16 @@ def deliver(session: Session, user_id: _uuid.UUID, *,
     # their own delivery ceiling can get their own Telegram bot rate-limited. Unlimited is safe now
     # only because sending is paced below — the cap used to be the sole guard against that, and it
     # guarded by withholding jobs the user had matched.
+    #
+    # **`None` means unlimited and must not be given a fallback.** `resolve` already returns the
+    # catalogue default for a limit nobody has set, so `None` is only ever the operator having
+    # chosen Unlimited — and `resolve(...) or DEFAULT` turned that choice back into the default.
+    # An account set to Unlimited jobs per run was silently sending ten, which is what the setting
+    # was changed to stop.
     per_day = limits.resolve(user, "notifications_per_day")
+    # Never None: `send_gap_seconds` is Telegram's rule rather than ours and forbids unlimited.
     gap = limits.resolve(user, "send_gap_seconds") or limits.DEFAULT_SEND_GAP_SECONDS
-    per_run = limits.resolve(user, "items_per_run") or MAX_ITEMS_PER_DIGEST
+    per_run = limits.resolve(user, "items_per_run")
 
     if per_day is not None:
         remaining = per_day - notifications_today(session, user_id)
@@ -225,9 +236,11 @@ def deliver(session: Session, user_id: _uuid.UUID, *,
             # and go out in the next window.
             logger.info("notify: %s is at their daily cap, deferring", user_id)
             return 0
-        per_run = min(per_run, remaining)
+        # A daily ceiling bounds an unlimited per-run one; two unlimiteds stay unlimited.
+        per_run = remaining if per_run is None else min(per_run, remaining)
 
-    items, dropped = pending_feed(session, user_id, store=store, cutoff=cutoff, limit=per_run)
+    items, dropped = pending_feed(session, user_id, store=store, cutoff=cutoff,
+                                  limit=per_run if per_run is not None else UNLIMITED_ITEMS)
     if dropped:
         # Counted by reason, because "delivered 2" is alarming and unactionable while "dropped 38
         # for language" is a config problem somebody can fix in a minute.

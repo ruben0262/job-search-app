@@ -2238,6 +2238,14 @@ td.num {
 
 /* The whole row opens the account — a click target the width of the table rather than the width of
    an email address. */
+/* **No transition on a clickable row.** `td` carries a colour transition from the shared table
+   rules, so every re-render of the latency table faded each row's text and read as a blink. A row
+   that opens on click does not need to animate on hover as well. */
+.stages .row-link,
+.stages .row-link td {
+  transition: none;
+}
+
 .row-link {
   cursor: pointer;
 }

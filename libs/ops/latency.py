@@ -346,7 +346,7 @@ STAGES: tuple[Stage, ...] = (
     Stage(
         key="found_to_described",
         label="Found → described",
-        zone="describe pass (residential proxy for LinkedIn)",
+        zone="describe pass",
         what="The link became text. Until a posting has a description it cannot be embedded, so "
              "nothing downstream can happen and the row is invisible to every account.",
         scope="corpus",

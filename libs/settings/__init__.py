@@ -160,6 +160,22 @@ DEFAULT_SOURCE_RESULTS_PER_QUERY: dict[str, int] = {
 # how many we hold, which is why `/admin/sources` reports the total beside the control.
 DEFAULT_ATS_COMPANIES_PER_CYCLE = 400
 
+# How many postings the shared cycle will fetch descriptions for in one pass.
+#
+# A real throughput control rather than plumbing: a row with no description cannot be embedded, so
+# it cannot be scored or delivered, and this number decides how fast a cold-start backlog clears.
+# Bounded because each fetch is an HTTP request with retries.
+DEFAULT_DESCRIBE_PER_CYCLE = 200
+
+# How many users' LinkedIn passes run in one tick. **Not a per-user limit** — per-user proxies give
+# IP diversity, which handles one account's ban risk; this is the platform not issuing hundreds of
+# LinkedIn requests at once, and it is also the `linkedin` lane's worker count.
+#
+# At four users a tick and a fifteen-minute timer, fifty accounts take over three hours for one
+# rotation. That is the scaling wall on this tier, and it is a number an operator should be able to
+# move rather than a constant they have to find.
+DEFAULT_LINKEDIN_CONCURRENT_USERS = 4
+
 
 DEFAULTS: dict[str, object] = {
     "delivery_interval_min": DELIVERY_INTERVAL_MIN,
@@ -168,6 +184,8 @@ DEFAULTS: dict[str, object] = {
     "source_queries_per_cycle": DEFAULT_SOURCE_QUERIES_PER_CYCLE,
     "source_results_per_query": DEFAULT_SOURCE_RESULTS_PER_QUERY,
     "ats_companies_per_cycle": DEFAULT_ATS_COMPANIES_PER_CYCLE,
+    "describe_per_cycle": DEFAULT_DESCRIBE_PER_CYCLE,
+    "linkedin_concurrent_users": DEFAULT_LINKEDIN_CONCURRENT_USERS,
 }
 
 
@@ -233,6 +251,16 @@ def results_per_query(session: Session, source: str) -> int | None:
 def ats_companies_per_cycle(session: Session) -> int:
     """How many company boards the ATS family polls in one cycle."""
     return int(get(session, "ats_companies_per_cycle") or DEFAULT_ATS_COMPANIES_PER_CYCLE)
+
+
+def describe_per_cycle(session: Session) -> int:
+    """How many postings the shared cycle fetches descriptions for in one pass."""
+    return int(get(session, "describe_per_cycle") or DEFAULT_DESCRIBE_PER_CYCLE)
+
+
+def linkedin_concurrent_users(session: Session) -> int:
+    """How many users' LinkedIn passes run in one tick."""
+    return int(get(session, "linkedin_concurrent_users") or DEFAULT_LINKEDIN_CONCURRENT_USERS)
 
 
 def freshness_hours(session: Session, source: str) -> int:

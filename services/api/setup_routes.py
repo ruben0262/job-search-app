@@ -197,9 +197,9 @@ def new_conversation(db: Session = Depends(get_db),
     refusal, because deleting one is the intended move.
     """
     existing = _conversations(db, user_id)
-    # The admin panel's `conversations` limit, which until 2026-08-04 reached nothing.
-    ceiling = limits.resolve(db.get(User, user_id), "conversations") or MAX_CONVERSATIONS
-    if len(existing) >= ceiling:
+    # The admin panel's `conversations` limit. `None` is Unlimited, not "use the constant".
+    ceiling = limits.resolve(db.get(User, user_id), "conversations")
+    if ceiling is not None and len(existing) >= ceiling:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             detail=f"You can keep {ceiling} chats. Delete one to start another.")

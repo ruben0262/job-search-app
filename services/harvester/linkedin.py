@@ -74,6 +74,10 @@ RESULTS_WANTED = 30
 # fifteen minutes later.
 DESCRIBE_LIMIT = 60
 
+# What "unlimited descriptions per run" means to a query that needs a number. A pass is bounded by
+# what it actually found, so this is a guard rather than a ceiling anybody reaches.
+UNLIMITED_DESCRIBES = 10_000
+
 
 @dataclass
 class LinkedInReport:
@@ -259,8 +263,9 @@ def _run_one(user: User, queries: list[dict], *, corpus: CorpusRepository,
                 with make_client(lease) as client:
                     described = describe_pending(
                         corpus, client, linkedin=True,
-                        # Also an admin limit that reached nothing until 2026-08-04.
-                        limit=limits.resolve(user, "describe_per_run") or DESCRIBE_LIMIT)
+                        # `None` is Unlimited; the pass is bounded by what one run found anyway.
+                        limit=(limits.resolve(user, "describe_per_run")
+                               or UNLIMITED_DESCRIBES))
 
     except SecretsError:
         # The store could not answer. Not this user's fault and not a reason to stop the pass.

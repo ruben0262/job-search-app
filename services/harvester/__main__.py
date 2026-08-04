@@ -35,7 +35,9 @@ from libs.secrets import install
 from libs.settings import (
     HARVEST_SOURCES,
     ats_companies_per_cycle,
+    describe_per_cycle,
     freshness_hours,
+    linkedin_concurrent_users,
     queries_per_cycle,
     results_per_query,
 )
@@ -181,7 +183,7 @@ def main(argv: list[str] | None = None) -> int:
         # rather than to the platform (`services/harvester/linkedin.py`).
         install()
         with session_scope() as session:
-            report = run_linkedin(session)
+            report = run_linkedin(session, limit=linkedin_concurrent_users(session))
         logger.info("linkedin: %d considered, %d ran, %d without a lease, %d link(s), %d new",
                     report.considered, report.ran, report.skipped_no_lease,
                     report.links_found, report.new_jobs)
@@ -229,6 +231,7 @@ def main(argv: list[str] | None = None) -> int:
                       if args.max_queries is not None
                       else {name: queries_per_cycle(session, name) for name in HARVEST_SOURCES})
             kwargs["limits"] = limits
+            kwargs["describe_limit"] = describe_per_cycle(session)
             logger.info("harvest: %d sources enabled", len(source_configs))
 
             embedder = None if args.dry_run else EmbedderClient(base_url=embedder_url)

@@ -63,8 +63,12 @@ LIMITS: tuple[Limit, ...] = (
           "seconds is 15 a minute.", allow_unlimited=False),
     Limit("proxy_mb_per_day", "LinkedIn bandwidth per day", 200, "MB",
           "Their own residential proxy pays for this. LinkedIn is the only source that uses it."),
+    # **Not unlimited-able.** "Unlimited minutes between runs" has no meaning, and offering it in a
+    # dropdown invites somebody to pick the option that stops their own LinkedIn tier. Turning the
+    # tier off is `HARVEST_LINKEDIN_DISABLED`, which is a different decision in a different place.
     Limit("linkedin_interval_min", "Minutes between LinkedIn runs", 15, "minutes",
-          "How often this account's LinkedIn tier runs. Shorter means fresher and more bandwidth."),
+          "How often this account's LinkedIn tier runs. Shorter means fresher and more bandwidth.",
+          allow_unlimited=False),
     Limit("describe_per_run", "Job descriptions fetched per run", 60, "postings",
           "Each one is a request through their proxy. The rest wait for the next cycle."),
     Limit("keywords", "Search terms", 25, "terms",

@@ -23,6 +23,7 @@ quarantine every healthy user.
 from __future__ import annotations
 
 import logging
+import math
 from datetime import datetime
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -97,8 +98,13 @@ class ProxyUsageRepository:
         fallback, so an account nobody has tuned behaves exactly as it did.
         """
         user = self._s.get(User, user_id)
-        override = limits.resolve(user, "proxy_mb_per_day") if user is not None else None
-        return float(override if override is not None else credential.daily_cap_mb)
+        if user is None:
+            return float(credential.daily_cap_mb)
+        override = limits.resolve(user, "proxy_mb_per_day")
+        # **`None` is Unlimited, not "fall back to the column".** `resolve` returns the catalogue
+        # default for a limit nobody has set, so `None` only ever means the operator chose no
+        # ceiling — and a fallback here would quietly reimpose one.
+        return math.inf if override is None else float(override)
 
     # ── metering ─────────────────────────────────────────────────────────────────────────────
 
