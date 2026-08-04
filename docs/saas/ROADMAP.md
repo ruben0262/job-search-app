@@ -1190,17 +1190,41 @@ fall out of the same change:
 3. **Reading the corpus becomes possible for a human.** The admin Corpus tab shows title, company,
    a location string and a `usable` flag, because that is all a row holds.
 
-**`job_field` is a classifier, not a keyword list.** Clusters — software, engineering, law, civil
-service, hospitality, finance, healthcare — assigned once per row from the embedding the platform
-already computes, so it costs nothing per user and inherits the property 6o.1 argued for: it catches
-"Vehicle Dynamics Specialist" as engineering without anybody having written that phrase down. A
-user's field comes from their profile rather than their keyword list, for the same reason.
+**`job_field` comes from what actually found the job** (the owner's design, 2026-08-04, and it is
+better than the classifier this entry first proposed).
 
-**Open, and it is the interesting one: what does a mis-assigned field cost?** A wrong country is
-recoverable — the posting stays in the corpus and a user who widens their selection sees it. A wrong
-`job_field` hides a job from the only user who wanted it, permanently, with no symptom. So this
-ships behind the same before/after count as everything else here, and probably with a confidence
-floor below which the row is simply not filtered.
+We already search every board with a set of keywords. A job that turns up under *both* "python
+developer" and "backend engineer" has told us those two terms describe the same kind of work — not
+because a model guessed, but because a board returned the same posting for both. Do that across
+thousands of postings and the terms group themselves. **The clusters are discovered from evidence
+rather than invented in advance**, which is the same argument that killed the title-keyword filter:
+observed behaviour beats a list somebody wrote down.
+
+Three steps, and the first is worth doing on its own:
+
+1. **Record which query found which row.** Nothing does today — `corpus` has a `source` and no
+   query, which is also why the per-stem yield history in 6o.2 cannot be built. One join table
+   (`job_id`, `keyword`) fed at ingest closes both. **This is the enabling change and it is small.**
+2. **Cluster the keywords by co-occurrence.** Terms that keep landing on the same postings belong
+   together; each group gets a stable label. A job's `job_field` is the group its keywords fall in.
+3. **Cover the jobs no query found.** This is the gap in the idea and it is not small: the ATS
+   family, and every feed-shaped source, return postings nobody searched for — 1,720 rows in the
+   last seven days from ATS alone. Those have no keywords and so no field. They get one from their
+   nearest neighbours in the embedding already computed for them: a posting sitting among a hundred
+   jobs labelled *engineering* is engineering. **Keyword evidence where it exists, vector similarity
+   where it does not.**
+
+The cold-start limit is honest and worth stating: the label space is shaped by the terms our users
+actually search. A field nobody has signed up for produces no cluster, and its jobs stay unlabelled
+— which, by the rule below, means unfiltered rather than hidden. Operator keywords (6n.2) are the
+lever that seeds a field ahead of the person who needs it, and this is a second reason they matter.
+
+**The rule that makes a mistake survivable: no label means no filtering.** A wrong country is
+recoverable, because the posting stays in the corpus and a user who widens their selection sees it.
+A wrong `job_field` hides a job from the only user who wanted it, permanently, with no symptom. So a
+row whose field is unknown or low-confidence is **passed through to scoring**, exactly as an
+unreadable country is. The filter only ever removes rows it is confident about, and every version of
+it ships with the before/after count of ≥60 matches lost.
 
 **Also open: recycling.** The owner's concern is that a job filtered out for a user keeps being
 re-examined every cycle for ever. **The answer is that there is nothing to remember**, and it is
@@ -1231,27 +1255,23 @@ Extracted at ingest as 6w describes, then available as cheap pre-score filters. 
 6. **Seniority** — junior / mid / senior / lead. The most frequently mis-stated field in any
    posting, so the last one to trust and the one most likely to need a confidence floor.
 
-### 6y — should the employer's name leave the text? (added 2026-08-04)
+### 6y — the corpus grows forever, because the sweep that stops it is never called (added 2026-08-04)
 
-**Owner's question, and the answer is probably yes — but as a versioned change with an A/B, never a
-silent edit.**
+`trim_cold` drops the description and vector from unpinned rows older than `CORPUS_HOT_DAYS` and
+keeps the ~258-byte row so dedup still works. It is implemented, tested, and **called by nothing** —
+a third dead sweep beside the two in 6c, and the one with a disk bill attached.
 
-`libs.corpus.embedtext` already excludes the company *field* and says why: "a model that has seen
-the employer name learns employers, scores unseen companies badly, and quietly encodes geography as
-fit". But the name is still in the description prose, so the exclusion is a half measure — and the
-labeller reads that same text when it writes the labels the model is then trained on, so the leak
-enters twice.
+Measured on the live box: **17,089 rows, 0 ever trimmed, 136 MB.** Descriptions are essentially all
+of that, at roughly 8 KB a row. `PLATFORM_ARCHITECTURE.md` §4 projects 400k rows at 0.87 GB steady
+state, and that projection *assumes trimming*. Without it the same 400k rows is nearer 3 GB, and it
+never stops.
 
-Against doing it: naive replacement mangles real words. "Apple" appears inside "Apple Pay", "Meta"
-inside "metadata", and a company called "Stripe" or "Block" or "Palantir" makes a mess of a sentence
-about payments, storage or data. So the strip has to be word-boundary, case-insensitive, and skipped
-for names under about four characters or matching a common-word list.
+`user_job_state` is the other growth term and it is per user: 34,036 rows for two accounts, one per
+job each has been scored. At fifty accounts that is a row per account per corpus row. **The country
+and field filters in 6u and 6w cut this directly**, because a row that is never scored is never
+written — which is a second reason they are worth having beyond the CPU.
 
-The cost is the honest one `embedtext` already names: **the text is the input, so changing it
-invalidates every vector.** It is part of `EmbedderVersion.version`, `score_rows` refuses a
-mismatch, and the price is a full re-embed and a retrain per user. That is exactly why this wants an
-A/B rather than a decision — the machinery to run one exists (`deploy/scripts/ab_prompts.py`), and
-"does hiding the employer improve held-out AP" is a question with a measurable answer.
+Wants a caller on a schedule, like 6c. Not urgent at 136 MB; not something to discover at 30 GB.
 
 ### 6v — every limit an operator can see and change (added 2026-08-04)
 
