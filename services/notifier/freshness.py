@@ -44,7 +44,11 @@ MAX_REFRESH = 12
 
 
 def date_candidates(session, items: list, client) -> list:
-    """Fill `posted_at` for the undated jobs nearest the front of the queue. Returns the new list.
+    """Ask each posting near the front of the queue what it says about itself now.
+
+    **Four answers, and the date is the least of them**: whether it is still accepting applications,
+    how many people have applied, whether it is a repost, and when it was posted. Returns the new
+    list.
 
     `items` is the candidate list in score order, so taking from the front dates the ones most
     likely to be sent. LinkedIn only: nothing else exposes a posted time on the page that the
@@ -61,12 +65,21 @@ def date_candidates(session, items: list, client) -> list:
     dated = 0
 
     for item in items:
-        if dated >= MAX_REFRESH or item.posted_at is not None or not linkedin_id(item.url):
+        # **The gate used to be `item.posted_at is not None`, and it stopped this running at all.**
+        # `posted_at` is now filled for 2,582 of 2,587 LinkedIn rows at ingest, so the refresh
+        # skipped everything — and with it went the closed-job check, the live applicant count and
+        # the repost flag, which are the three things it is most worth asking about in the seconds
+        # before a card is sent. A date was only ever one of the answers.
+        if dated >= MAX_REFRESH or not linkedin_id(item.url):
             updated.append(item)
             continue
 
         try:
-            meta = fetch_meta(item.url, client=client)
+            # The 96 KB Easy Apply page is fetched only for a posting we have never asked about.
+            # It does not change, and paying for it every digest is ~110 MB a day against a 200 MB
+            # cap for one boolean.
+            meta = fetch_meta(item.url, client=client,
+                              with_easy_apply=item.easy_apply is None)
         except ProxyUnusable as exc:
             # The credential, not this job. Every remaining fetch would fail the same way, so the
             # rest of the list is passed through undated rather than retried twelve times.
@@ -80,20 +93,20 @@ def date_candidates(session, items: list, client) -> list:
             updated.append(replace(item, closed=True))
             continue
 
-        if meta["posted_at"] is None:
-            updated.append(item)
-            continue
-
+        # A `None` never overwrites a known value, so a fetch that answered only some of the
+        # questions still contributes what it had.
         corpus.set_posting_metadata(
             item.job_id, applicants=meta["applicants"], reposted=meta["reposted"],
-            workplace=meta["workplace"], posted_at=meta["posted_at"])
+            easy_apply=meta["easy_apply"], workplace=meta["workplace"],
+            posted_at=meta["posted_at"])
         updated.append(replace(
             item,
-            posted_at=meta["posted_at"],
+            posted_at=meta["posted_at"] or item.posted_at,
             applicants=meta["applicants"] if meta["applicants"] is not None else item.applicants,
-            reposted=meta["reposted"] if meta["reposted"] is not None else item.reposted))
+            reposted=meta["reposted"] if meta["reposted"] is not None else item.reposted,
+            easy_apply=meta["easy_apply"] if meta["easy_apply"] is not None else item.easy_apply))
         dated += 1
 
     if dated:
-        logger.info("freshness: dated %d candidate(s) before selection", dated)
+        logger.info("freshness: refreshed %d candidate(s) before selection", dated)
     return updated

@@ -223,6 +223,18 @@ def parse_reposted(html_text: str) -> bool | None:
     return "repost" in caption.group(1).lower() if caption else None
 
 
+def posted_caption(html_text: str) -> str | None:
+    """The raw "Posted 3 days ago" / "Reposted 2 weeks ago" text, or `None` where there is none.
+
+    **Kept so that "no repost has ever been detected" can be checked rather than assumed.** Across
+    2,584 LinkedIn rows the caption was found every time and `parse_reposted` said False every time,
+    which is either a true answer or a caption that never carries the word — and nothing stored
+    could tell those apart.
+    """
+    caption = _POSTED.search(html_text)
+    return caption.group(1).strip() if caption else None
+
+
 def parse_workplace(html_text: str) -> str | None:
     """`remote` | `hybrid` | `onsite` | None, in that order of evidence.
 
@@ -555,12 +567,19 @@ def _fetch_linkedin(job_id: str, *, client: httpx.Client, snippet: str, title: s
     return out
 
 
-def fetch_meta(url: str, *, client: httpx.Client, stats: dict | None = None) -> Posting:
+def fetch_meta(url: str, *, client: httpx.Client, stats: dict | None = None,
+               with_easy_apply: bool = True) -> Posting:
     """Live metadata only — no description. What the freshness refresher runs.
 
     Cheap enough to run over a whole feed: it answers "is this still worth showing" (accepting,
     applicants, reposted) without re-paying for text already stored. Non-LinkedIn URLs return all
     Nones, because nothing else exposes anything reliable to parse.
+
+    **`with_easy_apply` is off the hot path on purpose.** The guest fragment is small; the Easy
+    Apply marker lives on the full `/jobs/view` page and costs up to `_EA_CAP` — 96 KB — a second
+    request. Twelve of those per digest, four digests an hour, is roughly 110 MB a day against a
+    200 MB proxy cap for one boolean. It is worth paying **once per posting**, so the caller asks
+    for it only when it does not already know.
     """
     def tally(key: str) -> None:
         if stats is not None:
@@ -590,10 +609,11 @@ def fetch_meta(url: str, *, client: httpx.Client, stats: dict | None = None) -> 
             out["accepting"] = parse_accepting(response.text)
             out["reposted"] = parse_reposted(response.text)
             out["workplace"] = parse_workplace(response.text)
-            out["easy_apply"] = fetch_easy_apply(
-                f"https://www.linkedin.com/jobs/view/{job_id}", client)
-            if out["easy_apply"] is False:
-                out["application_url"] = parse_application_url(response.text, client)
+            if with_easy_apply:
+                out["easy_apply"] = fetch_easy_apply(
+                    f"https://www.linkedin.com/jobs/view/{job_id}", client)
+                if out["easy_apply"] is False:
+                    out["application_url"] = parse_application_url(response.text, client)
             tally("li_ok")
             return out
         tally(f"li_http_{response.status_code}" if response.status_code != 200 else "li_empty")

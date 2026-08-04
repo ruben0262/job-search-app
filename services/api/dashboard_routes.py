@@ -38,6 +38,10 @@ from services.api.status_routes import DEFAULT_NOTIFICATIONS_PER_DAY
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["dashboard"])
 
+# Where a posting with no date sorts against one that has one. Older than any real posting, so an
+# undated row loses a tie rather than winning it — absence of a date is not evidence of freshness.
+_UNDATED = datetime.min.replace(tzinfo=UTC)
+
 
 def _is_admin(user: User) -> bool:
     """The same rule `require_admin` enforces, in one place.
@@ -312,7 +316,14 @@ def _rules_feed(db: Session, user_id: _uuid.UUID, *, limit: int, offset: int,
             scored.append((result.score, row))
 
     if sort == "score":
-        scored.sort(key=lambda item: item[0], reverse=direction == "desc")
+        # **Freshness breaks a tie.** The rules score is title plus description and nothing else
+        # since location left it, so jobs matching on the same terms score identically — and an
+        # arbitrary tie-break is a feed that reorders itself for no reason a user can see. The newer
+        # posting wins, which is the one thing this product is for. Undated rows sort last rather
+        # than first: "we do not know when this was posted" is not evidence that it is new.
+        scored.sort(
+            key=lambda item: (item[0], item[1].posted_at or _UNDATED),
+            reverse=direction == "desc")
     elif sort in ("posted", "fetched"):
         # Undated rows go last whichever way the dated ones are ordered.
         column = "posted_at" if sort == "posted" else "first_seen_at"

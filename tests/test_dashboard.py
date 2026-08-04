@@ -306,3 +306,31 @@ def test_the_dashboard_requires_signing_in(api):
     http, _, _, _ = api
     http.cookies.clear()
     assert http.get("/dashboard").status_code == 401
+
+
+def test_two_jobs_that_score_the_same_are_ordered_newest_first(api):
+    """**Freshness is the tie-break.** The rules score is title plus description and nothing else
+    since location left it, so jobs matching on the same terms score identically — and an arbitrary
+    order is a feed that reshuffles itself for no reason a user can see.
+
+    An undated row loses the tie rather than winning it: not knowing when something was posted is
+    not evidence that it is new.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from libs.db.models import CorpusJob
+
+    http, session, _, _ = api
+    now = datetime.now(UTC)
+    for age_hours, slug in ((48, "older"), (1, "newer"), (None, "undated")):
+        session.add(CorpusJob(
+            url=f"https://example.test/tie-{slug}", source="test",
+            title="Backend Engineer", description="Backend engineer wanted.",
+            posted_at=None if age_hours is None else now - timedelta(hours=age_hours)))
+    session.flush()
+
+    titles = [job["url"] for job in http.get("/feed?sort=score").json()["jobs"]]
+    ours = [url for url in titles if "/tie-" in url]
+    assert ours.index("https://example.test/tie-newer") < ours.index(
+        "https://example.test/tie-older"), "the newer of two equal scores comes first"
+    assert ours[-1] == "https://example.test/tie-undated", "an undated row sorts last, not first"
