@@ -2203,9 +2203,11 @@ td.num {
 }
 
 .source-row {
-  display: flex;
+  /* A grid rather than space-between: four columns that have to line up down the list, and
+     `justify-content` cannot align anything with the row above it. */
+  display: grid;
+  grid-template-columns: 1fr auto auto 3.5rem;
   align-items: center;
-  justify-content: space-between;
   gap: 0.6rem;
   padding: 0.35rem 0;
   border-bottom: 1px solid var(--hairline);
@@ -2670,4 +2672,22 @@ td.num {
   font-family: var(--font-mono);
   font-size: 10px;
   fill: var(--muted);
+}
+
+/* The per-source table in Settings: name, freshness, query ceiling, and what that source is
+   currently asking for. Four columns rather than two, because a ceiling means nothing until you can
+   see the demand beside it. */
+.source-head {
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--dim);
+  border-bottom: 1px solid var(--hairline);
+  padding-bottom: 0.3rem;
+}
+/* Demand above the ceiling: this source is running behind, and the number is by how much. Amber
+   with the figure beside it rather than colour alone — the same rule the latency verdicts follow. */
+.behind {
+  color: #d08a34;
 }

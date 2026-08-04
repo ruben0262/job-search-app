@@ -16,7 +16,6 @@ from libs.contracts.config import migrate_config
 from libs.db.session import session_scope
 from libs.tenant.repository import TenantRepository
 from services.harvester.query_set import (
-    HARVEST_MAX_QUERIES_PER_CYCLE,
     build_query_set,
     select_within_budget,
 )
@@ -46,7 +45,7 @@ def main() -> int:
               f"{shared} wanted by more than one account")
 
         planned, deferred = select_within_budget(
-            query_set, max_queries=HARVEST_MAX_QUERIES_PER_CYCLE)
+            query_set)
         print(f"budget: {len(planned)} planned per cycle, {len(deferred)} deferred to the next")
 
         served: dict = {}

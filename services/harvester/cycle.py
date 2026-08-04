@@ -52,7 +52,6 @@ from services.harvester.describe import describe_pending
 from services.harvester.embedding import embed_all_pending
 from services.harvester.fetch import make_shared_client
 from services.harvester.query_set import (
-    HARVEST_MAX_QUERIES_PER_CYCLE,
     PlannedQuery,
     QueryKey,
     build_query_set,
@@ -187,7 +186,7 @@ def run_cycle(
     expected_embedder: EmbedderVersion | None = None,
     source_configs: dict[str, dict] | None = None,
     carried_over: Iterable[QueryKey] = (),
-    max_queries: int = HARVEST_MAX_QUERIES_PER_CYCLE,
+    limits: dict[str, int] | None = None,
     run_source: Callable[[Source, dict, AtsRepository], list[JobLink]] = _run_source,
     describe: bool = True,
 ) -> tuple[CycleReport, list[QueryKey]]:
@@ -245,7 +244,7 @@ def run_cycle(
         query_set = build_query_set(configs, sources=askable,
                                     locating_sources=(), remote_aware_sources=())
         planned, deferred = select_within_budget(
-            query_set, max_queries=max_queries, carried_over=carried_over)
+            query_set, limits=limits, carried_over=carried_over)
         report.queries_planned = len(planned)
         report.queries_deferred = len(deferred)
         if not configs:

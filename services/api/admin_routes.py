@@ -31,6 +31,7 @@ from libs.db.models import (
     UserJobState,
     UserLabel,
 )
+from libs.harvest import distinct_keywords
 from libs.limits import all_for, describe, set_limit
 from libs.obs import audit
 from libs.ops import evaluate, platform_health, render
@@ -43,7 +44,16 @@ from libs.ops.latency import (
 )
 from libs.profiles.repository import ProfileFiles
 from libs.scoring.history import model_history
-from libs.settings import DEFAULTS, HARVEST_SOURCES, all_settings, freshness_hours, put
+from libs.settings import (
+    DEFAULTS,
+    HARVEST_SOURCES,
+    QUERY_TAKING_SOURCES,
+    all_settings,
+    freshness_hours,
+    put,
+    queries_per_cycle,
+)
+from libs.tenant.repository import TenantRepository
 from services.api.deps import current_user, get_db
 
 logger = logging.getLogger(__name__)
@@ -325,8 +335,20 @@ def sources(db: Session = Depends(get_db), admin: User = Depends(require_admin))
     Read from the harvester's own enabled list rather than from whatever happens to be in the
     settings blob: a source nobody has tuned should still appear, with the default it is actually
     running at, or the panel silently omits the boards most likely to need attention.
+
+    **`wanted` is what makes the limit meaningful.** A ceiling of 40 tells an operator nothing on
+    its own; 40 against 28 queries waiting says the source is fully served, and 40 against 300 says
+    it is four cycles behind. The number is how many distinct queries that source currently has —
+    the same set the cycle budgets — so the two columns are the same arithmetic the harvest does.
     """
-    return {"sources": [{"name": name, "hours": freshness_hours(db, name)}
+    # One number for every query-taking source: location left the query axis, so a source is asked
+    # once per distinct keyword. Feed-shaped and ATS sources take no query at all and report zero.
+    wanted = len(distinct_keywords(TenantRepository(db).active_configs()))
+    asked = QUERY_TAKING_SOURCES | {"linkedin"}
+    return {"sources": [{"name": name,
+                         "hours": freshness_hours(db, name),
+                         "queries_per_cycle": queries_per_cycle(db, name),
+                         "wanted": wanted if name in asked else 0}
                         for name in HARVEST_SOURCES]}
 
 

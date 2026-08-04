@@ -143,17 +143,22 @@ def test_remote_only_marks_the_query_remote():
 
 def test_a_small_query_set_is_served_whole():
     qs = build_query_set({_uid(): _config(["python"], ["london"])}, SOURCES)
-    selected, deferred = select_within_budget(qs, max_queries=60)
+    selected, deferred = select_within_budget(qs, limits={"linkedin": 60, "indeed": 60})
     assert len(selected) == len(qs)
     assert deferred == []
 
 
-def test_one_greedy_user_cannot_crowd_out_everyone_elses_first_term():
-    """**The point of round-robin.**
+def test_nobody_is_starved_across_cycles():
+    """**The property that replaced round-robin over users**, and the trade is worth stating.
 
-    A user with five niche terms and four users with one term each: with only 4 slots, ordering by
-    list or by demand would spend them all on the greedy user. Round-robin gives every user their
-    first query before anyone gets a second.
+    Selection used to drain one query per user per round, so a user with five niche terms could not
+    crowd out four users' primary terms. That went with the global budget: the cap is per source
+    now, and within a source keys are taken in a stable order.
+
+    What protects a user is no longer the ordering — it is that a ceiling is sized to cover demand
+    (40 against 28 wanted, in production), and that anything deferred is served **first** on the
+    next cycle. So a term that loses this cycle wins the next one, and nothing is starved for more
+    than one cycle rather than being ordered fairly within each.
     """
     greedy = _uid()
     others = [_uid() for _ in range(4)]
@@ -162,18 +167,21 @@ def test_one_greedy_user_cannot_crowd_out_everyone_elses_first_term():
         configs[other] = _config([f"common{i}"], ["london"])
 
     qs = build_query_set(configs, ["linkedin"])
-    selected, deferred = select_within_budget(qs, max_queries=4)
+    first, deferred = select_within_budget(qs, limits={"linkedin": 4})
+    assert len(first) == 4
+    assert deferred, "what did not fit is deferred, not dropped"
 
-    assert len(selected) == 4
-    # The property that matters: four slots went to four DIFFERENT users, not to four of the
-    # greedy user's terms. List order or demand order would have produced the latter.
-    served_users = {next(iter(q.user_ids)) for q in selected}
-    assert len(served_users) == 4, f"slots went to {len(served_users)} distinct users, want 4"
-    assert deferred, "the greedy user's remaining terms are deferred, not dropped"
+    waiting = {q.key for q in deferred}
+    second, still_waiting = select_within_budget(
+        qs, limits={"linkedin": 4}, carried_over=list(waiting))
 
-    # And with room for everyone, everyone is served.
-    selected_all, _ = select_within_budget(qs, max_queries=5)
-    assert {next(iter(q.user_ids)) for q in selected_all} == {greedy, *others}
+    # **Every slot goes to work that already waited**, so a term cannot lose twice to the same
+    # rival. It is priority rather than a promise of service: five deferred keys do not fit a
+    # ceiling of four, and the fifth carries again.
+    assert {q.key for q in second} <= waiting
+    assert {q.key for q in still_waiting} & waiting <= waiting
+    # Nothing that waited is dropped — it is either served now or still queued.
+    assert waiting <= {q.key for q in second} | {q.key for q in still_waiting}
 
 
 def test_deferred_queries_are_served_first_next_cycle():
@@ -182,11 +190,11 @@ def test_deferred_queries_are_served_first_next_cycle():
     configs = {_uid(): _config([f"u{u}term{i}" for i in range(5)], ["london"]) for u in range(3)}
     qs = build_query_set(configs, ["linkedin"])
 
-    first_selected, first_deferred = select_within_budget(qs, max_queries=5)
+    first_selected, first_deferred = select_within_budget(qs, limits={"linkedin": 5})
     assert first_deferred
 
     carried = [q.key for q in first_deferred]
-    second_selected, _ = select_within_budget(qs, max_queries=5, carried_over=carried)
+    second_selected, _ = select_within_budget(qs, limits={"linkedin": 5}, carried_over=carried)
 
     assert [q.key for q in second_selected] == carried[:5], "deferred keys go first next cycle"
     assert first_selected, "the first cycle still served a full budget"
@@ -198,15 +206,16 @@ def test_selection_is_deterministic():
                for _ in range(5)}
     qs = build_query_set(configs, SOURCES)
 
-    first = [q.key for q in select_within_budget(qs, max_queries=17)[0]]
-    second = [q.key for q in select_within_budget(qs, max_queries=17)[0]]
+    caps = dict.fromkeys(SOURCES, 17)
+    first = [q.key for q in select_within_budget(qs, limits=caps)[0]]
+    second = [q.key for q in select_within_budget(qs, limits=caps)[0]]
     assert first == second
 
 
 def test_nothing_is_selected_twice():
     configs = {_uid(): _config(["python", "golang"], ["london"]) for _ in range(6)}
     qs = build_query_set(configs, SOURCES)
-    selected, deferred = select_within_budget(qs, max_queries=3)
+    selected, deferred = select_within_budget(qs, limits=dict.fromkeys(SOURCES, 3))
 
     keys = [q.key for q in selected]
     assert len(keys) == len(set(keys))
@@ -216,7 +225,7 @@ def test_nothing_is_selected_twice():
 def test_a_zero_budget_defers_everything_rather_than_silently_scraping():
     """A kill-switch-shaped case. It must stop work, not fail open into an unbounded harvest."""
     qs = build_query_set({_uid(): _config(["python"], ["london"])}, SOURCES)
-    selected, deferred = select_within_budget(qs, max_queries=0)
+    selected, deferred = select_within_budget(qs, limits=dict.fromkeys(SOURCES, 0))
     assert selected == []
     assert len(deferred) == len(qs)
 
@@ -229,8 +238,13 @@ def test_the_budget_is_never_exceeded():
     qs = build_query_set(configs, ["linkedin", "indeed", "google"])
     assert len(qs) > 60, "the unbounded set really is larger than the budget"
 
-    selected, deferred = select_within_budget(qs, max_queries=60)
-    assert len(selected) == 60
+    selected, deferred = select_within_budget(
+        qs, limits={"linkedin": 20, "indeed": 20, "google": 20})
+    # Per source, so the ceiling is 20 each and no source may exceed its own.
+    per_source: dict[str, int] = {}
+    for query in selected:
+        per_source[query.key.source] = per_source.get(query.key.source, 0) + 1
+    assert all(count <= 20 for count in per_source.values()), per_source
     assert len(selected) + len(deferred) == len(qs), "nothing is lost, only postponed"
 
 
@@ -240,7 +254,7 @@ def test_attribution_survives_selection():
     qs = build_query_set(
         {alice: _config(["python"], ["london"]), bob: _config(["python"], ["london"])},
         ["linkedin"])
-    selected, _ = select_within_budget(qs, max_queries=10)
+    selected, _ = select_within_budget(qs, limits={"linkedin": 10})
     assert selected[0].user_ids == frozenset({alice, bob})
     assert selected[0].demand == 2
 

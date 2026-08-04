@@ -25,6 +25,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from uuid import UUID
 
+from libs.settings import QUERY_TAKING_SOURCES
+
 # Sources needing no API key and no credential.
 #
 # **This was seven for four days and it was the wrong seven.** The original set was chosen as a
@@ -45,7 +47,7 @@ from uuid import UUID
 # the fact, which is a different design and one to revisit after beta (ROADMAP 6t).
 DEFAULT_ENABLED = (
     # Remote-work aggregators that filter on what we ask for.
-    "himalayas", "weworkremotely", "workingnomads", "jobicy",
+    "himalayas", "workingnomads", "jobicy",
     # ATS boards: employers posting directly. Gated on `ats_tokens` having rows.
     "greenhouse", "ashby", "lever", "smartrecruiters",
     "recruitee", "breezy", "workday", "personio", "workable",
@@ -68,12 +70,14 @@ DEFAULT_ENABLED = (
 #   getro           the same. **0 rows, ever.**
 #   nofluffjobs_hu  identical config to `nofluffjobs`, so it issued the identical request and every
 #                   row it found was deduplicated away. 0 rows.
+#   weworkremotely  removed 2026-08-04 for a different reason, and the distinction matters: the
+#                   adapter is fine and the keyword filter works. The *feed has stopped*. Its one
+#                   RSS category answered 200 with 25 items whose newest posting was 22 July, 13
+#                   days stale, so nothing inside any sane window was ever going to qualify. 0 rows
+#                   in 7 days. Worth re-probing rather than re-engineering.
 DEFERRED_SOURCES = ("arbeitnow", "remotive", "remoteok", "dreamjobs",
-                    "consider", "getro", "nofluffjobs_hu")
+                    "consider", "getro", "nofluffjobs_hu", "weworkremotely")
 
-# Board APIs that iterate `cfg["queries"]` and do nothing without it. Getting this list wrong is
-# silent: the adapter makes no request, logs nothing, and returns [] - which is its contract.
-QUERY_TAKING_SOURCES = frozenset({"himalayas", "hiringcafe", "nofluffjobs", "jooble"})
 
 # Adapters that read `cfg["keywords"]` **themselves** and filter on title + description + tags.
 #
@@ -85,7 +89,7 @@ QUERY_TAKING_SOURCES = frozenset({"himalayas", "hiringcafe", "nofluffjobs", "joo
 #
 # `profession` is the odd one: it issues **one request per keyword**, so for it this is server-side.
 KEYWORD_FILTER_SOURCES = frozenset({
-    "jobicy", "justjoinit", "workingnomads", "themuse", "weworkremotely", "profession",
+    "jobicy", "justjoinit", "workingnomads", "themuse", "profession",
 })
 
 

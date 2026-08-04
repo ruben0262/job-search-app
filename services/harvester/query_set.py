@@ -20,7 +20,6 @@ tail. Exact-tuple dedup captures most of the win with none of that risk (`HARVES
 """
 from __future__ import annotations
 
-import re
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
@@ -28,10 +27,15 @@ from typing import NamedTuple
 from uuid import UUID
 
 from libs.contracts.config import MAX_KEYWORDS_PER_USER, migrate_config
+from libs.harvest.keywords import normalise_keyword
 
-# Fan-out budget (HARVESTER_PLAN.md §3). Unbounded, 50 users × 5 terms × 3 sources = 750
-# queries/cycle: a ban, a bandwidth bill, and a 15-minute cycle that takes an hour.
-HARVEST_MAX_QUERIES_PER_CYCLE = 60
+# How many queries one source may be asked in a cycle when the operator has not said. The budget is
+# per source (`select_within_budget`) because rate limits are: the one global number this replaced
+# made unrelated boards queue behind each other.
+#
+# Unbounded is not an option — 50 users × 5 terms is a ban and a cycle that takes an hour — but the
+# ceiling belongs to the board it protects, and the operator moves it from the admin panel.
+DEFAULT_QUERIES_PER_CYCLE = 40
 
 # Imported, not redefined. The same cap bounds the config form, and a second copy here is how the
 # two drift: raise one and the other silently accepts terms it will never serve.
@@ -42,10 +46,6 @@ HARVEST_MAX_QUERIES_PER_USER = MAX_KEYWORDS_PER_USER
 # results that are strict subsets of one another.
 AGE_BUCKETS_HOURS = (24, 72, 168)
 
-# Stripped before folding so they cannot make two identical searches look different. Deliberately
-# tiny — an aggressive stop-word list starts merging queries that are genuinely distinct.
-_STOP_WORDS = frozenset({"a", "an", "the", "and", "or", "of", "for", "in", "at", "to", "with"})
-_NON_ALNUM = re.compile(r"[^a-z0-9+#]+")
 
 
 class QueryKey(NamedTuple):
@@ -75,27 +75,6 @@ class PlannedQuery:
         return len(self.user_ids)
 
 
-def normalise_keyword(term: str) -> str:
-    """Lowercase, strip punctuation, drop stop-words, sort tokens.
-
-    Sorting is what makes `"developer python"` and `"python developer"` the same key.
-
-    **This is a fold key and must not be sent to a board.** It was, once the query set was connected
-    to real sources, and the first live cycle shows what that costs: Arbeitnow was asked for
-    `engineer stress` and `developer python`, and every Hungarian term arrived truncated —
-    `szoftverfejlesztő` as `szoftverfejleszt`, `programozó` as `programoz` — because `_NON_ALNUM`
-    strips anything outside `a-z0-9+#`, accented letters included. Both behaviours are correct for
-    deciding whether two users asked for the same thing and wrong for asking a search engine.
-    `original_terms` is the other half of this.
-
-    `+` and `#` survive tokenisation on purpose: `c++` and `c#` are real, common search terms and
-    stripping them would collapse both into `c`.
-    """
-    tokens = [t for t in _NON_ALNUM.sub(" ", (term or "").lower()).split() if t]
-    kept = [t for t in tokens if t not in _STOP_WORDS]
-    # If a term is *entirely* stop-words, keep them rather than producing an empty key — an empty
-    # key would fold every such term together into one meaningless query.
-    return " ".join(sorted(kept or tokens))
 
 
 def original_terms(user_configs: Mapping[UUID, Mapping]) -> dict[str, str]:
@@ -238,64 +217,42 @@ def build_query_set(
 def select_within_budget(
     query_set: Mapping[QueryKey, frozenset[UUID]],
     *,
-    max_queries: int = HARVEST_MAX_QUERIES_PER_CYCLE,
+    limits: Mapping[str, int] | None = None,
     carried_over: Iterable[QueryKey] = (),
 ) -> tuple[list[PlannedQuery], list[PlannedQuery]]:
-    """Choose this cycle's queries. Returns `(selected, deferred)`.
+    """Choose this cycle's queries, **per source**. Returns `(selected, deferred)`.
 
-    **Round-robin over users, not list order.** Every user gets their first query served before any
-    user gets their second, so a user with five niche terms cannot crowd out four other users'
-    primary term. Ordering by demand instead would be worse in the same way — it would serve popular
-    terms repeatedly and starve anyone with an unusual search, which is precisely the user for whom
-    this product is most valuable.
+    **One budget for every source was the wrong instrument** and it is gone. That number was sized
+    for the JobSpy tier's ban risk and ended up governing unproxied REST boards, where it meant
+    nothing except that they queued behind each other: sources drained one at a time, so a board
+    could go seventy-five minutes without being asked anything while another was finished.
+    Remotive being starved has nothing to do with HiringCafe being expensive, and one cap made them
+    compete for a resource they do not share. Each source now has its own, set by the operator.
 
-    `carried_over` is last cycle's deferred keys; they are served first this time, so a query
-    unlucky enough to fall outside the budget does not stay unlucky forever.
+    `carried_over` is last cycle's deferred keys, served first this time, so a query unlucky enough
+    to fall outside its source's budget does not stay unlucky.
 
-    Deterministic tie-breaking throughout — an unstable order would make the same inputs produce
-    different harvests and make any bug here unreproducible.
+    Stable order throughout — the same inputs must produce the same harvest, or a bug here is not
+    reproducible.
     """
-    if max_queries <= 0:
-        return [], [PlannedQuery(k, v) for k, v in _stable(query_set)]
+    limits = limits or {}
+    ranked = list(carried_over)
+    rank = {key: index for index, key in enumerate(ranked)}
 
-    remaining = dict(query_set)
+    # Carried-over first, everything else in key order behind it. One sort, and `_stable` keeps the
+    # order inside each group fixed.
+    ordered = sorted(_stable(query_set), key=lambda item: rank.get(item[0], len(ranked)))
+
+    used: dict[str, int] = defaultdict(int)
     selected: list[PlannedQuery] = []
-
-    # Carried-over queries first, if anyone still wants them.
-    for key in carried_over:
-        if len(selected) >= max_queries:
-            break
-        users = remaining.pop(key, None)
-        if users:
+    deferred: list[PlannedQuery] = []
+    for key, users in ordered:
+        cap = limits.get(key.source, DEFAULT_QUERIES_PER_CYCLE)
+        if used[key.source] < cap:
+            used[key.source] += 1
             selected.append(PlannedQuery(key, users))
-
-    # Per-user queues, each in a stable order, drained one round at a time.
-    per_user: dict[UUID, list[QueryKey]] = defaultdict(list)
-    for key, users in _stable(remaining):
-        for user_id in sorted(users):
-            per_user[user_id].append(key)
-
-    taken: set[QueryKey] = set()
-    round_index = 0
-    while len(selected) < max_queries:
-        progressed = False
-        for user_id in sorted(per_user):
-            queue = per_user[user_id]
-            if round_index >= len(queue):
-                continue
-            progressed = True
-            key = queue[round_index]
-            if key in taken:
-                continue
-            taken.add(key)
-            selected.append(PlannedQuery(key, remaining[key]))
-            if len(selected) >= max_queries:
-                break
-        if not progressed:
-            break
-        round_index += 1
-
-    deferred = [PlannedQuery(k, v) for k, v in _stable(remaining) if k not in taken]
+        else:
+            deferred.append(PlannedQuery(key, users))
     return selected, deferred
 
 

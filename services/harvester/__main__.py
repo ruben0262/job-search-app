@@ -32,7 +32,7 @@ from libs.corpus.repository import CorpusRepository
 from libs.db.session import session_scope
 from libs.obs import configure
 from libs.secrets import install
-from libs.settings import HARVEST_SOURCES, freshness_hours
+from libs.settings import HARVEST_SOURCES, freshness_hours, queries_per_cycle
 from libs.tenant.repository import TenantRepository
 from services.harvester.cycle import run_cycle
 from services.harvester.describe import describe_linkedin_for_all
@@ -153,7 +153,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dry-run", action="store_true",
                         help="build and budget the query set, then stop before fetching anything")
     parser.add_argument("--max-queries", type=int, default=None,
-                        help="override the fan-out budget for this run")
+                        help="cap every source at this many queries for this run, ignoring the "
+                             "operator's per-source limits")
     parser.add_argument("--embed-only", action="store_true",
                         help="embed the backlog and nothing else, then stop")
     parser.add_argument("--linkedin", action="store_true",
@@ -198,8 +199,6 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     kwargs = {}
-    if args.max_queries is not None:
-        kwargs["max_queries"] = args.max_queries
     if args.dry_run:
         kwargs["run_source"] = lambda *a, **k: []
 
@@ -215,6 +214,12 @@ def main(argv: list[str] | None = None) -> int:
             source_configs = build_source_configs(
                 TenantRepository(session).active_configs(),
                 freshness={name: freshness_hours(session, name) for name in HARVEST_SOURCES})
+            # The operator's per-source query ceilings, read where the session is. `--max-queries`
+            # flattens them to one number for a manual run and is not how the timer runs.
+            limits = (dict.fromkeys(HARVEST_SOURCES, args.max_queries)
+                      if args.max_queries is not None
+                      else {name: queries_per_cycle(session, name) for name in HARVEST_SOURCES})
+            kwargs["limits"] = limits
             logger.info("harvest: %d sources enabled", len(source_configs))
 
             embedder = None if args.dry_run else EmbedderClient(base_url=embedder_url)

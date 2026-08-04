@@ -56,7 +56,6 @@ DEFAULT_SOURCE_FRESHNESS_HOURS: dict[str, int] = {
     # Feed-shaped aggregators: what they publish is what is new.
     "himalayas": 12,
     "justjoinit": 12,
-    "weworkremotely": 24,
     "workingnomads": 24,
     "jobicy": 24,
     "themuse": 24,
@@ -83,7 +82,7 @@ DEFAULT_FRESHNESS_HOURS = 6
 # admin panel offers a freshness control for, so a source that is not harvested must not appear.
 HARVEST_SOURCES: tuple[str, ...] = (
     # Remote-work aggregators.
-    "himalayas", "weworkremotely", "workingnomads", "jobicy",
+    "himalayas", "workingnomads", "jobicy",
     # ATS boards, polled directly per company.
     "greenhouse", "ashby", "lever", "smartrecruiters", "recruitee",
     "breezy", "workday", "personio", "workable",
@@ -98,10 +97,42 @@ HARVEST_SOURCES: tuple[str, ...] = (
     "linkedin",
 )
 
+# The sources that take a keyword query, as opposed to serving a feed. **Here for the same reason as
+# `HARVEST_SOURCES`**: the admin panel has to say how many queries a source has, and a service may
+# not import another service. `services/harvester/source_config.py` imports this rather than keeping
+# its own copy, because two lists of source names is two lists that drift.
+QUERY_TAKING_SOURCES: frozenset[str] = frozenset(
+    {"himalayas", "hiringcafe", "nofluffjobs", "jooble"})
+
+# How many queries a source may be asked in one 15-minute cycle, before the operator says otherwise.
+#
+# **Per source, because rate limits are.** The single number this replaced was sized for the JobSpy
+# tier's ban risk and ended up governing unproxied REST boards, which then queued behind each other:
+# one board could go seventy-five minutes without being asked anything while another finished.
+#
+# Set from what each board tolerated when it was measured. Arbeitnow answered 13 of 33 burst queries
+# with something that was not JSON — that is what a ceiling set too high looks like, and it is the
+# reason this is a control rather than a constant.
+DEFAULT_SOURCE_QUERIES_PER_CYCLE: dict[str, int] = {
+    # Per-user and proxied. The tightest, because it carries real ban risk and somebody's bandwidth.
+    "linkedin": 12,
+    # Search-shaped boards on a shared client.
+    "himalayas": 40,
+    "hiringcafe": 40,
+    "nofluffjobs": 40,
+    "jooble": 20,
+}
+
+# A source nobody has tuned. Matches `services.harvester.query_set.DEFAULT_QUERIES_PER_CYCLE`; the
+# test in `tests/test_schema.py` pins the two together so they cannot drift apart silently.
+DEFAULT_QUERIES_PER_CYCLE = 40
+
+
 DEFAULTS: dict[str, object] = {
     "delivery_interval_min": DELIVERY_INTERVAL_MIN,
     "source_freshness_hours": DEFAULT_SOURCE_FRESHNESS_HOURS,
     "default_freshness_hours": DEFAULT_FRESHNESS_HOURS,
+    "source_queries_per_cycle": DEFAULT_SOURCE_QUERIES_PER_CYCLE,
 }
 
 
@@ -133,6 +164,23 @@ def put(session: Session, key: str, value: object, *, by: str | None = None) -> 
         .values(key=key, value=value, updated_by=by)
         .on_conflict_do_update(index_elements=["key"],
                                set_={"value": value, "updated_by": by}))
+
+
+
+
+def queries_per_cycle(session: Session, source: str) -> int:
+    """How many queries this source may be asked this cycle.
+
+    Same override ladder as `freshness_hours`, and for the same reason: a stored map names the
+    sources an operator has touched, so treating it as a replacement would reset every other source
+    to a flat default the moment one was tuned.
+    """
+    per_source = get(session, "source_queries_per_cycle") or {}
+    if source in per_source:
+        return int(per_source[source])
+    if source in DEFAULT_SOURCE_QUERIES_PER_CYCLE:
+        return DEFAULT_SOURCE_QUERIES_PER_CYCLE[source]
+    return DEFAULT_QUERIES_PER_CYCLE
 
 
 def freshness_hours(session: Session, source: str) -> int:

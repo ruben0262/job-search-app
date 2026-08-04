@@ -153,8 +153,10 @@ def test_the_fan_out_budget_is_respected(ctx):
     # to be built for a hardcoded pair that was enabled nowhere, so the budget could be exercised
     # against `{}` -- which is precisely how the whole fold came to govern no requests at all.
     report, deferred = run_cycle(s, source_configs=_sources(himalayas={}, nofluffjobs={}),
-                                 max_queries=7, run_source=lambda *a: [])
-    assert report.queries_planned == 7
+                                 limits={"himalayas": 7, "nofluffjobs": 7},
+                                 run_source=lambda *a: [])
+    # Per source, so two sources at seven each is fourteen -- not seven shared between them.
+    assert report.queries_planned == 14
     assert report.queries_deferred > 0
     assert len(deferred) == report.queries_deferred
 
@@ -167,12 +169,49 @@ def test_deferred_queries_are_returned_for_the_next_cycle(ctx):
         _active_user(s, keywords=[f"u{i}a", f"u{i}b"])
 
     asked = _sources(himalayas={}, nofluffjobs={})
-    _, deferred = run_cycle(s, source_configs=asked, max_queries=3, run_source=lambda *a: [])
+    caps = {"himalayas": 3, "nofluffjobs": 3}
+    _, deferred = run_cycle(s, source_configs=asked, limits=caps, run_source=lambda *a: [])
     assert deferred
 
-    report2, _ = run_cycle(s, source_configs=asked, max_queries=3,
+    report2, _ = run_cycle(s, source_configs=asked, limits=caps,
                            carried_over=deferred, run_source=lambda *a: [])
-    assert report2.queries_planned == 3
+    assert report2.queries_planned == 6
+
+
+def test_one_sources_ceiling_does_not_starve_another(ctx):
+    """**The defect the global budget had, stated as behaviour.**
+
+    One number for every source made unrelated boards queue behind each other: keys sort by source,
+    so a cycle drained one board completely and then started the next. Simulated over the real
+    config that meant Remotive was not queried until the fifth cycle — seventy-five minutes — while
+    HiringCafe was finished. Remotive being starved has nothing to do with HiringCafe being
+    expensive, and per source is what makes that structurally impossible.
+    """
+    s = ctx
+    for i in range(20):
+        _active_user(s, keywords=[f"u{i}term{j}" for j in range(3)])
+
+    report, _ = run_cycle(s, source_configs=_sources(himalayas={}, nofluffjobs={}),
+                          limits={"himalayas": 2, "nofluffjobs": 5},
+                          run_source=lambda *a: [])
+
+    # Each source gets exactly its own ceiling, whatever the other one's demand is.
+    assert report.queries_planned == 7
+
+
+def test_a_source_the_operator_has_not_tuned_still_gets_a_ceiling(ctx):
+    """Unbounded is not an option — 50 users × 5 terms is a ban and a cycle that takes an hour — so
+    an unnamed source falls back to the module default rather than to no limit at all."""
+    from services.harvester.query_set import DEFAULT_QUERIES_PER_CYCLE
+
+    s = ctx
+    for i in range(30):
+        _active_user(s, keywords=[f"u{i}term{j}" for j in range(3)])
+
+    report, _ = run_cycle(s, source_configs=_sources(himalayas={}), limits={},
+                          run_source=lambda *a: [])
+    assert report.queries_planned == DEFAULT_QUERIES_PER_CYCLE
+    assert report.queries_deferred > 0
 
 
 # ── who is in the fold ────────────────────────────────────────────────────────────────────────

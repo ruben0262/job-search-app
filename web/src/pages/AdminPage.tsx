@@ -135,9 +135,16 @@ type Settings = {
   delivery_interval_min: number;
   source_freshness_hours: Record<string, number>;
   default_freshness_hours: number;
+  source_queries_per_cycle: Record<string, number>;
 };
 
-type Source = { name: string; hours: number };
+type Source = {
+  name: string;
+  hours: number;
+  queries_per_cycle: number;
+  /** How many distinct queries this source currently has. 0 means it takes none. */
+  wanted: number;
+};
 
 
 /** The four questions an operator arrives with, in the order they ask them. */
@@ -202,6 +209,17 @@ export function AdminPage() {
 
   // One source, one number. Written as a whole map because that is what the setting is — reading
   // it back from the response keeps the panel honest about what was actually stored.
+  // Same shape as the freshness control beside it: write the whole map, read back what was
+  // stored. One mechanism for both, because two would drift.
+  const saveQueries = useAction(async (name: string, value: number) => {
+    const next = { ...(settings?.source_queries_per_cycle ?? {}), [name]: value };
+    const body = await api.put<{ settings: Settings }>(
+      "/admin/settings/source_queries_per_cycle", { value: next });
+    setSettings(body.settings);
+    setSources((rows) =>
+      rows?.map((row) => (row.name === name ? { ...row, queries_per_cycle: value } : row)) ?? rows);
+  });
+
   const saveFreshness = useAction(async (name: string, hours: number) => {
     const next = { ...(settings?.source_freshness_hours ?? {}), [name]: hours };
     const body = await api.put<{ settings: Settings }>(
@@ -377,28 +395,67 @@ export function AdminPage() {
           </select>
           <Error>{saveCadence.error}</Error>
 
-          <p className="label" style={{ marginTop: "1.5rem" }}>Job freshness, per source</p>
+          <p className="label" style={{ marginTop: "1.5rem" }}>Per source</p>
           <span className="hint">
-            How recent a posting must be to qualify, in hours. LinkedIn lists within minutes; a
-            slower board given LinkedIn&apos;s window would never qualify at all. Anything left at
-            the default runs at {settings.default_freshness_hours}h.
+            <strong>Freshness</strong> is how recent a posting must be to qualify. LinkedIn lists
+            within minutes; a company board is reached whenever our token list gets there, so the
+            same window would keep 2% of it. <strong>Queries</strong> is how many times a cycle that
+            source may be asked — per source, because rate limits are, and one shared number made
+            unrelated boards queue behind each other. <strong>Wanted</strong> is how many it
+            currently has: equal or under the ceiling means it is fully served each cycle.
           </span>
-          <Error>{saveFreshness.error}</Error>
+          <Error>{saveFreshness.error ?? saveQueries.error}</Error>
           <div className="sources">
+            <div className="source-row source-head">
+              <span className="source-name">source</span>
+              <span>fresh</span>
+              <span>queries</span>
+              <span className="num">wanted</span>
+            </div>
             {(sources ?? []).map((source) => (
-              <label key={source.name} className="source-row">
+              <div key={source.name} className="source-row">
                 <span className="source-name">{source.name}</span>
                 <select
                   value={source.hours}
                   disabled={saveFreshness.busy}
+                  aria-label={`${source.name} freshness`}
                   onChange={(event) =>
                     void saveFreshness.run(source.name, Number(event.target.value))}
                 >
-                  {[1, 2, 4, 6, 12, 24, 48, 72].map((hours) => (
+                  {[1, 2, 4, 6, 12, 24, 48, 72, 168].map((hours) => (
                     <option key={hours} value={hours}>{hours}h</option>
                   ))}
                 </select>
-              </label>
+                {/* Only the sources that take a query get a ceiling. A feed source is fetched once
+                    whatever this said, so offering the control would be offering a lever attached
+                    to nothing. */}
+                {source.wanted > 0 ? (
+                  <>
+                    <select
+                      value={source.queries_per_cycle}
+                      disabled={saveQueries.busy}
+                      aria-label={`${source.name} queries per cycle`}
+                      onChange={(event) =>
+                        void saveQueries.run(source.name, Number(event.target.value))}
+                    >
+                      {[5, 10, 20, 40, 60, 100, 200].map((n) => (
+                        <option key={n} value={n}>{n}</option>
+                      ))}
+                    </select>
+                    {/* Amber when the ceiling is below demand: that source is running behind and
+                        the number beside it is why. */}
+                    <span className={source.wanted > source.queries_per_cycle
+                      ? "num behind" : "num muted"}>
+                      {source.wanted}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span className="small muted">feed</span>
+                    <span className="num muted">—</span>
+                  </>
+                )}
+              </div>
             ))}
           </div>
         </div>
