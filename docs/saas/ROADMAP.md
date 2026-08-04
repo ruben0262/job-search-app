@@ -1061,6 +1061,28 @@ which is what "harvest broadly, match per user" has always said. Worth checking 
 an unused upstream parameter exists — Jobicy takes a `tag`, TheMuse takes categories — since a
 server-side filter is a different mechanism from discarding what already arrived.
 
+## Phase 7 — the pipeline, in the order it has to be right (added 2026-08-04)
+
+**The owner's sequencing, and it is the correction to how this work was being picked up.** The
+entries below were being treated as a menu; they are a chain, and doing a later one first means
+building on something unverified.
+
+> **Stage 1 — the queries are right.** Every source is asked in the shape it reads, with the
+> keywords a user actually typed and the time window an operator set, and each one returns results
+> we can see. Nothing downstream is worth building while a source is being asked a question it
+> ignores. → **6t**, and the verification below.
+>
+> **Stage 2 — the corpus stores a record, not a blob.** Jobs arrive as structured rows: title,
+> description, country, field, and the rest. Extraction happens once at ingest, for everyone. →
+> **6w**, **6z**.
+>
+> **Stage 3 — filtering is fast and happens before scoring.** Only the jobs a user could plausibly
+> want reach their model. → **6u**, **6x**.
+
+Stage 1 is not "the code is written". It is: for **every enabled source**, we have seen that the
+keyword reaches it, the window reaches it, and rows come back. That check does not exist yet and is
+the immediate next piece of work.
+
 ### 6t — sources, and the seven taken out (decided 2026-08-04)
 
 **Every source was pinged from the production box** with a real keyword, an unrelated keyword and
@@ -1190,41 +1212,16 @@ fall out of the same change:
 3. **Reading the corpus becomes possible for a human.** The admin Corpus tab shows title, company,
    a location string and a `usable` flag, because that is all a row holds.
 
-**`job_field` comes from what actually found the job** (the owner's design, 2026-08-04, and it is
-better than the classifier this entry first proposed).
+**`job_field` is its own piece of work — see 6z.** It belongs to Stage 2 with the rest of the
+extraction, and it is large enough and interesting enough to have its own entry rather than a
+paragraph here.
 
-We already search every board with a set of keywords. A job that turns up under *both* "python
-developer" and "backend engineer" has told us those two terms describe the same kind of work — not
-because a model guessed, but because a board returned the same posting for both. Do that across
-thousands of postings and the terms group themselves. **The clusters are discovered from evidence
-rather than invented in advance**, which is the same argument that killed the title-keyword filter:
-observed behaviour beats a list somebody wrote down.
-
-Three steps, and the first is worth doing on its own:
-
-1. **Record which query found which row.** Nothing does today — `corpus` has a `source` and no
-   query, which is also why the per-stem yield history in 6o.2 cannot be built. One join table
-   (`job_id`, `keyword`) fed at ingest closes both. **This is the enabling change and it is small.**
-2. **Cluster the keywords by co-occurrence.** Terms that keep landing on the same postings belong
-   together; each group gets a stable label. A job's `job_field` is the group its keywords fall in.
-3. **Cover the jobs no query found.** This is the gap in the idea and it is not small: the ATS
-   family, and every feed-shaped source, return postings nobody searched for — 1,720 rows in the
-   last seven days from ATS alone. Those have no keywords and so no field. They get one from their
-   nearest neighbours in the embedding already computed for them: a posting sitting among a hundred
-   jobs labelled *engineering* is engineering. **Keyword evidence where it exists, vector similarity
-   where it does not.**
-
-The cold-start limit is honest and worth stating: the label space is shaped by the terms our users
-actually search. A field nobody has signed up for produces no cluster, and its jobs stay unlabelled
-— which, by the rule below, means unfiltered rather than hidden. Operator keywords (6n.2) are the
-lever that seeds a field ahead of the person who needs it, and this is a second reason they matter.
-
-**The rule that makes a mistake survivable: no label means no filtering.** A wrong country is
-recoverable, because the posting stays in the corpus and a user who widens their selection sees it.
-A wrong `job_field` hides a job from the only user who wanted it, permanently, with no symptom. So a
-row whose field is unknown or low-confidence is **passed through to scoring**, exactly as an
-unreadable country is. The filter only ever removes rows it is confident about, and every version of
-it ships with the before/after count of ≥60 matches lost.
+**The rule that makes a mistake survivable, and it governs every field in this entry: no label means
+no filtering.** A wrong country is recoverable, because the posting stays in the corpus and a user
+who widens their selection sees it. A wrong `job_field` hides a job from the only user who wanted
+it, permanently, with no symptom. So a row whose field is unknown or low-confidence is **passed
+through to scoring**, exactly as an unreadable country is. The filter only ever removes rows it is
+confident about, and every version ships with the before/after count of ≥60 matches lost.
 
 **Also open: recycling.** The owner's concern is that a job filtered out for a user keeps being
 re-examined every cycle for ever. **The answer is that there is nothing to remember**, and it is
@@ -1255,6 +1252,54 @@ Extracted at ingest as 6w describes, then available as cheap pre-score filters. 
 6. **Seniority** — junior / mid / senior / lead. The most frequently mis-stated field in any
    posting, so the last one to trust and the one most likely to need a confidence floor.
 
+### 6z — job fields, discovered from what actually found the job (added 2026-08-04)
+
+**The owner's design, and it is better than the classifier 6w first proposed.** Stage 2.
+
+We already search every board with a set of keywords. A posting that turns up under *both* "python
+developer" and "backend engineer" has told us those two terms describe the same kind of work — not
+because a model guessed, but because a board returned the same row for both. Do that across
+thousands of postings and the terms group themselves. **The clusters are discovered from evidence
+rather than invented in advance**, which is the argument that killed the title-keyword filter:
+observed behaviour beats a list somebody wrote down.
+
+**1. Record which query found which row.** Nothing does today — `corpus` carries a `source` and no
+query. One join table (`job_id`, `keyword`) written at ingest. **This is the enabling change, it is
+small, and it is worth doing on its own**: it is also the missing input for the per-keyword yield
+history in 6o.2, which cannot be built without it.
+
+**2. Group the keywords that keep landing on the same postings.** Terms that co-occur across many
+rows belong together; each group gets a stable label. A job's `job_field` is the group its keywords
+fall in. A job found by one keyword still gets that keyword's group.
+
+**3. Match a user to their nearest cluster, not to their literal terms.** The owner's point, and it
+is what makes this a filter rather than a keyword match by another name: a user's field is the
+cluster their keywords sit closest to, so somebody searching "backend developer" is matched to the
+whole software cluster and receives the "Vehicle Dynamics Specialist"-shaped jobs their own wording
+would never have found. That is the property 6o.1 demanded and a keyword prefilter could not give.
+
+**4. The jobs no query found — open, and the real gap.** ATS boards and feed-shaped sources return
+postings nobody searched for: **1,720 rows in the last seven days from the ATS family alone**, and
+they arrive with no keyword attached, so steps 1–3 give them nothing. Today they are simply scored
+by every user's model like everything else, which is exactly the cost this work exists to remove.
+Three candidate answers, none yet chosen:
+
+- **Nearest neighbours in the embedding.** Every row already has a vector. A posting sitting among a
+  hundred rows labelled *engineering* is engineering, with a distance threshold below which it stays
+  unlabelled. Cheapest, uses only what exists, and inherits whatever the labelled rows got right.
+- **Label the ATS company, not the job.** An ATS token belongs to one employer, and employers are
+  usually in one or two fields. Once a company's queried jobs are labelled, its unqueried ones
+  inherit. Cheap and probably accurate for small companies, wrong for conglomerates.
+- **Ask the model once per row.** Accurate, and the only option that costs money per posting. It is
+  a one-off per job rather than per user, which is not nothing, but it reintroduces the per-row LLM
+  cost this whole phase is trying to delete.
+
+**The cold-start limit is real and worth stating.** The label space is shaped by the terms our users
+actually search, so a field nobody has signed up for produces no cluster. By the rule in 6w that
+means those jobs are unfiltered rather than hidden, so the failure is a cost rather than a loss.
+Operator keywords (6n.2) are the lever that seeds a field ahead of the first person who needs it,
+and this is a second reason they matter.
+
 ### 6y — the corpus grows forever, because the sweep that stops it is never called (added 2026-08-04)
 
 `trim_cold` drops the description and vector from unpinned rows older than `CORPUS_HOT_DAYS` and
@@ -1270,6 +1315,19 @@ never stops.
 job each has been scored. At fifty accounts that is a row per account per corpus row. **The country
 and field filters in 6u and 6w cut this directly**, because a row that is never scored is never
 written — which is a second reason they are worth having beyond the CPU.
+
+**Archived, not deleted** (owner's call, 2026-08-04). `trim_cold` as written *destroys* the
+description and the vector. That is the wrong trade now: the text is the only record of what a job
+actually said, and every future idea in this phase — a better field classifier, a salary parser, a
+retrained embedding, an A/B against old postings — wants a corpus of historical text to work
+against. Deleting it makes those experiments impossible rather than expensive.
+
+So the sweep becomes a **move**: description and vector leave the hot table after
+`CORPUS_HOT_DAYS`, the ~258-byte row stays so dedup still works, and the text goes somewhere cold
+and cheap. Open, and to decide when it is built: a second Postgres table on the same box is the
+simplest thing that works and does not solve the disk problem; object storage off the box does, and
+adds a dependency this platform has so far avoided. The cost difference at 3 GB is small enough
+that "simplest" probably wins for now and the interface should make the other swap-in-able.
 
 Wants a caller on a schedule, like 6c. Not urgent at 136 MB; not something to discover at 30 GB.
 
