@@ -84,7 +84,7 @@ for service in $SERVICES; do
   # an import error every two seconds. State first, contents second.
   # A one-shot has no running container between ticks, so the hash is read from a fresh one.
   if [[ " $ONE_SHOT_SERVICES " == *" $service "* ]]; then
-    running=$($COMPOSE run --rm --no-deps --entrypoint python "$service" -c "$HASH" 2>/dev/null       | tr -d '
+    running=$($COMPOSE run --rm --no-deps --entrypoint python "$service" -c "$HASH" 2>/dev/null       | tr -d '
 ' || echo unreachable)
     if [ "$running" = "$EXPECTED" ]; then
       printf '  %-12s %s
