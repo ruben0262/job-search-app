@@ -98,16 +98,9 @@ def gather_remotive(cfg: dict[str, Any], logger) -> list[JobLink]:
 def gather_arbeitnow(cfg: dict[str, Any], logger) -> list[JobLink]:
     endpoint = cfg.get("endpoint", "https://www.arbeitnow.com/api/job-board-api")
     max_age = cfg.get("max_age_hours", 24)
-    # **Paced, because this loop used to run once.** It took one unfiltered feed request per cycle
-    # until the query set was connected to it; at 33 keywords in a burst the board answered 13 of
-    # them with something that is not JSON. The adapter read a delay from config and never applied
-    # one, so the setting looked present and did nothing.
-    delay = float(cfg.get("request_delay_s", 0))
     out: list[JobLink] = []
     with make_shared_client() as client:
-        for i, q in enumerate(cfg.get("queries", [])):
-            if i and delay:
-                time.sleep(delay)
+        for q in cfg.get("queries", []):
             params = {"search": q.get("search", "")}
             if q.get("remote"):
                 params["remote"] = "true"
@@ -303,16 +296,13 @@ def gather_remoteok(cfg: dict[str, Any], logger) -> list[JobLink]:
     endpoint = cfg.get("endpoint", "https://remoteok.io/api")
     max_age = cfg.get("max_age_hours", 24)
     tags = cfg.get("tags", [])
-    delay = float(cfg.get("request_delay_s", 1.2))  # be kind to their server
     out: list[JobLink] = []
     seen: set[str] = set()
     # RemoteOK blocks the generic Mozilla UA; a slightly more specific one works.
     ua = {"User-Agent": "Mozilla/5.0 (compatible; job-search-bot/1.0)", "Accept": "application/json"}
     queries: list[dict] = [{"tag": t} for t in tags] if tags else [{}]
     with make_shared_client(headers=ua, follow_redirects=True) as client:
-        for i, params in enumerate(queries):
-            if i > 0:
-                time.sleep(delay)
+        for params in queries:
             try:
                 data = client.get(endpoint, params=params or None).json()
             except Exception as exc:

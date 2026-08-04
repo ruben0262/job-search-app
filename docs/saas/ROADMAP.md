@@ -1141,6 +1141,63 @@ than an unusual phrasing — but "easier to defend" is not "measured".
 this is where it belongs: asked once against the corpus, per user, on a parsed field — rather than
 multiplied into every board's query set to be applied by boards that mostly cannot apply it.
 
+**Country is a hard filter, and the trick is what "EU" means** (decided 2026-08-04).
+
+- **Hard, not a weighting.** A user who did not choose the UK must not receive UK jobs, and no
+  amount of a good title should override that. Today nothing enforces it anywhere: `_location_points`
+  awards *full marks* to any posting when the user picked a region, with the comment "no posting
+  spells `european_union` in its location field… the region is treated as satisfied". So selecting
+  the EU currently excludes nothing at all, and a London job scores exactly like a Berlin one.
+- **An unknown country passes.** Plenty of postings name no place, and a remote role frequently
+  names none on purpose. Rejecting those would throw away the most portable jobs on the board, so
+  absence of evidence stays what it already is elsewhere in this codebase: not evidence of absence.
+  That is also what keeps the filter cheap — one indexed comparison and a NULL check.
+- **The EU is a list, and the UK is not on it.** `european_union` expands to the 27 member states;
+  `europe` expands to those plus the UK, Switzerland, Norway and the rest of the continent. A user
+  selecting Germany gets Germany. A city implies its country — `budapest` admits Hungary — because
+  somebody who named a city has certainly not excluded the country around it.
+- **`remote_worldwide` disables the filter** rather than expanding to every country, since the point
+  of that selection is that place does not matter.
+
+**Fully tested is a requirement of this entry, not a nicety.** The failure is invisible: a filter
+that is too tight silently costs somebody a job they would have taken, and nothing in the product
+reports a job that was never scored. The tests have to cover the expansion of every location slug,
+the UK-is-not-EU case in both directions, the unknown-country pass, and a job whose location string
+is a city with no country in it.
+
+Salary and contract type are deliberately **not** in this first cut. Country and job field are what
+make the scorer's cost stop scaling; the rest is a later addition once this one is proven.
+
+### 6v — every limit an operator can see and change (added 2026-08-04)
+
+**The rule: a number that governs how hard we hit a source belongs beside the other one that does.**
+The per-source freshness window is already an operator setting with a control in the admin panel;
+these are the same kind of number and are currently constants, so tuning one means a deploy.
+Documentation and rate limits change over time, and the person who notices is the operator.
+
+Moving into platform settings, per source, rendered next to the freshness column:
+
+1. **Queries per cycle, per source** — replacing `HARVEST_MAX_QUERIES_PER_CYCLE = 60`. That number
+   was sized for the JobSpy tier's ban risk and now governs unproxied REST boards, where it means
+   nothing (6r). Per source, it means what it says: this is how many times a cycle we are willing
+   to ask this board. JobSpy/LinkedIn keeps a tight one for the reason the global number existed.
+2. **Results per query, per source** — today a scatter of adapter constants: `limit: 100` for
+   Remotive and Himalayas, `pageSize: 100` for NoFluffJobs, three pages of 40 for HiringCafe,
+   `count: 50` for Jobicy. Each is a real ceiling on how deep one query reaches, and each is
+   currently invisible.
+3. **ATS companies per cycle**, with **the total we hold shown beside it.** `max_companies: 400` is
+   a constant, and the token list grows on its own from harvested apply-URLs — so an operator
+   choosing that number needs to know whether it is 400 out of 500 or 400 out of 12,000. The count
+   is a query nobody currently runs.
+
+**Deleted rather than moved: `request_delay_s`.** It exists on two adapters, was applied by one, and
+the owner's call is that pacing is not something we should be doing by hand. If a board refuses a
+burst, that is a per-source query ceiling to lower, which is item 1, and it is visible where the
+delay never was.
+
+Keywords per user and locations per user stay where they are — they bound what one person can ask
+for rather than what we do to a source, and the config form already shows both.
+
 ## Deliberately deferred
 
 Do not build these before Phase 4, regardless of how appealing they look mid-build.

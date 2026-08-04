@@ -187,13 +187,8 @@ PLATFORM_DEFAULTS: dict[str, dict] = {
     "remotive": {"endpoint": "https://remotive.com/api/remote-jobs"},
     "himalayas": {"endpoint": "https://himalayas.app/jobs/api"},
     # RemoteOK rate-limits a burst from one IP; the delay is from the reference and is not a guess.
-    "remoteok": {"endpoint": "https://remoteok.com/api", "request_delay_s": 2},
-    # **A delay, because the query set now reaches it.** Arbeitnow used to get one unfiltered feed
-    # request per cycle and now gets one per keyword; the first live cycle at 33 queries had 13 of
-    # them answered with something that is not JSON, which is what this board does under a burst
-    # from one IP. Same treatment as RemoteOK, and for the same reason.
-    "arbeitnow": {"endpoint": "https://www.arbeitnow.com/api/job-board-api",
-                  "request_delay_s": 1},
+    "remoteok": {"endpoint": "https://remoteok.com/api"},
+    "arbeitnow": {"endpoint": "https://www.arbeitnow.com/api/job-board-api"},
     "weworkremotely": {"feeds": ["https://weworkremotely.com/categories/remote-programming-jobs.rss"]},
     "workingnomads": {"endpoint": "https://www.workingnomads.com/api/exposed_jobs/"},
     "jobicy": {"count": 50},
