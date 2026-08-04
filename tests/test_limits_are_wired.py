@@ -83,16 +83,22 @@ def test_no_limit_is_read_with_an_or_fallback():
     """
     offenders = []
     for path, body in ((p, p.read_text(encoding="utf-8")) for p in _sources()):
-        for number, line in enumerate(body.splitlines(), start=1):
+        lines = body.splitlines()
+        for number, line in enumerate(lines, start=1):
             stripped = line.strip()
             # Comments explaining the rule are not violations of it.
             if stripped.startswith("#"):
                 continue
-            if "resolve(" not in line or " or " not in line:
+            if "resolve(" not in line or stripped.startswith("def "):
                 continue
             if "send_gap_seconds" in line:
                 continue
-            offenders.append(f"{path.relative_to(ROOT)}:{number}: {line.strip()}")
+            # **Two lines, because a wrapped call hid one of these.** `resolve(...)` on one line and
+            # `or DEFAULT` on the next is the same defect and reads as innocent.
+            window = " ".join(
+                part.split("#")[0] for part in lines[number - 1:number + 1])
+            if " or " in window:
+                offenders.append(f"{path.relative_to(ROOT)}:{number}: {stripped}")
 
     assert not offenders, (
         "a limit read with an `or` fallback cannot express Unlimited:\n  " + "\n  ".join(offenders))
@@ -109,3 +115,36 @@ def test_a_limit_that_cannot_be_unlimited_says_so():
     # And the ones where unlimited is a real, useful answer keep it.
     assert BY_KEY["notifications_per_day"].allow_unlimited is True
     assert BY_KEY["items_per_run"].allow_unlimited is True
+
+
+def test_unlimited_is_honoured_wherever_it_is_offered():
+    """**A dropdown option that silently means something else is worse than no option.**
+
+    Reported from the panel: an account set to Unlimited jobs per delivery run was still receiving
+    ten. The rule this pins is the general one — a limit whose catalogue says unlimited is available
+    must have a consumer that acts on `None`, and a limit whose consumer cannot express unlimited
+    must not offer it.
+    """
+    from libs.limits import LIMITS
+
+    bodies = {path: path.read_text(encoding="utf-8") for path in _sources()}
+
+    unhonoured = []
+    for limit in LIMITS:
+        if not limit.allow_unlimited:
+            continue
+        quoted = (f'"{limit.key}"', f"'{limit.key}'")
+        for body in bodies.values():
+            lines = body.splitlines()
+            for number, line in enumerate(lines):
+                if "resolve(" not in line or not any(q in line for q in quoted):
+                    continue
+                # The consumer has to look at `None` within a few lines of reading it — either on
+                # the same line or in the branch under it.
+                window = "\n".join(lines[number:number + 6])
+                if "None" not in window and "is not None" not in window:
+                    unhonoured.append(f"{limit.key}: {line.strip()}")
+
+    assert not unhonoured, (
+        "these limits offer Unlimited and their consumer never checks for it:\n  "
+        + "\n  ".join(unhonoured))

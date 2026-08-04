@@ -672,16 +672,13 @@
         "type": "string"
       },
       "Location": {
-        "description": "Controlled vocabulary. **Adding a value is a deliberate act, not a user typing.**\n\nEvery entry here becomes a distinct axis of the harvest query set, so this list is a direct\ninput to the fan-out budget. Growing it without measuring the cycle cost is how a 15-minute\nharvest becomes an hour (`HARVESTER_PLAN.md` \u00a73).\n\n`REMOTE_*` are not places but delivery regions, which is exactly how the sources treat them.",
+        "description": "Controlled vocabulary. **Adding a value is a deliberate act, not a user typing.**\n\nEvery entry here becomes a distinct axis of the harvest query set, so this list is a direct\ninput to the fan-out budget. Growing it without measuring the cycle cost is how a 15-minute\nharvest becomes an hour (`HARVESTER_PLAN.md` \u00a73).\n\n**This is a list of places and nothing else** (2026-08-04). It used to carry `remote_worldwide`,\n`remote_eu`, `remote_uk` and `remote_us`, which are not places \u2014 they made \"where\" and \"how\" one\nquestion whose answers could contradict each other, and duplicated the `remote_policy` field\nevery section already has. Working arrangement is `remote_policy`; this is geography.\n\n**One region, and it is `europe`.** `european_union` and `europe` were two slugs nobody reading\na checkbox would tell apart, and getting it wrong silently changes which jobs somebody sees.\n`europe` means the 27 member states; the UK, Switzerland and Norway are named separately,\nbecause the UK not being in the EU is the case this whole filter exists for.\n\nEvery value here must resolve to countries in `libs.corpus.geo`, or a user can select something\nthe country filter cannot act on \u2014 and `test_geo` fails if one does not.",
         "enum": [
-          "european_union",
-          "united_kingdom",
           "europe",
+          "united_kingdom",
           "ireland",
-          "remote_worldwide",
-          "remote_eu",
-          "remote_uk",
-          "remote_us",
+          "switzerland",
+          "norway",
           "london",
           "berlin",
           "amsterdam",
@@ -1810,6 +1807,107 @@
         ]
       }
     },
+    "/admin/latency": {
+      "get": {
+        "description": "The drill-down: the spans, then where the time actually went, then when.\n\nThe health page reports that a posting took 36 minutes end to end. That is the number worth\npublishing and useless for fixing anything -- it does not say whether a worker was busy or the\nwork was slow, and those are repaired in completely different places. Nor does an average over a\nday show the hour it was four times worse, which is the hour worth looking at.\n\nBounded window: a fortnight of hourly buckets is a chart nobody can read and a query nobody\nshould run on a page load.",
+        "operationId": "latency_admin_latency_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "hours",
+            "required": false,
+            "schema": {
+              "default": 24,
+              "title": "Hours",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Latency Admin Latency Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Latency",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/latency/{key}": {
+      "get": {
+        "description": "One zone, expanded: waiting versus running, the backlog, and the hour-by-hour shape.\n\n**Fetched on expansion rather than with the table.** Each of these costs a query and only one\nrow is ever open, so putting them on the page load would run six times the work to answer a\nquestion nobody asked yet.\n\n`key` is matched against the known stages rather than interpolated anywhere -- an unknown one is\na 404, and no part of it reaches SQL.",
+        "operationId": "latency_stage_admin_latency__key__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "title": "Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "hours",
+            "required": false,
+            "schema": {
+              "default": 24,
+              "title": "Hours",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Latency Stage Admin Latency  Key  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Latency Stage",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/admin/limits": {
       "get": {
         "description": "What can be set, what it defaults to, and what each one means.\n\nServed rather than hardcoded in the panel so adding a ceiling is one entry in `libs.limits`\nrather than an entry plus a form field plus a label somebody has to keep in step.",
@@ -1915,7 +2013,7 @@
     },
     "/admin/sources": {
       "get": {
-        "description": "Every source the harvester collects from, with the freshness window each one is using.\n\nRead from the harvester's own enabled list rather than from whatever happens to be in the\nsettings blob: a source nobody has tuned should still appear, with the default it is actually\nrunning at, or the panel silently omits the boards most likely to need attention.",
+        "description": "Every source the harvester collects from, with the freshness window each one is using.\n\nRead from the harvester's own enabled list rather than from whatever happens to be in the\nsettings blob: a source nobody has tuned should still appear, with the default it is actually\nrunning at, or the panel silently omits the boards most likely to need attention.\n\n**`wanted` is what makes the limit meaningful.** A ceiling of 40 tells an operator nothing on\nits own; 40 against 28 queries waiting says the source is fully served, and 40 against 300 says\nit is four cycles behind. The number is how many distinct queries that source currently has \u2014\nthe same set the cycle budgets \u2014 so the two columns are the same arithmetic the harvest does.",
         "operationId": "sources_admin_sources_get",
         "responses": {
           "200": {
@@ -3495,7 +3593,7 @@
         ]
       },
       "put": {
-        "description": "Validate and store. The server is the authority; the form is a convenience.\n\nSaving does not schedule anything. The harvester picks the config up on its next cycle by\nreading every active user's config \u2014 there is no per-user trigger to forget to fire.",
+        "description": "Validate and store. The server is the authority; the form is a convenience.\n\nSaving does not schedule anything. The harvester picks the config up on its next cycle by\nreading every active user's config \u2014 there is no per-user trigger to forget to fire.\n\n**The keyword ceiling is checked here rather than in the schema**, because it is per account.\n`UserConfigSchema` bounds each section at the platform maximum, which is the right hard stop for\neveryone; the operator's `keywords` limit is what an individual account is allowed, and it went\nunread until 2026-08-04 \u2014 the control existed, the panel rendered it, and the schema constant\nwas the only thing anybody was measured against. Counted **across sections**, matching the\nharvester's own cap, or five sections would buy five times the allowance.",
         "operationId": "put_config_onboarding_config_put",
         "requestBody": {
           "content": {

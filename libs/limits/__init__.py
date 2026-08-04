@@ -78,8 +78,13 @@ LIMITS: tuple[Limit, ...] = (
     Limit("conversations", "Setup chats", 3, "chats",
           "Every turn replays its whole chat on the user's own credential, so more chats is more "
           "spend re-reading them."),
+    # **Not unlimited-able**, for the same reason `send_gap_seconds` is not: the ceiling protects
+    # somebody rather than expressing a preference. Labelling spends the user's own Claude
+    # credential, "unlimited" is not a bigger target but an unbounded bill, and the option was being
+    # read as 300 anyway — so it was a choice that looked available and was not.
     Limit("label_pool", "Jobs bought per labelling run", 300, "jobs",
-          "Labelling runs on the user's own Claude credential, so this is their money."),
+          "Labelling runs on the user's own Claude credential, so this is their money.",
+          allow_unlimited=False),
 )
 
 BY_KEY = {limit.key: limit for limit in LIMITS}

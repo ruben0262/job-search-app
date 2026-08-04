@@ -178,8 +178,13 @@ def run_for_due_users(session, *, now: datetime | None = None,
         # in the admin panel and it reached nothing: this read `users.linkedin_interval_min`, a
         # column the panel does not write, so moving the slider moved a number on a page. The column
         # remains the fallback for an account nobody has tuned.
-        interval = (limits.resolve(user, "linkedin_interval_min")
-                    or user.linkedin_interval_min or DELIVERY_INTERVAL_MIN)
+        # `linkedin_interval_min` forbids unlimited, so `resolve` always answers with a number:
+        # the operator's, or the catalogue default. The column is the legacy fallback for a row
+        # written before the limit existed.
+        chosen = limits.resolve(user, "linkedin_interval_min")
+        if chosen is None:
+            chosen = user.linkedin_interval_min or DELIVERY_INTERVAL_MIN
+        interval = chosen
         user.linkedin_next_run_at = next_linkedin_run(now, resolve_linkedin_interval(interval))
 
         queries = queries_for(session, user)
@@ -261,11 +266,13 @@ def _run_one(user: User, queries: list[dict], *, corpus: CorpusRepository,
                 # up to an hour and then rescored underneath the user. There is no window now.
                 new_jobs = _ingest(corpus, links)
                 with make_client(lease) as client:
+                    # `None` is Unlimited. Stated as a branch rather than an `or`, because `or`
+                    # cannot tell "no ceiling" from "unset" and that ambiguity is what made an
+                    # account set to Unlimited run at the default.
+                    per_run = limits.resolve(user, "describe_per_run")
                     described = describe_pending(
                         corpus, client, linkedin=True,
-                        # `None` is Unlimited; the pass is bounded by what one run found anyway.
-                        limit=(limits.resolve(user, "describe_per_run")
-                               or UNLIMITED_DESCRIBES))
+                        limit=UNLIMITED_DESCRIBES if per_run is None else per_run)
 
     except SecretsError:
         # The store could not answer. Not this user's fault and not a reason to stop the pass.

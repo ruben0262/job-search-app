@@ -4,20 +4,22 @@ Field maps and quirks below were confirmed against the live APIs (2026-06/07):
 
   Source           Call                                          date field (format)           url
   ───────────────  ───────────────────────────────────────────  ────────────────────────────  ────────────────────────────────────
-  Remotive         GET  remote-jobs?search=&limit=               publication_date (ISO)         job["url"]              (all remote)
-  Arbeitnow        GET  job-board-api?search=                    created_at (epoch s)           job["url"]              remote=bool
   Himalayas        GET  jobs/api?limit=                          pubDate (epoch s)              job["applicationLink"]  (remote-focused)
   JustJoin.it      GET  v2 by-cursor?perPage= (newest first)     publishedAt (ISO)              justjoin.it/job-offer/slug workplaceType
   NoFluffJobs      POST search/posting (rawSearch body)          posted (epoch ms)              nofluffjobs.com/job/url fullyRemote=bool
-  RemoteOK         GET  api?tag=                                 date (ISO) / epoch (unix s)    job["url"]              (all remote)
-  WeWorkRemotely   GET  RSS feed per category                    pubDate (RFC 2822)             <link>                  (all remote)
   WorkingNomads    GET  RSS feed per category                    pubDate (RFC 2822)             <link>                  (all remote)
   Profession.hu    GET  /allasok/1,0,0,<kw>?rss (keyword RSS)    pubDate (RFC 2822)             <guid>                  (HU on-site mostly)
-  DreamJobs.hu     GET  api/v1/en/jobs?region=hu (paginated)     started_at (ISO, space sep)    /en/job/<co>/<slug>     (HU IT board)
 
 Every adapter applies the client-side recency filter (max_age_hours) on the
 source's own date field, never raises (logs + returns [] on failure), and caps
 output so one source can't flood the queue.
+
+**Five adapters were removed on 2026-08-04** — Remotive, Arbeitnow, RemoteOK, WeWorkRemotely and
+DreamJobs — along with the VC-board module. Each was pinged from the production box with a real
+keyword, an unrelated one and nonsense, and answered identically to all three, or had stopped
+publishing. A source that cannot be asked for anything is not part of a targeted harvest
+(ROADMAP 6t), and an adapter nothing calls reads as current. They are recoverable from this
+commit if any of them is ever brought back as a pure feed.
 
 --- ported from the reference instance, 2026-07-27 ---
 
@@ -62,71 +64,6 @@ def _tokens(phrase: str) -> list[str]:
     return [w for w in phrase.lower().split() if len(w) > 2]
 
 
-# ── Remotive ─────────────────────────────────────────────────────────
-
-def gather_remotive(cfg: dict[str, Any], logger) -> list[JobLink]:
-    endpoint = cfg.get("endpoint", "https://remotive.com/api/remote-jobs")
-    max_age = cfg.get("max_age_hours", 24)
-    out: list[JobLink] = []
-    with make_shared_client() as client:
-        for q in cfg.get("queries", []):
-            params = {"limit": 100, "search": q.get("search", "")}
-            if q.get("category"):
-                params["category"] = q["category"]
-            try:
-                jobs = client.get(endpoint, params=params).json().get("jobs", [])
-            except Exception as exc:
-                logger.warning("remotive query %s failed: %s", q, exc)
-                continue
-            for j in jobs:
-                posted = j.get("publication_date")
-                if not is_within_hours(posted, max_age):
-                    continue
-                url = j.get("url")
-                if not url:
-                    continue
-                out.append(JobLink(
-                    url=url, title=j.get("title", ""), company=j.get("company_name", ""),
-                    location=j.get("candidate_required_location", ""), source="remotive",
-                    date_posted=posted, snippet=j.get("description", ""), is_remote=True,
-                ))
-    return out
-
-
-# ── Arbeitnow ────────────────────────────────────────────────────────
-
-def gather_arbeitnow(cfg: dict[str, Any], logger) -> list[JobLink]:
-    endpoint = cfg.get("endpoint", "https://www.arbeitnow.com/api/job-board-api")
-    max_age = cfg.get("max_age_hours", 24)
-    out: list[JobLink] = []
-    with make_shared_client() as client:
-        for q in cfg.get("queries", []):
-            params = {"search": q.get("search", "")}
-            if q.get("remote"):
-                params["remote"] = "true"
-            try:
-                data = client.get(endpoint, params=params).json().get("data", [])
-            except Exception as exc:
-                logger.warning("arbeitnow query %s failed: %s", q, exc)
-                continue
-            for j in data:
-                iso = epoch_to_iso(j.get("created_at"))
-                if not is_within_hours(iso, max_age):
-                    continue
-                if q.get("remote") and not j.get("remote"):
-                    continue
-                url = j.get("url")
-                if not url:
-                    continue
-                out.append(JobLink(
-                    url=url, title=j.get("title", ""), company=j.get("company_name", ""),
-                    location=j.get("location", ""), source="arbeitnow", date_posted=iso,
-                    snippet=j.get("description", ""),
-                    # remote=false means "not fully remote" — could be hybrid, so unknown
-                    # (False would make the workplace filter treat it as on-site).
-                    is_remote=(True if j.get("remote") else None),
-                ))
-    return out
 
 
 # ── Himalayas ────────────────────────────────────────────────────────
@@ -283,61 +220,6 @@ def _rss_date_to_iso(date_str: str | None) -> str | None:
         return date_str  # pass through to is_within_hours which handles various formats
 
 
-# ── Remote OK ─────────────────────────────────────────────────────────
-
-def gather_remoteok(cfg: dict[str, Any], logger) -> list[JobLink]:
-    """RemoteOK public JSON API — free, no auth, optional tag filter.
-
-    Strategy: one request per configured tag (query param ?tag=); short sleep
-    between calls to respect their rate limit. Client-side 24h date filter on
-    the job["date"] ISO field (job["epoch"] unix-seconds as fallback).
-    First element of the response array is always a legal notice object, not a job.
-    """
-    endpoint = cfg.get("endpoint", "https://remoteok.io/api")
-    max_age = cfg.get("max_age_hours", 24)
-    tags = cfg.get("tags", [])
-    out: list[JobLink] = []
-    seen: set[str] = set()
-    # RemoteOK blocks the generic Mozilla UA; a slightly more specific one works.
-    ua = {"User-Agent": "Mozilla/5.0 (compatible; job-search-bot/1.0)", "Accept": "application/json"}
-    queries: list[dict] = [{"tag": t} for t in tags] if tags else [{}]
-    with make_shared_client(headers=ua, follow_redirects=True) as client:
-        for params in queries:
-            try:
-                data = client.get(endpoint, params=params or None).json()
-            except Exception as exc:
-                logger.warning("remoteok query %s failed: %s", params, exc)
-                continue
-            if not isinstance(data, list):
-                continue
-            for j in data:
-                if not isinstance(j, dict) or not j.get("id"):
-                    continue  # skip the legal-notice first element
-                url = j.get("url") or f"https://remoteok.io/remote-jobs/{j['id']}"
-                if url in seen:
-                    continue
-                seen.add(url)
-                date_str = j.get("date")
-                if not date_str and j.get("epoch"):
-                    try:
-                        date_str = epoch_to_iso(int(j["epoch"]))
-                    except Exception:
-                        pass
-                if not is_within_hours(date_str, max_age):
-                    continue
-                tags_list = j.get("tags") or []
-                out.append(JobLink(
-                    url=url,
-                    title=j.get("position", ""),
-                    company=j.get("company", ""),
-                    location=j.get("location") or "Worldwide",
-                    source="remoteok",
-                    date_posted=date_str,
-                    snippet=" | ".join(str(t) for t in tags_list),
-                    is_remote=True,
-                ))
-    return out
-
 
 # ── RSS parsing (tolerant) ────────────────────────────────────────────
 _RSS_ENTITY_RE = re.compile(r"&(?!amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;)")
@@ -417,17 +299,6 @@ def _gather_rss(cfg: dict[str, Any], logger, source: str,
                 ))
     return out
 
-
-def gather_weworkremotely(cfg: dict[str, Any], logger) -> list[JobLink]:
-    """WeWorkRemotely RSS — title format "CompanyName: Job Title [Location, Remote]"."""
-    def parse(raw_title: str) -> tuple[str, str, str]:
-        if ": " not in raw_title:
-            return raw_title, "", "Remote"
-        company, _, rest = raw_title.partition(": ")
-        if "[" in rest:
-            return rest[:rest.rfind("[")].strip(), company, rest[rest.rfind("[") + 1:].rstrip("]").strip()
-        return rest.strip(), company, "Remote"
-    return _gather_rss(cfg, logger, "weworkremotely", parse)
 
 
 def gather_workingnomads(cfg: dict[str, Any], logger) -> list[JobLink]:
@@ -821,65 +692,6 @@ def gather_profession(cfg: dict[str, Any], logger) -> list[JobLink]:
                 ))
     return out
 
-
-# ── DreamJobs.hu (Hungarian IT/startup-focused board) ─────────────────
-
-def gather_dreamjobs(cfg: dict[str, Any], logger) -> list[JobLink]:
-    """DreamJobs.hu public JSON API (Nuxt backend), Hungarian IT/startup board.
-
-    Probed 2026-07-13: `GET api.dreamjobs.hu/api/v1/en/jobs?region=hu&scope[]=isNotBlue`
-    returns paginated jobs (15/page, `pagination.last_page`; ~74 jobs total on the whole
-    board, so polling every page is cheap). Server-side tag filtering 500s, so category
-    filtering is client-side on `tags.job_category.slug` (e.g. it-development). Field
-    map: `started_at` "YYYY-MM-DD HH:MM:SS" (fromisoformat-compatible), `name`/`slug`
-    are per-language dicts, company under `company` (name + slug), job URL is
-    `dreamjobs.hu/en/job/<company.slug>/<slug.en>`, locations under
-    `tags.office_location.data[].name.en`. No explicit remote flag -> is_remote=None."""
-    endpoint = cfg.get("endpoint", "https://api.dreamjobs.hu/api/v1/en/jobs")
-    max_age = cfg.get("max_age_hours", 24)
-    categories = set(cfg.get("categories", ["it-development", "it-operations-pm"]))
-    max_pages = int(cfg.get("max_pages", 5))
-    out: list[JobLink] = []
-    with make_shared_client() as client:
-        page, last_page = 1, 1
-        while page <= min(last_page, max_pages):
-            params = {"region": cfg.get("region", "hu"), "scope[]": "isNotBlue", "page": page}
-            try:
-                data = client.get(endpoint, params=params).json()
-            except Exception as exc:
-                logger.warning("dreamjobs page %d failed: %s", page, exc)
-                break
-            last_page = int((data.get("pagination") or {}).get("last_page", page))
-            for j in data.get("data", []):
-                tags = j.get("tags") or {}
-                cat = ((tags.get("job_category") or {}).get("slug") or "")
-                if categories and cat not in categories:
-                    continue
-                iso = j.get("started_at")
-                if not is_within_hours(iso, max_age):
-                    continue
-                slug = j.get("slug") or {}
-                job_slug = slug.get("en") or slug.get("hu") or ""
-                company = j.get("company") or {}
-                comp_slug = company.get("slug") or ""
-                if not (job_slug and comp_slug):
-                    continue
-                name = j.get("name") or {}
-                title = (name.get("en") or name.get("hu") or "").strip()
-                offices = ((tags.get("office_location") or {}).get("data")) or []
-                cities = [((o.get("name") or {}).get("en") or "") for o in offices if isinstance(o, dict)]
-                joined = ", ".join(c for c in cities if c)
-                # Always anchor to Hungary so explicit-onsite jobs outside Budapest still
-                # match the ONSITE_LOCATIONS ("hungary") allowance.
-                location = f"{joined}, Hungary" if joined else "Hungary"
-                out.append(JobLink(
-                    url=f"https://dreamjobs.hu/en/job/{comp_slug}/{job_slug}",
-                    title=title, company=company.get("name", ""), location=location,
-                    source="dreamjobs", date_posted=iso, snippet=title,
-                    is_remote=None,  # board has no exact remote flag — scorer/JD fetch decides
-                ))
-            page += 1
-    return out
 
 
 # ── Jooble (aggregator; hu.jooble.org = strong Hungarian coverage) ────

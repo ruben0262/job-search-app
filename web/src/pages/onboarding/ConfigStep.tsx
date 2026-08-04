@@ -74,14 +74,9 @@ const BLANK: Config = {
  *  be in. Anything the schema adds that is not listed here still appears, under "Other". */
 const PLACE_GROUPS: { label: string; hint: string; values: string[] }[] = [
   {
-    label: "Work from anywhere",
-    hint: "Remote roles, by where the company will hire from",
-    values: ["remote_worldwide", "remote_eu", "remote_uk", "remote_us"],
-  },
-  {
     label: "Regions and countries",
-    hint: "Anywhere in these, including roles that ask you on site",
-    values: ["european_union", "europe", "united_kingdom", "ireland"],
+    hint: "Where you can take a job. How you work — remote, hybrid or on site — is the next question",
+    values: ["europe", "united_kingdom", "ireland", "switzerland", "norway"],
   },
   {
     label: "Cities",
@@ -93,13 +88,10 @@ const PLACE_GROUPS: { label: string; hint: string; values: string[] }[] = [
 
 /** Plain names for the values that do not read well spelled out. */
 const PLACE_NAMES: Record<string, string> = {
-  remote_worldwide: "Remote, anywhere in the world",
-  remote_eu: "Remote, from the EU",
-  remote_uk: "Remote, from the UK",
-  remote_us: "Remote, from the US",
-  european_union: "European Union",
   united_kingdom: "United Kingdom",
-  europe: "Europe (including non-EU)",
+  // **Named for what it admits.** The whole point of the country filter is that a UK job does not
+  // reach somebody who chose the EU, and "Europe" alone would read as including it.
+  europe: "European Union (27 countries)",
 };
 
 const WORKPLACE: { value: string; label: string; hint: string }[] = [

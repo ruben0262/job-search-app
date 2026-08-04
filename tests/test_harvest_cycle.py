@@ -380,7 +380,7 @@ def test_a_board_with_no_geography_is_asked_once_per_keyword(ctx):
 
     config = {uuid.uuid4(): {"sections": [
         {"keywords": ["golang"], "platform": "all",
-         "locations": ["european_union", "united_kingdom", "budapest", "europe"]}]}}
+         "locations": ["europe", "united_kingdom", "budapest"]}]}}
 
     # `himalayas` has no location parameter at all; `hiringcafe` has a real one.
     keys = build_query_set(config, sources=("himalayas", "hiringcafe"),
@@ -390,7 +390,7 @@ def test_a_board_with_no_geography_is_asked_once_per_keyword(ctx):
         per_source[key.source] = per_source.get(key.source, 0) + 1
 
     assert per_source["himalayas"] == 1, "one keyword, one query, however many places were asked for"
-    assert per_source["hiringcafe"] == 4, "a source that can filter by place still gets all four"
+    assert per_source["hiringcafe"] == 3, "a source that can filter by place still gets all three"
 
 
 def test_a_job_a_board_returned_survives_every_enabled_source_s_own_filtering(ctx):
@@ -423,7 +423,7 @@ def test_a_job_a_board_returned_survives_every_enabled_source_s_own_filtering(ct
 
     built = build_source_configs(
         {uuid.uuid4(): {"sections": [
-            {"keywords": ["software engineer"], "locations": ["european_union"]}]}},
+            {"keywords": ["software engineer"], "locations": ["europe"]}]}},
         env={})
 
     # Only the sources that route through `JobFilter` — the ATS family. The others run their own
@@ -456,7 +456,7 @@ def test_a_keyword_filtered_source_keeps_what_matches_and_judges_nothing_else(ct
 
     built = build_source_configs(
         {uuid.uuid4(): {"sections": [
-            {"keywords": ["software engineer"], "locations": ["european_union"]}]}},
+            {"keywords": ["software engineer"], "locations": ["europe"]}]}},
         env={})
 
     for name in KEYWORD_FILTER_SOURCES & set(built):
@@ -534,7 +534,7 @@ def test_the_union_is_asked_for_not_used_to_throw_away_what_a_board_sent(ctx):
     from services.harvester.source_config import PREFILTER_SOURCES, build_source_configs
 
     built = build_source_configs(
-        {uuid.uuid4(): {"sections": [{"keywords": ["golang"], "locations": ["european_union"]}]}},
+        {uuid.uuid4(): {"sections": [{"keywords": ["golang"], "locations": ["europe"]}]}},
         env={})
 
     assert not PREFILTER_SOURCES, (

@@ -1372,6 +1372,40 @@ that "simplest" probably wins for now and the interface should make the other sw
 
 Wants a caller on a schedule, like 6c. Not urgent at 136 MB; not something to discover at 30 GB.
 
+### 6ab — split "posted → found" into their lag and ours (planned 2026-08-04)
+
+**The owner's observation, and it is correct: that row measures two different things and neither is
+readable.** `posted_at → first_seen_at` currently contains, added together:
+
+1. **Their lag** — how long a board took to publish, and how coarsely it reports when. LinkedIn says
+   "2 days ago". Nothing we do changes it, and it is why the row carries no verdict.
+2. **The harvest tick** — up to fifteen minutes waiting for the next cycle, which is a schedule
+   rather than a delay.
+3. **Our fetch** — how long the cycle took once it started asking. **This is the only actionable
+   part, and it is currently invisible**, buried under a p90 of thirteen hours that belongs to (1).
+
+Two rows instead of one:
+
+| Row | From → to | Judged? |
+|---|---|---|
+| **Posted → available** | the board published it → it was there to be found | No. Their clock, their rounding — unchanged from today's reasoning |
+| **Fetch → stored** | the cycle issued the query → the row was in the corpus | **Yes**, and tightly. This is our code and nothing else's |
+
+**What has to exist first: `corpus.fetched_at`, or something equivalent.** Today a row records
+`first_seen_at` and nothing about *when the request that found it went out*, so the second row
+cannot be computed from what is stored — the same gap `embedded_at` had, and the reason
+`described → embedded` was unmeasurable until 6p added a column. The cycle already knows: it is the
+timestamp at the top of the gather stage, and every link a cycle produces shares it.
+
+**A threshold worth having.** Gather takes ~22 s against a 15-minute cycle, so `fetch → stored`
+should be seconds. Anything in minutes means a source is hanging or the ingest is contended, and
+either is something a person can act on this afternoon — which is the whole test of whether a
+latency row is worth its space.
+
+Do this **after** 6aa, since that investigation may show the same thing: a row measuring the cycle's
+shape rather than a stage's speed. If both turn out that way, the fix is one idea applied twice
+rather than two separate changes.
+
 ### 6aa — why does embedding take nine to thirteen minutes? (added 2026-08-04)
 
 **A latency investigation, not a fix, because nobody knows the answer yet.**

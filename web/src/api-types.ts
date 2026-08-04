@@ -205,6 +205,61 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/latency": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Latency
+         * @description The drill-down: the spans, then where the time actually went, then when.
+         *
+         *     The health page reports that a posting took 36 minutes end to end. That is the number worth
+         *     publishing and useless for fixing anything -- it does not say whether a worker was busy or the
+         *     work was slow, and those are repaired in completely different places. Nor does an average over a
+         *     day show the hour it was four times worse, which is the hour worth looking at.
+         *
+         *     Bounded window: a fortnight of hourly buckets is a chart nobody can read and a query nobody
+         *     should run on a page load.
+         */
+        get: operations["latency_admin_latency_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/latency/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Latency Stage
+         * @description One zone, expanded: waiting versus running, the backlog, and the hour-by-hour shape.
+         *
+         *     **Fetched on expansion rather than with the table.** Each of these costs a query and only one
+         *     row is ever open, so putting them on the page load would run six times the work to answer a
+         *     question nobody asked yet.
+         *
+         *     `key` is matched against the known stages rather than interpolated anywhere -- an unknown one is
+         *     a 404, and no part of it reaches SQL.
+         */
+        get: operations["latency_stage_admin_latency__key__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/limits": {
         parameters: {
             query?: never;
@@ -288,6 +343,11 @@ export interface paths {
          *     Read from the harvester's own enabled list rather than from whatever happens to be in the
          *     settings blob: a source nobody has tuned should still appear, with the default it is actually
          *     running at, or the panel silently omits the boards most likely to need attention.
+         *
+         *     **`wanted` is what makes the limit meaningful.** A ceiling of 40 tells an operator nothing on
+         *     its own; 40 against 28 queries waiting says the source is fully served, and 40 against 300 says
+         *     it is four cycles behind. The number is how many distinct queries that source currently has —
+         *     the same set the cycle budgets — so the two columns are the same arithmetic the harvest does.
          */
         get: operations["sources_admin_sources_get"];
         put?: never;
@@ -1131,6 +1191,13 @@ export interface paths {
          *
          *     Saving does not schedule anything. The harvester picks the config up on its next cycle by
          *     reading every active user's config — there is no per-user trigger to forget to fire.
+         *
+         *     **The keyword ceiling is checked here rather than in the schema**, because it is per account.
+         *     `UserConfigSchema` bounds each section at the platform maximum, which is the right hard stop for
+         *     everyone; the operator's `keywords` limit is what an individual account is allowed, and it went
+         *     unread until 2026-08-04 — the control existed, the panel rendered it, and the schema constant
+         *     was the only thing anybody was measured against. Counted **across sections**, matching the
+         *     harvester's own cap, or five sections would buy five times the allowance.
          */
         put: operations["put_config_onboarding_config_put"];
         post?: never;
@@ -1960,10 +2027,21 @@ export interface components {
          *     input to the fan-out budget. Growing it without measuring the cycle cost is how a 15-minute
          *     harvest becomes an hour (`HARVESTER_PLAN.md` §3).
          *
-         *     `REMOTE_*` are not places but delivery regions, which is exactly how the sources treat them.
+         *     **This is a list of places and nothing else** (2026-08-04). It used to carry `remote_worldwide`,
+         *     `remote_eu`, `remote_uk` and `remote_us`, which are not places — they made "where" and "how" one
+         *     question whose answers could contradict each other, and duplicated the `remote_policy` field
+         *     every section already has. Working arrangement is `remote_policy`; this is geography.
+         *
+         *     **One region, and it is `europe`.** `european_union` and `europe` were two slugs nobody reading
+         *     a checkbox would tell apart, and getting it wrong silently changes which jobs somebody sees.
+         *     `europe` means the 27 member states; the UK, Switzerland and Norway are named separately,
+         *     because the UK not being in the EU is the case this whole filter exists for.
+         *
+         *     Every value here must resolve to countries in `libs.corpus.geo`, or a user can select something
+         *     the country filter cannot act on — and `test_geo` fails if one does not.
          * @enum {string}
          */
-        Location: "european_union" | "united_kingdom" | "europe" | "ireland" | "remote_worldwide" | "remote_eu" | "remote_uk" | "remote_us" | "london" | "berlin" | "amsterdam" | "dublin" | "paris" | "madrid" | "lisbon" | "warsaw" | "budapest" | "zurich" | "stockholm" | "copenhagen";
+        Location: "europe" | "united_kingdom" | "ireland" | "switzerland" | "norway" | "london" | "berlin" | "amsterdam" | "dublin" | "paris" | "madrid" | "lisbon" | "warsaw" | "budapest" | "zurich" | "stockholm" | "copenhagen";
         /** LoginRequest */
         LoginRequest: {
             /**
@@ -2552,6 +2630,74 @@ export interface operations {
             header?: never;
             path: {
                 keyword_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    latency_admin_latency_get: {
+        parameters: {
+            query?: {
+                hours?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    latency_stage_admin_latency__key__get: {
+        parameters: {
+            query?: {
+                hours?: number;
+            };
+            header?: never;
+            path: {
+                key: string;
             };
             cookie?: never;
         };

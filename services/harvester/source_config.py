@@ -209,12 +209,8 @@ KEY_GATED = {
 # Endpoints and rate limits: genuinely platform-level, lifted from the reference's config.yaml.
 # Nothing personal here — no keywords, no locations, no seniority.
 PLATFORM_DEFAULTS: dict[str, dict] = {
-    "remotive": {"endpoint": "https://remotive.com/api/remote-jobs"},
     "himalayas": {"endpoint": "https://himalayas.app/jobs/api"},
     # RemoteOK rate-limits a burst from one IP; the delay is from the reference and is not a guess.
-    "remoteok": {"endpoint": "https://remoteok.com/api"},
-    "arbeitnow": {"endpoint": "https://www.arbeitnow.com/api/job-board-api"},
-    "weworkremotely": {"feeds": ["https://weworkremotely.com/categories/remote-programming-jobs.rss"]},
     "workingnomads": {"endpoint": "https://www.workingnomads.com/api/exposed_jobs/"},
     "jobicy": {"count": 50},
     "hiringcafe": {"posted_within_days": 3},

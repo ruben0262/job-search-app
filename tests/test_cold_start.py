@@ -22,7 +22,7 @@ from sqlalchemy import select
 from libs.scoring.rules import DESCRIPTION_WEIGHT, TITLE_WEIGHT, score_job
 
 CONFIG = {"sections": [{"platform": "all", "keywords": ["backend engineer", "full-stack"],
-                        "exclude_keywords": ["unpaid"], "locations": ["remote_eu"],
+                        "exclude_keywords": ["unpaid"], "locations": ["europe"],
                         "remote_policy": "remote_or_hybrid"}]}
 
 

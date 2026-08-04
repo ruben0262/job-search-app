@@ -23,7 +23,7 @@ from collections.abc import Callable
 from enum import StrEnum
 from typing import Any, NamedTuple
 
-from services.harvester.sources import ats, hiringcafe, http_apis, jobspy_source, vcboards
+from services.harvester.sources import ats, hiringcafe, http_apis, jobspy_source
 from services.harvester.sources.base import JobLink
 
 
@@ -70,21 +70,14 @@ REGISTRY: dict[str, Source] = {
         Source("workable", ats.gather_workable, Tier.SHARED, needs_ats_repo=True),
 
         # VC portfolio boards.
-        Source("consider", vcboards.gather_consider, Tier.SHARED),
-        Source("getro", vcboards.gather_getro, Tier.SHARED),
 
         # Board APIs — feed-shaped, so they need no query set at all (HARVESTER_PLAN.md §1).
         Source("nofluffjobs", http_apis.gather_nofluffjobs, Tier.SHARED),
         Source("nofluffjobs_hu", http_apis.gather_nofluffjobs, Tier.SHARED),
         Source("profession", http_apis.gather_profession, Tier.SHARED),
-        Source("dreamjobs", http_apis.gather_dreamjobs, Tier.SHARED),
         Source("jooble", http_apis.gather_jooble, Tier.SHARED),
         Source("justjoinit", http_apis.gather_justjoinit, Tier.SHARED),
-        Source("arbeitnow", http_apis.gather_arbeitnow, Tier.SHARED),
-        Source("remotive", http_apis.gather_remotive, Tier.SHARED),
         Source("himalayas", http_apis.gather_himalayas, Tier.SHARED),
-        Source("remoteok", http_apis.gather_remoteok, Tier.SHARED),
-        Source("weworkremotely", http_apis.gather_weworkremotely, Tier.SHARED),
         Source("workingnomads", http_apis.gather_workingnomads, Tier.SHARED),
         Source("jobicy", http_apis.gather_jobicy, Tier.SHARED),
         Source("themuse", http_apis.gather_themuse, Tier.SHARED),

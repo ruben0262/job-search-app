@@ -185,3 +185,52 @@ def test_end_to_end_the_case_that_was_described():
     ]
     for location, should_pass in postings:
         assert allows(read_country(location), wanted) is should_pass, location
+
+
+# ── the vocabulary and the filter have to agree ──────────────────────────────────────────────────
+
+def test_every_location_a_user_can_pick_resolves_to_countries():
+    """**A slug the picker offers and the filter cannot read is a country filter that silently does
+    not apply.** That is exactly what happened between the two halves of this change: `geo` moved to
+    one `europe` slug while `Location` still offered `european_union`, so both live accounts had a
+    location the filter returned `None` for — no filtering at all, and no symptom."""
+    from libs.contracts.config import Location
+
+    unresolved = [value.value for value in Location
+                  if wanted_countries([value.value]) is None]
+    assert not unresolved, (
+        f"the picker offers {unresolved}, and `wanted_countries` cannot turn them into countries")
+
+
+def test_remoteness_is_not_in_the_place_vocabulary():
+    """Where and how are two questions. `remote_policy` is the second one, per section."""
+    from libs.contracts.config import Location
+
+    assert not [value.value for value in Location if value.value.startswith("remote")]
+
+
+def test_a_stored_config_from_the_old_vocabulary_still_reads():
+    """**Migrated on read, not by rewriting rows.** Both live accounts had `european_union`, and a
+    deploy must not change somebody's stored search — but every reader has to see the new shape
+    immediately, or the filter keeps not applying."""
+    from libs.contracts.config import migrate_config
+
+    old = {"sections": [{"keywords": ["python"], "platform": "all",
+                         "locations": ["european_union", "remote_eu", "remote_uk",
+                                       "remote_worldwide", "budapest"]}]}
+    locations = migrate_config(old)["sections"][0]["locations"]
+
+    # `european_union` and `remote_eu` both mean the union, and fold into one entry.
+    assert locations == ["europe", "united_kingdom", "budapest"]
+    # And what comes out is something the filter can act on.
+    wanted = wanted_countries(locations)
+    assert wanted is not None and "GB" in wanted and "HU" in wanted
+
+
+def test_the_v1_flat_config_still_migrates_and_its_locations_move_too():
+    """Two migrations in one read: v1's flat shape becomes a section, and that section's locations
+    are translated. Missing the second is how a v1 row would arrive with slugs nothing reads."""
+    from libs.contracts.config import migrate_config
+
+    migrated = migrate_config({"keywords": ["python"], "locations": ["european_union"]})
+    assert migrated["sections"][0]["locations"] == ["europe"]

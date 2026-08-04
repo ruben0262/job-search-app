@@ -96,7 +96,7 @@ def api():
 
 
 CONFIG = {"sections": [{"platform": "all", "keywords": ["backend engineer"],
-                        "locations": ["remote_eu"]}]}
+                        "locations": ["europe"]}]}
 
 
 def _finish_every_page(http, session, user):

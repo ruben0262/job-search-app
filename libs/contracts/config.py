@@ -107,26 +107,26 @@ class Location(StrEnum):
     input to the fan-out budget. Growing it without measuring the cycle cost is how a 15-minute
     harvest becomes an hour (`HARVESTER_PLAN.md` §3).
 
-    `REMOTE_*` are not places but delivery regions, which is exactly how the sources treat them.
+    **This is a list of places and nothing else** (2026-08-04). It used to carry `remote_worldwide`,
+    `remote_eu`, `remote_uk` and `remote_us`, which are not places — they made "where" and "how" one
+    question whose answers could contradict each other, and duplicated the `remote_policy` field
+    every section already has. Working arrangement is `remote_policy`; this is geography.
+
+    **One region, and it is `europe`.** `european_union` and `europe` were two slugs nobody reading
+    a checkbox would tell apart, and getting it wrong silently changes which jobs somebody sees.
+    `europe` means the 27 member states; the UK, Switzerland and Norway are named separately,
+    because the UK not being in the EU is the case this whole filter exists for.
+
+    Every value here must resolve to countries in `libs.corpus.geo`, or a user can select something
+    the country filter cannot act on — and `test_geo` fails if one does not.
     """
 
-    # Region-level targets. Added 2026-07-27: the first real config searched "European Union",
-    # "United Kingdom" and "Europe", and the vocabulary had none of them. They are NOT the same as
-    # the REMOTE_* values below - "United Kingdom" means jobs located in the UK, including hybrid
-    # and onsite, while REMOTE_UK means remote work for a UK-region employer. Collapsing them would
-    # have silently narrowed what an existing user sees.
-    EUROPEAN_UNION = "european_union"
-    UNITED_KINGDOM = "united_kingdom"
     EUROPE = "europe"
-    # Added 2026-07-27 for the second migrated account. Not the same as DUBLIN, for exactly the
-    # reason UNITED_KINGDOM is not LONDON: a country-level search returns roles the city one never
-    # sees, and folding them would silently narrow what that user is shown.
+    UNITED_KINGDOM = "united_kingdom"
     IRELAND = "ireland"
+    SWITZERLAND = "switzerland"
+    NORWAY = "norway"
 
-    REMOTE_WORLDWIDE = "remote_worldwide"
-    REMOTE_EU = "remote_eu"
-    REMOTE_UK = "remote_uk"
-    REMOTE_US = "remote_us"
     LONDON = "london"
     BERLIN = "berlin"
     AMSTERDAM = "amsterdam"
@@ -141,35 +141,10 @@ class Location(StrEnum):
     COPENHAGEN = "copenhagen"
 
 
-# What each location is called when it is handed to a job board.
-#
-# **The stored value is a slug and no board understands one.** LinkedIn was being sent
-# `european_union` and `united_kingdom` as geo strings; it resolves neither, and one query died
-# outright with `Invalid country string`. The reference sends `"European Union"` — the human
-# readable name — because that is what the search box takes.
-#
-# Anything absent falls back to the slug with underscores replaced and words capitalised, which is
-# right for every city (`budapest` → `Budapest`) and is why cities are not listed here.
-LOCATION_SEARCH_NAMES = {
-    "european_union": "European Union",
-    "united_kingdom": "United Kingdom",
-    "remote_worldwide": "Worldwide",
-    "remote_eu": "European Union",
-    "remote_uk": "United Kingdom",
-    "remote_us": "United States",
-}
-
-
-def location_search_name(value: str) -> str:
-    """The name a job board will recognise for a stored location slug.
-
-    Empty in, empty out: `""` means "wherever" in a `QueryKey` and must stay that way, or a query
-    meant to be unconstrained acquires a location nobody asked for.
-    """
-    slug = (value or "").strip().lower()
-    if not slug:
-        return ""
-    return LOCATION_SEARCH_NAMES.get(slug, slug.replace("_", " ").title())
+# **`LOCATION_SEARCH_NAMES` was removed on 2026-08-04 with its only caller.** It translated a stored
+# slug into the place name a job board would recognise, for the LinkedIn query set — and the query
+# set no longer carries a location at all, on any tier. Country is a filter against the corpus now
+# (ROADMAP 6u), so nothing needs to name a place to a board.
 
 
 class Language(StrEnum):
@@ -338,14 +313,47 @@ def migrate_config(raw: dict) -> dict:
     changed by a deploy they did not ask for — it upgrades the next time they save.
     """
     if "sections" in raw:
-        return raw
+        return {**raw, "sections": [_migrate_locations(s) for s in raw.get("sections") or []]}
 
     section_fields = ("keywords", "exclude_keywords", "locations", "remote_policy",
                       "posted_within_hours")
     section = {key: raw[key] for key in section_fields if key in raw}
     section["platform"] = Platform.ALL.value
     rest = {key: value for key, value in raw.items() if key not in section_fields}
-    return {"sections": [section], **rest}
+    return {"sections": [_migrate_locations(section)], **rest}
+
+
+# What a location slug retired on 2026-08-04 means in the vocabulary that replaced it. Applied on
+# read, like the v1 upgrade above, so nobody's stored config is rewritten by a deploy — but the
+# filter, the query set and the form all see the current shape immediately.
+#
+# `remote_*` slugs carried two claims at once. The **place** half is kept; the **remote** half is
+# dropped here rather than translated, because `remote_policy` is a per-section field the user has
+# already set and overwriting it from a location would be inventing an answer they did not give.
+_RETIRED_LOCATIONS: dict[str, str | None] = {
+    "european_union": "europe",
+    "remote_eu": "europe",
+    "remote_uk": "united_kingdom",
+    # No US slug in the vocabulary, and no user has asked for one. Dropping it leaves the section
+    # with whatever else it named, or with nothing — which correctly means "no country filter".
+    "remote_us": None,
+    # "Anywhere" is the absence of a place, and an empty location list already says that.
+    "remote_worldwide": None,
+}
+
+
+def _migrate_locations(section: dict) -> dict:
+    """Rewrite a section's locations into the current vocabulary, dropping what has no successor."""
+    stored = (section or {}).get("locations")
+    if not stored:
+        return section
+    moved: list[str] = []
+    for value in stored:
+        slug = str(value or "").strip().lower()
+        replacement = _RETIRED_LOCATIONS.get(slug, slug)
+        if replacement and replacement not in moved:
+            moved.append(replacement)
+    return {**section, "locations": moved}
 
 
 def json_schema() -> dict:
