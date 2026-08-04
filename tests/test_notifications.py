@@ -190,3 +190,21 @@ class _Item:
     applicants: object = None
     reposted: object = None
     easy_apply: object = None
+
+
+def test_unlimited_still_fits_inside_one_claim():
+    """**Unlimited means "withhold nothing", not "clear the backlog in one transaction".**
+
+    An account with 1,282 waiting and no per-run ceiling built a candidate pool five times that,
+    and ranking it did not finish inside the `notify` lane's two-minute claim — so the job was
+    reclaimed, re-ran, and the account received nothing while every job reported done.
+
+    The limit's own description already promises the right behaviour: anything over stays queued for
+    the next run and nothing is dropped.
+    """
+    from services.notifier.deliver import MAX_ITEMS_PER_DIGEST, UNLIMITED_ITEMS
+    from services.notifier.eligibility import CANDIDATE_MULTIPLIER
+
+    assert UNLIMITED_ITEMS > MAX_ITEMS_PER_DIGEST * 10, "unlimited should be generous"
+    assert UNLIMITED_ITEMS * CANDIDATE_MULTIPLIER <= 1_000, (
+        "the candidate pool this implies is too large to rank inside one claim")

@@ -50,9 +50,18 @@ logger = logging.getLogger(__name__)
 # One digest message per delivery keeps this simple; the cap is the per-day one below.
 MAX_ITEMS_PER_DIGEST = 10
 
-# What "unlimited jobs per run" means to a query that needs a number. Large enough to be no ceiling
-# in practice, small enough that a runaway cannot ask Postgres for the whole corpus in one go.
-UNLIMITED_ITEMS = 10_000
+# What "unlimited jobs per run" means to a query that needs a number.
+#
+# **Not "everything at once", and the difference stopped an account delivering.** The limit's own
+# description is "anything over stays queued for the next one; nothing is dropped" — so unlimited
+# means the platform withholds nothing deliberately, not that one run must clear a backlog of 1,282
+# in a single transaction. At 10,000 the candidate pool became five times that, and the ranking,
+# eligibility and salary parsing over it did not finish inside the `notify` lane's two-minute claim:
+# the job was reclaimed, re-ran, and that account received nothing at all while every job reported
+# done.
+#
+# 200 is roughly twenty digests' worth. A backlog drains over a few cycles rather than never.
+UNLIMITED_ITEMS = 200
 
 # `TENANT_SAFETY.md` §3. Resets at the user's local midnight, which is why it is counted against
 # `notified_at` in their timezone rather than against a counter column.
