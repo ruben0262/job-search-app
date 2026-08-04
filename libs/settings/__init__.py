@@ -35,10 +35,38 @@ DELIVERY_INTERVAL_MIN = 15
 # LinkedIn is tighter than the boards on purpose: it lists within minutes and carries the most
 # volume, so a wide window there is mostly re-reading jobs already seen. The aggregators are slower
 # to publish, and a window as tight as LinkedIn's would mean their postings never qualified.
+#
+# **The ATS family needs a wide window and that is not slack.** Those boards belong to a company,
+# and the platform discovers a posting whenever its harvested token list reaches that company —
+# which has nothing to do with when the job went up. Measured over three days of real ingestion, a
+# uniform 6-hour window would have kept:
+#
+#     arbeitnow  99.9%    himalayas  99.7%    hiringcafe  53%    nofluffjobs  59%
+#     greenhouse   41%    smartrecruiters 41%    ashby  34%
+#     recruitee     4%    workday      2%
+#
+# So one number is not a simplification here, it is a 96% loss on two sources. The aggregators
+# publish a feed of what is new and can be read tightly; the ATS boards cannot.
 DEFAULT_SOURCE_FRESHNESS_HOURS: dict[str, int] = {
+    # Per-user, proxied, lists within minutes and carries the most volume — a wide window is mostly
+    # re-reading jobs already seen.
     "linkedin": 4,
     "indeed": 6,
     "google": 6,
+    # Feed-shaped aggregators: what they publish is what is new.
+    "arbeitnow": 12,
+    "himalayas": 12,
+    "remotive": 12,
+    "justjoinit": 12,
+    # Search-shaped boards, relevance-sorted rather than date-sorted.
+    "hiringcafe": 48,
+    "nofluffjobs": 48,
+    "nofluffjobs_hu": 48,
+    "profession": 24,
+    # Company boards, reached when our token list gets there.
+    "greenhouse": 72, "ashby": 72, "lever": 72, "smartrecruiters": 72,
+    "recruitee": 168, "breezy": 72, "workday": 168, "personio": 72, "workable": 72,
+    "consider": 72, "getro": 72,
 }
 
 # Anything not named above. Wide enough that a slow board still contributes, narrow enough that the
@@ -104,8 +132,20 @@ def put(session: Session, key: str, value: object, *, by: str | None = None) -> 
 
 
 def freshness_hours(session: Session, source: str) -> int:
-    """How fresh a posting from this source must be. The number passed to the site's own filter."""
+    """How fresh a posting from this source must be. The number passed to the site's own filter.
+
+    **A stored map is a set of overrides, not a replacement**, and the difference is not academic.
+    The live setting names three sources; `get` returns a stored value whole, so every source it
+    does *not* name used to fall through to the flat `default_freshness_hours` of six hours. Applied
+    to the ATS family that is a 6-hour window on boards we reach whenever our token list gets to
+    them — measured, it would keep 4% of Recruitee's rows and 2% of Workday's.
+
+    So the ladder is: what the operator set for this source, then what this source is known to need,
+    then the flat default. An operator narrowing one board must not silently narrow every other one.
+    """
     per_source = get(session, "source_freshness_hours") or {}
     if source in per_source:
         return int(per_source[source])
+    if source in DEFAULT_SOURCE_FRESHNESS_HOURS:
+        return DEFAULT_SOURCE_FRESHNESS_HOURS[source]
     return int(get(session, "default_freshness_hours"))

@@ -32,6 +32,7 @@ from libs.corpus.repository import CorpusRepository
 from libs.db.session import session_scope
 from libs.obs import configure
 from libs.secrets import install
+from libs.settings import HARVEST_SOURCES, freshness_hours
 from libs.tenant.repository import TenantRepository
 from services.harvester.cycle import run_cycle
 from services.harvester.describe import describe_linkedin_for_all
@@ -207,7 +208,13 @@ def main(argv: list[str] | None = None) -> int:
             # Source pre-filters are derived from the union of ACTIVE users' configs, never from
             # one person's keywords - the corpus is shared, so filtering it to one user would
             # silently deny everyone else the jobs they asked for.
-            source_configs = build_source_configs(TenantRepository(session).active_configs())
+            # **The operator's per-source freshness, read here because this is where a session
+            # exists.** `build_source_configs` is pure and the setting lives in the database, which
+            # is why the two were never connected: the admin panel wrote a value and the harvest
+            # went on computing its own window (ROADMAP 6l.2).
+            source_configs = build_source_configs(
+                TenantRepository(session).active_configs(),
+                freshness={name: freshness_hours(session, name) for name in HARVEST_SOURCES})
             logger.info("harvest: %d sources enabled", len(source_configs))
 
             embedder = None if args.dry_run else EmbedderClient(base_url=embedder_url)

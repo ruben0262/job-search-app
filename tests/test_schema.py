@@ -249,4 +249,13 @@ def test_freshness_is_per_source_and_falls_back(session):
 
     assert settings.freshness_hours(session, "linkedin") == 2
     assert settings.freshness_hours(session, "arbeitnow") == 8
+
+    # **What an operator stores is a set of overrides, not a replacement.** A stored map naming
+    # three sources used to drop every other source to the flat default — six hours, applied to
+    # company boards we reach whenever the token list gets there. Measured over three days that
+    # keeps 4% of Recruitee's rows and 2% of Workday's, so narrowing one board must not narrow the
+    # rest.
+    assert settings.freshness_hours(session, "workday") == \
+        settings.DEFAULT_SOURCE_FRESHNESS_HOURS["workday"]
+    assert settings.freshness_hours(session, "workday") > settings.DEFAULT_FRESHNESS_HOURS
     assert settings.freshness_hours(session, "some-new-board") == settings.DEFAULT_FRESHNESS_HOURS

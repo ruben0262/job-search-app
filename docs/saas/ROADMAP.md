@@ -629,9 +629,13 @@ checking — it trains the reader to ignore the one alarm there that has caught 
 `--describe-linkedin` survives as a manual backfill for the rows a pass could not reach (122 of
 them today); what is gone is the schedule.
 
-**2. Freshness becomes admin-set, per source** ✅ **done 2026-08-03.** `source_freshness_hours` is an
-operator setting with a per-source table in the admin panel, and `default_freshness_hours` behind it.
-The per-user field is dropped rather than merely unread.
+**2. Freshness becomes admin-set, per source** ✅ **done 2026-08-04** — and it was ticked a day early
+on 2026-08-03, which was wrong and is worth recording. The setting existed, the admin panel rendered
+it, and **`freshness_hours` was called by exactly one caller: the admin route that renders it.** The
+harvest computed its own window from user configs, so an operator moving this number moved a number
+on a page. Ticking "done" off the existence of a setting rather than off a consumer reading it is
+the same mistake as the label budget and the rubric column, made while documenting those two. Wired
+and measured in 6s.
 
 **3. One delivery cadence: 15 minutes, for everyone** ✅ **done 2026-08-03.** `delivery_interval_min`
 is operator-owned and `users.notify_interval_min` is no longer read anywhere. The only things a user
@@ -957,6 +961,105 @@ rather than by a test, which is the argument for grepping the remaining callers 
 before the next user signs up rather than after. The survey as of 2026-08-03: `process_routes.py`
 lines 82/86/101 read it and are already correct — they treat a finished set of files as a profile —
 and `trainer/train.py` 77/109 are fixed. `docgen/run.py` 92 and 245 are what remain.
+
+### 6r — the budget belongs to a source, not to the platform (added 2026-08-04)
+
+**The owner's question, and it dissolves the problem: why is there a global limit at all?**
+
+`HARVEST_MAX_QUERIES_PER_CYCLE = 60` comes from `HARVESTER_PLAN.md` §3, and it was sized for the
+JobSpy tier — proxied, ban-prone, bandwidth-billed, one residential IP. After 6o.3 connected the
+query set to the sources that actually read one, that number governs **eight free unproxied REST
+boards**, where none of its reasoning applies. 318 queries at 60 a cycle is six cycles, ninety
+minutes, for one full round, against a product whose entire claim is a fifteen-minute stream.
+
+**Users are not the constraint, and it is worth being precise about why.** The corpus is shared, so
+a query is `(source, keyword, location)` — it is never *for* anybody. The user set on a
+`PlannedQuery` exists for attribution and quota accounting only. So the query set grows with
+*distinct* keyword-location pairs and saturates as users overlap; the tenth user asking for "python
+developer" costs nothing. What scales badly with user count is only the round-robin **ordering**,
+not the work.
+
+Sources already run concurrently (`ThreadPoolExecutor`, eight wide), and queries within one source
+run serially, which is right — serial is what respects a rate limit. So the real wall clock is the
+slowest single source, not the sum. Twenty-eight keywords at one request a second is thirty
+seconds, in parallel with everything else. It fits in a cycle with room to spare, and the ninety
+minutes is an artefact of the cap rather than a fact about the work.
+
+**The actual constraints, measured:**
+
+| Constraint | Reality |
+|---|---|
+| Result cap per query | ~100 rows (Remotive, Himalayas, NoFluffJobs, Consider), 120 HiringCafe, 40 Getro. **Per query, so more queries reach deeper** — this is also why subsumption is unsafe: a broader query returns a *truncated* superset |
+| Rate limit per source | Real and per source. Arbeitnow answered 13 of 33 burst queries with non-JSON; RemoteOK needs 2 s between requests |
+| Wall clock | ~22 s gather against a 15-minute cycle, with embed (78 s) and describe (39 s) dominating |
+| Bandwidth | Only the proxied LinkedIn tier, which is metered per user and already governed separately |
+| Corpus size | Not a constraint. 15k rows against a 400k projection |
+
+**The redesign, in order:**
+
+1. **Per-source budgets, replacing the global one.** Each source gets a ceiling matched to its own
+   rate limit, with the global number kept only as a safety ceiling far above the sum. Remotive
+   being starved has nothing to do with HiringCafe being expensive, and a single cap makes them
+   compete for a resource they do not share.
+2. **Round-robin over distinct keywords within a source, not over users.** The fold has already
+   deduplicated across users by this point, so keyword-level fairness *is* user fairness the moment
+   demand overlaps — and adding a user with terms somebody already asked for then costs nothing at
+   all. This is the change that removes user count from the constraint.
+3. **Two live defects in the current implementation**, both visible in a six-cycle simulation of the
+   real config:
+   - Sources are drained one at a time. `_stable` sorts by `QueryKey`, whose first field is
+     `source`, so each user's queue is grouped by source and one board is finished before the next
+     is touched. **Remotive is not queried until cycle 5** — seventy-five minutes — and every source
+     is silent for an hour at a stretch.
+   - `if key in taken: continue` costs a user their whole turn when a query is shared, rather than
+     advancing them to their next unserved one. Latent at two accounts with zero overlap; it bites
+     exactly as overlap grows, and it systematically serves users with popular terms last.
+4. **HiringCafe is then the only long pole** — 117 of the 318, because it is the one free-tier board
+   with a real location model and `europe`, `european_union` and `budapest` are nested. That is a
+   per-source subsumption table, not a general rule, and it stays behind the result-cap argument.
+
+**Not part of this:** a per-stem yield history (6o.2) still cannot be built, because nothing records
+which query found which row. `corpus` has a `source` and no query.
+
+### 6s — every source needs a keyword and a time filter (added 2026-08-04)
+
+**The owner's rule, and it is the right split: keyword and time are primary, location is not.**
+Location, remoteness and contract type can all be recovered from a posting we already hold, so they
+are per-user filters applied at scoring and delivery. Freshness and subject cannot be recovered —
+a job we never fetched is a job nobody can score.
+
+Audited 2026-08-04, and the picture is uneven:
+
+| | keyword | location | time |
+|---|---|---|---|
+| Remotive, Himalayas, NoFluffJobs ×2, Consider, Getro | server-side term | none | client-side |
+| Arbeitnow | server-side term | none (remote flag only) | client-side |
+| HiringCafe | server-side term | real region model | **server-side** |
+| Jooble | server-side | server-side | client-side |
+| ATS family ×9, RemoteOK, WeWorkRemotely, WorkingNomads, Jobicy, TheMuse, Profession, DreamJobs, JustJoinIt | **none** | none | client-side |
+
+**Time is now real** ✅ **2026-08-04.** `freshness_hours` was rendered in the admin panel and read
+by exactly one caller — the admin route that renders it — while the harvest computed its own window
+from user configs. It is passed into `build_source_configs` now, per source, and reaches
+`posted_within_hours` as well as `max_age_hours`, because the ATS family's `JobFilter` prefers the
+former and a flat platform constant of 72 was outranking everything.
+
+The defaults are set from three days of measured ingestion rather than taste. A uniform six-hour
+window would have kept 99.9% of Arbeitnow, 41% of Greenhouse, **4% of Recruitee and 2% of Workday**:
+a company board is reached when our harvested token list gets to it, which has nothing to do with
+when the job was posted. One number is not a simplification here, it is a 96% loss on two sources.
+And a stored override map is now merged over those defaults rather than replacing them — the live
+setting names three sources, so replacement silently dropped every other source to six hours.
+
+**Keyword is the open half.** Eight sources have no search parameter upstream at all: RemoteOK
+serves a full dump, WeWorkRemotely is an RSS feed per category, WorkingNomads returns everything.
+For those the only possible keyword filter is client-side, and **that is the one this project has
+measured as harmful** — 239 of 376 jobs scoring ≥60 had a keyword in the title, and turning it on
+took eleven sources to zero ingestion for six hours on 2026-08-03. So the answer for a feed-shaped
+source is to fetch it, apply the time window, keep everything, and let per-user scoring decide,
+which is what "harvest broadly, match per user" has always said. Worth checking per source whether
+an unused upstream parameter exists — Jobicy takes a `tag`, TheMuse takes categories — since a
+server-side filter is a different mechanism from discarding what already arrived.
 
 ## Deliberately deferred
 

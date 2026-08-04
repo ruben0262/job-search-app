@@ -241,12 +241,24 @@ def build_source_configs(
     *,
     enabled: tuple[str, ...] | None = None,
     env: Mapping[str, str] | None = None,
+    freshness: Mapping[str, int] | None = None,
 ) -> dict[str, dict]:
     """Platform defaults plus the union-derived filters, for every enabled source.
 
     A source with **no users' keywords at all** is still enabled and simply unfiltered — that is the
     cold-start case, where the platform harvests broadly before anybody has configured anything, and
     it is what makes a new user's first feed non-empty.
+
+    `freshness` is the operator's per-source window (`libs.settings.freshness_hours`), and passing it
+    is what makes that setting real. It was rendered in the admin panel and read by nothing: the
+    harvest computed its own window from user configs instead, so an operator moving a slider moved
+    a number on a page (ROADMAP 6l.2). Injected rather than read here because this module is pure
+    and the setting lives in the database.
+
+    **Per source, because one window is provably wrong.** Measured over three days of real
+    ingestion, a uniform 6-hour window would keep 99.9% of Arbeitnow's rows, 41% of Greenhouse's,
+    4% of Recruitee's and 2% of Workday's — the ATS family lists on a company's own board and we
+    discover it whenever our token list gets there, which is not when it was posted.
     """
     env = env if env is not None else os.environ
     keywords = union_keywords(configs)
@@ -291,8 +303,17 @@ def build_source_configs(
         # The reference's watcher does the same thing explicitly and says why: "the JobSpy sources
         # use `hours_old` instead ... so force `hours_old` to the same window, else we'd stream a
         # day of jobs, not the freshest slice."
-        cfg["max_age_hours"] = max_age
-        cfg["hours_old"] = max_age
+        # **The operator's window for this source, where they have set one.** Falls back to the
+        # widest any user asked for, then to the default — so an unconfigured platform behaves
+        # exactly as it did, and a configured one is actually obeyed.
+        window = int((freshness or {}).get(source) or 0) or max_age
+        cfg["max_age_hours"] = window
+        cfg["hours_old"] = window
+        # `posted_within_hours` is what `ats.JobFilter` prefers, and PLATFORM_DEFAULTS sets it to a
+        # flat 72 for the whole ATS family — which silently outranked everything above it. An
+        # operator narrowing a source has to narrow it here too or nothing changes.
+        if "posted_within_hours" in cfg:
+            cfg["posted_within_hours"] = window
         # **Deliberately not handed to `JobFilter`.** See `PREFILTER_SOURCES`.
         if keywords and source in PREFILTER_SOURCES:
             cfg["keywords"] = keywords

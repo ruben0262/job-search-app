@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import uuid
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -351,6 +352,62 @@ def test_a_board_with_no_geography_is_asked_once_per_keyword(ctx):
 
     assert per_source["himalayas"] == 1, "one keyword, one query, however many places were asked for"
     assert per_source["hiringcafe"] == 4, "a source that can filter by place still gets all four"
+
+
+def test_a_job_a_board_returned_survives_every_enabled_source_s_own_filtering(ctx):
+    """**The hole the ATS incident went through, closed for every source at once.**
+
+    Eleven sources went from hundreds of rows a day to exactly zero for six hours, and nothing
+    failed: no exception, no error count, no alert. A client-side filter simply started rejecting
+    everything a board returned, which is indistinguishable from a quiet day.
+
+    So this asserts the behaviour rather than any one filter: take an ordinary posting a source
+    genuinely returned, run it through the filtering the cycle would build for that source, and
+    require it to survive. Any future config change that starts silently discarding real postings
+    fails here instead of in production six hours later.
+
+    Deliberately an *ordinary* job — a title nobody's keyword list contains, a city nobody named.
+    That is the case the corpus exists to hold: harvest broadly, match per user.
+    """
+    from services.harvester.source_config import build_source_configs
+    from services.harvester.sources.ats import JobFilter
+
+    ordinary = JobLink(
+        url="https://boards.greenhouse.io/acme/jobs/1",
+        title="Vehicle Dynamics Specialist",
+        company="Acme", location="Berlin, Germany", source="greenhouse",
+        date_posted=(datetime.now(UTC) - timedelta(hours=2)).date().isoformat())
+
+    built = build_source_configs(
+        {uuid.uuid4(): {"sections": [
+            {"keywords": ["software engineer"], "locations": ["european_union"]}]}},
+        env={})
+
+    rejected = [name for name, cfg in built.items() if not JobFilter(cfg).ok(ordinary)]
+    assert not rejected, (
+        f"{rejected} would drop a real posting before it ever reached the corpus — the shape of "
+        "the incident that zeroed eleven sources")
+
+
+def test_a_source_whose_window_an_operator_narrowed_actually_narrows(ctx):
+    """**A setting that reaches nothing is worse than no setting**, because it looks answered.
+
+    `source_freshness_hours` was rendered in the admin panel and read by exactly one caller: the
+    admin route that renders it. The harvest computed its own window from user configs, so an
+    operator moving this number moved a number on a page. Same shape as the label budget nothing
+    read and the rubric written where nothing looked.
+    """
+    from services.harvester.source_config import build_source_configs
+
+    default = build_source_configs({}, env={})
+    narrowed = build_source_configs({}, env={}, freshness={"greenhouse": 3})
+
+    assert narrowed["greenhouse"]["max_age_hours"] == 3
+    # `posted_within_hours` is what `ats.JobFilter` prefers, so leaving it at the platform default
+    # would let a 72-hour constant outrank the operator.
+    assert narrowed["greenhouse"]["posted_within_hours"] == 3
+    # One source only. Narrowing Greenhouse must not quietly narrow everything else.
+    assert narrowed["ashby"]["max_age_hours"] == default["ashby"]["max_age_hours"]
 
 
 def test_the_union_is_asked_for_not_used_to_throw_away_what_a_board_sent(ctx):
