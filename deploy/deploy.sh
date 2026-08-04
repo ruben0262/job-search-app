@@ -22,7 +22,17 @@ COMPOSE="docker compose -f deploy/compose.yml -p job-search-platform"
 
 # Every service, named. `up -d` with no arguments skips anything behind a profile, which is how four
 # workers stayed on old images while reporting healthy.
-ALL_SERVICES="api oauthbroker notifier scorer trainer labeller docgen setupagent capture"
+#
+# **`harvester` is here and was not, which is the same defect one layer along.** It sits behind the
+# `tools` profile because it is a one-shot the timer invokes rather than a container that stays up,
+# so it was left out of this list — and every full deploy then rebuilt eight services and silently
+# left the one that does the collecting on old code. It ran for hours without `fetched_at` after the
+# column shipped, reporting healthy cycles the whole time.
+ALL_SERVICES="api oauthbroker notifier scorer trainer labeller docgen setupagent capture harvester"
+
+# The one-shots. They exit when their work is done, so "is it running" and `exec` are the wrong
+# questions — verification runs a fresh container instead.
+ONE_SHOT_SERVICES="harvester"
 SERVICES="${*:-$ALL_SERVICES}"
 
 say() { printf '\n\033[1m== %s\033[0m\n' "$1"; }
@@ -72,6 +82,21 @@ for service in $SERVICES; do
   # **Running, before anything else.** A container that is restart-looping still has the right
   # files on disk, so the hash below would have called `oauthbroker` correct while it crashed on
   # an import error every two seconds. State first, contents second.
+  # A one-shot has no running container between ticks, so the hash is read from a fresh one.
+  if [[ " $ONE_SHOT_SERVICES " == *" $service "* ]]; then
+    running=$($COMPOSE run --rm --no-deps --entrypoint python "$service" -c "$HASH" 2>/dev/null       | tr -d '
+' || echo unreachable)
+    if [ "$running" = "$EXPECTED" ]; then
+      printf '  %-12s %s
+' "$service" "ok (one-shot)"
+    else
+      printf '  %-12s [31mrunning %s, expected %s[0m
+' "$service" "$running" "$COMMIT"
+      failed=1
+    fi
+    continue
+  fi
+
   state=$($COMPOSE ps "$service" --format '{{.State}}' 2>/dev/null | head -1)
   if [ "$state" != "running" ]; then
     printf '  %-12s \033[31mnot running (%s)\033[0m\n' "$service" "${state:-absent}"
