@@ -44,7 +44,12 @@ from libs.db.models import User, UserConfig
 from libs.obs import audit
 from libs.secrets import SecretStore, redacting
 from libs.secrets.keyring import SecretsError
-from libs.settings import DELIVERY_INTERVAL_MIN, freshness_hours, queries_per_cycle
+from libs.settings import (
+    DELIVERY_INTERVAL_MIN,
+    freshness_hours,
+    queries_per_cycle,
+    results_per_query,
+)
 from services.harvester.describe import describe_pending
 from services.harvester.fetch import make_client
 from services.harvester.governor import (
@@ -155,8 +160,9 @@ def run_for_due_users(session, *, now: datetime | None = None,
     now = now or datetime.now(UTC)
     corpus = CorpusRepository(session)
     usage = ProxyUsageRepository(session)
-    # Read once per pass rather than per user: it is a platform setting, not a per-account one.
+    # Read once per pass rather than per user: both are platform settings, not per-account ones.
     window = freshness_hours(session, "linkedin")
+    depth = results_per_query(session, "linkedin") or RESULTS_WANTED
     store = SecretStore(session)
 
     for user in due_users(session, now=now, limit=limit):
@@ -178,7 +184,8 @@ def run_for_due_users(session, *, now: datetime | None = None,
 
         try:
             ran = _run_one(user, queries, corpus=corpus, usage=usage, store=store,
-                           report=report, gather=gather, hours_old=window)
+                           report=report, gather=gather, hours_old=window,
+                           results_wanted=depth)
         except Exception as exc:                                    # noqa: BLE001
             # One user's LinkedIn failing is not the tier failing. Recorded and moved past, which
             # is the same contract every shared source adapter has.
@@ -196,7 +203,8 @@ def run_for_due_users(session, *, now: datetime | None = None,
 
 def _run_one(user: User, queries: list[dict], *, corpus: CorpusRepository,
              usage: ProxyUsageRepository, store: SecretStore,
-             report: LinkedInReport, gather, hours_old: int) -> bool:
+             report: LinkedInReport, gather, hours_old: int,
+             results_wanted: int) -> bool:
     """One user's fetch, inside their own credential's scope. Returns whether it ran.
 
     The proxy URL lives only inside `store.use`, and the whole fetch happens within that block —
@@ -219,7 +227,12 @@ def _run_one(user: User, queries: list[dict], *, corpus: CorpusRepository,
                     report.skipped_no_lease += 1
                     return False
 
-                cfg = {"queries": queries, "results_wanted": RESULTS_WANTED,
+                cfg = {"queries": queries,
+                       # The operator's ceiling, not the constant beside it. `source_results_per_query`
+                       # carried a value for LinkedIn from the day it was added and this line read
+                       # `RESULTS_WANTED` regardless — the same defect the setting was created to fix,
+                       # reintroduced in the commit that fixed it.
+                       "results_wanted": results_wanted,
                        # **The operator's window, not the user's.** This read the narrowest window
                        # any of the user's own sections asked for, so the per-source setting in the
                        # admin panel — which for LinkedIn is deliberately the tightest on the
