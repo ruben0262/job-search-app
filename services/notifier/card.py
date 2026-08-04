@@ -76,6 +76,9 @@ class FeedItem:
     description: str | None = None
     posted_at: object | None = None
     applicants: int | None = None
+    # LinkedIn's own words. "Be among the first 25" and "Over 200" are different claims that parse
+    # to the same kind of integer, and only the caption tells them apart.
+    applicants_caption: str | None = None
     easy_apply: bool | None = None
     reposted: bool | None = None
     workplace: str | None = None
@@ -92,11 +95,28 @@ def applicant_bucket(count: int) -> int:
     return len(APPLICANT_BUCKETS)
 
 
-def applicant_label(count: int | None) -> str:
-    """`'25 🟡'`, `'200+ 🔴'`, or empty. The reference's `store.applicant_label`, unchanged."""
+def applicant_label(count: int | None, caption: str | None = None) -> str:
+    """`'<25 🟢'`, `'68 🟡'`, `'200+ 🔴'`, or empty.
+
+    **The number on its own says the wrong thing**, which eight live pages made plain: LinkedIn
+    writes *"Be among the first 25 applicants"* when **fewer than** 25 have applied, and *"Over 200
+    applicants"* when it has stopped counting. Both parse to a bare integer, and a card reading
+    `👥25` tells somebody twenty-five people are ahead of them when the page is saying the opposite
+    — the difference between a job worth opening now and one worth skipping.
+
+    So the caption decides the qualifier where we have it, and the number is the fallback for a row
+    stored before the caption was kept.
+    """
     if not isinstance(count, int):
         return ""
-    return f"{count}{'+' if count >= 200 else ''} {APPLICANT_DOTS[applicant_bucket(count)]}"
+    dot = APPLICANT_DOTS[applicant_bucket(count)]
+    words = (caption or "").lower()
+    if "be among the first" in words:
+        # Fewer than `count` have applied — the least contested a posting ever is.
+        return f"<{count} {APPLICANT_DOTS[applicant_bucket(0)]}"
+    if "over" in words or count >= 200:
+        return f"{count}+ {dot}"
+    return f"{count} {dot}"
 
 
 def render(item: FeedItem, *, salary_bands: dict | None = None,
@@ -110,7 +130,7 @@ def render(item: FeedItem, *, salary_bands: dict | None = None,
     esc = html.escape
     icon = "🟢" if item.score >= high_fit else "🟡"
 
-    applicants = applicant_label(item.applicants)
+    applicants = applicant_label(item.applicants, item.applicants_caption)
     applicants = f" · 👥{esc(applicants)}" if applicants else ""
     # `age_label` can return "<1h", and a raw `<` breaks Telegram's HTML parse — the reference
     # escapes it for exactly this reason.

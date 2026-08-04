@@ -196,8 +196,11 @@ def test_every_keyword_a_user_has_is_searched(db):
     db.flush()
 
     queries = linkedin.queries_for(db, user)
-    assert {q["search_term"] for q in queries} == set(wanted), "every term, once each"
-    assert all(q["location"] is None for q in queries), "no location axis on this tier"
+    # Every term is searched, in every place the user asked for. The ceiling is sized to cover the
+    # cross product rather than to truncate it — a cap below it drops whole locations, because
+    # queries are taken in key order.
+    assert {q["search_term"] for q in queries} == set(wanted), "every term reaches the board"
+    assert len(queries) == len(wanted) * 4, "each term in each of the four places"
 
 
 def test_a_board_gets_the_phrase_the_user_typed(db):
@@ -214,3 +217,41 @@ def test_a_board_gets_the_phrase_the_user_typed(db):
 
     terms = {q["search_term"] for q in linkedin.queries_for(db, user)}
     assert terms == {"stress engineer", "szoftverfejlesztő"}
+
+
+def test_a_users_locations_reach_the_board_as_place_names(db):
+    """**Per user, on their own proxy, and LinkedIn can genuinely filter by place.**
+
+    The shared cycle drops the location axis because one query there serves everyone and most boards
+    cannot apply a place anyway. Neither holds here: a filter the board applies costs nothing, and
+    one applied afterwards is bandwidth already spent. Dropping it for a few hours put 384 of 1,165
+    rows in the United States for an account that never asked for it.
+
+    The board wants a name, not a slug — `europe` resolves to nothing, and LinkedIn answered one
+    query with `Invalid country string` before the mapping existed.
+    """
+    user = _user(db)
+    db.execute(UserConfig.__table__.update()
+               .where(UserConfig.user_id == user.id)
+               .values(config={"sections": [{"keywords": ["python developer"],
+                                             "locations": ["europe", "budapest"],
+                                             "platform": "all", "remote_policy": "any",
+                                             "posted_within_hours": 6}]}))
+    db.flush()
+
+    queries = linkedin.queries_for(db, user)
+    locations = {q["location"] for q in queries}
+
+    assert locations == {"European Union", "Budapest"}
+    assert not any("_" in (loc or "") for loc in locations), "a slug reached the board"
+    # One query per keyword per place, so both places are actually searched.
+    assert len(queries) == 2
+
+
+def test_the_linkedin_ceiling_covers_the_cross_product(db):
+    """A ceiling below keyword × location does not trim evenly — queries are taken in key order, so
+    the last locations simply never run and a user silently loses whole places."""
+    from libs.settings import DEFAULT_SOURCE_QUERIES_PER_CYCLE
+
+    # The founder's shape: 23 terms across 3 places.
+    assert DEFAULT_SOURCE_QUERIES_PER_CYCLE["linkedin"] >= 23 * 3

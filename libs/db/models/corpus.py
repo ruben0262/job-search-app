@@ -123,6 +123,11 @@ class CorpusJob(Base):
     # anybody opens the link (`watcher/feed.py`). All nullable and opportunistic: a source that does
     # not report a field is not a reason to withhold the job, and the card omits the element.
     applicants: Mapped[int | None] = mapped_column(Integer)
+    # **The number alone means the wrong thing.** "Be among the first 25 applicants" is a nudge
+    # saying *fewer than* 25 have applied; "Over 200" is a ceiling LinkedIn stops counting at. Both
+    # parse to an integer that the card then renders as a count, which is the opposite of what the
+    # page says in the first case. The caption is the datum (ROADMAP 6ac).
+    applicants_caption: Mapped[str | None] = mapped_column(Text)
     easy_apply: Mapped[bool | None] = mapped_column(Boolean)
     reposted: Mapped[bool | None] = mapped_column(Boolean)
     # 'remote' | 'hybrid' | 'onsite'. NULL means unknown, and unknown means keep — the fail-open

@@ -119,10 +119,13 @@ DEFAULT_SOURCE_QUERIES_PER_CYCLE: dict[str, int] = {
     # was asked for the alphabetically first three terms and never saw the other twenty, on the
     # source that produced 337 of the founder's 348 jobs at or above the delivery cutoff.
     #
-    # The location axis is gone (`services.harvester.linkedin.queries_for`) and the ceiling is a
-    # keyword count now. Bandwidth was the argument for keeping it low and bandwidth is not scarce:
-    # the cap is 200 MB a day per user and measured usage is 0.0.
-    "linkedin": 60,
+    # **Sized to cover keyword × location rather than to truncate it.** LinkedIn keeps the location
+    # axis (unlike the shared cycle) because it is per user, runs on that user's own proxy, and does
+    # geo search properly -- so a place the board filters is bandwidth never spent. The founder's
+    # account is 23 keywords × 3 locations = 69, and a ceiling below that silently drops whole
+    # search terms rather than trimming evenly: it takes them in key order, so the last locations
+    # simply never run.
+    "linkedin": 150,
     # Search-shaped boards on a shared client. Comfortably above the 28 distinct keywords the
     # platform currently has, so nothing defers and every source is served every cycle.
     "himalayas": 100,

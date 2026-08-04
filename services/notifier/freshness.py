@@ -109,7 +109,8 @@ def date_candidates(session, items: list, client) -> list:
         # A `None` never overwrites a known value, so a fetch that answered only some of the
         # questions still contributes what it had.
         corpus.set_posting_metadata(
-            item.job_id, applicants=meta["applicants"], reposted=meta["reposted"],
+            item.job_id, applicants=meta["applicants"],
+            applicants_caption=meta["applicants_caption"], reposted=meta["reposted"],
             easy_apply=meta["easy_apply"], workplace=meta["workplace"],
             posted_at=meta["posted_at"])
         updated.append(replace(

@@ -332,6 +332,7 @@ class CorpusRepository:
             .values(closed_at=datetime.now(UTC)))
 
     def set_posting_metadata(self, job_id: int, *, applicants: int | None = None,
+                             applicants_caption: str | None = None,
                              easy_apply: bool | None = None, reposted: bool | None = None,
                              workplace: str | None = None,
                              posted_at: datetime | None = None) -> None:
@@ -343,7 +344,8 @@ class CorpusRepository:
         did. Clearing `workplace` this way would silently un-filter a job the user had excluded.
         """
         values = {name: value for name, value in (
-            ("applicants", applicants), ("easy_apply", easy_apply), ("reposted", reposted),
+            ("applicants", applicants), ("applicants_caption", applicants_caption),
+            ("easy_apply", easy_apply), ("reposted", reposted),
             ("workplace", workplace)) if value is not None}
         if values:
             self._s.execute(update(CorpusJob).where(CorpusJob.id == job_id).values(**values))

@@ -39,6 +39,7 @@ from datetime import UTC, datetime
 from sqlalchemy import or_, select
 
 from libs import limits
+from libs.contracts.config import location_search_name
 from libs.corpus.repository import CorpusRepository
 from libs.db.models import User, UserConfig
 from libs.obs import audit
@@ -115,16 +116,17 @@ def queries_for(session, user: User) -> list[dict]:
     is shared. Here the opposite is true: the fetch is paid for by one person, so it asks only what
     that person asked for. Sending the folded set would spend their bandwidth on other users' jobs.
 
-    **One query per keyword, and no location axis** (2026-08-04). Crossing keywords with locations
-    was costing this account twenty of its twenty-three searches: 23 keywords × 4 locations is 92
-    queries against a ceiling of 12, so LinkedIn was being asked for the alphabetically first *three*
-    terms in four places each, and never saw the other twenty at all. On the source that produced
-    337 of the founder's 348 jobs at or above the delivery cutoff.
+    **Keyword × location, and that is deliberate here** (2026-08-04). The shared cycle dropped the
+    location axis because one query there serves every user, most boards cannot filter by place, and
+    a posting's country is on the posting. **None of that holds on this tier.** It is per user, it
+    runs on that user's own paid proxy, and LinkedIn does geo search properly — so a filter the
+    board applies is free and one we apply afterwards is bandwidth already spent. Dropping it for a
+    few hours put **384 of 1,165 rows in the United States** for an account that never asked for it.
 
-    Dropping the axis is the same decision the shared cycle made: a posting's country is on the
-    posting, so it is a filter against the corpus rather than a question multiplied into a query set
-    (ROADMAP 6u). Bandwidth was the reason to keep it here and bandwidth is not scarce — the cap is
-    200 MB a day per user and today's usage is 0.0.
+    The ceiling this crosses into is real and was the reason it came off in the first place: 23
+    keywords × 4 locations against a cap of 12 meant the alphabetically first three terms in four
+    places and nothing else. The cap is a per-source operator setting now, sized to cover the cross
+    product rather than to truncate it.
 
     The **phrase the user wrote**, not the fold key: `keyword_norm` sorts its tokens and strips
     accents, which is right for deciding whether two searches are the same and wrong for typing into
@@ -134,11 +136,11 @@ def queries_for(session, user: User) -> list[dict]:
     if not config:
         return []
 
-    keys = build_query_set({user.id: config}, sources=("linkedin",),
-                           locating_sources=(), remote_aware_sources=())
+    keys = build_query_set({user.id: config}, sources=("linkedin",))
     terms = original_terms({user.id: config})
     queries = [{"search_term": terms.get(key.keyword_norm, key.keyword_norm),
-                "location": None,
+                # The board wants a place name, not the slug we store.
+                "location": location_search_name(key.location_norm) or None,
                 "is_remote": key.is_remote, "hours_old": key.max_age_hours}
                for key in keys]
     return queries[:queries_per_cycle(session, "linkedin")]

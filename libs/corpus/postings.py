@@ -548,6 +548,9 @@ def _fetch_linkedin(job_id: str, *, client: httpx.Client, snippet: str, title: s
             # The guest page's values beat the scrape's on every field it carries: a real posted
             # timestamp rather than a date, a genuine workplace tag, the applicant count.
             out["applicants"] = parse_applicants(response.text) or out["applicants"]
+            # The caption, because the number in it means different things: "be among the first 25"
+            # is fewer than 25, "over 200" is a ceiling.
+            out["applicants_caption"] = applicants_caption(response.text)
             out["reposted"] = parse_reposted(response.text)
             out["workplace"] = parse_workplace(response.text)
             out["posted_at"] = parse_posted_at(response.text)

@@ -208,3 +208,33 @@ def test_unlimited_still_fits_inside_one_claim():
     assert UNLIMITED_ITEMS > MAX_ITEMS_PER_DIGEST * 10, "unlimited should be generous"
     assert UNLIMITED_ITEMS * CANDIDATE_MULTIPLIER <= 1_000, (
         "the candidate pool this implies is too large to rank inside one claim")
+
+
+def test_the_card_says_what_linkedin_said_about_applicants():
+    """**The number alone says the opposite of the page.**
+
+    Measured against eight live postings: LinkedIn writes "Be among the first 25 applicants" when
+    *fewer than* 25 have applied, and "Over 200 applicants" when it has stopped counting. Both parse
+    to a bare integer, and `👥25` tells somebody twenty-five people are ahead of them when the page
+    is saying the opposite — the difference between a job worth opening now and one worth skipping.
+    """
+    from services.notifier.card import applicant_label
+
+    assert applicant_label(25, "Be among the first 25 applicants").startswith("<25")
+    assert applicant_label(200, "Over 200 applicants").startswith("200+")
+    assert applicant_label(68, "68 applicants").startswith("68")
+    # A row stored before the caption was kept still renders from the number alone.
+    assert applicant_label(68).startswith("68")
+    assert applicant_label(None) == ""
+
+
+def test_the_feed_item_columns_line_up_with_the_query():
+    """`FeedItem(*row[:-1])` maps by position, so a column added to one and not the other shifts
+    every field after it — silently, into a card that looks plausible and is wrong."""
+    import dataclasses as dc
+
+    from services.notifier.card import FeedItem
+
+    fields = [f.name for f in dc.fields(FeedItem)]
+    assert fields.index("applicants_caption") == fields.index("applicants") + 1
+    assert fields.index("easy_apply") == fields.index("applicants_caption") + 1

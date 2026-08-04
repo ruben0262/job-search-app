@@ -141,10 +141,40 @@ class Location(StrEnum):
     COPENHAGEN = "copenhagen"
 
 
-# **`LOCATION_SEARCH_NAMES` was removed on 2026-08-04 with its only caller.** It translated a stored
-# slug into the place name a job board would recognise, for the LinkedIn query set — and the query
-# set no longer carries a location at all, on any tier. Country is a filter against the corpus now
-# (ROADMAP 6u), so nothing needs to name a place to a board.
+# What a stored slug is called when it is handed to a job board.
+#
+# **Restored for LinkedIn on 2026-08-04, and the distinction is the point.** Removing the location
+# axis was right for the shared cycle: one query serves every user, a posting's country is on the
+# posting, and most boards cannot filter by place anyway — so crossing keywords with locations there
+# produced identical requests.
+#
+# LinkedIn is none of those things. It is **per user**, it runs on **that user's paid residential
+# proxy**, and it supports geo search properly. Fetching Texas jobs to discard them in the corpus
+# spends somebody's bandwidth on nothing, and 384 of 1,165 rows in four hours were doing exactly
+# that. A filter the board applies is free; a filter we apply afterwards is not.
+#
+# A board wants a place name, not a slug: `europe` resolves to nothing, and LinkedIn answered one
+# query with `Invalid country string` before this existed.
+LOCATION_SEARCH_NAMES = {
+    "europe": "European Union",
+    "united_kingdom": "United Kingdom",
+    "ireland": "Ireland",
+    "switzerland": "Switzerland",
+    "norway": "Norway",
+}
+
+
+def location_search_name(value: str) -> str:
+    """The name a board will recognise for a stored slug.
+
+    Empty in, empty out: `""` means "wherever" in a `QueryKey` and must stay that way, or a query
+    meant to be unconstrained acquires a location nobody asked for. A city falls through to its own
+    name, which is what every board wants for one.
+    """
+    slug = (value or "").strip().lower()
+    if not slug:
+        return ""
+    return LOCATION_SEARCH_NAMES.get(slug, slug.replace("_", " ").title())
 
 
 class Language(StrEnum):

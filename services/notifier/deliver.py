@@ -120,6 +120,10 @@ def pending_feed(session: Session, user_id: _uuid.UUID, *, cutoff: float,
         select(UserJobState.job_id, CorpusJob.url, CorpusJob.title, CorpusJob.company,
                UserJobState.score, CorpusJob.source, CorpusJob.location, CorpusJob.is_remote,
                CorpusJob.description, CorpusJob.posted_at, CorpusJob.applicants,
+               # **Positional.** `FeedItem(*row[:-1])` below maps these by order, so a column
+               # inserted here has to go in at the same place in the dataclass — and a mismatch is
+               # silent, producing cards with fields shifted by one.
+               CorpusJob.applicants_caption,
                CorpusJob.easy_apply, CorpusJob.reposted, CorpusJob.workplace,
                CorpusJob.first_seen_at)
         .join(CorpusJob, CorpusJob.id == UserJobState.job_id)

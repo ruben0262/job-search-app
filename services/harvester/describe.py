@@ -99,7 +99,9 @@ def describe_pending(corpus: CorpusRepository, client, *, linkedin: bool | None 
         # and the filter read, and they arrive on responses that carried no usable JD.
         before = (job.applicants, job.easy_apply, job.reposted, job.workplace)
         corpus.set_posting_metadata(
-            job.id, applicants=posting["applicants"], reposted=posting["reposted"],
+            job.id, applicants=posting["applicants"],
+            applicants_caption=posting.get("applicants_caption"),
+            reposted=posting["reposted"],
             workplace=posting["workplace"], posted_at=posting["posted_at"])
         if (job.applicants, job.easy_apply, job.reposted, job.workplace) != before:
             report.metadata_written += 1
