@@ -174,21 +174,43 @@ def test_the_tier_can_be_killed_globally(db, monkeypatch):
     assert report.considered == 0
 
 
-def test_locations_reach_the_board_as_place_names_not_slugs(db):
-    """**No job board understands `european_union`.** LinkedIn was being sent the stored slug as a
-    geo string; it resolves neither that nor `united_kingdom`, and one query died outright with
-    `Invalid country string`. The reference sends "European Union" because that is what the search
-    box takes."""
+def test_every_keyword_a_user_has_is_searched(db):
+    """**The location axis was costing this account twenty of its twenty-three searches.**
+
+    23 keywords crossed with 4 locations is 92 queries against a ceiling of 12, so LinkedIn was
+    asked for the alphabetically first three terms in four places each and never saw the rest — on
+    the source that produced 337 of the founder's 348 jobs at or above the delivery cutoff.
+
+    One query per keyword now, no location, matching the shared cycle: a posting's country is on the
+    posting, so it is a filter against the corpus rather than a question multiplied into a query set.
+    """
     user = _user(db)
+    wanted = [f"term {i}" for i in range(20)]
     db.execute(UserConfig.__table__.update()
                .where(UserConfig.user_id == user.id)
-               .values(config={"sections": [{"keywords": ["python developer"],
-                                             "locations": ["european_union", "budapest"],
+               .values(config={"sections": [{"keywords": wanted,
+                                             "locations": ["europe", "budapest",
+                                                           "united_kingdom", "berlin"],
                                              "platform": "all", "remote_policy": "any",
                                              "posted_within_hours": 6}]}))
     db.flush()
 
-    locations = {q["location"] for q in linkedin.queries_for(db, user)}
-    assert "European Union" in locations
-    assert "Budapest" in locations
-    assert not any("_" in (loc or "") for loc in locations)
+    queries = linkedin.queries_for(db, user)
+    assert {q["search_term"] for q in queries} == set(wanted), "every term, once each"
+    assert all(q["location"] is None for q in queries), "no location axis on this tier"
+
+
+def test_a_board_gets_the_phrase_the_user_typed(db):
+    """`keyword_norm` sorts tokens and strips accents so two users asking the same thing fold into
+    one query. Typing that into a search box asks for `engineer stress` and truncates every accented
+    term, which is the defect the shared cycle had first."""
+    user = _user(db)
+    db.execute(UserConfig.__table__.update()
+               .where(UserConfig.user_id == user.id)
+               .values(config={"sections": [{"keywords": ["stress engineer", "szoftverfejlesztő"],
+                                             "locations": ["europe"], "platform": "all",
+                                             "remote_policy": "any", "posted_within_hours": 6}]}))
+    db.flush()
+
+    terms = {q["search_term"] for q in linkedin.queries_for(db, user)}
+    assert terms == {"stress engineer", "szoftverfejlesztő"}

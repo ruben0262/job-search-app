@@ -38,13 +38,12 @@ from datetime import UTC, datetime
 
 from sqlalchemy import or_, select
 
-from libs.contracts.config import location_search_name
 from libs.corpus.repository import CorpusRepository
 from libs.db.models import User, UserConfig
 from libs.obs import audit
 from libs.secrets import SecretStore, redacting
 from libs.secrets.keyring import SecretsError
-from libs.settings import DELIVERY_INTERVAL_MIN, freshness_hours
+from libs.settings import DELIVERY_INTERVAL_MIN, freshness_hours, queries_per_cycle
 from services.harvester.describe import describe_pending
 from services.harvester.fetch import make_client
 from services.harvester.governor import (
@@ -54,7 +53,7 @@ from services.harvester.governor import (
     resolve_linkedin_interval,
 )
 from services.harvester.proxy_usage import ProxyCapExceeded, ProxyUsageRepository
-from services.harvester.query_set import build_query_set
+from services.harvester.query_set import build_query_set, original_terms
 from services.harvester.sources import jobspy_source
 
 logger = logging.getLogger(__name__)
@@ -68,10 +67,6 @@ RESULTS_WANTED = 30
 # than a user's whole daily allowance in a single cycle. What is left waits for the next run,
 # fifteen minutes later.
 DESCRIBE_LIMIT = 60
-
-# Queries one user contributes per run. `build_query_set` already caps a user's keywords; this
-# bounds the cross product with their locations, which is what actually multiplies.
-MAX_QUERIES_PER_RUN = 12
 
 
 @dataclass
@@ -104,23 +99,39 @@ def due_users(session, *, now: datetime, limit: int) -> list[User]:
 
 
 def queries_for(session, user: User) -> list[dict]:
-    """This user's own LinkedIn queries — their keywords and locations, nobody else's.
+    """This user's own LinkedIn queries — their keywords, nobody else's.
 
     The shared cycle folds every active user's terms into one query set because the corpus it fills
     is shared. Here the opposite is true: the fetch is paid for by one person, so it asks only what
     that person asked for. Sending the folded set would spend their bandwidth on other users' jobs.
+
+    **One query per keyword, and no location axis** (2026-08-04). Crossing keywords with locations
+    was costing this account twenty of its twenty-three searches: 23 keywords × 4 locations is 92
+    queries against a ceiling of 12, so LinkedIn was being asked for the alphabetically first *three*
+    terms in four places each, and never saw the other twenty at all. On the source that produced
+    337 of the founder's 348 jobs at or above the delivery cutoff.
+
+    Dropping the axis is the same decision the shared cycle made: a posting's country is on the
+    posting, so it is a filter against the corpus rather than a question multiplied into a query set
+    (ROADMAP 6u). Bandwidth was the reason to keep it here and bandwidth is not scarce — the cap is
+    200 MB a day per user and today's usage is 0.0.
+
+    The **phrase the user wrote**, not the fold key: `keyword_norm` sorts its tokens and strips
+    accents, which is right for deciding whether two searches are the same and wrong for typing into
+    a search box.
     """
     config = session.scalar(select(UserConfig.config).where(UserConfig.user_id == user.id))
     if not config:
         return []
 
-    keys = build_query_set({user.id: config}, sources=("linkedin",))
-    # The board wants a place name, not the slug we store. `european_union` resolves to nothing.
-    queries = [{"search_term": key.keyword_norm,
-                "location": location_search_name(key.location_norm) or None,
+    keys = build_query_set({user.id: config}, sources=("linkedin",),
+                           locating_sources=(), remote_aware_sources=())
+    terms = original_terms({user.id: config})
+    queries = [{"search_term": terms.get(key.keyword_norm, key.keyword_norm),
+                "location": None,
                 "is_remote": key.is_remote, "hours_old": key.max_age_hours}
                for key in keys]
-    return queries[:MAX_QUERIES_PER_RUN]
+    return queries[:queries_per_cycle(session, "linkedin")]
 
 
 def run_for_due_users(session, *, now: datetime | None = None,

@@ -114,13 +114,21 @@ QUERY_TAKING_SOURCES: frozenset[str] = frozenset(
 # with something that was not JSON — that is what a ceiling set too high looks like, and it is the
 # reason this is a control rather than a constant.
 DEFAULT_SOURCE_QUERIES_PER_CYCLE: dict[str, int] = {
-    # Per-user and proxied. The tightest, because it carries real ban risk and somebody's bandwidth.
-    "linkedin": 12,
-    # Search-shaped boards on a shared client.
-    "himalayas": 40,
-    "hiringcafe": 40,
-    "nofluffjobs": 40,
-    "jooble": 20,
+    # **Per user, and it was the tightest ceiling on the platform against the widest demand.** 12
+    # against an account with 23 keywords, which then crossed them with 4 locations — so LinkedIn
+    # was asked for the alphabetically first three terms and never saw the other twenty, on the
+    # source that produced 337 of the founder's 348 jobs at or above the delivery cutoff.
+    #
+    # The location axis is gone (`services.harvester.linkedin.queries_for`) and the ceiling is a
+    # keyword count now. Bandwidth was the argument for keeping it low and bandwidth is not scarce:
+    # the cap is 200 MB a day per user and measured usage is 0.0.
+    "linkedin": 60,
+    # Search-shaped boards on a shared client. Comfortably above the 28 distinct keywords the
+    # platform currently has, so nothing defers and every source is served every cycle.
+    "himalayas": 100,
+    "hiringcafe": 100,
+    "nofluffjobs": 100,
+    "jooble": 50,
 }
 
 # A source nobody has tuned. Matches `services.harvester.query_set.DEFAULT_QUERIES_PER_CYCLE`; the
