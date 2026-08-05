@@ -17,6 +17,7 @@ import io
 import logging
 import os
 import struct
+import time
 import uuid
 
 import pytest
@@ -25,7 +26,7 @@ pytest.importorskip("sqlalchemy")
 pytest.importorskip("numpy")
 pytest.importorskip("cryptography")
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.orm import Session
 
 from libs.db.models import CorpusJob, User, UserJobState, UserLabel, UserModel
@@ -594,3 +595,102 @@ def test_declining_says_so_in_the_log(ctx, monkeypatch, caplog):
         trainer.handle(ctx, job)
 
     assert any("no new labels" in record.getMessage() for record in caplog.records)
+
+
+# ── the flood-then-silence failure (ROADMAP 6ai) ──────────────────────────────────────────────
+
+
+def test_a_send_that_fails_partway_does_not_resend_what_already_went(ctx, monkeypatch):
+    """**The duplicates-then-silence failure, in one test.**
+
+    `notified_at` was marked for every item only after the whole digest had gone. So a run that
+    failed on message four rolled back the marks for one, two and three — which Telegram had
+    already delivered — and the retry sent them again. Measured live as bursts of hundreds followed
+    by hours of nothing.
+
+    A sent message cannot be un-sent, so its record must not depend on the rest of the run.
+    """
+    from services.notifier import deliver as deliver_module
+
+    # The pacing gap is Telegram's rule and is tested elsewhere; here it would only make the suite
+    # slow, so the wait is a no-op and the clock below is what the test is about.
+    monkeypatch.setattr(deliver_module, "sleep", lambda _seconds: None)
+
+    user = _connected(ctx)
+    store = _store(ctx)
+    store.put(user.id, "telegram_bot", BOT_TOKEN)
+    for _ in range(5):
+        _scored(ctx, user)
+    ctx.flush()
+
+    sent: list[str] = []
+
+    def fail_on_the_fourth(_token, _chat, message, _keyboard=None):
+        if len(sent) == 3:
+            raise RuntimeError("Bad Gateway")
+        sent.append(message)
+
+    with pytest.raises(RuntimeError):
+        deliver(ctx, user.id, store=store, send=fail_on_the_fourth)
+
+    # The three that went are recorded, so the retry picks up where it stopped.
+    delivered = ctx.scalar(
+        select(func.count()).select_from(UserJobState)
+        .where(UserJobState.user_id == user.id, UserJobState.notified_at.is_not(None)))
+    assert delivered == 3
+
+    resent: list[str] = []
+    deliver(ctx, user.id, store=store, send=lambda t, c, m, k=None: resent.append(m))
+    assert len(resent) == 2, "only the two that never went are sent"
+
+
+def test_a_run_stops_before_its_claim_expires(ctx, monkeypatch):
+    """**15 of 319 notify jobs overran their two-minute claim, the worst at 638 seconds.**
+
+    Sending is paced, so a large digest simply cannot finish inside the claim: at a three-second
+    gap, 200 items is 600 seconds. An overrun is swept back to `ready` while the worker is still
+    sending, a second worker starts the same digest from the top, and the account gets the flood.
+
+    So the loop is bounded by the clock rather than by a count that cannot know the gap.
+    """
+    from services.notifier import deliver as deliver_module
+
+    user = _connected(ctx)
+    store = _store(ctx)
+    store.put(user.id, "telegram_bot", BOT_TOKEN)
+    for _ in range(10):
+        _scored(ctx, user)
+    ctx.flush()
+
+    # A budget that expires part-way through, with no real waiting.
+    monkeypatch.setattr(deliver_module, "SEND_BUDGET_SECONDS", 0.05)
+    monkeypatch.setattr(deliver_module, "sleep", lambda _seconds: None)
+
+    sent: list[str] = []
+
+    def slow(_token, _chat, message, _keyboard=None):
+        sent.append(message)
+        time.sleep(0.04)
+
+    count = deliver(ctx, user.id, store=store, send=slow)
+
+    assert count < 10, "the run must stop rather than overrun its claim"
+    assert count == len(sent)
+    # And what was not sent is still pending, not lost.
+    pending = ctx.scalar(
+        select(func.count()).select_from(UserJobState)
+        .where(UserJobState.user_id == user.id, UserJobState.notified_at.is_(None)))
+    assert pending == 10 - count
+
+
+def test_the_send_budget_fits_inside_the_notify_claim():
+    """Derived rather than chosen, so the claim timeout cannot be raised without this following.
+    Two constants kept equal by hand is the defect this project ships most often (CLAUDE.md §5)."""
+    from libs.db.models.queue import CLAIM_TIMEOUT_MIN
+    from services.notifier.deliver import SEND_BUDGET_SECONDS
+    from services.notifier.freshness import REFRESH_BUDGET_SECONDS
+
+    claim = CLAIM_TIMEOUT_MIN["notify"] * 60
+    assert claim > SEND_BUDGET_SECONDS + REFRESH_BUDGET_SECONDS, (
+        "the refresh and the send together have to finish inside one claim, or the job is swept "
+        "back to ready while it is still working")

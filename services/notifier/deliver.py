@@ -2,9 +2,18 @@
 
 Three rules, each of which is a silent failure when broken:
 
-1. **The `seen` row and the job's completion commit together.** The queue is at-least-once, so a
-   retry after a crash must re-send nothing already recorded (`SCHEDULER_PLAN.md` §4). Committing
-   them separately leaves a window where the send happened and the record did not.
+1. **Each `notified_at` commits the moment its message has gone**, one at a time. The queue is
+   at-least-once, so a retry must re-send nothing already delivered (`SCHEDULER_PLAN.md` §4).
+
+   This used to say the marks and the job's completion commit *together*, on the reasoning that
+   splitting them leaves a window where the send happened and the record did not. The window is
+   real and unavoidable — a Telegram message is not transactional — but batching does not close it,
+   it widens it to the whole digest. Marking at the end meant a run that failed, or was swept back
+   to `ready` for overrunning its two-minute claim, rolled back every mark while every message had
+   already been delivered; the retry then sent the lot again. Measured on the live box: 15 of 319
+   notify jobs overran, the worst at 638 seconds, and the account saw a flood of duplicates
+   followed by silence. Per-message commits narrow the window from two hundred messages to one
+   (ROADMAP 6ai).
 2. **A revoked bot is terminal, not a retry.** Telegram answers 403 and it will never succeed.
    Retrying it five times wastes the attempts and then goes quiet anyway, so the user's feed stops
    with no signal to anyone. The account is flagged `broken`, the dispatcher stops enqueuing, and
@@ -24,7 +33,7 @@ import uuid as _uuid
 from collections.abc import Callable
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
-from time import sleep
+from time import monotonic, sleep
 
 import httpx
 from sqlalchemy import func, select
@@ -33,6 +42,7 @@ from sqlalchemy.orm import Session
 import libs.notify as notifylib
 from libs import limits
 from libs.db.models import CorpusJob, User, UserConfig, UserJobState
+from libs.db.models.queue import CLAIM_TIMEOUT_MIN
 from libs.obs import audit
 from libs.scoring.thresholds import DEFAULT_CUTOFF, cutoff_for
 from libs.secrets import SecretsError, SecretStore, redacting
@@ -41,7 +51,7 @@ from services.notifier.card import FeedItem
 from services.notifier.card import render as render_card
 from services.notifier.eligibility import CANDIDATE_MULTIPLIER, Eligibility
 from services.notifier.eligibility import select as select_feed
-from services.notifier.freshness import date_candidates
+from services.notifier.freshness import REFRESH_BUDGET_SECONDS, date_candidates
 from services.notifier.routing import group_by_chat
 
 logger = logging.getLogger(__name__)
@@ -62,6 +72,24 @@ MAX_ITEMS_PER_DIGEST = 10
 #
 # 200 is roughly twenty digests' worth. A backlog drains over a few cycles rather than never.
 UNLIMITED_ITEMS = 200
+
+# **How long the sending loop may run, derived from the claim it has to finish inside.**
+#
+# This is the fix for the failure the owner described as "jobs going on and off". Sending is paced
+# at `send_gap_seconds` — 3 on both live accounts — so a run of 200 items takes 600 seconds against
+# a `notify` claim of 120. Measured over 48 hours on the live box: **15 of 319 notify jobs overran
+# their claim, the worst running 638 seconds.** Every one of those was swept back to `ready` while
+# its worker was still sending, a second worker claimed it and started the same digest from the
+# top, and the first worker's marks were rolled back when its transaction finally failed. The
+# account got a flood of duplicates and then silence (ROADMAP 6ai).
+#
+# **Derived, not chosen.** A constant here would be a second definition of the claim timeout, which
+# is the defect this project ships most often — so it reads the lane's own number and leaves room
+# for the refresh that runs before it plus a margin for rendering. Whatever does not fit goes next
+# cycle, which is exactly what the `items_per_run` limit already promises: "anything over stays
+# queued for the next one; nothing is dropped".
+SEND_BUDGET_SECONDS = (
+    CLAIM_TIMEOUT_MIN["notify"] * 60 - REFRESH_BUDGET_SECONDS) * 0.6
 
 # Re-exported, not redefined. The number is `libs.scoring.thresholds`, because the API's jobs table
 # needs the same one and `services` may not import `services` — and three copies of a threshold are
@@ -265,6 +293,8 @@ def deliver(session: Session, user_id: _uuid.UUID, *,
     # to their personal chat, which is the same behaviour as before this existed.
     batches = group_by_chat(items, user.telegram_routes, user.telegram_chat_id)
 
+    sent = 0
+    deadline = monotonic() + SEND_BUDGET_SECONDS
     with store.use(user_id, "telegram_bot") as token:
         if token is None:
             raise BotRevoked(f"user {user_id} has no telegram token stored")
@@ -273,16 +303,38 @@ def deliver(session: Session, user_id: _uuid.UUID, *,
                 # **Cards only, no header.** The reference feed posts one card per job and nothing
                 # else; a "10 new matches" line above them was a platform addition that turns a
                 # channel you scroll into a channel you have to read the top of.
-                for position, item in enumerate(batch):
+                for item in batch:
+                    # **Stop before the claim does.** Whatever is left keeps `notified_at IS NULL`
+                    # and goes out next cycle — the same fail-forward the daily cap already uses.
+                    if monotonic() >= deadline:
+                        logger.info(
+                            "notify: %s sent %d and ran out of its send budget — the rest go next "
+                            "cycle", user_id, sent)
+                        return sent
                     # **Paced, because Telegram allows 20 messages a minute to a channel.** The
                     # gap is what makes an unlimited daily ceiling safe: the old guard against
                     # rate limits was a cap, which protected the bot by withholding jobs the user
                     # had matched. This protects it by taking longer instead. No sleep before the
                     # first message — a run that sends one card should not wait to send it.
-                    if position:
+                    if sent:
                         sleep(gap)
                     send(token.reveal(), chat_id, render_job(item, cutoff=cutoff),
                          keyboard(item.job_id))
+                    # **Marked and committed the moment it has gone, one message at a time.**
+                    #
+                    # A sent message cannot be un-sent, so its record must not depend on the rest
+                    # of the run succeeding. Marking all of them at the end meant that a run which
+                    # failed — or was swept back to `ready` for overrunning its claim — rolled back
+                    # every mark while the messages were already delivered, and the retry sent the
+                    # whole digest again. That is what a flood of duplicates followed by silence
+                    # actually was (ROADMAP 6ai).
+                    #
+                    # Committing here narrows the at-least-once window from the whole digest to a
+                    # single message: a crash between the send and the commit costs one duplicate
+                    # rather than two hundred.
+                    session.get(UserJobState, (user_id, item.job_id)).notified_at = func.now()
+                    session.commit()
+                    sent += 1
             except Exception as exc:
                 if _is_terminal(exc):
                     # A revoked token is terminal for every channel, so stopping here is right.
@@ -297,11 +349,8 @@ def deliver(session: Session, user_id: _uuid.UUID, *,
                     raise BotRevoked(str(exc)[:200]) from exc
                 raise
 
-    for item in items:
-        session.get(UserJobState, (user_id, item.job_id)).notified_at = func.now()
-
-    _log_freshness(session, user_id, items)
-    return len(items)
+    _log_freshness(session, user_id, items[:sent])
+    return sent
 
 
 def _operating_point(session: Session, user_id: _uuid.UUID, requested: float) -> float:
