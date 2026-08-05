@@ -51,8 +51,12 @@ class Item:
     workplace: str | None = None
 
 
-def rules(**overrides) -> Eligibility:
-    return Eligibility.from_config({"languages": ["en"], **overrides})
+def rules(*, applicant_cap: int | None = 200, **overrides) -> Eligibility:
+    """One user's filters. `applicant_cap` is separate because it is an operator limit resolved
+    from `libs.limits`, not a field on their config — passing it in the config dict was how it
+    stayed invisible to the panel that is supposed to own it."""
+    return Eligibility.from_config({"languages": ["en"], **overrides},
+                                   applicant_cap=applicant_cap)
 
 
 # ── the buckets ───────────────────────────────────────────────────────────────────────────────

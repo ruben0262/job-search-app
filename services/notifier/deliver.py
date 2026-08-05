@@ -100,7 +100,11 @@ def pending_feed(session: Session, user_id: _uuid.UUID, *, cutoff: float,
     """
     if rules is None:
         config = session.scalar(select(UserConfig.config).where(UserConfig.user_id == user_id))
-        rules = Eligibility.from_config(config)
+        # The applicant ceiling is the operator's, not the user's: it comes from `libs.limits`
+        # alongside every other per-account ceiling, and `None` there means show everything.
+        user = session.get(User, user_id)
+        rules = Eligibility.from_config(
+            config, applicant_cap=limits.resolve(user, "applicant_cap") if user else None)
 
     # **The age filter belongs in the query, not only after it.** The pool is ordered by score, so
     # without this a backlog of stale high-scoring rows fills every candidate slot and is then

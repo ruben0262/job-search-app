@@ -28,6 +28,7 @@ from datetime import UTC, datetime
 from libs.contracts.config import migrate_config
 from libs.corpus import langfilter, workfilter
 from libs.corpus.ranking import applicant_glut, priority_key
+from libs.limits import limit_default
 
 logger = logging.getLogger(__name__)
 
@@ -35,9 +36,14 @@ logger = logging.getLogger(__name__)
 # still fills, and small enough that the language detector is not run over a thousand descriptions.
 CANDIDATE_MULTIPLIER = 5
 
-# LinkedIn's display cap. A listing pinned at "over 200 applicants" is nearly always stale or
-# reposted; 0 disables the drop for a user who would rather see everything.
-DEFAULT_APPLICANT_CAP = 200
+# LinkedIn's display cap, and **the operator's per-user limit is the live one** — this is only the
+# fallback for a caller that has no user to resolve against (a test, a direct construction).
+#
+# It used to be the only value, read via `config.get("applicant_cap", …)` from a config field
+# nothing writes, so it was a constant with a lookup in front of it. Measured 2026-08-05: it was
+# dropping 87 of one account's 90 fresh matches, and nobody could see it or change it
+# (ROADMAP 6ag). `applicant_glut` treats 0 as off, which is what unlimited resolves to.
+DEFAULT_APPLICANT_CAP = limit_default("applicant_cap")
 
 # The window a user gets if they never said. Matches `SearchSection.posted_within_hours`.
 DEFAULT_MAX_AGE_HOURS = 24
@@ -64,8 +70,13 @@ class Eligibility:
     max_age_hours: int = DEFAULT_MAX_AGE_HOURS
 
     @classmethod
-    def from_config(cls, config: dict | None) -> Eligibility:
+    def from_config(cls, config: dict | None, *,
+                    applicant_cap: int | None = DEFAULT_APPLICANT_CAP) -> Eligibility:
         """Build from a stored `user_config.config`. A missing key means "no opinion", not "none".
+
+        `applicant_cap` comes from `libs.limits`, not from the config: it is an operator ceiling
+        rather than a search preference, and the config field it used to read was never written by
+        anything. `None` is the operator choosing Unlimited and means no drop at all.
 
         That reading matters for `languages` especially: an account that never answered the
         question must not have its entire feed dropped for being in the wrong language.
@@ -86,7 +97,11 @@ class Eligibility:
         return cls(
             languages={str(code).lower() for code in config.get("languages") or []},
             onsite_locations=workfilter.onsite_locations(config.get("onsite_locations")),
-            applicant_cap=int(config.get("applicant_cap", DEFAULT_APPLICANT_CAP)),
+            # **`None` is unlimited and must not become a number.** `applicant_glut` reads 0 as
+            # "do not drop anything", which is exactly what Unlimited means here — and writing it
+            # as `applicant_cap or 0` would silently turn a deliberate 0 and an accidental None
+            # into the same thing without saying so.
+            applicant_cap=0 if applicant_cap is None else int(applicant_cap),
             max_age_hours=max([window for window in windows if window > 0],
                               default=DEFAULT_MAX_AGE_HOURS),
             exclude_keywords=tuple(

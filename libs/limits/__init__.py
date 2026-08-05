@@ -63,6 +63,19 @@ LIMITS: tuple[Limit, ...] = (
           "seconds is 15 a minute.", allow_unlimited=False),
     Limit("proxy_mb_per_day", "LinkedIn bandwidth per day", 200, "MB",
           "Their own residential proxy pays for this. LinkedIn is the only source that uses it."),
+    # **The single biggest filter on a feed, and it was a constant nobody could see.** Measured
+    # 2026-08-05: 87 of one account's 90 fresh matches were dropped by it, leaving three. LinkedIn
+    # stops counting at 200 and displays "Over 200 applicants", so every popular posting arrives
+    # pinned at exactly the cap — and an account whose model likes mainstream postings has its whole
+    # feed sitting on that number. Per user rather than platform-wide because it is a judgement
+    # about one person's odds, not a platform safety rule (ROADMAP 6ag).
+    #
+    # Unlimited means "show me everything regardless of how many have applied", which is a real
+    # position: a strong candidate applying to a 300-applicant role is not wasting their time.
+    Limit("applicant_cap", "Drop jobs at or above this many applicants", 200, "applicants",
+          "LinkedIn only — it is the one source reporting a count, and it stops counting at 200, "
+          "so a posting pinned there has 200 or more. Unlimited shows every job whatever the "
+          "count."),
     # **Not unlimited-able.** "Unlimited minutes between runs" has no meaning, and offering it in a
     # dropdown invites somebody to pick the option that stops their own LinkedIn tier. Turning the
     # tier off is `HARVEST_LINKEDIN_DISABLED`, which is a different decision in a different place.
@@ -103,6 +116,18 @@ def resolve(user: User, key: str) -> int | None:
         return BY_KEY[key].default
     value = stored[key]
     return None if value is None else int(value)
+
+
+def limit_default(key: str) -> int | None:
+    """The catalogue's default for a limit, for a caller with no user to resolve against.
+
+    Exists so a module needing a sensible fallback writes `limit_default("applicant_cap")` rather
+    than its own copy of the number. A constant beside a catalogue entry naming the same thing is
+    the defect this project has shipped most often.
+    """
+    if key not in BY_KEY:
+        raise KeyError(f"unknown limit {key!r}; known: {sorted(BY_KEY)}")
+    return BY_KEY[key].default
 
 
 def all_for(user: User) -> dict[str, int | None]:

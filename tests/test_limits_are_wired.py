@@ -194,3 +194,74 @@ def test_unlimited_delivery_is_reported_as_unlimited_not_as_a_number():
     # And the catalogue itself still offers unlimited, which is what makes `None` reachable.
     assert next(item for item in limits.LIMITS
                 if item.key == "notifications_per_day").allow_unlimited
+
+
+def test_the_applicant_ceiling_is_the_operators_and_unlimited_shows_everything():
+    """**The single biggest filter on a feed, and it was a constant nobody could see.**
+
+    Measured 2026-08-05: 87 of one account's 90 fresh matches were dropped by it, leaving three.
+    LinkedIn stops counting at 200 and displays "Over 200 applicants", so every popular posting
+    arrives pinned at exactly the cap — and an account whose model likes mainstream postings has
+    its entire feed sitting on that number. It was read from a config field nothing writes, so it
+    was a constant with a lookup in front of it (ROADMAP 6ag).
+    """
+    from services.notifier.eligibility import Eligibility
+
+    # The operator's number is honoured, not the config's.
+    assert Eligibility.from_config({}, applicant_cap=50).applicant_cap == 50
+    # A config that carries the old field cannot override the operator.
+    assert Eligibility.from_config({"applicant_cap": 999}, applicant_cap=50).applicant_cap == 50
+    # Unlimited means show everything: `applicant_glut` reads 0 as "do not drop".
+    assert Eligibility.from_config({}, applicant_cap=None).applicant_cap == 0
+
+
+def test_unlimited_applicants_actually_lets_a_busy_posting_through():
+    """The limit has to reach the decision, not just the dataclass. A ceiling that is stored and
+    never consulted is the failure this whole file exists to catch."""
+    from libs.corpus.ranking import applicant_glut
+    from services.notifier.eligibility import Eligibility
+
+    capped = Eligibility.from_config({}, applicant_cap=200)
+    unlimited = Eligibility.from_config({}, applicant_cap=None)
+
+    assert applicant_glut(source="linkedin", applicants=200, cap=capped.applicant_cap) is True
+    assert applicant_glut(source="linkedin", applicants=200, cap=unlimited.applicant_cap) is False
+
+
+def test_the_applicant_cap_default_is_not_written_twice():
+    """A constant beside a catalogue entry naming the same thing is the defect this project has
+    shipped most often: the panel shows one value, the code reads the other, nothing errors."""
+    from libs.limits import BY_KEY
+    from services.notifier.eligibility import DEFAULT_APPLICANT_CAP
+
+    assert BY_KEY["applicant_cap"].default == DEFAULT_APPLICANT_CAP
+
+
+def test_every_limit_in_the_catalogue_has_a_control_an_operator_can_reach():
+    """**A limit with no choices renders an empty dropdown, and nothing errors.**
+
+    The admin panel builds each control from `CHOICES[spec.key]`, defaulting to `[]`. So adding a
+    ceiling to `libs.limits` without adding its steps produces a visible row with nothing in it —
+    the operator sees the limit exists and cannot set it, which is worse than not offering it. This
+    is the same class as every other defect in this file: two places that have to agree, and only
+    one of them enforced.
+    """
+    import re
+    from pathlib import Path
+
+    from libs.limits import LIMITS
+
+    panel = Path("web/src/pages/AdminUserPage.tsx").read_text(encoding="utf-8")
+    block = re.search(r"const CHOICES:[^=]*=\s*\{(.*?)\n\};", panel, re.S)
+    assert block, "the CHOICES map has moved; this guard needs updating with it"
+    listed = set(re.findall(r"^\s*(\w+):\s*\[", block.group(1), re.M))
+
+    missing = [limit.key for limit in LIMITS if limit.key not in listed]
+    assert not missing, (
+        f"these limits would render an empty dropdown: {missing}. Add their steps to CHOICES in "
+        "web/src/pages/AdminUserPage.tsx")
+
+    # And nothing in the panel that the catalogue does not offer — a control for a limit nobody
+    # resolves is a setting with no consumer, which this project has shipped repeatedly.
+    stray = listed - {limit.key for limit in LIMITS}
+    assert not stray, f"CHOICES offers limits that no longer exist: {sorted(stray)}"

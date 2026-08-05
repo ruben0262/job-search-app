@@ -64,6 +64,10 @@ const CHOICES: Record<string, number[]> = {
   items_per_run: [5, 10, 15, 20, 30, 50],
   send_gap_seconds: [3, 4, 5, 8, 12, 20],
   proxy_mb_per_day: [100, 200, 500, 1000, 2000],
+  // LinkedIn stops counting at 200 and shows "Over 200 applicants", so 200 is the top real step —
+  // anything above it would be a ceiling no posting can reach. Unlimited is the way to turn the
+  // drop off entirely.
+  applicant_cap: [25, 50, 100, 150, 200],
   linkedin_interval_min: [15, 30, 60, 120],
   describe_per_run: [20, 40, 60, 100, 200],
   keywords: [10, 25, 50, 100],
