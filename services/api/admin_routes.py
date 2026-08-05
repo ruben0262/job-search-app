@@ -53,6 +53,7 @@ from libs.settings import (
     all_settings,
     ats_companies_per_cycle,
     freshness_hours,
+    pages_per_cycle,
     put,
     queries_per_cycle,
     results_per_query,
@@ -357,6 +358,10 @@ def sources(db: Session = Depends(get_db), admin: User = Depends(require_admin))
                      # returns its whole list, TheMuse counts pages. The panel shows no control
                      # rather than one attached to nothing.
                      "results_per_query": results_per_query(db, name),
+                     # `None` for a source that fetches one response rather than walking pages —
+                     # the same rule as the column beside it: no control where there is nothing to
+                     # control.
+                     "pages_per_cycle": pages_per_cycle(db, name),
                      "wanted": wanted if name in asked else 0}
                     for name in HARVEST_SOURCES],
         # **The ATS ceiling, with the number it is a ceiling on.** The token list grows on its own

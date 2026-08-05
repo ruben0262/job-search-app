@@ -69,12 +69,6 @@ logger = logging.getLogger(__name__)
 # reference's figure rather than a bigger number that would feel more thorough.
 RESULTS_WANTED = 30
 
-# How many postings one user's pass may fetch descriptions for. Bounded like every other proxy
-# pass: a keyword that suddenly matches four hundred new jobs should cost one capped run rather
-# than a user's whole daily allowance in a single cycle. What is left waits for the next run,
-# fifteen minutes later.
-DESCRIBE_LIMIT = 60
-
 # What "unlimited descriptions per run" means to a query that needs a number. A pass is bounded by
 # what it actually found, so this is a guard rather than a ceiling anybody reaches.
 UNLIMITED_DESCRIBES = 10_000

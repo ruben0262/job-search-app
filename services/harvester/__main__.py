@@ -38,6 +38,7 @@ from libs.settings import (
     describe_per_cycle,
     freshness_hours,
     linkedin_concurrent_users,
+    pages_per_cycle,
     queries_per_cycle,
     results_per_query,
 )
@@ -224,6 +225,8 @@ def main(argv: list[str] | None = None) -> int:
                 freshness={name: freshness_hours(session, name) for name in HARVEST_SOURCES},
                 results={name: results_per_query(session, name) for name in HARVEST_SOURCES
                          if results_per_query(session, name)},
+                pages={name: pages_per_cycle(session, name) for name in HARVEST_SOURCES
+                       if pages_per_cycle(session, name)},
                 ats_companies=ats_companies_per_cycle(session))
             # The operator's per-source query ceilings, read where the session is. `--max-queries`
             # flattens them to one number for a manual run and is not how the timer runs.

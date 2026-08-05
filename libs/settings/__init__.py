@@ -170,6 +170,30 @@ DEFAULT_ATS_COMPANIES_PER_CYCLE = 400
 # Bounded because each fetch is an HTTP request with retries.
 DEFAULT_DESCRIBE_PER_CYCLE = 200
 
+# How deep a paginated source reads in one cycle, per source.
+#
+# **The third half of the query budget, and the only one that was invisible.** `queries_per_cycle`
+# decides how many times we ask, `results_per_query` how much one ask returns — and for the sources
+# that paginate, this decides how many pages we walk. Both numbers here were constants inside their
+# adapters (`hiringcafe._MAX_PAGES`, `ats._WD_PAGES`), which meant HiringCafe was capped at 3 × 40 =
+# 120 rows a cycle by a value nobody could see and no panel reported (ROADMAP 6ag).
+#
+# Platform-wide rather than per user: a page is a request to a board, and how hard we lean on
+# somebody else's server is a platform decision, not one account's preference. Contrast the
+# applicant cap, which is a judgement about one person's odds and is therefore per user.
+#
+# A source absent from this map does not paginate, and adding a key here does nothing on its own —
+# the adapter has to read it. That is the trap this project keeps hitting, so the test that pins
+# every key to a consumer is part of the change rather than a follow-up.
+DEFAULT_SOURCE_PAGES_PER_CYCLE: dict[str, int] = {
+    # Relevance-sorted, so the top pages carry the matches and depth has falling returns. It is
+    # also proxied, which is why this one is worth an operator's attention.
+    "hiringcafe": 3,
+    # Newest-first at 20 a page, and the walk stops early once a page is older than the freshness
+    # window — so this is a ceiling rather than a fixed cost.
+    "workday": 5,
+}
+
 # How many users' LinkedIn passes run in one tick. **Not a per-user limit** — per-user proxies give
 # IP diversity, which handles one account's ban risk; this is the platform not issuing hundreds of
 # LinkedIn requests at once, and it is also the `linkedin` lane's worker count.
@@ -186,6 +210,7 @@ DEFAULTS: dict[str, object] = {
     "default_freshness_hours": DEFAULT_FRESHNESS_HOURS,
     "source_queries_per_cycle": DEFAULT_SOURCE_QUERIES_PER_CYCLE,
     "source_results_per_query": DEFAULT_SOURCE_RESULTS_PER_QUERY,
+    "source_pages_per_cycle": DEFAULT_SOURCE_PAGES_PER_CYCLE,
     "ats_companies_per_cycle": DEFAULT_ATS_COMPANIES_PER_CYCLE,
     "describe_per_cycle": DEFAULT_DESCRIBE_PER_CYCLE,
     "linkedin_concurrent_users": DEFAULT_LINKEDIN_CONCURRENT_USERS,
@@ -237,6 +262,19 @@ def queries_per_cycle(session: Session, source: str) -> int:
     if source in DEFAULT_SOURCE_QUERIES_PER_CYCLE:
         return DEFAULT_SOURCE_QUERIES_PER_CYCLE[source]
     return DEFAULT_QUERIES_PER_CYCLE
+
+
+def pages_per_cycle(session: Session, source: str) -> int | None:
+    """How many pages this source may walk in one cycle, or `None` when it does not paginate.
+
+    Same override ladder as the rest. `None` is a real answer and the adapters treat it as "this
+    control does not apply", so a source that fetches one response is not handed a page count it
+    would have to invent a meaning for.
+    """
+    stored = get(session, "source_pages_per_cycle") or {}
+    if source in stored:
+        return int(stored[source])
+    return DEFAULT_SOURCE_PAGES_PER_CYCLE.get(source)
 
 
 def results_per_query(session: Session, source: str) -> int | None:

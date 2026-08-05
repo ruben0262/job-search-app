@@ -786,3 +786,72 @@ def test_a_removed_source_cannot_be_quietly_switched_back_on(ctx):
     assert deferred & set(HARVEST_SOURCES) == set(), "the admin panel would offer it a control"
     assert deferred & QUERY_TAKING_SOURCES == set()
     assert deferred & KEYWORD_FILTER_SOURCES == set()
+
+
+# ── how deep a paginated source walks (ROADMAP 6ag) ───────────────────────────────────────────
+
+
+def test_the_operators_page_depth_reaches_the_two_sources_that_paginate():
+    """**Both were constants inside their adapters and neither appeared anywhere an operator looks.**
+
+    `hiringcafe._MAX_PAGES = 3` at 40 rows a page capped that source at 120 rows a cycle — on the
+    second-biggest proxied source — and `ats._WD_PAGES = 5` did the same for Workday. A ceiling
+    nobody can see is one nobody can raise when a source starts running behind.
+    """
+    from services.harvester.source_config import build_source_configs
+
+    built = build_source_configs({}, env={}, pages={"hiringcafe": 8, "workday": 2})
+
+    assert built["hiringcafe"]["max_pages"] == 8
+    assert built["workday"]["max_pages"] == 2
+
+
+def test_a_source_with_no_page_setting_keeps_its_own_default():
+    """An operator who has tuned one source must not silently reset every other one — the same
+    ladder as freshness and results, for the same reason."""
+    from services.harvester.source_config import build_source_configs
+
+    built = build_source_configs({}, env={}, pages={"hiringcafe": 8})
+
+    assert "max_pages" not in built.get("workday", {})
+
+
+def test_workday_walks_the_number_of_pages_it_was_given():
+    """The setting has to reach the request, not just the config dict. A value that stops at the
+    config is the failure this file exists to catch — six of ten limits did exactly that."""
+    from services.harvester.sources import ats
+
+    seen: list[int] = []
+
+    # A full page of fresh postings, so the loop's own early exits — an empty page, a short page,
+    # a page gone stale — do not end the walk before the page count does.
+    page = {"jobPostings": [
+        {"externalPath": f"/job/{n}", "title": f"Engineer {n}", "postedOn": "Posted Today",
+         "locationsText": "Berlin"}
+        for n in range(20)]}
+
+    class _Response:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return page
+
+    class _Client:
+        def itself(self):
+            return self
+
+        def post(self, _url, json=None, **_kw):
+            seen.append(json["offset"])
+            return _Response()
+
+    client = _Client()
+    original = ats._http
+    ats._http = client.itself
+    try:
+        ats.fetch_workday("tenant:wd3:site", pages=2)
+    finally:
+        ats._http = original
+
+    # Two pages at 20 a page, and no third request.
+    assert seen == [0, 20]

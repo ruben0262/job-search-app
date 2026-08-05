@@ -46,6 +46,7 @@ import threading
 import defusedxml.ElementTree as ET   # not stdlib ET: these parse third-party feeds
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+from functools import partial
 from typing import Any, Callable
 
 import httpx
@@ -389,7 +390,10 @@ def fetch_breezy(token: str, etag: str | None = None) -> tuple[list[JobLink] | N
     return out, new_etag
 
 
-_WD_PAGES = 5        # 20/page; the listing is newest-first, so we stop early once a page goes stale
+# 20/page; the listing is newest-first, so we stop early once a page goes stale. The operator's
+# value arrives as `max_pages` in the config and is bound onto the fetcher by `gather_workday` —
+# this is the fallback for a direct call (token validation in `seed_tokens`) that has no config.
+_WD_PAGES = 5
 _WD_STALE_DAYS = 4   # comfortably covers the posted_within_hours: 72 window
 
 
@@ -409,7 +413,8 @@ def _wd_date(posted_on: str | None) -> str | None:
     return (datetime.now(timezone.utc).date() - timedelta(days=days)).isoformat()
 
 
-def fetch_workday(token: str, etag: str | None = None) -> tuple[list[JobLink] | None, str | None]:
+def fetch_workday(token: str, etag: str | None = None, *,
+                  pages: int = _WD_PAGES) -> tuple[list[JobLink] | None, str | None]:
     """token = 'tenant:wdN:site' (all three live in every myworkdayjobs.com job URL).
     POST endpoint, no ETag support; gated tenants (401/403) are treated as dead like a 404."""
     try:
@@ -420,7 +425,7 @@ def fetch_workday(token: str, etag: str | None = None) -> tuple[list[JobLink] | 
     base = f"https://{tenant}.{wd}.myworkdayjobs.com/{site}"
     today = datetime.now(timezone.utc).date()
     out: list[JobLink] = []
-    for page in range(_WD_PAGES):
+    for page in range(pages):
         r = _http().post(api, json={"appliedFacets": {}, "limit": 20,
                                     "offset": page * 20, "searchText": ""})
         # 401/403 = tenant gates the API; 404/422 = tenant or site segment doesn't exist.
@@ -527,7 +532,11 @@ def gather_breezy(cfg: dict[str, Any], logger, repo: AtsRepository) -> list[JobL
 
 
 def gather_workday(cfg: dict[str, Any], logger, repo: AtsRepository) -> list[JobLink]:
-    return gather_ats(cfg, logger, repo=repo, ats="workday", fetch_company=fetch_workday)
+    # **Bound rather than threaded.** `fetch_company` is one signature shared by nine fetchers, and
+    # widening it so that one of them can read a page count would change all nine for the sake of
+    # Workday. `partial` keeps the contract and puts the operator's number where it is used.
+    fetch = partial(fetch_workday, pages=int(cfg.get("max_pages") or _WD_PAGES))
+    return gather_ats(cfg, logger, repo=repo, ats="workday", fetch_company=fetch)
 
 
 def gather_personio(cfg: dict[str, Any], logger, repo: AtsRepository) -> list[JobLink]:

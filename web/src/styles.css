@@ -2228,7 +2228,7 @@ td.num {
   display: grid;
   /* Fixed widths on the four control columns, so a row's contents cannot move its neighbours'
      columns. Wide enough for the longest option in each: `168h`, `200`, `100`, and a count. */
-  grid-template-columns: minmax(8rem, 1fr) 5rem 4.5rem 4.5rem 4rem;
+  grid-template-columns: minmax(7rem, 1fr) 5rem 4.5rem 4.5rem 4.5rem 4rem;
   align-items: center;
   column-gap: 0.75rem;
   margin-top: 0.75rem;

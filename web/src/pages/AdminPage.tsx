@@ -137,6 +137,7 @@ type Settings = {
   default_freshness_hours: number;
   source_queries_per_cycle: Record<string, number>;
   source_results_per_query: Record<string, number>;
+  source_pages_per_cycle: Record<string, number>;
   ats_companies_per_cycle: number;
   describe_per_cycle: number;
   linkedin_concurrent_users: number;
@@ -148,6 +149,8 @@ type Source = {
   queries_per_cycle: number;
   /** `null` where the source has no result cap to set — it serves a feed or counts pages. */
   results_per_query: number | null;
+  /** `null` where the source fetches one response rather than walking pages. */
+  pages_per_cycle: number | null;
   /** How many distinct queries this source currently has. 0 means it takes none. */
   wanted: number;
 };
@@ -251,6 +254,15 @@ export function AdminPage() {
     setSettings(body.settings);
     setSources((rows) =>
       rows?.map((row) => (row.name === name ? { ...row, queries_per_cycle: value } : row)) ?? rows);
+  });
+
+  const savePages = useAction(async (name: string, value: number) => {
+    const next = { ...(settings?.source_pages_per_cycle ?? {}), [name]: value };
+    const body = await api.put<{ settings: Settings }>(
+      "/admin/settings/source_pages_per_cycle", { value: next });
+    setSettings(body.settings);
+    setSources((rows) =>
+      rows?.map((row) => (row.name === name ? { ...row, pages_per_cycle: value } : row)) ?? rows);
   });
 
   const saveFreshness = useAction(async (name: string, hours: number) => {
@@ -474,6 +486,7 @@ export function AdminPage() {
               <span>fresh</span>
               <span>queries</span>
               <span>results</span>
+              <span>pages</span>
               <span className="num">wanted</span>
             </div>
             {(sources ?? []).map((source) => (
@@ -507,6 +520,7 @@ export function AdminPage() {
                       ))}
                     </select>
                     <Results source={source} save={saveResults} />
+                    <Pages source={source} save={savePages} />
                     {/* Amber when the ceiling is below demand: that source is running behind and
                         the number beside it is why. */}
                     <span className={source.wanted > source.queries_per_cycle
@@ -527,6 +541,7 @@ export function AdminPage() {
                       <option value={1}>1</option>
                     </select>
                     <Results source={source} save={saveResults} />
+                    <Pages source={source} save={savePages} />
                     <span className="num muted">—</span>
                   </>
                 )}
@@ -1383,6 +1398,29 @@ function Results({ source, save }: {
       onChange={(event) => void save.run(source.name, Number(event.target.value))}
     >
       {[20, 30, 40, 50, 100, 200].map((n) => (
+        <option key={n} value={n}>{n}</option>
+      ))}
+    </select>
+  );
+}
+
+/** How deep a paginated source walks in one cycle. A dash where the source fetches one response —
+ *  the same rule as `Results`: no control where there is nothing to control. */
+function Pages({ source, save }: {
+  source: Source;
+  save: { busy: boolean; run: (name: string, value: number) => Promise<unknown> };
+}) {
+  if (source.pages_per_cycle === null) {
+    return <span className="small muted">—</span>;
+  }
+  return (
+    <select
+      value={source.pages_per_cycle}
+      disabled={save.busy}
+      aria-label={`${source.name} pages per cycle`}
+      onChange={(event) => void save.run(source.name, Number(event.target.value))}
+    >
+      {[1, 2, 3, 5, 8, 12, 20].map((n) => (
         <option key={n} value={n}>{n}</option>
       ))}
     </select>

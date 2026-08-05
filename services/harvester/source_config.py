@@ -283,6 +283,7 @@ def build_source_configs(
     enabled: tuple[str, ...] | None = None,
     env: Mapping[str, str] | None = None,
     freshness: Mapping[str, int] | None = None,
+    pages: Mapping[str, int] | None = None,
     results: Mapping[str, int] | None = None,
     ats_companies: int | None = None,
 ) -> dict[str, dict]:
@@ -371,6 +372,12 @@ def build_source_configs(
         # How many company boards one ATS cycle polls.
         if ats_companies and source in ATS_SOURCES:
             cfg["max_companies"] = int(ats_companies)
+        # **How deep a paginated source walks.** Both of these were constants inside their adapters,
+        # so HiringCafe was capped at 3 pages x 40 rows a cycle by a number nobody could see and no
+        # panel reported. One key, because the two adapters already differ enough (ROADMAP 6ag).
+        page_depth = (pages or {}).get(source)
+        if page_depth:
+            cfg["max_pages"] = int(page_depth)
         # **Two different consumers of the same word, and only one of them is safe.**
         # `KEYWORD_FILTER_SOURCES` read this themselves and match the whole posting;
         # `PREFILTER_SOURCES` hands it to `ats.JobFilter`, which matches a title alone and is empty
