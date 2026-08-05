@@ -110,10 +110,12 @@ def test_every_unit_linkedin_uses_is_understood(caption, delta):
 
 
 def test_a_repost_is_distinguished_from_a_posting():
-    """LinkedIn resurfaces stale listings with a fresh timestamp. The word is the only tell."""
+    """LinkedIn resurfaces stale listings with a fresh timestamp. The word is the only tell — and a
+    caption without it is **no evidence either way**, because no page a logged-out fetch can reach
+    carries the word at all (2026-08-05)."""
     reposted = '<span class="posted-time-ago__text"> Reposted 1 day ago </span>'
     assert postings.parse_reposted(reposted) is True
-    assert postings.parse_reposted(GUEST_FRAGMENT) is False
+    assert postings.parse_reposted(GUEST_FRAGMENT) is None
     assert postings.parse_reposted("<div>nothing</div>") is None
 
 
@@ -204,7 +206,8 @@ def test_a_linkedin_url_goes_to_the_guest_endpoint():
     assert "data pipelines" in result.description
     assert "topcard__title" not in result.description      # the JD element, not the page
     assert result["applicants"] == 200
-    assert result["reposted"] is False
+    # Unknown, not denied: the marker is on no page we can fetch.
+    assert result["reposted"] is None
     assert client.requested[0].endswith("/jobPosting/4321")
 
 
@@ -356,3 +359,29 @@ def test_an_ordinary_transport_failure_is_still_retried():
     postings.fetch_job("https://www.linkedin.com/jobs/view/1", client=Flaky(), snippet="teaser",
                        stats=stats)
     assert stats["li_error"] == postings.LI_RETRIES
+
+
+def test_a_missing_repost_marker_is_unknown_not_a_denial():
+    """**The word appears on no page a logged-out fetch can reach.**
+
+    Confirmed twice: absent from the guest fragment and from the 250 KB full page on every sample,
+    while the same posting reads "Reposted 5 hours ago" in a signed-in browser. So a caption without
+    it is no evidence either way — and returning False told 2,584 rows they were not reposts on the
+    strength of a page that never mentions reposts.
+    """
+    from libs.corpus import postings
+
+    assert postings.parse_reposted('<span class="posted-time-ago__text">Posted 3 days ago</span>') \
+        is None
+    assert postings.parse_reposted('<span class="posted-time-ago__text">Reposted 2 days ago</span>') \
+        is True
+    assert postings.parse_reposted("<div>no caption here</div>") is None
+
+
+def test_the_easy_apply_fetch_is_gone():
+    """It streamed 96 KB of a user's paid proxy per posting to read one boolean that is not on the
+    page. `parse_easy_apply` stays — pure, tested, and correct the day a logged-in page exists."""
+    from libs.corpus import postings
+
+    assert not hasattr(postings, "fetch_easy_apply")
+    assert hasattr(postings, "parse_easy_apply")

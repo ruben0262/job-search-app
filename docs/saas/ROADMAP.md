@@ -1398,8 +1398,36 @@ latency query discards a negative span as a clock change, which is part of why t
 `posted_at` is now clamped to never exceed `first_seen_at`: a posting cannot have been published
 after we already had it.
 
-**Still open**: 1 and 2. Both are small, and 2 costs a second page fetch per posting, so it belongs
-with the Easy Apply read rather than beside it.
+**Closed 2026-08-05, and the answer to 2 was "it cannot be done from here".**
+
+The owner supplied the decisive evidence: the same posting, guest page against a signed-in browser.
+Logged out it reads *"5 hours ago · 86 applicants"*. Logged in it reads *"**Reposted** 5 hours ago ·
+**98** applicants"*, with an **Easy Apply** button and a "Promoted by hirer" line. Probed
+independently against four postings, comparing the guest fragment with the full 250 KB
+`/jobs/view`: **neither carries `apply-link-onsite`, "easy apply", "repost" or "promoted by"**.
+Six times the bytes for the same nothing.
+
+And JobSpy cannot supply them either — `JobPost` has no field for applicants, repost or easy-apply.
+
+So:
+
+- **`fetch_easy_apply` is deleted.** It streamed up to 96 KB of a user's paid residential proxy per
+  posting to read a boolean that is not on the page. `parse_easy_apply` stays: pure, tested, and
+  correct the day a logged-in session exists.
+- **`reposted` returns `None` rather than `False`.** A caption without the word is no evidence
+  either way, and returning False told 2,584 rows they were not reposts on the strength of a page
+  that never mentions reposts. The card renders unknown as nothing, which is right.
+- **The applicant count is a floor and is documented as one** — 86 where the truth was 98. Kept,
+  because a floor is still the difference between "be among the first 25" and "over 200".
+
+**What would actually fix this is a logged-in session**, which is a different product decision: a
+credential to store, a ToS position to take, and a ban surface on somebody's own account. Not a
+parser change, and not worth doing quietly.
+
+**A better find while looking.** JobSpy already returns seven fields the platform discards, and they
+are most of 6x's filter inventory, free and already fetched: `job_type` (contract type),
+`job_level` (seniority), `company_industry`, `job_function`, `skills`, `compensation` (salary) and
+`work_from_home_type`. Stage 2 should read them before inventing anything.
 
 ### 6ab — split "posted → found" into their lag and ours ✅ **done 2026-08-04**
 

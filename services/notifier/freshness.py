@@ -88,11 +88,7 @@ def date_candidates(session, items: list, client) -> list:
             continue
 
         try:
-            # The 96 KB Easy Apply page is fetched only for a posting we have never asked about.
-            # It does not change, and paying for it every digest is ~110 MB a day against a 200 MB
-            # cap for one boolean.
-            meta = fetch_meta(item.url, client=client,
-                              with_easy_apply=item.easy_apply is None)
+            meta = fetch_meta(item.url, client=client)
         except ProxyUnusable as exc:
             # The credential, not this job. Every remaining fetch would fail the same way, so the
             # rest of the list is passed through undated rather than retried twelve times.

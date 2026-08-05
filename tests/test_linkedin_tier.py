@@ -255,3 +255,60 @@ def test_the_linkedin_ceiling_covers_the_cross_product(db):
 
     # The founder's shape: 23 terms across 3 places.
     assert DEFAULT_SOURCE_QUERIES_PER_CYCLE["linkedin"] >= 23 * 3
+
+
+def test_choosing_the_eu_and_a_country_searches_both_without_repeating_one(db):
+    """**The owner's rule, end to end.** Pick Europe and every member state is allowed through; add
+    individual countries and they are allowed too; and a country already inside Europe must not
+    become a second query for the same ground.
+
+    Two halves and they are different mechanisms. The board is asked for each *place* the user
+    named, which is what stops a Poland search returning Texas — and `libs.corpus.geo` decides
+    which *countries* those choices admit, which is what the corpus filter will read before scoring.
+    Both have to agree or a user is shown jobs the board was never asked for.
+    """
+    from libs.corpus.geo import EU_COUNTRIES, allows, read_country, wanted_countries
+
+    user = _user(db)
+    chosen = ["europe", "united_kingdom", "switzerland"]
+    db.execute(UserConfig.__table__.update()
+               .where(UserConfig.user_id == user.id)
+               .values(config={"sections": [{"keywords": ["ai engineer"], "locations": chosen,
+                                             "platform": "all", "remote_policy": "any",
+                                             "posted_within_hours": 6}]}))
+    db.flush()
+
+    # One query per place, none repeated.
+    places = [q["location"] for q in linkedin.queries_for(db, user)]
+    assert sorted(places) == ["European Union", "Switzerland", "United Kingdom"]
+    assert len(places) == len(set(places)), "the same place asked for twice is a wasted fetch"
+
+    # And the countries those choices admit, which is what filtering will read.
+    wanted = wanted_countries(chosen)
+    assert wanted >= EU_COUNTRIES, "every member state, from the one Europe choice"
+    assert {"GB", "CH"} <= wanted, "and the countries named individually"
+    assert allows(read_country("Warsaw, Poland"), wanted)
+    assert allows(read_country("London, United Kingdom"), wanted)
+    assert allows(read_country("Zurich, Switzerland"), wanted)
+    assert not allows(read_country("Austin, Texas"), wanted), "never asked for, never allowed"
+
+
+def test_a_country_inside_europe_does_not_widen_or_narrow_the_set(db):
+    """Adding Ireland to a Europe search changes nothing — it is already a member. The union is a
+    union, so a redundant choice is free rather than a second query or a narrower result."""
+    from libs.corpus.geo import wanted_countries
+
+    assert wanted_countries(["europe"]) == wanted_countries(["europe", "ireland"])
+
+    user = _user(db)
+    db.execute(UserConfig.__table__.update()
+               .where(UserConfig.user_id == user.id)
+               .values(config={"sections": [{"keywords": ["ai engineer"],
+                                             "locations": ["europe", "ireland"],
+                                             "platform": "all", "remote_policy": "any",
+                                             "posted_within_hours": 6}]}))
+    db.flush()
+    # The board is still asked for both, because LinkedIn's "European Union" geo and its "Ireland"
+    # geo do not return the same rows — the country search surfaces roles the region one does not.
+    # That is a fetch the user asked for, not a duplicate.
+    assert len(linkedin.queries_for(db, user)) == 2

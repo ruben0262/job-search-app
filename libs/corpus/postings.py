@@ -106,9 +106,6 @@ _ATS_APPLY_RE = re.compile(
     r"|https?://[A-Za-z0-9-]+\.jobs\.personio\.(?:de|com)/job/\d+"
     r"|https?://apply\.workable\.com/[A-Za-z0-9-]+/j/[A-Za-z0-9]+")
 
-# The easy-apply marker sits ~30KB into a ~290KB page. Streaming to this cap and stopping at the
-# marker reads a fraction of it — the difference between a free signal and one worth skipping.
-_EA_CAP = 96 * 1024
 
 
 # ── page → text ───────────────────────────────────────────────────────────────────────────────
@@ -216,11 +213,20 @@ def parse_posted_at(html_text: str, *, now: dt.datetime | None = None) -> dt.dat
 def parse_reposted(html_text: str) -> bool | None:
     """Whether LinkedIn is showing "Reposted" rather than "Posted".
 
-    A repost is a stale listing resurfaced — already-filled, or left up and re-promoted — so it is
-    ranked down whatever its timestamp claims. None when there is no caption to read.
+    **`None` unless the page actually says so, which no page we can reach does.** A repost is a
+    stale listing resurfaced, and it is worth ranking down whatever its timestamp claims — but the
+    marker appears only to a logged-in session. Confirmed twice: the word "repost" is absent from
+    the guest fragment and from the 250 KB full page on every sample, while the same posting shows
+    "Reposted 5 hours ago" to a signed-in browser.
+
+    So a caption without the word is **no evidence either way**, and returning False from it told
+    2,584 rows they were not reposts on the strength of a page that never mentions reposts. Unknown
+    is the honest answer, and it is what the card already renders as nothing.
     """
     caption = _POSTED.search(html_text)
-    return "repost" in caption.group(1).lower() if caption else None
+    if not caption or "repost" not in caption.group(1).lower():
+        return None
+    return True
 
 
 def posted_caption(html_text: str) -> str | None:
@@ -409,29 +415,13 @@ class Posting(dict):
         return self.get("description") or ""
 
 
-def fetch_easy_apply(url: str, client: httpx.Client) -> bool | None:
-    """Whether a LinkedIn job is Easy Apply. A separate, deliberately cheap fetch.
-
-    The signal lives only on the full `/jobs/view` page, not on the guest fragment the description
-    comes from. So this streams that page and stops at the marker or at `_EA_CAP` — worth calling
-    for a job about to be surfaced, not for every job scored.
-    """
-    job_id = linkedin_id(url)
-    if not job_id:
-        return None
-    buffer = b""
-    try:
-        with client.stream("GET", f"https://www.linkedin.com/jobs/view/{job_id}") as response:
-            if response.status_code != 200:
-                return None
-            for chunk in response.iter_bytes():
-                buffer += chunk
-                if (b"apply-link-onsite" in buffer or b"apply-link-offsite" in buffer
-                        or len(buffer) >= _EA_CAP):
-                    break
-    except Exception:
-        return None
-    return parse_easy_apply(buffer.decode("utf-8", "replace"))
+# **`fetch_easy_apply` was removed on 2026-08-05, measured rather than reasoned about.** It streamed
+# up to 96 KB of `/jobs/view` per posting on a user's paid residential proxy to read one boolean.
+# Probed against four live postings, guest fragment and full page side by side: the full page is
+# 250 KB and carries **none** of `apply-link-onsite`, "easy apply", "repost" or "promoted by" —
+# every marker appears only to a logged-in session. Six times the bytes for the same nothing.
+#
+# `parse_easy_apply` stays: it is pure, tested, and correct the day a logged-in page exists.
 
 
 def fetch_apply_url(url: str, client: httpx.Client) -> str | None:
@@ -570,19 +560,18 @@ def _fetch_linkedin(job_id: str, *, client: httpx.Client, snippet: str, title: s
     return out
 
 
-def fetch_meta(url: str, *, client: httpx.Client, stats: dict | None = None,
-               with_easy_apply: bool = True) -> Posting:
+def fetch_meta(url: str, *, client: httpx.Client, stats: dict | None = None) -> Posting:
     """Live metadata only — no description. What the freshness refresher runs.
 
     Cheap enough to run over a whole feed: it answers "is this still worth showing" (accepting,
     applicants, reposted) without re-paying for text already stored. Non-LinkedIn URLs return all
     Nones, because nothing else exposes anything reliable to parse.
 
-    **`with_easy_apply` is off the hot path on purpose.** The guest fragment is small; the Easy
-    Apply marker lives on the full `/jobs/view` page and costs up to `_EA_CAP` — 96 KB — a second
-    request. Twelve of those per digest, four digests an hour, is roughly 110 MB a day against a
-    200 MB proxy cap for one boolean. It is worth paying **once per posting**, so the caller asks
-    for it only when it does not already know.
+    **What it cannot answer, it leaves unknown.** Easy Apply, repost, and an accurate applicant
+    count are visible only to a logged-in session — measured on four postings against both the guest
+    fragment and the 250 KB full page, and confirmed against the owner's own browser, where the same
+    job reads "Reposted 5 hours ago · 98 applicants" and the logged-out page says "5 hours ago · 86
+    applicants". The count here is a **floor**, not a total.
     """
     def tally(key: str) -> None:
         if stats is not None:
@@ -612,11 +601,9 @@ def fetch_meta(url: str, *, client: httpx.Client, stats: dict | None = None,
             out["accepting"] = parse_accepting(response.text)
             out["reposted"] = parse_reposted(response.text)
             out["workplace"] = parse_workplace(response.text)
-            if with_easy_apply:
-                out["easy_apply"] = fetch_easy_apply(
-                    f"https://www.linkedin.com/jobs/view/{job_id}", client)
-                if out["easy_apply"] is False:
-                    out["application_url"] = parse_application_url(response.text, client)
+            # Easy Apply is not on any page a logged-out fetch can reach, so it is left unknown
+            # rather than guessed at. The apply URL still resolves from the fragment.
+            out["application_url"] = parse_application_url(response.text, client)
             tally("li_ok")
             return out
         tally(f"li_http_{response.status_code}" if response.status_code != 200 else "li_empty")
