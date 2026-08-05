@@ -501,3 +501,46 @@ def test_an_unreadable_description_leaves_the_arrangement_unknown(repo):
     session.flush()
 
     assert session.get(CorpusJob, job_id).workplace is None
+
+
+def test_a_new_row_carries_the_country_it_was_read_from(repo):
+    """**The column exists so the filter is an indexed equality, not a regex per user per job.**
+
+    `libs/corpus/geo.py` had no production consumer at all before this — the module, its EU
+    vocabulary and its forty tests were imported by tests and nothing else, so the country filter
+    the owner asked for had never run and American jobs kept arriving (ROADMAP 6ak).
+    """
+    repo, session = repo
+    job_id = repo.add(url=f"https://example.com/{uuid.uuid4()}", source="test",
+                      title="Backend Engineer", company="Acme", location="Berlin, Germany")
+    session.flush()
+
+    assert session.get(CorpusJob, job_id).country == "DE"
+
+
+def test_a_posting_that_names_no_place_stores_no_country(repo):
+    """NULL is the value that passes every filter, and 16% of the corpus has it. Storing a guess
+    here would hide those jobs from everyone who set a country."""
+    repo, session = repo
+    job_id = repo.add(url=f"https://example.com/{uuid.uuid4()}", source="test",
+                      title="Backend Engineer", company="Acme", location="Remote")
+    session.flush()
+
+    assert session.get(CorpusJob, job_id).country is None
+
+
+def test_the_country_column_is_read_from_the_same_place_the_filter_will_be(repo):
+    """One definition. The column and `wanted_countries` have to agree about what "DE" means, or
+    the filter is a second implementation of the vocabulary — the defect in 6ah."""
+    from libs.corpus.geo import EU_COUNTRIES, allows, wanted_countries
+
+    repo, session = repo
+    job_id = repo.add(url=f"https://example.com/{uuid.uuid4()}", source="test",
+                      title="Backend Engineer", company="Acme", location="Toulouse, FR")
+    session.flush()
+
+    country = session.get(CorpusJob, job_id).country
+    assert country == "FR"
+    assert country in EU_COUNTRIES
+    assert allows(country, wanted_countries(["europe"])) is True
+    assert allows(country, wanted_countries(["united_kingdom"])) is False

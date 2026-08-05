@@ -37,6 +37,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from libs.corpus import workfilter
+from libs.corpus.geo import read_country
 from libs.corpus.keys import canonical_url, content_key
 from libs.db.models import CorpusJob
 
@@ -207,6 +208,11 @@ class CorpusRepository:
                 title=title,
                 company=company or None,
                 location=location or None,
+                # **Read once here, for everyone, rather than per user per query.** That is the
+                # whole argument for the column: a pre-score country filter becomes an indexed
+                # equality instead of a regex over free text run once per account per posting. NULL
+                # for a posting that names no place, which passes every filter.
+                country=read_country(location, title=title),
                 is_remote=is_remote,
                 posted_at=posted_at,
                 # When the fetch that found this row produced it, so how long *we* took is separable

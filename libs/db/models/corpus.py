@@ -88,6 +88,11 @@ class CorpusJob(Base):
     title: Mapped[str] = mapped_column(Text)
     company: Mapped[str | None] = mapped_column(Text)
     location: Mapped[str | None] = mapped_column(Text)
+    # **The location string, read once, as a fact.** ISO 3166-1 alpha-2, or NULL for a posting that
+    # names no place — which 16% of them do, and those are kept rather than dropped (`libs.corpus.geo`
+    # rule 2). Stored rather than computed per query because the whole point of the column is that a
+    # pre-score filter is an indexed comparison instead of a regex over free text (ROADMAP 6ak).
+    country: Mapped[str | None] = mapped_column(String(2))
     is_remote: Mapped[bool | None] = mapped_column(Boolean)
 
     # Nullable because a row exists from the moment it is discovered, and the description is fetched
@@ -172,6 +177,10 @@ class CorpusJob(Base):
         Index("ix_corpus_application_canonical_url", "application_canonical_url"),
         # The per-user match pass: "recent rows from sources this user can see".
         Index("ix_corpus_source_first_seen", "source", "first_seen_at"),
+        # **Partial, because NULL is never selected on.** A country filter asks "is this row in one
+        # of these countries, or unreadable" — and the unreadable half is a pass, so it is answered
+        # by the absence of a value rather than by an index scan over 16% of the table.
+        Index("ix_corpus_country", "country", postgresql_where=text("country IS NOT NULL")),
         # Finds rows still awaiting an embedding, without scanning the whole corpus.
         # Every read of `closed_at` asks for the rows where it is NULL — nearly all of them early on
         # and a shrinking share later — so the partial index covers the open ones, not the closed.
