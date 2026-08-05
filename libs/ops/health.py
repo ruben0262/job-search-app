@@ -22,8 +22,15 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import Float, cast, func, select, text
 from sqlalchemy.orm import Session
 
-from libs.db.models import CorpusJob, ProxyCredential, QueueJob, User, UserJobState
+from libs.contracts.config import migrate_config
+from libs.db.models import CorpusJob, ProxyCredential, QueueJob, User, UserConfig, UserJobState
 from libs.db.models.queue import LANES
+from libs.scoring.thresholds import cutoff_for
+
+# The window an account gets if it never said, matching `SearchSection.posted_within_hours` and
+# `services.notifier.eligibility.DEFAULT_MAX_AGE_HOURS`. The two have to agree: this decides who is
+# paged, that decides who is sent to, and a disagreement is an alert about nothing.
+DEFAULT_MAX_AGE_HOURS = 24
 
 # What a lane's oldest waiting job is *expected* to be, in minutes. Exceeded by 4x is a stall
 # (`OPERATIONS_PLAN.md` §4). These are the lane's normal latency, not its timeout: `notify` runs on
@@ -118,7 +125,58 @@ def lane_health(session: Session) -> list[LaneHealth]:
     ]
 
 
-def user_health(session: Session, *, cutoff: float = 60.0) -> list[UserHealth]:
+def deliverable_window(config: dict | None) -> int:
+    """How old a posting may be and still be worth sending to this account, in hours.
+
+    The same reading `services.notifier.eligibility` uses — the **widest** window across their
+    sections, because a job cannot be attributed back to the section that found it. Duplicated here
+    rather than imported because `libs` may not import `services`; kept to one small function so the
+    duplication is visible and testable rather than spread across a query.
+    """
+    windows = [int(section.get("posted_within_hours") or 0)
+               for section in (migrate_config(config or {})).get("sections") or []]
+    return max([window for window in windows if window > 0], default=DEFAULT_MAX_AGE_HOURS)
+
+
+def pending_matches(session: Session, user: User) -> int:
+    """How many jobs this account is actually waiting on — the same pool the notifier would draw.
+
+    **This number decides whether somebody gets paged, so it has to mean what the alert says it
+    means.** It used to be `score >= 60` and nothing else, which was wrong three ways at once, and
+    the result was a page nobody could ever clear: an account showed "71 matching job(s) waiting"
+    where all 71 were older than the window that account had asked for, so the notifier was
+    correctly sending none of them and the alert was permanently red (ROADMAP 6ad).
+
+    Wrong three ways:
+
+    1. **60 is not the cutoff anybody delivers at.** `cutoff_for` reads the operating point the
+       user's own training run tuned — 29 and 42 for the two live accounts. A constant here counts
+       a pool neither of them uses.
+    2. **A closed posting is not waiting.** There is nothing to apply for, and `pending_feed`
+       excludes it in SQL.
+    3. **A posting past the user's freshness window is not waiting either.** It will never be sent,
+       so counting it turns "the feed is stuck" into "the corpus contains old jobs", which is not
+       an alertable condition and is always true.
+
+    Still an upper bound: eligibility (language, applicant glut, workplace) and the dating pass run
+    over descriptions, not in SQL. That direction is deliberate — an alert that over-counts slightly
+    is a false alarm somebody investigates, while one that under-counts is silence.
+    """
+    cutoff = cutoff_for(session, user.id)
+    config = session.scalar(select(UserConfig.config).where(UserConfig.user_id == user.id))
+    fresh_since = datetime.now(UTC) - timedelta(hours=deliverable_window(config))
+    return session.scalar(
+        select(func.count()).select_from(UserJobState)
+        .join(CorpusJob, CorpusJob.id == UserJobState.job_id)
+        .where(UserJobState.user_id == user.id,
+               UserJobState.notified_at.is_(None),
+               UserJobState.score.is_not(None),
+               UserJobState.score >= cutoff,
+               CorpusJob.closed_at.is_(None),
+               CorpusJob.posted_at.is_(None) | (CorpusJob.posted_at >= fresh_since))) or 0
+
+
+def user_health(session: Session) -> list[UserHealth]:
     """Per-account state, for the alerts that name a user.
 
     Bounded by the number of accounts, which is the point of an invite-only launch — this becomes a
@@ -127,11 +185,7 @@ def user_health(session: Session, *, cutoff: float = 60.0) -> list[UserHealth]:
     """
     out = []
     for user in session.scalars(select(User).where(User.status == "active").order_by(User.email)):
-        pending = session.scalar(
-            select(func.count()).select_from(UserJobState)
-            .where(UserJobState.user_id == user.id,
-                   UserJobState.notified_at.is_(None),
-                   UserJobState.score >= cutoff)) or 0
+        pending = pending_matches(session, user)
         last_delivery = session.scalar(
             select(func.max(UserJobState.notified_at))
             .where(UserJobState.user_id == user.id))

@@ -41,6 +41,33 @@ def log_path(service: str, log_dir: Path | str | None = None) -> Path:
     return Path(log_dir or DEFAULT_LOG_DIR) / f"{service}.log"
 
 
+# Libraries that log one INFO line per network call, raised to WARNING so they still report trouble
+# and stop narrating success.
+#
+# **A log nobody can read is the same as no log.** On 2026-08-05 the notifier's own output was
+# roughly one line in ten: everything else was `httpx` announcing `HTTP Request: GET … "200 OK"` for
+# each posting a delivery re-dated. The lines that mattered — an account dropping every candidate,
+# a Telegram gateway error — were scrolled away by requests that succeeded (CLAUDE.md §7).
+#
+# WARNING rather than ERROR because a library's own retry warnings are worth seeing; it is only the
+# per-request success chatter that carries no information.
+NOISY_LIBRARIES = ("httpx", "httpcore", "urllib3", "asyncio", "sqlalchemy.engine")
+
+
+def _quieten_libraries() -> None:
+    """Raise third-party loggers to WARNING, unless the operator asked for DEBUG.
+
+    Under `LOG_LEVEL=DEBUG` somebody is deliberately looking at a specific problem and the request
+    trace is the point, so the levels are *cleared* rather than skipped. Skipping was not enough:
+    a logger's level is process-global and outlives the call that set it, so a second `configure`
+    at DEBUG — which is what raising the level at runtime looks like — left the libraries quiet and
+    the trace missing exactly when it had been asked for.
+    """
+    debugging = logging.getLogger().level <= logging.DEBUG
+    for name in NOISY_LIBRARIES:
+        logging.getLogger(name).setLevel(logging.NOTSET if debugging else logging.WARNING)
+
+
 def configure(service: str, *, level: str | None = None,
               log_dir: Path | str | None = None,
               console: bool = True) -> Path | None:
@@ -56,6 +83,7 @@ def configure(service: str, *, level: str | None = None,
     """
     root = logging.getLogger()
     root.setLevel(level or os.environ.get("LOG_LEVEL", "INFO"))
+    _quieten_libraries()
 
     existing = {getattr(handler, "_jobsearch_service", None) for handler in root.handlers}
     if service in existing:

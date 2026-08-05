@@ -69,10 +69,68 @@ Report them as a short list with a recommendation each — expose it, delete it,
 The owner decides; the job is to make sure the decision is available rather than discovered later in
 production.
 
+## 6. Green before it is pushed
+
+**Nothing goes to the VPS that CI would have rejected.** Pushing first and reading the result later
+means broken code is live for however long the run takes, and on this project "live" means an
+account stops receiving jobs.
+
+Before every push, locally, in this order — the same gates CI runs, so a pass here is a prediction
+of a pass there:
+
+```
+lint-imports            # services may not import each other; libs may not import services
+ruff check .
+alembic upgrade head    # from empty, on a throwaway Postgres
+pytest tests/ -v        # with DATABASE_URL set
+```
+
+- **A skipped test is not a passing test.** Roughly 290 of them skip silently without
+  `DATABASE_URL`, and the suite still prints green. Check the skip count, not just the colour.
+- If a gate cannot be run locally, say which one and why in the response — do not push and hope.
+- CI is the backstop, not the check. It runs the same four gates plus the embedder tier and the
+  web/OpenAPI contract, and a red run after a push is a fix under time pressure that could have
+  been a fix at leisure.
+- **New behaviour that CI cannot see is not covered.** A test needing a live stack belongs behind an
+  explicit skip *and* a note; a test needing nothing must not sit in a file that skips itself
+  wholesale, or it silently never runs. That has already happened here.
+
+## 7. Logs are the only view into a running system
+
+There is no debugger on the VPS. Whatever was not logged did not happen, and this project has
+already lost two digests and six hours of ingestion to failures that raised nothing anybody saw.
+
+**Log every exception at the boundary that swallows it.** A `try` that continues, a fallback, an
+`or` default, a bare `except` — each is a decision to carry on with less, and each needs a line at
+`WARNING` or `ERROR` naming what failed and what was done instead. An exception caught silently is a
+bug that will be found by a user.
+
+Levels, so that severity means something:
+
+- `ERROR` — work was lost or a user is affected. Somebody should look today. Always with the
+  exception, always with the identifier (user, source, job id) needed to find it again.
+- `WARNING` — recovered, but not normal: a retry, a fallback, a source returning nothing, a limit
+  reached. This is the level that finds the intermittent faults.
+- `INFO` — one line per unit of work, with its outcome and a count. "notified X with 3 item(s)",
+  "harvest: 412 rows from 18 sources". Enough to reconstruct what the platform did.
+- `DEBUG` — off in production.
+
+**Do not flood `INFO`.** A log nobody can read is the same as no log, and the failure it hides is
+whichever one happened during the noise. Specifically:
+
+- No per-item lines at `INFO` in a loop — log the tally after it, not the iteration inside it.
+- Third-party loggers get their level raised, not their output tolerated. One `httpx` line per
+  outbound request drowns the platform's own lines at exactly the moment they matter.
+- A message that is always the same is not information. If it cannot be false, drop it.
+- Counts and reasons over volume: `dropped {'too_old': 11, 'workplace': 1}` is one line and answers
+  the question. Eleven lines saying "dropped" do not.
+
+Never log a secret, a token, or a full proxy URL. `libs.secrets.redacting` exists for the case where
+a traceback would otherwise carry one.
+
 ## Practical
 
-- Full suite against a real Postgres before pushing — ~290 tests skip silently without
-  `DATABASE_URL`, so a green run without it means very little.
+- Full suite against a real Postgres before pushing — see rule 6 for the gates and the skip trap.
 - `.venv/Scripts/python.exe` on the Windows box; bare `python` has no dependencies.
 - `docs/saas/ROADMAP.md` is the plan and `CHANGELOG.md` is the history. A non-trivial change gets an
   entry in the second; a plan changes in the first.

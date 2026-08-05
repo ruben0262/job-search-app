@@ -266,3 +266,117 @@ def test_a_stopped_feed_is_an_incident_within_the_hour_not_the_day():
         f"{cycles_missed} missed cycles before anybody is told: under two cries wolf on one slow "
         "run, over eight is most of a working morning")
     assert SILENT_FEED_HOURS <= 2
+
+
+# ── what "waiting" means (ROADMAP 6ad) ────────────────────────────────────────────────────────
+
+
+def test_the_window_is_the_widest_a_user_asked_for_and_24h_if_they_never_said():
+    """Matches `services.notifier.eligibility`, which is the only reason this number is useful.
+
+    The alert counts what the notifier would send. If the two read the user's window differently,
+    the alert is measuring a pool nobody delivers from — which is the bug this section exists for.
+    """
+    from libs.ops.health import DEFAULT_MAX_AGE_HOURS, deliverable_window
+
+    assert deliverable_window(None) == DEFAULT_MAX_AGE_HOURS
+    assert deliverable_window({"sections": []}) == DEFAULT_MAX_AGE_HOURS
+    assert deliverable_window({"sections": [{"posted_within_hours": 6}]}) == 6
+    # Widest, not narrowest: a job cannot be attributed back to the section that found it.
+    assert deliverable_window(
+        {"sections": [{"posted_within_hours": 6}, {"posted_within_hours": 72}]}) == 72
+
+
+@pytestmark_db
+def test_a_posting_too_old_to_send_is_not_a_job_waiting():
+    """**The page nobody could clear.** On 2026-08-05 an account showed "71 matching job(s) waiting
+    and last delivery was 5h ago" while the notifier was working perfectly: all 71 were older than
+    the 24 hours that account had asked for, so `pending_feed` excluded every one of them in SQL.
+
+    The count said the feed was stuck. The feed was fine — there was simply nothing fresh to send,
+    which is not an alertable condition and would have stayed red forever.
+    """
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from libs.db.models import CorpusJob, User, UserConfig, UserJobState
+    from libs.ops.health import pending_matches
+
+    engine = create_engine(os.environ["DATABASE_URL"])
+    conn = engine.connect()
+    trans = conn.begin()
+    session = Session(bind=conn, join_transaction_mode="create_savepoint")
+    try:
+        account = User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active",
+                       active=True)
+        session.add(account)
+        session.flush()
+        session.add(UserConfig(user_id=account.id,
+                               config={"sections": [{"posted_within_hours": 24}]}))
+
+        def posting(**kwargs) -> CorpusJob:
+            row = CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
+                            title="Engineer", **kwargs)
+            session.add(row)
+            session.flush()
+            return row
+
+        now = datetime.now(UTC)
+        stale = posting(posted_at=now - timedelta(hours=48))
+        closed = posting(posted_at=now - timedelta(hours=1), closed_at=now)
+        fresh = posting(posted_at=now - timedelta(hours=1))
+        undated = posting()
+        for row in (stale, closed, fresh, undated):
+            session.add(UserJobState(user_id=account.id, job_id=row.id, score=99.0))
+        session.flush()
+
+        # The fresh one and the undated one. Undated counts because the notifier lets it through
+        # too — LinkedIn reports no posted time and dating it is a later step, not a reason to
+        # drop it.
+        assert pending_matches(session, account) == 2
+    finally:
+        session.close()
+        trans.rollback()
+        conn.close()
+
+
+@pytestmark_db
+def test_the_count_uses_the_users_own_cutoff_not_a_constant():
+    """60 is the label threshold used while *training*, not the score anybody delivers at.
+
+    The two live accounts deliver at 29 and 42, tuned by their own training runs. Counting at 60
+    both missed jobs that were genuinely waiting and counted a pool neither account uses.
+    """
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from libs.db.models import CorpusJob, User, UserJobState, UserModel
+    from libs.ops.health import pending_matches
+
+    engine = create_engine(os.environ["DATABASE_URL"])
+    conn = engine.connect()
+    trans = conn.begin()
+    session = Session(bind=conn, join_transaction_mode="create_savepoint")
+    try:
+        account = User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active",
+                       active=True)
+        session.add(account)
+        session.flush()
+        session.add(UserModel(user_id=account.id, is_active=True, version=1, path="model.pkl",
+                              feature_schema_version=1, profile_generation=1,
+                              embedder_model="test", embedder_dim=8, embedder_version="test",
+                              metrics={"decision_cutoff": 29}))
+        row = CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test", title="Engineer",
+                        posted_at=datetime.now(UTC) - timedelta(hours=1))
+        session.add(row)
+        session.flush()
+        # Over this account's tuned cutoff of 29, under the old hardcoded 60. The notifier sends
+        # it; the alert used to be blind to it.
+        session.add(UserJobState(user_id=account.id, job_id=row.id, score=35.0))
+        session.flush()
+
+        assert pending_matches(session, account) == 1
+    finally:
+        session.close()
+        trans.rollback()
+        conn.close()

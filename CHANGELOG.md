@@ -14,6 +14,123 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-08-05
+
+**Both alerts on the admin health panel were real, and neither meant what it said** (ROADMAP 6ad).
+The owner's observation is the one worth keeping: having them on the panel at all is what made this
+findable in minutes, instead of by an account going quiet for a week.
+
+### A Telegram outage permanently lost two digests (`services/notifier/__main__.py`)
+
+Two dead-lettered notify jobs, both `RuntimeError: Bad Gateway`, five attempts each, sixteen minutes
+apart. `send` retried only 429 — every other `>= 400` raised on the first response, so the queue
+spent all five attempts inside five and a half minutes and dead-lettered while Telegram was still
+unwell.
+
+**Nothing here was broken.** The retries worked, the attempt counter worked, the dead-letter worked.
+Together they sampled an outage at a resolution far finer than the outage, which is a different kind
+of mistake and one that no component could have detected alone.
+
+5xx now retries inside `send` with a backoff, before it costs the job an attempt. 4xx other than 429
+still fails immediately: a malformed payload or a revoked bot does not improve by asking again. The
+two conditions get **two budgets, counted separately**, so a burst of flood waits cannot consume the
+allowance an outage needs. The failure message names which budget ran out — the old one said
+"Telegram kept rate limiting this bot" during an upstream failure, sending an operator to look at
+bot limits for a problem that was never theirs.
+
+`tests/test_telegram_send.py`, five tests. Deliberately in their own file with no database
+dependency: written first inside `test_notifications.py`, they were silently skipped by that
+module's `DATABASE_URL` guard, which is the same trap CLAUDE.md §6 now names.
+
+### An alert that could never be cleared, about a notifier doing its job (`libs/ops/health.py`)
+
+"71 matching job(s) waiting and last delivery was 5h ago." Measured before changing anything: all 71
+rows were **older than the 24 hours that account had asked for**, so `pending_feed` excluded every
+one in SQL and correctly sent nothing. The lane was healthy — 657 jobs done, newest minutes old —
+and the account's own log line read `dropped {'applicant_glut': 1, 'workplace': 1, 'too_old': 11}`
+over a deliverable pool of exactly 13, matching the database to the row.
+
+`user_health` counted `score >= 60` and nothing else, which was wrong three ways at once:
+
+- **60 is not a cutoff anybody delivers at.** `cutoff_for` reads the operating point each user's own
+  training run tuned; the two live accounts are at **29 and 42**. The constant counted a pool
+  neither uses and missed jobs genuinely waiting below 60.
+- **A closed posting is not waiting** — there is nothing to apply for.
+- **A posting past the user's window is not waiting** — it can never be sent, so counting it
+  restates "the corpus contains old jobs", which is always true and never actionable.
+
+`pending_matches` now draws the same pool `pending_feed` does: per-user tuned cutoff, open, inside
+that user's own freshness window. The account reads 0. Still a deliberate upper bound — eligibility
+and the dating pass run over descriptions, not in SQL — because over-counting is a false alarm
+somebody investigates and under-counting is silence.
+
+**The general defect is the one this project keeps shipping: an alert that defines its trigger
+differently from the code it watches is not an alert, it is a second implementation.** Written where
+the number is computed, not only here.
+
+### The logs that should have shown this were nine parts noise (`libs/obs/logs.py`)
+
+Roughly one line in ten of the notifier's output was the notifier's. The rest was `httpx` announcing
+every posting-refresh request that had **succeeded**, while the lines that mattered scrolled away.
+Third-party loggers are raised to WARNING (`NOISY_LIBRARIES`) so they still report trouble and stop
+narrating success — and *cleared* again under `LOG_LEVEL=DEBUG`, not merely skipped: a logger's
+level is process-global and outlives the call that set it, so skipping left the trace missing at
+exactly the moment somebody had asked for it. Found by a test, not by reasoning.
+
+### Two working rules added (`CLAUDE.md`)
+
+**§6, green before it is pushed.** The four gates CI runs — `lint-imports`, `ruff`, `alembic upgrade
+head` from empty, `pytest` with `DATABASE_URL` — run locally first, in that order. A red CI run
+after a push is a fix under time pressure that could have been a fix at leisure. Includes the skip
+trap: ~290 tests skip silently without a database and the suite still prints green, so the skip
+count is part of the result.
+
+**§7, logs are the only view into a running system.** Every swallowed exception gets a line naming
+what failed and what was done instead; levels are defined so severity means something; and the
+INFO-flooding rules, because a log nobody can read hides whichever failure happened during the
+noise.
+
+### The latency panel's two red rows, checked and mostly not defects (ROADMAP 6ae)
+
+**`Posted → fetched`, worst 54h43m: entirely HiringCafe** (p90 30.5h over 105 rows, against
+LinkedIn's 1.0h over 2,333). The wiring is correct — it is asked for `posted_within_days = 1` — and
+it returns 54-hour-old rows anyway, because its filter granularity is days and its day boundary is
+loose. Nothing to tighten from here, which is why that row is `reported, not judged`. It is wasted
+*intake* rather than wrong delivery: those rows are caught at delivery as `too_old`, having already
+been fetched, described and embedded. A pre-score filter (6u/6x) is where that stops costing.
+
+**`Described → embedded` p90 2h18m: already over.** Backlog zero, current p90 0.8 minutes; the
+24-hour window is showing an evening catch-up burst that drained by 02:00. No code change — the
+finding is that a 24-hour p90 stays red long after recovery and the row does not say so. Deferred.
+
+## 2026-08-04
+
+**Stage 1 — "the queries are right" — closed.** Eight defects found and fixed, and **not one of them
+raised an error**: the query set was wired to disabled sources; the union readers read the wrong
+config level, so every board on the free tier fetched its unfiltered recent feed while the platform
+behaved as though nobody had signed up; eight sources were fed a query shape only two read; seven
+ignored keywords entirely; the fold key was being typed into search boxes; two sources ignored the
+operator's freshness window; **six of ten operator limits governed nothing**; and LinkedIn searched
+3 of a user's 23 keywords.
+
+Then, in the same day, a live outage with three independent causes — the harvester was never in
+`deploy.sh` so `fetched_at` was never populated; the pre-send refresh had no wall-clock budget and
+starved the notify lane's two-minute claim; and `UNLIMITED_ITEMS = 10_000` built a candidate pool
+that could not be ranked inside that claim. Delivery was dead for both accounts while every job
+reported `done`.
+
+Also that day: `Unlimited` silently meant "the default" everywhere it was offered, because
+`resolve(...) or DEFAULT` cannot express `None` — found from a screenshot of the admin panel where
+the operator's change had visibly not taken. Location left the score and `europe` became one thing
+rather than two; seven sources that cannot answer a keyword were removed; the country vocabulary
+(`libs/corpus/geo.py`) and the corpus's own clock (`clock_timestamp()`, `fetched_at`,
+`embedded_at`) both landed; and LinkedIn's card signals were measured against live pages rather than
+reasoned about (ROADMAP 6ac).
+
+Full detail per defect is in `docs/saas/ROADMAP.md` 6q–6ac, each with the measurement that justified
+it. Recorded here late — the day's work went in under twenty-six commits and no changelog entry,
+which is the gap this file exists to prevent.
+
 ## 2026-08-03
 
 **The whole workflow walked on a fresh account** — signup, onboarding, the setup chat with its

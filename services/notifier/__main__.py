@@ -34,6 +34,20 @@ RATE_LIMIT_RETRIES = 3
 # undelivered rows are simply picked up on the next run.
 MAX_RATE_LIMIT_WAIT_SEC = 60.0
 
+# A 5xx from api.telegram.org is Telegram being briefly unwell, not our request being wrong.
+#
+# **Two digests were lost permanently to a "Bad Gateway".** Only 429 was retried here, so a 502
+# raised on the first response; the queue then spent all five of its attempts inside five and a
+# half minutes, and dead-lettered while the outage was still going. Both the retries and the
+# dead-letter were technically working — they were just measuring Telegram's bad minute at a
+# resolution far finer than the outage (ROADMAP 6ad).
+#
+# So retry in here, where the waits are seconds apart rather than instant, before spending one of
+# the job's attempts. 4xx other than 429 stays immediate: a malformed payload or a revoked bot does
+# not improve by asking again.
+SERVER_ERROR_RETRIES = 3
+SERVER_ERROR_BACKOFF_SEC = 2.0
+
 logger = logging.getLogger(__name__)
 
 
@@ -50,7 +64,12 @@ def send(token: str, chat_id: str, message: str, keyboard: dict | None = None) -
                "parse_mode": "HTML"}
     if keyboard:
         payload["reply_markup"] = keyboard
-    for attempt in range(1, RATE_LIMIT_RETRIES + 1):
+    # Two separate budgets, counted separately, because they are two different conditions: a flood
+    # wait is Telegram pacing us, a 502 is Telegram broken. One shared counter would let a burst of
+    # 429s exhaust the allowance an outage needs.
+    rate_limits = 0
+    server_errors = 0
+    while rate_limits < RATE_LIMIT_RETRIES and server_errors < SERVER_ERROR_RETRIES:
         response = httpx.post(
             f"https://api.telegram.org/bot{token}/sendMessage",
             json=payload,
@@ -63,14 +82,30 @@ def send(token: str, chat_id: str, message: str, keyboard: dict | None = None) -
         if response.status_code == 429:
             body = response.json() if response.content else {}
             wait = float((body.get("parameters") or {}).get("retry_after", 1))
-            logger.warning("telegram: rate limited, waiting %.0fs (attempt %d)", wait, attempt)
+            rate_limits += 1
+            logger.warning("telegram: rate limited, waiting %.0fs (attempt %d)", wait, rate_limits)
             time.sleep(min(wait, MAX_RATE_LIMIT_WAIT_SEC))
+            continue
+
+        # Telegram's own fault and Telegram's own to fix: 500, 502, 504. Nothing about the payload
+        # changes, so the only useful response is to wait and ask again.
+        if response.status_code >= 500:
+            server_errors += 1
+            logger.warning("telegram: %d from the API, retrying in %.0fs (attempt %d)",
+                           response.status_code, SERVER_ERROR_BACKOFF_SEC, server_errors)
+            time.sleep(SERVER_ERROR_BACKOFF_SEC * server_errors)
             continue
 
         if response.status_code >= 400:
             raise RuntimeError(response.json().get("description", response.text)[:300])
         return
 
+    # Which budget ran out, in the message — "Telegram kept rate limiting" sent an operator looking
+    # at bot limits during what was actually an upstream outage.
+    if server_errors:
+        raise RuntimeError(
+            f"Telegram answered {server_errors} server error(s) in a row; "
+            "the rest will go out next cycle")
     raise RuntimeError("Telegram kept rate limiting this bot; the rest will go out next cycle")
 
 

@@ -107,3 +107,33 @@ def test_the_format_carries_level_service_and_module():
 
 def path_lines(path, needle: str) -> int:
     return sum(1 for line in path.read_text(encoding="utf-8").splitlines() if needle in line)
+
+
+def test_a_library_narrating_every_request_does_not_drown_our_own_lines(tmp_path):
+    """**One line in ten was ours.** On 2026-08-05 the notifier's log was almost entirely `httpx`
+    announcing `HTTP Request: GET … "200 OK"` for each posting a delivery re-dated, and the lines
+    that mattered — an account dropping every candidate, a Telegram gateway error — scrolled away
+    behind requests that had succeeded (CLAUDE.md §7).
+
+    A successful request is not information. A failing one still is, which is why these are raised
+    to WARNING rather than silenced.
+    """
+    path = configure("notifier", log_dir=tmp_path, console=False)
+
+    logging.getLogger("httpx").info('HTTP Request: GET https://example.com "HTTP/1.1 200 OK"')
+    logging.getLogger("httpx").warning("could not reach the host")
+    logging.getLogger("services.notifier.deliver").info("notified abc123 with 3 item(s)")
+
+    assert path_lines(path, "200 OK") == 0
+    assert path_lines(path, "could not reach the host") == 1
+    assert path_lines(path, "notified abc123") == 1
+
+
+def test_debug_keeps_the_request_trace(tmp_path):
+    """`LOG_LEVEL=DEBUG` means somebody is looking at a specific problem and the per-request trace
+    is the thing they came for. Quietening it then would remove the only tool that helps."""
+    path = configure("harvester", level="DEBUG", log_dir=tmp_path, console=False)
+
+    logging.getLogger("httpx").info('HTTP Request: GET https://example.com "HTTP/1.1 200 OK"')
+
+    assert path_lines(path, "200 OK") == 1

@@ -1257,6 +1257,41 @@ fall out of the same change:
 extraction, and it is large enough and interesting enough to have its own entry rather than a
 paragraph here.
 
+#### 6w.1 — LinkedIn already hands us most of these fields, and we throw them away
+
+**The owner's instruction, 2026-08-05: read them and store them like every other job.** Verified
+against `JobPost.model_fields` while measuring 6ac — JobSpy returns seven fields the adapter drops
+on the floor:
+
+| JobSpy field | Becomes | 6x priority |
+|---|---|---|
+| `job_type` | contract type — full-time, contract, internship | 4 |
+| `job_level` | seniority | 6 |
+| `company_industry` | industry | new |
+| `job_function` | corroborates `job_field` | 3 |
+| `skills` | skills list | new |
+| `compensation` | structured salary, no parsing needed | 5 |
+| `work_from_home_type` | remote / hybrid / on-site | 2 |
+
+**This is most of 6x's inventory, already fetched and already paid for.** The proxy bandwidth, the
+request, the rate-limit budget — all spent; the fields are discarded on the way into the row. So
+the first slice of 6w is not extraction at all, it is *stopping the discard*: columns, an adapter
+that reads them, and a migration.
+
+Three things follow, and they are the point of putting this here rather than in a LinkedIn entry:
+
+1. **LinkedIn rows get no special path.** They are structured at ingest and pre-filtered before
+   scoring exactly like everything else. The query-side location filter on LinkedIn is a *bandwidth*
+   optimisation — it stops us paying for Texas postings on the user's own proxy — and the
+   corpus-side filter is the *correctness* guarantee. LinkedIn needs both because a board's geo
+   search is approximate; every other source needs the second because it cannot filter at all.
+2. **A field present on one source and absent on another must not filter.** By 6w's governing rule,
+   unknown passes. Otherwise turning on a contract-type filter would silently delete every source
+   that does not report one, which is most of them — and it would look like the filter working.
+3. **These are a floor to build the extractor against, not a substitute for it.** Where LinkedIn
+   states `job_type` and the extractor also reads it from the description, we get free agreement
+   data: a labelled set for measuring the extractor on the rows nobody labelled.
+
 **The rule that makes a mistake survivable, and it governs every field in this entry: no label means
 no filtering.** A wrong country is recoverable, because the posting stays in the corpus and a user
 who widens their selection sees it. A wrong `job_field` hides a job from the only user who wanted
@@ -1427,7 +1462,98 @@ parser change, and not worth doing quietly.
 **A better find while looking.** JobSpy already returns seven fields the platform discards, and they
 are most of 6x's filter inventory, free and already fetched: `job_type` (contract type),
 `job_level` (seniority), `company_industry`, `job_function`, `skills`, `compensation` (salary) and
-`work_from_home_type`. Stage 2 should read them before inventing anything.
+`work_from_home_type`. Stage 2 should read them before inventing anything. **Written up as 6w.1**,
+where the work belongs, on the owner's instruction.
+
+### 6ad — the health panel's two notify alerts, and what each turned out to be ✅ **done 2026-08-05**
+
+**Both alerts were real and neither meant what it said.** The owner's point stands and is worth
+recording: having them on the admin panel at all is what made this findable in minutes rather than
+by an account going quiet for a week.
+
+**1. "2 job(s) dead-lettered in the notify lane" — a Telegram outage, permanently lost.** ✅
+
+Both rows: `RuntimeError: Bad Gateway`, five attempts, 22:41 and 22:57 on 2026-08-04. `send` retried
+only 429; every other `>= 400` raised on the first response, so the queue burned all five attempts
+inside five and a half minutes and dead-lettered while Telegram was still unwell. Every component
+worked as written — the retries, the attempt counter, the dead-letter — they were together sampling
+an outage at a resolution far finer than the outage.
+
+Fixed: 5xx is retried inside `send` with a backoff, before it costs the job an attempt; 4xx other
+than 429 still fails immediately, because a malformed payload or a revoked bot does not improve by
+asking again. **Two separate budgets, counted separately** — a burst of flood waits must not consume
+the allowance an outage needs. The failure message now names which one ran out; "Telegram kept rate
+limiting this bot" sent somebody looking at bot limits during an upstream failure.
+`tests/test_telegram_send.py`, five tests, no database so CI actually runs them.
+
+**2. "71 matching job(s) waiting and last delivery was 5h ago" — the notifier was right and the
+alert was wrong.** ✅
+
+Measured before changing anything. All 71 of those rows were **older than the 24 hours that account
+had asked for**, so `pending_feed` excluded every one of them in SQL and correctly sent nothing. The
+lane was healthy: 657 notify jobs done, the newest minutes old, the account's own log line reading
+`dropped {'applicant_glut': 1, 'workplace': 1, 'too_old': 11}` over a deliverable pool of exactly 13
+— which matched the database to the row.
+
+`user_health` counted `score >= 60` and nothing else. Wrong three ways at once:
+
+- **60 is not a cutoff anybody delivers at.** `cutoff_for` reads the operating point each user's own
+  training run tuned. The two live accounts are at **29 and 42**. The constant counted a pool
+  neither of them uses, and missed jobs genuinely waiting below 60.
+- **A closed posting is not waiting.** There is nothing to apply for.
+- **A posting past the user's freshness window is not waiting.** It can never be sent, so counting it
+  restates "the corpus contains old jobs" — always true, never actionable.
+
+Together that produced **a page that could never be cleared**: permanently red, pointing at "check
+the notifier", about a notifier doing its job. `pending_matches` now draws the same pool
+`pending_feed` does — per-user tuned cutoff, open, within that user's own window — and the account
+reads 0. Still a deliberate upper bound: eligibility and the dating pass run over descriptions, not
+in SQL. Over-counting is a false alarm somebody investigates; under-counting is silence.
+
+**The general lesson, and it is the one worth keeping: an alert that defines its trigger differently
+from the code it watches is not an alert, it is a second implementation.** Same class of defect as
+the three that already cost this project real time — a value written in one place and read in
+another. `libs/ops/health.py` now says so where the number is computed.
+
+**Also fixed while here: the logs that should have shown this.** The notifier's output was roughly
+one line in ten ours; the rest was `httpx` announcing every re-dating request that had *succeeded*.
+Third-party loggers are raised to WARNING (`libs.obs.logs.NOISY_LIBRARIES`) and cleared again under
+`LOG_LEVEL=DEBUG`. See CLAUDE.md §7, written the same day.
+
+### 6ae — the latency panel's two red rows (added 2026-08-05)
+
+Checked on the owner's hunch that these might share a cause with the notify alerts. **They do not,
+and one of them is not a defect at all.**
+
+**1. `Posted → fetched` p99 27h, worst 54h43m — it is entirely HiringCafe.** Measured per source
+over 24 hours:
+
+| source | rows | p90 | max |
+|---|---|---|---|
+| linkedin | 2,333 | 1.0h | 2.9h |
+| **hiringcafe** | **105** | **30.5h** | **54.7h** |
+| workday | 7 | 21.1h | 22.4h |
+| everything else | ~290 | < 1h | < 36h |
+
+The wiring is correct — `build_source_configs` converts the operator's window to
+`posted_within_days = ceil(hours / 24)` and HiringCafe is being asked for **1 day**. It returns rows
+up to 54 hours old anyway. **Its filter granularity is days and its day boundary is loose**, so a
+one-day request is in practice "today and yesterday, generously". Nothing here can be tightened from
+our side; this is why the row is `reported, not judged`.
+
+Consequence, and it belongs to Stage 2: this is **wasted intake**, not wrong delivery. The
+corpus-side freshness filter catches every one of these rows at delivery (`too_old`), having already
+paid to fetch, describe and embed them. A pre-score filter (6u/6x) is where it stops costing.
+
+**2. `Described → embedded` p90 2h18m — already over.** The backlog is **zero rows** and the current
+p90 is **0.8 minutes**; hourly, it was 8–10 min through the evening, spiked to 21–28 min around
+00:00–01:00 and has been under a minute since 02:00. The 24-hour window is showing a catch-up burst
+that has since drained.
+
+**No code change. The finding is about the panel**: a 24-hour p90 stays red long after recovery,
+which is what the 6-hour window selector is for — and the row does not say that. Worth one line in
+the drill-down explaining that a red verdict over a long window may be a resolved incident, and that
+the shorter windows are how you tell. Small, deferred with the rest of the panel work.
 
 ### 6ab — split "posted → found" into their lag and ours ✅ **done 2026-08-04**
 
