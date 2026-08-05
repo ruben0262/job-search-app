@@ -94,24 +94,36 @@ def test_the_python_tick_matches_the_unit_files():
     assert on_the_tick, (
         f"no timer fires at PLATFORM_TICK_MIN ({PLATFORM_TICK_MIN}min), so either the setting is "
         f"wrong or every unit has drifted from it: {ticking}")
-    # The harvest and the LinkedIn tier are the two that are meant to share it.
-    assert {"harvester", "linkedin"} <= set(on_the_tick), (
-        f"these should tick with the platform: {sorted(on_the_tick)}")
+    # One fetch tick. LinkedIn used to have its own and now runs on the back of this one.
+    assert "harvester" in on_the_tick, (
+        f"the fetch tick must be the platform tick: {sorted(on_the_tick)}")
 
 
-def test_the_linkedin_describe_budget_fits_inside_the_pass():
-    """Derived from the tick rather than written beside it — this was a local `= 15` hand-copied
-    from the timer, which is the same defect the derivation exists to prevent."""
+def test_the_linkedin_pass_fits_inside_the_harvest_tick_it_now_rides_on():
+    """**The LinkedIn pass runs on the back of the harvest tick**, so its budget is bounded by that
+    unit's timeout rather than by a timer of its own — which is the timer that was removed for
+    having a thirty-minute timeout on a fifteen-minute interval."""
     from libs.settings import PLATFORM_TICK_MIN
     from services.harvester.linkedin import DESCRIBE_BUDGET_SECONDS
 
-    tick = PLATFORM_TICK_MIN * 60
-    assert tick > DESCRIBE_BUDGET_SECONDS, "a pass must not outlive the tick that started it"
+    assert PLATFORM_TICK_MIN * 60 > DESCRIBE_BUDGET_SECONDS, (
+        "a pass must not outlive the tick that started it")
 
-    timeout = seconds(directive(UNITS / "linkedin.service", "TimeoutStartSec"))
+    timeout = seconds(directive(UNITS / "harvester.service", "TimeoutStartSec"))
     assert timeout > DESCRIBE_BUDGET_SECONDS, (
-        "the pass must stop itself before systemd kills it, or the run ends with no summary and "
-        "nothing recorded about what it did")
+        f"the harvest unit allows {timeout}s and the LinkedIn pass inside it may take "
+        f"{DESCRIBE_BUDGET_SECONDS}s, so the run would be killed part-way with no summary")
+
+
+def test_only_the_timers_that_have_to_exist_do():
+    """**Every clock is a unit to install, a timeout to get wrong, and a thing that can silently not
+    be running** — all three of which have happened here. This pins the reduction from five so that
+    adding a fourth is a deliberate decision somebody has to change this test to make.
+
+    `health` is deliberately not folded into a worker: a monitor inside the monitored process
+    reports healthy right up until it reports nothing.
+    """
+    assert {timer.stem for timer in timers()} == {"harvester", "health", "backup"}
 
 
 def test_a_notify_run_fits_inside_the_notify_claim():

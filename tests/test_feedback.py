@@ -281,10 +281,12 @@ def test_a_cv_build_over_the_daily_limit_is_refused_at_the_tap(api):
     from sqlalchemy import select
 
     from libs.db.models import QueueJob
-    from libs.tenant.quotas import FREE_LIMITS
 
     http, session, user, job = api
-    user.quota_overrides = {"cv_builds_per_day": 1}
+    # The ceiling comes from `libs.limits` — the one per-user limits system. It used to be set here
+    # through `users.quota_overrides`, a column of a second system that nothing ever wrote, so the
+    # exception this test grants could not actually be granted in production (ROADMAP 6as).
+    user.limits = {"cv_builds_per_day": 1}
     session.flush()
 
     assert tap(http, job.id, action="bc").json()["status"] == "queued"
@@ -292,11 +294,14 @@ def test_a_cv_build_over_the_daily_limit_is_refused_at_the_tap(api):
 
     second = tap(http, job.id, action="bc").json()
     assert second["status"] == "over_quota"
-    assert "cv_builds_per_day" in second["answer"] and "resets" in second["answer"]
+    assert "1 documents for today" in second["answer"] and "resets" in second["answer"]
 
     assert len(session.scalars(select(QueueJob).where(QueueJob.lane == "docgen")).all()) == 1
-    # The override is what the test drove; the plan's own number is what a user actually gets.
-    assert FREE_LIMITS["cv_builds_per_day"] == 10
+    # The per-account override is what the test drove; the catalogue default is what an untouched
+    # account gets, and it is the same number the plan system used to hold.
+    from libs.limits import BY_KEY
+
+    assert BY_KEY["cv_builds_per_day"].default == 10
 
 
 def test_the_keyboard_carries_three_buttons_within_telegrams_limit(api):

@@ -19,21 +19,33 @@ set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 UNIT_DIR=/etc/systemd/system
 
-# Every timer the platform runs, and what breaks when it is missing.
-#   harvester         — the shared cycle. Missing: no new jobs enter the corpus.
-#   notify-dispatch   — fills the notify lane. Missing: nothing is ever delivered.
-#   linkedin          — per-user LinkedIn fetch, and the description pass with it. Missing: no
-#                       LinkedIn jobs enter the corpus at all.
-#   health            — the check that notices the above. Missing: nobody finds out.
-#   backup            — pg_dump. Missing: one bad day is unrecoverable.
+# **Three timers, down from five** (2026-08-05, ROADMAP 6ar). Every clock is a unit to install, a
+# timeout to get wrong and a thing that can silently not be running — all three of which have
+# happened here — so a job that can be done by a process already looping is not given a timer.
 #
-# `linkedin-describe` was here until 2026-08-03. Describing moved inside the `linkedin` pass, which
-# dedups first and so pays the per-posting cost once per new job rather than once per result
-# (ROADMAP 6l.1). Remove the leftovers from a box that ran the old version:
+#   harvester   — one fetch tick. The shared cycle across every source, then the per-user LinkedIn
+#                 pass on the same run. Missing: no new jobs enter the corpus at all.
+#   health      — the check that notices the above, and emails on a page. Missing: nobody finds out.
+#   backup      — pg_dump at 03:20. Missing: one bad day is unrecoverable.
 #
-#     sudo systemctl disable --now linkedin-describe.timer
-#     sudo rm -f /etc/systemd/system/linkedin-describe.{service,timer} && sudo systemctl daemon-reload
-TIMERS=(harvester linkedin notify-dispatch health backup)
+# **Health stays separate on purpose, and it is the one reduction not worth making.** Folding it
+# into a pipeline worker would mean the check dies with the thing it is checking, which is precisely
+# when it is needed. A monitor inside the monitored process reports "healthy" right up until it
+# reports nothing.
+#
+# Removed, and their leftovers must be cleaned off any box that ran the old version:
+#
+#   notify-dispatch — the notifier worker is long-lived and now dispatches on its own loop. It was
+#                     absent from this box for weeks in July, so nothing entered the notify lane
+#                     while every container looked healthy.
+#   linkedin        — folded into the harvest tick. Its `TimeoutStartSec=30min` against a
+#                     fifteen-minute timer meant a stuck pass cancelled the following tick.
+#   linkedin-describe — describing moved inside the LinkedIn pass on 2026-08-03 (ROADMAP 6l.1).
+#
+#     sudo systemctl disable --now notify-dispatch.timer linkedin.timer linkedin-describe.timer
+#     sudo rm -f /etc/systemd/system/{notify-dispatch,linkedin,linkedin-describe}.{service,timer}
+#     sudo systemctl daemon-reload
+TIMERS=(harvester health backup)
 
 if [[ $EUID -ne 0 ]]; then
   echo "needs root: sudo $0" >&2

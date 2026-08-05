@@ -98,16 +98,28 @@ def run_worker(session_factory: Callable[[], Session], lane: str, worker: str,
                handler: Callable[[Session, QueueJob], None], *,
                max_jobs: int | None = None,
                idle_sleep: float = IDLE_SLEEP_SEC,
-               stop: Callable[[], bool] | None = None) -> WorkerStats:
+               stop: Callable[[], bool] | None = None,
+               periodic: Callable[[Session], None] | None = None,
+               periodic_every: float = SWEEP_EVERY_SEC) -> WorkerStats:
     """Drain `lane` until told to stop. `max_jobs` bounds it, which is what the tests use.
 
     A fresh session per iteration rather than one held open for the process's life: a long-lived
     session accumulates an identity map of every job it has ever seen, and a connection held idle
     across a Postgres restart fails on the next claim rather than reconnecting.
+
+    `periodic` is work this worker owns that is not a queue job — the notify dispatcher deciding who
+    is due, for instance. **It runs here rather than on its own systemd timer** because a timer is a
+    second clock, a second one-shot container and a second thing that can be installed wrong: the
+    dispatcher's absence once meant nothing ever entered the `notify` lane while the stack looked
+    entirely healthy. A worker that is already looping can simply do it (ROADMAP 6ar).
+
+    Failures in `periodic` are logged and swallowed. It is a side errand, and taking the worker
+    down with it would stop the lane it was helping.
     """
     stats = WorkerStats()
     should_stop = stop or _sigterm_flag()
     last_sweep = 0.0
+    last_periodic = 0.0
 
     while not should_stop():
         if max_jobs is not None and stats.claimed >= max_jobs:
@@ -119,6 +131,15 @@ def run_worker(session_factory: Callable[[], Session], lane: str, worker: str,
                 stats.swept += sweep_expired(session, lane)
                 session.commit()
             last_sweep = now
+
+        if periodic is not None and now - last_periodic > periodic_every:
+            last_periodic = now
+            try:
+                with session_factory() as session:
+                    periodic(session)
+                    session.commit()
+            except Exception:
+                logger.exception("%s: the periodic pass failed; the lane keeps running", lane)
 
         with session_factory() as session:
             worked = run_once(session, lane, worker, handler, stats)

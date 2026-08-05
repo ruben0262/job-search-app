@@ -73,6 +73,7 @@ const CHOICES: Record<string, number[]> = {
   keywords: [10, 25, 50, 100],
   documents: [10, 25, 50, 100],
   conversations: [1, 3, 5, 10],
+  cv_builds_per_day: [5, 10, 20, 50, 100],
   label_pool: [100, 300, 500, 1000],
 };
 

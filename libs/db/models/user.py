@@ -120,7 +120,6 @@ class User(Base):
     # a deploy (TENANT_SAFETY.md §3).
     plan_id: Mapped[str] = mapped_column(ForeignKey("plans.id"), default="free",
                                          server_default="free")
-    quota_overrides: Mapped[dict | None] = mapped_column(JSONB)
 
     # IANA name, validated against the tz database (G7). Not an offset: offsets do not survive DST,
     # and "resets at midnight your time" has to keep meaning the same thing in November.
@@ -216,16 +215,11 @@ class User(Base):
     # so a generated document can name the exact bytes that grounded it.
     facts_md: Mapped[str | None] = mapped_column(Text)
 
-    # **The grounding document, in the user's own prose.** The reference instance's CLAUDE.md is
-    # auto-loaded on every generation call, and the 2026-07-15 A/B measured what it is worth:
-    # without it the model invented an employer and fabricated metrics. `facts_md` is rendered from
-    # a schema and can only contain what the schema has fields for; this can hold the judgement a
-    # schema has nowhere to put — what to lead with for which kind of role, how to frame a
-    # discipline, which claims are off-limits.
-    #
-    # Injected as the system prompt for CV and cover-letter generation, with `facts_md` as the
-    # fallback for an account that has not got one yet.
-    profile_context: Mapped[str | None] = mapped_column(Text)
+    # **`profile_context` was here and the feature it describes lives elsewhere.** The grounding
+    # prose — what to lead with for which kind of role, how to frame a discipline, which claims are
+    # off-limits — is `context.md` in `user_profile_files`: written by the setup chat, required by
+    # `libs.profiles.grounding`, and injected into every CV and cover-letter prompt. This column was
+    # the earlier design of the same idea and lost; it was never written or read (ROADMAP 6as).
 
     # Managed Agents agent objects are created with the *user's* API key, so they live in that
     # user's Anthropic workspace — one per user, not one per platform. Stored so re-capture reuses

@@ -30,6 +30,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from libs import limits
 from libs.corpus import ondemand
 from libs.corpus.ondemand import NotAJobLink
 from libs.db.models import CorpusJob, User
@@ -37,10 +38,32 @@ from libs.feedback import ACTIONS, next_to_rate, record
 from libs.obs import audit
 from libs.queue import enqueue, jobs_today
 from libs.secrets import SecretsError, SecretStore
-from libs.tenant.quotas import QuotaExceeded, quotas_for
 from services.api.deps import get_db
 
 logger = logging.getLogger(__name__)
+
+
+class OverBuildQuota(RuntimeError):
+    """This account has had its documents for today. Carries what to say to the user."""
+
+
+def _check_build_quota(db, user) -> None:
+    """Refuse a build once the account is at its daily ceiling.
+
+    **Checked at the admission point**, never inside the worker (`TENANT_SAFETY.md` §3): a limit
+    checked halfway through a build has already spent the Claude call it was protecting.
+
+    Reads `libs.limits`, which is the one per-user limits system. It used to read a second one —
+    plan quotas with a `users.quota_overrides` column that nothing ever wrote, so the exception it
+    existed to grant could not be granted (ROADMAP 6as).
+    """
+    allowed = limits.resolve(user, "cv_builds_per_day")
+    if allowed is None:
+        return                                    # the catalogue forbids unlimited here, but honour
+    used = jobs_today(db, "docgen", user.id)      # it rather than inventing a number if it changes
+    if used >= allowed:
+        raise OverBuildQuota(
+            f"you have had your {allowed} documents for today — the count resets at midnight")
 router = APIRouter(prefix="/telegram", tags=["telegram"])
 
 # A retrain is debounced so a burst of taps produces one fit, ten minutes after the last
@@ -128,8 +151,8 @@ async def webhook(secret: str, request: Request, db: Session = Depends(get_db),
         # Claude call it was protecting. The popup names the limit, because a button that silently
         # does nothing is how somebody concludes the product is broken.
         try:
-            quotas_for(db, user.id).check("cv_builds_per_day", jobs_today(db, "docgen", user.id))
-        except QuotaExceeded as exc:
+            _check_build_quota(db, user)
+        except OverBuildQuota as exc:
             audit(logger, "telegram.build_over_quota", user=user.id, job=job_id, kind=kind)
             return {"status": "over_quota", "answer": str(exc)}
 
@@ -224,8 +247,8 @@ def _build_from_link(db: Session, user: User, *, kind: str, link: str) -> dict:
                 "message": f"Send it as {kind} followed by the job's link."}
 
     try:
-        quotas_for(db, user.id).check("cv_builds_per_day", jobs_today(db, "docgen", user.id))
-    except QuotaExceeded as exc:
+        _check_build_quota(db, user)
+    except OverBuildQuota as exc:
         return {"status": "over_quota", "message": str(exc)}
 
     try:

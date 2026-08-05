@@ -39,6 +39,10 @@ WRITTEN_ELSEWHERE = {
     "first_seen_at": "server_default on insert",
     "updated_at": "server_default / onupdate",
     "sent_at": "server_default now() on the mail_sends insert",
+    # A column default on the model (`default="free"`), applied by SQLAlchemy on insert. The plan
+    # is a label shown on the account and admin pages; the limits that used to hang off it are now
+    # `libs.limits` (ROADMAP 6as).
+    "plan_id": "model column default, applied on insert",
 }
 
 # **Columns this test found on its first run, each a real answer to "what is silently absent".**
@@ -55,12 +59,9 @@ KNOWN_UNWRITTEN = {
     # `libs.limits` entry of the same name defaults to 15; the governor reads the limit. The column
     # is the loser of a migration nobody finished.
     "linkedin_interval_min": "superseded by libs.limits; column default 240 vs limit default 15",
-    # **A feature that cannot be used.** `quotas_for` merges this over the plan's limits, so the
-    # per-user quota override is implemented, read, and impossible to set: nothing writes it.
-    "quota_overrides": "read by libs.tenant.quotas and written by nothing — overrides are unusable",
-    # **No reader either.** Declared 2026-07-29 and referenced by exactly one line, its own
-    # declaration. Dead in both directions.
-    "profile_context": "no reader and no writer; dead in both directions",
+    # `quota_overrides` and `profile_context` were here and are now dropped — the first with the
+    # whole second limits system it belonged to, the second because `context.md` in
+    # `user_profile_files` is the live version of the same idea (ROADMAP 6as).
 }
 
 

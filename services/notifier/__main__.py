@@ -48,6 +48,12 @@ MAX_RATE_LIMIT_WAIT_SEC = 60.0
 SERVER_ERROR_RETRIES = 3
 SERVER_ERROR_BACKOFF_SEC = 2.0
 
+# How often the worker asks "is anybody due". **Not a cadence** — a user's own delivery interval is
+# what decides when they are sent to, and this only decides how promptly the worker notices. A
+# minute is cheap: the query is one indexed read over the account list, which is bounded by the
+# number of accounts and not by the corpus.
+DISPATCH_EVERY_SEC = 60.0
+
 logger = logging.getLogger(__name__)
 
 
@@ -109,6 +115,13 @@ def send(token: str, chat_id: str, message: str, keyboard: dict | None = None) -
     raise RuntimeError("Telegram kept rate limiting this bot; the rest will go out next cycle")
 
 
+def _dispatch(session) -> None:
+    """Enqueue a notify job for every account whose feed is due. One line per pass, with a count."""
+    enqueued = dispatch_due_notifications(session)
+    if enqueued:
+        logger.info("dispatcher: enqueued %d notify job(s)", enqueued)
+
+
 def handle(session, job: QueueJob) -> None:
     try:
         sent = deliver(session, job.user_id, store=SecretStore(session), send=send)
@@ -129,7 +142,18 @@ def main(argv: list[str] | None = None) -> int:
         logger.info("dispatcher: enqueued %d notify job(s)", enqueued)
         return 0
 
-    run_worker(session_scope, "notify", os.environ.get("WORKER_NAME", "notifier-1"), handle)
+    # **The dispatcher runs inside the worker, not on its own timer.**
+    #
+    # It used to be `notify-dispatch.timer` firing a one-shot container every five minutes. That is
+    # a second clock, a second unit to install and a second thing to get wrong — and it was got
+    # wrong: on 2026-07-29 the timer was simply not installed, so nothing ever entered the `notify`
+    # lane and the worker sat idle forever while the stack looked completely healthy. A process that
+    # is already looping does not need a timer to tell it the time (ROADMAP 6ar).
+    #
+    # `--tick` stays for a manual run, which is what an operator reaches for when they want one pass
+    # now rather than at the next interval.
+    run_worker(session_scope, "notify", os.environ.get("WORKER_NAME", "notifier-1"), handle,
+               periodic=_dispatch, periodic_every=DISPATCH_EVERY_SEC)
     return 0
 
 

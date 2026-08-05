@@ -261,7 +261,33 @@ def main(argv: list[str] | None = None) -> int:
         report.new_jobs, report.embedded, len(report.source_failures))
     for key, error in report.source_failures.items():
         logger.warning("source %s failed: %s", key, error)
+
+    # **The LinkedIn tier runs on the same tick, not its own timer.**
+    #
+    # It is still a separate pass — per user, on that user's own proxy and their own cadence, which
+    # `run_linkedin` decides from `linkedin_next_run_at`. What it no longer has is a second clock.
+    # `linkedin.timer` was a second unit to install, a second timeout to get wrong, and it was got
+    # wrong: `TimeoutStartSec=30min` against a fifteen-minute timer meant a stuck pass cancelled the
+    # tick after it rather than delaying it, and LinkedIn ingest stopped for five hours (6ap, 6ar).
+    #
+    # After the shared cycle rather than before it: the shared sources cost the platform nothing and
+    # should not wait behind somebody's residential proxy.
+    if not args.dry_run:
+        _run_linkedin_pass()
     return 0
+
+
+def _run_linkedin_pass() -> None:
+    """The per-user LinkedIn tier. Failures are logged, never raised — the shared harvest above has
+    already succeeded by this point and must not be reported as failed because a proxy was down."""
+    try:
+        with session_scope() as session:
+            report = run_linkedin(session, limit=linkedin_concurrent_users(session))
+        logger.info("linkedin: %d considered, %d ran, %d without a lease, %d link(s), %d new",
+                    report.considered, report.ran, report.skipped_no_lease,
+                    report.links_found, report.new_jobs)
+    except Exception:
+        logger.exception("the LinkedIn pass failed; the shared harvest was unaffected")
 
 
 if __name__ == "__main__":

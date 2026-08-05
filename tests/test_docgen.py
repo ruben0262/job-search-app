@@ -319,7 +319,7 @@ def _session(monkeypatch, *, profile=PROFILE, chat_id="4242", description="Backe
     """A stand-in for the two `session.get` calls and the pin, with no database."""
     user = type("U", (), {"id": uuid.uuid4(), "profile": profile.model_dump(),
                           "facts_md": "# Facts about Alice Example",
-                          "profile_context": None, "config": None,
+                          "config": None,
                           "telegram_chat_id": chat_id})()
     job = FakeJob(description=description)
     state = type("S", (), {"score": 88.0, "applied_at": None})()

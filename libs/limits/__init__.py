@@ -95,6 +95,15 @@ LIMITS: tuple[Limit, ...] = (
     # somebody rather than expressing a preference. Labelling spends the user's own Claude
     # credential, "unlimited" is not a bigger target but an unbounded bill, and the option was being
     # read as 300 anyway — so it was a choice that looked available and was not.
+    # **Moved here from the plan-quota system on 2026-08-05**, which was a second per-user limits
+    # mechanism with two keys — `notifications_per_day` and `proxy_mb_per_day` — already duplicated
+    # in this catalogue. It enforced exactly this one limit and nothing wrote its override column,
+    # so a support exception was impossible to grant (ROADMAP 6as).
+    #
+    # Not unlimited-able: a build spends the user's own Claude credential, so the ceiling protects
+    # their money rather than expressing a preference — the same reason `label_pool` cannot be.
+    Limit("cv_builds_per_day", "CV and cover letters per day", 10, "documents",
+          "Each one is a Claude call on this account's own credential.", allow_unlimited=False),
     Limit("label_pool", "Jobs bought per labelling run", 300, "jobs",
           "Labelling runs on the user's own Claude credential, so this is their money.",
           allow_unlimited=False),
