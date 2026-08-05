@@ -122,8 +122,14 @@ def _user_alerts(health: PlatformHealth) -> list[Alert]:
             alerts.append(Alert(
                 "page", "silent_feed",
                 f"{user.pending_matches} matching job(s) waiting and last delivery was {waited}",
-                "The feed is running and nothing is arriving — check the notifier and this "
-                "account's Telegram status.", user.email))
+                # **Where the answer actually is, in the order it is usually in.** The old advice
+                # said "check the notifier and this account's Telegram status", and the first time
+                # this fired for real the notifier was working perfectly: every candidate was being
+                # dropped by the account's own filters, which the notifier logs by reason on each
+                # run and nothing else records (ROADMAP 6ad).
+                "Read the notifier's `dropped {...}` line for this account first — it says which "
+                "filter is emptying the feed. If nothing was dropped, check the notify lane and "
+                "this account's Telegram status.", user.email))
 
         if user.telegram_status == "broken":
             alerts.append(Alert(
