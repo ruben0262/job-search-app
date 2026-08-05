@@ -1520,6 +1520,72 @@ one line in ten ours; the rest was `httpx` announcing every re-dating request th
 Third-party loggers are raised to WARNING (`libs.obs.logs.NOISY_LIBRARIES`) and cleared again under
 `LOG_LEVEL=DEBUG`. See CLAUDE.md §7, written the same day.
 
+### 6af — the button that did nothing, and three more numbers nobody enforced ✅ **done 2026-08-05**
+
+Started from the owner's report that the CV and cover-letter buttons in Telegram do nothing on the
+second account, with the instruction that mattered: **investigate the general user setup, because a
+fix that only repairs one account is not a fix.** That was the right instinct — it was general.
+
+**1. `telegram_webhook_secret` was a column with no producer.** ✅
+
+Declared on the model, created by a migration on 2026-07-28, read by `_authenticate` — and written
+by **nothing anywhere in the tree**. The one account whose buttons worked had its row filled in by
+hand. Measured live: both bots had a webhook registered with Telegram, and only one had the matching
+secret on its user row. So every tap on the other account arrived, matched no user, and 404'd.
+
+Both halves are now written where a bot is connected: the secret on the row, and `setWebhook` on
+that user's own bot pointing at `PUBLIC_URL/telegram/webhook/<secret>` with the same value as
+Telegram's `secret_token` header. Idempotent, so pressing Connect again repairs any account created
+before this existed — which is every account. Best-effort by design: a Telegram outage must not
+strand somebody mid-onboarding, and the secret is stored either way.
+
+**And the 404 was silent**, which is why a dead feature stayed dead for weeks. A tap matching no
+account now logs at WARNING naming the webhook prefix, because that log line is the only symptom
+the platform ever gets.
+
+**2. Four definitions of "jobs per day", and the home page showed the wrong one.** ✅
+
+| Where | Value | Enforced? |
+|---|---|---|
+| `libs/contracts/config.py` → `max_notifications_per_day` | 20 | no |
+| `services/api/status_routes.py` → `DEFAULT_NOTIFICATIONS_PER_DAY` | 100 | no |
+| `services/notifier/deliver.py` → `MAX_NOTIFICATIONS_PER_DAY` | 100 | **no — a parameter nothing read** |
+| `libs/tenant/quotas.py` → `FREE_LIMITS` | 100 | not for this |
+| `libs/limits` → `notifications_per_day` | `None` (unlimited) | **yes** |
+
+The dashboard read the first and said *"At most 20 messages a day"* on a day the account received
+**908**. The status page read the second and stood ready to announce that the allowance was spent at
+100. The notifier read the fifth. Three of the five were being kept honest by a test that asserted
+two fictions were equal to each other.
+
+One reader now: `daily_cap()` returns `limits.resolve(user, "notifications_per_day")`, `None` and
+all — and `None` travels out as `None` rather than becoming a number that understates the platform.
+The dashboard renders "No daily limit on messages"; the status page only claims a spent allowance
+when a cap exists. `MAX_NOTIFICATIONS_PER_DAY`, its unused `daily_cap` parameter and
+`DEFAULT_NOTIFICATIONS_PER_DAY` are deleted.
+
+**3. A dead letter could be read but never retired.** ✅
+
+`DELETE /admin/queue/dead?lane=<lane>` and an `×` on the dead-letter banner. **The alert goes because
+its cause is gone, not because a banner was hidden** — deliberately not a general dismiss, which
+would let a real outage be silenced in one click and stay silenced. Each discarded row is logged at
+WARNING with its lane, owner and final error *before* deletion: the row goes, the evidence does not.
+It does not retry — a dead letter has had its attempts, and re-running one is a decision belonging to
+whoever fixed the cause.
+
+**4. The per-source table's columns did not line up.** ✅
+
+Each row was its own CSS grid with `auto` columns, so every row sized its columns from its own
+contents — `168h` set a wider column than `2h`, and nothing aligned down the list. `auto` cannot
+align across siblings. One shared grid with fixed control columns, rows as `display: contents`.
+
+**5. The usage meter the owner remembered is `GAPS_REVIEW.md` G9, and it was never built.** Still
+open there: *"Nothing meters spend. `libs/llm` does not read `usage` from a response, and no ledger
+exists."* The `Quotas` mechanism (`libs/tenant/quotas.py`) enforces `cv_builds_per_day` at the
+Telegram admission point and nothing reads the other seven for display. There is no `/usage`
+endpoint and no panel. Not built here — it is a Phase 3 item with its own gap entry — but recorded
+so the answer is not "we are not sure".
+
 ### 6ae — the latency panel's two red rows (added 2026-08-05)
 
 Checked on the owner's hunch that these might share a cause with the notify alerts. **They do not,

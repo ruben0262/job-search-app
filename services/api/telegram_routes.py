@@ -64,6 +64,14 @@ def _authenticate(secret: str, db: Session, header_token: str | None) -> User:
     """
     user = db.scalar(select(User).where(User.telegram_webhook_secret == secret))
     if user is None:
+        # **This 404 was silent, and it hid a dead feature for every account but one.** A bot whose
+        # webhook is registered but whose row carries no secret sends taps that match nobody: the
+        # user presses "Build my CV", Telegram gets a 404, and nothing anywhere records that the
+        # button does not work. Logged at WARNING with the path secret's prefix so it can be tied
+        # back to a bot without writing the whole credential-shaped value to a log (ROADMAP 6af).
+        logger.warning("telegram: a tap arrived for webhook %s… and matched no account — that "
+                       "bot's owner has no telegram_webhook_secret, so their buttons are dead",
+                       secret[:8])
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="not found")
 
     # `compare_digest`, not `==`. The comparison is against a value an attacker supplies and can

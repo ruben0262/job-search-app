@@ -283,6 +283,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/queue/dead": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Discard Dead Letters
+         * @description Clear dead-lettered jobs an operator has read and dealt with.
+         *
+         *     **A dead letter is a fact, not a task, and the panel had no way to say "seen".** The two rows
+         *     that sat on the health page were a Telegram outage from the night before: read, understood,
+         *     fixed in code — and still paging, because nothing could retire them. An alert that cannot be
+         *     cleared is one an operator learns to scroll past, which costs the next alert its meaning
+         *     (ROADMAP 6af).
+         *
+         *     **The row goes, the evidence does not.** Each discarded job is logged at WARNING with its lane,
+         *     its owner and its final error before deletion, so the forensic trail lives where every other
+         *     incident detail on this platform lives. Deleting without that would trade a noisy panel for a
+         *     missing record, which is the worse of the two.
+         *
+         *     Deliberately does **not** retry. A dead letter has already had its attempts; re-running it is a
+         *     new decision that belongs to whoever fixed the cause, not to a button labelled "discard".
+         */
+        delete: operations["discard_dead_letters_admin_queue_dead_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/settings": {
         parameters: {
             query?: never;
@@ -2743,6 +2777,39 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    discard_dead_letters_admin_queue_dead_delete: {
+        parameters: {
+            query?: {
+                lane?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

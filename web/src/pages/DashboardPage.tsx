@@ -80,8 +80,13 @@ export function DashboardPage({ dashboard }: { dashboard: Dashboard; onChanged: 
             : model.stale_reason}
         </p>
         <p className="facts">
-          Telegram is {telegram}. At most {notifications.per_day_cap} messages a day, checked every{" "}
-          {notifications.interval_min} minutes.
+          Telegram is {telegram}.{" "}
+          {/* null is unlimited, which is the catalogue default. Rendering it as a number was how
+              this line claimed a cap of 20 on a day the account received 908. */}
+          {notifications.per_day_cap === null
+            ? "No daily limit on messages"
+            : `At most ${notifications.per_day_cap} messages a day`}
+          , checked every {notifications.interval_min} minutes.
         </p>
 
         <StatusList />

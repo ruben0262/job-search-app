@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 import os
+import secrets
 import uuid as _uuid
 
 import httpx
@@ -43,6 +44,10 @@ router = APIRouter(prefix="/credentials", tags=["credentials"])
 
 # Either satisfies the Claude requirement. Onboarding cannot complete without one of them.
 CLAUDE_KINDS = ("claude_api", "claude_oauth")
+
+# Registering a webhook is one small call on a path a user is waiting on, so it fails fast rather
+# than holding the request. A failure is recoverable — pressing Connect again repairs it.
+WEBHOOK_TIMEOUT_SEC = 10.0
 
 
 class CredentialBody(BaseModel):
@@ -97,6 +102,9 @@ def put_credential(kind: str, body: CredentialBody, request: Request, *,
                 user.telegram_chat_id = chat_id
                 user.telegram_status = "connected"
                 extra["chat_id_captured"] = "yes"
+                # Their bot only learns where to send taps once we tell it, and this is the first
+                # moment we hold a working token for it.
+                extra["webhook"] = ensure_webhook(db, user, value)
             else:
                 # Not an error: they have saved a valid token and simply not pressed Start yet.
                 user.telegram_status = "unconfigured"
@@ -104,6 +112,67 @@ def put_credential(kind: str, body: CredentialBody, request: Request, *,
 
     return {"status": "saved", "validated": result.ok,
             "detail": result.detail, **extra}
+
+
+def ensure_webhook(db: Session, user: User, token: str) -> str:
+    """Point this user's bot at our webhook, and give their row the secret that identifies it.
+
+    **The buttons on every feed card were decorative, for everybody except the one account whose
+    secret had been set by hand.** `telegram_webhook_secret` was declared on the model, created by a
+    migration and read by `_authenticate` — and written by *nothing*. A column with no producer.
+    Taps arrived, matched no user, and 404'd in silence; the account owner saw a button that did
+    nothing and concluded the product was broken, which is exactly what it was (ROADMAP 6af).
+
+    Two halves, and both have to happen or the tap is lost:
+
+    1. **The secret on the row**, because it is the only thing linking an inbound tap to an account.
+       Telegram's own `secret_token` header carries the same value, so a forged POST to a guessed
+       path fails the header check.
+    2. **`setWebhook` on their bot**, because a bot with no webhook simply queues updates and drops
+       them. Their token, their bot, one call.
+
+    Idempotent, so re-saving a token or pressing Connect again is a no-op that repairs a half-built
+    account. Returns a short status for the response body, and never raises: a Telegram outage must
+    not stop somebody finishing onboarding, and the account page shows the state.
+    """
+    if not user.telegram_webhook_secret:
+        # 32 bytes, URL-safe: it is a path segment. Telegram restricts `secret_token` to
+        # `A-Za-z0-9_-`, which is exactly what `token_urlsafe` produces.
+        user.telegram_webhook_secret = secrets.token_urlsafe(32)
+        db.flush()
+
+    base = os.environ.get("PUBLIC_URL", "").rstrip("/")
+    if not base:
+        # Loud, because the alternative is a webhook pointed at localhost and buttons that fail the
+        # same silent way this function exists to end.
+        logger.error("telegram: PUBLIC_URL is not set, so %s's bot has no webhook to point at — "
+                     "their feed buttons will not work", user.id)
+        return "no_public_url"
+
+    url = f"{base}/telegram/webhook/{user.telegram_webhook_secret}"
+    try:
+        response = httpx.post(
+            f"https://api.telegram.org/bot{token}/setWebhook",
+            json={"url": url,
+                  "secret_token": user.telegram_webhook_secret,
+                  # Only what we handle. Every other update type is bandwidth and log noise.
+                  "allowed_updates": ["callback_query", "message"],
+                  # A webhook being re-pointed should not replay taps queued against the old one.
+                  "drop_pending_updates": True},
+            timeout=WEBHOOK_TIMEOUT_SEC)
+        body = response.json() if response.content else {}
+    except httpx.HTTPError as exc:
+        logger.error("telegram: could not register a webhook for %s (%s) — their feed buttons "
+                     "will not work until they reconnect", user.id, exc)
+        return "unreachable"
+
+    if not body.get("ok"):
+        logger.error("telegram: setWebhook refused for %s: %s", user.id,
+                     body.get("description", response.text)[:200])
+        return "refused"
+
+    audit(logger, "telegram.webhook_registered", user=user.id)
+    return "registered"
 
 
 def _ensure_proxy_credential(db: Session, user_id) -> None:
@@ -129,19 +198,23 @@ def telegram_connect(db: Session = Depends(get_db),
     the user goes to their phone, then they come back. Asking them to re-paste the token to finish
     connecting would be gratuitous.
     """
+    user = db.get(User, user_id)
     with store.use(user_id, "telegram_bot") as token:
         if token is None:
             raise HTTPException(status.HTTP_400_BAD_REQUEST,
                                 detail="save your bot token first")
         chat_id = telegram_chat_id(token.reveal())
+        if not chat_id:
+            return {"status": "waiting",
+                    "detail": "press Start in your bot, then try again"}
+        # **Also here, and idempotent on purpose.** This route is the one a user reaches by
+        # pressing Connect again, so it is where a half-built account gets repaired — including
+        # every account created before the registration existed at all.
+        webhook = ensure_webhook(db, user, token.reveal())
 
-    user = db.get(User, user_id)
-    if not chat_id:
-        return {"status": "waiting",
-                "detail": "press Start in your bot, then try again"}
     user.telegram_chat_id = chat_id
     user.telegram_status = "connected"
-    return {"status": "connected"}
+    return {"status": "connected", "webhook": webhook}
 
 
 class ChatBody(BaseModel):

@@ -63,10 +63,6 @@ MAX_ITEMS_PER_DIGEST = 10
 # 200 is roughly twenty digests' worth. A backlog drains over a few cycles rather than never.
 UNLIMITED_ITEMS = 200
 
-# `TENANT_SAFETY.md` §3. Resets at the user's local midnight, which is why it is counted against
-# `notified_at` in their timezone rather than against a counter column.
-MAX_NOTIFICATIONS_PER_DAY = 100
-
 # Re-exported, not redefined. The number is `libs.scoring.thresholds`, because the API's jobs table
 # needs the same one and `services` may not import `services` — and three copies of a threshold are
 # three chances for it to drift, which had already happened twice.
@@ -210,8 +206,7 @@ def notifications_today(session: Session, user_id: _uuid.UUID) -> int:
 def deliver(session: Session, user_id: _uuid.UUID, *,
             store: SecretStore,
             send: Callable[..., None],
-            cutoff: float = DEFAULT_CUTOFF,
-            daily_cap: int = MAX_NOTIFICATIONS_PER_DAY) -> int:
+            cutoff: float = DEFAULT_CUTOFF) -> int:
     """Send this user's pending feed. Returns how many items were delivered.
 
     `send(token, chat_id, text, keyboard=None)` is injected so the transport is one replaceable

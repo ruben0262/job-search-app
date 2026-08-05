@@ -14,6 +14,62 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-08-05 (later)
+
+**The CV and cover-letter buttons did nothing, and the cause was general** (ROADMAP 6af). Reported
+on the second account, with the instruction that made the fix right: investigate the *setup*, not
+the account. It was general — the first account worked only because its database row had been
+filled in by hand.
+
+### A column with no producer (`services/api/credential_routes.py`)
+
+`users.telegram_webhook_secret` was declared on the model, created by a migration, and read by the
+webhook route to identify whose bot a tap came from. **Nothing in the tree ever wrote it.** Probed
+live: both bots had a webhook registered with Telegram, one had the matching secret on its row, and
+every tap on the other matched no user and 404'd.
+
+Connecting a bot now does both halves — the secret on the row, and `setWebhook` on that user's own
+bot pointing at `PUBLIC_URL/telegram/webhook/<secret>`, with the same value as Telegram's
+`secret_token` header so a forged POST to a guessed path fails. Idempotent, so pressing Connect
+repairs any account that predates it. Best-effort: a Telegram outage must not strand somebody
+mid-onboarding, and the secret is stored either way.
+
+**The 404 was silent, which is why this survived weeks.** A tap matching no account now logs at
+WARNING — that line is the only symptom the platform ever gets.
+
+### Four definitions of "jobs per day", and the home page showed the wrong one
+
+The user config said 20, `status_routes` mirrored a constant of 100, `deliver` held a third at 100
+in a parameter **nothing read**, the plan quota held a fourth, and the notifier enforced none of
+them — it reads `libs.limits`, where the default is unlimited. So the dashboard told an account *"At
+most 20 messages a day"* on a day it received **908**, and a test was keeping two of the fictions
+equal to each other.
+
+One reader now, and `None` stays `None` rather than becoming a number that understates what the
+platform sends. The dashboard renders "No daily limit on messages"; the status page claims a spent
+allowance only when a cap exists. Three constants and an unused parameter deleted.
+
+### A dead letter could be read but never retired (`services/api/admin_routes.py`)
+
+`DELETE /admin/queue/dead?lane=<lane>`, with an `×` on the banner. **The alert goes because its
+cause is gone, not because a banner was hidden** — deliberately not a general dismiss, which would
+let a real outage be silenced in one click. Each row's lane, owner and final error are logged at
+WARNING before deletion: the row goes, the evidence does not. No retry — that decision belongs to
+whoever fixed the cause.
+
+### The per-source table's columns did not line up (`web/src/styles.css`)
+
+Every row was its own grid with `auto` columns, so each sized its columns from its own contents:
+`168h` set a wider column than `2h` and nothing aligned down the list. `auto` cannot align across
+siblings — one shared grid with fixed control columns, rows as `display: contents`.
+
+### Also recorded
+
+The usage meter is **G9 cost visibility** in `GAPS_REVIEW.md`, still open and never built: nothing
+meters spend, `libs/llm` does not read `usage` from a response, and no ledger exists. The `Quotas`
+mechanism enforces `cv_builds_per_day` at the Telegram admission point; the other seven limits have
+no display. Recorded rather than guessed at.
+
 ## 2026-08-05
 
 **Both alerts on the admin health panel were real, and neither meant what it said** (ROADMAP 6ad).

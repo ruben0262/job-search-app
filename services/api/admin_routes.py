@@ -27,6 +27,7 @@ from libs.db.models import (
     AtsToken,
     CorpusJob,
     OperatorKeyword,
+    QueueJob,
     User,
     UserConfig,
     UserJobState,
@@ -546,6 +547,39 @@ def remove_keyword(keyword_id: int, db: Session = Depends(get_db),
     db.delete(row)
     audit(logger, "admin.keyword_removed", user=admin.id, keyword=row.keyword)
     return {"status": "removed", "keyword": row.keyword}
+
+@router.delete("/queue/dead")
+def discard_dead_letters(db: Session = Depends(get_db), admin: User = Depends(require_admin), *,
+                         lane: str | None = None) -> dict:
+    """Clear dead-lettered jobs an operator has read and dealt with.
+
+    **A dead letter is a fact, not a task, and the panel had no way to say "seen".** The two rows
+    that sat on the health page were a Telegram outage from the night before: read, understood,
+    fixed in code — and still paging, because nothing could retire them. An alert that cannot be
+    cleared is one an operator learns to scroll past, which costs the next alert its meaning
+    (ROADMAP 6af).
+
+    **The row goes, the evidence does not.** Each discarded job is logged at WARNING with its lane,
+    its owner and its final error before deletion, so the forensic trail lives where every other
+    incident detail on this platform lives. Deleting without that would trade a noisy panel for a
+    missing record, which is the worse of the two.
+
+    Deliberately does **not** retry. A dead letter has already had its attempts; re-running it is a
+    new decision that belongs to whoever fixed the cause, not to a button labelled "discard".
+    """
+    query = select(QueueJob).where(QueueJob.state == "dead")
+    if lane:
+        query = query.where(QueueJob.lane == lane)
+
+    rows = list(db.scalars(query))
+    for row in rows:
+        logger.warning("admin: discarding dead %s job %s for user %s — last error: %s",
+                       row.lane, row.id, row.user_id, (row.last_error or "")[:200])
+        db.delete(row)
+
+    audit(logger, "admin.dead_discarded", user=admin.id, lane=lane or "all", count=len(rows))
+    return {"status": "discarded", "count": len(rows), "lane": lane}
+
 
 @router.get("/latency")
 def latency(db: Session = Depends(get_db), admin: User = Depends(require_admin), *,

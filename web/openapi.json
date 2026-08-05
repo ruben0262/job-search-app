@@ -1932,6 +1932,58 @@
         ]
       }
     },
+    "/admin/queue/dead": {
+      "delete": {
+        "description": "Clear dead-lettered jobs an operator has read and dealt with.\n\n**A dead letter is a fact, not a task, and the panel had no way to say \"seen\".** The two rows\nthat sat on the health page were a Telegram outage from the night before: read, understood,\nfixed in code \u2014 and still paging, because nothing could retire them. An alert that cannot be\ncleared is one an operator learns to scroll past, which costs the next alert its meaning\n(ROADMAP 6af).\n\n**The row goes, the evidence does not.** Each discarded job is logged at WARNING with its lane,\nits owner and its final error before deletion, so the forensic trail lives where every other\nincident detail on this platform lives. Deleting without that would trade a noisy panel for a\nmissing record, which is the worse of the two.\n\nDeliberately does **not** retry. A dead letter has already had its attempts; re-running it is a\nnew decision that belongs to whoever fixed the cause, not to a button labelled \"discard\".",
+        "operationId": "discard_dead_letters_admin_queue_dead_delete",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "lane",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lane"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Discard Dead Letters Admin Queue Dead Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Discard Dead Letters",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/admin/settings": {
       "get": {
         "description": "What the operator controls, with the defaults filled in for anything unset.\n\n**These are properties of the product, not preferences.** Freshness and delivery cadence used to\nbe per user, which meant every source had to be fetched at the widest window anybody asked for\nand filtered back down per person \u2014 and a user choosing a four-hour cadence was choosing to hear\nabout a two-hour-old job. One number per source, one cadence, set here.",

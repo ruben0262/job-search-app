@@ -20,10 +20,9 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from libs.contracts.config import migrate_config
+from libs import limits
 from libs.db.models import CorpusJob, QueueJob, User, UserJobState, UserModel
 from libs.scoring.thresholds import cutoff_for
-from libs.tenant.repository import TenantRepository
 from services.api.deps import current_user, get_db
 
 logger = logging.getLogger(__name__)
@@ -162,10 +161,14 @@ def _delivery(db: Session, user: User, now: datetime) -> dict:
     # with nothing sent and report a stall. Observed on 2026-08-01: 802 waiting, "last delivery 4
     # hours ago", and the real answer was simply that the day's jobs had already arrived.
     sent_today = _sent_today(db, user)
-    cap = _daily_cap(db, user.id)
-    if sent_today >= cap:
+    cap = daily_cap(user)
+    # **Only when a cap exists.** Unlimited has no "allowance spent" state, and reporting one said
+    # "today's 20 jobs have been sent, more arrive tomorrow" to an account that had had 908 and was
+    # still going.
+    if cap is not None and sent_today >= cap:
         return _entry("delivery", "Delivery", "ok",
-                      f"Today's {cap} jobs have been sent. More arrive tomorrow.")
+                      f"Today's {cap} jobs have been sent — that is this account's daily limit. "
+                      "More arrive tomorrow.")
 
     cutoff = cutoff_for(db, user.id)
     waiting = db.scalar(
@@ -218,18 +221,25 @@ def _docgen(db: Session, user_id: _uuid.UUID) -> dict:
     return _entry("docgen", "CV & cover letters", "ok", "Working. The last build finished cleanly.")
 
 
-# The platform default, mirrored rather than imported: `services.api` may not import
-# `services.notifier` (the boundary contract), and the notifier owns the number it enforces.
-# Duplicating a constant is the smaller evil compared with two services importing each other, and a
-# test pins the two together so they cannot drift apart unnoticed.
-DEFAULT_NOTIFICATIONS_PER_DAY = 100
+def daily_cap(user: User) -> int | None:
+    """This account's delivery cap, or `None` for unlimited. **The number the notifier enforces.**
 
+    **There were three answers to this question and all three were wrong somewhere.** The user
+    config carried `max_notifications_per_day` (default 20), this module mirrored a constant of
+    100, and the notifier read neither — it reads `libs.limits`, where the catalogue default is
+    `None`, unlimited. So the dashboard told an account "at most 20 messages a day" and the status
+    page said "today's 100 jobs have been sent", on a day it had delivered 908 (ROADMAP 6af).
 
-def _daily_cap(db: Session, user_id: _uuid.UUID) -> int:
-    """This account's own cap, or the platform default. The same number the notifier enforces."""
-    config = TenantRepository(db).get_config(user_id) or {}
-    return int(migrate_config(config).get("max_notifications_per_day",
-                                          DEFAULT_NOTIFICATIONS_PER_DAY))
+    `libs.limits` is in `libs` precisely so both services can read it without importing each other,
+    which is what the mirrored constant was working around. There is nothing left to mirror.
+
+    `None` is returned rather than substituted, because a cap of "unlimited" is not a number and
+    every place that has quietly turned it into one has understated what the platform does.
+    """
+    cap = limits.resolve(user, "notifications_per_day")
+    # None travels out as None. Callers branch on it; nobody gets handed a number standing in for
+    # "no limit", which is the substitution that produced every wrong figure above.
+    return cap
 
 
 def _sent_today(db: Session, user: User) -> int:

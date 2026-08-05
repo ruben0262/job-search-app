@@ -475,3 +475,117 @@ def test_a_channel_id_pasted_into_the_chat_field_is_caught_by_shape(api):
     http, _session, _user, _ = api
     assert http.put("/credentials/telegram/chat",
                     json={"chat_id": "-1004454061394"}).status_code == 422
+
+
+# ── the webhook that nothing registered (ROADMAP 6af) ─────────────────────────────────────────
+
+
+@pytestmark_db
+def test_connecting_a_bot_registers_its_webhook_and_stores_the_secret(api, monkeypatch):
+    """**The button that did nothing, for every account but one.**
+
+    `telegram_webhook_secret` was declared on the model, created by a migration and read by the
+    webhook route — and written by nothing. Taps arrived, matched no user, 404'd in silence, and
+    "Build my CV" looked broken because it was. This is the producer that was missing.
+    """
+    import httpx as _httpx
+
+    from services.api import credential_routes
+
+    http, session, user, store = api
+    monkeypatch.setenv("PUBLIC_URL", "https://app.example.com")
+    store.put(user.id, "telegram_bot", "123:ABC")
+    session.flush()
+
+    called = {}
+
+    def post(url, **kwargs):
+        called["url"] = url
+        called["json"] = kwargs.get("json")
+        return _httpx.Response(200, json={"ok": True, "result": True})
+
+    monkeypatch.setattr(credential_routes.httpx, "post", post)
+    monkeypatch.setattr(credential_routes, "telegram_chat_id", lambda _token: "4242")
+
+    body = http.post("/credentials/telegram/connect").json()
+
+    assert body["status"] == "connected"
+    assert body["webhook"] == "registered"
+    session.refresh(user)
+    secret = user.telegram_webhook_secret
+    assert secret, "the row must carry the secret, or no tap can be matched to this account"
+    # Telegram is told the same secret twice: once as the path it posts to, once as the header it
+    # sends. The route checks both.
+    assert called["json"]["url"].endswith(f"/telegram/webhook/{secret}")
+    assert called["json"]["secret_token"] == secret
+    assert "callback_query" in called["json"]["allowed_updates"]
+
+
+@pytestmark_db
+def test_reconnecting_repairs_an_account_that_has_no_secret_yet(api, monkeypatch):
+    """Every account created before this existed has a live bot and a null secret. Pressing Connect
+    again has to be the repair, or each one needs a hand-written database row."""
+    import httpx as _httpx
+
+    from services.api import credential_routes
+
+    http, session, user, store = api
+    monkeypatch.setenv("PUBLIC_URL", "https://app.example.com")
+    store.put(user.id, "telegram_bot", "123:ABC")
+    user.telegram_status = "connected"
+    user.telegram_chat_id = "4242"
+    session.flush()
+    assert user.telegram_webhook_secret is None
+
+    monkeypatch.setattr(credential_routes.httpx, "post",
+                        lambda url, **kw: _httpx.Response(200, json={"ok": True}))
+    monkeypatch.setattr(credential_routes, "telegram_chat_id", lambda _token: "4242")
+
+    http.post("/credentials/telegram/connect")
+
+    session.refresh(user)
+    assert user.telegram_webhook_secret
+
+
+@pytestmark_db
+def test_a_telegram_outage_does_not_block_connecting(api, monkeypatch):
+    """Registering is best-effort: the secret is stored either way and pressing Connect again
+    retries. A bad minute at Telegram must not strand somebody mid-onboarding."""
+    import httpx as _httpx
+
+    from services.api import credential_routes
+
+    http, session, user, store = api
+    monkeypatch.setenv("PUBLIC_URL", "https://app.example.com")
+    store.put(user.id, "telegram_bot", "123:ABC")
+    session.flush()
+
+    def boom(url, **kwargs):
+        raise _httpx.ConnectError("no route to host")
+
+    monkeypatch.setattr(credential_routes.httpx, "post", boom)
+    monkeypatch.setattr(credential_routes, "telegram_chat_id", lambda _token: "4242")
+
+    body = http.post("/credentials/telegram/connect").json()
+
+    assert body["status"] == "connected"
+    assert body["webhook"] == "unreachable"
+    session.refresh(user)
+    assert user.telegram_webhook_secret
+
+
+@pytestmark_db
+def test_a_tap_that_matches_no_account_is_logged_rather_than_dropped(api, caplog):
+    """The 404 was silent, which is how a dead feature stayed dead. A tap arriving for a webhook
+    with no owner is the one symptom the platform gets, so it has to be written down."""
+    import logging as _logging
+
+    http, _session, _user, _store = api
+
+    with caplog.at_level(_logging.WARNING):
+        response = http.post("/telegram/webhook/nosuchsecretatall",
+                             json={"callback_query": {}},
+                             headers={"X-Telegram-Bot-Api-Secret-Token": "nosuchsecretatall"})
+
+    assert response.status_code == 404
+    assert any("matched no account" in record.message for record in caplog.records)

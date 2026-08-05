@@ -444,6 +444,29 @@ button[disabled] {
   color: var(--danger);
 }
 
+/* The dismiss on a dead-letter banner. Floated so it sits at the top right of a banner whose text
+   wraps to three lines, without the text having to know it is there. */
+.alert-dismiss {
+  float: right;
+  border: none;
+  background: none;
+  color: inherit;
+  opacity: 0.55;
+  cursor: pointer;
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0 0 0 0.75rem;
+}
+
+.alert-dismiss:hover:not(:disabled) {
+  opacity: 1;
+}
+
+.alert-dismiss:disabled {
+  cursor: default;
+  opacity: 0.25;
+}
+
 .banner.warning {
   border-left-color: var(--ink);
 }
@@ -2195,30 +2218,46 @@ td.num {
 
 /* A labelled row per board rather than a JSON blob. The set of sources changes, so the grid tracks
    rather than a hand-written column per site. */
+/* **One grid for the whole table, not one grid per row.**
+   Each `.source-row` used to be its own grid with `auto` control columns, so every row sized its
+   own columns from its own contents: a row showing `168h` set a wider column than one showing `2h`,
+   `100` a wider one than `1`, and nothing lined up down the list. `auto` cannot align across
+   siblings — only a shared grid can, which is what `display: contents` on the rows gives us while
+   leaving the markup as rows. */
 .sources {
-  /* Two columns, not three. Four fields per row need the width, and `auto-fill` at 14rem gave
-     three cramped ones with the header wrapped into the middle of the first. */
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(30rem, 100%), 1fr));
-  gap: 0.35rem 2rem;
+  /* Fixed widths on the four control columns, so a row's contents cannot move its neighbours'
+     columns. Wide enough for the longest option in each: `168h`, `200`, `100`, and a count. */
+  grid-template-columns: minmax(8rem, 1fr) 5rem 4.5rem 4.5rem 4rem;
+  align-items: center;
+  column-gap: 0.75rem;
   margin-top: 0.75rem;
 }
 
-/* The header is a row, not a cell. Without this it takes one grid slot and the first source lands
-   beside it, which is what made the list look shuffled. */
-.sources .source-head {
-  grid-column: 1 / -1;
+.source-row {
+  display: contents;
 }
 
-.source-row {
-  /* A grid rather than space-between: four columns that have to line up down the list, and
-     `justify-content` cannot align anything with the row above it. */
-  display: grid;
-  grid-template-columns: 1fr auto auto auto 3.5rem;
-  align-items: center;
-  gap: 0.6rem;
+/* The rule belongs to the cells now that the row is not a box. Every cell of a row carries it, so
+   the line still runs the full width of the table. */
+.source-row > * {
   padding: 0.35rem 0;
   border-bottom: 1px solid var(--hairline);
+  min-width: 0;
+}
+
+/* Numbers and their headings right-align against the column edge; the name stays left. Mixed
+   alignment is what makes a column of figures readable. */
+.source-row > *:not(.source-name) {
+  justify-self: stretch;
+  text-align: right;
+}
+
+.sources .source-head > * {
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
 
 .source-name {
@@ -2231,7 +2270,9 @@ td.num {
 }
 
 .source-row select {
-  width: auto;
+  /* Fill the column rather than the content. Identical boxes down the list is the whole point of
+     the fixed columns above. */
+  width: 100%;
   padding: 0.2rem 0.4rem;
   font-size: 0.8rem;
 }

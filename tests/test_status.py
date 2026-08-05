@@ -186,14 +186,19 @@ def test_pausing_delivery_is_reported_as_paused_not_broken(api):
     assert "Paused by you" in delivery["detail"]
 
 
-def test_the_mirrored_daily_cap_matches_the_notifier(api):
-    """`services.api` may not import `services.notifier`, so the default cap is written in both.
-    Duplicating a constant is the smaller evil next to two services importing each other, but only
-    if something notices when they drift."""
-    from services.api.status_routes import DEFAULT_NOTIFICATIONS_PER_DAY
-    from services.notifier.deliver import MAX_NOTIFICATIONS_PER_DAY
+def test_there_is_no_mirrored_daily_cap_left_to_drift(api):
+    """**The mirror is gone, because it never had to exist.**
 
-    assert DEFAULT_NOTIFICATIONS_PER_DAY == MAX_NOTIFICATIONS_PER_DAY
+    This used to assert that `status_routes.DEFAULT_NOTIFICATIONS_PER_DAY` equalled
+    `deliver.MAX_NOTIFICATIONS_PER_DAY` — two constants kept equal by a test, on the reasoning that
+    `services.api` may not import `services.notifier`. Both were 100 and both were fiction: the
+    notifier reads `libs.limits`, whose default is unlimited, and neither constant governed a single
+    delivery. `libs` is exactly where a value two services share belongs, so there is nothing left
+    to mirror (ROADMAP 6af).
+    """
+    from services.notifier import deliver
+
+    assert not hasattr(deliver, "MAX_NOTIFICATIONS_PER_DAY")
 
 
 def test_spending_the_daily_allowance_is_not_a_stall(api):
@@ -207,15 +212,19 @@ def test_spending_the_daily_allowance_is_not_a_stall(api):
     from datetime import timedelta
 
     from libs.db.models import CorpusJob, UserJobState
-    from services.api.status_routes import DEFAULT_NOTIFICATIONS_PER_DAY
 
     http, session, user = api
     user.active = True
     user.onboarding_completed_at = datetime.now(UTC)
+    # **A cap has to exist for "the allowance is spent" to be a state at all.** The catalogue
+    # default is unlimited, and reporting a spent allowance against no limit is what told an
+    # account "today's 20 jobs have been sent" on a day it received 908.
+    cap = 25
+    user.limits = {"notifications_per_day": cap}
     session.flush()
 
     # The day's allowance, all delivered a few hours ago, with more still waiting behind it.
-    for index in range(DEFAULT_NOTIFICATIONS_PER_DAY + 1):
+    for index in range(cap + 1):
         job = CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
                         title="Backend Engineer", first_seen_at=datetime.now(UTC))
         session.add(job)
@@ -223,7 +232,7 @@ def test_spending_the_daily_allowance_is_not_a_stall(api):
         session.add(UserJobState(
             user_id=user.id, job_id=job.id, score=95.0, scored_at=datetime.now(UTC),
             notified_at=(datetime.now(UTC) - timedelta(hours=4)
-                         if index < DEFAULT_NOTIFICATIONS_PER_DAY else None)))
+                         if index < cap else None)))
     session.flush()
 
     delivery = next(c for c in http.get("/status").json()["components"] if c["key"] == "delivery")

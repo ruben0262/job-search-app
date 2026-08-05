@@ -434,3 +434,92 @@ def test_a_users_own_search_terms_are_shown_but_never_deletable(api):
     assert theirs, "an operator should be able to see what a user searches for"
     assert theirs[0]["deletable"] is False
     assert ordinary.email in theirs[0]["accounts"]
+
+
+# ── discarding dead letters (ROADMAP 6af) ─────────────────────────────────────────────────────
+
+
+def _dead_job(session, user, lane="notify", error="RuntimeError: Bad Gateway"):
+    from libs.db.models import QueueJob
+
+    job = QueueJob(lane=lane, user_id=user.id, payload={}, state="dead", attempts=5,
+                   last_error=error)
+    session.add(job)
+    session.flush()
+    return job
+
+
+def test_discarding_dead_letters_clears_the_alert_they_caused(api):
+    """**An alert that cannot be cleared is one an operator learns to ignore.**
+
+    Two dead-lettered notify jobs sat on the health page after their cause — a Telegram outage —
+    had been read, understood and fixed in code. Nothing could retire them, so the panel kept
+    paging about a problem that no longer existed, which costs the next alert its meaning.
+    """
+    from libs.ops import evaluate, platform_health
+
+    http, session, operator, ordinary, sign_in = api
+    sign_in(http, operator)
+    _dead_job(session, ordinary)
+    _dead_job(session, ordinary)
+    session.flush()
+
+    assert any(alert.key == "dead_letter:notify" for alert in evaluate(platform_health(session)))
+
+    body = http.request("DELETE", "/admin/queue/dead?lane=notify").json()
+
+    assert body == {"status": "discarded", "count": 2, "lane": "notify"}
+    assert not any(alert.key.startswith("dead_letter")
+                   for alert in evaluate(platform_health(session))), (
+        "the alert must go because its cause is gone, not because a banner was hidden")
+
+
+def test_discarding_one_lane_leaves_the_others_alone(api):
+    """A lane is named so that clearing a known Telegram outage does not also erase an unread
+    failure in `train`, which nobody has looked at yet."""
+    http, session, operator, ordinary, sign_in = api
+    sign_in(http, operator)
+    _dead_job(session, ordinary, lane="notify")
+    _dead_job(session, ordinary, lane="train")
+    session.flush()
+
+    body = http.request("DELETE", "/admin/queue/dead?lane=notify").json()
+
+    assert body["count"] == 1
+    lanes = {row.lane: row.dead for row in _lane_health(session)}
+    assert lanes["notify"] == 0
+    assert lanes["train"] == 1
+
+
+def _lane_health(session):
+    from libs.ops.health import lane_health
+
+    return lane_health(session)
+
+
+def test_the_failure_is_written_to_the_log_before_the_row_goes(api, caplog):
+    """**The row goes, the evidence does not.** Discarding without recording would trade a noisy
+    panel for a missing record, which is the worse of the two — there is no debugger on the box and
+    the log is the only place an incident survives."""
+    import logging
+
+    http, session, operator, ordinary, sign_in = api
+    sign_in(http, operator)
+    _dead_job(session, ordinary, error="RuntimeError: Bad Gateway")
+    session.flush()
+
+    with caplog.at_level(logging.WARNING):
+        http.request("DELETE", "/admin/queue/dead?lane=notify")
+
+    assert any("Bad Gateway" in record.getMessage() for record in caplog.records), (
+        "the last error must reach the log, because the row that held it is now gone")
+
+
+def test_an_ordinary_user_cannot_discard_anything(api):
+    """Same rule as every other admin route, and worth pinning on a destructive one."""
+    http, session, _operator, ordinary, sign_in = api
+    sign_in(http, ordinary)
+    _dead_job(session, ordinary)
+    session.flush()
+
+    assert http.request("DELETE", "/admin/queue/dead").status_code == 404

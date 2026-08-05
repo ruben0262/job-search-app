@@ -261,6 +261,14 @@ export function AdminPage() {
     setSources((rows) => rows?.map((row) => (row.name === name ? { ...row, hours } : row)) ?? rows);
   });
 
+  // The alert key is `dead_letter:<lane>`, so the lane comes from the alert being dismissed rather
+  // than from a second piece of state that could disagree with which banner was clicked.
+  const discardDead = useAction(async (lane: string) => {
+    await api.del(`/admin/queue/dead?lane=${encodeURIComponent(lane)}`);
+    const fresh = await api.get<Health>("/admin/health");
+    setHealth(fresh);
+  });
+
   const toggleAdmin = useAction(async (user: AdminUser) => {
     await api.put(`/admin/users/${user.id}/admin`, { is_admin: !user.is_admin });
     const fresh = await api.get<{ users: AdminUser[] }>("/admin/users");
@@ -354,6 +362,18 @@ export function AdminPage() {
           {health.alerts.map((alert) => (
             <div key={alert.key} className={`banner ${alert.severity === "page" ? "error" : "warning"}`}
                  style={{ marginBottom: "0.6rem" }}>
+              {/* **Only the dead-letter alert is dismissable, and it is dismissed by clearing the
+                  rows it counts — not by hiding the banner.** A general "hide this alert" control
+                  would let a real outage be silenced with one click and stay silenced; here the
+                  alert goes because its cause is gone, which is the only honest way for an alert
+                  to disappear. Every other condition clears when the condition does. */}
+              {alert.key.startsWith("dead_letter") ? (
+                <button className="alert-dismiss" disabled={discardDead.busy}
+                        title="Discard these dead-lettered jobs. The failure is written to the log first."
+                        onClick={() => void discardDead.run(alert.key.split(":")[1] ?? "")}>
+                  ×
+                </button>
+              ) : null}
               <strong>{alert.severity === "page" ? "Needs you now" : "Needs you today"}</strong>
               {alert.user_email ? <span className="muted"> · {alert.user_email}</span> : null}
               <br />
@@ -362,6 +382,7 @@ export function AdminPage() {
               <span className="small muted">{alert.action}</span>
             </div>
           ))}
+          <Error>{discardDead.error}</Error>
         </div>
       )}
 

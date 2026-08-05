@@ -148,3 +148,49 @@ def test_unlimited_is_honoured_wherever_it_is_offered():
     assert not unhonoured, (
         "these limits offer Unlimited and their consumer never checks for it:\n  "
         + "\n  ".join(unhonoured))
+
+
+def test_only_one_place_answers_how_many_jobs_a_day():
+    """**Four answers, and the page showed a fifth of the truth.**
+
+    `notifications_per_day` had definitions in four places: the user config schema
+    (`max_notifications_per_day`, default 20), a mirrored constant in `status_routes` (100), the
+    plan quota in `libs.tenant.quotas` (100), and `libs.limits` (None — unlimited). The notifier
+    enforces the last. So the dashboard told an account "at most 20 messages a day" on a day it had
+    delivered 908, and the status page was ready to claim the allowance was spent at 100
+    (ROADMAP 6af).
+
+    This pins the fix rather than the wording: the two pages that report the cap read it from the
+    same place the notifier does, and the mirrored constant is gone.
+    """
+    from pathlib import Path
+
+    dashboard = Path("services/api/dashboard_routes.py").read_text(encoding="utf-8")
+    status = Path("services/api/status_routes.py").read_text(encoding="utf-8")
+
+    # Definitions and reads, not prose — the docstrings below name the old mechanisms deliberately,
+    # so the assertion has to look for the code rather than the words.
+    assert "DEFAULT_NOTIFICATIONS_PER_DAY = " not in dashboard + status, (
+        "the mirrored constant is back; libs.limits is in libs so both services can read it")
+    assert 'get("max_notifications_per_day"' not in dashboard + status, (
+        "the user config field is not what the notifier enforces, so it must not be reported as "
+        "the delivery cap")
+    assert 'resolve(user, "notifications_per_day")' in status
+
+
+def test_unlimited_delivery_is_reported_as_unlimited_not_as_a_number():
+    """`None` means no cap. Every place that has quietly substituted a number for it has understated
+    what the platform does, and one of them said so on the user's own home page."""
+    from libs import limits
+    from libs.db.models import User
+    from services.api.status_routes import daily_cap
+
+    user = User(email="x@example.com", password_hash="x", limits={})
+    assert daily_cap(user) is None, "the catalogue default is unlimited"
+
+    user.limits = {"notifications_per_day": 40}
+    assert daily_cap(user) == 40
+
+    # And the catalogue itself still offers unlimited, which is what makes `None` reachable.
+    assert next(item for item in limits.LIMITS
+                if item.key == "notifications_per_day").allow_unlimited

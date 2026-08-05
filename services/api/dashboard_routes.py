@@ -33,7 +33,7 @@ from libs.scoring.thresholds import cutoff_for
 from libs.tenant.repository import TenantRepository
 from services.api.admin_routes import admin_emails
 from services.api.deps import current_user, get_db
-from services.api.status_routes import DEFAULT_NOTIFICATIONS_PER_DAY
+from services.api.status_routes import daily_cap
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["dashboard"])
@@ -129,7 +129,10 @@ def dashboard(db: Session = Depends(get_db),
         "telegram": user.telegram_status,
         # The cadence is the platform's, not this user's — reported so the page can say how
         # often the feed arrives without implying it is theirs to change.
-        "notifications": {"per_day_cap": _cap(db, user_id),
+        # `per_day_cap` is null for unlimited, which is the catalogue's default and what both
+        # live accounts run at. It used to be read from the user's config instead of from the limit
+        # the notifier enforces, so the page said 20 on a day that delivered 908.
+        "notifications": {"per_day_cap": daily_cap(user),
                           "interval_min": int(settings.get(db, "delivery_interval_min"))},
         "banners": _banners(user, servable, onboarding),
         # **Whether to show the operator panel at all.** A rendering hint, not the access control:
@@ -149,14 +152,6 @@ def _stale_reason(user: User, model: UserModel | None) -> str:
         return "you have no model yet — your jobs are ranked by your keywords until you train one"
     return ("your profile changed after this model was trained, so your jobs need relabelling and "
             "a retrain")
-
-
-def _cap(db: Session, user_id: _uuid.UUID) -> int:
-    config = TenantRepository(db).get_config(user_id) or {}
-    # The same default the notifier enforces. It read 20 here and 100 there, so the dashboard
-    # told a user their cap was a fifth of what it was.
-    return migrate_config(config).get("max_notifications_per_day",
-                                      DEFAULT_NOTIFICATIONS_PER_DAY)
 
 
 def _banners(user: User, servable: bool, onboarding) -> list[dict]:
