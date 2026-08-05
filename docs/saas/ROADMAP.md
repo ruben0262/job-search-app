@@ -1328,6 +1328,48 @@ Extracted at ingest as 6w describes, then available as cheap pre-score filters. 
 6. **Seniority** — junior / mid / senior / lead. The most frequently mis-stated field in any
    posting, so the last one to trust and the one most likely to need a confidence floor.
 
+### 6an — the pre-score filter, measured before it was written (added 2026-08-05)
+
+**The centroid chosen in 6z.1, built and measured against the live corpus.** The library is in
+`libs/scoring/centroid.py`; wiring it into the trainer and the score lane is the next step.
+
+**What it does.** A user's accepted jobs have a direction in the embedding space. The centroid of
+those vectors is that direction, and the threshold is the similarity of the *least* similar job they
+have already said yes to, less a margin. Anything below it is not worth running the model on.
+
+**The threshold cannot be a platform constant, and measuring is what showed it.** At 0.66 the same
+number cut 51% of one live account's pool and 20% of the other's — a user with broad interests has a
+broader spread, so the number has to come from their own labels.
+
+Measured with the shipped library over 23,621 scored rows per account:
+
+| account | positives | threshold | pool cut | matches lost |
+|---|---|---|---|---|
+| andraslekli | 67 | 0.689 | **72%** (16,950 rows) | **0 of 280** |
+| lekliruben | 878 | 0.586 | 4% (890 rows) | **0 of 3,574** |
+
+The asymmetry is the design working. An account whose accepted jobs span a wide space legitimately
+cannot be filtered much, and it is not filtered much — the filter never buys its saving with a job
+somebody wanted.
+
+**The margin is measured, not chosen.** At the floor exactly, the narrow account lost 16 of 280
+matches: the floor is the minimum of a sample, so it sits on the edge of the distribution and any
+new job slightly beyond it is cut. Stepping back 0.05 took that to zero while still cutting 72%.
+
+**Two fail-open rules, both of which would empty a feed if inverted.** Under 25 positive labels there
+is no centroid and nothing is filtered — a centroid of a handful of vectors points at wherever those
+few happened to be. And a caller holding no centroid scores everything rather than nothing.
+
+**Throughput: 4 microseconds a row**, measured over 20,000. The first version was 235 — a
+plain-Python dot product over 768 floats, 5.5 seconds for one account's corpus and this runs per
+user. Passing lists to numpy was still 25, because building the array dominates. Reading the packed
+bytes straight into one array with `frombuffer` is 4, and `corpus.embedding` is already those bytes,
+so nothing is unpacked in order to be re-packed. A test fails if it returns to per-row arithmetic.
+
+**Still to do**: the trainer computes and stores the centroid beside the model it fitted, and
+`score_lane` reads it. Both are behaviour changes to what reaches a user's model, so they ship with
+the before/after count of matches lost — which the table above is the prediction of.
+
 ### 6am — LinkedIn stops for hours at a time, and why ✅ **done 2026-08-05**
 
 **The owner's report: LinkedIn jobs stop arriving, repeatedly, and previous fixes did not hold.**
