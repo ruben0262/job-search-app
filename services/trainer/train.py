@@ -31,7 +31,9 @@ import libs.notify as notifylib
 from libs.contracts.embedder import unpack_vector
 from libs.db.models import CorpusJob, User, UserLabel, UserModel
 from libs.profiles.repository import ProfileFiles
+from libs.scoring import centroid
 from libs.scoring.features import FEATURE_SCHEMA_VERSION, job_features, spec_for
+from libs.scoring.thresholds import DEFAULT_CUTOFF
 
 logger = logging.getLogger(__name__)
 
@@ -40,8 +42,10 @@ logger = logging.getLogger(__name__)
 MIN_LABELS = 25
 MIN_NEW_LABELS = 5
 
-# The band boundaries the scorer reads back out of the artifact.
-DEFAULT_CUTOFF = 60
+# The band boundary the scorer reads back out of the artifact. **Imported, not restated.** It was
+# `DEFAULT_CUTOFF = 60` here beside the identical constant in `libs.scoring.thresholds` — the fourth
+# copy of one number in a tree whose most common defect is exactly that (ROADMAP 6ah). `libs` is
+# where a value two services share belongs, and both already import from it.
 
 
 class NotEnoughData(RuntimeError):
@@ -121,10 +125,15 @@ def build_training_set(session: Session, user_id: _uuid.UUID) -> TrainingSet:
         embedder_version=rows[0].embedding_version)
 
 
-# A label at or above this counts as "fit" when training. **Not the delivery cutoff** — the two
-# were conflated and it cost the platform its feed. This is the question the classifier is asked;
-# the operating point is tuned separately, below, and comes out lower.
-FIT_THRESHOLD = 60.0
+# A label at or above this counts as "fit" when training. **Not the delivery cutoff** — the two were
+# conflated and it cost the platform its feed. This is the question the classifier is asked; the
+# operating point is tuned separately, below, and comes out lower.
+#
+# Read from `libs.scoring.thresholds` rather than written here, where it was a bare `60.0` beside
+# `DEFAULT_CUTOFF = 60.0` and `centroid.POSITIVE_AT`. Three copies of one number, agreeing by luck —
+# and the pre-score filter has to call "positive" exactly what the model was trained to call
+# positive, or it filters on a different question than the one it protects (ROADMAP 6ah).
+FIT_THRESHOLD = DEFAULT_CUTOFF
 
 # What fraction of the genuinely good jobs the operating point should catch. The reference's
 # default, and the reason its live cutoff is 44 rather than a round number: recall is what a job
@@ -340,8 +349,23 @@ def train_user(session: Session, user_id: _uuid.UUID, *,
     # cleared in the same statement batch rather than trusted to be cleared later.
     session.query(UserModel).filter(
         UserModel.user_id == user_id, UserModel.is_active.is_(True)).update({"is_active": False})
+    # **The pre-score filter, measured from the same rows the fit just used.** No extra query: the
+    # training matrix is `embedding || features`, so the embedding half of every row the model was
+    # trained to like is exactly what the centroid is the centre of (ROADMAP 6an).
+    #
+    # `None` when there are too few positives, and it is stored as `None` — an account in cold start
+    # has no centre and must not be filtered at all.
+    built = centroid.build([
+        [float(component) for component in data.matrix[index][:data.embedder_dim]]
+        for index, target in enumerate(data.targets) if target >= FIT_THRESHOLD])
+    if built is None:
+        logger.info("trainer: %s has too few positive labels for a pre-score centroid — "
+                    "its jobs are all scored", user_id)
+
     session.add(UserModel(
         user_id=user_id, version=version, path=str(path),
+        centroid=centroid.pack(built[0]) if built else None,
+        centroid_threshold=built[1] if built else None,
         feature_schema_version=FEATURE_SCHEMA_VERSION,
         profile_generation=user.profile_generation,
         embedder_model=data.embedder_model, embedder_dim=data.embedder_dim,

@@ -185,3 +185,106 @@ def test_an_account_without_the_old_profile_json_can_still_be_scored():
                      "skills": {"languages": ["python"], "frameworks": [], "domains": [],
                                 "tools": []}})
     assert real is not None
+
+
+# ── the pre-score centroid filter (ROADMAP 6an) ───────────────────────────────────────────────
+
+
+def _loaded(user, *, centroid_blob=None, threshold=None):
+    """A servable model with a stub estimator, so the lane can be driven without an artifact."""
+    import numpy as np
+
+    from libs.scoring.features import spec_for
+    from services.scorer.registry import LoadedModel
+
+    class Estimator:
+        def predict(self, matrix):
+            return np.full(len(matrix), 80.0, dtype=np.float32)
+
+    return LoadedModel(
+        user_id=user.id, model_version=user.model_version, profile_generation=1,
+        estimator=Estimator(), task="regress", features=spec_for(None),
+        embedder_model="test", embedder_dim=2, embedder_version="v1",
+        cutoff=60, keep_cutoff=45,
+        centroid=centroid_blob, centroid_threshold=threshold)
+
+
+def _pointing(*components: float) -> bytes:
+    from libs.scoring.centroid import pack
+
+    return pack(list(components))
+
+
+def test_a_row_far_from_the_users_centre_is_never_scored(db, monkeypatch):
+    """**The saving is the model call, so the filter has to happen before it.**
+
+    Measured on live data: 72% of one account's pool sits below its own threshold and none of its
+    280 matches do. This asserts the mechanism actually runs — a filter that is computed and then
+    ignored is the defect this project ships most often.
+    """
+    from sqlalchemy import select
+
+    from libs.db.models import UserJobState
+    from services.scorer import score_lane
+
+    session, user, jobs = db
+    user.model_version = 1
+    # Two rows pointing the same way as the centroid, three pointing away.
+    for index, job in enumerate(jobs):
+        job.embedding = _pointing(1.0, 0.0) if index < 2 else _pointing(-1.0, 0.0)
+    session.flush()
+
+    model = _loaded(user, centroid_blob=_pointing(1.0, 0.0), threshold=0.5)
+    monkeypatch.setattr(score_lane.ModelRegistry, "get", lambda self, uid: model)
+
+    scored, _remaining = score_lane.score_batch(session, user.id)
+    session.flush()
+
+    assert scored == 2, "only the rows near the centre reach the model"
+
+    states = {s.job_id: s for s in session.scalars(
+        select(UserJobState).where(UserJobState.user_id == user.id))}
+    assert len(states) == 5, "every row is marked at this version, or the lane re-reads it forever"
+    assert sum(1 for s in states.values() if s.score is None) == 3
+    assert sum(1 for s in states.values() if s.score is not None) == 2
+
+
+def test_a_filtered_row_is_not_reconsidered_next_cycle(db, monkeypatch):
+    """The saving is spent back if the same rows are re-examined every run. `scored_model_version`
+    is what stops that, and it only moves again when the model — and with it the centroid — does."""
+    from services.scorer import score_lane
+
+    session, user, jobs = db
+    user.model_version = 1
+    for job in jobs:
+        job.embedding = _pointing(-1.0, 0.0)
+    session.flush()
+
+    model = _loaded(user, centroid_blob=_pointing(1.0, 0.0), threshold=0.5)
+    monkeypatch.setattr(score_lane.ModelRegistry, "get", lambda self, uid: model)
+
+    first, _ = score_lane.score_batch(session, user.id)
+    session.flush()
+    second, _ = score_lane.score_batch(session, user.id)
+
+    assert first == 0 and second == 0
+    assert score_lane.unscored_count(session, user.id) == 0, "nothing is left pending"
+
+
+def test_a_model_with_no_centroid_scores_everything(db, monkeypatch):
+    """**The fail-open, and it is the one that would empty a feed if inverted.** An account in cold
+    start, or a model published before the column existed, has no centre — and every row must reach
+    the model rather than none of them."""
+    from services.scorer import score_lane
+
+    session, user, jobs = db
+    user.model_version = 1
+    for job in jobs:
+        job.embedding = _pointing(-1.0, 0.0)      # as far from any centre as possible
+    session.flush()
+
+    model = _loaded(user, centroid_blob=None, threshold=None)
+    monkeypatch.setattr(score_lane.ModelRegistry, "get", lambda self, uid: model)
+
+    scored, _remaining = score_lane.score_batch(session, user.id)
+    assert scored == len(jobs)

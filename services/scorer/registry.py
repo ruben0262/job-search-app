@@ -65,6 +65,11 @@ class LoadedModel:
     embedder_version: str
     cutoff: int
     keep_cutoff: int
+    # The pre-score filter measured from the labels this artifact was fitted on. `None` means this
+    # account has no centre — cold start, or a model published before the column existed — and the
+    # scorer must then score every row rather than none (ROADMAP 6an).
+    centroid: bytes | None = None
+    centroid_threshold: float | None = None
 
 
 def resolve_artifact(path: str) -> str:
@@ -190,4 +195,8 @@ class ModelRegistry:
             embedder_dim=artifact_row.embedder_dim,
             embedder_version=artifact_row.embedder_version,
             cutoff=cutoff,
-            keep_cutoff=int(blob.get("keep_cutoff", max(cutoff - 10, 1))))
+            keep_cutoff=int(blob.get("keep_cutoff", max(cutoff - 10, 1))),
+            # From the row rather than the artifact: the centroid is a property of the labels, and
+            # keeping it in the database means an existing artifact does not have to be rewritten.
+            centroid=artifact_row.centroid,
+            centroid_threshold=artifact_row.centroid_threshold)

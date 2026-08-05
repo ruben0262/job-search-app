@@ -22,6 +22,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     String,
     Text,
     func,
@@ -171,6 +172,16 @@ class UserModel(Base):
     # status" panel reads.
     metrics: Mapped[dict | None] = mapped_column(JSONB)
     n_labels: Mapped[int | None] = mapped_column(Integer)
+
+    # **The pre-score filter, measured from the same labels this artifact was fitted on.** Beside
+    # the model rather than on the user so the two cannot drift: a retrain produces both together,
+    # and an old model keeps the centroid it was measured with (ROADMAP 6an).
+    #
+    # NULL is the fail-open and it is load-bearing — an account under `centroid.MIN_POSITIVES`, or
+    # a model fitted before this existed, has no centroid, and a caller holding none scores every
+    # row rather than none.
+    centroid: Mapped[bytes | None] = mapped_column(LargeBinary)
+    centroid_threshold: Mapped[float | None] = mapped_column(Float)
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[timestamptz] = mapped_column(server_default=func.now())

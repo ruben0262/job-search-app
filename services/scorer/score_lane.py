@@ -27,6 +27,7 @@ from sqlalchemy.orm import Session
 
 from libs.db.models import CorpusJob, User, UserJobState
 from libs.obs import audit
+from libs.scoring import centroid
 from libs.tenant.repository import TenantRepository
 from services.scorer.registry import ModelRegistry, ModelUnavailable
 from services.scorer.serve import score_rows
@@ -90,7 +91,35 @@ def score_batch(session: Session, user_id: _uuid.UUID, *, limit: int = MAX_PER_R
     if not rows:
         return 0, 0
 
+    # **The pre-score filter.** Rows too far from what this user has already accepted are recorded
+    # as scored at this model version without a model call, so they are not reconsidered every
+    # cycle — the saving is the model call, and re-asking the same question forever would spend it
+    # back (ROADMAP 6an).
+    #
+    # `keep` returns all-True when there is no centroid, which is the fail-open: an account in cold
+    # start, or a model fitted before the column existed, has every row scored.
+    verdicts = centroid.keep([row["embedding"] for row in rows],
+                             centroid.unpack(model.centroid) if model.centroid else [],
+                             model.centroid_threshold or 0.0)
+    worth_scoring = [row for row, ok in zip(rows, verdicts, strict=True) if ok]
+    skipped = len(rows) - len(worth_scoring)
+
     tenant = TenantRepository(session)
+    for row, ok in zip(rows, verdicts, strict=True):
+        if not ok:
+            # Scored at this version with no score: `pending_feed` requires `score IS NOT NULL`, so
+            # a filtered row is never delivered, and `scored_model_version` stops the lane picking
+            # it up again until the model — and with it the centroid — changes.
+            tenant.record_score(user_id, row["id"], score=None,
+                                model_version=user.model_version)
+
+    rows = worth_scoring
+    if not rows:
+        session.flush()
+        audit(logger, "score.batch", user=user_id, scored=0, skipped=skipped,
+              remaining=unscored_count(session, user_id), model_version=user.model_version)
+        return 0, unscored_count(session, user_id)
+
     bands = {"high": 0, "needs-review": 0, "skip": 0}
     for result in score_rows(model, [dict(row) for row in rows]):
         tenant.record_score(user_id, result.job_id, score=result.score,
@@ -99,8 +128,8 @@ def score_batch(session: Session, user_id: _uuid.UUID, *, limit: int = MAX_PER_R
     session.flush()
 
     remaining = unscored_count(session, user_id)
-    audit(logger, "score.batch", user=user_id, scored=len(rows), remaining=remaining,
-          model_version=user.model_version, **bands)
+    audit(logger, "score.batch", user=user_id, scored=len(rows), skipped=skipped,
+          remaining=remaining, model_version=user.model_version, **bands)
     return len(rows), remaining
 
 
