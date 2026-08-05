@@ -70,6 +70,14 @@ except ImportError:  # pragma: no cover - only the harvester image installs it
 LI_RETRIES = 6
 LI_BACKOFF = 2.0
 
+# Answers a fresh IP cannot change. **A retry is only worth its bandwidth when the next attempt
+# could plausibly differ**, and a deleted posting will not come back: 404 and 410 were being asked
+# six times each, on the user's own paid residential proxy, for the same answer (ROADMAP 6am).
+#
+# 429 and 5xx are deliberately absent — those are exactly the transient cases the rotation exists
+# for, and they keep every one of their attempts.
+TERMINAL_STATUSES = frozenset({400, 404, 410})
+
 # Trust a source's own snippet at this length rather than spending a fetch. Tier-2 APIs return the
 # full text here; LinkedIn returns a teaser, which is why it is never trusted below.
 MIN_SNIPPET = 200
@@ -550,9 +558,22 @@ def _fetch_linkedin(job_id: str, *, client: httpx.Client, snippet: str, title: s
                 tally("li_ok")
                 out["description"] = text[:MAX_DESC]
                 return out
-            tally("li_empty")           # 200 with a blank body means throttled or expired
-        else:
+            # **A 200 with no description body is an answer, not a failure.**
+            #
+            # This used to retry, on the reasoning that a blank body means throttled or expired. The
+            # live log disproves it: the same posting returns 200 with the same short body six times
+            # in a row, each attempt on a fresh residential IP. It is simply a fragment LinkedIn
+            # serves without `show-more-less-html__markup`. Retrying spent six times the user's paid
+            # bandwidth to receive the same page again, and everything else on it — the applicant
+            # count, the workplace tag, the posted time — was already parsed above and kept
+            # (ROADMAP 6am).
+            tally("li_empty")
+            break
+        if response.status_code in TERMINAL_STATUSES:
+            # The posting is gone. A fresh IP cannot bring it back, and this was six requests.
             tally(f"li_http_{response.status_code}")
+            break
+        tally(f"li_http_{response.status_code}")
         time.sleep(LI_BACKOFF)
 
     tally("li_giveup")

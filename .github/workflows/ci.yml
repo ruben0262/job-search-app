@@ -11,7 +11,23 @@ name: ci
 on:
   push:
     branches: [main]
+    # **Documentation does not need eleven jobs and a Postgres.** ROADMAP and CHANGELOG entries are
+    # a large share of the commits here, and each one was costing a full matrix run — 90% of the
+    # month's Actions allowance was gone by the 5th (ROADMAP 6al).
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
   pull_request:
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+
+# **One run per branch, and a new push cancels the one it supersedes.** Several pushes in a row is
+# the normal shape of work here, and without this every superseded run kept a Postgres service
+# container and nine matrix jobs alive to the end for a commit nobody would ever look at.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   boundaries:
@@ -168,38 +184,59 @@ jobs:
   # `libs/secrets`, which needs cryptography — so a development environment that has everything
   # installed cannot see the gap, and the failure lands as a container that will not start.
   #
-  # A matrix rather than one job, because installing them together would defeat the point.
+  # **One job, one venv per service**, rather than a nine-way matrix. The isolation is the whole
+  # point and it is preserved — each service still installs only its own requirements into an empty
+  # environment — but nine runners cost nine billed minutes before a single package is downloaded,
+  # and GitHub rounds every job up to the minute. Consolidating keeps the guarantee and pays for it
+  # once (ROADMAP 6al).
+  #
+  # `fail-fast` behaviour is kept by collecting failures and reporting them together at the end: a
+  # missing dependency in `scorer` should not hide one in `trainer`.
   service-deps:
-    name: ${{ matrix.service }} starts from its own requirements
+    name: every service starts from its own requirements
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { service: api, module: "services.api.app" }
-          - { service: capture, module: "services.capture.__main__" }
-          - { service: labeller, module: "services.labeller.__main__" }
-          - { service: notifier, module: "services.notifier.__main__" }
-          # **The one this check was made for.** Its requirements listed only what it imports by
-          # name, so the image crash-looped twice on transitive dependencies of `libs.obs`, once on
-          # cryptography and once on sqlalchemy, each found by watching a container restart in
-          # production rather than by anything here.
-          - { service: oauthbroker, module: "services.oauthbroker.__main__" }
-          - { service: scorer, module: "services.scorer.__main__" }
-          - { service: setupagent, module: "services.setupagent.__main__" }
-          - { service: trainer, module: "services.trainer.__main__" }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
-      - run: pip install -r services/${{ matrix.service }}/requirements.txt
-      # The environment a container would have: nothing set, because a missing variable must fail
-      # loudly at use rather than at import.
-      - run: python -c "import ${{ matrix.module }}"
-        env:
-          ACCESS_TOKEN_SECRET: ci-import-check-${{ matrix.service }}-xxxxxxxxxxxxxxxxxxxx
+      - name: each service, alone, in an empty environment
+        run: |
+          set -uo pipefail
+          failed=""
+          while read -r service module; do
+            [ -z "$service" ] && continue
+            echo "::group::$service"
+            rm -rf /tmp/venv
+            python -m venv /tmp/venv
+            if ! /tmp/venv/bin/pip install -q -r "services/$service/requirements.txt"; then
+              echo "::error::$service: its requirements do not install"
+              failed="$failed $service"
+              echo "::endgroup::"
+              continue
+            fi
+            # The environment a container would have: nothing set, because a missing variable must
+            # fail loudly at use rather than at import.
+            if ! ACCESS_TOKEN_SECRET="ci-import-check-$service-xxxxxxxxxxxxxxxxxxxx"                  /tmp/venv/bin/python -c "import $module"; then
+              echo "::error::$service: $module does not import from its own requirements"
+              failed="$failed $service"
+            fi
+            echo "::endgroup::"
+          done <<'SERVICES'
+          api services.api.app
+          capture services.capture.__main__
+          labeller services.labeller.__main__
+          notifier services.notifier.__main__
+          oauthbroker services.oauthbroker.__main__
+          scorer services.scorer.__main__
+          setupagent services.setupagent.__main__
+          trainer services.trainer.__main__
+          SERVICES
+          if [ -n "$failed" ]; then
+            echo "::error::these services cannot start from their own requirements:$failed"
+            exit 1
+          fi
 
   # Secret leakage. Every push is scanned over the full history, because a key that was committed
   # and then removed is still in every clone — the removal commit is where people stop looking and

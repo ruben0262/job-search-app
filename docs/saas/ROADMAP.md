@@ -1328,6 +1328,72 @@ Extracted at ingest as 6w describes, then available as cheap pre-score filters. 
 6. **Seniority** — junior / mid / senior / lead. The most frequently mis-stated field in any
    posting, so the last one to trust and the one most likely to need a confidence floor.
 
+### 6am — LinkedIn stops for hours at a time, and why ✅ **done 2026-08-05**
+
+**The owner's report: LinkedIn jobs stop arriving, repeatedly, and previous fixes did not hold.**
+Measured rather than guessed this time. At 13:23 every other source had rows from 13:13; LinkedIn's
+newest was **08:18, five hours earlier**. `systemctl` explained it:
+
+```
+linkedin.timer   next: -    last: 20min ago
+linkedin.service Active: activating (start) since ... ; 20min ago
+```
+
+`Type=oneshot` on a fifteen-minute timer: **while a pass is still running, the next one cannot
+start.** So one slow pass does not delay LinkedIn, it stops it until that pass ends. Two causes,
+both in the same log:
+
+**1. A 200 was being retried six times.** `_fetch_linkedin` returned only when the guest fragment
+carried ≥100 characters of description; anything shorter counted as `li_empty` and went round again,
+on the reasoning that LinkedIn answers a throttled fetch with 200 and an empty body. The log
+disproves it — the same posting returned 200 with the same short body **six consecutive times**,
+each on a different residential IP. It is a fragment served without
+`show-more-less-html__markup`, and the retry bought a byte-identical page six times on the user's
+own paid bandwidth. Everything else on it — applicants, workplace, posted time — was already parsed
+and kept from the first response.
+
+**2. A 404 was being retried six times.** A deleted posting does not come back on a fresh IP.
+
+At ~2.4 seconds a request, sixty describes at six requests each is fourteen minutes of pure waste,
+which is how a fifteen-minute tick was missed. Now: 400/404/410 stop immediately, a 200 that
+answered stops immediately, and 429 and 5xx keep every attempt — those are exactly what the IP
+rotation exists for.
+
+**3. And the pass now bounds itself.** Removing the waste makes the overrun unlikely; a budget makes
+it impossible. `DESCRIBE_BUDGET_SECONDS` is two thirds of the tick, derived from it rather than
+chosen, so the run always ends before the timer wants to start another. Whatever is not described
+stays thin and is first in line next pass — the same fail-forward as the notify send budget, and
+the third place this pattern has now been needed.
+
+### 6al — every CI run failed for four days, and the local gate said green ✅ **done 2026-08-05**
+
+**Two failures, and the second is mine.**
+
+`requirements-dev.txt` pinned `alembic>=1.13`. CI resolved **1.19.0**; the development machine held
+**1.18.5**. Alembic 1.19 double-applies the `ck_%(table_name)s_` naming convention when comparing
+check constraints, and its autogenerate output is self-contradictory — it drops
+`ck_corpus_ck_corpus_workplace_valid` to create `ck_corpus_corpus_workplace_valid`, then drops that
+to recreate the first. Twenty such operations. The drift gate read them as real drift and failed.
+
+Reproduced deliberately before fixing: 20 `op.` lines on 1.19.0, **zero** on 1.18.5, same database
+image, same models. Capped at `<1.19`.
+
+**The second failure is that nobody looked.** Twelve consecutive red runs, and each push was
+reported as "gates green" on the strength of the local run. A local gate is a *prediction* of CI,
+and a prediction is worth checking against the outcome — `gh run list` takes a second. Written into
+CLAUDE.md §6 along with the pinning rule.
+
+**And the bill.** 90% of the month's Actions allowance was gone by the 5th, because every commit —
+including documentation-only ones, which are a large share here — started eleven jobs including a
+Postgres service container and a nine-way matrix. Three changes:
+
+- `paths-ignore` for `**/*.md` and `docs/**`, so a roadmap entry costs nothing;
+- a `concurrency` group with `cancel-in-progress`, so a superseded run stops instead of finishing;
+- the nine-way `service-deps` matrix consolidated into one job with a fresh virtualenv per service.
+  The isolation is the entire point of that check and is preserved — each service still installs
+  only its own requirements into an empty environment — but nine runners cost nine billed minutes
+  before a package is downloaded, and GitHub rounds every job up to the minute.
+
 ### 6z.1 — the plan reviewed against live numbers, before writing any of it (added 2026-08-05)
 
 **The owner asked for faults to be found first. Five, and the first one is fatal to the design as
@@ -1398,6 +1464,22 @@ principle — the co-occurrence idea is sound and the observation behind it is c
 it needs a scale the platform does not have yet, and the thing it is needed for can be had now with
 less machinery. **The owner decides; this entry exists so the decision is available rather than
 discovered after the join table is built.**
+
+#### ✅ Decided 2026-08-05: the centroid now, 6z later
+
+**The owner's call, and the reasoning is the platform's size.** Two accounts and 28 keywords cannot
+produce a taxonomy; a per-user centroid needs neither. So the pre-score filter is the centroid, and
+**6z stays on the roadmap with its five faults recorded above as the work required to revive it**.
+
+The trigger for revisiting is scale, and it is worth naming so it is not missed: **the centroid is
+per user, so its cost is O(users × candidate rows)** — one dot product each, trivial at two accounts
+and a real number at five hundred. `job_field` is computed once and shared, which is exactly the
+property that makes it worth the machinery at that point. When the centroid pass starts showing up
+in the latency drill-down, that is the signal.
+
+The five faults are the price of admission when that day comes, and fault 1 is the one that must be
+fixed first: **the keyword is recorded on the duplicate path, not at insert**, or the co-occurrence
+matrix is empty and nothing says so.
 
 ### 6z — job fields, discovered from what actually found the job (added 2026-08-04)
 

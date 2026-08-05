@@ -73,6 +73,19 @@ RESULTS_WANTED = 30
 # what it actually found, so this is a guard rather than a ceiling anybody reaches.
 UNLIMITED_DESCRIBES = 10_000
 
+# **How long one user's describe pass may run, derived from the timer that starts it.**
+#
+# `linkedin.timer` ticks every fifteen minutes and `Type=oneshot` means a run still going blocks the
+# next: measured 2026-08-05, a pass twenty minutes in with the timer reporting no next run, and five
+# hours without a single LinkedIn row while every other source stayed current. A count cannot bound
+# this — one row is a proxied fetch whose cost varies by an order of magnitude — so the pass bounds
+# itself in seconds and leaves the rest for next time (ROADMAP 6am).
+#
+# Two thirds of the tick, so several users can still be served in one pass and the run always ends
+# before the timer wants to start another.
+LINKEDIN_TICK_MINUTES = 15
+DESCRIBE_BUDGET_SECONDS = LINKEDIN_TICK_MINUTES * 60 * 2 / 3
+
 
 @dataclass
 class LinkedInReport:
@@ -268,7 +281,8 @@ def _run_one(user: User, queries: list[dict], *, corpus: CorpusRepository,
                     per_run = limits.resolve(user, "describe_per_run")
                     described = describe_pending(
                         corpus, client, linkedin=True,
-                        limit=UNLIMITED_DESCRIBES if per_run is None else per_run)
+                        limit=UNLIMITED_DESCRIBES if per_run is None else per_run,
+                        budget_seconds=DESCRIBE_BUDGET_SECONDS)
 
     except SecretsError:
         # The store could not answer. Not this user's fault and not a reason to stop the pass.

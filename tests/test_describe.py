@@ -415,3 +415,57 @@ def test_closing_twice_does_not_move_the_timestamp(repo):
     session.flush()
     session.expire_all()
     assert session.get(CorpusJob, job_id).closed_at == first
+
+
+def test_the_pass_stops_when_it_runs_out_of_time(repo, monkeypatch):
+    """**A run that outlives its timer stops the next one starting.**
+
+    `linkedin.timer` ticks every fifteen minutes and `Type=oneshot` means an active run blocks the
+    next. Measured 2026-08-05: a pass still going after twenty minutes, the timer reporting no next
+    run, and five hours with no LinkedIn rows ingested while every other source stayed current.
+
+    A count cannot bound this — one row is a proxied fetch whose cost varies by an order of
+    magnitude — so the pass bounds itself in seconds. What is left stays thin and is first in line
+    next time, which is the same fail-forward the rest of the pipeline uses.
+
+    The clock is driven rather than slept through: this file's autouse fixture no-ops
+    `time.sleep` on the shared module, so a test that waited for real time would measure nothing.
+    """
+    from services.harvester import describe as describe_module
+
+    corpus, session = repo
+    for _ in range(8):
+        corpus.add(url=f"https://www.linkedin.com/jobs/view/{uuid.uuid4().int % 10**9}",
+                   source="linkedin", title="Engineer", company="Acme")
+    session.flush()
+
+    # A clock that advances a second per reading: the budget below is spent after two fetches.
+    ticks = iter(range(0, 1000))
+    monkeypatch.setattr(describe_module, "monotonic", lambda: float(next(ticks)))
+
+    class Fetcher:
+        def get(self, url, **_kwargs):
+            return FakeResponse("<div>" + "x" * 400 + "</div>")
+
+    report = describe_pending(corpus, Fetcher(), linkedin=True, limit=8, budget_seconds=2.5)
+
+    assert report.attempted < 8, "the pass must stop rather than outlive its timer"
+    # And nothing was lost: whatever was not described is still waiting for the next pass.
+    assert len(corpus.awaiting_description(limit=20, linkedin=True)) == 8 - report.described
+
+
+def test_no_budget_means_the_pass_runs_to_completion(repo):
+    """The shared cycle has its own scheduling and passes no budget, so the bound must be opt-in
+    rather than a default that quietly truncates it."""
+    corpus, session = repo
+    for _ in range(3):
+        corpus.add(url=f"https://www.linkedin.com/jobs/view/{uuid.uuid4().int % 10**9}",
+                   source="linkedin", title="Engineer", company="Acme")
+    session.flush()
+
+    class Fast:
+        def get(self, url, **_kwargs):
+            return FakeResponse("<div>" + "x" * 400 + "</div>")
+
+    report = describe_pending(corpus, Fast(), linkedin=True, limit=3)
+    assert report.attempted == 3

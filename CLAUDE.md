@@ -95,6 +95,17 @@ pytest tests/ -v        # with DATABASE_URL set
 
 - **A skipped test is not a passing test.** Roughly 290 of them skip silently without
   `DATABASE_URL`, and the suite still prints green. Check the skip count, not just the colour.
+- **A gate is only a prediction of CI if both resolve the same versions.** Every tool that decides
+  pass or fail is capped in `requirements-dev.txt`, for the reason ruff's rules are pinned in
+  `pyproject.toml`: a release must not fail an unrelated commit. `alembic>=1.13` let CI take 1.19
+  while a laptop held 1.18.5, and 1.19 double-applies the check-constraint naming convention — so
+  the drift gate failed **every run for four days** while the same command passed locally, and the
+  local result was reported as green (ROADMAP 6al). Raise a cap deliberately, after running the
+  gate against the new version.
+- **Read the CI result, do not assume it.** `gh run list` takes a second. Four days of red runs went
+  unnoticed because the local gates were treated as the answer rather than as the prediction.
+- **Actions minutes are the owner's money.** Batch commits and push once; a docs-only change must
+  not start eleven jobs. 90% of a month's allowance went by the 5th.
 - If a gate cannot be run locally, say which one and why in the response — do not push and hope.
 - CI is the backstop, not the check. It runs the same four gates plus the embedder tier and the
   web/OpenAPI contract, and a red run after a push is a fix under time pressure that could have

@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from time import monotonic
 
 from sqlalchemy import select
 
@@ -68,7 +69,8 @@ class DescribeReport:
 
 
 def describe_pending(corpus: CorpusRepository, client, *, linkedin: bool | None = None,
-                     limit: int = SHARED_LIMIT) -> DescribeReport:
+                     limit: int = SHARED_LIMIT,
+                     budget_seconds: float | None = None) -> DescribeReport:
     """Fetch and store descriptions for corpus rows that are still thin.
 
     `client` is whatever the caller is authorised to spend — the shared client for the free tier,
@@ -77,11 +79,23 @@ def describe_pending(corpus: CorpusRepository, client, *, linkedin: bool | None 
 
     A row that comes back thin anyway is left thin rather than marked done. It will be retried on
     the next pass, which is correct for the common cause: LinkedIn returning 429 to a burst.
+
+    `budget_seconds` bounds the pass in wall-clock time. **A count cannot bound it**, because the
+    cost of one row is a proxied fetch with retries and that varies by an order of magnitude: the
+    LinkedIn pass is a systemd one-shot on a fifteen-minute timer, and a run that outlives the tick
+    stops the next one starting. Observed 2026-08-05 — a pass still going after twenty minutes with
+    `linkedin.timer` showing no next run, and five hours with no LinkedIn rows ingested at all
+    (ROADMAP 6am). Whatever is not described stays thin and is first in line next pass.
     """
     report = DescribeReport()
     jobs = corpus.awaiting_description(limit=limit, linkedin=linkedin)
+    deadline = None if budget_seconds is None else monotonic() + budget_seconds
 
     for job in jobs:
+        if deadline is not None and monotonic() >= deadline:
+            logger.info("describe: stopping at %d of %d, the pass is out of time — the rest are "
+                        "first in line next run", report.attempted, len(jobs))
+            break
         report.attempted += 1
         try:
             posting = fetch_job(job.url, client=client, snippet=job.description or "",

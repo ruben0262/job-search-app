@@ -229,13 +229,53 @@ def test_a_throttled_linkedin_fetch_is_retried_and_then_falls_back_to_the_snippe
     assert stats == {"li_http_429": postings.LI_RETRIES, "li_giveup": 1}
 
 
-def test_a_two_hundred_with_an_empty_body_counts_as_throttled_not_as_success():
-    """LinkedIn answers a rate-limited guest fetch with 200 and nothing in it. Treating that as a
-    description would store the empty string over a usable snippet."""
+def test_a_two_hundred_with_an_empty_body_is_asked_once(monkeypatch):
+    """**The assumption this test used to encode was wrong, and the live log disproved it.**
+
+    It asserted six attempts, on the reasoning that LinkedIn answers a rate-limited guest fetch with
+    200 and an empty body — so a retry on a fresh residential IP would get the text. Watched on the
+    box 2026-08-05: the same posting returned 200 with the same short body six times consecutively,
+    each on a different IP. It is not throttling, it is a fragment served without
+    `show-more-less-html__markup`, and asking again spent six times the user's paid bandwidth for a
+    byte-identical page (ROADMAP 6am).
+
+    Everything else on that page — applicants, workplace, posted time — is parsed and kept on the
+    first response, so stopping loses nothing.
+    """
     client = FakeClient(*[FakeResponse("<div></div>") for _ in range(postings.LI_RETRIES)])
     stats: dict[str, int] = {}
-    postings.fetch_job("https://www.linkedin.com/jobs/view/9", client=client, stats=stats)
-    assert stats["li_empty"] == postings.LI_RETRIES
+    result = postings.fetch_job("https://www.linkedin.com/jobs/view/9", client=client,
+                                snippet="teaser", stats=stats)
+
+    assert stats["li_empty"] == 1, "one request, not six, for a page that answered"
+    assert result.description == "teaser", "the usable snippet still survives"
+
+
+def test_a_posting_that_is_gone_is_not_asked_six_times():
+    """404 is an answer a fresh IP cannot change. Six requests per deleted posting, on somebody's
+    paid residential proxy, for the same 404."""
+    client = FakeClient(*[FakeResponse("", 404) for _ in range(postings.LI_RETRIES)])
+    stats: dict[str, int] = {}
+    postings.fetch_job("https://www.linkedin.com/jobs/view/9", client=client,
+                       snippet="teaser", stats=stats)
+
+    assert stats["li_http_404"] == 1
+
+
+def test_throttling_and_server_errors_keep_every_attempt():
+    """The other half of the rule: 429 and 5xx are exactly what the IP rotation exists for, so they
+    are not swept up by the change above."""
+    client = FakeClient(*[FakeResponse("", 429) for _ in range(postings.LI_RETRIES)])
+    stats: dict[str, int] = {}
+    postings.fetch_job("https://www.linkedin.com/jobs/view/9", client=client,
+                       snippet="teaser", stats=stats)
+    assert stats["li_http_429"] == postings.LI_RETRIES
+
+    client = FakeClient(*[FakeResponse("", 503) for _ in range(postings.LI_RETRIES)])
+    stats = {}
+    postings.fetch_job("https://www.linkedin.com/jobs/view/9", client=client,
+                       snippet="teaser", stats=stats)
+    assert stats["li_http_503"] == postings.LI_RETRIES
 
 
 def test_a_transport_error_never_escapes():
