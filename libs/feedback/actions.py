@@ -52,7 +52,6 @@ class FeedbackResult:
     # Whether this changed anything. A second tap on the same button is a person checking it
     # registered, not a new opinion — and it must not enqueue a second retrain.
     changed: bool
-    labels_since_train: int
 
 
 def record(session: Session, user_id: _uuid.UUID, job_id: int, action: str, *,
@@ -84,7 +83,7 @@ def record(session: Session, user_id: _uuid.UUID, job_id: int, action: str, *,
         # A tap on a job this user was never shown. Not an error worth raising at somebody — the
         # message may be old and the row trimmed — but never silent either.
         logger.warning("feedback: user %s has no state for job %s", user_id, job_id)
-        return FeedbackResult(action, job_id, changed=False, labels_since_train=0)
+        return FeedbackResult(action, job_id, changed=False)
 
     changed = _apply(state, action)
     if changed and action in ("applied", "skipped"):
@@ -107,14 +106,16 @@ def record(session: Session, user_id: _uuid.UUID, job_id: int, action: str, *,
     user.last_active_at = func.now()
     session.flush()
 
-    count = session.scalar(
-        select(func.count()).select_from(UserLabel)
-        .where(UserLabel.user_id == user_id, UserLabel.source == "feedback",
-               UserLabel.profile_generation == user.profile_generation)) or 0
-
     if changed:
+        # Only counted when it is about to be written down. It used to be read on every call to
+        # feed a retrain gate that has since gone — `should_retrain` is the one authority on that
+        # question — so an unchanged tap now costs one query fewer.
+        count = session.scalar(
+            select(func.count()).select_from(UserLabel)
+            .where(UserLabel.user_id == user_id, UserLabel.source == "feedback",
+                   UserLabel.profile_generation == user.profile_generation)) or 0
         audit(logger, f"feedback.{action}", user=user_id, job=job_id, feedback_labels=count)
-    return FeedbackResult(action, job_id, changed=changed, labels_since_train=count)
+    return FeedbackResult(action, job_id, changed=changed)
 
 
 def _apply(state: UserJobState, action: str) -> bool:

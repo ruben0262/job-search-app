@@ -544,3 +544,53 @@ def test_stale_high_scorers_do_not_crowd_fresh_jobs_out_of_the_pool(ctx):
     items, _dropped = pending_feed(ctx, user.id, cutoff=60.0, limit=5, rules=rules)
 
     assert [item.title for item in items] == ["Fresh Backend Engineer"]
+
+
+# ── declining to retrain is a decision, not a failure (ROADMAP 6ah) ───────────────────────────
+
+
+def test_declining_to_retrain_completes_the_job_rather_than_dead_lettering(ctx, monkeypatch):
+    """**"1 job(s) dead-lettered in the train lane" was the trainer working correctly.**
+
+    `handle` raised `Terminal` when `should_retrain` said no, and `Terminal` dead-letters — so an
+    account that added a label after its model was already current produced a red banner on the
+    operator's health page about nothing at all. A dead letter should mean work was lost.
+
+    The job asked a question, got "no", and is complete.
+    """
+    from libs.db.models import QueueJob
+    from libs.queue.worker import Terminal
+    from services.trainer import __main__ as trainer
+
+    user = _user(ctx)
+    monkeypatch.setattr(trainer, "should_retrain", lambda *_a, **_kw: False)
+
+    job = QueueJob(lane="train", user_id=user.id, payload={}, state="claimed")
+    ctx.add(job)
+    ctx.flush()
+
+    try:
+        trainer.handle(ctx, job)
+    except Terminal as exc:                                     # pragma: no cover - the regression
+        pytest.fail(f"declining to retrain must not dead-letter: {exc}")
+
+
+def test_declining_says_so_in_the_log(ctx, monkeypatch, caplog):
+    """There is no debugger on the box, so the answer to "why did nothing retrain" has to be a
+    line somebody can grep. Removing the dead letter without leaving one would trade a false alarm
+    for silence (CLAUDE.md §7)."""
+    import logging
+
+    from libs.db.models import QueueJob
+    from services.trainer import __main__ as trainer
+
+    user = _user(ctx)
+    monkeypatch.setattr(trainer, "should_retrain", lambda *_a, **_kw: False)
+    job = QueueJob(lane="train", user_id=user.id, payload={}, state="claimed")
+    ctx.add(job)
+    ctx.flush()
+
+    with caplog.at_level(logging.INFO):
+        trainer.handle(ctx, job)
+
+    assert any("no new labels" in record.getMessage() for record in caplog.records)

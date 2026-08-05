@@ -1520,6 +1520,52 @@ one line in ten ours; the rest was `httpx` announcing every re-dating request th
 Third-party loggers are raised to WARNING (`libs.obs.logs.NOISY_LIBRARIES`) and cleared again under
 `LOG_LEVEL=DEBUG`. See CLAUDE.md §7, written the same day.
 
+### 6ah — the recurring defect, named ✅ **done 2026-08-05**
+
+**The owner asked whether this is a recurring problem. It is, it is the same one every time, and it
+is worth writing down as a rule rather than as a seventh incident.**
+
+> **Two places answer the same question, and only one of them is enforced.**
+
+Every significant defect on this platform in the last week is an instance:
+
+| What was asked twice | The two answers | What the user saw |
+|---|---|---|
+| "is the profile ready" | a column and a computed check | account looked finished, refused to work |
+| "how many jobs a day" | user config 20, a mirror at 100, `libs.limits` unlimited | *"at most 20 messages a day"* on a day it sent 908 |
+| "which jobs are waiting" | health counted `score >= 60`, the notifier used a tuned 29 | a page that could never be cleared |
+| "how many applicants is too many" | a constant, and a config field nothing wrote | 87 of 90 fresh matches dropped, invisibly |
+| "how deep does this source page" | a constant in the adapter, nothing in the panel | HiringCafe capped at 120 rows a cycle |
+| **"are there enough new labels"** | **the API's count, and `should_retrain`'s delta** | **"1 job(s) dead-lettered in the train lane"** |
+
+**This entry's instance.** `telegram_routes.TRAIN_MIN_NEW_LABELS = 5` gated on *"has this account
+produced five feedback labels at the current profile generation"* — an absolute count. The trainer's
+`should_retrain` asks *"are there five more labels than the active model was fitted on"* — a delta.
+Same name, same number, different question. So once an account passed five feedback labels the gate
+was **permanently true**: every later tap enqueued a retrain, the trainer correctly declined each
+one, and each decline dead-lettered onto the health page.
+
+Two fixes, and both matter:
+
+1. **Declining to retrain is not a failure.** `handle` raised `Terminal`, which dead-letters. A dead
+   letter should mean work was lost; this was the trainer working correctly. It now logs at INFO and
+   returns — the job asked a question, got "no", and is complete.
+2. **One authority.** The API-side gate is deleted, along with `FeedbackResult.labels_since_train`,
+   which had no other consumer. A tap *asks* for a retrain; `should_retrain` decides. Nothing is
+   lost — the ten-minute debounce and the `retrain` dedup key already collapse a burst into one job,
+   which is all the gate contributed when it happened to be right.
+
+**Why this keeps happening, and the only defence that has worked.** `services` may not import
+`services`, so a value both an API route and a worker need cannot simply be shared — and the
+tempting fix is a constant on each side plus a test asserting they are equal. That test passes while
+both are wrong, because equality is not agreement: the two `= 5`s in this entry were identical and
+still asked different questions.
+
+The defence that works is `libs`: one definition, imported by both, with no copy to drift.
+`libs.limits`, `libs.settings` and `libs.scoring.thresholds` exist for exactly this, and every fix
+above ended by moving the answer into one of them. **When a value is needed on both sides of a
+service boundary, it goes in `libs` — never two constants and a test.**
+
 ### 6af — the button that did nothing, and three more numbers nobody enforced ✅ **done 2026-08-05**
 
 Started from the owner's report that the CV and cover-letter buttons in Telegram do nothing on the

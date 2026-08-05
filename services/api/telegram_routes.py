@@ -47,7 +47,16 @@ router = APIRouter(prefix="/telegram", tags=["telegram"])
 # (`SCHEDULER_PLAN.md` §5). Below this many new feedback labels there is nothing worth refitting —
 # a model rebuilt on one extra label is not a different model, it is the same CPU spent twice.
 TRAIN_DEBOUNCE_MIN = 10
-TRAIN_MIN_NEW_LABELS = 5
+# **Removed 2026-08-05, and the removal is the fix.** This gate asked "has this account produced
+# five feedback labels at the current profile generation" and the trainer's `should_retrain` asks
+# "are there five *more* labels than the active model was fitted on". Two different questions with
+# one name and one number, so once an account passed five feedback labels the gate was permanently
+# true, every subsequent tap enqueued a retrain, and the trainer correctly declined each one — onto
+# the operator's health page as a dead letter (ROADMAP 6ah).
+#
+# The trainer is the authority now and this side does not second-guess it. Nothing is lost: the
+# debounce below and the `retrain` dedup key already collapse a burst into one job, which is all
+# this was contributing when it happened to be right.
 
 # `callback_data` is capped at 64 bytes by Telegram, so it carries an action and a job id and
 # nothing else. Everything about *who* comes from the URL and the header.
@@ -129,7 +138,7 @@ async def webhook(secret: str, request: Request, db: Session = Depends(get_db),
         # signal than a tap on "Applied", backed by spending rather than by intention. The feed
         # carries no Applied button any more, so this is where the label comes from.
         result = record(db, user.id, job_id, "applied")
-        if result.changed and result.labels_since_train >= TRAIN_MIN_NEW_LABELS:
+        if result.changed:
             enqueue(db, "train", user.id, dedup_key="retrain", delay_min=TRAIN_DEBOUNCE_MIN)
 
         enqueue(db, "docgen", user.id, payload={"job_id": job_id, "kind": kind},
@@ -140,7 +149,7 @@ async def webhook(secret: str, request: Request, db: Session = Depends(get_db),
                 "answer": f"Building your {document} — it will arrive here shortly."}
 
     result = record(db, user.id, job_id, action)
-    if result.changed and result.labels_since_train >= TRAIN_MIN_NEW_LABELS:
+    if result.changed:
         # Debounced: `run_after` in ten minutes, collapsed on the dedup key, so twenty taps in a
         # burst produce exactly one retrain ten minutes after the last of them.
         enqueue(db, "train", user.id, dedup_key="retrain", delay_min=TRAIN_DEBOUNCE_MIN)
@@ -231,7 +240,7 @@ def _build_from_link(db: Session, user: User, *, kind: str, link: str) -> dict:
     # `record` refuses, correctly for a tap on a trimmed old message and wrongly here, and the
     # paste would silently produce no training signal at all.
     result = record(db, user.id, resolved.job_id, "applied", create_missing=True)
-    if result.changed and result.labels_since_train >= TRAIN_MIN_NEW_LABELS:
+    if result.changed:
         enqueue(db, "train", user.id, dedup_key="retrain", delay_min=TRAIN_DEBOUNCE_MIN)
 
     enqueue(db, "docgen", user.id, payload={"job_id": resolved.job_id, "kind": kind},
@@ -318,5 +327,5 @@ def keyboard(job_id: int) -> dict:
     }
 
 
-__all__ = ["ACTIONS", "CALLBACK_PREFIX", "TRAIN_DEBOUNCE_MIN", "TRAIN_MIN_NEW_LABELS",
+__all__ = ["ACTIONS", "CALLBACK_PREFIX", "TRAIN_DEBOUNCE_MIN",
            "keyboard", "rating_keyboard", "router"]

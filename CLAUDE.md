@@ -58,7 +58,15 @@ What counts:
   settings or the limits catalogue, and if it does not go there now, say why.
 - **A second source of truth.** A constant beside a setting that names the same thing is the defect
   this project has shipped most often, and it is invisible: the panel shows a value, the code reads
-  the constant, and nothing errors.
+  the constant, and nothing errors. **Six of the last seven incidents were this one defect**
+  (ROADMAP 6ah): a profile-ready flag, a daily cap defined four times, a health count at a threshold
+  nobody delivered at, an applicant ceiling, two page limits, and a retrain gate.
+  - `services` may not import `services`, so the tempting fix is a constant on each side plus a test
+    asserting they are equal. **That test passes while both are wrong** — equality is not agreement.
+    Two identical `= 5`s once asked different questions: one an absolute count, one a delta.
+  - **A value needed on both sides of a service boundary goes in `libs`.** One definition, imported
+    by both, with no copy to drift. That is what `libs.limits`, `libs.settings` and
+    `libs.scoring.thresholds` are for.
 - **A value with no consumer** — a setting, timer, column or list nothing reads.
 - **A fallback that swallows a real answer.** `resolve(...) or DEFAULT` cannot express "unlimited",
   and an account set to Unlimited silently ran at the default for as long as that line existed.

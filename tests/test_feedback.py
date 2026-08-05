@@ -223,8 +223,17 @@ def test_a_burst_of_taps_produces_exactly_one_retrain(api):
         .where(QueueJob.user_id == user.id, QueueJob.lane == "train")) == 1
 
 
-def test_a_single_tap_does_not_trigger_a_retrain(api):
-    """Below the floor there is nothing worth refitting."""
+def test_the_enqueue_is_a_request_and_the_trainer_is_the_authority(api):
+    """**Two definitions of "enough new labels" put a red banner on the operator's health page.**
+
+    This side used to gate on "has this account five feedback labels at the current profile
+    generation"; `should_retrain` asks "are there five *more* labels than the active model was
+    fitted on". Two different questions with one name and one number — so once an account passed
+    five feedback labels the gate was permanently true, every later tap enqueued a retrain, and the
+    trainer correctly declined each one straight into a dead letter (ROADMAP 6ah).
+
+    So a tap asks; it does not decide. The debounce and the dedup key keep the cost at one job.
+    """
     from sqlalchemy import func, select
 
     from libs.db.models import QueueJob
@@ -235,7 +244,18 @@ def test_a_single_tap_does_not_trigger_a_retrain(api):
 
     assert session.scalar(
         select(func.count()).select_from(QueueJob)
-        .where(QueueJob.user_id == user.id, QueueJob.lane == "train")) == 0
+        .where(QueueJob.user_id == user.id, QueueJob.lane == "train")) == 1
+
+
+def test_nothing_in_the_api_second_guesses_should_retrain():
+    """The decision lives in one place. `services.api` may not import `services.trainer`, which is
+    exactly why a copy of the rule grew here — and a copy is what drifted."""
+    from pathlib import Path
+
+    body = Path("services/api/telegram_routes.py").read_text(encoding="utf-8")
+
+    assert "labels_since_train" not in body
+    assert "TRAIN_MIN_NEW_LABELS = " not in body
 
 
 def test_build_cv_queues_a_docgen_job_carrying_the_posting(api):

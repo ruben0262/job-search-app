@@ -27,9 +27,16 @@ ARTIFACT_DIR = Path(os.environ.get("MODEL_DIR", "/var/lib/jobsearch/models"))
 
 def handle(session, job: QueueJob) -> None:
     if not should_retrain(session, job.user_id):
-        # Not a failure. The queue collapsed a burst into one job and the burst turned out to be
-        # too small to be worth a fit; retrying would spend the slot on the same nothing.
-        raise Terminal("not enough new labels since the active artifact")
+        # **Not a failure, and it must not be recorded as one.** This said `raise Terminal(...)`,
+        # which dead-letters — so every label added after a model was already current produced a
+        # red "1 job(s) dead-lettered in the train lane" on the operator's health page, about the
+        # trainer correctly deciding there was nothing to fit (ROADMAP 6ah).
+        #
+        # The job is complete. It asked "is a retrain worth it", the answer was no, and the answer
+        # is logged where an operator can find it rather than paged.
+        logging.getLogger(__name__).info(
+            "trainer: %s has no new labels since its active model — nothing to fit", job.user_id)
+        return
     try:
         version = train_user(session, job.user_id, artifact_dir=ARTIFACT_DIR)
     except NotEnoughData as exc:
