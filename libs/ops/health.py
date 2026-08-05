@@ -23,7 +23,15 @@ from sqlalchemy import Float, cast, func, select, text
 from sqlalchemy.orm import Session
 
 from libs.contracts.config import migrate_config
-from libs.db.models import CorpusJob, ProxyCredential, QueueJob, User, UserConfig, UserJobState
+from libs.db.models import (
+    CorpusJob,
+    ProxyCredential,
+    QueueJob,
+    User,
+    UserConfig,
+    UserJobState,
+    UserSecret,
+)
 from libs.db.models.queue import LANES
 from libs.scoring.thresholds import cutoff_for
 
@@ -138,6 +146,23 @@ def deliverable_window(config: dict | None) -> int:
     return max([window for window in windows if window > 0], default=DEFAULT_MAX_AGE_HOURS)
 
 
+def _proxy_status(session: Session, user_id, proxy) -> str | None:
+    """What the panel should say about this account's proxy.
+
+    `None` when there is no credential row at all — that account simply has no LinkedIn tier and is
+    not broken. `"no_secret"` when the row exists and the secret behind it does not, which is the
+    state that looked healthy and was not: the row is a promise nothing fulfilled.
+
+    Reads the secret's *existence*, never its value — no decryption, one indexed lookup.
+    """
+    if proxy is None:
+        return None
+    stored = session.scalar(
+        select(func.count()).select_from(UserSecret)
+        .where(UserSecret.user_id == user_id, UserSecret.kind == "proxy")) or 0
+    return proxy.status if stored else "no_secret"
+
+
 def pending_matches(session: Session, user: User) -> int:
     """How many jobs this account is actually waiting on — the same pool the notifier would draw.
 
@@ -206,7 +231,11 @@ def user_health(session: Session) -> list[UserHealth]:
             hours_since_delivery=(
                 round((datetime.now(UTC) - last_delivery).total_seconds() / 3600, 1)
                 if last_delivery else None),
-            proxy_status=proxy.status if proxy else None,
+            # **A row is not a credential.** `_ensure_proxy_credential` creates this row when a
+            # user first saves anything, so it exists — and says `healthy` — for an account that has
+            # never stored a proxy secret at all. One live account read `healthy` while its LinkedIn
+            # tier had never run once, on the source that is 43% of the corpus (ROADMAP 6ao).
+            proxy_status=_proxy_status(session, user.id, proxy),
             proxy_mb_today=float(proxy.mb_used_today) if proxy else 0.0,
         ))
     return out

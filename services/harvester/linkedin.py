@@ -231,6 +231,14 @@ def _run_one(user: User, queries: list[dict], *, corpus: CorpusRepository,
     try:
         with store.use(user.id, "proxy") as secret:
             if secret is None:
+                # **Not a transient skip and not the same as the others.** Every other reason below
+                # clears on its own — a cap resets at midnight, a quarantine lifts. This one is
+                # permanent until the user saves a credential, and it silently costs them every
+                # LinkedIn job there is. It was counted into `skipped_no_lease` and never said
+                # (ROADMAP 6ao).
+                logger.warning(
+                    "linkedin: %s has no proxy credential — their LinkedIn tier cannot run at all "
+                    "and none of its jobs will ever reach them", user.id)
                 report.skipped_no_lease += 1
                 return False
 
@@ -239,9 +247,13 @@ def _run_one(user: User, queries: list[dict], *, corpus: CorpusRepository,
                 try:
                     lease = usage.acquire_lease(user.id, secret_resolver=lambda _ref: proxy)
                 except ProxyCapExceeded:
+                    logger.warning("linkedin: %s is at its daily proxy cap — resumes tomorrow",
+                                   user.id)
                     report.skipped_no_lease += 1
                     return False
                 if lease is None:
+                    logger.warning("linkedin: %s could not take a proxy lease — the credential is "
+                                   "quarantined or unusable", user.id)
                     report.skipped_no_lease += 1
                     return False
 

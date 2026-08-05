@@ -380,3 +380,57 @@ def test_the_count_uses_the_users_own_cutoff_not_a_constant():
         session.close()
         trans.rollback()
         conn.close()
+
+
+# ── a credential row is not a credential (ROADMAP 6ao) ────────────────────────────────────────
+
+
+def test_an_account_with_no_proxy_secret_is_warned_about_not_called_healthy():
+    """**Silent, permanent, and it halves a feed.**
+
+    `_ensure_proxy_credential` creates a `proxy_credentials` row the first time a user saves
+    anything, so the row exists — and reads `healthy` — for an account that has never stored a proxy
+    secret. One live account sat like that while its LinkedIn tier had never run once, on the source
+    that is 43% of the corpus, and the panel reported the credential healthy the whole time.
+    """
+    alerts = evaluate(health(users=[user(proxy_status="no_secret")]))
+
+    assert "proxy_missing" in keys(alerts)
+    assert any("LinkedIn" in alert.action for alert in alerts if alert.key == "proxy_missing")
+
+
+def test_an_account_with_no_proxy_row_at_all_is_not_an_alert():
+    """No row means no LinkedIn tier, which is a configuration rather than a fault. Alerting on it
+    would page about every account that never wanted one."""
+    assert "proxy_missing" not in keys(evaluate(health(users=[user(proxy_status=None)])))
+
+
+@pytestmark_db
+def test_the_status_reads_the_secret_not_just_the_row():
+    """The distinction the panel got wrong: a row saying `healthy` beside no secret at all."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from libs.db.models import ProxyCredential, User
+    from libs.ops.health import user_health
+
+    engine = create_engine(os.environ["DATABASE_URL"])
+    conn = engine.connect()
+    trans = conn.begin()
+    session = Session(bind=conn, join_transaction_mode="create_savepoint")
+    try:
+        account = User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active",
+                       active=True)
+        session.add(account)
+        session.flush()
+        # The row `_ensure_proxy_credential` writes, with its default status and no secret behind it.
+        session.add(ProxyCredential(user_id=account.id, secret_ref=f"{account.id}:proxy"))
+        session.flush()
+
+        row = next(r for r in user_health(session) if r.email == account.email)
+        assert row.proxy_status == "no_secret", (
+            "a row with no secret behind it must not report the row's own status")
+    finally:
+        session.close()
+        trans.rollback()
+        conn.close()

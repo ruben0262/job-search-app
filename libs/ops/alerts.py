@@ -138,6 +138,17 @@ def _user_alerts(health: PlatformHealth) -> list[Alert]:
                 "Tell the user: they need to reconnect the bot. Nothing is being delivered until "
                 "they do.", user.email))
 
+        if user.proxy_status == "no_secret":
+            # **Silent, permanent, and it halves a feed.** LinkedIn is the only proxied source and
+            # 43% of the corpus; an account with no proxy secret has never received a single row
+            # from it. The pass skipped that user on every run and said nothing anybody read, while
+            # the panel reported the credential healthy (ROADMAP 6ao).
+            alerts.append(Alert(
+                "warn", "proxy_missing",
+                "no proxy credential, so their LinkedIn jobs have never been collected",
+                "LinkedIn is the only source that needs one and it is a large share of the "
+                "corpus. Ask them to save a proxy URL under Your details.", user.email))
+
         if user.proxy_status == "quarantined":
             alerts.append(Alert(
                 "warn", "proxy_quarantined",

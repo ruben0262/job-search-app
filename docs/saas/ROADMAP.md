@@ -1328,6 +1328,48 @@ Extracted at ingest as 6w describes, then available as cheap pre-score filters. 
 6. **Seniority** — junior / mid / senior / lead. The most frequently mis-stated field in any
    posting, so the last one to trust and the one most likely to need a confidence floor.
 
+### 6ao — an account whose LinkedIn tier had never run once ✅ **done 2026-08-05**
+
+**Chasing "Andras stopped receiving jobs" to the bottom, and it was not the delivery path at all.**
+
+`user_secrets` for that account holds `claude_oauth` and `telegram_bot`. **No `proxy`.** LinkedIn is
+the only proxied source and 43% of the corpus, so every LinkedIn pass since the account was created
+did this and returned:
+
+```python
+with store.use(user.id, "proxy") as secret:
+    if secret is None:
+        report.skipped_no_lease += 1
+        return False
+```
+
+Silently. Four different skip reasons — no credential, daily cap reached, quarantined lease, no
+lease — all incremented one counter named `skipped_no_lease`, and the cycle summary printed the
+number with no user and no reason. Three of those four clear on their own; **this one is permanent
+until somebody saves a credential**, and it costs the user every LinkedIn job there is.
+
+**And the panel said the credential was healthy.** `_ensure_proxy_credential` writes a
+`proxy_credentials` row the first time a user saves anything at all, with a default status of
+`healthy`. The row existed, the secret behind it never did, and nothing compared the two —
+`proxy_credentials.status` is a fact about a row, not about a credential. Live state: `status
+healthy, mb_used_today 0.000, last_used_at NULL`. Three columns each telling the truth and together
+describing an account that was working.
+
+Fixed on both sides:
+
+- `user_health` reads whether the secret **exists** — one indexed count, never a decryption — and
+  reports `no_secret` where the row would have claimed its own status. A missing row still reports
+  `None`, because an account with no LinkedIn tier is a configuration and not a fault.
+- A `proxy_missing` warning naming the account, saying what it costs and what to do.
+- The harvester logs each skip reason separately, at WARNING, with the user id. A cap that resets
+  tonight and a credential that will never arrive are not the same event and should not have been
+  the same counter.
+
+**The general lesson is the one this project keeps relearning**: a row created as a placeholder is a
+promise, and nothing was checking that anything fulfilled it. Same shape as
+`telegram_webhook_secret` in 6af — a column with no producer — and found the same way, by following
+a user-visible symptom rather than by reading code.
+
 ### 6an — the pre-score filter, measured before it was written (added 2026-08-05)
 
 **The centroid chosen in 6z.1, built and measured against the live corpus.** The library is in
