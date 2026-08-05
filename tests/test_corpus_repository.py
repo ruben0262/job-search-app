@@ -447,3 +447,57 @@ def test_a_posting_is_never_recorded_as_published_after_we_found_it(repo):
     corpus.set_posting_metadata(job_id, posted_at=older)
     s.flush()
     assert s.get(CorpusJob, job_id).posted_at == older
+
+
+# ── the working arrangement, classified when the text arrives (ROADMAP 6aj) ───────────────────
+
+
+def test_a_description_arriving_classifies_the_working_arrangement(repo):
+    """**The filter that was barely running.** `workfilter.classify` has always read the
+    description — it just never saw one. At ingest a row has a title, a location and whatever
+    snippet the source sent, and LinkedIn sends none, so `workplace` was set on 3% of LinkedIn rows
+    on the source that is 43% of the corpus.
+
+    The description arriving is the event that makes the classification possible, so that is where
+    it happens.
+    """
+    repo, session = repo
+    job_id = repo.add(url=f"https://example.com/{uuid.uuid4()}", source="linkedin",
+                      title="Backend Engineer", company="Acme", location="Berlin")
+    session.flush()
+    assert session.get(CorpusJob, job_id).workplace is None, "nothing to classify from yet"
+
+    repo.set_description(job_id, "We are a fully remote team and this role is remote. " * 8)
+    session.flush()
+
+    assert session.get(CorpusJob, job_id).workplace == "remote"
+
+
+def test_the_page_s_own_tag_is_never_overwritten_by_the_guess(repo):
+    """LinkedIn's workplace pill and schema.org's `jobLocationType` are the real tag on the page.
+    A heuristic over the advert's prose must not replace one — that is the difference between
+    reading a posting and second-guessing it."""
+    repo, session = repo
+    job_id = repo.add(url=f"https://example.com/{uuid.uuid4()}", source="linkedin",
+                      title="Backend Engineer", company="Acme", location="Berlin")
+    repo.set_posting_metadata(job_id, workplace="onsite")
+    session.flush()
+
+    repo.set_description(job_id, "This is a fully remote position, work from anywhere. " * 8)
+    session.flush()
+
+    assert session.get(CorpusJob, job_id).workplace == "onsite"
+
+
+def test_an_unreadable_description_leaves_the_arrangement_unknown(repo):
+    """Unknown means keep, here as everywhere else. Guessing "onsite" from silence would quietly
+    drop every remote job whose advert never uses the word."""
+    repo, session = repo
+    job_id = repo.add(url=f"https://example.com/{uuid.uuid4()}", source="test",
+                      title="Backend Engineer", company="Acme", location="Berlin")
+    session.flush()
+
+    repo.set_description(job_id, "We build things. You will build things with us. " * 8)
+    session.flush()
+
+    assert session.get(CorpusJob, job_id).workplace is None

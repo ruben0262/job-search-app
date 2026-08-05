@@ -265,3 +265,94 @@ def test_the_picker_offers_exactly_what_the_schema_allows():
         f"the picker offers places the server will refuse: {sorted(offered - allowed)}")
     assert allowed - offered == set(), (
         f"the schema allows places the picker never shows: {sorted(allowed - offered)}")
+
+
+# ── reading the code beside a city (ROADMAP 6aj) ──────────────────────────────────────────────
+
+
+def test_a_trailing_iso_code_places_a_city_we_do_not_know():
+    """SmartRecruiters writes `City, CC` and a quarter of its rows were unplaceable without this."""
+    assert read_country("Toulouse, FR") == "FR"
+    assert read_country("Tallinn, EE") == "EE"
+    assert read_country("Ho Chi Minh, VN") == "VN"
+    assert read_country("Sofia, BG") == "BG"
+
+
+def test_a_trailing_us_state_code_is_the_united_states():
+    """LinkedIn's house style for American postings, and the largest single block of unresolved
+    rows before it was read."""
+    assert read_country("Springfield, MO") == "US"
+    assert read_country("Overland Park, KS") == "US"
+    assert read_country("Cedar Rapids, IA") == "US"
+    assert read_country("Somewhere, NJ") == "US"
+
+
+def test_a_code_that_means_two_things_is_refused_rather_than_guessed():
+    """**`Stuttgart, DE` is Germany and `Wilmington, DE` is Delaware.**
+
+    Twelve such collisions occur in the live corpus. A guess that resolves the wrong way hides a
+    European job behind a US label, and rule 2 of this module is that a wrong country is the one
+    error that costs somebody a role. Unknown is free; wrong is not.
+    """
+    from libs.corpus.geo import _AMBIGUOUS_CODES
+
+    # Derived from the two tables rather than typed, so adding a country cannot silently start
+    # resolving a US state to it.
+    assert {"DE", "IN", "CA", "CO", "MD"} <= _AMBIGUOUS_CODES
+
+    # A city we do not know, beside a code that could be either: no answer.
+    assert read_country("Nowheresville, DE") is None
+    assert read_country("Nowheresville, IN") is None
+
+    # **The cost of that refusal, stated rather than hidden.** `Reutlingen, DE` is a real German
+    # posting we decline to place because Reutlingen is not in the table and `DE` is also Delaware.
+    # It passes the filter unfiltered, which is the right failure — the alternative is labelling
+    # Wilmington jobs as German.
+    assert read_country("Reutlingen, DE") is None
+
+    # A code that belongs to only one of the two resolves normally, in both directions.
+    assert read_country("Nowheresville, PA") == "US"     # Pennsylvania; no country uses PA here
+    assert read_country("Nowheresville, HU") == "HU"     # Hungary; no US state uses HU
+
+
+def test_a_known_city_settles_an_ambiguous_code():
+    """Which is what makes refusing the ambiguous ones affordable: the collisions that actually
+    occur are all cities the table knows, so the code beside them is never consulted."""
+    assert read_country("Stuttgart, DE") == "DE"
+    assert read_country("Bengaluru, IN") == "IN"
+    assert read_country("Atlanta, GA") == "US"
+    assert read_country("Philadelphia, PA") == "US"
+    assert read_country("San Francisco, CA") == "US"
+
+
+def test_the_longest_place_name_wins_not_the_earliest():
+    """"US Remote - Berlin" is a Berlin job. Taking the first match in the string rather than the
+    longest name would read it as American — and this is the rule the old scan encoded by sorting
+    the table, so the single-pass rewrite has to keep it."""
+    assert read_country("US Remote - Berlin") == "DE"
+    assert read_country("Remote, Netherlands") == "NL"
+
+
+def test_a_posting_that_names_no_place_stays_unknown():
+    """Rule 2. Remote-first boards say "Worldwide" and mean it, and an unreadable country is a pass
+    rather than a rejection — dropping these would throw away the most portable jobs there are."""
+    for nothing in ("", "   ", "Remote", "Remote job", "Worldwide", "Anywhere", "Homeoffice"):
+        assert read_country(nothing) is None, nothing
+
+
+def test_reading_a_country_is_fast_enough_for_ingest():
+    """**Every posting entering the corpus pays this**, so it is a throughput number rather than a
+    nicety. The name-at-a-time scan cost 64 microseconds against a table of 400 names; one pass
+    costs about five, and this fails long before a future edit makes it a problem again.
+    """
+    import time
+
+    samples = ["Toulouse, FR", "Berlin, Germany", "San Francisco, CA", "", "Remote",
+               "Warszawa", "London, England, UK", "Nowheresville, DE"]
+    started = time.perf_counter()
+    for _ in range(2_000):
+        for sample in samples:
+            read_country(sample)
+    per_call = (time.perf_counter() - started) / (2_000 * len(samples))
+
+    assert per_call < 50e-6, f"{per_call * 1e6:.0f} microseconds per posting is too slow for ingest"

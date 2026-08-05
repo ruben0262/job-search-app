@@ -36,6 +36,7 @@ from sqlalchemy import func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
+from libs.corpus import workfilter
 from libs.corpus.keys import canonical_url, content_key
 from libs.db.models import CorpusJob
 
@@ -262,6 +263,22 @@ class CorpusRepository:
         # behind it would date the *next* embed to before its own text arrived, and the latency
         # page would read that as a negative span.
         job.embedded_at = None
+
+        # **Classify the working arrangement now the text exists, if nothing authoritative has.**
+        #
+        # `workfilter.classify` has always read the description — it just never saw one. At ingest a
+        # row has a title, a location and whatever snippet the source sent, and LinkedIn sends none:
+        # measured 2026-08-05, `workplace` was set on **3% of LinkedIn rows and 4% of the last
+        # week's**, on the source that is 43% of the corpus. So the remote/hybrid/onsite filter was
+        # barely running on most of the platform's jobs (ROADMAP 6aj).
+        #
+        # Here rather than in the describe pass because *the description arriving* is exactly the
+        # event that makes the classification possible, and there are three callers that attach one.
+        # Only when it is still unknown: LinkedIn's own workplace pill and schema.org's
+        # `jobLocationType` are the real tag on the page, and a heuristic must never overwrite them.
+        if job.workplace is None:
+            job.workplace = workfilter.classify(
+                job.title, job.location or "", description, job.is_remote)
         return True
 
     def awaiting_description(self, *, limit: int = 200, linkedin: bool | None = None,
