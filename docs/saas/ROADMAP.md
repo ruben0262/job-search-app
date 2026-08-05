@@ -1328,6 +1328,77 @@ Extracted at ingest as 6w describes, then available as cheap pre-score filters. 
 6. **Seniority** — junior / mid / senior / lead. The most frequently mis-stated field in any
    posting, so the last one to trust and the one most likely to need a confidence floor.
 
+### 6z.1 — the plan reviewed against live numbers, before writing any of it (added 2026-08-05)
+
+**The owner asked for faults to be found first. Five, and the first one is fatal to the design as
+written.**
+
+**Fault 1 — dedup eats the evidence, so the co-occurrence matrix would be empty by construction.**
+The whole design rests on one posting being found by two keywords. Measured from three consecutive
+harvests:
+
+```
+harvest: 84 queries, 1253 links, 1235 duplicates, 18 new
+harvest: 84 queries, 1282 links, 1261 duplicates, 21 new
+harvest: 84 queries, 1059 links, 1038 duplicates, 21 new
+```
+
+**98.5% of every harvest is a row we already hold**, and the upsert loop's duplicate branch does
+`touch_last_seen` and `continue` — the keyword that found it a second time is discarded. Step 1 says
+"one join table written at ingest". Written at *insert*, it would capture 18 observations of 1,253:
+every row would carry exactly one keyword, no two keywords would ever co-occur, and the clustering
+would produce nothing. **It would not raise.** It would produce empty groups and a filter that
+labels nothing, which is this project's signature failure.
+
+The fix is one line of placement, and it has to be stated now or it will be got wrong: **the keyword
+is recorded on the duplicate path too.** That is where 98.5% of the evidence is.
+
+**Fault 2 — 39% of rows can never carry a keyword.** Of 18,160 rows in the last seven days, **7,136
+came from sources that take no query at all** (ATS boards, arbeitnow, feed-shaped aggregators). Step
+4 lists this as open; it is not a tail, it is two fifths of the corpus and the single largest block.
+
+**Fault 3 — degenerate at current scale.** The label space is the platform's 28 distinct keywords
+across two accounts. Clustering 28 terms yields perhaps three groups, and step 3 — "match a user to
+their nearest cluster" — is vacuous when every user is already in every cluster. The design needs
+tens of accounts before it describes anything.
+
+**Fault 4 — circular, and it fails hardest exactly where it is needed.** `job_field` derived from
+user keywords can only name fields users already search. A posting in an unsearched field gets no
+cluster, stays unlabelled and — correctly, by the rule in 6w — passes unfiltered. So the jobs the
+filter cannot label are precisely the jobs it was meant to stop scoring, and the CPU saving is not
+realised for them. Combined with fault 2, the filter might cover well under half the corpus.
+
+**Fault 5 — cluster identity drifts.** "Each group gets a stable label", but groups recomputed as
+new keywords arrive will move. A posting labelled `backend` today can be `data` next week, and a
+user's filter set against a cluster id silently changes what they receive.
+
+#### The alternative this comparison suggests
+
+**Every row already has a vector — 100% of 22,992 — and every user already has a trained model
+fitted on their own labels.** A pre-score filter can be a cosine distance from the posting's
+embedding to the centroid of that user's positive labels, thresholded. One dot product per row.
+
+Against the five faults: it needs no keyword, so faults 1 and 2 do not arise; it needs no taxonomy,
+so 3 and 5 do not arise; and it is not circular, because the centroid moves with what the user
+actually labelled rather than with what they typed. It works on ATS rows on day one.
+
+It is also strictly simpler — no join table, no clustering job, no cluster registry, no cold-start
+seeding — which is rule 1. The cost is that it is per user rather than shared: a centroid per
+account, and a dot product per candidate row rather than an indexed equality. At 768 dimensions
+that is microseconds, against the model call it replaces.
+
+**What `job_field` still buys that the centroid does not**: a label a human can read, put in the
+admin panel, and reason about — "this account is being shown 400 data-engineering jobs a day".
+That is a real product benefit and it is not nothing. But it is a *reporting* benefit, and the
+filter can be the centroid while the label, if wanted later, is computed separately and owes nothing
+to it.
+
+**Recommendation: build the centroid filter, and defer the taxonomy.** Not because 6z is wrong in
+principle — the co-occurrence idea is sound and the observation behind it is correct — but because
+it needs a scale the platform does not have yet, and the thing it is needed for can be had now with
+less machinery. **The owner decides; this entry exists so the decision is available rather than
+discovered after the join table is built.**
+
 ### 6z — job fields, discovered from what actually found the job (added 2026-08-04)
 
 **The owner's design, and it is better than the classifier 6w first proposed.** Stage 2.
