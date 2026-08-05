@@ -29,6 +29,19 @@ from libs.db.models import PlatformSetting
 # to, and a longer cadence spends that lead time doing nothing.
 DELIVERY_INTERVAL_MIN = 15
 
+# **How often the platform's one-shots run, and the only schedule number in the tree.**
+#
+# Harvest, the LinkedIn tier and the health probe all tick at this rate; the systemd units carry the
+# same figure because systemd cannot read Python, and `tests/test_schedules.py` fails if they ever
+# disagree. That test is the mechanism — the numbers were identical by hand and one of them was
+# still wrong for weeks (ROADMAP 6ap).
+#
+# The invariant that matters more than the value: **a one-shot must finish inside its own tick.**
+# `linkedin.service` carried `TimeoutStartSec=30min` against a 15-minute timer, so a stuck pass
+# blocked two whole ticks before systemd would even kill it — which is exactly how LinkedIn ingest
+# stopped for five hours.
+PLATFORM_TICK_MIN = 15
+
 # How fresh a posting must be, per source, in hours. The operator tunes these; the defaults are the
 # starting point rather than a ceiling.
 #

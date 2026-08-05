@@ -16,6 +16,11 @@ Requires=docker.service
 Type=oneshot
 WorkingDirectory=/home/ruben/job-search-app
 ExecStart=/usr/bin/docker compose -f deploy/compose.yml run --rm --no-deps harvester --linkedin
-# Four users at a time, up to a dozen queries each, on a rotating residential proxy. A pass that
-# runs longer than this is one where LinkedIn is throttling, and the next tick is the retry.
-TimeoutStartSec=30min
+# **Must be shorter than the timer's own interval**, or a stuck pass blocks the tick after it —
+# `Type=oneshot` means systemd will not start a run while one is active. This said 30min against a
+# 15-minute timer, so a hung pass held the tier for two full ticks before being killed, and LinkedIn
+# ingest stopped for five hours with the timer reporting no next run (ROADMAP 6ap).
+#
+# The pass bounds its own describe phase well inside this; the timeout is the backstop for the case
+# where it does not get that far.
+TimeoutStartSec=13min

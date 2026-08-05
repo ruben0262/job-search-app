@@ -1328,6 +1328,62 @@ Extracted at ingest as 6w describes, then available as cheap pre-score filters. 
 6. **Seniority** — junior / mid / senior / lead. The most frequently mis-stated field in any
    posting, so the last one to trust and the one most likely to need a confidence floor.
 
+### 6aq — every column has a producer, and four of them did not (added 2026-08-05)
+
+**A crude test, and it found four real things on its first run.** A nullable column nothing writes
+reads as NULL forever; NULL is legal, so nothing raises and the feature that depends on it is simply
+absent. `tests/test_columns_have_producers.py` greps for an assignment per declared column.
+
+| column | state | what it costs |
+|---|---|---|
+| `users.profile_context` | **no reader and no writer** | dead in both directions since 2026-07-29 |
+| `users.quota_overrides` | read, never written | per-user quota overrides are implemented and impossible to set |
+| `users.linkedin_interval_min` | read by nothing live | second source of truth: column defaults to 240, the `libs.limits` entry of the same name to 15 |
+| `proxy_credentials.daily_cap_mb` | deliberate fallback | documented at the reader; on the list so it cannot quietly become a second answer |
+
+**Recommendations**: drop `profile_context` (nothing reads it); either write `quota_overrides` from
+the admin panel or delete the merge in `quotas_for` that reads it; drop `linkedin_interval_min` from
+`users` now that `libs.limits` owns it. All three are the owner's call, which is why they are listed
+rather than done.
+
+### 6ap — thirteen clocks, one of them longer than its own tick ✅ **done 2026-08-05**
+
+**The owner's question — why does this keep breaking — answered by counting.** Sixteen defects in a
+week, and only two were wrong code. The rest were relationships:
+
+| cause | count |
+|---|---|
+| one value defined in two places | 5 |
+| a row or column with no producer or consumer | 4 |
+| a step with no bound against somebody else's clock | 4 |
+| deploy or environment drift | 2 |
+
+The third row is a single structural cause: **thirteen independent time bounds** across five systemd
+timers, seven queue lanes and Python constants, with nothing relating them. And the worst of them
+was `linkedin.service` at `TimeoutStartSec=30min` against `OnUnitActiveSec=15min` — `Type=oneshot`
+means systemd will not start a run while one is active, so a timeout longer than the interval does
+not delay the next tick, **it cancels it**. That is how LinkedIn ingest stopped for five hours.
+
+Fixed:
+
+- `libs.settings.PLATFORM_TICK_MIN` is the one schedule number; `LINKEDIN_TICK_MINUTES` — which I
+  had hand-copied from the timer file two commits earlier — is gone and the describe budget derives
+  from the tick.
+- `linkedin.service` now times out at 13min, inside its own 15min tick.
+- `tests/test_schedules.py` parses `deploy/*.timer` and `deploy/*.service` as data and asserts the
+  invariants: every one-shot finishes inside its own tick, every timer has a service and vice versa,
+  the Python tick matches the unit files, and the notify refresh plus send fit inside the notify
+  claim. Verified against the real defect — restoring `30min` fails it.
+
+**The lesson, now CLAUDE.md §6.** The suite could not catch any of these because every component was
+individually correct and the fault was *between* components. The tests that have paid for themselves
+here assert relationships — `test_schedules.py`, `test_limits_are_wired.py`,
+`test_columns_have_producers.py` — not that a function returns what it returns.
+
+**Still open: one dispatcher.** Five timers could be one process that decides what is due, which
+would remove four more schedules and their four timeouts. Larger than this entry and worth doing
+next; recorded so it is not lost.
+
 ### 6ao — an account whose LinkedIn tier had never run once ✅ **done 2026-08-05**
 
 **Chasing "Andras stopped receiving jobs" to the bottom, and it was not the delivery path at all.**

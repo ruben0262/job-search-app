@@ -77,7 +77,33 @@ Report them as a short list with a recommendation each — expose it, delete it,
 The owner decides; the job is to make sure the decision is available rather than discovered later in
 production.
 
-## 6. Green before it is pushed
+## 6. Prefer fewer failure points to more tests
+
+**Counted on 2026-08-05: sixteen defects in one week, and only two were wrong code.** The rest were
+relationships — one value defined twice, a column nothing wrote, a step allowed to outlive somebody
+else's clock. The suite could not catch any of them, because every component was individually
+correct and the fault was *between* components.
+
+So when a change adds a moving part, the question is not "can I test it" but **"can I not add it"**:
+
+- **A second clock is a second outage.** Anything with an interval, a timeout or a budget derives it
+  from the one already there. There were thirteen independent time bounds across systemd units and
+  Python, and `linkedin.service` was allowed to run for thirty minutes on a fifteen-minute timer —
+  which is not a delay but a cancelled tick.
+- **A value needed in two places goes in `libs`.** Never two constants and a test asserting they are
+  equal: that test passes while both are wrong (§5).
+- **A column, setting or row is a promise.** If nothing writes it, the feature that reads it is
+  silently absent — no error, no query failure, just NULL forever.
+  `tests/test_columns_have_producers.py` fails the build on a new one.
+- **Every hop is a place to stop.** Harvest → dedup → store → describe → embed → score → deliver are
+  seven real state changes and worth keeping; five timers, seven lanes and fifteen services around
+  them are not all load-bearing. Removing a hop is worth more than covering it.
+
+The tests that have paid for themselves here are the ones asserting a *relationship*
+(`test_schedules.py`, `test_limits_are_wired.py`, `test_columns_have_producers.py`), not the ones
+asserting a function returns what it returns.
+
+## 7. Green before it is pushed
 
 **Nothing goes to the VPS that CI would have rejected.** Pushing first and reading the result later
 means broken code is live for however long the run takes, and on this project "live" means an
@@ -114,7 +140,7 @@ pytest tests/ -v        # with DATABASE_URL set
   explicit skip *and* a note; a test needing nothing must not sit in a file that skips itself
   wholesale, or it silently never runs. That has already happened here.
 
-## 7. Logs are the only view into a running system
+## 8. Logs are the only view into a running system
 
 There is no debugger on the VPS. Whatever was not logged did not happen, and this project has
 already lost two digests and six hours of ingestion to failures that raised nothing anybody saw.

@@ -47,6 +47,7 @@ from libs.secrets import SecretStore, redacting
 from libs.secrets.keyring import SecretsError
 from libs.settings import (
     DELIVERY_INTERVAL_MIN,
+    PLATFORM_TICK_MIN,
     freshness_hours,
     queries_per_cycle,
     results_per_query,
@@ -82,9 +83,10 @@ UNLIMITED_DESCRIBES = 10_000
 # itself in seconds and leaves the rest for next time (ROADMAP 6am).
 #
 # Two thirds of the tick, so several users can still be served in one pass and the run always ends
-# before the timer wants to start another.
-LINKEDIN_TICK_MINUTES = 15
-DESCRIBE_BUDGET_SECONDS = LINKEDIN_TICK_MINUTES * 60 * 2 / 3
+# before the timer wants to start another. Read from `libs.settings`, where the tick is defined
+# once — this was a local `LINKEDIN_TICK_MINUTES = 15` hand-copied from `linkedin.timer`, which is
+# the same defect it was written to fix (ROADMAP 6ap).
+DESCRIBE_BUDGET_SECONDS = PLATFORM_TICK_MIN * 60 * 2 / 3
 
 
 @dataclass
