@@ -221,12 +221,6 @@ class User(Base):
     # `libs.profiles.grounding`, and injected into every CV and cover-letter prompt. This column was
     # the earlier design of the same idea and lost; it was never written or read (ROADMAP 6as).
 
-    # Managed Agents agent objects are created with the *user's* API key, so they live in that
-    # user's Anthropic workspace — one per user, not one per platform. Stored so re-capture reuses
-    # it: "create the agent once" still holds, it is just once per user
-    # (PROFILE_CAPTURE_PLAN.md §4.1). Anthropic ids are opaque; Text avoids bounding a string
-    # whose length is not ours to bound.
-    capture_agent_id: Mapped[str | None] = mapped_column(Text)
 
     # Per-user DEK, wrapped by the KEK. The KEK itself lives in the environment and must never reach
     # the database or its backups — that separation is the entire reason a stolen dump is useless,

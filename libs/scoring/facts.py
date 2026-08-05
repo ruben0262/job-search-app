@@ -19,8 +19,6 @@ between two runs is unattributable.
 """
 from __future__ import annotations
 
-import hashlib
-
 from libs.contracts.profile import ProfileSchema
 
 # The database is the source of truth; a worker materialises this to scratch when a session needs a
@@ -51,11 +49,6 @@ def render_facts(profile: ProfileSchema) -> str:
         _rules(profile),
     ]
     return "\n".join(section for section in sections if section).rstrip() + "\n"
-
-
-def facts_version(facts_md: str) -> str:
-    """Short hash of the rendered block, so a generated document can name what grounded it."""
-    return hashlib.sha256(facts_md.encode("utf-8")).hexdigest()[:8]
 
 
 def _identity(profile: ProfileSchema) -> str:

@@ -121,16 +121,6 @@ class TenantRepository:
         row.scored_at = func.now()
         row.scored_model_version = model_version
 
-    def mark_notified(self, user_id: _uuid.UUID, job_id: int) -> None:
-        """Delivery dedup. **Write this in the same transaction that marks the queue job done.**
-
-        The queue gives at-least-once delivery, so this row is what stops a retried job re-sending a
-        digest. Committing it separately would leave a window where the send happened and the record
-        did not — which is precisely the duplicate the protocol is supposed to make impossible
-        (`SCHEDULER_PLAN.md` §4).
-        """
-        self._state(user_id, job_id).notified_at = func.now()
-
     # ── applied log ──────────────────────────────────────────────────────────────────────────
 
     def record_applied(self, user_id: _uuid.UUID, job_id: int, *,
@@ -270,12 +260,6 @@ class TenantRepository:
     def profile(self, user_id: _uuid.UUID) -> dict | None:
         user = self._s.get(User, user_id)
         return user.profile if user is not None else None
-
-    def remember_capture_agent(self, user_id: _uuid.UUID, agent_id: str) -> None:
-        """Agent objects live in the *user's* Anthropic workspace, so reuse is per user, not global."""
-        user = self._s.get(User, user_id)
-        if user is not None:
-            user.capture_agent_id = agent_id
 
     def touch_activity(self, user_id: _uuid.UUID) -> None:
         """Record engagement. Call from login **and from every Telegram action**.

@@ -247,11 +247,6 @@ def _now_plus(minutes: int):
     return func.now() + func.make_interval(0, 0, 0, 0, 0, int(minutes)) if minutes else func.now()
 
 
-def _now_plus_column(column):
-    """`now() + <column> minutes`, where the interval comes from a per-user column."""
-    return func.now() + func.make_interval(0, 0, 0, 0, 0, column)
-
-
 def _fair_order(lane: str) -> str:
     """Round-robin: the user who has waited longest since their last completion in this lane.
 

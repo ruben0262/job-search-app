@@ -252,55 +252,6 @@ def _rss_root(resp, feed_url: str, logger, label: str):
 # ── generic RSS gather (WeWorkRemotely + Working Nomads share everything but the
 #    title format, so one loop + a per-source title parser) ─────────────────────
 
-def _gather_rss(cfg: dict[str, Any], logger, source: str,
-                parse_title) -> list[JobLink]:
-    """Fetch each configured feed, filter by pubDate recency + keywords, dedup by link.
-    parse_title(raw_title) -> (job_title, company, location)."""
-    max_age = cfg.get("max_age_hours", 24)
-    keywords: list[str] = cfg.get("keywords", [])
-    out: list[JobLink] = []
-    seen: set[str] = set()
-    ua = {"User-Agent": "Mozilla/5.0 (compatible; job-search-bot/1.0)",
-          "Accept": "application/rss+xml, text/xml, application/xml"}
-    with make_shared_client(headers=ua, follow_redirects=True) as client:
-        for feed_url in cfg.get("feeds", []):
-            try:
-                resp = client.get(feed_url)
-            except Exception as exc:
-                logger.warning("%s feed %s failed: %s", source, feed_url, exc)
-                continue
-            root = _rss_root(resp, feed_url, logger, source)
-            if root is None:
-                continue
-            for item in root.findall(".//item"):
-                raw_title = (item.findtext("title") or "").strip()
-                # <link> is sometimes an empty tag with the URL as a tail text node —
-                # ElementTree then sees no text; fall back to <guid>.
-                link = (item.findtext("link") or item.findtext("guid") or "").strip()
-                if not link or link in seen:
-                    continue
-                pub_date = _rss_date_to_iso(item.findtext("pubDate"))
-                if not is_within_hours(pub_date, max_age):
-                    continue
-                desc = re.sub(r"<[^>]+>", " ", item.findtext("description") or "").strip()
-                if keywords and not _keyword_hit(f"{raw_title} {desc}".lower(), keywords):
-                    continue
-                seen.add(link)
-                job_title, company, location = parse_title(raw_title)
-                out.append(JobLink(
-                    url=link,
-                    title=job_title or raw_title,
-                    company=company,
-                    location=location or "Remote",
-                    source=source,
-                    date_posted=pub_date,
-                    snippet=desc[:400] if desc else "",
-                    is_remote=True,
-                ))
-    return out
-
-
-
 def gather_workingnomads(cfg: dict[str, Any], logger) -> list[JobLink]:
     """Working Nomads public JSON API (/api/exposed_jobs/) — all-remote board.
 

@@ -36,9 +36,19 @@ depends_on: str | None = None
 def upgrade() -> None:
     op.drop_column("users", "quota_overrides")
     op.drop_column("users", "profile_context")
+    # The other half of the same system. Nothing reads it now that `cv_builds_per_day` is in the
+    # catalogue; the tier itself stays, because `plan_id` is a label the account page shows.
+    op.drop_column("plans", "limits")
+    # **Its only writer was `remember_capture_agent`, which nothing ever called.** The producer
+    # check found an assignment and passed — the assignment was inside dead code. Removing the dead
+    # function is what surfaced the column, which is the order these two checks work in.
+    op.drop_column("users", "capture_agent_id")
 
 
 def downgrade() -> None:
+    op.add_column("plans", sa.Column("limits", sa.dialects.postgresql.JSONB(),
+                                     nullable=False, server_default="{}"))
+    op.add_column("users", sa.Column("capture_agent_id", sa.Text(), nullable=True))
     op.add_column("users", sa.Column("profile_context", sa.Text(), nullable=True))
     op.add_column("users", sa.Column("quota_overrides",
                                      sa.dialects.postgresql.JSONB(), nullable=True))

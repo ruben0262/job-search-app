@@ -168,9 +168,6 @@ class CorpusRepository:
             .values(application_url=application_url,
                     application_canonical_url=canonical_url(application_url)))
 
-    def seen_url(self, url: str) -> bool:
-        return self._s.scalar(select(CorpusJob.id).where(CorpusJob.url == url).limit(1)) is not None
-
     def seen_canonical(self, canon: str | None) -> bool:
         if not canon:                                   # None means no opinion — never a match
             return False

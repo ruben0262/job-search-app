@@ -237,18 +237,6 @@ def parse_reposted(html_text: str) -> bool | None:
     return True
 
 
-def posted_caption(html_text: str) -> str | None:
-    """The raw "Posted 3 days ago" / "Reposted 2 weeks ago" text, or `None` where there is none.
-
-    **Kept so that "no repost has ever been detected" can be checked rather than assumed.** Across
-    2,584 LinkedIn rows the caption was found every time and `parse_reposted` said False every time,
-    which is either a true answer or a caption that never carries the word — and nothing stored
-    could tell those apart.
-    """
-    caption = _POSTED.search(html_text)
-    return caption.group(1).strip() if caption else None
-
-
 def parse_workplace(html_text: str) -> str | None:
     """`remote` | `hybrid` | `onsite` | None, in that order of evidence.
 
@@ -430,15 +418,6 @@ class Posting(dict):
 # every marker appears only to a logged-in session. Six times the bytes for the same nothing.
 #
 # `parse_easy_apply` stays: it is pure, tested, and correct the day a logged-in page exists.
-
-
-def fetch_apply_url(url: str, client: httpx.Client) -> str | None:
-    """The external ATS link on a job-board page, for cross-source dedup. Fail-soft."""
-    try:
-        response = client.get(url)
-    except Exception:
-        return None
-    return extract_ats_url(response.text) if response.status_code == 200 else None
 
 
 def fetch_posting(url: str, client: httpx.Client) -> dict[str, Any]:
