@@ -858,3 +858,44 @@ def test_workday_walks_the_number_of_pages_it_was_given():
 
     # Two pages at 20 a page, and no third request.
     assert seen == [0, 20]
+
+
+def test_a_failing_embedder_does_not_take_the_cycle_with_it(ctx):
+    """**One slow embed call killed the whole harvest, including the scoring enqueue.**
+
+    Measured on the live box: 229 rows described and waiting, an embedder answering `200 OK` with
+    `queue_depth: 0`, and an hour with no new rows — because `/embed/bulk` exceeded the client's
+    read timeout, the exception left `run_cycle`, and step 7 never ran. The gather, the ingest and
+    the describe had all succeeded and were reported as a failed cycle (ROADMAP 6ba).
+
+    Embedding is the one stage free to fail: a row stays unembedded and is picked up next cycle,
+    which is what `embed_all_pending` is built around. Everything after it is not.
+    """
+    from libs.corpus.repository import CorpusRepository
+    from services.harvester.cycle import run_cycle
+
+    session = ctx
+
+    # A row described and waiting, which is what makes the embed step actually call out.
+    corpus = CorpusRepository(session)
+    job_id = corpus.add(url=f"https://example.com/{uuid.uuid4()}", source="test",
+                        title="Backend Engineer", company="Acme")
+    corpus.set_description(job_id, "We build things with Go and gRPC. " * 20)
+    session.flush()
+
+    # A real client whose backend times out on the bulk lane and is healthy everywhere else, which
+    # is exactly the live shape: `/health` answered `200 OK` with `queue_depth: 0` throughout.
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/health":
+            return httpx.Response(200, json=SERVED)
+        raise httpx.ReadTimeout("timed out", request=request)
+
+    embedder = EmbedderClient(client=httpx.Client(
+        base_url="http://e", transport=httpx.MockTransport(handler)))
+
+    report, _deferred = run_cycle(session, embedder=embedder, source_configs={}, describe=False)
+
+    assert report.embed_error is not None, "the failure is recorded rather than swallowed"
+    assert report.embedded == 0
+    # The step after it still ran, which is the whole point.
+    assert report.scoring_enqueued >= 0

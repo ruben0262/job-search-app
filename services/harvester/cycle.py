@@ -41,7 +41,7 @@ from dataclasses import dataclass, field
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from libs.contracts.embedder import EmbedderClient, EmbedderVersion
+from libs.contracts.embedder import EmbedderClient, EmbedderError, EmbedderVersion
 from libs.corpus.ats import AtsRepository
 from libs.corpus.repository import CorpusRepository
 from libs.db.models import User
@@ -83,6 +83,10 @@ class CycleReport:
     described: int = 0
     describe_outcomes: dict[str, int] = field(default_factory=dict)
     embedded: int = 0
+    # Set when the embedder refused or timed out. **The cycle still succeeds**: those rows stay
+    # unembedded and are retried, which is far better than losing the gather, the ingest and the
+    # scoring enqueue that had already worked (ROADMAP 6ba).
+    embed_error: str | None = None
     # Per source, so "the cycle found 200 links" cannot hide "and four of six sources found none".
     links_by_source: dict[str, int] = field(default_factory=dict)
     source_failures: dict[str, str] = field(default_factory=dict)
@@ -278,10 +282,26 @@ def run_cycle(
             report.describe_outcomes = described.outcomes
 
         # 6. Embed the new rows. Once, for everyone.
+        #
+        # **A slow embedder must not take the rest of the cycle with it.** This was unguarded, so a
+        # `ReadTimeout` from `/embed/bulk` propagated out of `run_cycle`, the whole harvest reported
+        # failure, and step 7 never ran — no scoring was enqueued and nothing was delivered, on a
+        # cycle whose gather, ingest and describe had all succeeded. Measured on the live box:
+        # 229 rows described and waiting, an embedder answering `200 OK` and `queue_depth: 0`, and
+        # an hour with no new rows because every cycle died at the same step (ROADMAP 6ba).
+        #
+        # Embedding is the one stage that is free to fail: a row simply stays unembedded and is
+        # picked up next cycle, which is what `embed_all_pending` is built for. So it is logged and
+        # skipped rather than raised.
         if embedder is not None:
-            with timed("embed", report.timings):
-                result = embed_all_pending(corpus, embedder, expected=expected_embedder)
-            report.embedded = result.embedded
+            try:
+                with timed("embed", report.timings):
+                    result = embed_all_pending(corpus, embedder, expected=expected_embedder)
+                report.embedded = result.embedded
+            except EmbedderError as exc:
+                report.embed_error = str(exc)
+                logger.error("harvest: embedding failed — those rows stay unembedded and are "
+                             "retried next cycle: %s", exc)
 
         # 7. Ask the `score` lane to catch each account up.
         #
