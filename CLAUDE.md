@@ -103,42 +103,56 @@ The tests that have paid for themselves here are the ones asserting a *relations
 (`test_schedules.py`, `test_limits_are_wired.py`, `test_columns_have_producers.py`), not the ones
 asserting a function returns what it returns.
 
-## 7. Green before it is pushed
+## 7. Green before it is pushed — locally, because that is the only gate now
 
-**Nothing goes to the VPS that CI would have rejected.** Pushing first and reading the result later
-means broken code is live for however long the run takes, and on this project "live" means an
-account stops receiving jobs.
+**GitHub Actions is unavailable to this project.** As of 2026-08-06 every job on every run fails at
+setup with `Failed to resolve action download info: Service Unavailable` — including jobs that do
+nothing but check import boundaries — and runs sit queued for quarter-hours before doing it. That is
+not a signal about the code and it must not be read as one.
 
-Before every push, locally, in this order — the same gates CI runs, so a pass here is a prediction
-of a pass there:
+So the local gates are no longer a *prediction* of the check. **They are the check.** Nothing goes to
+the VPS that has not passed all six here first, and there is no backstop behind them.
+
+Before every push, locally, in this order:
 
 ```
-lint-imports            # services may not import each other; libs may not import services
+lint-imports                       # services may not import each other; libs may not import services
 ruff check .
-alembic upgrade head    # from empty, on a throwaway Postgres
-pytest tests/ -v        # with DATABASE_URL set
+alembic upgrade head               # from empty, on a throwaway Postgres
+pytest tests/ -q                   # with DATABASE_URL set — read the skip count, not just the colour
+python web/scripts/dump_openapi.py && npx openapi-typescript openapi.json -o src/api-types.ts
+git diff --exit-code web/openapi.json web/src/api-types.ts   # the contract must already be current
+npm --prefix web run build         # the site has to compile
 ```
+
+The last three used to be CI's alone, and that is exactly why they are written out here: **a gate
+nobody runs is a gate that does not exist.** The contract check caught a real break the day it was
+added, and the two before it are what would have caught it earlier.
 
 - **A skipped test is not a passing test.** Roughly 290 of them skip silently without
   `DATABASE_URL`, and the suite still prints green. Check the skip count, not just the colour.
-- **A gate is only a prediction of CI if both resolve the same versions.** Every tool that decides
-  pass or fail is capped in `requirements-dev.txt`, for the reason ruff's rules are pinned in
-  `pyproject.toml`: a release must not fail an unrelated commit. `alembic>=1.13` let CI take 1.19
-  while a laptop held 1.18.5, and 1.19 double-applies the check-constraint naming convention — so
-  the drift gate failed **every run for four days** while the same command passed locally, and the
-  local result was reported as green (ROADMAP 6al). Raise a cap deliberately, after running the
-  gate against the new version.
-- **Read the CI result, do not assume it.** `gh run list` takes a second. Four days of red runs went
-  unnoticed because the local gates were treated as the answer rather than as the prediction.
-- **Actions minutes are the owner's money.** Batch commits and push once; a docs-only change must
-  not start eleven jobs. 90% of a month's allowance went by the 5th.
-- If a gate cannot be run locally, say which one and why in the response — do not push and hope.
-- CI is the backstop, not the check. It runs the same four gates plus the embedder tier and the
-  web/OpenAPI contract, and a red run after a push is a fix under time pressure that could have
-  been a fix at leisure.
-- **New behaviour that CI cannot see is not covered.** A test needing a live stack belongs behind an
+- **Say which gate you ran and what it said, with the numbers.** "Gates green" is a claim; "1,340
+  passed, 13 skipped, contracts 2 kept" is a report. Once CI stopped answering, the only thing
+  standing between a broken push and production is whether that report is honest.
+- **A gate whose result depends on which machine ran it is not a gate.** Every tool that decides pass
+  or fail is capped in `requirements-dev.txt`, for the reason ruff's rules are pinned in
+  `pyproject.toml`. Two instances of this defect, both of which reported green locally while the
+  build was broken: `alembic>=1.13` let CI take 1.19 while a laptop held 1.18.5, and 1.19
+  double-applies the check-constraint naming convention, so the drift gate failed **every run for
+  four days** (ROADMAP 6al); and `dump_openapi.py` let Python choose the line ending, so a dump run
+  on Windows committed 4,642 CRLF lines that CI regenerated as LF — a whole-file diff in which not
+  one line had changed. Raise a cap deliberately, after running the gate against the new version.
+- If a gate cannot be run, **say which one and why in the response** — do not push and hope.
+- **New behaviour nothing runs is not covered.** A test needing a live stack belongs behind an
   explicit skip *and* a note; a test needing nothing must not sit in a file that skips itself
   wholesale, or it silently never runs. That has already happened here.
+- **Batch commits and push once.** The reason used to be that Actions minutes are the owner's money —
+  90% of a month's allowance went by the 5th. It still holds for the VPS deploy, and a docs-only
+  change should ride with the next code change rather than travel alone.
+
+**If Actions is restored**, this section goes back to reading "the local gates predict CI, read the
+CI result, do not assume it" — and the six commands above stay, because they were always the ones
+that mattered and only two of them were ever run by habit.
 
 ## 8. Logs are the only view into a running system
 

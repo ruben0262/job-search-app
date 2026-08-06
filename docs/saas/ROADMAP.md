@@ -1341,7 +1341,7 @@ Extracted at ingest as 6w describes, then available as cheap pre-score filters. 
 6. **Seniority** — junior / mid / senior / lead. The most frequently mis-stated field in any
    posting, so the last one to trust and the one most likely to need a confidence floor.
 
-### 6ax — the pipeline radar (added 2026-08-06) — **next**
+### 6ax — the pipeline radar (added 2026-08-06) ✅ **done 2026-08-06**
 
 **The owner's idea, and it is the right next thing.** One page in the admin panel showing the whole
 pipeline as it moves: every stage as a node, the count of jobs currently in each, bars that change
@@ -1789,6 +1789,101 @@ inside the same `INSERT` that sets `first_seen_at`, so the span is zero by const
 it would be a permanent green measuring nothing. **If structuring ever moves off the insert path —
 which is exactly what a heavier extractor at scale would require — it needs that row on the same
 day**, because the moment it becomes a pass of its own it becomes a pass that can back up.
+
+### 6ba — delivery had a ceiling nobody meant to keep ✅ **done 2026-08-06**
+
+**Symptom the owner reported:** LinkedIn postings arriving three hours old, against a source window
+of one hour.
+
+**It was not the filter.** LinkedIn rows are fetched at **0.6 hours old on average**, and 25 of
+5,626 in a day carry no `posted_at` at all. The postings arriving stale had spent **191–207 minutes
+in the delivery queue** — fresh when we found them, stale when we sent them.
+
+Two causes, one of which was mine from earlier the same day:
+
+1. **A run that hit its send budget left the rest until the next cadence.** A run stops at its
+   two-minute claim so a second worker cannot start the same digest — that is the fix for the
+   flood-then-silence incident (6ai) and it stays. What was wrong is what happened next: a backlog
+   drained at one run's worth every fifteen minutes while its tail aged past the freshness window and
+   was never sent at all. **576 matched postings expired unsent in 48 hours**, against 931 delivered.
+   A run now re-arms `next_run_at` and the dispatcher already inside the worker picks it straight
+   back up — no second mechanism and no new clock. Measured: **~18 every fifteen minutes became ~18
+   every fifty-five seconds**, about 24×.
+2. **The re-arm then read the wrong number.** `sent >= limit` treats a run that fetched nineteen and
+   sent seventeen — two having closed in between — as one that had emptied the queue. **What is
+   capped is the fetch.** Caught by measuring an hour after deploying, not by a test: the two
+   versions differ only when the pre-send refresh finds a posting closed, which needs the account's
+   own proxy client, so nothing in the suite can reach it. A test was written, it passed against the
+   old code, and it was deleted rather than shipped (CLAUDE.md §2).
+
+`items_per_run` is Unlimited by default now. **It was not what capped these two accounts** — both had
+it explicitly `null` already — but 10 a cycle is 960 a day, below what an account matches, and a new
+signup should not inherit a ceiling that guarantees its tail expires. `UNLIMITED_ITEMS = 200` is
+gone; what a run may fetch is derived from its budget divided by Telegram's send gap.
+
+**What still paces delivery, and should:** `send_gap_seconds`, which is Telegram's rule rather than
+ours, and the claim timeout. Both are real.
+
+---
+
+### 6bb — one filter, once, before scoring ✅ **done 2026-08-06**
+
+**The owner's instruction — "we do the filtering and the scoring beforehand, there should literally
+be nothing in the way of a job from being sent to Telegram" — and it turned out to name a defect.**
+
+The applicant ceiling, workplace mode, language and the freshness window ran **at send time**, in
+`services.notifier.eligibility`. The pre-score filter knew only about countries, freshness and
+excluded words. So a posting an account could never receive was still embedded against their model,
+scored, counted as *waiting* by the health page and by the radar — and then dropped in the last
+second before sending, by a filter neither of those pages knew about.
+
+One question with two answers, which is 6ah again. It produced three symptoms that looked unrelated:
+
+| Symptom | What it actually was |
+|---|---|
+| `1 matching job(s) waiting and last delivery was 2h ago`, permanently | `dropped {'workplace': 1}` → `notified with 0 item(s)`, every cycle |
+| A delivery queue of 395 that would not drain | mostly postings that were never going to be sent |
+| Model calls on postings already ruled out | the filter ran after the model, not before it |
+
+All four now live in `libs.tenant.filters.UserFilters.unwanted` and run in the score lane. Delivery
+keeps exactly one check — `closed`, learned from the posting's own page seconds before sending, which
+is the only thing no earlier filter could have known. `Eligibility`, `too_old` and the preference half
+of `is_eligible` went in the same commit (§3), and the tests moved to the layer the behaviour moved
+to rather than being deleted — the age window's are against a real database now, because it is a SQL
+condition.
+
+**`scripts/rejudge_scored_rows.py`** re-applies the filter to rows scored under the old arrangement:
+**7,108 cleared for one account, 2,946 for the other.** Without it the score lane would never revisit
+them — it skips anything already carrying the current `model_version` — so the alert would have
+outlived the fix.
+
+**Caught by the suite before it shipped:** `from_config` read `applicant_cap=None` as "not supplied"
+and substituted the catalogue default, turning an operator's deliberate *Unlimited* back into 200.
+`tests/test_limits_are_wired.py` exists for that exact pattern.
+
+**Open, for the owner:** the pre-send liveness refresh costs **13–24 s of every ~80 s run**. It is
+not a freshness check — it asks whether the posting is still open, the live applicant count and
+whether it is a repost — but it is a quarter of the send budget, and the closed check is the only one
+of its four answers that changes a decision.
+
+---
+
+### 6bc — GitHub Actions is unavailable (added 2026-08-06)
+
+**Every job on every run fails at setup** with `Failed to resolve action download info: Service
+Unavailable`, including jobs that do nothing but check import boundaries, and runs queue for
+quarter-hours first. Not a signal about the code.
+
+**CLAUDE.md §7 has been rewritten accordingly**: the local gates are no longer a prediction of the
+check, they *are* the check, and the three that were CI's alone — the OpenAPI contract diff and the
+web build — are now written out as commands to run by hand. A gate nobody runs is a gate that does
+not exist, and the contract one caught a real break the day it was added.
+
+**To revisit when Actions returns:** restore "read the CI result, do not assume it" to §7. Keep the
+six local commands regardless; they were always the ones that mattered and only two were ever run
+out of habit.
+
+---
 
 ### 6z — job fields, discovered from what actually found the job (added 2026-08-04)
 
