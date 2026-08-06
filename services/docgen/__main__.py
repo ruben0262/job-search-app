@@ -23,6 +23,7 @@ from contextlib import contextmanager
 
 import httpx
 
+import libs.notify as notifylib
 from libs.db.models import QueueJob
 from libs.db.session import session_scope
 from libs.llm import CLAUDE_KINDS, LlmError, client_for
@@ -119,7 +120,21 @@ def _build(session, job: QueueJob, client, bot_token: str, *, job_id: int, kind:
     try:
         return run_build(session, job.user_id, job_id, client=client,
                          send_document=send_document, token=bot_token, kind=kind, http=http)
-    except (NotBuildable, LlmError) as exc:
+    except NotBuildable as exc:
+        # **Not a failure, and it must not be recorded as one.** The account cannot build documents
+        # yet — no finished profile, no base CV — which is a state only the user can change. It was
+        # `raise Terminal(...)`, so it dead-lettered onto the operator's health page and the user,
+        # who had just been told "it will arrive shortly", heard nothing (ROADMAP 6aw).
+        #
+        # The tap is refused at the button now; this is the race where setup changed in between.
+        notifylib.notify(session, job.user_id, notifylib.DOCUMENT_NOT_READY, str(exc))
+        logger.info("docgen: %s cannot build yet — %s", job.user_id, exc)
+        return None
+    except LlmError as exc:
+        # Their credential, and the operator should see a run of these — a key that stopped working
+        # looks identical to a key that was never right, and both need somebody to notice.
+        notifylib.notify(session, job.user_id, notifylib.DOCUMENT_NOT_READY,
+                         "Your Claude credential could not build this document.")
         raise Terminal(str(exc)) from exc
     except CompileFailed as exc:
         logger.warning("docgen: compile failed for user %s, will retry: %s", job.user_id, exc)

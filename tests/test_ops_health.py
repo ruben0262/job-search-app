@@ -382,26 +382,19 @@ def test_the_count_uses_the_users_own_cutoff_not_a_constant():
         conn.close()
 
 
-# ── a credential row is not a credential (ROADMAP 6ao) ────────────────────────────────────────
+# ── the proxy is opt-in (ROADMAP 6aw) ─────────────────────────────────────────────────────────
 
 
-def test_an_account_with_no_proxy_secret_is_warned_about_not_called_healthy():
-    """**Silent, permanent, and it halves a feed.**
+def test_an_account_with_no_proxy_is_not_an_alert():
+    """**LinkedIn is opt-in, so having no proxy is a configuration rather than a fault.**
 
-    `_ensure_proxy_credential` creates a `proxy_credentials` row the first time a user saves
-    anything, so the row exists — and reads `healthy` — for an account that has never stored a proxy
-    secret. One live account sat like that while its LinkedIn tier had never run once, on the source
-    that is 43% of the corpus, and the panel reported the credential healthy the whole time.
+    This warned, on the reasoning that a missing credential silently costs an account 43% of the
+    corpus. True, and still not the operator's problem to be paged about: an account that never
+    wanted LinkedIn is not broken, and an alert that fires for a deliberate choice trains its reader
+    to ignore the next one. The status is still reported on the account page, where somebody
+    deciding whether to add one can see it.
     """
-    alerts = evaluate(health(users=[user(proxy_status="no_secret")]))
-
-    assert "proxy_missing" in keys(alerts)
-    assert any("LinkedIn" in alert.action for alert in alerts if alert.key == "proxy_missing")
-
-
-def test_an_account_with_no_proxy_row_at_all_is_not_an_alert():
-    """No row means no LinkedIn tier, which is a configuration rather than a fault. Alerting on it
-    would page about every account that never wanted one."""
+    assert "proxy_missing" not in keys(evaluate(health(users=[user(proxy_status="no_secret")])))
     assert "proxy_missing" not in keys(evaluate(health(users=[user(proxy_status=None)])))
 
 

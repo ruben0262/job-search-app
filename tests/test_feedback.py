@@ -50,6 +50,17 @@ def api():
     session.add(user)
     session.flush()
 
+    # A finished profile, because the build button now refuses without one and these tests are
+    # about the quota and the queued payload rather than about readiness. The refusal has its own
+    # test below.
+    from libs.db.models import UserProfileFile
+    from libs.profiles import GENERATION_FILES
+
+    for name in GENERATION_FILES:
+        session.add(UserProfileFile(user_id=user.id, name=name, kind="context",
+                                    content=f"Real content for {name}, with no placeholders."))
+    session.flush()
+
     job = CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test", title="Engineer")
     session.add(job)
     session.flush()
@@ -529,3 +540,28 @@ def test_a_pasted_link_from_a_channel_member_is_refused(api):
     http, *_ = api
     assert say(http, "/cv https://acme.example.com/jobs/1",
                from_id="9999999").json()["status"] == "not_yours"
+
+
+def test_a_build_is_refused_at_the_tap_when_setup_is_unfinished(api):
+    """**A dead letter about a state only the user can fix.**
+
+    Two docgen jobs sat on the operator's health page reading "this account has no confirmed
+    profile — finish onboarding first", while the user who tapped the button had been told "it will
+    arrive shortly" and heard nothing. The refusal belongs at the admission point, in the popup,
+    like the quota beside it (ROADMAP 6aw).
+    """
+    from sqlalchemy import delete, func, select
+
+    from libs.db.models import QueueJob, UserProfileFile
+
+    http, session, user, job = api
+    session.execute(delete(UserProfileFile).where(UserProfileFile.user_id == user.id))
+    session.flush()
+
+    answer = tap(http, job.id, action="bc").json()
+
+    assert answer["status"] == "not_ready"
+    assert "setup" in answer["answer"].lower(), "the popup has to say what to do about it"
+    assert session.scalar(
+        select(func.count()).select_from(QueueJob).where(QueueJob.lane == "docgen")) == 0, (
+        "nothing is queued that could only fail")

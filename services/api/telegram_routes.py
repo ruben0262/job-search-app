@@ -36,6 +36,7 @@ from libs.corpus.ondemand import NotAJobLink
 from libs.db.models import CorpusJob, User
 from libs.feedback import ACTIONS, next_to_rate, record
 from libs.obs import audit
+from libs.profiles.repository import ProfileFiles
 from libs.queue import enqueue, jobs_today
 from libs.secrets import SecretsError, SecretStore
 from services.api.deps import get_db
@@ -114,6 +115,49 @@ def _authenticate(secret: str, db: Session, header_token: str | None) -> User:
     return user
 
 
+def _build(db, user, action: str, job_id: int) -> dict:
+    """A tap on Build my CV or Build my cover letter.
+
+    Extracted from `webhook` so each refusal is one early return in a function about building,
+    rather than a seventh branch in a function about routing taps.
+    """
+    kind = "cover" if action == "build_cover" else "cv"
+
+    # **The quota is checked here, at the admission point**, never inside the worker
+    # (`TENANT_SAFETY.md` §3): a limit checked halfway through a build has already spent the
+    # Claude call it was protecting. The popup names the limit, because a button that silently
+    # does nothing is how somebody concludes the product is broken.
+    try:
+        _check_build_quota(db, user)
+    except OverBuildQuota as exc:
+        audit(logger, "telegram.build_over_quota", user=user.id, job=job_id, kind=kind)
+        return {"status": "over_quota", "answer": str(exc)}
+
+    # **Refused here rather than dead-lettered there.** An account that has not finished setup
+    # has no `context.md` and no base CV, so the build cannot succeed — and queueing it anyway
+    # produced a dead letter on the operator's health page about a state only the user can fix,
+    # while the user was told "it will arrive shortly" and nothing arrived (ROADMAP 6aw).
+    if not ProfileFiles(db, user.id).is_ready():
+        return {"status": "not_ready",
+                "answer": "Finish your setup chat first — a CV needs your profile to build "
+                          "from."}
+
+    # **A build is the positive label** (decided 2026-07-29). It spends the user's own credit,
+    # so nobody presses it on a job they are not going to apply to — which makes it a stronger
+    # signal than a tap on "Applied", backed by spending rather than by intention. The feed
+    # carries no Applied button any more, so this is where the label comes from.
+    result = record(db, user.id, job_id, "applied")
+    if result.changed:
+        enqueue(db, "train", user.id, dedup_key="retrain", delay_min=TRAIN_DEBOUNCE_MIN)
+
+    enqueue(db, "docgen", user.id, payload={"job_id": job_id, "kind": kind},
+            dedup_key=f"{kind}:{job_id}")
+    audit(logger, "telegram.build", user=user.id, job=job_id, kind=kind)
+    document = "cover letter" if kind == "cover" else "CV"
+    return {"status": "queued",
+            "answer": f"Building your {document} — it will arrive here shortly."}
+
+
 @router.post("/webhook/{secret}")
 async def webhook(secret: str, request: Request, db: Session = Depends(get_db),
                   x_telegram_bot_api_secret_token: str | None = Header(default=None)) -> dict:
@@ -144,32 +188,7 @@ async def webhook(secret: str, request: Request, db: Session = Depends(get_db),
         return {"status": "unknown_action"}
 
     if action in ("build_cv", "build_cover"):
-        kind = "cover" if action == "build_cover" else "cv"
-
-        # **The quota is checked here, at the admission point**, never inside the worker
-        # (`TENANT_SAFETY.md` §3): a limit checked halfway through a build has already spent the
-        # Claude call it was protecting. The popup names the limit, because a button that silently
-        # does nothing is how somebody concludes the product is broken.
-        try:
-            _check_build_quota(db, user)
-        except OverBuildQuota as exc:
-            audit(logger, "telegram.build_over_quota", user=user.id, job=job_id, kind=kind)
-            return {"status": "over_quota", "answer": str(exc)}
-
-        # **A build is the positive label** (decided 2026-07-29). It spends the user's own credit,
-        # so nobody presses it on a job they are not going to apply to — which makes it a stronger
-        # signal than a tap on "Applied", backed by spending rather than by intention. The feed
-        # carries no Applied button any more, so this is where the label comes from.
-        result = record(db, user.id, job_id, "applied")
-        if result.changed:
-            enqueue(db, "train", user.id, dedup_key="retrain", delay_min=TRAIN_DEBOUNCE_MIN)
-
-        enqueue(db, "docgen", user.id, payload={"job_id": job_id, "kind": kind},
-                dedup_key=f"{kind}:{job_id}")
-        audit(logger, "telegram.build", user=user.id, job=job_id, kind=kind)
-        document = "cover letter" if kind == "cover" else "CV"
-        return {"status": "queued",
-                "answer": f"Building your {document} — it will arrive here shortly."}
+        return _build(db, user, action, job_id)
 
     result = record(db, user.id, job_id, action)
     if result.changed:

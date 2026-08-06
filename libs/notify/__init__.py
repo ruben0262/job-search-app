@@ -44,6 +44,10 @@ PROCESSING_DONE = Event("processing.done", "info", "Your profile is ready to rev
 PROCESSING_FAILED = Event("processing.failed", "error", "Processing your documents failed",
                           "#/process")
 PASSWORD_CHANGED = Event("account.password_changed", "warning", "Your password was changed")
+# A build was asked for and cannot happen yet. **The user is the only one who can fix it**, so they
+# are the one told — this used to dead-letter to the operator and say nothing to anybody.
+DOCUMENT_NOT_READY = Event("document.not_ready", "warning", "A document could not be built",
+                           "#/setup")
 def notify(session: Session, user_id: _uuid.UUID, event: Event, body: str = "") -> None:
     """Record one. Never raises — a notification about a failure must not become a second failure
     inside the same transaction as the recovery it is describing."""

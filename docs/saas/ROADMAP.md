@@ -1328,6 +1328,62 @@ Extracted at ingest as 6w describes, then available as cheap pre-score filters. 
 6. **Seniority** — junior / mid / senior / lead. The most frequently mis-stated field in any
    posting, so the last one to trust and the one most likely to need a confidence floor.
 
+### 6ax — the pipeline radar (added 2026-08-06) — **next**
+
+**The owner's idea, and it is the right next thing.** One page in the admin panel showing the whole
+pipeline as it moves: every stage as a node, the count of jobs currently in each, bars that change
+as work flows, and a stage that is backing up marked red.
+
+The argument for it is not decoration. Every outage in this project's short history was a stage
+quietly stopping while everything around it looked fine — six hours of ingestion lost, LinkedIn dead
+for five hours, a notify lane nothing fed, a labeller that never started. In each case the numbers
+existed and nobody was looking at the right one, because reading them meant knowing which query to
+run. **A shape you can glance at turns "is anything stuck" from a query into a look.**
+
+The stages, which are the seven real state changes and nothing invented:
+
+```
+gather → dedup → store → describe → embed → score → deliver
+```
+
+Each shows: how many entered in the window, how many are waiting, and how long the wait is. The
+counts already exist — `CycleReport.timings`, the corpus timestamp columns, `lane_timings`, and the
+per-batch `score.timing` line. What is missing is one endpoint that assembles them and a page that
+draws it.
+
+**What it replaces**: the latency drill-down answers "how long did each handoff take" and this
+answers "where are the jobs right now". They are different questions and both are worth having, but
+the radar is the one somebody opens first.
+
+**Worth deciding when it is built**: whether it polls or streams. A poll every few seconds is a
+handful of counts and needs nothing new; a stream is a websocket and a second delivery mechanism.
+The owner's instinct is a stream, and the honest answer is that polling is enough for counts that
+change every fifteen minutes — the stream earns its keep only if the page is meant to feel live at
+the second, which is a product decision rather than a technical one.
+
+### 6aw — a dead letter about a state only the user can fix ✅ **done 2026-08-06**
+
+Two docgen jobs on the operator's health page: *"this account has no confirmed profile — finish
+onboarding first"*. The account had tapped **Build my CV** — which works now that the webhook is
+registered — and been told *"it will arrive shortly"*, and then heard nothing.
+
+Every piece behaved as written. `run_build` raised `NotBuildable`, the worker turned it into
+`Terminal`, and `Terminal` dead-letters. But an account that has not finished setup is not a
+failure, it is a state only that account can change, and the person who needs to know is the one who
+pressed the button.
+
+- **Refused at the tap**, beside the quota check and for the same reason (`TENANT_SAFETY.md` §3):
+  the popup now says "Finish your setup chat first", and nothing is queued that could only fail.
+- **In the worker it is a decision**, for the race where setup changed in between: the user gets a
+  `document.not_ready` notification and the job completes.
+- **`LlmError` stays terminal**, and also notifies. A credential that stopped working looks
+  identical to one that was never right, and a run of those is worth an operator noticing.
+
+**And the proxy alert is removed** (owner's call). LinkedIn is opt-in, so an account without a proxy
+is a configuration rather than a fault — and an alert that fires for a deliberate choice trains its
+reader to ignore the next one. The status stays on the account page, where somebody deciding
+whether to add one can see it.
+
 ### 6at — the dead-code sweep, and what the method got wrong first (done 2026-08-06)
 
 **Trimming, on the owner's instruction, with the scans that produced it.**
