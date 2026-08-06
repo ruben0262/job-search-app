@@ -1169,9 +1169,9 @@ function PipelineTab() {
               {stage.expired ? (
                 <p className="pipeline-expired">
                   {stage.expired.toLocaleString()} matched and expired unsent in the last{" "}
-                  {report.window_hours}h — this account matches faster than its per-cycle cap
-                  delivers, so the tail ages out. Raise <code>items_per_run</code> or tighten the
-                  filter.
+                  {report.window_hours}h — matched, ranked, and never shown to anybody. Sending is
+                  uncapped and re-arms itself, so this should fall to zero; if it does not, delivery
+                  is genuinely stuck rather than busy.
                 </p>
               ) : null}
             </div>

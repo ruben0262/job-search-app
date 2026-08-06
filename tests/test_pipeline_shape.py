@@ -281,3 +281,19 @@ def test_a_stage_with_no_queue_says_so_rather_than_claiming_zero(db):
     entry = stage(pipeline(db), "gather")
     assert entry["waiting"] is None
     assert entry["verdict"] == "ok"
+
+
+def test_a_job_a_worker_is_running_is_counted_as_running(db):
+    """**The queue has no state called `running`.** It is `claimed`, so the live view's one moving
+    number counted zero forever — a page built to show whether work is moving, whose "moving" could
+    not move. Shipped and caught the same afternoon by reading it against the table."""
+    from libs.db.models import QueueJob
+    from libs.ops.pipeline import pipeline
+
+    user = _account(db)
+    db.add(QueueJob(lane="notify", user_id=user.id, state="claimed",
+                    claimed_at=datetime.now(UTC), claimed_by="worker-1"))
+    db.flush()
+
+    notify = next(lane for lane in pipeline(db)["lanes"] if lane["lane"] == "notify")
+    assert notify["running"] == 1

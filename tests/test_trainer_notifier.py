@@ -728,3 +728,70 @@ def test_an_undated_row_held_past_the_window_is_not_reconsidered_every_cycle(ctx
     assert "too_old" not in dropped, (
         "the row must not reach the pool at all — reporting it as dropped means it was fetched, "
         "ranked and judged again for an answer that cannot change")
+
+
+# ── nothing stands between a scored match and Telegram ──────────────────────────────────────────
+#
+# The owner's instruction, and the measurement behind it: `items_per_run` defaulted to 10, which is
+# 960 a day against 96 cycles. Measured on the live box 2026-08-06 — 931 delivered, and **576 matched
+# postings that expired unsent**. The cap was the platform's largest single loss of work, and every
+# posting it withheld had already passed the filter and the model.
+
+
+def test_nothing_caps_a_delivery_run_by_default(ctx):
+    """**The default is Unlimited, and it has to be the default rather than a setting somebody
+    remembers.** Filtering and scoring already decided what is worth sending; a further ceiling
+    only delays a posting the platform has judged, and the product's whole claim is being early to
+    it."""
+    from libs.limits import limit_default
+
+    assert limit_default("items_per_run") is None
+
+
+def test_a_run_sends_every_match_it_has_time_for(ctx):
+    """Not ten. The old default stopped at a number unrelated to anything the run could do."""
+    user = _connected(ctx)
+    store = _store(ctx)
+    store.put(user.id, "telegram_bot", BOT_TOKEN)
+    for _ in range(14):
+        _scored(ctx, user)
+    ctx.flush()
+
+    sent = []
+    delivered = deliver(ctx, user.id, store=store, send=lambda t, c, m, k=None: sent.append(m))
+    assert delivered == 14, "a cap unrelated to the send budget withheld four of these"
+
+
+def test_a_run_that_could_not_finish_makes_the_account_due_again_now(ctx):
+    """**The other half, and the one that actually cost the 576.**
+
+    A run stops at its claim so a second worker cannot start the same digest — that stays, it is the
+    fix for the flood-then-silence incident. What was wrong is what happened next: the remainder
+    waited a full cadence, so a backlog drained at one run's worth every fifteen minutes while its
+    tail aged past the freshness window and was never sent at all.
+
+    Now the account is due immediately, and the dispatcher already running inside the worker picks
+    it straight back up — no second mechanism, no new clock.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from libs import limits
+
+    user = _connected(ctx)
+    # An explicit per-run ceiling is still honoured; it just no longer means "and then wait".
+    limits.set_limit(ctx, user.id, "items_per_run", 1)
+    store = _store(ctx)
+    store.put(user.id, "telegram_bot", BOT_TOKEN)
+    _scored(ctx, user)
+    _scored(ctx, user)
+    ctx.flush()
+
+    before = datetime.now(UTC)
+    assert deliver(ctx, user.id, store=store, send=lambda *a, **k: None) == 1
+    ctx.flush()
+    ctx.refresh(user)
+
+    assert user.next_run_at is not None
+    due = user.next_run_at if user.next_run_at.tzinfo else user.next_run_at.replace(tzinfo=UTC)
+    assert due <= before + timedelta(seconds=5), (
+        "the rest of the queue waits a whole cadence, which is how a backlog's tail expires unsent")

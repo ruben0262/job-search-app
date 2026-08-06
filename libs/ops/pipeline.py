@@ -24,11 +24,16 @@ A thousand rows moving through in a minute is fine and forty stuck for a day is 
 comes from **how long the oldest waiting row has waited**, against the tick that is supposed to
 clear it. A stage with nothing waiting is green whatever its throughput.
 
-**Delivery is the exception, and has to be.** It is capped at `items_per_run` a cycle on purpose, so
-a queue behind it is the design working rather than a fault, and an age-based colour there would be
-red every day of the platform's life. What is genuinely wrong is a posting the model matched, that
-nobody was ever shown, that is now too old to send — work the platform did and threw away. That is
-what colours the delivery row, and nothing else does.
+**Delivery is the exception, and still is after the cap was removed.** A queue there is a run that
+has not got to the end of its list yet — sending is paced at `send_gap_seconds`, which is Telegram's
+rule rather than ours, so a momentary backlog is arithmetic and not a fault. What is genuinely wrong
+is a posting the model matched, that nobody was ever shown, that is now too old to send: work the
+platform did and threw away. That is what colours this row, and nothing else does.
+
+Before 2026-08-06 that number was structural — `items_per_run` defaulted to 10, which is 960 a day
+against a match rate above it, so the tail expired by design. With the ceiling gone and a run
+re-arming itself the moment it runs out of claim, a non-zero count here now means something is
+actually stuck.
 """
 from __future__ import annotations
 
@@ -80,12 +85,11 @@ class Stage:
         **Age, not size**, for every stage that drains as fast as it can — a thousand rows moving
         through is healthy and forty stuck for a day is not.
 
-        Delivery is judged differently and has to be: `items_per_run` caps it at ten a cycle *on
-        purpose*, so a queue behind it is the design working, and colouring that red would cry wolf
-        every day of the platform's life. What is not the design working is a posting the model
-        matched, that nobody was ever shown, that is now too old to send. That is work lost, which
-        is the same bar `ERROR` is held to (CLAUDE.md §8), so it is the only thing that colours this
-        row.
+        Delivery is judged differently: sending is paced at Telegram's own rate, so a queue there
+        is a run partway through its list rather than a stage that has stopped, and an age-based
+        colour would fire on healthy behaviour. What is not healthy is a posting the model matched,
+        that nobody was ever shown, that is now too old to send. That is work lost, which is the
+        same bar `ERROR` is held to (CLAUDE.md §8), so it is the only thing that colours this row.
         """
         if self.expired is not None:
             return "down" if self.expired else "ok"
@@ -187,7 +191,10 @@ def lanes(session: Session, since: datetime) -> list[dict]:
     rows = session.execute(
         select(QueueJob.lane,
                func.count().filter(QueueJob.state == "ready").label("ready"),
-               func.count().filter(QueueJob.state == "running").label("running"),
+               # **`claimed`, not `running`.** The queue has no state called `running`, so this counted
+               # zero forever — a live view whose one moving number could never move. Shipped
+               # and caught the same afternoon, by reading it against the table.
+               func.count().filter(QueueJob.state == "claimed").label("running"),
                func.count().filter(QueueJob.state == "dead").label("dead"),
                func.count().filter((QueueJob.state == "done")
                                    & (QueueJob.finished_at >= since)).label("done"))
@@ -258,10 +265,11 @@ def _per_user_stages(session: Session, since) -> list[Stage]:
         # posting this account matched, that was never sent, and that is now too old to send. The
         # platform embedded it, scored it and ranked it, and nobody was ever shown it.
         #
-        # Delivery is capped at `items_per_run` a cycle deliberately, so a queue behind it is
-        # normal and says nothing. This says whether the cap is *lower than the account's own match
-        # rate*, which is the condition under which the queue never drains and the tail dies of old
-        # age — measured live on 2026-08-06 at 576 postings in 48 hours for one account.
+        # A queue in front of delivery says nothing on its own — sending is paced at Telegram's
+        # rate and a run works through its list. This says the queue never drained *at all* before
+        # its contents went stale, which is the condition that was structural until the per-run cap
+        # was removed: measured live on 2026-08-06 at 576 postings in 48 hours for one account,
+        # against a ceiling of 960 a day.
         expired += session.scalar(
             pending.where(*waiting, CorpusJob.closed_at.is_(None),
                           func.coalesce(CorpusJob.posted_at, CorpusJob.first_seen_at)

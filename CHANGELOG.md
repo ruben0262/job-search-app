@@ -14,6 +14,46 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-08-06 (evening)
+
+**Nothing stands between a scored match and Telegram any more**, on the owner's instruction — and
+the measurement agreed with them.
+
+`items_per_run` defaulted to **10 a cycle, which is 960 a day**. Measured on the live box: 931
+delivered and **576 matched postings that expired unsent**. Filtering and scoring had already decided
+those were worth sending; the ceiling only delayed them until they were too old to be worth
+anything. It is now unlimited by default, and the only pacing left is `send_gap_seconds`, which is
+Telegram's rule rather than ours.
+
+**The other half was the wait, not the cap.** A run stops at its claim so a second worker cannot
+start the same digest — that stays, it is the fix for the flood-then-silence incident. What was wrong
+was what happened next: the remainder waited a full fifteen-minute cadence, so a backlog drained at
+one run's worth per cycle while its tail aged past the freshness window. A run that could not finish
+now makes the account due immediately and the dispatcher already inside the worker picks it back up.
+No second mechanism and no new clock.
+
+`UNLIMITED_ITEMS = 200` is gone. It was a number with no relationship to anything — the shape of a
+fallback that swallows a real answer (CLAUDE.md §5). What a run can fetch is now derived from what it
+can physically send: its budget divided by Telegram's gap.
+
+**The freshness complaint turned out not to be a filter fault, and the measurement is the answer.**
+LinkedIn rows are fetched at **0.6 hours old on average** under the source's own 1-hour window, and
+25 of 5,626 lack a `posted_at` at all. Jobs arriving at three hours old had spent **191–207 minutes
+in the delivery queue** — the posting was fresh when we found it and stale when we sent it. Same
+cause as everything above.
+
+**And one bug in yesterday's radar: the queue has no state called `running`.** It is `claimed`, so
+the live view's one moving number counted zero forever — a page built to show whether work is moving,
+whose "moving" could not move. Found by reading it against the table the same afternoon.
+
+Measured while checking whether any of this is slow, since it was asked: the per-user filter is
+**76–280 ms of SQL** over 30,441 corpus rows and **1.7–3.6 ms of Python** for 500 rows, the score
+lane averages **1.39 s** a batch (worst 12.1 s), and notify averages **24.4 s** (worst 82.3 s)
+against a 120-second claim. Nothing here needs optimising; the numbers are recorded so that claim can
+be checked rather than believed.
+
+---
+
 ## 2026-08-06 (later)
 
 **The radar's first day found three of its own numbers lying**, which is roughly the point of

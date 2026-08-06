@@ -36,7 +36,7 @@ from datetime import UTC, datetime
 from time import monotonic, sleep
 
 import httpx
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 import libs.notify as notifylib
@@ -63,17 +63,18 @@ MAX_ITEMS_PER_DIGEST = 10
 
 # What "unlimited jobs per run" means to a query that needs a number.
 #
-# **Not "everything at once", and the difference stopped an account delivering.** The limit's own
-# description is "anything over stays queued for the next one; nothing is dropped" — so unlimited
-# means the platform withholds nothing deliberately, not that one run must clear a backlog of 1,282
-# in a single transaction. At 10,000 the candidate pool became five times that, and the ranking,
+# **Not "everything at once", and the difference stopped an account delivering.** Unlimited means
+# the platform withholds nothing deliberately, not that one run must clear a backlog of 1,282 in a
+# single transaction. At 10,000 the candidate pool became five times that, and the ranking,
 # eligibility and salary parsing over it did not finish inside the `notify` lane's two-minute claim:
 # the job was reclaimed, re-ran, and that account received nothing at all while every job reported
 # done.
 #
-# 200 is roughly twenty digests' worth. A backlog drains over a few cycles rather than never.
-UNLIMITED_ITEMS = 200
-
+# **Derived from what a run can physically send, rather than picked.** It was 200 — a number with no
+# relationship to anything, which is the shape of a fallback that swallows a real answer
+# (CLAUDE.md §5). A run is bounded by its send budget and paced by Telegram's gap, so the most it
+# can ever deliver is the one divided by the other; fetching more than that is fetching rows to
+# throw away, and fetching fewer would withhold work the run had time for.
 # **How long the sending loop may run, derived from the claim it has to finish inside.**
 #
 # This is the fix for the failure the owner described as "jobs going on and off". Sending is paced
@@ -91,6 +92,11 @@ UNLIMITED_ITEMS = 200
 # queued for the next one; nothing is dropped".
 SEND_BUDGET_SECONDS = (
     CLAIM_TIMEOUT_MIN["notify"] * 60 - REFRESH_BUDGET_SECONDS) * 0.6
+
+
+def unlimited_items(gap_seconds: float) -> int:
+    """The most one run could send if nothing stopped it, plus one to prove there is more."""
+    return int(SEND_BUDGET_SECONDS / max(gap_seconds, 0.1)) + 1
 
 # Re-exported, not redefined. The number is `libs.scoring.thresholds`, because the API's jobs table
 # needs the same one and `services` may not import `services` — and three copies of a threshold are
@@ -275,23 +281,11 @@ def deliver(session: Session, user_id: _uuid.UUID, *,
     # chosen Unlimited — and `resolve(...) or DEFAULT` turned that choice back into the default.
     # An account set to Unlimited jobs per run was silently sending ten, which is what the setting
     # was changed to stop.
-    per_day = limits.resolve(user, "notifications_per_day")
-    # Never None: `send_gap_seconds` is Telegram's rule rather than ours and forbids unlimited.
-    gap = limits.resolve(user, "send_gap_seconds") or limits.DEFAULT_SEND_GAP_SECONDS
-    per_run = limits.resolve(user, "items_per_run")
+    gap, limit = _run_budget(session, user)
+    if limit == 0:
+        return 0
 
-    if per_day is not None:
-        remaining = per_day - notifications_today(session, user_id)
-        if remaining <= 0:
-            # Over cap is not an error and not a silent drop: the items keep `notified_at IS NULL`
-            # and go out in the next window.
-            logger.info("notify: %s is at their daily cap, deferring", user_id)
-            return 0
-        # A daily ceiling bounds an unlimited per-run one; two unlimiteds stay unlimited.
-        per_run = remaining if per_run is None else min(per_run, remaining)
-
-    items, dropped = pending_feed(session, user_id, store=store, cutoff=cutoff,
-                                  limit=per_run if per_run is not None else UNLIMITED_ITEMS)
+    items, dropped = pending_feed(session, user_id, store=store, cutoff=cutoff, limit=limit)
     if dropped:
         # Counted by reason, because "delivered 2" is alarming and unactionable while "dropped 38
         # for language" is a config problem somebody can fix in a minute.
@@ -318,9 +312,16 @@ def deliver(session: Session, user_id: _uuid.UUID, *,
                     # **Stop before the claim does.** Whatever is left keeps `notified_at IS NULL`
                     # and goes out next cycle — the same fail-forward the daily cap already uses.
                     if monotonic() >= deadline:
+                        # **Straight back into the queue, not "next cycle".** A run stops at its
+                        # claim so a second worker cannot start the same digest — that is the fix
+                        # for the flood-then-silence incident and it stays. What was wrong was
+                        # what happened next: whatever did not fit waited a full cadence, so a
+                        # backlog drained at one run's worth every fifteen minutes and its tail
+                        # aged out unsent (576 postings in 48 hours, measured 2026-08-06).
+                        _deliver_again(session, user_id)
                         logger.info(
-                            "notify: %s sent %d and ran out of its send budget — the rest go next "
-                            "cycle", user_id, sent)
+                            "notify: %s sent %d and ran out of its send budget — continuing "
+                            "immediately", user_id, sent)
                         return sent
                     # **Paced, because Telegram allows 20 messages a minute to a channel.** The
                     # gap is what makes an unlimited daily ceiling safe: the old guard against
@@ -360,8 +361,54 @@ def deliver(session: Session, user_id: _uuid.UUID, *,
                     raise BotRevoked(str(exc)[:200]) from exc
                 raise
 
+    # A full batch means the limit was the binding constraint, not the supply — so there is more
+    # behind it and waiting a cadence to find out would be the same delay by another name.
+    if sent and sent >= limit:
+        _deliver_again(session, user_id)
+
     _log_freshness(session, user_id, items[:sent])
     return sent
+
+
+def _run_budget(session: Session, user: User) -> tuple[float, int]:
+    """How fast this run may send, and how many rows are worth fetching for it.
+
+    **`None` means unlimited and must not be given a fallback.** `resolve` already returns the
+    catalogue default for a limit nobody has set, so `None` is only ever the operator having chosen
+    Unlimited — and defaulting it away turned that choice back into the number it was chosen instead
+    of. An account set to Unlimited jobs per run was silently sending ten, which is what the setting
+    was changed to stop. `tests/test_limits_are_wired.py` fails the build on the pattern that did
+    it, which is why the pattern is not written out here either.
+
+    Returns `(gap, 0)` when the account is over its daily ceiling. That is not an error and not a
+    silent drop: the items keep `notified_at IS NULL` and go out in the next window.
+    """
+    # Never None: `send_gap_seconds` is Telegram's rule rather than ours and forbids unlimited.
+    gap = limits.resolve(user, "send_gap_seconds") or limits.DEFAULT_SEND_GAP_SECONDS
+    per_run = limits.resolve(user, "items_per_run")
+    per_day = limits.resolve(user, "notifications_per_day")
+
+    if per_day is not None:
+        remaining = per_day - notifications_today(session, user.id)
+        if remaining <= 0:
+            logger.info("notify: %s is at their daily cap, deferring", user.id)
+            return gap, 0
+        # A daily ceiling bounds an unlimited per-run one; two unlimiteds stay unlimited.
+        per_run = remaining if per_run is None else min(per_run, remaining)
+
+    return gap, per_run if per_run is not None else unlimited_items(gap)
+
+
+def _deliver_again(session: Session, user_id: _uuid.UUID) -> None:
+    """Make this account due again now, so the drain continues on the next dispatcher pass.
+
+    **The dispatcher is the one mechanism, and this re-arms it rather than adding a second.** It
+    already runs inside the notify worker every `DISPATCH_EVERY_SEC` and enqueues whoever is due;
+    moving `next_run_at` back to now is enough to be in that set. Enqueueing directly from here
+    would be a second producer for the same lane, and the insert would be rejected by the dedup
+    index anyway while this job is still claimed.
+    """
+    session.execute(update(User).where(User.id == user_id).values(next_run_at=func.now()))
 
 
 def _operating_point(session: Session, user_id: _uuid.UUID, requested: float) -> float:

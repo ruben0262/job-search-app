@@ -202,12 +202,20 @@ def test_unlimited_still_fits_inside_one_claim():
     The limit's own description already promises the right behaviour: anything over stays queued for
     the next run and nothing is dropped.
     """
-    from services.notifier.deliver import MAX_ITEMS_PER_DIGEST, UNLIMITED_ITEMS
+    from libs.limits import DEFAULT_SEND_GAP_SECONDS
+    from services.notifier.deliver import SEND_BUDGET_SECONDS, unlimited_items
     from services.notifier.eligibility import CANDIDATE_MULTIPLIER
 
-    assert UNLIMITED_ITEMS > MAX_ITEMS_PER_DIGEST * 10, "unlimited should be generous"
-    assert UNLIMITED_ITEMS * CANDIDATE_MULTIPLIER <= 1_000, (
+    fetched = unlimited_items(DEFAULT_SEND_GAP_SECONDS)
+
+    # **Derived from the run's own budget rather than picked**, so the two cannot drift: whatever
+    # the claim timeout or the pacing becomes, this stays the number a run could actually send.
+    assert fetched == int(SEND_BUDGET_SECONDS / DEFAULT_SEND_GAP_SECONDS) + 1
+    assert fetched * CANDIDATE_MULTIPLIER <= 1_000, (
         "the candidate pool this implies is too large to rank inside one claim")
+    # Never withhold what the run had time for: fetching fewer than it can send is a cap by
+    # accident, which is the defect this whole change removes.
+    assert fetched > SEND_BUDGET_SECONDS / DEFAULT_SEND_GAP_SECONDS
 
 
 def test_the_card_says_what_linkedin_said_about_applicants():

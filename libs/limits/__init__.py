@@ -55,9 +55,19 @@ LIMITS: tuple[Limit, ...] = (
           "How many matches reach this account in a day. Unlimited is safe now that sending is "
           "paced — the cap used to be the only guard against Telegram's rate limits, and it "
           "guarded them by withholding jobs the user had matched."),
-    Limit("items_per_run", "Jobs per delivery run", 10, "jobs",
-          "How many are sent in one 15-minute cycle. Anything over stays queued for the next one; "
-          "nothing is dropped."),
+    # **Unlimited by default, on the owner's instruction: nothing should stand between a scored
+    # match and Telegram.** Filtering and scoring already decided what is worth sending, so a
+    # further ceiling here does not protect anything — it only delays a posting the platform has
+    # already judged, and the product's whole claim is being early to it.
+    #
+    # It was 10, and 10 × 96 cycles is 960 a day: measured 2026-08-06 at 931 delivered and 576
+    # matched postings that expired unsent. The cap was the largest single loss of work on the
+    # platform. Telegram's own pacing (`send_gap_seconds`) is the only limit left, and that one is
+    # theirs rather than ours.
+    Limit("items_per_run", "Jobs per delivery run", None, "jobs",
+          "How many are sent in one cycle. Unlimited means a run keeps sending until the queue is "
+          "empty or its claim runs out, and whatever is left is picked up immediately rather than "
+          "at the next cycle."),
     Limit("send_gap_seconds", "Seconds between messages", DEFAULT_SEND_GAP_SECONDS, "seconds",
           "Telegram allows 20 messages a minute to a channel and answers 429 above it. Four "
           "seconds is 15 a minute.", allow_unlimited=False),
