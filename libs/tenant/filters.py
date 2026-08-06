@@ -1,0 +1,105 @@
+"""What one account will accept, as a set of cheap conditions applied before scoring.
+
+**The scorer and the notifier ask the same question at two points**, and until now they answered it
+separately: `services.notifier.eligibility` decided what could be *sent*, and nothing at all decided
+what was worth *scoring*. So every account's model ran over every row in the corpus, and the
+filtering happened afterwards — which is the wrong order, because the model call is the expensive
+part and the filters are microseconds.
+
+This is that question in one place, in `libs`, because both services need it and neither may import
+the other (CLAUDE.md §5).
+
+## The two layers, and why they are separate
+
+1. **SQL** — country, freshness, closed. Indexed comparisons that never fetch the row, so the cost
+   is paid by Postgres on columns built for it (`corpus.country`, `first_seen_at`). This is what
+   makes a 30,000-row corpus cheap.
+2. **In Python** — the user's own excluded words, against title and company. A `LIKE` per term per
+   row would be a sequential scan; a substring check over the few hundred rows that survived layer
+   one is nothing.
+
+The centroid (`libs.scoring.centroid`) sits between them: it needs the embedding, so it runs on what
+SQL returned, and it removes most of what is left.
+
+## Unknown always passes
+
+A posting with no country, no posted date, or no company is **kept**. That rule is the same
+everywhere in this platform and it is not a nicety: 16% of rows carry no location at all, and a
+filter that dropped them would quietly delete the most portable jobs on the board. A wrong exclusion
+costs somebody a role and is invisible; a wrong inclusion costs one model call.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
+
+from libs.contracts.config import migrate_config
+from libs.corpus.geo import wanted_countries
+from libs.ops.health import DEFAULT_MAX_AGE_HOURS
+
+
+@dataclass(frozen=True)
+class UserFilters:
+    """One account's pre-score conditions, read from their config once per batch."""
+
+    # `None` means "no country selection", which admits everywhere — never an empty set, because a
+    # set that happens to be empty and a deliberate "anywhere" must not look the same.
+    countries: frozenset[str] | None = None
+    max_age_hours: int = DEFAULT_MAX_AGE_HOURS
+    # Lower-cased terms the user typed in order *not* to see them, matched against title and
+    # company. "senior", "unpaid", a company they will not work for.
+    exclude: tuple[str, ...] = field(default_factory=tuple)
+
+    @classmethod
+    def from_config(cls, config: dict | None) -> UserFilters:
+        """Build from a stored `user_config.config`.
+
+        **Migrated before it is read.** A v1 config keeps `posted_within_hours` and
+        `exclude_keywords` at the top level while this reads sections; without the migration a v1
+        user silently gets the defaults instead of their own answers, which happened live on
+        2026-07-30.
+        """
+        config = migrate_config(config or {}) if config else {}
+        sections = config.get("sections") or []
+
+        # **The widest window across their sections, not the narrowest.** A user with six hours on
+        # one search and a week on another asked for both, and a posting cannot be attributed back
+        # to the section that found it — so the generous reading is the only one that cannot
+        # silently delete something they asked for.
+        windows = [int(section.get("posted_within_hours") or 0) for section in sections]
+
+        # **Locations live inside sections, not at the top level**, and `migrate_config` moves a
+        # v1 top-level list into one. Reading the top level returned nothing for every real config
+        # — the same shape of mistake that made `union_keywords` fetch every board's unfiltered
+        # feed while the platform behaved as though nobody had signed up (ROADMAP 6l).
+        #
+        # The union across sections, for the reason the window takes the widest: a user with the EU
+        # on one search and the UK on another asked for both, and a posting cannot be attributed
+        # back to the section that found it.
+        places = [place for section in sections for place in section.get("locations") or []]
+
+        return cls(
+            countries=wanted_countries(places),
+            max_age_hours=max([w for w in windows if w > 0], default=DEFAULT_MAX_AGE_HOURS),
+            exclude=tuple(
+                term.strip().lower()
+                for section in sections
+                for term in section.get("exclude_keywords") or []
+                if term and term.strip()),
+        )
+
+    def fresh_since(self, *, now: datetime | None = None) -> datetime:
+        """The oldest a posting may be and still be worth scoring for this account."""
+        return (now or datetime.now(UTC)) - timedelta(hours=self.max_age_hours)
+
+    def excluded(self, title: str | None, company: str | None) -> str | None:
+        """The term that rules this posting out, or `None`.
+
+        Returns *which* term rather than a boolean so the caller can log what a filter is doing —
+        "dropped 400 for 'senior'" is a config problem somebody can fix in a minute, and "dropped
+        400" is not.
+        """
+        if not self.exclude:
+            return None
+        haystack = f"{title or ''} {company or ''}".lower()
+        return next((term for term in self.exclude if term in haystack), None)

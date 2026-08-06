@@ -181,6 +181,13 @@ class CorpusJob(Base):
         # of these countries, or unreadable" — and the unreadable half is a pass, so it is answered
         # by the absence of a value rather than by an index scan over 16% of the table.
         Index("ix_corpus_country", "country", postgresql_where=text("country IS NOT NULL")),
+        # **What the score lane reads, in the order it reads it.** Newest first, and partial on the
+        # two conditions every scoring query carries: a row with no embedding cannot be scored and a
+        # closed posting has nothing to apply for. Without it the candidate query planned a
+        # sequential scan — 64 ms on 29,000 rows, and roughly a second per batch per account at the
+        # 400,000 this architecture projects (ROADMAP 6au).
+        Index("ix_corpus_scorable", text("first_seen_at DESC"),
+              postgresql_where=text("closed_at IS NULL AND embedding IS NOT NULL")),
         # Finds rows still awaiting an embedding, without scanning the whole corpus.
         # Every read of `closed_at` asks for the rows where it is NULL — nearly all of them early on
         # and a shrinking share later — so the partial index covers the open ones, not the closed.

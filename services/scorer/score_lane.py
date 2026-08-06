@@ -22,12 +22,13 @@ from __future__ import annotations
 import logging
 import uuid as _uuid
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, true
 from sqlalchemy.orm import Session
 
-from libs.db.models import CorpusJob, User, UserJobState
+from libs.db.models import CorpusJob, User, UserConfig, UserJobState
 from libs.obs import audit
 from libs.scoring import centroid
+from libs.tenant.filters import UserFilters
 from libs.tenant.repository import TenantRepository
 from services.scorer.registry import ModelRegistry, ModelUnavailable
 from services.scorer.serve import score_rows
@@ -62,6 +63,21 @@ def unscored_count(session: Session, user_id: _uuid.UUID) -> int:
                | (UserJobState.scored_model_version != user.model_version))) or 0
 
 
+def _in_countries(countries):
+    """The SQL for "in one of these countries, or we could not tell".
+
+    `None` means the account named no location, which admits everywhere — expressed as `true()`
+    rather than as an empty condition so the caller reads the same either way.
+
+    **The NULL half is the important half.** 16% of corpus rows carry no readable country, and they
+    are kept: a filter that dropped them would delete the remote-first postings, which are the most
+    portable jobs on the board (`libs.corpus.geo` rule 2).
+    """
+    if not countries:
+        return true()
+    return CorpusJob.country.is_(None) | CorpusJob.country.in_(countries)
+
+
 def score_batch(session: Session, user_id: _uuid.UUID, *, limit: int = MAX_PER_RUN) -> tuple[int, int]:
     """Score up to `limit` rows. Returns (scored, remaining).
 
@@ -77,60 +93,104 @@ def score_batch(session: Session, user_id: _uuid.UUID, *, limit: int = MAX_PER_R
         return 0, 0
 
     model = ModelRegistry(session).get(user_id)
+    filters = UserFilters.from_config(
+        session.scalar(select(UserConfig.config).where(UserConfig.user_id == user_id)))
+
     rows = session.execute(
-        select(CorpusJob.id, CorpusJob.title, CorpusJob.description,
+        select(CorpusJob.id, CorpusJob.title, CorpusJob.company, CorpusJob.description,
                CorpusJob.embedding, CorpusJob.embedding_dim, CorpusJob.embedding_version)
         .outerjoin(UserJobState,
                    (UserJobState.job_id == CorpusJob.id)
                    & (UserJobState.user_id == user_id))
         .where(CorpusJob.embedding.is_not(None),
                (UserJobState.scored_model_version.is_(None))
-               | (UserJobState.scored_model_version != user.model_version))
+               | (UserJobState.scored_model_version != user.model_version),
+               # **Nothing to apply for.** Not a preference, so it is not in `UserFilters`.
+               CorpusJob.closed_at.is_(None),
+               # **Their own freshness window, at last.** The operator's per-source setting decides
+               # how far back a *source is asked*; this is how old a posting may be and still be
+               # worth this account's model. Falls back to `first_seen_at` for the 16% of rows that
+               # carry no posted date, which is the same fallback the delivery filter uses.
+               (CorpusJob.posted_at >= filters.fresh_since())
+               | (CorpusJob.posted_at.is_(None)
+                  & (CorpusJob.first_seen_at >= filters.fresh_since())),
+               # **The country filter, finally running.** `libs.corpus.geo` had no production
+               # consumer for two days after it was written (ROADMAP 6ak); this is it. NULL passes:
+               # a posting that names no place is kept, or the most portable jobs on the board
+               # would be the first to go.
+               _in_countries(filters.countries))
+        # **Newest first.** There was no ordering at all, so a 28,000-row backlog was served in
+        # whatever order Postgres returned it and a posting found a minute ago queued behind jobs
+        # from a month back. The product's whole claim is that a job reaches somebody while it is
+        # still worth applying to (ROADMAP 6au).
+        .order_by(CorpusJob.first_seen_at.desc())
         .limit(limit)).mappings().all()
 
     if not rows:
         return 0, 0
 
-    # **The pre-score filter.** Rows too far from what this user has already accepted are recorded
-    # as scored at this model version without a model call, so they are not reconsidered every
-    # cycle — the saving is the model call, and re-asking the same question forever would spend it
-    # back (ROADMAP 6an).
+    tenant = TenantRepository(session)
+
+    def skip(job_id: int) -> None:
+        """Record a row as considered, with no score.
+
+        `pending_feed` requires `score IS NOT NULL`, so a skipped row can never be delivered, and
+        `scored_model_version` stops the lane picking it up again until the model changes — which
+        is also when the centroid and the filters were last recomputed. Without this the saving is
+        spent back re-asking the same question every cycle.
+        """
+        tenant.record_score(user_id, job_id, score=None, model_version=user.model_version)
+
+    # **The user's own excluded words, in Python rather than SQL.** A `LIKE` per term per row would
+    # be a sequential scan over the corpus; a substring check over the few hundred rows SQL already
+    # narrowed to is nothing. Counted by term, because "dropped 400 for 'senior'" is a config
+    # problem somebody can fix and "dropped 400" is not.
+    excluded: dict[str, int] = {}
+    kept = []
+    for row in rows:
+        term = filters.excluded(row["title"], row["company"])
+        if term is None:
+            kept.append(row)
+        else:
+            excluded[term] = excluded.get(term, 0) + 1
+            skip(row["id"])
+
+    # **The centroid**, on whatever survived. It needs the embedding, so it cannot run in SQL.
     #
     # `keep` returns all-True when there is no centroid, which is the fail-open: an account in cold
-    # start, or a model fitted before the column existed, has every row scored.
-    verdicts = centroid.keep([row["embedding"] for row in rows],
+    # start, or a model fitted before the column existed, has every row scored (ROADMAP 6an).
+    verdicts = centroid.keep([row["embedding"] for row in kept],
                              centroid.unpack(model.centroid) if model.centroid else [],
                              model.centroid_threshold or 0.0)
-    worth_scoring = [row for row, ok in zip(rows, verdicts, strict=True) if ok]
-    skipped = len(rows) - len(worth_scoring)
-
-    tenant = TenantRepository(session)
-    for row, ok in zip(rows, verdicts, strict=True):
+    worth_scoring = [row for row, ok in zip(kept, verdicts, strict=True) if ok]
+    for row, ok in zip(kept, verdicts, strict=True):
         if not ok:
-            # Scored at this version with no score: `pending_feed` requires `score IS NOT NULL`, so
-            # a filtered row is never delivered, and `scored_model_version` stops the lane picking
-            # it up again until the model — and with it the centroid — changes.
-            tenant.record_score(user_id, row["id"], score=None,
-                                model_version=user.model_version)
+            skip(row["id"])
 
-    rows = worth_scoring
-    if not rows:
+    off_centre = len(kept) - len(worth_scoring)
+    if not worth_scoring:
         session.flush()
-        audit(logger, "score.batch", user=user_id, scored=0, skipped=skipped,
-              remaining=unscored_count(session, user_id), model_version=user.model_version)
-        return 0, unscored_count(session, user_id)
+        remaining = unscored_count(session, user_id)
+        audit(logger, "score.batch", user=user_id, scored=0, off_centre=off_centre,
+              excluded=sum(excluded.values()), remaining=remaining,
+              model_version=user.model_version)
+        return 0, remaining
 
     bands = {"high": 0, "needs-review": 0, "skip": 0}
-    for result in score_rows(model, [dict(row) for row in rows]):
+    for result in score_rows(model, [dict(row) for row in worth_scoring]):
         tenant.record_score(user_id, result.job_id, score=result.score,
                             model_version=user.model_version)
         bands[result.decision] = bands.get(result.decision, 0) + 1
     session.flush()
 
     remaining = unscored_count(session, user_id)
-    audit(logger, "score.batch", user=user_id, scored=len(rows), skipped=skipped,
-          remaining=remaining, model_version=user.model_version, **bands)
-    return len(rows), remaining
+    if excluded:
+        # By term rather than as a total, so the reader can see which word is emptying a feed.
+        logger.info("score: %s excluded %s before scoring", user_id, excluded)
+    audit(logger, "score.batch", user=user_id, scored=len(worth_scoring), off_centre=off_centre,
+          excluded=sum(excluded.values()), remaining=remaining,
+          model_version=user.model_version, **bands)
+    return len(worth_scoring), remaining
 
 
 __all__ = ["BATCH", "MAX_PER_RUN", "ModelUnavailable", "score_batch", "unscored_count"]

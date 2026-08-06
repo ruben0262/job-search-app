@@ -288,3 +288,177 @@ def test_a_model_with_no_centroid_scores_everything(db, monkeypatch):
 
     scored, _remaining = score_lane.score_batch(session, user.id)
     assert scored == len(jobs)
+
+
+# ── the per-account pre-score filters (ROADMAP 6au) ───────────────────────────────────────────
+
+
+def _configure(session, user, **config):
+    from libs.db.models import UserConfig
+
+    session.add(UserConfig(user_id=user.id, config=config))
+    session.flush()
+
+
+def test_a_job_outside_the_users_countries_is_never_scored(db, monkeypatch):
+    """**The country filter, finally running.** `libs.corpus.geo` was written, tested forty times
+    over and imported by nothing for two days, which is why American jobs kept arriving after two
+    rounds of work on it (ROADMAP 6ak)."""
+    from services.scorer import score_lane
+
+    session, user, jobs = db
+    user.model_version = 1
+    _configure(session, user, locations=["europe"])
+    for index, job in enumerate(jobs):
+        job.country = "DE" if index < 2 else "US"
+        job.embedding = _pointing(1.0, 0.0)
+    session.flush()
+
+    model = _loaded(user, centroid_blob=None, threshold=None)
+    monkeypatch.setattr(score_lane.ModelRegistry, "get", lambda self, uid: model)
+
+    scored, _ = score_lane.score_batch(session, user.id)
+    assert scored == 2, "only the European rows reach the model"
+
+
+def test_a_posting_with_no_readable_country_is_kept(db, monkeypatch):
+    """**Unknown passes, and this is the half that matters.** 16% of corpus rows carry no readable
+    country, and they are disproportionately the remote-first postings — the most portable jobs on
+    the board would be the first thing a naive filter deleted."""
+    from services.scorer import score_lane
+
+    session, user, jobs = db
+    user.model_version = 1
+    _configure(session, user, locations=["europe"])
+    for job in jobs:
+        job.country = None
+        job.embedding = _pointing(1.0, 0.0)
+    session.flush()
+
+    model = _loaded(user, centroid_blob=None, threshold=None)
+    monkeypatch.setattr(score_lane.ModelRegistry, "get", lambda self, uid: model)
+
+    scored, _ = score_lane.score_batch(session, user.id)
+    assert scored == len(jobs)
+
+
+def test_a_stale_posting_is_not_scored(db, monkeypatch):
+    """**The user's own freshness window, applied before the model rather than after.**
+
+    The operator's per-source setting decides how far back a *source is asked*; this is how old a
+    posting may be and still be worth an account's model. Scoring a month-old job and then dropping
+    it at delivery as `too_old` is the whole cost paid for nothing.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from services.scorer import score_lane
+
+    session, user, jobs = db
+    user.model_version = 1
+    _configure(session, user, sections=[{"platform": "all", "keywords": ["x"],
+                                         "posted_within_hours": 24}])
+    now = datetime.now(UTC)
+    for index, job in enumerate(jobs):
+        job.posted_at = now - timedelta(hours=2 if index < 2 else 200)
+        job.embedding = _pointing(1.0, 0.0)
+    session.flush()
+
+    model = _loaded(user, centroid_blob=None, threshold=None)
+    monkeypatch.setattr(score_lane.ModelRegistry, "get", lambda self, uid: model)
+
+    scored, _ = score_lane.score_batch(session, user.id)
+    assert scored == 2, "only the fresh rows reach the model"
+
+
+def test_a_term_the_user_excluded_is_never_scored(db, monkeypatch):
+    """Their own words, against title and company. "senior", or a company they will not work for."""
+    from services.scorer import score_lane
+
+    session, user, jobs = db
+    user.model_version = 1
+    _configure(session, user, sections=[{"platform": "all", "keywords": ["x"],
+                                         "exclude_keywords": ["senior", "Acme Corp"]}])
+    jobs[0].title = "Senior Backend Engineer"
+    jobs[1].company = "Acme Corp"
+    for job in jobs:
+        job.embedding = _pointing(1.0, 0.0)
+    session.flush()
+
+    model = _loaded(user, centroid_blob=None, threshold=None)
+    monkeypatch.setattr(score_lane.ModelRegistry, "get", lambda self, uid: model)
+
+    scored, _ = score_lane.score_batch(session, user.id)
+    assert scored == len(jobs) - 2, "the excluded title and the excluded company both go"
+
+
+def test_the_freshest_jobs_are_scored_first(db, monkeypatch):
+    """**There was no ordering at all.**
+
+    The lane took 500 rows in whatever order Postgres returned them, so a posting found a minute ago
+    queued behind a 28,000-row backlog. The product's whole claim is that a job arrives while it is
+    still worth applying to.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from services.scorer import score_lane
+
+    session, user, jobs = db
+    user.model_version = 1
+    now = datetime.now(UTC)
+    for index, job in enumerate(jobs):
+        job.first_seen_at = now - timedelta(hours=index)      # jobs[0] newest
+        job.embedding = _pointing(1.0, 0.0)
+    session.flush()
+
+    model = _loaded(user, centroid_blob=None, threshold=None)
+    monkeypatch.setattr(score_lane.ModelRegistry, "get", lambda self, uid: model)
+
+    score_lane.score_batch(session, user.id, limit=2)
+    session.flush()
+
+    from sqlalchemy import select
+
+    from libs.db.models import UserJobState
+
+    done = {s.job_id for s in session.scalars(
+        select(UserJobState).where(UserJobState.user_id == user.id))}
+    assert done == {jobs[0].id, jobs[1].id}, "the two newest, not two arbitrary rows"
+
+
+def test_a_closed_posting_is_never_scored(db, monkeypatch):
+    """There is nothing to apply for. Not a preference, so it is not in `UserFilters`."""
+    from datetime import UTC, datetime
+
+    from services.scorer import score_lane
+
+    session, user, jobs = db
+    user.model_version = 1
+    jobs[0].closed_at = datetime.now(UTC)
+    for job in jobs:
+        job.embedding = _pointing(1.0, 0.0)
+    session.flush()
+
+    model = _loaded(user, centroid_blob=None, threshold=None)
+    monkeypatch.setattr(score_lane.ModelRegistry, "get", lambda self, uid: model)
+
+    scored, _ = score_lane.score_batch(session, user.id)
+    assert scored == len(jobs) - 1
+
+
+def test_an_account_with_no_config_is_not_filtered_into_silence(db, monkeypatch):
+    """**The fail-open across every filter at once.** A user who has answered nothing has excluded
+    nothing: no countries, no terms, and the default window. Getting this wrong empties a feed, and
+    an empty feed is indistinguishable from a quiet week."""
+    from services.scorer import score_lane
+
+    session, user, jobs = db
+    user.model_version = 1                     # no UserConfig row at all
+    for job in jobs:
+        job.embedding = _pointing(1.0, 0.0)
+    session.flush()
+
+    model = _loaded(user, centroid_blob=None, threshold=None)
+    monkeypatch.setattr(score_lane.ModelRegistry, "get", lambda self, uid: model)
+
+    scored, _ = score_lane.score_batch(session, user.id)
+    assert scored == len(jobs)
