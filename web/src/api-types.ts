@@ -283,6 +283,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/pipeline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Pipeline Shape
+         * @description Where the jobs are right now, stage by stage.
+         *
+         *     **The question the latency page cannot answer.** That one reports how long each handoff took for
+         *     postings that already made it through; this reports how many are sitting at each stage at this
+         *     moment. Every outage here so far was a stage quietly stopping while the numbers around it looked
+         *     fine, and the number that would have shown it existed the whole time (ROADMAP 6ax).
+         */
+        get: operations["pipeline_shape_admin_pipeline_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/queue/dead": {
         parameters: {
             query?: never;
@@ -2777,6 +2802,39 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    pipeline_shape_admin_pipeline_get: {
+        parameters: {
+            query?: {
+                hours?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

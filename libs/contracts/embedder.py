@@ -52,6 +52,12 @@ def pack_vector(values: list[float]) -> bytes:
     return struct.pack(f"<{len(values)}f", *values)
 
 
+# How long a caller waits for the embedder before giving up. **Named, because the harvester's batch
+# size is derived from it** — the two were independent numbers and the batch was sized so that a
+# full one could not finish inside the timeout (ROADMAP 6ba).
+DEFAULT_EMBED_TIMEOUT = 120.0
+
+
 def unpack_vector(blob: bytes) -> list[float]:
     """Read a vector back. The inverse of `pack_vector`, and the only reader of that format."""
     if len(blob) % 4:
@@ -69,7 +75,7 @@ class EmbedderClient:
     """
 
     def __init__(self, base_url: str = "http://embedder-gateway:8080",
-                 token: str | None = None, timeout: float = 120.0,
+                 token: str | None = None, timeout: float = DEFAULT_EMBED_TIMEOUT,
                  client: httpx.Client | None = None) -> None:
         headers = {"Authorization": f"Bearer {token}"} if token else {}
         # `client` is injectable so tests can drive a stub transport. Not for production use.

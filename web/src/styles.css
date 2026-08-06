@@ -2755,3 +2755,80 @@ td.num {
 .behind {
   color: #d08a34;
 }
+
+/* ── the pipeline radar ───────────────────────────────────────────────────────────────────────
+   One row per stage, in pipeline order. The bar is relative to the busiest stage rather than to an
+   absolute scale, because the question the page answers is "where is work piling up" and nobody
+   set a number that would make an absolute width mean anything. */
+.pipeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 1.25rem;
+}
+
+.pipeline-row {
+  display: grid;
+  grid-template-columns: minmax(12rem, 22rem) 1fr auto;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--hairline);
+  /* The verdict colours the left edge only. A whole row in red reads as "everything is broken"
+     when the claim is "this one boundary is slow". */
+  border-left-width: 3px;
+  border-left-color: var(--hairline);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+}
+
+.pipeline-row.warn { border-left-color: var(--ink); }
+.pipeline-row.down { border-left-color: var(--danger); }
+
+.pipeline-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.pipeline-bar-wrap {
+  height: 0.5rem;
+  background: var(--bg);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.pipeline-bar {
+  height: 100%;
+  min-width: 2px;
+  background: var(--faint);
+  border-radius: 999px;
+  /* Slow enough to read as movement rather than as a flicker on a five-second poll. */
+  transition: width 600ms ease;
+}
+
+.pipeline-row.warn .pipeline-bar { background: var(--ink); }
+.pipeline-row.down .pipeline-bar { background: var(--danger); }
+
+.pipeline-numbers {
+  display: grid;
+  grid-template-columns: auto auto auto auto auto;
+  align-items: baseline;
+  gap: 0.35rem 0.6rem;
+  white-space: nowrap;
+}
+
+.pipeline-waiting {
+  font-size: 1.35rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.pipeline-entered {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+@media (max-width: 720px) {
+  .pipeline-row { grid-template-columns: 1fr; }
+}

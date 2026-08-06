@@ -131,6 +131,25 @@ type StageDetail = {
 
 type LatencyReport = { window_hours: number; stages: StageRow[] };
 
+/** One stage as it stands right now. `entered` and `oldest_min` are `null` where the number is
+ *  genuinely unavailable — the page shows a dash, never a zero, because zero is a claim. */
+type PipelineStage = {
+  key: string;
+  label: string;
+  what: string;
+  entered: number | null;
+  waiting: number;
+  oldest_min: number | null;
+  verdict: "ok" | "warn" | "down";
+};
+
+type PipelineReport = {
+  window_hours: number;
+  stages: PipelineStage[];
+  amber_after_min: number;
+  red_after_min: number;
+};
+
 type Settings = {
   delivery_interval_min: number;
   source_freshness_hours: Record<string, number>;
@@ -165,11 +184,12 @@ const TABS: [Tab, string][] = [
   ["health", "Health"],
   ["settings", "Settings"],
   ["corpus", "Corpus"],
+  ["pipeline", "Pipeline"],
   ["latency", "Latency"],
   ["accounts", "Accounts"],
 ];
 
-type Tab = "health" | "settings" | "corpus" | "latency" | "accounts";
+type Tab = "health" | "settings" | "corpus" | "pipeline" | "latency" | "accounts";
 
 type CorpusJob = {
   id: number;
@@ -626,6 +646,7 @@ export function AdminPage() {
 
 
       {tab === "corpus" ? <CorpusTab /> : null}
+      {tab === "pipeline" ? <PipelineTab /> : null}
       {tab === "latency" ? <LatencyTab /> : null}
 
       {tab === "accounts" ? <>      <p className="kicker" style={{ marginTop: "2.5rem" }}>
@@ -1000,6 +1021,82 @@ function CorpusTab() {
  * kind from percentiles, which is exactly why they sit behind a disclosure rather than in six more
  * columns nobody reads (ROADMAP 6p).
  */
+
+/** **Where the jobs are, right now.** The latency page says how long each handoff took for postings
+ *  that already made it through; this says how many are sitting at each stage at this moment.
+ *
+ *  Every outage this platform has had was a stage quietly stopping while the numbers around it
+ *  looked fine — six hours of ingestion behind an invisible filter, LinkedIn dead for five hours
+ *  behind a timer that could not fire, and 229 rows stuck awaiting an embed while both health
+ *  alerts pointed at delivery. The number existed every time; reading it meant knowing the query.
+ *
+ *  Polls rather than streams, deliberately: these counts move on a fifteen-minute tick, so a few
+ *  seconds of staleness is invisible and a websocket would be a second delivery mechanism to keep
+ *  alive for no gain the reader could see. */
+function PipelineTab() {
+  const [report, setReport] = useState<PipelineReport | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    const load = () =>
+      api.get<PipelineReport>("/admin/pipeline")
+        .then((data) => { if (live) { setReport(data); setFailed(false); } })
+        .catch(() => { if (live) setFailed(true); });
+    void load();
+    // Five seconds is well inside the tick, so the page is never meaningfully behind, and the query
+    // is a handful of indexed counts rather than anything that scans.
+    const timer = setInterval(() => void load(), 5000);
+    return () => { live = false; clearInterval(timer); };
+  }, []);
+
+  if (failed && !report) return <p className="muted">Could not read the pipeline.</p>;
+  if (!report) return <p className="muted">Reading the pipeline…</p>;
+
+  const busiest = Math.max(1, ...report.stages.map((s) => s.waiting));
+
+  return (
+    <>
+      <h2>Where the jobs are</h2>
+      <p className="hint" style={{ maxWidth: "60ch" }}>
+        One row per stage, in the order a posting moves through them. <strong>Waiting</strong> is how
+        many are sitting in that stage now; <strong>entered</strong> is how many arrived in the last{" "}
+        {report.window_hours} hours. A stage turns amber after {report.amber_after_min} minutes of
+        the oldest row waiting and red after {report.red_after_min} — the tick that should have
+        cleared it runs every {report.amber_after_min / 2} minutes.
+      </p>
+
+      <div className="pipeline">
+        {report.stages.map((stage) => (
+          <div key={stage.key} className={`pipeline-row ${stage.verdict}`}>
+            <div className="pipeline-head">
+              <strong>{stage.label}</strong>
+              <span className="small muted">{stage.what}</span>
+            </div>
+            <div className="pipeline-bar-wrap">
+              {/* Width is relative to the busiest stage, so the shape shows where work piles up
+                  rather than implying an absolute scale nobody set. */}
+              <div className="pipeline-bar"
+                   style={{ width: `${Math.round((stage.waiting / busiest) * 100)}%` }} />
+            </div>
+            <div className="pipeline-numbers">
+              <span className="pipeline-waiting">{stage.waiting.toLocaleString()}</span>
+              <span className="small muted">waiting</span>
+              <span className="pipeline-entered">
+                {stage.entered === null ? "—" : stage.entered.toLocaleString()}
+              </span>
+              <span className="small muted">in {report.window_hours}h</span>
+              <span className="small muted">
+                {stage.oldest_min === null ? "—" : `oldest ${minutes(stage.oldest_min)}`}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
 function LatencyTab() {
   const [report, setReport] = useState<LatencyReport | null>(null);
   const [hours, setHours] = useState(24);

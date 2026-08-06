@@ -154,3 +154,24 @@ def test_every_timer_has_a_service_and_every_service_a_timer():
     orphan_services = services - stems
     assert not orphan_services, (
         f"services no timer starts: {sorted(orphan_services)} — if that is intended, say so here")
+
+
+def test_an_embed_batch_can_finish_inside_the_client_timeout():
+    """**A batch that cannot finish is a deadlock, not a slow path.**
+
+    `EMBED_BATCH_SIZE` was 200 against a 120-second timeout, and the measured rate is ~840 ms a
+    text — so a full batch needed ~168 seconds and always timed out. The backlog is what produces a
+    full batch, so the timeout preserved the condition that caused it: 229 rows waiting, every
+    cycle dying at the same step, and the exception taking the scoring enqueue with it
+    (ROADMAP 6ba).
+
+    Same shape as the schedule invariants above — two numbers set independently, with the
+    relationship between them enforced nowhere.
+    """
+    from libs.contracts.embedder import DEFAULT_EMBED_TIMEOUT
+    from services.harvester.embedding import EMBED_BATCH_SIZE, EMBED_SECONDS_PER_TEXT
+
+    worst_case = EMBED_BATCH_SIZE * EMBED_SECONDS_PER_TEXT
+    assert worst_case < DEFAULT_EMBED_TIMEOUT * 0.6, (
+        f"a full batch takes about {worst_case:.0f}s against a {DEFAULT_EMBED_TIMEOUT:.0f}s "
+        "timeout, which leaves nothing for a slow day")

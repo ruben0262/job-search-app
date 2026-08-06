@@ -1932,6 +1932,52 @@
         ]
       }
     },
+    "/admin/pipeline": {
+      "get": {
+        "description": "Where the jobs are right now, stage by stage.\n\n**The question the latency page cannot answer.** That one reports how long each handoff took for\npostings that already made it through; this reports how many are sitting at each stage at this\nmoment. Every outage here so far was a stage quietly stopping while the numbers around it looked\nfine, and the number that would have shown it existed the whole time (ROADMAP 6ax).",
+        "operationId": "pipeline_shape_admin_pipeline_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "hours",
+            "required": false,
+            "schema": {
+              "default": 24,
+              "title": "Hours",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Pipeline Shape Admin Pipeline Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Pipeline Shape",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/admin/queue/dead": {
       "delete": {
         "description": "Clear dead-lettered jobs an operator has read and dealt with.\n\n**A dead letter is a fact, not a task, and the panel had no way to say \"seen\".** The two rows\nthat sat on the health page were a Telegram outage from the night before: read, understood,\nfixed in code \u2014 and still paging, because nothing could retire them. An alert that cannot be\ncleared is one an operator learns to scroll past, which costs the next alert its meaning\n(ROADMAP 6af).\n\n**The row goes, the evidence does not.** Each discarded job is logged at WARNING with its lane,\nits owner and its final error before deletion, so the forensic trail lives where every other\nincident detail on this platform lives. Deleting without that would trade a noisy panel for a\nmissing record, which is the worse of the two.\n\nDeliberately does **not** retry. A dead letter has already had its attempts; re-running it is a\nnew decision that belongs to whoever fixed the cause, not to a button labelled \"discard\".",

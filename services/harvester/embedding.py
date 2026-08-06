@@ -26,17 +26,34 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
-from libs.contracts.embedder import EmbedderClient, EmbedderVersion, pack_vector
+from libs.contracts.embedder import DEFAULT_EMBED_TIMEOUT, EmbedderClient, EmbedderVersion, pack_vector
 from libs.corpus.embedtext import build_text, embedding_version
 from libs.corpus.repository import CorpusRepository
 
 logger = logging.getLogger(__name__)
 
+# **Roughly how long one text takes to embed**, measured on the live box against the real backend:
+# 16 texts in 17.1s, 32 in 26.8s, 64 in 52.1s, 128 in 107.8s — flat at ~840 ms a text above a batch
+# of 32, because TEI is CPU-bound here and takes 32 at a time whatever it is handed.
+#
+# Kept as a number rather than folded into the batch size so the relationship below is visible: the
+# batch is derived from this and the client timeout, and a change to either has to move the other.
+EMBED_SECONDS_PER_TEXT = 0.9
+
 # How many rows to embed per pass. The gateway chunks internally to whatever TEI accepts, so this
 # bounds the *transaction*, not the request: a smaller number commits progress more often, which
 # matters because a cold-start batch of 2,000 takes ~5 minutes and a crash at minute four should not
 # discard four minutes of work.
-EMBED_BATCH_SIZE = 200
+#
+# **It was 200, and 200 could never succeed.** At the measured rate that is ~168 seconds against a
+# client timeout of 120 — so a full batch always timed out, and because the backlog is what produces
+# a full batch, the timeout preserved the condition that caused it. Live: 229 rows waiting, every
+# cycle dying at the same step, and the exception taking the scoring enqueue down with it
+# (ROADMAP 6ba).
+#
+# Derived from the timeout with room to spare rather than chosen: at 64 the same measurement gives
+# ~52 seconds, which leaves the slow half of the distribution somewhere to go.
+EMBED_BATCH_SIZE = int(DEFAULT_EMBED_TIMEOUT * 0.45 / EMBED_SECONDS_PER_TEXT)
 
 
 @dataclass(frozen=True)

@@ -44,6 +44,7 @@ from libs.ops.latency import (
     stage_breakdown,
     stage_detail,
 )
+from libs.ops.pipeline import pipeline
 from libs.profiles.repository import ProfileFiles
 from libs.scoring.history import model_history
 from libs.settings import (
@@ -584,6 +585,19 @@ def discard_dead_letters(db: Session = Depends(get_db), admin: User = Depends(re
 
     audit(logger, "admin.dead_discarded", user=admin.id, lane=lane or "all", count=len(rows))
     return {"status": "discarded", "count": len(rows), "lane": lane}
+
+
+@router.get("/pipeline")
+def pipeline_shape(db: Session = Depends(get_db), admin: User = Depends(require_admin), *,
+                   hours: int = 24) -> dict:
+    """Where the jobs are right now, stage by stage.
+
+    **The question the latency page cannot answer.** That one reports how long each handoff took for
+    postings that already made it through; this reports how many are sitting at each stage at this
+    moment. Every outage here so far was a stage quietly stopping while the numbers around it looked
+    fine, and the number that would have shown it existed the whole time (ROADMAP 6ax).
+    """
+    return pipeline(db, hours=max(1, min(hours, 168)))
 
 
 @router.get("/latency")
