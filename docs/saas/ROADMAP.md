@@ -1764,6 +1764,32 @@ The five faults are the price of admission when that day comes, and fault 1 is t
 fixed first: **the keyword is recorded on the duplicate path, not at insert**, or the co-occurrence
 matrix is empty and nothing says so.
 
+#### The two measurements that will say when that day has arrived
+
+**Both exist now, so the trigger is a number somebody reads rather than a feeling somebody has.**
+They are recorded here rather than beside the code because they are about *when to change the
+software*, which is a roadmap question.
+
+- **The filter row** (`filter_effect`, Admin → Latency) reports what the pre-score filter removed per
+  account. Two things move it as the platform grows. It is currently `O(users × candidate rows)`, so
+  the *cost* rises linearly with accounts while the *benefit* is per user — and when the removal rate
+  across accounts converges on a similar number, that is the signal the accounts are asking similar
+  questions and a computed-once `job_field` (6z) starts paying for the machinery it needs. Measured
+  2026-08-06 at 4.7% and 50.8% for the two live accounts: nowhere near convergence, and nowhere near
+  a cost worth optimising.
+- **The delivery row** (Admin → Pipeline) reports postings matched and expired unsent. That number
+  is the one that says an account's cap is below its own match rate, and it will rise with *every*
+  new account whose model is well trained. At 576 in 48 hours for one account it is already the
+  platform's largest single loss of work, and it is a settings decision rather than a code change —
+  until the number is common across accounts, at which point `items_per_run`'s default is wrong and
+  that is a code change.
+
+**And one row that is deliberately absent**: stage 2's "found → structured". Country extraction runs
+inside the same `INSERT` that sets `first_seen_at`, so the span is zero by construction and a row for
+it would be a permanent green measuring nothing. **If structuring ever moves off the insert path —
+which is exactly what a heavier extractor at scale would require — it needs that row on the same
+day**, because the moment it becomes a pass of its own it becomes a pass that can back up.
+
 ### 6z — job fields, discovered from what actually found the job (added 2026-08-04)
 
 **The owner's design, and it is better than the classifier 6w first proposed.** Stage 2.
