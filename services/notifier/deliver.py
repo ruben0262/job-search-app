@@ -140,8 +140,17 @@ def pending_feed(session: Session, user_id: _uuid.UUID, *, cutoff: float,
     # one page further down. That is precisely what happened: 50 candidates, 50 dropped, zero sent,
     # with 25 fresh matches waiting.
     #
-    # Undated rows still come through. They are the ones `date_candidates` exists to resolve, and
-    # excluding them here would drop every LinkedIn row before anything could look at it.
+    # **An undated row is admitted only while we have not held it long.** It used to be admitted
+    # unconditionally, on the reasoning that `date_candidates` would resolve it — but that needs the
+    # account's own proxy, and an account without one can never date anything. Measured on the live
+    # box: one account's candidate pool was eleven undated rows, all first seen more than a day
+    # earlier, re-selected and re-dropped as `too_old` on every single cycle for hours, with nothing
+    # else able to get in behind them. The same sixteen counts in the log, tick after tick
+    # (ROADMAP 6ay).
+    #
+    # `first_seen_at` is the fallback `too_old` already uses in Python, so this is the same rule
+    # asked in the same shape rather than a second one — which is what the two of them being
+    # different made possible.
     cutoff_at = datetime.now(UTC) - timedelta(hours=rules.max_age_hours)
 
     rows = session.execute(
@@ -162,7 +171,8 @@ def pending_feed(session: Session, user_id: _uuid.UUID, *, cutoff: float,
                UserJobState.notified_at.is_(None),
                UserJobState.score.is_not(None),
                UserJobState.score >= cutoff,
-               CorpusJob.posted_at.is_(None) | (CorpusJob.posted_at >= cutoff_at))
+               (CorpusJob.posted_at >= cutoff_at)
+               | (CorpusJob.posted_at.is_(None) & (CorpusJob.first_seen_at >= cutoff_at)))
         # **Known-fresh first, then undated, and only then by score.** The age filter above lets
         # undated rows through because it must — LinkedIn reports no posted time and dating them is
         # what `date_candidates` is for — but ordering the pool by score alone let them take every

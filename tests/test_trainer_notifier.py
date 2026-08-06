@@ -694,3 +694,37 @@ def test_the_send_budget_fits_inside_the_notify_claim():
     assert claim > SEND_BUDGET_SECONDS + REFRESH_BUDGET_SECONDS, (
         "the refresh and the send together have to finish inside one claim, or the job is swept "
         "back to ready while it is still working")
+
+
+def test_an_undated_row_held_past_the_window_is_not_reconsidered_every_cycle(ctx):
+    """**Work repeated forever, and a drop tally that lied about why.**
+
+    Undated rows were admitted to the candidate pool unconditionally, on the reasoning that
+    `date_candidates` would resolve them. That needs the account's own proxy, and an account without
+    one can never date anything — so rows first seen days earlier were selected and dropped as
+    `too_old` on every cycle, indefinitely. The live log showed the identical counts tick after
+    tick: `{'applicant_glut': 4, 'workplace': 1, 'too_old': 11}` at 10:49 and again at 11:04
+    (ROADMAP 6ay).
+
+    They were always going to be dropped — `too_old` uses `first_seen_at` as its fallback and got
+    the right answer. What was wrong is that SQL asked a *weaker* question than Python, so the rows
+    were fetched, ranked and re-judged every fifteen minutes to reach a conclusion that could not
+    change, and the operator's drop tally reported a filter that was really just history.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    user = _connected(ctx)
+    store = _store(ctx)
+    store.put(user.id, "telegram_bot", BOT_TOKEN)
+
+    stale = _scored(ctx, user)
+    stale.posted_at = None
+    stale.first_seen_at = datetime.now(UTC) - timedelta(days=3)
+    ctx.flush()
+
+    items, dropped = pending_feed(ctx, user.id, cutoff=0.0)
+
+    assert stale.id not in {item.job_id for item in items}
+    assert "too_old" not in dropped, (
+        "the row must not reach the pool at all — reporting it as dropped means it was fetched, "
+        "ranked and judged again for an answer that cannot change")
