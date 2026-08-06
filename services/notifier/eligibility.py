@@ -22,15 +22,9 @@ digest of three when seven were eligible, because four dropped out of a ten-row 
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
-from datetime import UTC, datetime
 
-from libs.contracts.config import migrate_config
-from libs.corpus import langfilter, workfilter
-from libs.corpus.ranking import applicant_glut, priority_key
+from libs.corpus.ranking import priority_key
 from libs.limits import limit_default
-from libs.ops.health import DEFAULT_MAX_AGE_HOURS
-from libs.tenant.filters import UserFilters
 
 logger = logging.getLogger(__name__)
 
@@ -49,146 +43,24 @@ DEFAULT_APPLICANT_CAP = limit_default("applicant_cap")
 
 
 
-@dataclass(frozen=True)
-class Eligibility:
-    """One user's filters, read from their config once per delivery rather than per job."""
-
-    languages: set[str]
-    onsite_locations: list[str]
-    # Terms the user typed specifically in order not to see them. **A hard no at delivery, not a
-    # scoring input.** They were honoured only by the cold-start keyword scorer, which means they
-    # quietly stopped applying the moment an account got a trained model — and "I told it never to
-    # show me contract roles and it started again" is indistinguishable from the product ignoring
-    # them, because that is what it was doing.
-    exclude_keywords: tuple[str, ...] = ()
-    applicant_cap: int = DEFAULT_APPLICANT_CAP
-    # How old a posting may be and still be worth sending. **The user's own answer, applied here.**
-    # The harvester fetches at the *widest* window any active account asked for, because the corpus
-    # is shared and one fetch serves everyone — which means a user who asked for six hours was
-    # being sent whatever the most patient account on the platform wanted. This is where their
-    # answer is honoured.
-    max_age_hours: int = DEFAULT_MAX_AGE_HOURS
-
-    @classmethod
-    def from_config(cls, config: dict | None, *,
-                    applicant_cap: int | None = DEFAULT_APPLICANT_CAP) -> Eligibility:
-        """Build from a stored `user_config.config`. A missing key means "no opinion", not "none".
-
-        `applicant_cap` comes from `libs.limits`, not from the config: it is an operator ceiling
-        rather than a search preference, and the config field it used to read was never written by
-        anything. `None` is the operator choosing Unlimited and means no drop at all.
-
-        That reading matters for `languages` especially: an account that never answered the
-        question must not have its entire feed dropped for being in the wrong language.
-
-        **Migrated before it is read.** A v1 config keeps `posted_within_hours` and
-        `exclude_keywords` at the top level; this method reads sections. Without the migration both
-        of a v1 user's own answers are silently replaced by the defaults — found live on
-        2026-07-30, where the account that asked for 72 hours and typed exclusions was getting
-        24 hours and none. Done here rather than in the caller so no future caller can repeat it.
-        """
-        config = migrate_config(config) if config else {}
-        # The **widest** of their sections, not the narrowest. A user with a six-hour window on one
-        # search and a week on another asked for both, and a job cannot be attributed back to the
-        # section that found it — so the generous reading is the only one that cannot silently
-        # delete something they asked for.
-        windows = [int(section.get("posted_within_hours") or 0)
-                   for section in config.get("sections") or []]
-        return cls(
-            languages={str(code).lower() for code in config.get("languages") or []},
-            onsite_locations=workfilter.onsite_locations(config.get("onsite_locations")),
-            # **`None` is unlimited and must not become a number.** `applicant_glut` reads 0 as
-            # "do not drop anything", which is exactly what Unlimited means here — and writing it
-            # as `applicant_cap or 0` would silently turn a deliberate 0 and an accidental None
-            # into the same thing without saying so.
-            applicant_cap=0 if applicant_cap is None else int(applicant_cap),
-            max_age_hours=max([window for window in windows if window > 0],
-                              default=DEFAULT_MAX_AGE_HOURS),
-            exclude_keywords=tuple(
-                term.strip().lower()
-                for section in config.get("sections") or []
-                for term in section.get("exclude_keywords") or []
-                if term and term.strip()),
-        )
-
-
-def too_old(item, rules: Eligibility, *, first_seen=None, now=None) -> bool:
-    """Whether this posting is past the window the user asked for.
-
-    Falls back to `first_seen_at` when the source gave no posted date, which most do not — when we
-    found it is a weaker answer than when it was posted, but it is a real one, and it is the same
-    fallback the recency buckets use.
-
-    **Unknown means keep.** With neither date there is no evidence of age, and dropping on an
-    absent field would silently empty the feed of every source that does not report one. The
-    reference's `is_within_hours` makes the same call for the same reason.
-    """
-    when = item.posted_at or first_seen
-    if when is None:
-        return False
-    if when.tzinfo is None:
-        when = when.replace(tzinfo=UTC)
-    hours = ((now or datetime.now(UTC)) - when).total_seconds() / 3600
-    return hours > rules.max_age_hours
-
-
-def is_eligible(item, rules: Eligibility, *, first_seen=None, now=None) -> tuple[bool, str | None]:
+def is_eligible(item) -> tuple[bool, str | None]:
     """Whether to send this job, and the reason if not.
 
-    The reason is returned rather than logged here so the caller can count them: "delivered 2 of
-    40" is alarming and unactionable, while "dropped 38 for language" is a config problem somebody
-    can fix in a minute.
+    **One check left, and it is the only one that could not have been made earlier.** Everything
+    this used to decide — excluded words, the applicant ceiling, workplace mode, language, the
+    freshness window — now runs in `libs.tenant.filters` *before the posting is scored*, so a row
+    that reaches here has already been judged deliverable by the account's own filters.
 
-    **Two kinds of check, in order.** The first two are facts about the posting — it is closed, or
-    it is older than the user asked for — and they are not judgements about anybody's preferences.
-    The rest are preferences, and every one of them fails open.
+    That move is what fixed the disagreement: those checks running at send time meant a posting the
+    account could never receive was still embedded, scored, and counted as "waiting" by the health
+    page and by the radar, which then reported a backlog the notifier would never send. One account
+    held a permanent "1 job waiting, last delivery 2h ago" alert on exactly that (ROADMAP 6bb).
+
+    What remains is `closed`, and it cannot move: it is learned from the posting's own page during
+    the pre-send refresh, seconds before the card goes out, and a job that closed since we scored it
+    is the one thing no earlier filter could have known.
     """
-    fact = _unusable(item, rules, first_seen=first_seen, now=now)
-    if fact is not None:
-        return False, fact
-    return _preferences(item, rules)
-
-
-def _unusable(item, rules: Eligibility, *, first_seen, now) -> str | None:
-    """Facts about the posting that make it not worth sending, whoever the user is."""
-    if getattr(item, "closed", False):
-        # Learned during the pre-send refresh. There is nothing to apply for.
-        return "closed"
-    if too_old(item, rules, first_seen=first_seen, now=now):
-        return "too_old"
-    return None
-
-
-def _preferences(item, rules: Eligibility) -> tuple[bool, str | None]:
-    """What this particular user does and does not want to see. Every check fails open."""
-    # Title and company only, never the description. A posting that merely *mentions* a term in a
-    # benefits paragraph is not the job the user was excluding, and matching the body turned "no
-    # recruitment agencies" into a filter that removed most of a feed.
-    #
-    # **Whole words, via the same matcher the pre-score filter uses.** This was `term in haystack`,
-    # a plain substring test, and one live account excludes `"sr"` — which matched *Israel* Tech
-    # and Di*sr*aeli Ltd and removed them silently. Two copies of one rule, and both were wrong the
-    # same way, which is why it is now one implementation in `libs` (ROADMAP 6av).
-    if UserFilters(exclude=rules.exclude_keywords).excluded(item.title, item.company):
-        return False, "excluded_keyword"
-
-    if applicant_glut(source=item.source, applicants=item.applicants,
-                      cap=rules.applicant_cap):
-        return False, "applicant_glut"
-
-    # `explicit=` is the tag parsed off the posting's own page, and it wins over every heuristic:
-    # it is what the employer wrote, not what the title implies.
-    mode = workfilter.classify(item.title or "", item.location or "", item.description,
-                               item.is_remote, explicit=item.workplace)
-    if not workfilter.is_allowed(mode, item.location or "", rules.onsite_locations):
-        return False, "workplace"
-
-    # Language last: it is the only check that runs a detector, and the cheap checks have already
-    # removed most of what it would have been run on.
-    if not langfilter.is_allowed(item.description or "", rules.languages, source=item.source):
-        return False, "language"
-
-    return True, None
+    return (False, "closed") if getattr(item, "closed", False) else (True, None)
 
 
 def rank(items: list, *, first_seen: dict[int, object] | None = None, now=None) -> list:
@@ -205,20 +77,24 @@ def rank(items: list, *, first_seen: dict[int, object] | None = None, now=None) 
         workplace=item.workplace, score=int(item.score or 0), now=now))
 
 
-def select(items: list, rules: Eligibility, *, limit: int,
+def select(items: list, *, limit: int,
            first_seen: dict[int, object] | None = None,
            now=None) -> tuple[list, dict[str, int]]:
-    """Filter, rank, and take the top `limit`. Returns the items and why the rest were dropped.
+    """Rank, drop anything that closed since it was scored, and take the top `limit`.
+
+    **This used to be where the feed was filtered, and it is not any more.** Excluded words, the
+    applicant ceiling, workplace, language and the age window all run in `libs.tenant.filters`
+    before a posting is scored, so what arrives here has already been judged deliverable by the
+    account's own rules. That move is what stopped the health page counting a backlog the notifier
+    would never send (ROADMAP 6bb).
 
     `now` is threaded through rather than left to each check's own default. Two calls that read the
     clock a millisecond apart are harmless in production and are the difference between a passing
-    and a failing test suite at midnight — one decision about what time it is, made once.
+    and a failing suite at midnight — one decision about what time it is, made once.
     """
     kept, dropped = [], {}
     for item in items:
-        eligible, reason = is_eligible(item, rules, now=now,
-                                       first_seen=first_seen.get(item.job_id)
-                                       if first_seen else None)
+        eligible, reason = is_eligible(item)
         if eligible:
             kept.append(item)
         else:

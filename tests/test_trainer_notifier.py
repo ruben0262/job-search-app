@@ -517,9 +517,8 @@ def test_stale_high_scorers_do_not_crowd_fresh_jobs_out_of_the_pool(ctx):
     """
     from datetime import UTC, datetime, timedelta
 
-    from libs.db.models import CorpusJob, UserJobState
+    from libs.db.models import CorpusJob, UserConfig, UserJobState
     from services.notifier.deliver import pending_feed
-    from services.notifier.eligibility import Eligibility
 
     user = _connected(ctx)
     now = datetime.now(UTC)
@@ -541,8 +540,11 @@ def test_stale_high_scorers_do_not_crowd_fresh_jobs_out_of_the_pool(ctx):
     ctx.add(UserJobState(user_id=user.id, job_id=fresh.id, score=65.0))
     ctx.flush()
 
-    rules = Eligibility.from_config({"sections": [{"posted_within_hours": 6}]})
-    items, _dropped = pending_feed(ctx, user.id, cutoff=60.0, limit=5, rules=rules)
+    # The window is read from the account's own stored config now, because there is only one
+    # filter and it is the account's — nothing is passed in beside it.
+    ctx.add(UserConfig(user_id=user.id, config={"sections": [{"posted_within_hours": 6}]}))
+    ctx.flush()
+    items, _dropped = pending_feed(ctx, user.id, cutoff=60.0, limit=5)
 
     assert [item.title for item in items] == ["Fresh Backend Engineer"]
 

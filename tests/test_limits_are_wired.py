@@ -205,24 +205,24 @@ def test_the_applicant_ceiling_is_the_operators_and_unlimited_shows_everything()
     its entire feed sitting on that number. It was read from a config field nothing writes, so it
     was a constant with a lookup in front of it (ROADMAP 6ag).
     """
-    from services.notifier.eligibility import Eligibility
+    from libs.tenant.filters import UserFilters
 
     # The operator's number is honoured, not the config's.
-    assert Eligibility.from_config({}, applicant_cap=50).applicant_cap == 50
+    assert UserFilters.from_config({}, applicant_cap=50).applicant_cap == 50
     # A config that carries the old field cannot override the operator.
-    assert Eligibility.from_config({"applicant_cap": 999}, applicant_cap=50).applicant_cap == 50
+    assert UserFilters.from_config({"applicant_cap": 999}, applicant_cap=50).applicant_cap == 50
     # Unlimited means show everything: `applicant_glut` reads 0 as "do not drop".
-    assert Eligibility.from_config({}, applicant_cap=None).applicant_cap == 0
+    assert UserFilters.from_config({}, applicant_cap=None).applicant_cap == 0
 
 
 def test_unlimited_applicants_actually_lets_a_busy_posting_through():
     """The limit has to reach the decision, not just the dataclass. A ceiling that is stored and
     never consulted is the failure this whole file exists to catch."""
     from libs.corpus.ranking import applicant_glut
-    from services.notifier.eligibility import Eligibility
+    from libs.tenant.filters import UserFilters
 
-    capped = Eligibility.from_config({}, applicant_cap=200)
-    unlimited = Eligibility.from_config({}, applicant_cap=None)
+    capped = UserFilters.from_config({}, applicant_cap=200)
+    unlimited = UserFilters.from_config({}, applicant_cap=None)
 
     assert applicant_glut(source="linkedin", applicants=200, cap=capped.applicant_cap) is True
     assert applicant_glut(source="linkedin", applicants=200, cap=unlimited.applicant_cap) is False
@@ -232,7 +232,7 @@ def test_the_applicant_cap_default_is_not_written_twice():
     """A constant beside a catalogue entry naming the same thing is the defect this project has
     shipped most often: the panel shows one value, the code reads the other, nothing errors."""
     from libs.limits import BY_KEY
-    from services.notifier.eligibility import DEFAULT_APPLICANT_CAP
+    from libs.tenant.filters import CATALOGUE_APPLICANT_CAP as DEFAULT_APPLICANT_CAP
 
     assert BY_KEY["applicant_cap"].default == DEFAULT_APPLICANT_CAP
 

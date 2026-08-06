@@ -25,6 +25,7 @@ import uuid as _uuid
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from libs import limits
 from libs.db.models import CorpusJob, User, UserConfig, UserJobState
 from libs.obs import Timings, audit, report_timings, timed
 from libs.scoring import centroid
@@ -72,7 +73,11 @@ def _candidates(session, user, user_id, filters, limit):
     """
     return session.execute(
         select(CorpusJob.id, CorpusJob.title, CorpusJob.company, CorpusJob.description,
-               CorpusJob.embedding, CorpusJob.embedding_dim, CorpusJob.embedding_version)
+               CorpusJob.embedding, CorpusJob.embedding_dim, CorpusJob.embedding_version,
+               # **What the delivery filter used to need at send time.** Fetched here so the same
+               # decision is made once, before the model runs, rather than after it.
+               CorpusJob.source, CorpusJob.applicants, CorpusJob.location,
+               CorpusJob.is_remote, CorpusJob.workplace)
         .outerjoin(UserJobState,
                    (UserJobState.job_id == CorpusJob.id)
                    & (UserJobState.user_id == user_id))
@@ -110,8 +115,14 @@ def score_batch(session: Session, user_id: _uuid.UUID, *, limit: int = MAX_PER_R
     timings = Timings()
 
     model = ModelRegistry(session).get(user_id)
+    cap = limits.resolve(user, "applicant_cap")
     filters = UserFilters.from_config(
-        session.scalar(select(UserConfig.config).where(UserConfig.user_id == user_id)))
+        session.scalar(select(UserConfig.config).where(UserConfig.user_id == user_id)),
+        # The operator's ceiling for this account, resolved here because the filter itself has no
+        # user in hand. **`None` is Unlimited and is passed through as `None`**, never defaulted:
+        # `resolve` has already returned the catalogue value for a limit nobody set, so a `None`
+        # here can only be somebody having chosen "no ceiling" in the panel.
+        applicant_cap=None if cap is None else int(cap))
 
     with timed("select", timings):
         rows = _candidates(session, user, user_id, filters, limit)
@@ -132,19 +143,27 @@ def score_batch(session: Session, user_id: _uuid.UUID, *, limit: int = MAX_PER_R
         """
         tenant.record_score(user_id, job_id, score=None, model_version=user.model_version)
 
-    # **The user's own excluded words, in Python rather than SQL.** A `LIKE` per term per row would
-    # be a sequential scan over the corpus; a substring check over the few hundred rows SQL already
-    # narrowed to is nothing. Counted by term, because "dropped 400 for 'senior'" is a config
-    # problem somebody can fix and "dropped 400" is not.
+    # **Everything the account could never receive, in Python rather than SQL.** Excluded words,
+    # the applicant ceiling, workplace mode and language: a `LIKE` per term per row would be a
+    # sequential scan over the corpus, while these checks over the few hundred rows SQL already
+    # narrowed to are microseconds.
+    #
+    # **All four used to run at delivery instead, and that was one filter too late.** A posting the
+    # account could never receive was embedded against their model, scored, counted as "waiting" by
+    # the health page and the radar, and then dropped in the last second before sending — so the
+    # count and the send disagreed, permanently, and the count was the one an operator read.
+    #
+    # Counted by reason, because "dropped 51 for applicant_glut" is a setting somebody can change
+    # in a minute and "dropped 51" is not.
     excluded: dict[str, int] = {}
     kept = []
     with timed("exclude", timings):
         for row in rows:
-            term = filters.excluded(row["title"], row["company"])
-            if term is None:
+            reason = filters.unwanted(row)
+            if reason is None:
                 kept.append(row)
             else:
-                excluded[term] = excluded.get(term, 0) + 1
+                excluded[reason] = excluded.get(reason, 0) + 1
                 skip(row["id"])
 
     # **The centroid**, on whatever survived. It needs the embedding, so it cannot run in SQL.

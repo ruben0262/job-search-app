@@ -14,6 +14,49 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-08-06 (night)
+
+**One filter, once, before scoring** — the owner's instruction, and it turned out to be the cause of
+three separate symptoms.
+
+The applicant ceiling, workplace mode, language and the freshness window all ran **at send time**, in
+`services.notifier.eligibility`, while the pre-score filter knew only about countries, freshness and
+excluded words. So a posting an account could never receive was still embedded against their model,
+scored, counted as *waiting* by the health page and by the radar — and then dropped in the last
+second before sending, by a filter neither of those pages knew about.
+
+That is one question with two answers, which is the defect this project has shipped more than any
+other, and it produced:
+
+- **A permanent health alert.** *"1 matching job waiting and last delivery was 2h ago"* on the second
+  account, every cycle. The notifier's own log said it: `dropped {'workplace': 1}` then `notified
+  with 0 item(s)`. The count and the send disagreed, and the count was the one an operator read.
+- **A delivery queue that would not drain.** 395 rows above cutoff, of which `dropped
+  {'applicant_glut': 51, 'excluded_keyword': 4, 'workplace': 2}` every run — the queue was mostly
+  postings that were never going to be sent, so the radar's "waiting" was counting work that did not
+  exist.
+- **Wasted model calls**, on every posting the account had already ruled out.
+
+All four checks now live in `libs.tenant.filters.UserFilters.unwanted` and run in the score lane, so
+a row that fails them is skipped before the model sees it and never counted as waiting. Delivery has
+one check left — `closed`, learned from the posting's own page seconds before sending, which is the
+only thing no earlier filter could have known.
+
+`Eligibility`, `is_eligible`'s preference half and `too_old` are deleted in the same commit, and the
+tests that covered them moved to the layer the behaviour moved to rather than being dropped — the age
+window's tests are now against a real database, because it is a SQL condition now.
+
+**`scripts/rejudge_scored_rows.py`** re-applies the filter to rows scored under the old arrangement.
+Without it those keep their score forever: the score lane never revisits a row already carrying the
+current model version, so the alert would have outlived the fix.
+
+**And a bug the suite caught in this change**: `UserFilters.from_config` read `applicant_cap=None` as
+"not supplied" and substituted the catalogue default — turning an operator's deliberate *Unlimited*
+back into 200. `tests/test_limits_are_wired.py` exists for exactly that pattern and found it before
+it shipped.
+
+---
+
 ## 2026-08-06 (evening)
 
 **Nothing stands between a scored match and Telegram any more**, on the owner's instruction — and

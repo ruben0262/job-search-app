@@ -10,6 +10,7 @@ because a false drop removes a real job from a feed silently and the user never 
 """
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -22,7 +23,8 @@ from libs.corpus.ranking import (
     opportunity_score,
     priority_key,
 )
-from services.notifier.eligibility import Eligibility, is_eligible, rank, select
+from libs.tenant.filters import UserFilters
+from services.notifier.eligibility import is_eligible, rank, select
 
 NOW = datetime(2026, 7, 29, 12, 0, tzinfo=UTC)
 
@@ -51,12 +53,21 @@ class Item:
     workplace: str | None = None
 
 
-def rules(*, applicant_cap: int | None = 200, **overrides) -> Eligibility:
-    """One user's filters. `applicant_cap` is separate because it is an operator limit resolved
-    from `libs.limits`, not a field on their config — passing it in the config dict was how it
-    stayed invisible to the panel that is supposed to own it."""
-    return Eligibility.from_config({"languages": ["en"], **overrides},
+def filters(*, applicant_cap: int | None = 200, **overrides) -> UserFilters:
+    """The same account, as the *pre-score* filter sees it.
+
+    **These checks moved on 2026-08-06 and the tests moved with them.** They used to run at send
+    time, which meant a posting the account could never receive was embedded against their model,
+    scored, and counted as waiting by two pages that then disagreed with what was actually sent.
+    They now run once, before scoring, in `libs.tenant.filters` (ROADMAP 6bb).
+    """
+    return UserFilters.from_config({"languages": ["en"], **overrides},
                                    applicant_cap=applicant_cap)
+
+
+def drops(item, rules_=None) -> str | None:
+    """Why this account would never receive this posting, or `None`."""
+    return (rules_ or filters()).unwanted(dataclasses.asdict(item))
 
 
 # ── the buckets ───────────────────────────────────────────────────────────────────────────────
@@ -157,49 +168,49 @@ def test_a_job_in_a_language_the_user_does_not_write_is_dropped():
         "Wir suchen einen erfahrenen Softwareentwickler für unser Team in Berlin. "
         "Sie entwickeln und betreiben unsere Dienste und arbeiten eng mit dem Produktteam "
         "zusammen. Gute Deutschkenntnisse sind erforderlich."))
-    assert is_eligible(german, rules(), now=NOW) == (False, "language")
+    assert drops(german) == "language"
 
 
 def test_a_description_too_short_to_detect_is_kept():
     """Fails open. A three-word snippet is not evidence of anything."""
-    assert is_eligible(Item(description="Engineer wanted"), rules(), now=NOW)[0] is True
+    assert drops(Item(description="Engineer wanted")) is None
 
 
 def test_an_account_that_never_stated_a_language_keeps_everything():
     """Otherwise a user who skipped one onboarding question would have their entire feed silently
     emptied."""
     german = Item(description="Wir suchen einen erfahrenen Softwareentwickler für unser Team. " * 3)
-    assert is_eligible(german, Eligibility.from_config({}), now=NOW)[0] is True
+    assert drops(german, UserFilters.from_config({})) is None
 
 
 def test_an_explicit_onsite_posting_outside_the_allowed_countries_is_dropped():
     item = Item(workplace="onsite", location="Paris, France")
-    assert is_eligible(item, rules(onsite_locations=["hungary"]), now=NOW) == (False, "workplace")
+    assert drops(item, filters(onsite_locations=["hungary"])) == "workplace"
 
 
 def test_an_onsite_posting_where_the_user_will_go_is_kept():
     item = Item(workplace="onsite", location="Budapest, Hungary")
-    assert is_eligible(item, rules(onsite_locations=["hungary"]), now=NOW)[0] is True
+    assert drops(item, filters(onsite_locations=["hungary"])) is None
 
 
 def test_a_job_whose_workplace_is_unknown_is_never_dropped():
     """The filter only ever drops an *explicit* on-site tag. Everything else fails open."""
-    assert is_eligible(Item(workplace=None, location="Paris, France"),
-                       rules(onsite_locations=["hungary"]), now=NOW)[0] is True
+    assert drops(Item(workplace=None, location="Paris, France"),
+                 filters(onsite_locations=["hungary"])) is None
 
 
 def test_a_linkedin_listing_at_the_display_cap_is_dropped_as_stale():
-    assert is_eligible(Item(applicants=200), rules(), now=NOW) == (False, "applicant_glut")
+    assert drops(Item(applicants=200)) == "applicant_glut"
 
 
 def test_the_same_count_on_another_source_is_not():
     """Only LinkedIn reports a count worth trusting, and only there does the 200 cap mean
     "over-subscribed" rather than "exactly two hundred"."""
-    assert is_eligible(Item(source="greenhouse", applicants=200), rules(), now=NOW)[0] is True
+    assert drops(Item(source="greenhouse", applicants=200)) is None
 
 
 def test_a_user_who_disabled_the_cap_sees_them():
-    assert is_eligible(Item(applicants=500), rules(applicant_cap=0), now=NOW)[0] is True
+    assert drops(Item(applicants=500), filters(applicant_cap=0)) is None
 
 
 def test_applicant_glut_needs_a_count_to_act_on():
@@ -208,46 +219,62 @@ def test_applicant_glut_needs_a_count_to_act_on():
 
 # ── selection ─────────────────────────────────────────────────────────────────────────────────
 
-def test_selection_filters_ranks_and_caps_in_that_order():
-    # A week's window, so the stale job is dropped for being crowded rather than for being old —
-    # the age filter has its own tests and this one is about ordering.
-    week = rules(sections=[{"posted_within_hours": 168}])
+def test_selection_ranks_and_caps_and_no_longer_filters():
+    """**Selection stopped being a filter on 2026-08-06.** Everything it used to reject — excluded
+    words, the applicant ceiling, workplace, language, the age window — now runs before the posting
+    is scored, so a row that reaches here has already been judged deliverable.
+
+    What is left is ordering, and ordering by *opportunity* rather than fit: youth and scarcity
+    first, score as the tiebreaker. Sorting by score and taking ten put a three-week-old posting
+    with two hundred applicants ahead of one posted an hour ago.
+    """
     items = [
         Item(job_id=1, score=99, posted_at=NOW - timedelta(hours=100), applicants=180),
         Item(job_id=2, score=70, posted_at=NOW - timedelta(minutes=10), applicants=2),
-        Item(job_id=3, score=95, applicants=200),                        # glut
+        Item(job_id=3, score=95, posted_at=NOW - timedelta(hours=200), applicants=190),
     ]
-    kept, dropped = select(items, week, limit=2, now=NOW)
+    kept, dropped = select(items, limit=2, now=NOW)
 
-    assert [item.job_id for item in kept] == [2, 1]
-    assert dropped == {"applicant_glut": 1}
+    assert [item.job_id for item in kept] == [2, 1], "freshest and least crowded first"
+    assert dropped == {}, "nothing is filtered at delivery any more"
 
 
-def test_the_drop_tally_says_why_a_digest_was_small():
-    """"Delivered 2" is alarming and unactionable. "Dropped 38 for language" is a config problem
-    somebody can fix in a minute."""
-    german = "Wir suchen einen erfahrenen Softwareentwickler für unser Team in Berlin. " * 3
-    items = [Item(job_id=index, description=german) for index in range(3)]
-    kept, dropped = select(items, rules(), limit=10, now=NOW)
+def test_the_drop_tally_still_names_a_closed_posting():
+    """"Delivered 2" is alarming and unactionable; the reason is what makes it actionable. Only one
+    reason can still arise here — a posting that closed between being scored and being sent, which
+    no earlier filter could have known."""
+    items = [Item(job_id=index) for index in range(3)]
+    for item in items[:2]:
+        item.closed = True
+    kept, dropped = select(items, limit=10, now=NOW)
 
-    assert kept == []
-    assert dropped == {"language": 3}
+    assert [item.job_id for item in kept] == [2]
+    assert dropped == {"closed": 2}
 
 
 # ── the age window the user asked for ─────────────────────────────────────────────────────────
 
-def test_a_posting_older_than_the_users_window_is_dropped():
+def test_the_age_window_is_enforced_in_sql_before_anything_is_scored():
     """**The harvester fetches at the widest window any account asked for**, because the corpus is
     shared and one fetch serves everyone. Without this, a user who asked for six hours was being
-    sent whatever the most patient account on the platform wanted."""
-    old = Item(posted_at=NOW - timedelta(hours=30))
-    assert is_eligible(old, rules(sections=[{"posted_within_hours": 24}]),
-                       now=NOW) == (False, "too_old")
+    sent whatever the most patient account on the platform wanted.
+
+    It is a SQL condition rather than a per-item check, and deliberately: it is the predicate that
+    keeps a 30,000-row corpus cheap, and running it in Python would mean fetching every row to
+    throw most of them away. `tests/test_user_filters.py` exercises it against a real database —
+    what belongs here is that the *shape* is the account's own answer and not a platform constant.
+    """
+    tight = filters(sections=[{"posted_within_hours": 6}])
+    assert tight.max_age_hours == 6
+    assert tight.fresh_since(now=NOW) == NOW - timedelta(hours=6)
+    # And that it is not silently one of the checks that moved into `unwanted`, where it would run
+    # after the rows had already been fetched.
+    assert drops(Item(posted_at=NOW - timedelta(hours=300)), tight) is None
 
 
 def test_a_posting_inside_the_window_is_kept():
     fresh = Item(posted_at=NOW - timedelta(hours=3))
-    assert is_eligible(fresh, rules(sections=[{"posted_within_hours": 24}]), now=NOW)[0] is True
+    assert drops(fresh, filters(sections=[{"posted_within_hours": 24}])) is None
 
 
 def test_the_widest_of_several_sections_wins():
@@ -255,43 +282,36 @@ def test_the_widest_of_several_sections_wins():
     be attributed back to the section that found it. The generous reading is the only one that
     cannot silently delete something they asked for."""
     item = Item(posted_at=NOW - timedelta(hours=100))
-    both = rules(sections=[{"posted_within_hours": 6}, {"posted_within_hours": 168}])
+    both = filters(sections=[{"posted_within_hours": 6}, {"posted_within_hours": 168}])
     assert both.max_age_hours == 168
-    assert is_eligible(item, both, now=NOW)[0] is True
-
-
-def test_the_age_filter_falls_back_to_when_we_found_it():
-    item = Item(posted_at=None)
-    tight = rules(sections=[{"posted_within_hours": 6}])
-    assert is_eligible(item, tight, first_seen=NOW - timedelta(hours=40), now=NOW)[0] is False
-    assert is_eligible(item, tight, first_seen=NOW - timedelta(hours=1), now=NOW)[0] is True
+    assert drops(item, both) is None
 
 
 def test_a_posting_with_no_dates_at_all_is_kept():
     """**Unknown means keep.** Most sources report no posted date, so dropping on an absent field
     would silently empty the feed of every one of them."""
     item = Item(posted_at=None)
-    assert is_eligible(item, rules(sections=[{"posted_within_hours": 6}]), now=NOW)[0] is True
+    assert drops(item, filters(sections=[{"posted_within_hours": 6}])) is None
 
 
 def test_an_account_with_no_sections_gets_the_default_window():
-    from services.notifier.eligibility import DEFAULT_MAX_AGE_HOURS
+    from libs.tenant.filters import DEFAULT_MAX_AGE_HOURS
 
-    assert Eligibility.from_config({}).max_age_hours == DEFAULT_MAX_AGE_HOURS
+    assert UserFilters.from_config({}).max_age_hours == DEFAULT_MAX_AGE_HOURS
 
 
 def test_a_v1_config_keeps_its_window_and_its_exclusions():
     """A v1 row is flat — `posted_within_hours` and `exclude_keywords` at the top level — and
     `from_config` reads sections. Found live: the account that asked for 72 hours and typed
     exclusions was getting the 24-hour default and none of them."""
-    rules = Eligibility.from_config({
+    rules = UserFilters.from_config({
         "keywords": ["mechanical engineer"],
         "posted_within_hours": 72,
         "exclude_keywords": ["recruitment agency"],
         "languages": [],
     })
     assert rules.max_age_hours == 72
-    assert rules.exclude_keywords == ("recruitment agency",)
+    assert rules.exclude == ("recruitment agency",)
 
 
 def test_the_age_window_is_not_the_notification_interval():
@@ -305,18 +325,17 @@ def test_the_age_window_is_not_the_notification_interval():
 
 # ── the terms the user asked never to see ─────────────────────────────────────────────────────
 
-def test_an_excluded_keyword_is_a_hard_no_at_delivery():
+def test_an_excluded_keyword_is_a_hard_no_before_scoring():
     """**They were honoured only by the cold-start keyword scorer**, so they quietly stopped
     applying the moment an account got a trained model. "I told it never to show me contract roles
     and it started again" is indistinguishable from the product ignoring them — because it was."""
     item = Item(title="Contract Backend Engineer")
-    assert is_eligible(item, rules(sections=[{"exclude_keywords": ["contract"]}]),
-                       now=NOW) == (False, "excluded_keyword")
+    assert drops(item, filters(sections=[{"exclude_keywords": ["contract"]}])) == "excluded_keyword"
 
 
 def test_an_excluded_keyword_matches_the_company_too():
     item = Item(title="Backend Engineer", company="Hays Recruitment")
-    assert is_eligible(item, rules(sections=[{"exclude_keywords": ["hays"]}]), now=NOW)[0] is False
+    assert drops(item, filters(sections=[{"exclude_keywords": ["hays"]}])) == "excluded_keyword"
 
 
 def test_an_excluded_term_in_the_description_does_not_drop_the_job():
@@ -325,11 +344,11 @@ def test_an_excluded_term_in_the_description_does_not_drop_the_job():
     of a feed."""
     item = Item(title="Backend Engineer",
                 description="We work with contract staff occasionally. " * 10)
-    assert is_eligible(item, rules(sections=[{"exclude_keywords": ["contract"]}]), now=NOW)[0] is True
+    assert drops(item, filters(sections=[{"exclude_keywords": ["contract"]}])) is None
 
 
 def test_no_excluded_keywords_drops_nothing():
-    assert is_eligible(Item(), rules(sections=[{"exclude_keywords": []}]), now=NOW)[0] is True
+    assert drops(Item(), filters(sections=[{"exclude_keywords": []}])) is None
 
 
 # ── dating the feed before filtering it ───────────────────────────────────────────────────────
@@ -356,22 +375,20 @@ MONTH_OLD = ('<span class="posted-time-ago__text"> Reposted 1 month ago </span>'
              '<span class="num-applicants__caption"> 180 applicants </span>' + "x" * 300)
 
 
-def test_an_undated_linkedin_job_is_only_dropped_once_it_has_been_dated():
-    """**The leak that kept "Reposted 1 month ago" in the feed.** LinkedIn reports no posted time
-    to the listing API, so the age filter had nothing to test and correctly failed open. Dating the
-    job first is what turns "we never asked" into an answer."""
+def test_dating_an_undated_linkedin_job_is_what_makes_the_age_window_answerable():
+    """**The leak that kept "Reposted 1 month ago" in the feed.** LinkedIn reports no posted time to
+    the listing API, so the age filter had nothing to test and correctly failed open.
+
+    The filter itself now lives in SQL, one step earlier, and reads `posted_at` with a fallback to
+    `first_seen_at` — so what still matters here is that the refresh produces a real `posted_at` for
+    a row that arrived without one. Without that, an undated month-old repost is indistinguishable
+    from a posting we found a minute ago.
+    """
     from libs.corpus import postings
 
-    undated = Item(posted_at=None, source="linkedin")
-    tight = rules(sections=[{"posted_within_hours": 6}])
-
-    # Undated and recently found: nothing to drop it on, so it goes out.
-    assert is_eligible(undated, tight, first_seen=NOW, now=NOW)[0] is True
-
-    # Dated from the posting's own page, it is a month old and fails the same filter.
-    undated.posted_at = postings.parse_posted_at(MONTH_OLD, now=NOW)
-    assert undated.posted_at is not None
-    assert is_eligible(undated, tight, first_seen=NOW, now=NOW) == (False, "too_old")
+    dated = postings.parse_posted_at(MONTH_OLD, now=NOW)
+    assert dated is not None, "an undated row stays undated and the window has nothing to test"
+    assert dated < NOW - timedelta(days=20)
 
 
 def test_a_closed_posting_found_at_send_time_is_dropped_and_not_failed_open():
@@ -379,7 +396,7 @@ def test_a_closed_posting_found_at_send_time_is_dropped_and_not_failed_open():
     doubt the language and workplace filters get."""
     item = Item()
     item.closed = True
-    assert is_eligible(item, rules(), now=NOW) == (False, "closed")
+    assert is_eligible(item) == (False, "closed")
 
 
 # ── what a job is embedded from ───────────────────────────────────────────────────────────────

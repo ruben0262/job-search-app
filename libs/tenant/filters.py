@@ -37,8 +37,11 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import true
 
 from libs.contracts.config import migrate_config
+from libs.corpus import langfilter, workfilter
 from libs.corpus.geo import wanted_countries
+from libs.corpus.ranking import applicant_glut
 from libs.db.models import CorpusJob
+from libs.limits import limit_default
 
 # The window an account gets if it never said, matching `SearchSection.posted_within_hours`.
 #
@@ -46,6 +49,13 @@ from libs.db.models import CorpusJob
 # filters are what it configures, and health importing filters while filters imported health was a
 # circular import waiting for the second caller (ROADMAP 6az).
 DEFAULT_MAX_AGE_HOURS = 24
+
+# The catalogue's ceiling, for a caller with no user to resolve against — a test, or a direct
+# construction. **A default argument rather than a `None` check inside**, because `None` already
+# means something else here: it is the operator having chosen Unlimited. Reading "not supplied" and
+# "unlimited" as the same value is how an account set to Unlimited silently ran at the default,
+# which is the defect `tests/test_limits_are_wired.py` exists to catch — and did catch, here.
+CATALOGUE_APPLICANT_CAP = limit_default("applicant_cap")
 
 
 @dataclass(frozen=True)
@@ -59,6 +69,18 @@ class UserFilters:
     # Lower-cased terms the user typed in order *not* to see them, matched against title and
     # company. "senior", "unpaid", a company they will not work for.
     exclude: tuple[str, ...] = field(default_factory=tuple)
+    # **Everything below used to live in `services.notifier.eligibility` and run at send time.**
+    # That was one filter too late and one place too many: a posting the account could never
+    # receive was still embedded against their model, scored, counted as "waiting" by the health
+    # page and by the radar, and then silently dropped in the last second before sending. One
+    # account sat on a permanent "1 job waiting, last delivery 2h ago" alert for exactly that
+    # reason — the count and the send disagreed, and the count was the one an operator read.
+    #
+    # 0 means no ceiling, which is what Unlimited resolves to. **Not `None`**: `applicant_glut`
+    # reads 0 as off, and two spellings of "no limit" is how one of them ends up wrong.
+    applicant_cap: int = 0
+    onsite_locations: tuple[str, ...] = field(default_factory=tuple)
+    languages: frozenset[str] = field(default_factory=frozenset)
 
     def __post_init__(self) -> None:
         # Compiled once per batch rather than per row: one pass over the title and company against
@@ -69,7 +91,8 @@ class UserFilters:
             re.compile(rf"(?<!\w)({pattern})(?!\w)", re.I) if pattern else None)
 
     @classmethod
-    def from_config(cls, config: dict | None) -> UserFilters:
+    def from_config(cls, config: dict | None, *,
+                    applicant_cap: int | None = CATALOGUE_APPLICANT_CAP) -> UserFilters:
         """Build from a stored `user_config.config`.
 
         **Migrated before it is read.** A v1 config keeps `posted_within_hours` and
@@ -104,6 +127,14 @@ class UserFilters:
                 for section in sections
                 for term in section.get("exclude_keywords") or []
                 if term and term.strip()),
+            # An operator ceiling rather than a search preference, so it comes from `libs.limits`
+            # and not from the config. `None` is Unlimited and becomes 0, which is what
+            # `applicant_glut` reads as "drop nothing".
+            applicant_cap=0 if applicant_cap is None else int(applicant_cap),
+            onsite_locations=tuple(workfilter.onsite_locations(config.get("onsite_locations"))),
+            # **An account that never answered must not have its whole feed dropped**, so an empty
+            # set means "no opinion" and admits every language.
+            languages=frozenset(str(code).lower() for code in config.get("languages") or []),
         )
 
     def fresh_since(self, *, now: datetime | None = None) -> datetime:
@@ -130,6 +161,48 @@ class UserFilters:
             return None
         found = self._matcher.search(f"{title or ''} {company or ''}")
         return found.group(0).lower() if found else None
+
+
+    def unwanted(self, row) -> str | None:
+        """Why this account can never receive this posting, or `None`.
+
+        **The whole of "would we ever send this", in one place, applied before it is scored.** It
+        used to run at delivery, which meant every posting an account could not receive was still
+        embedded against their model, scored, and counted as waiting by two pages that then
+        disagreed with what was sent.
+
+        Returns the reason rather than a boolean so the caller can tally them: "dropped 51 for
+        applicant_glut" is a setting somebody can change in a minute, and "dropped 51" is not.
+
+        **Every check fails open.** An undetectable language, an unclassifiable workplace and an
+        unknown applicant count all keep the posting: a wrong exclusion costs somebody a role and is
+        invisible, while a wrong inclusion costs one model call.
+        """
+        # Title and company only, never the description. A posting that merely *mentions* a term in
+        # a benefits paragraph is not the job the user was excluding, and matching the body turned
+        # "no recruitment agencies" into a filter that removed most of a feed.
+        if self.excluded(row.get("title"), row.get("company")):
+            return "excluded_keyword"
+
+        if applicant_glut(source=row.get("source"), applicants=row.get("applicants"),
+                          cap=self.applicant_cap):
+            return "applicant_glut"
+
+        # `explicit=` is the tag parsed off the posting's own page, and it wins over every
+        # heuristic: it is what the employer wrote, not what the title implies.
+        mode = workfilter.classify(row.get("title") or "", row.get("location") or "",
+                                   row.get("description"), row.get("is_remote"),
+                                   explicit=row.get("workplace"))
+        if not workfilter.is_allowed(mode, row.get("location") or "", list(self.onsite_locations)):
+            return "workplace"
+
+        # Language last: it is the only check that runs a detector, and the cheap checks above have
+        # already removed most of what it would have been run over.
+        if not langfilter.is_allowed(row.get("description") or "", set(self.languages),
+                                     source=row.get("source")):
+            return "language"
+
+        return None
 
 
 def candidate_conditions(filters: UserFilters, *, now: datetime | None = None) -> list:

@@ -50,7 +50,7 @@ from libs.tenant.filters import UserFilters, candidate_conditions
 from services.notifier.buttons import keyboard
 from services.notifier.card import FeedItem
 from services.notifier.card import render as render_card
-from services.notifier.eligibility import CANDIDATE_MULTIPLIER, Eligibility
+from services.notifier.eligibility import CANDIDATE_MULTIPLIER
 from services.notifier.eligibility import select as select_feed
 from services.notifier.freshness import REFRESH_BUDGET_SECONDS, date_candidates
 from services.notifier.routing import group_by_chat
@@ -114,7 +114,6 @@ class BotRevoked(RuntimeError):
 
 def pending_feed(session: Session, user_id: _uuid.UUID, *, cutoff: float,
                  limit: int = MAX_ITEMS_PER_DIGEST,
-                 rules: Eligibility | None = None,
                  store: SecretStore | None = None) -> tuple[list[FeedItem], dict[str, int]]:
     """This user's next digest: eligible, ranked by opportunity, capped at `limit`.
 
@@ -133,13 +132,11 @@ def pending_feed(session: Session, user_id: _uuid.UUID, *, cutoff: float,
     The pool is `CANDIDATE_MULTIPLIER` times the digest so that filtering cannot starve it: taking
     ten and then dropping four for language would send six when forty were eligible.
     """
-    if rules is None:
-        config = session.scalar(select(UserConfig.config).where(UserConfig.user_id == user_id))
-        # The applicant ceiling is the operator's, not the user's: it comes from `libs.limits`
-        # alongside every other per-account ceiling, and `None` there means show everything.
-        user = session.get(User, user_id)
-        rules = Eligibility.from_config(
-            config, applicant_cap=limits.resolve(user, "applicant_cap") if user else None)
+    # **The account's own filters, read once — the same object the score lane already applied.**
+    # Everything it decides was decided before these rows were scored; what it is needed for here is
+    # the freshness window, because a posting can go stale between being scored and being sent.
+    config = session.scalar(select(UserConfig.config).where(UserConfig.user_id == user_id))
+    filters = UserFilters.from_config(config)
 
     # **The age filter belongs in the query, not only after it.** The pool is ordered by score, so
     # without this a backlog of stale high-scoring rows fills every candidate slot and is then
@@ -158,8 +155,6 @@ def pending_feed(session: Session, user_id: _uuid.UUID, *, cutoff: float,
     # `first_seen_at` is the fallback `too_old` already uses in Python, so this is the same rule
     # asked in the same shape rather than a second one — which is what the two of them being
     # different made possible.
-    filters = UserFilters(countries=None, max_age_hours=rules.max_age_hours)
-
     rows = session.execute(
         select(UserJobState.job_id, CorpusJob.url, CorpusJob.title, CorpusJob.company,
                UserJobState.score, CorpusJob.source, CorpusJob.location, CorpusJob.is_remote,
@@ -207,7 +202,7 @@ def pending_feed(session: Session, user_id: _uuid.UUID, *, cutoff: float,
             if client is not None:
                 items = date_candidates(session, items, client)
 
-    return select_feed(items, rules, limit=limit, first_seen=first_seen)
+    return select_feed(items, limit=limit, first_seen=first_seen)
 
 
 @contextmanager

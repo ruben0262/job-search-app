@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from libs.tenant.filters import UserFilters
 
 
@@ -176,3 +178,83 @@ def test_naming_no_country_still_produces_a_usable_condition():
 
     conditions = candidate_conditions(UserFilters.from_config(config()))
     assert len(conditions) == 3
+
+
+# ── the age window, against a real database ─────────────────────────────────────────────────────
+#
+# **These moved here from `test_ranking.py` on 2026-08-06**, with the filter itself. The window used
+# to be tested per item at delivery; it is now a SQL condition applied before anything is scored, so
+# the only test that proves it is one that runs the SQL.
+
+@pytest.fixture()
+def db():
+    import os
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    if not os.environ.get("DATABASE_URL"):
+        pytest.skip("DATABASE_URL not set (no live Postgres)")
+    engine = create_engine(os.environ["DATABASE_URL"])
+    conn = engine.connect()
+    trans = conn.begin()
+    session = Session(bind=conn, join_transaction_mode="create_savepoint")
+    try:
+        yield session
+    finally:
+        session.close()
+        trans.rollback()
+        conn.close()
+
+
+def _row(db, **kwargs):
+    import uuid
+
+    from libs.db.models import CorpusJob
+
+    row = CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test", title="Engineer",
+                    **kwargs)
+    db.add(row)
+    db.flush()
+    return row
+
+
+def _survivors(db, filters):
+    from sqlalchemy import select
+
+    from libs.db.models import CorpusJob
+    from libs.tenant.filters import candidate_conditions
+
+    return set(db.scalars(select(CorpusJob.id).where(*candidate_conditions(filters))).all())
+
+
+def test_a_posting_older_than_the_account_asked_for_never_reaches_the_model(db):
+    """**The harvester fetches at the widest window any account asked for**, because the corpus is
+    shared and one fetch serves everyone. Without this a user who asked for six hours was being sent
+    whatever the most patient account on the platform wanted."""
+    from datetime import UTC, datetime, timedelta
+
+    now = datetime.now(UTC)
+    fresh = _row(db, posted_at=now - timedelta(hours=2))
+    stale = _row(db, posted_at=now - timedelta(hours=30))
+
+    kept = _survivors(db, UserFilters.from_config(config(posted_within_hours=6)))
+    assert fresh.id in kept
+    assert stale.id not in kept
+
+
+def test_an_undated_posting_is_aged_from_when_we_found_it(db):
+    """Most sources report no posted time. **When we found it is a weaker answer than when it was
+    posted, but it is a real one** — and admitting undated rows unconditionally is what let an
+    account accumulate rows that were re-judged every cycle forever."""
+    from datetime import UTC, datetime, timedelta
+
+    now = datetime.now(UTC)
+    recent = _row(db, posted_at=None)
+    old = _row(db, posted_at=None)
+    old.first_seen_at = now - timedelta(hours=40)
+    db.flush()
+
+    kept = _survivors(db, UserFilters.from_config(config(posted_within_hours=6)))
+    assert recent.id in kept, "found a moment ago, so there is nothing to drop it on"
+    assert old.id not in kept, "found forty hours ago and still undated, so it is not fresh"
