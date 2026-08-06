@@ -19,13 +19,15 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 **Nothing stands between a scored match and Telegram any more**, on the owner's instruction — and
 the measurement agreed with them.
 
-`items_per_run` defaulted to **10 a cycle, which is 960 a day**. Measured on the live box: 931
-delivered and **576 matched postings that expired unsent**. Filtering and scoring had already decided
-those were worth sending; the ceiling only delayed them until they were too old to be worth
-anything. It is now unlimited by default, and the only pacing left is `send_gap_seconds`, which is
-Telegram's rule rather than ours.
+**Corrected after deploying — the cause was the wait, not the ceiling.** `items_per_run` defaulted
+to 10, which is 960 a day, and that default is wrong for the reason below. But both live accounts had
+it explicitly set to `null`, so `resolve` was already returning Unlimited and the ceiling was never
+what held them back. The evidence is the throughput shape: raising the default changed nothing, and
+re-arming the run took delivery from ~18 every fifteen minutes to ~18 every fifty-five seconds —
+**about 24×, measured at 950 an hour against 40 before.** The default is unlimited now anyway,
+because 960 a day is below what an account matches and a new signup should not inherit that.
 
-**The other half was the wait, not the cap.** A run stops at its claim so a second worker cannot
+**What actually cost the 576:** A run stops at its claim so a second worker cannot
 start the same digest — that stays, it is the fix for the flood-then-silence incident. What was wrong
 was what happened next: the remainder waited a full fifteen-minute cadence, so a backlog drained at
 one run's worth per cycle while its tail aged past the freshness window. A run that could not finish
