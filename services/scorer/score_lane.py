@@ -22,13 +22,13 @@ from __future__ import annotations
 import logging
 import uuid as _uuid
 
-from sqlalchemy import func, select, true
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from libs.db.models import CorpusJob, User, UserConfig, UserJobState
 from libs.obs import Timings, audit, report_timings, timed
 from libs.scoring import centroid
-from libs.tenant.filters import UserFilters
+from libs.tenant.filters import UserFilters, candidate_conditions
 from libs.tenant.repository import TenantRepository
 from services.scorer.registry import ModelRegistry, ModelUnavailable
 from services.scorer.serve import score_rows
@@ -63,26 +63,12 @@ def unscored_count(session: Session, user_id: _uuid.UUID) -> int:
                | (UserJobState.scored_model_version != user.model_version))) or 0
 
 
-def _in_countries(countries):
-    """The SQL for "in one of these countries, or we could not tell".
-
-    `None` means the account named no location, which admits everywhere — expressed as `true()`
-    rather than as an empty condition so the caller reads the same either way.
-
-    **The NULL half is the important half.** 16% of corpus rows carry no readable country, and they
-    are kept: a filter that dropped them would delete the remote-first postings, which are the most
-    portable jobs on the board (`libs.corpus.geo` rule 2).
-    """
-    if not countries:
-        return true()
-    return CorpusJob.country.is_(None) | CorpusJob.country.in_(countries)
-
-
 def _candidates(session, user, user_id, filters, limit):
     """The rows worth considering for this account, newest first.
 
-    Every condition here is an indexed comparison that Postgres answers without the row ever
-    reaching Python — which is what makes a 30,000-row corpus affordable per account.
+    Every condition is an indexed comparison Postgres answers without the row reaching Python, and
+    they come from `libs.tenant.filters` so this cannot drift from what the notifier will send or
+    from what the health page counts (ROADMAP 6az).
     """
     return session.execute(
         select(CorpusJob.id, CorpusJob.title, CorpusJob.company, CorpusJob.description,
@@ -93,24 +79,10 @@ def _candidates(session, user, user_id, filters, limit):
         .where(CorpusJob.embedding.is_not(None),
                (UserJobState.scored_model_version.is_(None))
                | (UserJobState.scored_model_version != user.model_version),
-               # **Nothing to apply for.** Not a preference, so it is not in `UserFilters`.
-               CorpusJob.closed_at.is_(None),
-               # **Their own freshness window, at last.** The operator's per-source setting decides
-               # how far back a *source is asked*; this is how old a posting may be and still be
-               # worth this account's model. Falls back to `first_seen_at` for the 16% of rows that
-               # carry no posted date, which is the same fallback the delivery filter uses.
-               (CorpusJob.posted_at >= filters.fresh_since())
-               | (CorpusJob.posted_at.is_(None)
-                  & (CorpusJob.first_seen_at >= filters.fresh_since())),
-               # **The country filter, finally running.** `libs.corpus.geo` had no production
-               # consumer for two days after it was written (ROADMAP 6ak); this is it. NULL passes:
-               # a posting that names no place is kept, or the most portable jobs on the board
-               # would be the first to go.
-               _in_countries(filters.countries))
-        # **Newest first.** There was no ordering at all, so a 28,000-row backlog was served in
-        # whatever order Postgres returned it and a posting found a minute ago queued behind jobs
-        # from a month back. The product's whole claim is that a job reaches somebody while it is
-        # still worth applying to (ROADMAP 6au).
+               *candidate_conditions(filters))
+        # **Newest first.** There was no ordering at all, so a posting found a minute ago queued
+        # behind a 28,000-row backlog. The product's whole claim is that a job reaches somebody
+        # while it is still worth applying to (ROADMAP 6au).
         .order_by(CorpusJob.first_seen_at.desc())
         .limit(limit)).mappings().all()
 

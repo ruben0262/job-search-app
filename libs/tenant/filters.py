@@ -34,9 +34,18 @@ import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
+from sqlalchemy import true
+
 from libs.contracts.config import migrate_config
 from libs.corpus.geo import wanted_countries
-from libs.ops.health import DEFAULT_MAX_AGE_HOURS
+from libs.db.models import CorpusJob
+
+# The window an account gets if it never said, matching `SearchSection.posted_within_hours`.
+#
+# **Here rather than in `libs.ops.health`**, where it lived beside the count that reads it: the
+# filters are what it configures, and health importing filters while filters imported health was a
+# circular import waiting for the second caller (ROADMAP 6az).
+DEFAULT_MAX_AGE_HOURS = 24
 
 
 @dataclass(frozen=True)
@@ -121,3 +130,31 @@ class UserFilters:
             return None
         found = self._matcher.search(f"{title or ''} {company or ''}")
         return found.group(0).lower() if found else None
+
+
+def candidate_conditions(filters: UserFilters, *, now: datetime | None = None) -> list:
+    """The SQL every "is this row a candidate for this account" question must ask.
+
+    **Three callers asked it and three copies drifted.** `pending_feed` decides what to send,
+    `pending_matches` decides whether to page an operator, and `score_lane` decides what to score —
+    and on 2026-08-06 the first was fixed and the other two were not, so the health page counted 155
+    rows the notifier could not see and paged about all of them (ROADMAP 6az).
+
+    Returns conditions rather than a query because the three select different columns and order
+    differently; what they must not differ on is *which rows qualify*.
+    """
+    fresh = filters.fresh_since(now=now)
+    return [
+        # Nothing to apply for.
+        CorpusJob.closed_at.is_(None),
+        # **Dated rows against their posted time, undated ones against when we found them.** An
+        # undated row used to be admitted unconditionally, on the reasoning that a later pass would
+        # date it — which needs the account's own proxy, so an account without one accumulated rows
+        # that were re-judged every cycle forever (ROADMAP 6ay).
+        (CorpusJob.posted_at >= fresh)
+        | (CorpusJob.posted_at.is_(None) & (CorpusJob.first_seen_at >= fresh)),
+        # Their countries, or a posting that names no readable place. NULL passes: 16% of rows
+        # carry no country and they are disproportionately the remote-first ones.
+        true() if not filters.countries
+        else CorpusJob.country.is_(None) | CorpusJob.country.in_(filters.countries),
+    ]

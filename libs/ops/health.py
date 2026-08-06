@@ -34,11 +34,11 @@ from libs.db.models import (
 )
 from libs.db.models.queue import LANES
 from libs.scoring.thresholds import cutoff_for
-
-# The window an account gets if it never said, matching `SearchSection.posted_within_hours` and
-# `services.notifier.eligibility.DEFAULT_MAX_AGE_HOURS`. The two have to agree: this decides who is
-# paged, that decides who is sent to, and a disagreement is an alert about nothing.
-DEFAULT_MAX_AGE_HOURS = 24
+from libs.tenant.filters import (
+    DEFAULT_MAX_AGE_HOURS,
+    UserFilters,
+    candidate_conditions,
+)
 
 # What a lane's oldest waiting job is *expected* to be, in minutes. Exceeded by 4x is a stall
 # (`OPERATIONS_PLAN.md` §4). These are the lane's normal latency, not its timeout: `notify` runs on
@@ -186,8 +186,8 @@ def pending_matches(session: Session, user: User) -> int:
     is a false alarm somebody investigates, while one that under-counts is silence.
     """
     cutoff = cutoff_for(session, user.id)
-    config = session.scalar(select(UserConfig.config).where(UserConfig.user_id == user.id))
-    fresh_since = datetime.now(UTC) - timedelta(hours=deliverable_window(config))
+    filters = UserFilters.from_config(
+        session.scalar(select(UserConfig.config).where(UserConfig.user_id == user.id)))
     return session.scalar(
         select(func.count()).select_from(UserJobState)
         .join(CorpusJob, CorpusJob.id == UserJobState.job_id)
@@ -195,8 +195,7 @@ def pending_matches(session: Session, user: User) -> int:
                UserJobState.notified_at.is_(None),
                UserJobState.score.is_not(None),
                UserJobState.score >= cutoff,
-               CorpusJob.closed_at.is_(None),
-               CorpusJob.posted_at.is_(None) | (CorpusJob.posted_at >= fresh_since))) or 0
+               *candidate_conditions(filters))) or 0
 
 
 def user_health(session: Session) -> list[UserHealth]:

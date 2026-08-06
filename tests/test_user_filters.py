@@ -127,3 +127,52 @@ def test_a_v1_config_is_migrated_before_it_is_read():
 
     assert filters.max_age_hours == 72
     assert filters.excluded("Senior Engineer", None) == "senior"
+
+
+# ── one definition of "candidate", for three callers (ROADMAP 6az) ────────────────────────────
+
+
+def test_the_three_callers_all_use_the_shared_conditions():
+    """**Three copies of one question, and fixing one made the others wrong.**
+
+    `pending_feed` decides what to send, `pending_matches` decides whether to page an operator, and
+    `score_lane` decides what to score. On 2026-08-06 the freshness rule was corrected in the first
+    and not the other two, so within the hour the health page was counting 155 rows the notifier
+    could not see and paging about every one of them.
+
+    Pinned by grep rather than by behaviour on purpose: the failure is *a fourth copy appearing*,
+    which no behavioural test of the existing three would notice.
+    """
+    from pathlib import Path
+
+    for name in ("libs/ops/health.py",
+                 "services/notifier/deliver.py",
+                 "services/scorer/score_lane.py"):
+        body = Path(name).read_text(encoding="utf-8")
+        assert "candidate_conditions" in body, (
+            f"{name} must ask `libs.tenant.filters.candidate_conditions` rather than spell the "
+            "conditions out again")
+        assert "posted_at >= " not in body.replace("candidate_conditions", ""), (
+            f"{name} still has its own freshness comparison")
+
+
+def test_the_conditions_are_the_ones_the_callers_need():
+    """The shape, so a caller can splat them into a `where`."""
+    from libs.tenant.filters import candidate_conditions
+
+    conditions = candidate_conditions(UserFilters.from_config(config(locations=["europe"])))
+
+    assert len(conditions) == 3, "closed, fresh, in-country"
+    rendered = " ".join(str(c) for c in conditions)
+    assert "closed_at" in rendered
+    assert "posted_at" in rendered and "first_seen_at" in rendered
+    assert "country" in rendered
+
+
+def test_naming_no_country_still_produces_a_usable_condition():
+    """`true()` rather than a missing element, so every caller splats the same number of conditions
+    and none of them has to branch."""
+    from libs.tenant.filters import candidate_conditions
+
+    conditions = candidate_conditions(UserFilters.from_config(config()))
+    assert len(conditions) == 3

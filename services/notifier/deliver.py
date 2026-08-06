@@ -32,7 +32,7 @@ import statistics
 import uuid as _uuid
 from collections.abc import Callable
 from contextlib import contextmanager
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from time import monotonic, sleep
 
 import httpx
@@ -46,6 +46,7 @@ from libs.db.models.queue import CLAIM_TIMEOUT_MIN
 from libs.obs import audit
 from libs.scoring.thresholds import DEFAULT_CUTOFF, cutoff_for
 from libs.secrets import SecretsError, SecretStore, redacting
+from libs.tenant.filters import UserFilters, candidate_conditions
 from services.notifier.buttons import keyboard
 from services.notifier.card import FeedItem
 from services.notifier.card import render as render_card
@@ -151,7 +152,7 @@ def pending_feed(session: Session, user_id: _uuid.UUID, *, cutoff: float,
     # `first_seen_at` is the fallback `too_old` already uses in Python, so this is the same rule
     # asked in the same shape rather than a second one — which is what the two of them being
     # different made possible.
-    cutoff_at = datetime.now(UTC) - timedelta(hours=rules.max_age_hours)
+    filters = UserFilters(countries=None, max_age_hours=rules.max_age_hours)
 
     rows = session.execute(
         select(UserJobState.job_id, CorpusJob.url, CorpusJob.title, CorpusJob.company,
@@ -165,14 +166,14 @@ def pending_feed(session: Session, user_id: _uuid.UUID, *, cutoff: float,
                CorpusJob.first_seen_at)
         .join(CorpusJob, CorpusJob.id == UserJobState.job_id)
         .where(UserJobState.user_id == user_id,
-               # Never a closed posting. Filtered in SQL rather than in `eligibility` because it is
-               # not a judgement about the user's preferences — there is nothing to apply for.
-               CorpusJob.closed_at.is_(None),
                UserJobState.notified_at.is_(None),
                UserJobState.score.is_not(None),
                UserJobState.score >= cutoff,
-               (CorpusJob.posted_at >= cutoff_at)
-               | (CorpusJob.posted_at.is_(None) & (CorpusJob.first_seen_at >= cutoff_at)))
+               # **The same conditions the health count and the score lane use.** Closed, fresh,
+               # in-country — one definition in `libs.tenant.filters`, because when this was three
+               # copies the health page counted 155 rows the notifier could not see and paged about
+               # every one of them (ROADMAP 6az).
+               *candidate_conditions(filters))
         # **Known-fresh first, then undated, and only then by score.** The age filter above lets
         # undated rows through because it must — LinkedIn reports no posted time and dating them is
         # what `date_candidates` is for — but ordering the pool by score alone let them take every
