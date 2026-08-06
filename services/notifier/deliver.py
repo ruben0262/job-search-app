@@ -356,9 +356,21 @@ def deliver(session: Session, user_id: _uuid.UUID, *,
                     raise BotRevoked(str(exc)[:200]) from exc
                 raise
 
-    # A full batch means the limit was the binding constraint, not the supply — so there is more
+    # **A full *fetch* means the limit was the binding constraint, not the supply**, so there is more
     # behind it and waiting a cadence to find out would be the same delay by another name.
-    if sent and sent >= limit:
+    #
+    # This read `sent >= limit` for an hour and that was wrong: a run that fetched nineteen and sent
+    # seventeen — two having closed between being scored and being sent — looked like a run that had
+    # exhausted the queue, and stopped for fifteen minutes with 317 still waiting. **What was capped
+    # is the question, and the fetch is what carries the cap.**
+    #
+    # **Not unit-tested, deliberately, and this note is the reason.** The two versions differ only
+    # when `sent < len(items)`, which happens only when the pre-send refresh finds a posting closed —
+    # and that refresh needs the account's own proxy client, which no test here has. A test written
+    # against the reachable cases passes identically on both implementations, and a test that passes
+    # before and after is testing nothing (CLAUDE.md §2). The evidence for this line is the live
+    # measurement above, not a green assertion.
+    if len(items) >= limit:
         _deliver_again(session, user_id)
 
     _log_freshness(session, user_id, items[:sent])
