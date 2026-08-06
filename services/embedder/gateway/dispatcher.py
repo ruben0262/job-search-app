@@ -1,29 +1,4 @@
-"""Two-lane dispatch in front of TEI (PLAN §4b/§4c).
-
-The problem: on-arrival scoring (a user waiting) and bulk training embeds share ONE TEI backend.
-A training flood must not make a score request wait.
-
-A single priority queue is NOT enough, and the first VPS run proved it — score latency went from
-0.08s idle to 8-15s under a bulk flood. Priority decides who is picked up NEXT; it cannot recall a
-worker already blocked inside a multi-second TEI call. With every worker busy on bulk chunks, a
-score item sits at the front of the queue and waits anyway (classic head-of-line blocking).
-
-So the lanes get SEPARATE worker pools:
-  - score workers serve /embed only, and are therefore always free to dispatch immediately,
-  - bulk workers serve /embed/bulk, deliberately few (default 1) so a flood cannot fill TEI's own
-    internal queue and push score requests behind a wall of queued batches.
-
-Chunk size is the other half. TEI's CPU backend caps its internal batch at 8, so forwarding more
-than that per call buys no inference speed — it only lengthens the window during which a worker,
-and TEI's queue head, is unavailable. Hence a small bulk chunk by default.
-
-Both queues are BOUNDED (`EMBEDDER_MAX_QUEUE`): past that depth the gateway sheds load with a 503
-rather than growing memory while every caller times out anyway. An unbounded queue just converts a
-throughput problem into an OOM.
-
-TODO(tune): chunk size, pool sizes, and the queue bound are empirical — set them from
-`scripts/load_rss.py` + `tests/test_priority_lane.py` on the real box (PLAN §12/§14.8).
-"""
+"""Two-lane dispatch in front of TEI (PLAN §4b/§4c)."""
 from __future__ import annotations
 
 import asyncio
@@ -84,12 +59,7 @@ class Dispatcher:
         return await fut
 
     async def _submit(self, lane: str, texts: list[str], chunk: int) -> list[list[float]]:
-        """Split into chunks, dispatch them on `lane`, reassemble in the caller's order.
-
-        Chunking is not optional on either lane: TEI refuses any single call over its
-        --max-client-batch-size, so an unchunked request from a caller embedding a page of postings
-        would 413 rather than embed.
-        """
+        """Split into chunks, dispatch them on `lane`, reassemble in the caller's order."""
         if not texts:
             return []
         if self._verifier is not None:

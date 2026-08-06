@@ -1,20 +1,4 @@
-"""How long a posting takes to reach the person it was found for.
-
-**The product's whole claim is timeliness, and nobody was measuring it.** Freshness windows are set
-in hours; if the pipeline itself eats two of them, a four-hour window delivers jobs with two hours
-of usefulness left and the setting is a fiction. This turns that from an assumption into a number.
-
-Two spans, because they fail for different reasons and have different fixes:
-
-- **found → scored** is the platform's own work: describe, embed, score. Slow here means a stage is
-  backed up, and the queue depth in `libs.ops.health` says which one.
-- **scored → delivered** is the wait for the user's next delivery slot. With one 15-minute cadence
-  it should sit near seven minutes on average and never exceed fifteen by much; a larger number
-  means the dispatcher is not keeping up, not that the pipeline is slow.
-
-Reported as percentiles rather than an average. An average hides the tail, and the tail is what a
-user actually experiences on the day the thing they wanted was late.
-"""
+"""How long a posting takes to reach the person it was found for."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -22,8 +6,7 @@ from dataclasses import dataclass
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-# How far back to measure. Long enough that a quiet hour does not empty the sample, short enough
-# that yesterday's incident stops flattering or damning today's number.
+# How far back to measure.
 WINDOW_HOURS = 24
 
 
@@ -40,9 +23,7 @@ class LatencySpan:
         return {"p50": self.p50, "p90": self.p90, "p99": self.p99, "samples": self.samples}
 
 
-# The shape of both measurements. A constant with named slots rather than an f-string built at the
-# call site: the slots are **column identifiers**, an identifier cannot be a bound parameter, and
-# keeping the template in one place makes it obvious that nothing user-supplied reaches it.
+# The shape of both measurements.
 _SPAN_SQL = """
     SELECT count(*) AS n,
            percentile_cont(0.50) WITHIN GROUP (ORDER BY minutes) AS p50,
@@ -67,11 +48,7 @@ _SPAN_SQL = """
 
 
 def _span(session: Session, start: str, end: str, *, hours: int) -> LatencySpan:
-    """Percentiles of `end - start`, in minutes, over rows where both are set.
-
-    One statement rather than pulling rows into Python: the corpus is the largest table on the
-    platform and this runs on an admin page load.
-    """
+    """Percentiles of `end - start`, in minutes, over rows where both are set."""
     sql = _SPAN_SQL.format(start=start, end=end)
     row = session.execute(text(sql), {"hours": hours}).one()
 
@@ -82,15 +59,10 @@ def _span(session: Session, start: str, end: str, *, hours: int) -> LatencySpan:
 
 
 def pipeline_latency(session: Session, *, hours: int = WINDOW_HOURS) -> dict:
-    """Both spans, plus the total a user actually experiences.
-
-    Each span carries its own verdict, so the page renders a judgement rather than asking every
-    reader to remember what a good number looks like.
-    """
+    """Both spans, plus the total a user actually experiences."""
     found_to_scored = _span(session, "c.first_seen_at", "s.scored_at", hours=hours).as_dict()
     scored_to_delivered = _span(session, "s.scored_at", "s.notified_at", hours=hours).as_dict()
-    # What the person waited, end to end. Not the sum of the two above — the percentiles of a sum
-    # are not the sum of the percentiles, and this is the one a user would recognise.
+    # What the person waited, end to end.
     found_to_delivered = _span(session, "c.first_seen_at", "s.notified_at", hours=hours).as_dict()
 
     return {
@@ -98,8 +70,7 @@ def pipeline_latency(session: Session, *, hours: int = WINDOW_HOURS) -> dict:
         "found_to_scored": _judged("found_to_scored", found_to_scored),
         "scored_to_delivered": _judged("scored_to_delivered", scored_to_delivered),
         "found_to_delivered": _judged("found_to_delivered", found_to_delivered),
-        # The worst of the three, so the page has one word for "is the pipeline healthy" without
-        # re-deriving it and disagreeing with the rows underneath.
+        # The worst of the three, so the page has one word for "is the pipeline healthy".
         "verdict": _worst([
             _judged("found_to_scored", found_to_scored)["verdict"],
             _judged("scored_to_delivered", scored_to_delivered)["verdict"],
@@ -107,49 +78,21 @@ def pipeline_latency(session: Session, *, hours: int = WINDOW_HOURS) -> dict:
         ]),
     }
 
-# **Set from measured behaviour, not guessed.** Minutes, per span, as (amber, red).
-#
-# The product's whole claim is being early to a posting, so these are tight on purpose -- but they
-# are also the number an operator will learn to ignore if it cries wolf, and this has already gone
-# wrong once here: a found-to-scored median looked alarming and turned out to be measuring backlog
-# age rather than pipeline latency. Anything that turns amber should be something a person would
-# actually want to look at.
-#
-# Reasoning per span, so a future change to them is a change to an argument rather than a number:
-#
-# - found -> scored: the harvest runs every 15 minutes and the score lane drains behind it, so one
-#   missed cycle is normal and two is a backlog worth seeing.
-# - scored -> delivered: delivery is a 15-minute cadence and sending is paced, so a job scored just
-#   after a send waits most of a cycle by design. An hour means something is not draining.
-# - found -> delivered: not the sum of the other two -- it is what the user experiences, and it is
-#   the only one of the three worth waking up for.
-#
-# **`posted_to_fetched` is deliberately absent, and that absence is the decision.** Sources round
-# what they publish — LinkedIn reports "2 days ago" — so a threshold on it would be judging their
-# rounding, and a red pill produced by rounding is exactly the colour an operator learns to ignore.
-# It is reported without a verdict rather than dropped, because that wait is part of what a user
-# experiences and hiding it would make the judged rows look like the whole story.
-#
-# `fetched_to_stored` is the half that *is* ours, and it is judged tightly for exactly that reason.
+# Set from measured behaviour, not guessed.
 THRESHOLDS: dict[str, tuple[int, int]] = {
     "found_to_scored": (30, 60),
     "scored_to_delivered": (30, 60),
     "found_to_delivered": (60, 120),
-    # Per zone, for the drill-down. Each is one missed cycle of whatever drives that zone, with red
-    # at the point where a person should stop reading and start looking.
+    # Per zone, for the drill-down.
     "found_to_described": (30, 60),
-    # The embedder answers in milliseconds and drains continuously, so unlike the others this one
-    # has no cadence to forgive: minutes here mean a queue, not a schedule.
+    # The embedder drains continuously, so minutes here mean a queue rather than a schedule.
     "described_to_embedded": (15, 45),
     "embedded_to_scored": (30, 60),
-    # **Ours, and tight on purpose.** Everything before it belongs to a board; this is four indexed
-    # lookups and an insert. One minute is already a symptom.
+    # Ours, and tight on purpose.
     "fetched_to_stored": (1, 5),
 }
 
-# Why each threshold is where it is, in the words the expanded row shows. **A colour whose reasoning
-# lives only in a Python constant is a colour nobody trusts**, and this project has already had one
-# number turn out to be measuring something other than what its label claimed.
+# Why each threshold is where it is, in the words the expanded row shows.
 THRESHOLD_REASONING: dict[str, str] = {
     "posted_to_fetched": "Not judged. The board's own publishing lag plus our tick, and sources "
                          "round what they report — so this measures their precision as much as "
@@ -171,17 +114,12 @@ THRESHOLD_REASONING: dict[str, str] = {
                           "the only one of these worth waking up for.",
 }
 
-# Below this many samples a percentile is arithmetic rather than evidence, and colouring it invites
-# somebody to chase a number that three rows produced.
+# Below this many samples a percentile is arithmetic rather than evidence.
 MIN_SAMPLES = 20
 
 
 def verdict(span: str, measured: dict) -> str:
-    """`ok`, `warn`, `down`, or `unknown` for one span.
-
-    Judged on p90 rather than the median: half the jobs arriving promptly is not the claim this
-    product makes, and a median hides exactly the tail a candidate loses a role in.
-    """
+    """`ok`, `warn`, `down`, or `unknown` for one span."""
     if span not in THRESHOLDS:
         return "unknown"
     samples = measured.get("samples") or 0
@@ -204,21 +142,14 @@ def _judged(span: str, measured: dict) -> dict:
 
 
 def _worst(verdicts: list[str]) -> str:
-    """The most serious verdict present.
-
-    `unknown` never outranks a real one: a span with too few samples should not turn the whole
-    pipeline grey while another span is plainly on fire.
-    """
+    """The most serious verdict present."""
     for level in ("down", "warn", "ok"):
         if level in verdicts:
             return level
     return "unknown"
 
 
-# Per-lane timing, from the queue's own timestamps. Two numbers per lane, because they fail for
-# different reasons and have different fixes: **waiting** means not enough workers or a lane behind
-# a long job, **running** means the work itself got slower. A single "how long did it take" hides
-# which, and they are fixed in completely different places.
+# Per-lane timing, from the queue's own timestamps.
 _LANE_SQL = """
     SELECT lane,
            count(*) AS n,
@@ -241,15 +172,7 @@ _LANE_SQL = """
 
 
 def lane_timings(session: Session, *, hours: int = WINDOW_HOURS) -> list[dict]:
-    """How long each lane waited and then ran, in seconds.
-
-    This is where an optimisation target actually comes from. The end-to-end spans say a posting
-    took 36 minutes; they do not say whether that was a worker being busy or the work being slow,
-    and those have nothing to do with each other.
-
-    `run_max` is carried because a lane whose p90 is fine and whose worst case is four minutes has a
-    tail worth looking at, and a percentile alone would never show it.
-    """
+    """How long each lane waited and then ran, in seconds."""
     rows = session.execute(text(_LANE_SQL), {"hours": hours}).all()
     return [
         {"lane": row.lane, "samples": int(row.n),
@@ -261,8 +184,7 @@ def lane_timings(session: Session, *, hours: int = WINDOW_HOURS) -> list[dict]:
         for row in rows]
 
 
-# The end-to-end span, bucketed by hour. **A snapshot cannot show a spike**, and a spike is the
-# thing worth chasing: a p90 of 36 minutes averaged over a day hides an hour where it was four.
+# The end-to-end span, bucketed by hour.
 _SERIES_SQL = """
     SELECT date_trunc('hour', s.notified_at) AS bucket,
            count(*) AS n,
@@ -294,26 +216,11 @@ def latency_series(session: Session, *, hours: int = WINDOW_HOURS) -> list[dict]
 
 
 # ── the drill-down: one row per zone ─────────────────────────────────────────────────────────────
-#
-# **A posting arrives as a link and leaves as a card, and crosses five boundaries in between.** Each
-# boundary is somewhere work is picked up, done, and handed on, and each fails for its own reason
-# with its own fix. The end-to-end number cannot name which one, so it cannot be acted on; these can
-# (ROADMAP 6p).
-#
-# Two scopes, and the difference is not cosmetic. A `corpus` stage happens **once for everybody** —
-# a description is fetched and a vector computed for the shared row — so it must be measured on
-# `corpus` alone. A `user` stage happens **once per account**, so it joins `user_job_state`. Running
-# a corpus stage through that join would multiply every posting by the number of accounts that hold
-# it and report a fabricated sample count.
 
 
 @dataclass(frozen=True)
 class Stage:
-    """One zone of the pipeline: what happens in it, and how to time it.
-
-    Declarative rather than six near-identical functions, because the interesting differences
-    between stages are exactly these fields and they should be readable side by side.
-    """
+    """One zone of the pipeline: what happens in it, and how to time it."""
 
     key: str
     label: str
@@ -324,20 +231,16 @@ class Stage:
     scope: str  # "corpus" — once for everyone; "user" — once per account.
     start: str
     end: str
-    # The queue lane that performs it, where one does. Harvest and describe run on timers rather
-    # than the queue, so there is nothing to split into waiting and running for those.
+    # The queue lane that performs it, where one does.
     lane: str | None = None
-    # A count of what is sitting at this zone's door, where that question has an answer. `since` is
-    # the column that dates the wait, so the oldest one can be aged.
+    # A count of what is sitting at this zone's door, where that question has an answer.
     backlog_where: str | None = None
     backlog_since: str | None = None
-    # A caveat the expanded row shows above the numbers. Present when the measurement itself has a
-    # limitation somebody would otherwise read past.
+    # A caveat the expanded row shows above the numbers.
     caveat: str | None = None
 
 
-# The pipeline, in order. `posted_to_found` is deliberately first and deliberately unjudged — see
-# THRESHOLDS below for why it carries no colour.
+# The pipeline, in order.
 STAGES: tuple[Stage, ...] = (
     Stage(
         key="posted_to_fetched",
@@ -434,9 +337,7 @@ STAGES: tuple[Stage, ...] = (
 
 _BY_KEY = {stage.key: stage for stage in STAGES}
 
-# Where each scope's rows come from. The recency guard on `first_seen_at` belongs to both: without
-# it a rescore of the whole corpus — which happens on every retrain — reports the age of every old
-# row as pipeline latency.
+# Where each scope's rows come from.
 _SCOPE_FROM = {
     "corpus": "corpus c",
     "user": "user_job_state s JOIN corpus c ON c.id = s.job_id",
@@ -461,11 +362,7 @@ _STAGE_SQL = """
 
 
 def _stage_span(session: Session, stage: Stage, *, hours: int) -> dict:
-    """Percentiles for one zone, in minutes, plus its worst case.
-
-    `worst` is carried alongside the percentiles because a stage with a healthy p90 and a
-    forty-minute tail has something worth looking at that no percentile would ever show.
-    """
+    """Percentiles for one zone, in minutes, plus its worst case."""
     sql = _STAGE_SQL.format(start=stage.start, end=stage.end, source=_SCOPE_FROM[stage.scope])
     row = session.execute(text(sql), {"hours": hours}).one()
     if not row.n:
@@ -476,13 +373,7 @@ def _stage_span(session: Session, stage: Stage, *, hours: int) -> dict:
 
 
 def stage_breakdown(session: Session, *, hours: int = WINDOW_HOURS) -> list[dict]:
-    """Every zone, in pipeline order, with the numbers a collapsed row shows.
-
-    Deliberately only the percentiles and a verdict. The things that say *why* a zone is slow —
-    waiting versus running, the backlog behind it, the shape of the last day — are a different kind
-    of question and cost a query each, so they live in `stage_detail` behind an expansion rather
-    than in twelve more columns on a page load.
-    """
+    """Every zone, in pipeline order, with the numbers a collapsed row shows."""
     rows = []
     for stage in STAGES:
         measured = _stage_span(session, stage, hours=hours)
@@ -495,9 +386,7 @@ def stage_breakdown(session: Session, *, hours: int = WINDOW_HOURS) -> list[dict
             "scope": stage.scope,
             "caveat": stage.caveat,
             **measured,
-            # **`unjudged` is not `unknown`.** One means "we chose not to put a colour on this and
-            # here is why"; the other means "there was not enough data to say". Collapsing them
-            # would make a deliberate decision look like missing data.
+            # `unjudged` is not `unknown`.
             "verdict": verdict(stage.key, measured) if judged else "unjudged",
             "judged": judged,
             "amber_after_min": THRESHOLDS.get(stage.key, (None, None))[0],
@@ -533,8 +422,7 @@ _BACKLOG_SQL = """
 
 
 def _stage_series(session: Session, stage: Stage, *, hours: int) -> list[dict]:
-    """One zone, bucketed by hour. **A snapshot cannot show a spike**, and the spike is the hour
-    worth chasing: a p90 of 36 minutes averaged over a day hides the hour it was four times that."""
+    """One zone, bucketed by hour."""
     sql = _STAGE_SERIES_SQL.format(start=stage.start, end=stage.end,
                                    source=_SCOPE_FROM[stage.scope])
     rows = session.execute(text(sql), {"hours": hours}).all()
@@ -545,12 +433,7 @@ def _stage_series(session: Session, stage: Stage, *, hours: int) -> list[dict]:
 
 
 def _stage_backlog(session: Session, stage: Stage) -> dict | None:
-    """How much is sitting at this zone's door, and how long the oldest has waited.
-
-    **The percentiles describe what got through; this describes what did not.** A stage with a fine
-    p90 and four thousand rows queued behind it is about to stop having a fine p90, and only this
-    number says so in advance.
-    """
+    """How much is sitting at this zone's door, and how long the oldest has waited."""
     if not stage.backlog_where or not stage.backlog_since:
         return None
     sql = _BACKLOG_SQL.format(since=stage.backlog_since, where=stage.backlog_where)
@@ -560,19 +443,6 @@ def _stage_backlog(session: Session, stage: Stage) -> dict | None:
 
 
 # ── what the pre-score filter removed ────────────────────────────────────────────────────────────
-#
-# **The stage-3 row the roadmap asked for, and it is deliberately not a duration.** The plan called
-# for "how long the pre-score filter takes per user and — more useful than the duration — how many
-# rows it removed", and the second half is the whole point: the filter costs about four microseconds
-# a row, so timing it would report noise, while what it *removed* is the number that says whether it
-# is earning its place or quietly emptying somebody's feed.
-#
-# **Per account, not per platform.** One user whose filter rejects everything is invisible in a
-# total — and a feed that goes silent because a filter is too tight looks exactly like a feed with
-# nothing new, which is the failure this platform has now shipped twice.
-#
-# No new column: `skip()` already writes `score = NULL` with `scored_at` set, and nothing else on the
-# platform produces that combination, so the count is a `FILTER` clause over rows that exist.
 _FILTER_SQL = """
     SELECT s.user_id,
            u.email,
@@ -596,17 +466,7 @@ FILTER_CAVEAT = ("Removed counts both reasons together — an excluded word and 
 
 
 def filter_effect(session: Session, *, hours: int = WINDOW_HOURS) -> dict:
-    """How much of each account's candidate pool the pre-score filter removed.
-
-    **Judged at one end only.** An account where *everything* was removed has a filter that has
-    turned its feed off, whatever the tuning intended, and that is worth a colour. There is no
-    defensible amber in the middle: a tight filter and a broad one are both correct depending on how
-    much the user has taught the model, and a threshold picked to look reasonable is the kind of
-    number an operator learns to ignore (CLAUDE.md §4).
-
-    A **zero** removal rate is likewise not a fault: an account in cold start has no centroid, and
-    `centroid.keep` fails open on purpose so a new user sees everything.
-    """
+    """How much of each account's candidate pool the pre-score filter removed."""
     rows = session.execute(text(_FILTER_SQL), {"hours": hours}).all()
 
     users = []
@@ -637,26 +497,14 @@ def filter_effect(session: Session, *, hours: int = WINDOW_HOURS) -> dict:
 
 
 def stage_detail(session: Session, key: str, *, hours: int = WINDOW_HOURS) -> dict:
-    """Everything an expanded row shows: why this zone, not just how slow.
-
-    Four answers, and they are different in kind from a percentile, which is why they are here
-    rather than on the table:
-
-    - **waiting vs running**, where a queue lane does the work. `created → claimed` is waiting and
-      means too few workers; `claimed → finished` is running and means the work itself got slower.
-      One "how long did it take" hides which, and they are repaired in completely different places.
-    - **the backlog**, which predicts the next hour where a percentile only describes the last.
-    - **an hourly series**, so a spike has somewhere to appear.
-    - **the threshold's reasoning**, in words, next to the number it judges.
-    """
+    """Everything an expanded row shows: why this zone, not just how slow."""
     stage = _BY_KEY.get(key)
     if stage is None:
         raise KeyError(key)
 
     lane = None
     if stage.lane:
-        # One row out of the per-lane timings rather than a second query shape. Absent when the lane
-        # completed nothing in the window, which is itself worth showing as "nothing ran".
+        # One row out of the per-lane timings rather than a second query shape.
         lane = next((row for row in lane_timings(session, hours=hours)
                      if row["lane"] == stage.lane), None)
 

@@ -1,8 +1,4 @@
-"""Async HTTP client for the TEI backend.
-
-TEI does the actual embedding + internal token-batching + length bucketing. The gateway
-only forwards batches to it (the priority ordering lives in dispatcher.py).
-"""
+"""Async HTTP client for the TEI backend."""
 from __future__ import annotations
 
 import httpx

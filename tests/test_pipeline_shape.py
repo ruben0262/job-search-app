@@ -1,14 +1,4 @@
-"""Where the jobs are — and whether the page telling you can be trusted.
-
-**A dashboard that reports zero when it means "I did not look" is worse than no dashboard**, because
-it is reassuring. Every number here is a count of rows against the condition the *next* stage
-actually reads, so a stage cannot show empty while work sits in it — and the tests below are mostly
-about that property rather than about the arithmetic.
-
-The motivating incident is one day old: 229 rows sat awaiting an embed for over an hour while both
-health alerts pointed at delivery, because nothing anywhere reported the size of that queue
-(ROADMAP 6ax, 6ba).
-"""
+"""Where the jobs are — and whether the page telling you can be trusted."""
 from __future__ import annotations
 
 import os
@@ -55,22 +45,18 @@ def stage(report: dict, key: str) -> dict:
 
 
 def test_every_stage_of_the_pipeline_is_present(db):
-    """Missing stages are the failure this exists to prevent: a stage nobody drew is a stage nobody
-    watches, which is how two dead sweeps and a labeller that never started went unnoticed."""
+    """Missing stages are the failure this exists to prevent."""
     from libs.ops.pipeline import pipeline
 
     keys = [s["key"] for s in pipeline(db)["stages"]]
-    # **No separate "store".** It and "gather" are set by the same `INSERT`, so nothing is ever
-    # queued between them and two rows could only ever show one number twice — or, across the day
-    # `fetched_at` was added, fewer gathered than stored, which is impossible.
+    # No separate "store".
     assert keys == ["gather", "describe", "embed", "score", "deliver"]
     for entry in pipeline(db)["stages"]:
         assert entry["label"] and entry["what"], "every stage says what it is, on the page itself"
 
 
 def test_a_row_waiting_to_be_embedded_is_counted_as_waiting(db):
-    """**The incident, in one assertion.** 229 rows described and unembedded, and no number
-    anywhere said so."""
+    """The incident, in one assertion."""
     from libs.ops.pipeline import pipeline
 
     _job(db, description="We build things. " * 40, description_fetched_at=datetime.now(UTC))
@@ -80,8 +66,7 @@ def test_a_row_waiting_to_be_embedded_is_counted_as_waiting(db):
 
 
 def test_a_row_with_no_description_waits_at_describe_not_at_embed(db):
-    """Each stage counts what *it* is holding. A row that has not been described cannot be waiting
-    to embed, and showing it in both would double the queue."""
+    """Each stage counts what *it* is holding."""
     from libs.ops.pipeline import pipeline
 
     _job(db)
@@ -93,8 +78,7 @@ def test_a_row_with_no_description_waits_at_describe_not_at_embed(db):
 
 
 def test_a_trimmed_row_is_not_a_backlog(db):
-    """Retention drops the description and vector after 90 days, deliberately. Counting those as
-    waiting would make the sweep that keeps the disk flat look like a stalled stage."""
+    """Retention drops the description and vector after 90 days, deliberately."""
     from libs.ops.pipeline import pipeline
 
     _job(db, trimmed_at=datetime.now(UTC))
@@ -104,8 +88,7 @@ def test_a_trimmed_row_is_not_a_backlog(db):
 
 
 def test_the_verdict_is_about_age_not_size(db):
-    """**A thousand rows moving is fine; forty stuck for a day is not.** Colouring by size would
-    turn a busy platform permanently red and teach its reader to ignore it."""
+    """A thousand rows moving is fine; forty stuck for a day is not."""
     from libs.ops.pipeline import pipeline
 
     for _ in range(50):
@@ -116,8 +99,7 @@ def test_the_verdict_is_about_age_not_size(db):
 
 
 def test_a_stage_holding_something_old_turns_red(db):
-    """The other half: one row nobody has picked up for a day is the signal, and it is the shape
-    every outage here has had."""
+    """The other half: one row nobody has picked up for a day is the signal."""
     from libs.ops.pipeline import pipeline
 
     old = _job(db)
@@ -140,8 +122,7 @@ def test_an_empty_stage_is_green_and_says_nothing_about_age(db):
 
 
 def test_the_thresholds_come_from_the_tick_that_clears_them(db):
-    """Derived, not chosen — the harvest interval is what is supposed to drain these stages, so a
-    change to it moves the colours with it."""
+    """Derived, not chosen — the harvest interval is what is supposed to drain these stages."""
     from libs.ops.pipeline import pipeline
     from libs.settings import PLATFORM_TICK_MIN
 
@@ -151,9 +132,7 @@ def test_the_thresholds_come_from_the_tick_that_clears_them(db):
 
 
 def test_scoring_counts_work_not_postings(db):
-    """One corpus row waiting for three accounts is three units of work. Counting distinct postings
-    would understate the queue by exactly the number of users, which is the number that matters as
-    this grows."""
+    """One corpus row waiting for three accounts is three units of work."""
     from libs.db.models import User
     from libs.ops.pipeline import pipeline
 
@@ -171,9 +150,6 @@ def test_scoring_counts_work_not_postings(db):
 
 
 # ── the three ways the first version lied ───────────────────────────────────────────────────────
-#
-# Found by reading the page against the database rather than by a test failing, which is the point:
-# every one of them is a number that looked entirely plausible.
 
 
 def _account(db, **config):
@@ -200,12 +176,7 @@ def _scored(db, user, job, *, score, notified=False, scored_ago_min=5):
 
 
 def test_the_age_of_a_queue_describes_a_row_that_is_in_it(db):
-    """**The count carried the account's filters and the age did not.**
-
-    Live, that read as 142 waiting with an oldest of 138 hours — an age belonging to a posting the
-    count had excluded for being stale. Both numbers were individually correct and together they
-    described nothing, which is the exact shape of every defect this project has shipped.
-    """
+    """The count carried the account's filters and the age did not."""
     from libs.ops.pipeline import pipeline
 
     user = _account(db)
@@ -222,12 +193,7 @@ def test_the_age_of_a_queue_describes_a_row_that_is_in_it(db):
 
 
 def test_the_scoring_queue_can_actually_turn_red(db):
-    """**The one colour that cannot fire is the one nobody notices is missing.**
-
-    `oldest_min` for scoring was initialised to `None` and never assigned, so whatever piled up
-    behind the score lane, the row stayed green. A stage that cannot report a fault is worse than an
-    absent stage, because the page implies it is being watched.
-    """
+    """The one colour that cannot fire is the one nobody notices is missing."""
     from libs.ops.pipeline import pipeline
 
     _account(db)
@@ -244,12 +210,7 @@ def test_the_scoring_queue_can_actually_turn_red(db):
 
 
 def test_a_delivery_queue_is_the_cap_working_but_an_expired_match_is_not(db):
-    """**Delivery is rate-capped on purpose**, so colouring its queue by age would be red every day
-    of the platform's life and teach its reader to ignore the row.
-
-    What is genuinely wrong is a posting the model matched, that nobody was ever shown, that is now
-    too old to send. Measured live at 576 in 48 hours for one account, and invisible until now.
-    """
+    """Delivery is rate-capped on purpose."""
     from libs.ops.pipeline import pipeline
 
     user = _account(db)
@@ -274,8 +235,7 @@ def test_a_delivery_queue_is_the_cap_working_but_an_expired_match_is_not(db):
 
 
 def test_a_stage_with_no_queue_says_so_rather_than_claiming_zero(db):
-    """Gathering and storing are one `INSERT`, so nothing is ever between them. **Zero is a claim
-    and a dash is an admission**, and this page's whole value is the difference."""
+    """Gathering and storing are one `INSERT`, so nothing is ever between them."""
     from libs.ops.pipeline import pipeline
 
     entry = stage(pipeline(db), "gather")
@@ -284,9 +244,7 @@ def test_a_stage_with_no_queue_says_so_rather_than_claiming_zero(db):
 
 
 def test_a_job_a_worker_is_running_is_counted_as_running(db):
-    """**The queue has no state called `running`.** It is `claimed`, so the live view's one moving
-    number counted zero forever — a page built to show whether work is moving, whose "moving" could
-    not move. Shipped and caught the same afternoon by reading it against the table."""
+    """The queue has no state called `running`."""
     from libs.db.models import QueueJob
     from libs.ops.pipeline import pipeline
 

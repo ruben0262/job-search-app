@@ -1,9 +1,4 @@
-"""Stage timing, and the one property that makes it worth having.
-
-Timing code is easy to write and easy to write uselessly. The tests here are about the two cases
-where a naive implementation silently gives the wrong answer: a stage that raises, and a clock that
-moves. Both produce numbers that look plausible and are not.
-"""
+"""Stage timing, and the one property that makes it worth having."""
 from __future__ import annotations
 
 import logging
@@ -22,8 +17,7 @@ def test_a_stage_records_how_long_it_took():
 
 
 def test_a_stage_that_raises_is_still_timed():
-    """**The most useful timing there is.** A stage that runs for ninety seconds and then throws is
-    exactly the one worth knowing about, and a context manager without a `finally` loses it."""
+    """The most useful timing there is."""
     timings = Timings()
     with pytest.raises(ValueError), timed("describe", timings):
         raise ValueError("upstream said no")
@@ -32,8 +26,7 @@ def test_a_stage_that_raises_is_still_timed():
 
 
 def test_a_failed_stage_is_logged_as_failed(caplog):
-    """A slow stage and a slow *failing* stage are different problems. A duration alone says the
-    first."""
+    """A slow stage and a slow *failing* stage are different problems."""
     with caplog.at_level(logging.INFO), pytest.raises(ValueError), timed("embed", Timings()):
         raise ValueError("no")
 
@@ -41,8 +34,7 @@ def test_a_failed_stage_is_logged_as_failed(caplog):
 
 
 def test_stages_keep_the_order_they_ran_in():
-    """A stage that is fast but runs three times is a different problem from one that is slow once,
-    and an unordered mapping hides the difference."""
+    """A stage that is fast but runs three times is a different problem from one that is slow once."""
     timings = Timings()
     for stage in ("gather", "ingest", "gather"):
         with timed(stage, timings):
@@ -61,15 +53,13 @@ def test_the_slowest_stage_is_the_one_reported():
 
 
 def test_an_empty_run_reports_no_slowest_stage_rather_than_raising():
-    """A cycle that skipped every stage is a real outcome — the advisory lock was held — and the
-    reporting path must survive it."""
+    """A cycle that skipped every stage is a real outcome — the advisory lock was held."""
     assert Timings().slowest() is None
     report(Timings(), event="harvest.timing")
 
 
 def test_the_report_names_the_slowest_stage_explicitly(caplog):
-    """The person reading this is reading it at the moment something is slow. Making them work it
-    out from the other numbers is the wrong time to be terse."""
+    """The person reading this is reading it at the moment something is slow."""
     timings = Timings()
     timings.record("gather", 10.0)
     timings.record("describe", 900.0)
@@ -84,8 +74,7 @@ def test_the_report_names_the_slowest_stage_explicitly(caplog):
 
 
 def test_durations_are_rounded_so_two_equal_runs_look_equal():
-    """Sub-millisecond precision on a stage measured in seconds is noise that makes two identical
-    runs look different."""
+    """Sub-millisecond precision on a stage measured in seconds is noise that makes two identical runs."""
     timings = Timings()
     timings.record("gather", 10.4)
     timings.record("ingest", 10.6)

@@ -1,28 +1,4 @@
-"""Create a platform account from the reference instance's config. **Read-only on the source.**
-
-    python deploy/scripts/migrate_reference_account.py --email you@example.com --dry-run
-    python deploy/scripts/migrate_reference_account.py --email you@example.com
-
-This exists for decision **D6**: the single-tenant stacks keep running, and their owners *also* get
-platform accounts, so the two can be compared on the same person. A comparison is only meaningful if
-both sides are searching for the same thing — so this copies the config **verbatim** rather than
-curating it. Nothing in the reference repository is written, moved, or deleted; it is opened for
-reading and that is all.
-
-**What it deliberately does not migrate:**
-
-- **Credentials.** The Claude key, Telegram bot token, and proxy URL live in the reference's `.env`
-  and belong in `user_secrets` under envelope encryption (`TENANT_SAFETY.md` §2), which is Phase 2.
-  Copying plaintext secrets into a database that has no encryption yet would be the exact mistake
-  the KEK design exists to prevent.
-- **Scored history, labels, applied records.** Those are the *output* of a rubric that does not
-  exist per-user yet (Phase 2). Importing them would attach one person's judgements to a profile
-  generation that never produced them.
-
-So this migrates **what the user asked for**, not what the old system concluded. The corpus is
-shared and already populated, which is what makes that sufficient: the account gets the whole
-back-catalogue immediately rather than starting empty (`COLD_START_PLAN.md`).
-"""
+"""Create a platform account from the reference instance's config."""
 from __future__ import annotations
 
 import argparse
@@ -30,9 +6,7 @@ import json
 import sys
 from pathlib import Path
 
-# Operational scripts are run by path (`python deploy/scripts/...`), not as modules, and that does
-# not put the repo root on sys.path. Same trap that made CI fail on `libs` imports: `python -m`
-# adds the working directory and a direct invocation does not.
+# Operational scripts are run by path (`python deploy/scripts/...`), not as modules.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from sqlalchemy import select
@@ -42,9 +16,7 @@ from libs.db.models import User
 from libs.db.session import session_scope
 from libs.tenant.repository import TenantRepository
 
-# The reference searches by region and city name; the platform uses a controlled vocabulary so the
-# harvest fold can deduplicate. Mapping is explicit rather than fuzzy — a wrong guess here silently
-# changes which jobs a user sees, and "European Union" is not the same target as "remote, EU".
+# The reference searches by region and city name.
 LOCATION_MAP = {
     "european union": Location.EUROPEAN_UNION,
     "europe": Location.EUROPE,
@@ -101,9 +73,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
 
-    # The config contains non-ASCII search terms (Hungarian, in the first real migration). A
-    # Windows console defaults to cp1252 and this script would die printing them — losing not the
-    # data, but the operator's only view of what it is about to write.
+    # The config contains non-ASCII search terms (Hungarian, in the first real migration).
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8", errors="replace")
@@ -117,8 +87,7 @@ def main(argv: list[str] | None = None) -> int:
     unmapped = extracted.pop("unmapped_locations")
 
     if unmapped:
-        # Refuse rather than quietly drop. A location that silently vanishes means the user stops
-        # seeing a whole category of job and has no way to tell.
+        # Refuse rather than quietly drop.
         print(f"ERROR: no vocabulary entry for {unmapped!r} — add it to Location before migrating,",
               file=sys.stderr)
         print("       or the user silently stops seeing jobs from there.", file=sys.stderr)
@@ -147,9 +116,7 @@ def main(argv: list[str] | None = None) -> int:
 
         user.timezone = args.timezone
         user.notify_interval_min = args.notify_interval_min
-        # Active immediately: this account exists for the D6 comparison and its owner is the
-        # operator, so there is no email to verify. A self-service signup takes the normal
-        # pending_verification path (TENANT_SAFETY.md §5).
+        # Active immediately: this account exists for the D6 comparison and its owner is the operator.
         user.status = "active"
         user.active = True
 

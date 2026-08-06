@@ -1,17 +1,4 @@
-"""One turn of a setup conversation: call, execute tools, call again, until the agent stops.
-
-The same shape the SDK's tool runner implements, kept explicit for two reasons — every tool call
-here writes to somebody's profile and belongs in an audit line, and the runner is a beta surface
-this platform does not otherwise depend on.
-
-**The transcript is the state.** There is no session object holding a conversation in memory: each
-turn is rebuilt from `setup_messages`, so a worker restart, a closed browser tab, or a user coming
-back a week later all resume the same way.
-
-**One conversation at a time.** Every read here filters on `conversation_id`, so a chat can never
-see another chat's transcript — which is the whole reason for having more than one. What crosses
-between them is the profile the tools write, not the talking.
-"""
+"""One turn of a setup conversation: call, execute tools, call again, until the agent stops."""
 from __future__ import annotations
 
 import logging
@@ -35,23 +22,14 @@ from libs.db.models.setup import SETUP_AGENTS
 
 logger = logging.getLogger(__name__)
 
-# What a turn is allowed to have written before the loop stops. Reached only by a malfunctioning
-# turn — `/setup` Path A reads a document set and writes seven files, comfortably inside it.
+# What a turn is allowed to have written before the loop stops.
 ITERATION_LIMIT_MESSAGE = ("I have run out of steps for this turn. Everything written so far is "
                            "saved — say 'continue' and I will pick up from there.")
 
 
 def history(session: Session, user_id: _uuid.UUID,
             conversation_id: _uuid.UUID) -> list[dict]:
-    """This conversation so far, in the shape the API takes it back.
-
-    Tool calls and their results are replayed as their own turns, so the model sees the file it
-    wrote rather than a summary of having written one — the difference between it knowing what is
-    in `context.md` and it guessing.
-
-    Scoped to one conversation **and** one user: the conversation id alone would be enough, and
-    carrying the user as well is what makes a guessed id useless.
-    """
+    """This conversation so far, in the shape the API takes it back."""
     rows = session.scalars(
         select(SetupMessage)
         .where(SetupMessage.user_id == user_id,
@@ -84,26 +62,12 @@ def run_turn(session: Session, user_id: _uuid.UUID, *, client, message: str,
              agent: str = "setup",
              reply_row: SetupMessage | None = None,
              on_text: Callable[[str], None] | None = None) -> dict:
-    """Take one message from the user and run the agent until it stops calling tools.
-
-    Returns what the caller needs to render and to decide about retraining: the reply, the tools
-    that ran, and which scoring-relevant files were touched.
-
-    **Commits as it goes**, unlike the queue workers. A setup conversation is minutes long and the
-    user is watching; losing ten minutes of interview because the last call failed would be the
-    worst possible moment to be strict about transactions.
-
-    `reply_row` is the pending assistant message this turn fills in. The queued path creates it
-    before enqueuing — so the page can show the turn as accepted the moment it is — and passes it
-    here; a caller that passes nothing gets the whole exchange written for it.
-    """
+    """Take one message from the user and run the agent until it stops calling tools."""
     if agent not in SETUP_AGENTS:
         raise ValueError(f"unknown setup agent {agent!r}; known: {SETUP_AGENTS}")
 
     if reply_row is None:
-        # No row was prepared, so this is the synchronous path: write the user's message and a
-        # pending reply here. The queued path does both before enqueuing, so the page can render
-        # the turn the instant it is accepted.
+        # Synchronous path: write the user's message and a pending reply here.
         session.add(SetupMessage(user_id=user_id, conversation_id=conversation_id,
                                  role="user", content=message, agent=agent))
         touch_conversation(session, user_id, conversation_id, message)
@@ -119,14 +83,7 @@ def run_turn(session: Session, user_id: _uuid.UUID, *, client, message: str,
     reply_parts: list[str] = []
     executed: list[dict] = []
 
-    # **Streamed into the row as it arrives.** The page polls the transcript, so writing partial
-    # text is what makes a two-minute turn feel answered rather than hung — and because it is the
-    # same row the finished reply lands in, a reader who walks away and comes back sees the whole
-    # thing rather than the half they watched.
-    #
-    # The live buffer is kept apart from `reply_parts` deliberately: `complete_tools` streams
-    # chunks *and* returns the same text as its final value, so accumulating both would write
-    # every reply twice. The buffer is what the reader watches; the returned text is what is kept.
+    # Streamed into the row as it arrives.
     streaming: list[str] = []
 
     def _stream(chunk: str) -> None:
@@ -138,11 +95,7 @@ def run_turn(session: Session, user_id: _uuid.UUID, *, client, message: str,
             on_text(chunk)
 
     for step in range(1, MAX_TOOL_ITERATIONS + 1):
-        # **The stop is checked here, between tool steps, and nowhere else.** Mid-call there is an
-        # open HTTP request to Anthropic that cannot be interrupted without abandoning a response
-        # the user has already paid for; between steps everything so far is committed and the next
-        # call has not been made. `session.refresh` because the API set the flag in a different
-        # transaction and this session would otherwise keep serving its own cached row.
+        # The stop is checked here, between tool steps, and nowhere else.
         session.refresh(reply_row)
         if reply_row.status == "cancelling":
             reply_row.content = "\n\n".join([*reply_parts, "".join(streaming)]).strip()
@@ -150,9 +103,7 @@ def run_turn(session: Session, user_id: _uuid.UUID, *, client, message: str,
             reply_row.status = "cancelled"
             session.commit()
             logger.info("setup: %s stopped by the user after %d step(s)", user_id, step - 1)
-            # Same shape as the normal return, plus the flag — a caller that ignores `cancelled`
-            # still gets the partial reply and the files that really were written, because they
-            # were: a stopped turn keeps its work rather than rolling it back.
+            # Same shape as the normal return, plus the flag: a stopped turn keeps its work.
             return {"reply": reply_row.content,
                     "tools_run": [call["name"] for call in executed],
                     "files_written": _written(executed),
@@ -193,17 +144,7 @@ def run_turn(session: Session, user_id: _uuid.UUID, *, client, message: str,
 
 def touch_conversation(session: Session, user_id: _uuid.UUID, conversation_id: _uuid.UUID,
            message: str) -> None:
-    """Move the conversation to the top of the list, and name it if it has no name yet.
-
-    The title is the first thing the user said, trimmed — no model call, because naming a chat is
-    not worth a request that can fail, and the first sentence is what somebody would have typed
-    anyway.
-
-    **Except when the first thing they said was a command.** Since the empty chat opens with a Start
-    button, the opening message is now usually `/setup` — and a tab reading "/setup" names the
-    machinery rather than the conversation, which is the one thing this page tries never to do.
-    A command gets the step's plain-English name instead.
-    """
+    """Move the conversation to the top of the list, and name it if it has no name yet."""
     row = session.get(SetupConversation, conversation_id)
     if row is None or row.user_id != user_id:
         return

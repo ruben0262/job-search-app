@@ -1,9 +1,4 @@
-"""Accuracy gate (PLAN §4b/§14.7): a text embedded ALONE must equal the same text embedded
-INSIDE a large mixed-length batch (within float tolerance). A failure means padding is leaking
-into the pooled vector — a correctness bug in the batcher, not a tuning knob.
-
-Integration test — needs a running stack (EMBEDDER_URL).
-"""
+"""Accuracy gate (PLAN §4b/§14.7): a text embedded alone must equal it embedded inside a batch."""
 from __future__ import annotations
 
 import os

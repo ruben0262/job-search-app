@@ -1,15 +1,4 @@
-"""The setup director and the context command, held to what made them necessary.
-
-**"Better" has to be checkable or it is an opinion.** A conversational prompt cannot be fully judged
-without running it on somebody's credential, and that is a separate, paid exercise. What *can* be
-checked mechanically is the class of defect that made the rewrite necessary in the first place: a
-director whose completion gates name things that do not exist on this platform, and whose steps
-point at commands nothing can start.
-
-Every assertion here is a property the ported local director measurably failed and these
-measurably pass. That file was retired on 2026-07-31 when these went live; the comparison that
-justified them is in `CHANGELOG.md`.
-"""
+"""The setup director and the context command, held to what made them necessary."""
 from __future__ import annotations
 
 import re
@@ -22,8 +11,7 @@ from libs.profiles import setup_files
 
 DRAFT = "setup-director"
 
-# Things that exist only in a local checkout of the reference instance. A gate that names one of
-# these cannot be verified from inside the platform, where there is no filesystem and no shell.
+# Things that exist only in a local checkout of the reference instance.
 LOCAL_ONLY = (
     "docker compose", "docker ", ".env", "pipeline/", "scorer/", ".joblib",
     "git clone", "venv", "docs/GETTING_STARTED.md", "docs/VPS_SETUP.md",
@@ -36,13 +24,11 @@ def _text(name: str) -> str:
 
 
 def _prose(name: str) -> str:
-    """The text with wrapping collapsed. A phrase assertion must not depend on where markdown
-    happened to break the line — that tests the formatter, not the instruction."""
+    """The text with wrapping collapsed."""
     return " ".join(command(name).split()).lower()
 
 
-# Both drafts are reviewed and approved together: the director hands off to `/setup-context`, and
-# approving one without the other leaves the gap that motivated them.
+# Both drafts are reviewed and approved together: the director hands off to `/setup-context`.
 DRAFT_COMMANDS = {"setup-director", "setup-context"}
 
 
@@ -59,11 +45,7 @@ def test_the_draft_names_nothing_that_does_not_exist_on_this_platform():
 # ── completeness: the gate must cover exactly what the trainer requires ────────────────────────
 
 def test_the_draft_accounts_for_every_file_the_trainer_gates_on():
-    """**The director's gate and `train_user`'s gate must be the same eight files.**
-
-    If they drift, a user is told setup is complete and then refused a model with no explanation —
-    the worst shape this failure can take, because both components are behaving correctly.
-    """
+    """The director's gate and `train_user`'s gate must be the same eight files."""
     text = _text(DRAFT)
     missing = [name for name in setup_files() if name not in text]
 
@@ -73,11 +55,7 @@ def test_the_draft_accounts_for_every_file_the_trainer_gates_on():
 # ── reachability: every step it names must be startable ───────────────────────────────────────
 
 def test_every_command_the_draft_tells_a_user_to_run_is_one_that_exists():
-    """A director that hands off to a command nothing can start strands the user mid-setup.
-
-    This is exactly what shipped: `context.md`, `08-role-angles.md` and `label.md` belong to steps
-    the chat never offered, so a new account could not finish setup and could never train.
-    """
+    """A director that hands off to a command nothing can start strands the user mid-setup."""
     referenced = set(re.findall(r"/([a-z][a-z-]+)", _text(DRAFT)))
     # Words that look like commands but are prose or paths, not handoffs.
     referenced -= DRAFT_COMMANDS
@@ -90,11 +68,7 @@ def test_every_command_the_draft_tells_a_user_to_run_is_one_that_exists():
 # ── termination: the reason a director loops forever ──────────────────────────────────────────
 
 def test_the_draft_says_when_to_stop():
-    """**An agent with no stop condition optimises until the budget runs out.**
-
-    The owner's requirement, and the failure mode a director is most prone to: it can always find
-    something else to improve about a profile, and every pass spends the user's own credential.
-    """
+    """An agent with no stop condition optimises until the budget runs out."""
     text = _text(DRAFT).lower()
 
     assert "stop" in text, "no stop instruction at all"
@@ -104,8 +78,7 @@ def test_the_draft_says_when_to_stop():
 
 
 def test_the_draft_asks_for_the_experience_a_cv_leaves_out():
-    """Owner's requirement: internships, side projects and volunteering are often what separates
-    two otherwise similar postings, and none of it reliably survives onto a CV."""
+    """Owner's requirement: internships, side projects and volunteering are often what separates two."""
     text = _text(DRAFT).lower()
 
     for topic in ("internship", "side project", "volunteer"):
@@ -131,8 +104,7 @@ def test_both_commands_are_startable():
 
 
 def test_the_draft_gets_the_environment_note_like_every_other_command():
-    """`system_prompt` is what the model actually receives; a command that only reads well on its
-    own is not the thing being tested."""
+    """`system_prompt` is what the model actually receives."""
     prompt = system_prompt(DRAFT)
 
     assert "There is no checkout and no filesystem" in prompt
@@ -153,8 +125,7 @@ CONTEXT = "setup-context"
 
 
 def test_the_context_command_owns_the_file_nothing_used_to_write():
-    """The gap that made setup impossible to finish: `setup-role-angles` requires `context.md` and
-    nothing produced it, so every new account stalled at a gate it could not pass."""
+    """The gap that made setup impossible to finish."""
     from libs.agents import FILE_OWNERS, UNOWNED_FILES
 
     assert FILE_OWNERS["context.md"] == CONTEXT
@@ -176,8 +147,7 @@ def test_the_context_command_asks_for_what_a_cv_drops():
 
 
 def test_the_context_command_refuses_to_guess_between_conflicting_documents():
-    """Two CVs and a LinkedIn export disagree on titles and dates — observed on a real account.
-    A guess here becomes a fabricated claim on an application."""
+    """Two CVs and a LinkedIn export disagree on titles and dates — observed on a real account."""
     text = _text(CONTEXT).lower()
 
     assert "conflict" in text
@@ -185,16 +155,13 @@ def test_the_context_command_refuses_to_guess_between_conflicting_documents():
 
 
 def test_the_context_command_forbids_placeholders():
-    """`is_filled` treats a bracket as unfinished, so a stub would leave the account unable to
-    train — the failure would surface as a refusal nobody could explain."""
+    """`is_filled` treats a bracket as unfinished, so a stub would leave the account unable to train."""
     assert "placeholder" in _text(CONTEXT).lower()
 
 
 def test_the_director_runs_context_first():
-    """`setup-role-angles` states that `context.md` must already be written, so an order that runs
-    it later produces files grounded on nothing."""
-    # Asserted on the order the steps are carried in, not on slash names in the prose: the director
-    # no longer sends anybody to a command, so its map names steps the way a user hears them.
+    """`setup-role-angles` states that `context.md` must already be written."""
+    # Asserted on the order the steps are carried in, not on slash names in the prose.
     from libs.agents import DIRECTOR_STEPS
 
     assert DIRECTOR_STEPS.index("setup-context") < DIRECTOR_STEPS.index("setup-role-angles")
@@ -204,13 +171,7 @@ def test_the_director_runs_context_first():
 # ── the context file, reverse-engineered from a real one ──────────────────────────────────────
 
 def test_the_context_draft_covers_what_a_real_context_file_contains():
-    """**Modelled on the owner's own file rather than on what seemed sensible.**
-
-    Reading its section headings found six things the first draft would have silently dropped —
-    certifications, publications, methodologies, research methods, and the per-person *rendering*
-    conventions that every CV must follow. The last group is the dangerous one: a missing header
-    location rule or spelling convention does not fail, it produces a confidently wrong document.
-    """
+    """Modelled on the owner's own file rather than on what seemed sensible."""
     text = _prose(CONTEXT)
 
     for topic in ("certification", "publication", "methodolog", "research method",
@@ -219,9 +180,7 @@ def test_the_context_draft_covers_what_a_real_context_file_contains():
 
 
 def test_the_context_draft_excludes_the_platforms_own_rules():
-    """A real context file mixes the person with the workflow, because in a checkout they live in
-    one document. Here the workflow half is the platform's and identical for everyone — writing it
-    per user would mean every account carrying its own copy of rules it cannot change."""
+    """A real context file mixes the person with the workflow."""
     text = _prose(CONTEXT)
 
     assert "not the place for how the platform works" in text
@@ -230,12 +189,7 @@ def test_the_context_draft_excludes_the_platforms_own_rules():
 # ── a scenario walked end to end ──────────────────────────────────────────────────────────────
 
 def test_the_directors_four_steps_produce_exactly_the_required_files():
-    """**Model the run before paying for one.** Every file the four steps claim to write, taken
-    together, must be exactly the set the trainer gates on — no more, no fewer.
-
-    A missing one strands the account at a gate it cannot pass; a spare one is a step nobody needs
-    that still costs a conversation.
-    """
+    """Model the run before paying for one."""
     claimed: set[str] = set()
     for name in ("setup-context", "setup", "setup-role-angles", "setup-scorer"):
         text = _text(name)
@@ -246,8 +200,7 @@ def test_the_directors_four_steps_produce_exactly_the_required_files():
 
 
 def test_the_director_never_promises_a_step_that_writes_nothing():
-    """Each step in the map must own at least one required file, or it is a conversation that
-    cannot move the account closer to being trainable."""
+    """Each step in the map must own at least one required file."""
     director = _text(DRAFT)
 
     from libs.agents import DIRECTOR_STEPS
@@ -259,13 +212,7 @@ def test_the_director_never_promises_a_step_that_writes_nothing():
 
 
 def test_the_director_carries_every_step_it_has_to_run():
-    """**It used to be told to follow instructions it could not see.**
-
-    Its body says "follow that step's own instructions exactly", and one conversation runs one
-    prompt: there is no tool that fetches another. So it worked from the gist, which is what the
-    rest of that prompt exists to prevent. The four bodies are appended at read time rather than
-    pasted into the file, so they stay byte-identical to the reference instance.
-    """
+    """It used to be told to follow instructions it could not see."""
     from libs.agents import DIRECTOR_STEPS, command, system_prompt
 
     prompt = system_prompt("setup-director")
@@ -276,8 +223,7 @@ def test_the_director_carries_every_step_it_has_to_run():
 
 
 def test_the_director_is_startable_and_runs_first():
-    """It is what somebody setting up for the first time wants: one chat, four steps. The
-    individual commands stay startable for anyone redoing one of them."""
+    """It is what somebody setting up for the first time wants: one chat, four steps."""
     from libs.agents import DIRECTOR_STEPS, STARTABLE
 
     assert STARTABLE[0] == "setup-director"
@@ -286,8 +232,7 @@ def test_the_director_is_startable_and_runs_first():
 
 
 def test_the_director_does_not_send_anybody_to_another_chat():
-    """The environment block tells every command to say "open a new chat" when it cannot do
-    something. The director can do all of it, and that sentence would strand the user."""
+    """The environment block tells every command to say "open a new chat" when it cannot do something."""
     from libs.agents import command
 
     body = command("setup-director")

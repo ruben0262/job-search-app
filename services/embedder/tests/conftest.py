@@ -1,13 +1,4 @@
-"""Shared test fixtures/paths.
-
-Puts the repo root on sys.path so tests can import `examples.client` (the reference caller) and
-`gateway.*` without an install step.
-
-Also fails the integration tests FAST and LEGIBLY when EMBEDDER_URL is set but nothing is
-listening. Otherwise every one of them emits a near-identical 60-line httpx traceback for a single
-dead socket, which buries the actual cause. Deliberately a failure and not a skip: a silent skip is
-how §14.1 parity went unrun for days while looking green.
-"""
+"""Shared test fixtures/paths."""
 from __future__ import annotations
 
 import os

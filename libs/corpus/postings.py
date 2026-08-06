@@ -1,41 +1,4 @@
-"""What a job posting's own page says, past what the source's listing API told us.
-
-**Port of `scorer/fetch_desc.py`.** The reference fetches this before every scoring run; the
-platform, until now, did not fetch it at all — it stored whatever `snippet` the source adapter
-happened to return and scored on that. Measured on the corpus, a snippet is a few hundred
-characters of boilerplate where the posting itself runs to several thousand, so the label was being
-formed from the job's advertisement rather than the job.
-
-Six things come off the page, and each of them is a decision the platform was previously making
-blind:
-
-- **description** — what the labeller and the embedder actually read.
-- **applicants** — LinkedIn's own count. A glut means the listing is stale.
-- **reposted** — an auto-resurfaced stale listing, which the card marks and ranking demotes.
-- **workplace** — the authoritative `jobLocationType` / pill, so `workfilter` can drop an explicit
-  on-site posting instead of passing it through as unknown.
-- **posted date** — the real "2 days ago", against a scrape that only ever knows the day.
-- **apply URL** — the external ATS target, which is both the link the user needs and the strongest
-  cross-source dedup key there is.
-
-## Why this is in `libs` rather than in the harvester
-
-The corpus is shared, so a description belongs to the job and not to the user who happened to
-trigger the fetch. Both the harvester (filling in new rows) and a per-user path (`/cv <link>` on an
-arbitrary URL) need this, and `services` may not import `services` — so it lives here, and takes
-the caller's client rather than building one.
-
-**That client is the tenancy seam.** The reference reads `PROXY_URL` from the environment because
-it serves one person. Here the caller passes the `TenantClient` holding that user's proxy lease, so
-bandwidth is metered to whoever caused it, and no code path can quietly fall back to the shared IP
-that LinkedIn blocks.
-
-## Conservative on purpose
-
-Every parser returns `None` rather than a guess. `workplace` in particular: only an explicit tag
-yields `onsite`, because the filter downstream *drops* on that value and a passing mention of
-"occasional onsite visits" in a remote posting's body would otherwise bin a good job.
-"""
+"""What a job posting's own page says, past what the source's listing API told us."""
 from __future__ import annotations
 
 import datetime as dt
@@ -52,38 +15,24 @@ logger = logging.getLogger(__name__)
 
 
 class ProxyUnusable(RuntimeError):
-    """The proxy itself refused, so no retry and no other job will fare any better.
-
-    Distinct from a per-job failure on purpose. "This posting would not load" is worth six retries
-    on a rotating IP; "your proxy account is out of traffic" is worth none, and retrying it turns
-    one dead credential into six requests per row for as long as the pass runs. The reference never
-    had to distinguish them because it had exactly one proxy and a human watching it.
-    """
+    """The proxy itself refused, so no retry and no other job will fare any better."""
 
 try:
     from bs4 import BeautifulSoup
 except ImportError:  # pragma: no cover - only the harvester image installs it
     BeautifulSoup = None  # type: ignore[assignment]
 
-# LinkedIn rate-limits bulk guest fetches. Each retry goes out on a fresh residential IP because
-# the proxy rotates per connection, so a retry is a genuinely different attempt rather than a wait.
+# LinkedIn rate-limits bulk guest fetches.
 LI_RETRIES = 6
 LI_BACKOFF = 2.0
 
-# Answers a fresh IP cannot change. **A retry is only worth its bandwidth when the next attempt
-# could plausibly differ**, and a deleted posting will not come back: 404 and 410 were being asked
-# six times each, on the user's own paid residential proxy, for the same answer (ROADMAP 6am).
-#
-# 429 and 5xx are deliberately absent — those are exactly the transient cases the rotation exists
-# for, and they keep every one of their attempts.
+# Answers a fresh IP cannot change.
 TERMINAL_STATUSES = frozenset({400, 404, 410})
 
-# Trust a source's own snippet at this length rather than spending a fetch. Tier-2 APIs return the
-# full text here; LinkedIn returns a teaser, which is why it is never trusted below.
+# Trust a source's own snippet at this length rather than spending a fetch.
 MIN_SNIPPET = 200
 
-# Cap on the stored description: enough to score and embed, and a bound on the token bill for a
-# posting that inlines an entire employee handbook.
+# Cap on the stored description: enough to score and embed, and a bound on the token bill.
 MAX_DESC = 4_000
 
 _LINKEDIN_ID = re.compile(r"/jobs/view/(\d+)")
@@ -94,15 +43,12 @@ _POSTED = re.compile(r"posted-time-ago__text[^>]*>\s*([^<]+)<")
 _CLOSED = re.compile(r"no longer accepting applications", re.I)
 
 _JLT_RE = re.compile(r'"jobLocationType"\s*:\s*"([^"]+)"', re.I)
-# The workplace pill as LinkedIn renders it: bracketed in the title, or middot-separated in the
-# top-card subtitle ("London, UK · Hybrid"). Deliberately narrow — these shapes cannot be produced
-# by prose, which is what stops a JD mentioning "onsite" from being classified as on-site.
+# The workplace pill as LinkedIn renders it: bracketed in the title, or middot-separated below it.
 _WP_REMOTE_RE = re.compile(r"\((?:fully\s+)?remote\)|[·|•]\s*remote\b|\bfully\s+remote\b", re.I)
 _WP_HYBRID_RE = re.compile(r"\(hybrid\)|[·|•]\s*hybrid\b", re.I)
 _WP_ONSITE_RE = re.compile(r"\(on-?site\)|[·|•]\s*on-?site\b", re.I)
 
-# Known ATS job-page shapes. A board's Apply button almost always points at the company's own ATS,
-# which makes this the cross-source dedup key: two boards listing one job resolve to one URL.
+# Known ATS job-page shapes.
 _ATS_APPLY_RE = re.compile(
     r"https?://(?:job-boards|boards)\.greenhouse\.io/[A-Za-z0-9_-]+/jobs/\d+"
     r"|https?://jobs\.(?:eu\.)?lever\.co/[A-Za-z0-9_-]+/[A-Fa-f0-9-]{16,}"
@@ -145,11 +91,7 @@ def _jsonld_objects(html_text: str) -> list[dict]:
 
 
 def jsonld_description(html_text: str) -> str | None:
-    """The JD out of the page's JSON-LD, which most ATS and boards embed.
-
-    Preferred over stripping the whole page because it is the description and nothing else — no
-    nav, no cookie banner, no "similar jobs" list competing for the model's attention.
-    """
+    """The JD out of the page's JSON-LD, which most ATS and boards embed."""
     for obj in _jsonld_objects(html_text):
         clean = strip_html(obj.get("description") or "")
         if len(clean) >= 100:
@@ -202,11 +144,7 @@ _UNIT_DELTA = {"minute": "minutes", "hour": "hours", "day": "days", "week": "wee
 
 
 def parse_posted_at(html_text: str, *, now: dt.datetime | None = None) -> dt.datetime | None:
-    """LinkedIn's relative "2 days ago" as an absolute timestamp.
-
-    Worth the parse because the scrape only ever knows the date, and recency ordering on a feed
-    checked every fifteen minutes cares about the hours.
-    """
+    """LinkedIn's relative "2 days ago" as an absolute timestamp."""
     caption = _POSTED.search(html_text)
     if not caption:
         return None
@@ -219,18 +157,7 @@ def parse_posted_at(html_text: str, *, now: dt.datetime | None = None) -> dt.dat
 
 
 def parse_reposted(html_text: str) -> bool | None:
-    """Whether LinkedIn is showing "Reposted" rather than "Posted".
-
-    **`None` unless the page actually says so, which no page we can reach does.** A repost is a
-    stale listing resurfaced, and it is worth ranking down whatever its timestamp claims — but the
-    marker appears only to a logged-in session. Confirmed twice: the word "repost" is absent from
-    the guest fragment and from the 250 KB full page on every sample, while the same posting shows
-    "Reposted 5 hours ago" to a signed-in browser.
-
-    So a caption without the word is **no evidence either way**, and returning False from it told
-    2,584 rows they were not reposts on the strength of a page that never mentions reposts. Unknown
-    is the honest answer, and it is what the card already renders as nothing.
-    """
+    """Whether LinkedIn is showing "Reposted" rather than "Posted"."""
     caption = _POSTED.search(html_text)
     if not caption or "repost" not in caption.group(1).lower():
         return None
@@ -238,15 +165,7 @@ def parse_reposted(html_text: str) -> bool | None:
 
 
 def parse_workplace(html_text: str) -> str | None:
-    """`remote` | `hybrid` | `onsite` | None, in that order of evidence.
-
-    schema.org `jobLocationType` first: TELECOMMUTE is the W3C/Google standard and the most
-    reliable signal on the page. Then LinkedIn's pill, scanned only in the first 6KB where the
-    top-card lives — restricting the window is what keeps JD prose out of the classification.
-
-    On the lightweight guest fragment this legitimately returns None: the pill is on the full
-    `/jobs/view` page. None is the safe answer, because the filter downstream fails open.
-    """
+    """`remote` | `hybrid` | `onsite` | None, in that order of evidence."""
     if not html_text:
         return None
     kind = _JLT_RE.search(html_text)
@@ -263,23 +182,12 @@ def parse_workplace(html_text: str) -> str | None:
 
 
 def parse_accepting(html_text: str) -> bool:
-    """False once the posting says "No longer accepting applications".
-
-    What lets the refresher retire a dead listing rather than keep it in a feed as if it were live.
-    """
+    """False once the posting says "No longer accepting applications"."""
     return not bool(_CLOSED.search(html_text))
 
 
 def parse_easy_apply(html_text: str) -> bool | None:
-    """Whether the application stays on LinkedIn.
-
-    Keyed off *where* the application happens rather than the button's words, because the
-    logged-out page rarely shows the literal "Easy Apply" label — that is a signed-in string, and
-    keying off it made almost everything read as external:
-
-        apply-link-onsite   → stays on LinkedIn  → easy apply
-        apply-link-offsite  → company website    → not easy
-    """
+    """Whether the application stays on LinkedIn."""
     low = html_text.lower()
     if "apply-link-offsite" in low or "apply on company website" in low:
         return False
@@ -321,12 +229,7 @@ def normalise_apply_url(href: str) -> str | None:
 
 
 def parse_apply_signal(html_text: str) -> tuple[bool | None, str | None]:
-    """LinkedIn's main apply control as `(is_easy_apply, candidate_url)`.
-
-    Ranked rather than first-match: a page carries several links containing the word "apply", and
-    the one that matters is the top-card button. An explicit "Easy Apply" outranks "apply on
-    company website", which outranks a bare "apply" anywhere on the page.
-    """
+    """LinkedIn's main apply control as `(is_easy_apply, candidate_url)`."""
     if BeautifulSoup:
         candidates: list[tuple[int, str, str]] = []
         soup = BeautifulSoup(html_text, "html.parser")
@@ -361,11 +264,7 @@ def parse_apply_signal(html_text: str) -> tuple[bool | None, str | None]:
 
 
 def resolve_apply_url(url: str, client: httpx.Client) -> str | None:
-    """Follow an apply link and keep it only if it lands somewhere external and alive.
-
-    A link that 404s or bounces back to LinkedIn is worse than no link: it is presented to the user
-    as the way to apply, and they find out it is not by clicking it.
-    """
+    """Follow an apply link and keep it only if it lands somewhere external and alive."""
     parsed = urlparse((url or "").strip())
     if parsed.scheme not in ("http", "https") or not parsed.netloc:
         return None
@@ -411,22 +310,9 @@ class Posting(dict):
         return self.get("description") or ""
 
 
-# **`fetch_easy_apply` was removed on 2026-08-05, measured rather than reasoned about.** It streamed
-# up to 96 KB of `/jobs/view` per posting on a user's paid residential proxy to read one boolean.
-# Probed against four live postings, guest fragment and full page side by side: the full page is
-# 250 KB and carries **none** of `apply-link-onsite`, "easy apply", "repost" or "promoted by" —
-# every marker appears only to a logged-in session. Six times the bytes for the same nothing.
-#
-# `parse_easy_apply` stays: it is pure, tested, and correct the day a logged-in page exists.
-
 
 def fetch_posting(url: str, client: httpx.Client) -> dict[str, Any]:
-    """Everything about an arbitrary job URL, for `/cv <link>` — no corpus row required.
-
-    Prefers JSON-LD, falls back to a page strip for the description and og:title for the title, and
-    returns empty strings for whatever the page does not say. It never raises: the user pasted a
-    link and deserves an answer about it, not a stack trace.
-    """
+    """Everything about an arbitrary job URL, for `/cv <link>` — no corpus row required."""
     job_id = linkedin_id(url)
     try:
         response = client.get(_guest_url(job_id) if job_id else url)
@@ -451,16 +337,7 @@ def fetch_posting(url: str, client: httpx.Client) -> dict[str, Any]:
 
 def fetch_job(url: str, *, client: httpx.Client, snippet: str = "", title: str = "",
               stats: dict | None = None) -> Posting:
-    """The description and every posting signal the page will give up.
-
-    Returns a `Posting` with `description` always set — falling back to the snippet and then the
-    title, because a job with a thin description still has to be scored, and an exception here
-    would drop it from the corpus entirely.
-
-    `stats` tallies outcomes by reason (`li_ok`, `li_http_429`, `li_empty`, `generic_ok`, `thin`).
-    Without it a bulk run that silently falls back to snippets looks identical to one that worked,
-    which is the failure this is designed to make visible.
-    """
+    """The description and every posting signal the page will give up."""
     def tally(key: str) -> None:
         if stats is not None:
             stats[key] = stats.get(key, 0) + 1
@@ -488,10 +365,7 @@ def _fetch_board(url: str, *, client: httpx.Client, snippet: str, title: str,
         if url:
             response = client.get(url)
             if response.status_code == 200:
-                # Free while the page is open: the board's external ATS link, and the
-                # authoritative workplace type most ATS boards emit as JSON-LD. Getting the
-                # workplace here is what lets an explicit on-site posting be dropped rather
-                # than passed through as unknown.
+                # Free while the page is open: the ATS link, and the JSON-LD workplace type.
                 out["application_url"] = extract_ats_url(response.text)
                 out["workplace"] = parse_workplace(response.text)
                 body = jsonld_description(response.text)
@@ -522,11 +396,9 @@ def _fetch_linkedin(job_id: str, *, client: httpx.Client, snippet: str, title: s
             time.sleep(LI_BACKOFF)
             continue
         if response.status_code == 200:
-            # The guest page's values beat the scrape's on every field it carries: a real posted
-            # timestamp rather than a date, a genuine workplace tag, the applicant count.
+            # The guest page's values beat the scrape's on every field it carries.
             out["applicants"] = parse_applicants(response.text) or out["applicants"]
-            # The caption, because the number in it means different things: "be among the first 25"
-            # is fewer than 25, "over 200" is a ceiling.
+            # The caption, because "first 25" is fewer than 25 and "over 200" is a ceiling.
             out["applicants_caption"] = applicants_caption(response.text)
             out["reposted"] = parse_reposted(response.text)
             out["workplace"] = parse_workplace(response.text)
@@ -537,15 +409,7 @@ def _fetch_linkedin(job_id: str, *, client: httpx.Client, snippet: str, title: s
                 tally("li_ok")
                 out["description"] = text[:MAX_DESC]
                 return out
-            # **A 200 with no description body is an answer, not a failure.**
-            #
-            # This used to retry, on the reasoning that a blank body means throttled or expired. The
-            # live log disproves it: the same posting returns 200 with the same short body six times
-            # in a row, each attempt on a fresh residential IP. It is simply a fragment LinkedIn
-            # serves without `show-more-less-html__markup`. Retrying spent six times the user's paid
-            # bandwidth to receive the same page again, and everything else on it — the applicant
-            # count, the workplace tag, the posted time — was already parsed above and kept
-            # (ROADMAP 6am).
+            # A 200 with no description body is an answer, not a failure.
             tally("li_empty")
             break
         if response.status_code in TERMINAL_STATUSES:
@@ -561,18 +425,7 @@ def _fetch_linkedin(job_id: str, *, client: httpx.Client, snippet: str, title: s
 
 
 def fetch_meta(url: str, *, client: httpx.Client, stats: dict | None = None) -> Posting:
-    """Live metadata only — no description. What the freshness refresher runs.
-
-    Cheap enough to run over a whole feed: it answers "is this still worth showing" (accepting,
-    applicants, reposted) without re-paying for text already stored. Non-LinkedIn URLs return all
-    Nones, because nothing else exposes anything reliable to parse.
-
-    **What it cannot answer, it leaves unknown.** Easy Apply, repost, and an accurate applicant
-    count are visible only to a logged-in session — measured on four postings against both the guest
-    fragment and the 250 KB full page, and confirmed against the owner's own browser, where the same
-    job reads "Reposted 5 hours ago · 98 applicants" and the logged-out page says "5 hours ago · 86
-    applicants". The count here is a **floor**, not a total.
-    """
+    """Live metadata only — no description."""
     def tally(key: str) -> None:
         if stats is not None:
             stats[key] = stats.get(key, 0) + 1
@@ -601,8 +454,7 @@ def fetch_meta(url: str, *, client: httpx.Client, stats: dict | None = None) -> 
             out["accepting"] = parse_accepting(response.text)
             out["reposted"] = parse_reposted(response.text)
             out["workplace"] = parse_workplace(response.text)
-            # Easy Apply is not on any page a logged-out fetch can reach, so it is left unknown
-            # rather than guessed at. The apply URL still resolves from the fragment.
+            # Easy Apply is on no page a logged-out fetch can reach, so it stays unknown rather than guessed.
             out["application_url"] = parse_application_url(response.text, client)
             tally("li_ok")
             return out

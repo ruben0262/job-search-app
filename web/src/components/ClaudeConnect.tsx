@@ -1,17 +1,4 @@
-/**
- * Connecting a Claude subscription with a button instead of a terminal.
- *
- * **What the user used to have to do**: install the Claude Code CLI, run `claude setup-token`, open
- * the URL it printed, sign in, copy a long-lived secret out of their terminal, and paste it into a
- * form. Five steps, four of them ours to do for them.
- *
- * Only the middle one genuinely needs a human — somebody has to sign in as themselves — so that is
- * the only one left. We start the sign-in on the server, hand over the link, and take back the
- * short code the browser shows. On success the modal closes itself and the caller moves on.
- *
- * The code is not the credential. It is single-use and worthless without the verifier held server
- * side, which is why it is safe for it to travel through a text input the user can see.
- */
+/** Connecting a Claude subscription with a button instead of a terminal. */
 import { useEffect, useState } from "react";
 
 import { api } from "../api";
@@ -26,8 +13,7 @@ export function ClaudeConnect({ onConnected }: { onConnected: () => void }) {
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  // A live sign-in holds a real process on the server. Closing the tab or navigating away should
-  // release it rather than leave it to the timeout.
+  // A live sign-in holds a real process on the server.
   useEffect(() => {
     if (!session) return;
     const drop = () => void api.post("/credentials/claude/oauth/cancel", { session_id: session });
@@ -40,10 +26,7 @@ export function ClaudeConnect({ onConnected }: { onConnected: () => void }) {
     setPhase("starting");
     setOpen(true);
 
-    // **Opened in the click, not after the await.** The server takes a few seconds to get a URL out
-    // of the CLI, and a tab opened after that await is no longer part of a user gesture -- browsers
-    // block it, and the ones that allow it left the user staring at nothing meanwhile. So the tab
-    // is claimed immediately and pointed at the URL when it arrives.
+    // Opened in the click, not after the await.
     const tab = window.open("", "_blank");
     if (tab) tab.opener = null;
 
@@ -77,10 +60,7 @@ export function ClaudeConnect({ onConnected }: { onConnected: () => void }) {
         onConnected();
       }, 900);
     } catch (caught) {
-      // **The link stays.** A rejected code leaves the session alive server side, still on the
-      // same challenge, so the user can correct the paste against the tab they already have open.
-      // Clearing the URL here used to strand them: a new link, a new challenge, and the code in
-      // front of them permanently invalid.
+      // The link stays.
       setPhase("waiting");
       setError(caught instanceof Error ? caught.message : "that code was not accepted");
     }
@@ -102,10 +82,7 @@ export function ClaudeConnect({ onConnected }: { onConnected: () => void }) {
       </button>
       {error && !open ? <p className="error">{error}</p> : null}
 
-      {/* **The backdrop does not close this one.** Elsewhere a stray click costs nothing; here it
-          cancelled the sign-in, and the next attempt minted a fresh URL with a new PKCE challenge,
-          so the code sitting in the tab the user had already authorized in could never work again.
-          Leaving is deliberate, through Cancel. */}
+      {/* The backdrop does not close this one. */}
       {open ? (
         <div className="modal-backdrop">
           <div className="modal">

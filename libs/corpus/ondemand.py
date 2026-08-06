@@ -1,22 +1,4 @@
-"""A job the user pasted, turned into a corpus row.
-
-`/cv <link>` and `/cover <link>` are the reference's answer to a job found somewhere the harvest
-never looked — a friend's message, a company's own careers page, a post on a forum. The user should
-not have to explain why the platform has not seen it; they paste the link and get the document.
-
-**It goes into the shared corpus rather than into a side table.** Three things fall out of that,
-and the third is the one that matters:
-
-- the build path is the ordinary one, so a pasted job produces exactly the same document as a
-  delivered one rather than travelling through a second code path nobody exercises;
-- the applications page and the training data see it, because it is a job the user acted on;
-- **the next user to be shown that job gets it already described.** A link pasted once is a link
-  fetched once, for everybody.
-
-Dedup runs first and runs the same four layers everything else does. A pasted LinkedIn link very
-often resolves to a Greenhouse posting already in the corpus, and adding a second row would give
-the user two different feed entries for one job and split its history in half.
-"""
+"""A job the user pasted, turned into a corpus row."""
 from __future__ import annotations
 
 import logging
@@ -41,17 +23,12 @@ class Resolved:
     job_id: int
     title: str
     company: str
-    # Whether this was already in the corpus. Worth reporting back: "you have seen this one" is a
-    # more useful answer than silently building a second copy.
+    # Whether this was already in the corpus.
     existing: bool
 
 
 def resolve(session, url: str, client) -> Resolved:
-    """Find or create the corpus row for a pasted job URL.
-
-    Raises `NotAJobLink` rather than returning a half-row: a build against a job with no title and
-    no description would produce a document about nothing, and it would cost the user to find out.
-    """
+    """Find or create the corpus row for a pasted job URL."""
     url = (url or "").strip()
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https") or not parsed.netloc:
@@ -70,8 +47,7 @@ def resolve(session, url: str, client) -> Resolved:
         raise NotAJobLink(
             "could not read that page — some job boards block us. Try the company's own listing")
 
-    # Dedup again with what the page told us: a title and a company make the content key usable,
-    # and that is the layer that catches the same role listed on two boards.
+    # Dedup again with the page's title and company: the layer that catches one role on two boards.
     duplicate = corpus.find_duplicate(url, title, posting.get("company") or "",
                                       posting.get("location") or "")
     if duplicate is not None:

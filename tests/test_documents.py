@@ -1,12 +1,4 @@
-"""Document extraction and upload.
-
-Real `.docx` and `.pdf` bytes, built here rather than mocked — a mocked parser proves nothing about
-whether an actual CV reads, which is the only question this code has to answer.
-
-The assertions that matter: a scan with no text layer says so rather than storing nothing useful, a
-`.docx` table is read (CVs put dates and employers in tables), the file itself is never persisted,
-and one user cannot reach another's documents.
-"""
+"""Document extraction and upload."""
 from __future__ import annotations
 
 import io
@@ -51,8 +43,7 @@ def _blank_pdf_bytes(pages: int = 1) -> bytes:
 # ── extraction ────────────────────────────────────────────────────────────────────────────────
 
 def test_plain_text_keeps_its_line_structure():
-    """A CV is a list because of its line breaks. Collapsing them would turn a work history into a
-    paragraph and lose the shape the model reads it by."""
+    """A CV is a list because of its line breaks."""
     extracted = extract_text("cv.md", b"# Alice\n\nBackend Engineer\n- Go\n- Postgres\n")
     assert extracted.text.splitlines() == ["# Alice", "", "Backend Engineer", "- Go", "- Postgres"]
 
@@ -63,8 +54,7 @@ def test_runs_of_blank_lines_collapse_to_one():
 
 
 def test_a_docx_table_is_read():
-    """CVs routinely lay out dates, employers and skills matrices in a table. Reading only
-    paragraphs silently drops the employment history."""
+    """CVs routinely lay out dates, employers and skills matrices in a table."""
     data = _docx_bytes(["Alice Example"], table=[["2019-2022", "Acme"], ["2022-", "Globex"]])
     text = extract_text("cv.docx", data).text
     assert "Alice Example" in text
@@ -73,15 +63,13 @@ def test_a_docx_table_is_read():
 
 
 def test_a_scan_with_no_text_layer_says_so():
-    """The single most likely bad upload. Storing it silently would give the processing step an
-    empty CV and the user a bad profile with no clue why."""
+    """The single most likely bad upload."""
     with pytest.raises(UnsupportedDocument, match="no readable text"):
         extract_text("scan.pdf", _blank_pdf_bytes())
 
 
 def test_an_unreadable_file_does_not_leak_the_parser_error():
-    """A parser's exception text is meaningless to the person at the form and occasionally quotes
-    file contents."""
+    """A parser's exception text is meaningless to the person at the form and occasionally quotes file."""
     with pytest.raises(UnsupportedDocument) as exc:
         extract_text("cv.pdf", b"this is not a pdf at all")
     assert "could not be read" in str(exc.value)
@@ -95,31 +83,27 @@ def test_an_unsupported_format_names_what_is_supported(filename):
 
 
 def test_an_oversized_file_is_refused_before_it_is_parsed():
-    """The ceiling exists so a decompression bomb is a rejection rather than an outage — which
-    means it has to apply before any parser sees the bytes."""
+    """The ceiling exists so a decompression bomb is a rejection rather than an outage."""
     with pytest.raises(UnsupportedDocument, match="the limit is"):
         extract_text("big.pdf", b"x" * (11 * 1024 * 1024))
 
 
 def test_very_long_text_is_truncated_and_says_so():
-    """Silently keeping the first 200k characters would give a user a profile built from half their
-    history with no indication."""
+    """Silently keeping the first 200k characters would give a user a profile built from half their."""
     extracted = extract_text("history.txt", ("word " * 60_000).encode())
     assert extracted.truncated is True
     assert extracted.chars == MAX_TEXT_CHARS
 
 
 def test_the_same_content_in_two_formats_hashes_the_same():
-    """The hash is over the extracted text, not the file, so a CV exported twice is recognised as
-    one document rather than stored twice."""
+    """The hash is over the extracted text, not the file."""
     first = extract_text("cv.txt", b"Alice Example\nBackend Engineer")
     second = extract_text("cv.md", b"Alice Example\nBackend Engineer\n")
     assert first.sha256 == second.sha256
 
 
 def test_a_legacy_encoding_is_read_rather_than_rejected():
-    """A CV exported from an old word processor is often cp1252. Rejecting it would be correct and
-    useless."""
+    """A CV exported from an old word processor is often cp1252."""
     assert "Andr" in extract_text("cv.txt", "András Lekli".encode("latin-1")).text
 
 
@@ -177,8 +161,7 @@ def _upload(http, name="cv.txt", body=b"Alice Example\nBackend Engineer at Acme"
 
 @pytestmark_db
 def test_an_upload_stores_the_text_and_not_the_file(api):
-    """Nothing downstream reads a PDF, and keeping strangers' records on disk would be a liability
-    with no consumer."""
+    """Nothing downstream reads a PDF, and keeping strangers' records on disk would be a liability with."""
     from libs.db.models import UserDocument
 
     http, session, users = api
@@ -193,8 +176,7 @@ def test_an_upload_stores_the_text_and_not_the_file(api):
 
 @pytestmark_db
 def test_re_uploading_the_same_file_replaces_rather_than_duplicates(api):
-    """Users press the button twice, and two copies of one CV is one CV of signal at twice the
-    processing cost."""
+    """Users press the button twice, and two copies of one CV is one CV of signal at twice the processing."""
     from sqlalchemy import func, select
 
     from libs.db.models import UserDocument
@@ -221,8 +203,7 @@ def test_a_bad_file_is_refused_with_something_the_user_can_act_on(api):
 
 @pytestmark_db
 def test_the_list_shows_a_preview_not_the_whole_history(api):
-    """Returning the full text would put a person's complete employment history into a response the
-    dashboard has no use for."""
+    """Returning the full text would put a person's complete employment history into a response the."""
     http, session, _ = api
     _upload(http, body=("Employment history. " * 500).encode())
     session.flush()

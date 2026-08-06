@@ -1,18 +1,4 @@
-"""FastAPI gateway for the shared embedder.
-
-Endpoints:
-    GET  /health       -> {ok, model, dim, normalize, version, tei_ok, verified, ...}
-    POST /embed        -> fast lane   (on-arrival scoring; a user is waiting)
-    POST /embed/bulk   -> bulk lane   (training corpus; throughput over latency)
-
-Both return {vectors, model, dim, version}. Callers assert model+dim+version against their
-trained artifact and refuse to score on a mismatch (PLAN §13).
-
-`ok` is true only once the configured (model, dim) has been confirmed against the LIVE backend
-(see verify.py) — reporting the `.env`'s claims unchecked would let a config drift sail through
-every caller's assert. Until then, and forever after a mismatch, the embed endpoints 503 so
-callers fail closed rather than scoring against the wrong vector space (PLAN §13/§14.6).
-"""
+"""FastAPI gateway for the shared embedder."""
 from __future__ import annotations
 
 from contextlib import asynccontextmanager

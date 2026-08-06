@@ -1,40 +1,21 @@
-"""The captured profile: what the interview produces and the confirmation form edits.
-
-One schema, three consumers — the capture adapter validates the agent's output against it, the
-confirmation form is generated from it, and `libs.scoring` renders the rubric from it
-(`PROFILE_CAPTURE_PLAN.md` §4.5). Same reason `UserConfigSchema` is one model: two definitions of
-the same shape drift, and here the drift would be silent.
-
-`not_list` carries the most weight and is the most dangerous field: a wrong entry becomes a hard
-gate that suppresses good jobs without saying so. It is a *proposal* until the user confirms it
-(§5), which is also the prompt-injection boundary — an uploaded CV is untrusted text, and nothing
-the agent wrote reaches a hard gate without a human click.
-"""
+"""The captured profile: what the interview produces and the confirmation form edits."""
 from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-# Bumped when the shape changes. `users.profile` rows keep the version they were written with, so a
-# migration can read them rather than guess.
-#
-# 2 (2026-07-28) added `certifications`. Additive and defaulted, so a version-1 row still validates
-# — the bump records *when* the field appeared, which is what tells a later reader that a v1 profile
-# has no certifications because the schema had nowhere to put them, rather than because the
-# candidate has none.
+# Bumped when the shape changes.
 PROFILE_SCHEMA_VERSION = 2
 
 
 class _Strict(BaseModel):
-    # `forbid` so an agent inventing a field fails validation instead of having it silently dropped
-    # — the dropped case looks like capture worked and produces a thinner profile than the user saw.
+    # `forbid` so an agent inventing a field fails validation instead of having it silently dropped.
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
 
 class Identity(_Strict):
     name: str = Field(min_length=1, max_length=120)
     location: str | None = Field(default=None, max_length=120)
-    # Drives the CV header location rule and the region gates, so it is a list of plain statements
-    # ("EU citizen", "UK work visa") rather than an enum — the vocabulary is not ours to close.
+    # Plain statements ("EU citizen", "UK work visa") rather than an enum: the vocabulary is not ours.
     work_eligibility: list[str] = Field(default_factory=list, max_length=10)
     links: dict[str, str] = Field(default_factory=dict, max_length=10)
 
@@ -49,8 +30,7 @@ class Education(_Strict):
 class Experience(_Strict):
     role: str = Field(max_length=160)
     org: str = Field(max_length=160)
-    # Free text, not dates: CVs say "2019", "Mar 2019", "present". Parsing them here would reject
-    # real profiles to gain a precision nothing downstream uses.
+    # Free text, not dates: CVs say "2019", "Mar 2019", "present".
     start: str | None = Field(default=None, max_length=32)
     end: str | None = Field(default=None, max_length=32)
     bullets: list[str] = Field(
@@ -73,12 +53,7 @@ class Project(_Strict):
 
 
 class Certification(_Strict):
-    """A course, licence or accreditation. Its own section on a CV, and a keyword an ATS looks for.
-
-    `issuer` and `year` are free text and optional for the same reason experience dates are: a CV
-    says "Bloomberg (2024)", "AWS, valid to 2027", or nothing at all, and parsing that would reject
-    real profiles to gain a precision nothing downstream uses.
-    """
+    """A course, licence or accreditation."""
 
     name: str = Field(max_length=160)
     issuer: str | None = Field(default=None, max_length=120)
@@ -119,9 +94,7 @@ class ProfileSchema(_Strict):
     identity: Identity
     education: list[Education] = Field(default_factory=list, max_length=10,
                                        description="Every qualification, most recent first")
-    # **The field that was silently coming back empty.** Nine documents produced zero entries: the
-    # schema is what the model is handed (`services/capture/prompt.py` builds it from this class),
-    # and a bare property name asks for nothing. The description is the instruction.
+    # The field that was silently coming back empty.
     experience: list[Experience] = Field(
         default_factory=list, max_length=30,
         description=("EVERY role, position and engagement in the documents, most recent first — "
@@ -145,8 +118,7 @@ class ProfileSchema(_Strict):
     # "Never put Freelance Web Developer on a CV", generalised.
     exclusions: list[str] = Field(default_factory=list, max_length=20)
 
-    # False until a human has seen the form. Nothing downstream may render from an unconfirmed
-    # profile — that is the injection boundary, so it is a field rather than a convention.
+    # False until a human has seen the form.
     confirmed: bool = False
 
     @field_validator("not_list", "exclusions", mode="after")

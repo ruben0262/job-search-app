@@ -1,10 +1,4 @@
-"""Per-user repository, and the isolation guarantee it exists to enforce.
-
-The last three tests are **T1** proper (`TEST_STRATEGY.md`): two users, overlapping jobs, every read
-path returns only the caller's rows. Container-level isolation was traded away deliberately
-(`PLATFORM_ARCHITECTURE.md` §2) for a shared corpus, and this is the other side of that trade — a
-release blocker, not a nice-to-have.
-"""
+"""Per-user repository, and the isolation guarantee it exists to enforce."""
 from __future__ import annotations
 
 import os
@@ -75,10 +69,7 @@ def test_applied_at_is_set_once_and_never_moved(ctx):
 
 
 def test_applying_pins_the_job_against_retention(ctx):
-    """The one place a per-user action reaches into shared state, and the reason `pin()` exists.
-
-    Without it, retention would remove the JD from under the applied record after 90 days.
-    """
+    """The one place a per-user action reaches into shared state, and the reason `pin()` exists."""
     t, c, s = ctx
     u, job_id = _user(s), _job(c, s)
     t.record_applied(u.id, job_id)
@@ -135,11 +126,7 @@ def test_feedback_is_a_label_with_higher_weight(ctx):
 
 
 def test_training_set_excludes_other_generations_and_thin_descriptions(ctx):
-    """Two filters from the reference's load_clean(), both silent if dropped.
-
-    Labels from an older rubric answer a different question. A description under ~100 chars means
-    the fetch failed, so the label describes a page nobody actually read.
-    """
+    """Two filters from the reference's load_clean(), both silent if dropped."""
     t, c, s = ctx
     u = _user(s)
     current = _job(c, s)
@@ -182,11 +169,7 @@ def test_a_user_without_a_config_reads_as_none_not_as_empty(ctx):
 
 
 def test_only_active_users_configs_reach_the_harvest_fold(ctx):
-    """A suspended or unverified account must not consume harvest budget.
-
-    `TENANT_SAFETY.md` §5: nothing before email verification touches a paid resource, and a signup
-    flood must cost nothing.
-    """
+    """A suspended or unverified account must not consume harvest budget."""
     t, _, s = ctx
     active = _user(s)
     active.active, active.status = True, "active"
@@ -206,11 +189,7 @@ def test_only_active_users_configs_reach_the_harvest_fold(ctx):
 
 
 def test_secret_metadata_never_exposes_the_value(ctx):
-    """Secrets are write-only through the API (`TENANT_SAFETY.md` §2).
-
-    The response carries enough to recognise which key was saved and nothing that could reconstruct
-    it. There is deliberately no repository method returning ciphertext.
-    """
+    """Secrets are write-only through the API (`TENANT_SAFETY.md` §2)."""
     from libs.db.models import UserSecret
 
     t, _, s = ctx
@@ -281,10 +260,7 @@ def test_one_users_labels_never_reach_anothers_training_set(ctx):
 
 
 def test_scores_are_per_user_on_the_same_shared_job(ctx):
-    """The same posting is a great match for one person and a bad one for another.
-
-    That is the product. It is also the thing a leaked filter would destroy most visibly.
-    """
+    """The same posting is a great match for one person and a bad one for another."""
     t, c, s = ctx
     alice, bob = _user(s), _user(s)
     shared_job = _job(c, s)
@@ -348,12 +324,7 @@ def test_one_users_queue_is_never_visible_to_another(ctx):
 # ── G11: account lifecycle ────────────────────────────────────────────────────────────────────
 
 def test_an_engaged_telegram_user_is_never_marked_dormant(ctx):
-    """**The reason G11's "no login in N days" was not implemented as written.**
-
-    Delivery is Telegram. A user who reads their feed every morning and applies to things may never
-    open the web app again after onboarding. Pausing them would stop the feed of the most engaged
-    users and tell nobody.
-    """
+    """The reason G11's "no login in N days" was not implemented as written."""
     from datetime import UTC, datetime, timedelta
 
     t, _, s = ctx
@@ -369,8 +340,7 @@ def test_an_engaged_telegram_user_is_never_marked_dormant(ctx):
 
 
 def test_an_abandoned_account_stops_consuming_budget(ctx):
-    """The cost G11 exists to stop: an abandoned account scraping LinkedIn on a paid proxy, and
-    consuming harvest budget, indefinitely."""
+    """The cost G11 exists to stop: an abandoned account scraping LinkedIn on a paid proxy."""
     from datetime import UTC, datetime, timedelta
 
     t, _, s = ctx
@@ -402,8 +372,7 @@ def test_a_signup_that_never_engaged_is_measured_from_creation(ctx):
 
 
 def test_any_activity_brings_a_dormant_account_straight_back(ctx):
-    """Reversal must be automatic. Requiring a support ticket to resume a feed is a product that
-    punishes people for going on holiday."""
+    """Reversal must be automatic."""
     t, _, s = ctx
     user = _user(s)
     user.status, user.active = "dormant", False
@@ -445,8 +414,7 @@ def test_touching_activity_defers_dormancy(ctx):
 # ── G12: model artifact growth ────────────────────────────────────────────────────────────────
 
 def test_old_model_artifacts_are_pruned_to_current_plus_one(ctx):
-    """Unbounded otherwise — a few MB per version is trivial until it is not, and nobody notices
-    that kind of growth until a disk alert."""
+    """Unbounded otherwise — a few MB per version is trivial until it is not."""
     from libs.db.models import UserModel
 
     t, _, s = ctx

@@ -1,10 +1,7 @@
 import { m, useScroll, useSpring, useTransform } from "framer-motion";
 import WheelSVG from "./WheelSVG";
 
-/**
- * The giant faint wheel behind the content. Rotation is bound to scroll
- * progress, so every scroll turns it — the page itself drives the wheel.
- */
+/** The giant faint wheel behind the content. */
 export default function BackgroundWheel() {
   const { scrollYProgress } = useScroll();
   const raw = useTransform(scrollYProgress, [0, 1], [0, 480]);

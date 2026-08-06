@@ -1,18 +1,4 @@
-"""Fit one user's classifier and publish it atomically.
-
-Two things make this different from the single-tenant trainer:
-
-1. **The training set is scoped by `profile_generation`.** A label written under an older rubric is
-   not merely old — it is an answer to a different question, and mixing generations trains a model
-   on two contradictory definitions of "good match" (`PROFILE_CAPTURE_PLAN.md` §6.4).
-2. **The artifact row and the `model_version` bump commit together.** The scorer decides what to
-   serve from `users.model_version`; if that moved without its artifact row, every score for that
-   user fails until someone notices. One transaction makes the half-state unrepresentable.
-
-Embeddings are read from the shared corpus, not recomputed — the expensive part of a retrain is
-already paid once for everyone during harvest, which is what makes a per-user retrain seconds rather
-than minutes (`HARVESTER_PLAN.md` §7).
-"""
+"""Fit one user's classifier and publish it atomically."""
 from __future__ import annotations
 
 import logging
@@ -37,15 +23,11 @@ from libs.scoring.thresholds import DEFAULT_CUTOFF
 
 logger = logging.getLogger(__name__)
 
-# A model refit on one extra label is not worth the CPU (`SCHEDULER_PLAN.md` §7). This is the floor
-# below which a retrain is skipped rather than queued and immediately abandoned.
+# A model refit on one extra label is not worth the CPU (`SCHEDULER_PLAN.md` §7).
 MIN_LABELS = 25
 MIN_NEW_LABELS = 5
 
-# The band boundary the scorer reads back out of the artifact. **Imported, not restated.** It was
-# `DEFAULT_CUTOFF = 60` here beside the identical constant in `libs.scoring.thresholds` — the fourth
-# copy of one number in a tree whose most common defect is exactly that (ROADMAP 6ah). `libs` is
-# where a value two services share belongs, and both already import from it.
+# `DEFAULT_CUTOFF` is imported from `libs.scoring.thresholds`, never restated here.
 
 
 class NotEnoughData(RuntimeError):
@@ -64,20 +46,13 @@ class TrainingSet:
 
 
 def build_training_set(session: Session, user_id: _uuid.UUID) -> TrainingSet:
-    """This user's labels at their **current** generation, joined to corpus vectors.
-
-    Rows whose corpus entry has no embedding yet are dropped rather than zero-filled: a zero vector
-    is a confident statement that the posting means nothing, and the model would learn it.
-    """
+    """This user's labels at their current generation, joined to corpus vectors."""
     import numpy as np  # noqa: PLC0415 - the trainer image has numpy; libs importers need not
 
     user = session.get(User, user_id)
     if user is None:
         raise NotEnoughData("no such user")
-    # **Either flow counts as a profile.** `user.profile` is the JSON the capture step wrote and
-    # nothing sets any more; an account set up by the conversation has profile files instead. This
-    # refused a live account whose setup was complete and whose `may_train` said yes -- the training
-    # job dead-lettered with "no confirmed profile" and the page had no idea.
+    # Either flow counts as a profile.
     if not user.profile and ProfileFiles(session, user_id).missing_setup():
         raise NotEnoughData("user has no finished profile")
 
@@ -95,21 +70,14 @@ def build_training_set(session: Session, user_id: _uuid.UUID) -> TrainingSet:
         raise NotEnoughData(
             f"{len(rows)} usable labels at generation {user.profile_generation}, need {MIN_LABELS}")
 
-    # One embedder per training set, always. A mixture of vector spaces produces a model that is
-    # wrong in a way no metric reveals — the holdout is drawn from the same mixture.
+    # One embedder per training set, always.
     versions = {r.embedding_version for r in rows}
     if len(versions) > 1:
         raise NotEnoughData(
             f"labels span {len(versions)} embedder versions: {sorted(versions)}. "
             f"Re-embed the corpus before retraining.")
 
-    # **The keyword features need the structured profile, and an account built by the setup
-    # conversation has none** -- those are prose files, not a schema. Rather than refuse, the spec
-    # falls back to empty term lists and the model trains on the embeddings alone.
-    #
-    # That is a real model, not a degraded one: the vectors carry the semantics and the term counts
-    # are an addition on top. Refusing instead is what dead-lettered a live training run five times
-    # over, with the account showing 241 labels and no model and nothing saying why.
+    # The keyword features need the structured profile, and a conversation-built account has none.
     spec = spec_for(user.profile)
     vectors = [unpack_vector(r.embedding) for r in rows]
     features = [job_features(spec, r.title or "", r.description or "") for r in rows]
@@ -125,35 +93,19 @@ def build_training_set(session: Session, user_id: _uuid.UUID) -> TrainingSet:
         embedder_version=rows[0].embedding_version)
 
 
-# A label at or above this counts as "fit" when training. **Not the delivery cutoff** — the two were
-# conflated and it cost the platform its feed. This is the question the classifier is asked; the
-# operating point is tuned separately, below, and comes out lower.
-#
-# Read from `libs.scoring.thresholds` rather than written here, where it was a bare `60.0` beside
-# `DEFAULT_CUTOFF = 60.0` and `centroid.POSITIVE_AT`. Three copies of one number, agreeing by luck —
-# and the pre-score filter has to call "positive" exactly what the model was trained to call
-# positive, or it filters on a different question than the one it protects (ROADMAP 6ah).
+# A label at or above this counts as "fit" when training.
 FIT_THRESHOLD = DEFAULT_CUTOFF
 
-# What fraction of the genuinely good jobs the operating point should catch. The reference's
-# default, and the reason its live cutoff is 44 rather than a round number: recall is what a job
-# seeker cares about, because a missed match is invisible while a weak one costs a glance.
+# What fraction of the genuinely good jobs the operating point should catch.
 TARGET_RECALL = 0.65
 
-# Below this many labels, or with too few of either class, a bake-off is theatre: five-fold CV over
-# eight positives measures nothing. A new account uses the simple head until its cold-start pool
-# has been labelled.
+# Below this many labels, or too few of either class, a bake-off is theatre.
 MIN_LABELS_FOR_BAKEOFF = 60
 MIN_PER_CLASS = 8
 
 
 def _classifiers() -> dict:
-    """The candidate heads, class-balanced and emitting calibrated probabilities.
-
-    Calibration is what makes a probability threshold mean anything: `SVC` and `LinearSVC` have no
-    native `predict_proba`, and `CalibratedClassifierCV` is the supported replacement for the
-    deprecated `probability=True`. Ported from the reference.
-    """
+    """The candidate heads, class-balanced and emitting calibrated probabilities."""
     from sklearn.calibration import CalibratedClassifierCV  # noqa: PLC0415
     from sklearn.ensemble import HistGradientBoostingClassifier  # noqa: PLC0415
     from sklearn.linear_model import LogisticRegression  # noqa: PLC0415
@@ -173,8 +125,7 @@ def _classifiers() -> dict:
 
 
 def _precision_recall(actual, predicted) -> tuple[float, float, float]:
-    """Precision, recall and F1 for one boolean prediction. Ported rather than imported so a
-    zero-denominator is a zero rather than a warning and a NaN."""
+    """Precision, recall and F1 for one boolean prediction."""
     tp = int((actual & predicted).sum())
     fp = int((~actual & predicted).sum())
     fn = int((actual & ~predicted).sum())
@@ -185,22 +136,7 @@ def _precision_recall(actual, predicted) -> tuple[float, float, float]:
 
 
 def _default_fit(data: TrainingSet) -> dict:
-    """Bake off the candidate heads and deploy the winner, as the reference does.
-
-    **This replaced a fixed `Ridge` regressor, and the difference was the platform having a feed.**
-    A regression fitted on labels that are mostly low pulls every prediction toward the mean, so
-    almost nothing reached the delivery cutoff — and that cutoff had itself been taken from the
-    *label* threshold rather than tuned. The reference does neither: it selects among four
-    calibrated classifiers and reports a probability, which spreads across the range.
-
-    Selection is on **cross-validated average precision**, not ROC-AUC and never the test score. At
-    roughly a quarter positives ROC-AUC is optimistic and rewards ranking nobody exploits, while
-    average precision is the honest imbalanced-retrieval number. Choosing on the held-out split
-    would be selection-on-test, so that split is read once, for the winner, as an honest estimate.
-
-    Falls back to the simple head when there is too little to bake off. That path is a new account's
-    first train, and it is not a degraded mode so much as the only defensible one.
-    """
+    """Bake off the candidate heads and deploy the winner, as the reference does."""
     import numpy as np  # noqa: PLC0415
     from sklearn.linear_model import Ridge  # noqa: PLC0415
 
@@ -239,8 +175,7 @@ def _bake_off(data: TrainingSet, labels, positives: int, negatives: int) -> dict
             fitted = estimator.fit(matrix[train_idx], y_train)
             proba = fitted.predict_proba(matrix[test_idx])[:, 1]
         except Exception as exc:                                  # noqa: BLE001
-            # One head failing to converge is not the bake-off failing. Logged, so a candidate that
-            # never wins because it never ran is visible rather than quietly absent.
+            # One head failing to converge is not the bake-off failing.
             logger.warning("trainer: %s failed to fit (%s)", name, type(exc).__name__)
             continue
         scored[name] = {"oof": oof, "proba": proba,
@@ -254,9 +189,7 @@ def _bake_off(data: TrainingSet, labels, positives: int, negatives: int) -> dict
     best_name = max(scored, key=lambda name: scored[name]["cv_ap"])
     best = scored[best_name]
 
-    # The operating point, from out-of-fold probabilities only. The highest cutoff that still holds
-    # the target recall: higher means fewer and better flags, and the sweep walks up rather than
-    # down so the answer is the strictest one that still catches what the user came for.
+    # The operating point, from out-of-fold probabilities only.
     actual = y_train.astype(bool)
     sweep = [(threshold, *_precision_recall(actual, best["oof"] >= threshold / 100))
              for threshold in range(20, 91)]
@@ -266,13 +199,7 @@ def _bake_off(data: TrainingSet, labels, positives: int, negatives: int) -> dict
         cutoff = holds_recall[-1][0]
         recall_met = True
     else:
-        # **No threshold reaches the target, so pick the best available point — never fall back to
-        # `FIT_THRESHOLD`.** That constant is the *label* threshold, and quietly reusing it as an
-        # operating point is precisely the conflation that emptied this platform's feed once
-        # already: a model asked for 60 when its own evidence says otherwise delivers almost
-        # nothing, and nothing says why. Best F1 is a defensible answer to "we cannot have the
-        # recall we wanted, so what is the least bad trade" — and `recall_met` records that the
-        # target was missed, so a thin feed is attributable rather than mysterious.
+        # No threshold reaches the target, so pick the best available point, never `FIT_THRESHOLD`.
         cutoff = max(sweep, key=lambda row: row[3])[0]
         recall_met = False
         logger.warning("trainer: no cutoff in 20-90 reaches %.0f%% recall out of fold; using %d, "
@@ -280,8 +207,7 @@ def _bake_off(data: TrainingSet, labels, positives: int, negatives: int) -> dict
 
     precision, recall, f1 = _precision_recall(actual, best["oof"] >= cutoff / 100)
 
-    # Refit on everything, including the held-out split. That split existed to produce an honest
-    # estimate, and a deployed model that never saw a fifth of the labels is worse for no reason.
+    # Refit on everything, including the held-out split.
     final = _classifiers()[best_name].fit(matrix, labels)
     logger.info("trainer: %s selected (cv-AP %.2f, test-AP %.2f), cutoff %d at recall %.0f%%",
                 best_name, best["cv_ap"], best["test_ap"], cutoff, recall * 100)
@@ -295,9 +221,7 @@ def _bake_off(data: TrainingSet, labels, positives: int, negatives: int) -> dict
             "test_ap": round(best["test_ap"], 3), "test_auc": round(best["test_auc"], 3),
             "cutoff": cutoff, "oof_precision": round(precision, 3),
             "oof_recall": round(recall, 3), "oof_f1": round(f1, 3),
-            # False means the cutoff is the best-F1 compromise rather than the recall target, which
-            # is the difference between "this feed is thin by design" and "this feed is thin and
-            # nobody knows why".
+            # False means the cutoff is the best-F1 compromise rather than the recall target.
             "recall_target_met": recall_met,
             "positives": positives, "negatives": negatives,
             "candidates": {name: round(row["cv_ap"], 3) for name, row in scored.items()},
@@ -309,23 +233,12 @@ def train_user(session: Session, user_id: _uuid.UUID, *,
                artifact_dir: Path,
                fit: Callable[[TrainingSet], dict] = _default_fit,
                cutoff: int = DEFAULT_CUTOFF) -> int:
-    """Fit, publish, and return the new `model_version`.
-
-    Publishing is one transaction the caller commits: artifact row, `is_active` flip, and the
-    version bump. The queue job's own completion belongs in the same commit
-    (`SCHEDULER_PLAN.md` §3) — that is what makes "queue says done, database says not" impossible.
-    """
+    """Fit, publish, and return the new `model_version`."""
     user = session.get(User, user_id)
     if user is None:
         raise NotEnoughData(f"no such user: {user_id}")
 
-    # **Setup must be finished before an artifact is built from it.** A model fitted on a
-    # half-written profile is fitted against a rubric answering a different question from the one
-    # the finished profile would ask, and nothing downstream reveals it — the labels look like
-    # labels, the metrics look reasonable, and the feed is quietly wrong for as long as the model
-    # lives. Found on 2026-07-31: an account with four unfilled files and five missing ones had 945
-    # labels and an active model. Refused here rather than in the queue handler so every caller —
-    # the worker, a script, a future manual retrain button — is behind the same gate.
+    # Setup must be finished before an artifact is built from it.
     missing = ProfileFiles(session, user_id).missing_setup()
     if missing:
         raise NotEnoughData(
@@ -335,9 +248,7 @@ def train_user(session: Session, user_id: _uuid.UUID, *,
     data = build_training_set(session, user_id)
     blob = dict(fit(data))
     blob.setdefault("task", "regress")
-    # **The cutoff comes from the fit, not from a constant.** It is an operating point tuned on
-    # out-of-fold predictions; the reference instance runs at 44, nowhere near the 60 this defaulted
-    # to — which was the label threshold wearing the wrong hat.
+    # The cutoff comes from the fit, not from a constant.
     blob.setdefault("decision_cutoff", cutoff)
     blob.setdefault("keep_cutoff", max(int(blob["decision_cutoff"]) - 15, 1))
     blob["n_train"] = len(data.targets)
@@ -345,16 +256,10 @@ def train_user(session: Session, user_id: _uuid.UUID, *,
     version = (user.model_version or 0) + 1
     path = _write_artifact(artifact_dir, user_id, version, blob)
 
-    # Exactly one active artifact per user is a partial unique index, so the previous one has to be
-    # cleared in the same statement batch rather than trusted to be cleared later.
+    # One active artifact per user is a partial unique index: clear the previous in the same batch.
     session.query(UserModel).filter(
         UserModel.user_id == user_id, UserModel.is_active.is_(True)).update({"is_active": False})
-    # **The pre-score filter, measured from the same rows the fit just used.** No extra query: the
-    # training matrix is `embedding || features`, so the embedding half of every row the model was
-    # trained to like is exactly what the centroid is the centre of (ROADMAP 6an).
-    #
-    # `None` when there are too few positives, and it is stored as `None` — an account in cold start
-    # has no centre and must not be filtered at all.
+    # The pre-score filter, measured from the same rows the fit just used.
     built = centroid.build([
         [float(component) for component in data.matrix[index][:data.embedder_dim]]
         for index, target in enumerate(data.targets) if target >= FIT_THRESHOLD])
@@ -371,8 +276,7 @@ def train_user(session: Session, user_id: _uuid.UUID, *,
         embedder_model=data.embedder_model, embedder_dim=data.embedder_dim,
         embedder_version=data.embedder_version,
         n_labels=len(data.targets), is_active=True,
-        # Everything the fit measured, so "did this retrain help" is answerable from the row rather
-        # than from a training log nobody kept.
+        # Everything the fit measured, so "did this retrain help" is answerable from the row.
         metrics={"n_train": len(data.targets), "decision_cutoff": blob["decision_cutoff"],
                  "task": blob["task"], **(blob.get("metrics") or {})}))
     user.model_version = version
@@ -384,19 +288,7 @@ def train_user(session: Session, user_id: _uuid.UUID, *,
 
 def should_retrain(session: Session, user_id: _uuid.UUID, *,
                    min_new: int = MIN_NEW_LABELS) -> bool:
-    """Whether enough has changed since the active artifact to be worth the CPU.
-
-    The queue's `dedup_key` collapses a burst into one job; this is the other half — a job that
-    fires anyway when only one label arrived would spend a training slot on nothing.
-
-    **A changed vector space overrides the label count.** Counting new labels assumes the only thing
-    that can go stale is the evidence; it can also be the coordinates. When the corpus is re-embedded
-    — a different model, or the same model given different text — every stored vector moves, and a
-    model fitted in the old space cannot read the new one. Its weights are indexed to axes that no
-    longer mean what they meant. Nothing about that shows up as a new label, so on 2026-07-31 a
-    retrain after a full re-embed was refused as "not enough new labels" while the active artifact
-    was already unusable, and the scorer was failing closed on the version mismatch.
-    """
+    """Whether enough has changed since the active artifact to be worth the CPU."""
     active = session.scalar(
         select(UserModel).where(UserModel.user_id == user_id, UserModel.is_active.is_(True)))
     labelled = session.scalar(
@@ -404,8 +296,7 @@ def should_retrain(session: Session, user_id: _uuid.UUID, *,
     if active is None:
         return labelled >= MIN_LABELS
 
-    # What the training rows are actually in now, read from the corpus rather than from config:
-    # the vectors are the ground truth about which space they belong to.
+    # What the training rows are in now, read from the corpus: the vectors are the ground truth.
     current = session.scalar(
         select(CorpusJob.embedding_version)
         .join(UserLabel, UserLabel.job_id == CorpusJob.id)
@@ -420,11 +311,7 @@ def should_retrain(session: Session, user_id: _uuid.UUID, *,
 
 
 def _write_artifact(artifact_dir: Path, user_id: _uuid.UUID, version: int, blob: dict) -> Path:
-    """Temp file then rename. A half-written artifact must never be loadable.
-
-    The rename is atomic within a filesystem, so the scorer either sees the previous file or the
-    complete new one — never a truncated joblib that fails at load time, on a user's next score.
-    """
+    """Temp file then rename."""
     import joblib  # noqa: PLC0415 - only the trainer image has joblib
 
     artifact_dir = Path(artifact_dir)

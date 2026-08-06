@@ -1,17 +1,10 @@
-/**
- * The handful of pieces every page needs. No component library: this is a form-heavy wizard and a
- * table, and the whole of what a library would give it is here in a hundred lines.
- */
+/** The handful of pieces every page needs. */
 import type { ReactNode } from "react";
 import { useState } from "react";
 
 import { ApiError } from "./api";
 
-/** Runs an async action, keeping its pending and error state. Every button on the site uses it.
- *
- * It exists because the failure it prevents is specific: a button that does nothing visible while
- * a request is in flight gets pressed again, and the second press is the one that buys a second
- * Opus call. */
+/** Runs an async action, keeping its pending and error state. */
 export function useAction<A extends unknown[]>(fn: (...args: A) => Promise<unknown>) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

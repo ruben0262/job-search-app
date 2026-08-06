@@ -1,22 +1,5 @@
 #!/usr/bin/env python3
-"""End-to-end check that the shared embedder and every tenant on it actually work.
-
-Answers the question "is this really working?" with evidence rather than a green container:
-
-  1. The embedder confirms its vector space against the live backend (not just its .env).
-  2. Each tenant's scorer-service reports ready — which now includes reaching the embedder.
-  3. Each tenant is on the SAME model the embedder serves (a mismatch here is the silent-wrong-
-     scores failure the whole version contract exists to prevent).
-  4. Each tenant returns real scores for a real POST /score — the only proof the full path works.
-  5. No tenant has an embedding model resident (that is the entire point of sharing one).
-
-Run on the VPS, stdlib only, no venv needed:
-
-    python3 services/embedder/scripts/verify_stack.py
-
-Add --failure-drill to also prove fail-closed + self-recovery. That one STOPS the embedder
-briefly, so every tenant loses scoring for ~30s; it is opt-in for that reason.
-"""
+"""End-to-end check that the shared embedder and every tenant on it actually work."""
 from __future__ import annotations
 
 import argparse
@@ -56,13 +39,7 @@ def get_json(url: str, timeout: float = 15.0) -> dict:
 
 
 def gateway_health(url: str, container: str) -> tuple[dict, str]:
-    """Read the gateway's /health, via the host port if published, else from inside the network.
-
-    The host port is a convenience for tooling, not part of how the service is consumed — tenants
-    reach the gateway by service name over embedder-net. So this falls back to exec'ing into the
-    gateway container, which means the port can stay closed without blinding the checks. Returns
-    (health, how) so the output says which path answered.
-    """
+    """Read the gateway's /health, via the host port if published, else from inside the network."""
     try:
         return get_json(f"{url}/health"), f"host {url}"
     except (urllib.error.URLError, OSError, ValueError):
@@ -81,8 +58,7 @@ def docker(*args: str, timeout: float = 60.0) -> tuple[int, str]:
 
 
 def in_container(container: str, code: str, timeout: float = 120.0) -> tuple[int, str]:
-    """Run python inside a tenant container — tenants publish no host port, so this is the only
-    way to reach their scorer-service from outside the docker network."""
+    """Run python inside a tenant container — tenants publish no host port."""
     return docker("exec", container, "python", "-c", code, timeout=timeout)
 
 
@@ -96,8 +72,7 @@ def tenant_health(container: str) -> dict:
 
 
 def tenant_score(container: str) -> list[dict]:
-    # base64 the payload rather than interpolating JSON into a shell-bound -c string: job text is
-    # arbitrary and quoting it by hand is how this kind of helper silently breaks later.
+    # base64 the payload rather than quoting arbitrary job text into a shell-bound -c string.
     import base64
     payload = base64.b64encode(json.dumps({"jobs": SAMPLE_JOBS}).encode()).decode()
     rc, out = in_container(container, (
@@ -181,8 +156,7 @@ def check_tenant(name: str, container: str, embedder: dict, max_rss_mb: float) -
         record(PASS, f"{name}: POST /score round-trip",
                f"scores={scores} decisions={[r.get('decision') for r in results]}")
 
-    # No model resident is the entire point. A tenant that quietly reloaded fastembed would still
-    # score correctly — and still cost the ~1.5GB this project exists to remove.
+    # No model resident is the entire point.
     mb = rss_mb(container)
     if mb is None:
         record(FAIL, f"{name}: memory readable", "docker stats gave nothing")
@@ -209,8 +183,7 @@ def failure_drill(url: str, gateway: str, tenants: list[tuple[str, str]],
             except Exception as exc:                            # noqa: BLE001
                 record(FAIL, f"{name}: reports unhealthy while embedder is down", str(exc)[:200])
                 continue
-            # Reporting ok here would be the dangerous outcome: the pipeline would proceed and
-            # then fail every job, or worse, a fallback would score against the wrong vectors.
+            # Reporting ok here would be dangerous: the pipeline would proceed and fail every job.
             if h.get("ok"):
                 record(FAIL, f"{name}: reports unhealthy while embedder is down",
                        "still says ok:true — health is not checking the embedder")

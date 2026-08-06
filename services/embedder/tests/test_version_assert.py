@@ -1,14 +1,4 @@
-"""Version/dim assertion gate (PLAN §14.2 + §13).
-
-Two halves of the same contract:
-  - CALLER side: `assert_compatible` must refuse when its artifact's (model, dim) differs from
-    what the service reports. A classifier bound to another vector space must never score.
-  - SERVICE side: `/health.ok` must be backed by a probe of the LIVE backend (`verified`), not by
-    the gateway's own `.env`. Otherwise a config drift satisfies every caller's assert while the
-    vectors are wrong — the exact silent failure §13 exists to prevent.
-
-Integration test — needs a running stack (EMBEDDER_URL).
-"""
+"""Version/dim assertion gate (PLAN §14.2 + §13)."""
 from __future__ import annotations
 
 import os

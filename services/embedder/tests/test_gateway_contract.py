@@ -1,15 +1,4 @@
-"""Gateway logic tests against a STUBBED TEI backend — no docker, no model, no network.
-
-These cover the parts of PLAN §13/§14.6/§4c that are pure gateway behaviour, so a regression is
-caught here instead of on the box:
-  - a backend serving a different model/dim → `/health.ok` false forever and embeds 503
-    (the silent-drift failure §13 exists to prevent),
-  - an unreachable backend → 503, never a fabricated vector,
-  - a healthy, matching backend → normal service, `verified: true`,
-  - the fast lane is served before queued bulk work.
-
-The real vectors are TEI's business; what is asserted here is the contract around them.
-"""
+"""Gateway logic tests against a STUBBED TEI backend — no docker, no model, no network."""
 from __future__ import annotations
 
 import asyncio
@@ -37,8 +26,7 @@ class _StubTEI:
     async def embed(self, texts: list[str]) -> list[list[float]]:
         if not self.reachable:
             raise ConnectionError("stub backend down")
-        # TEI answers 413 above its --max-client-batch-size; the stub is strict about it so an
-        # unchunked lane fails here instead of on the box.
+        # TEI answers 413 above `--max-client-batch-size`, so an unchunked lane fails here, not on the box.
         if len(texts) > self.max_batch:
             raise ValueError(f"batch size {len(texts)} > max_client_batch_size {self.max_batch}")
         if self.delay:
@@ -122,8 +110,7 @@ def test_oversized_request_rejected(monkeypatch) -> None:
 @pytest.mark.parametrize("path,chunk", [("/embed/bulk", CONFIG.chunk_bulk),
                                         ("/embed", CONFIG.chunk_score)])
 def test_lanes_preserve_input_order_across_chunks(monkeypatch, path: str, chunk: int) -> None:
-    """Both lanes split into chunks; results must reassemble in the caller's original order or
-    every row's label ends up attached to the wrong vector."""
+    """Both lanes chunk; results must reassemble in the caller's original order."""
     stub = _StubTEI()
     n = chunk * 2 + 3
     with _client(stub, monkeypatch) as c:
@@ -132,16 +119,13 @@ def test_lanes_preserve_input_order_across_chunks(monkeypatch, path: str, chunk:
         assert r.status_code == 200, r.text
         vectors = r.json()["vectors"]
     assert len(vectors) == n
-    # The stub encodes each text's position WITHIN its chunk into the vector, so the expected
-    # sequence is per-chunk indices concatenated — any reordering/reassembly bug breaks this.
+    # The stub encodes each text's position within its chunk, so reordering bugs break this.
     assert [v[0] for v in vectors] == [float(i % chunk) for i in range(n)]
     assert max(len(call) for call in stub.calls) <= stub.max_batch
 
 
 def test_chunks_clamp_to_backend_batch_limit(monkeypatch) -> None:
-    """A backend stricter than our config must LOWER the batch, not 413 every request. The gateway
-    reads the real limit from /info and clamps; otherwise this breaks only the bulk lane, i.e.
-    training silently fails while scoring looks fine."""
+    """A backend stricter than our config must LOWER the batch, not 413 every request."""
     stub = _StubTEI(max_batch=4)
     n = 30
     with _client(stub, monkeypatch) as c:
@@ -155,12 +139,7 @@ def test_chunks_clamp_to_backend_batch_limit(monkeypatch) -> None:
 
 
 def test_score_lane_not_blocked_by_inflight_bulk(monkeypatch) -> None:
-    """The §14.8 regression, reproduced without docker.
-
-    A shared worker pool let a score request sit behind an in-flight bulk call — priority orders
-    the queue but cannot recall a busy worker. With a reserved score pool, a score request must
-    return in about ONE backend call, not after the whole bulk run drains.
-    """
+    """The §14.8 regression, reproduced without docker."""
     import threading
     import time
 

@@ -1,20 +1,4 @@
-"""Asking the judge about a sample of what the model already scored.
-
-**The one check that can notice a model going wrong.** A trained model serves for months without an
-error or a warning when its numbers stop meaning what they meant. Sending 10% of what it scores
-back through the judge and keeping both opinions side by side is what makes that visible
-(`libs/scoring/shadow.py` for why the sampling is deterministic).
-
-Two outputs, and the second is the one that compounds:
-
-1. **A pair** — the model's score and the judge's, for drift measurement.
-2. **A label** — because the judge's opinion *is* the training signal on this platform, so a
-   shadow run is also a free label at the current generation. Discarding it would mean paying for
-   the same answer twice.
-
-It runs on the user's own credential and counts against their daily quota, which is why the sample
-is small and why nothing here re-asks about a pair already collected.
-"""
+"""Asking the judge about a sample of what the model already scored."""
 from __future__ import annotations
 
 import logging
@@ -32,20 +16,13 @@ from services.labeller.label import score_batch, write_labels
 
 logger = logging.getLogger(__name__)
 
-# Jobs per shadow run. Much smaller than a relabel batch: this is a periodic health check on a
-# model that is working, not a backlog to clear, and every row is money.
+# Jobs per shadow run.
 MAX_PER_RUN = 25
 
 
 def candidates(session: Session, user_id: _uuid.UUID, *, limit: int = MAX_PER_RUN,
                rate: int = DEFAULT_SAMPLE_RATE) -> list[int]:
-    """Job ids in this user's shadow sample that have not been compared yet.
-
-    Sampled in Python rather than in SQL, because the sample must be identical to the one every
-    other process would compute and a Postgres hash function is not the same function as
-    `hashlib.sha256`. The candidate set is bounded first so this stays a scan of recent scores
-    rather than of the user's whole history.
-    """
+    """Job ids in this user's shadow sample that have not been compared yet."""
     compared = select(ShadowScore.job_id).where(ShadowScore.user_id == user_id)
     rows = session.execute(
         select(UserJobState.job_id)
@@ -53,9 +30,7 @@ def candidates(session: Session, user_id: _uuid.UUID, *, limit: int = MAX_PER_RU
         .where(UserJobState.user_id == user_id,
                UserJobState.score.is_not(None),
                UserJobState.job_id.notin_(compared),
-               # No description, no comparison worth making: the judge would be grading a title
-               # while the model scored an embedding of the same title, and they would agree for
-               # reasons that say nothing about drift.
+               # No description, no comparison worth making: the judge would be grading a title.
                func.length(func.coalesce(CorpusJob.description, "")) >= 200)
         .order_by(UserJobState.scored_at.desc())
         .limit(limit * (100 // max(rate, 1)) if rate else 0)).scalars().all()
@@ -65,10 +40,7 @@ def candidates(session: Session, user_id: _uuid.UUID, *, limit: int = MAX_PER_RU
 
 def run_shadow(session: Session, user_id: _uuid.UUID, client: LlmClient, *,
                limit: int = MAX_PER_RUN, rate: int = DEFAULT_SAMPLE_RATE) -> tuple[int, int]:
-    """Compare the judge against the model on one sample. Returns (compared, disagreements).
-
-    **Does not commit** — the worker owns the transaction, as everywhere else in this service.
-    """
+    """Compare the judge against the model on one sample."""
     user = session.get(User, user_id)
     if user is None or not user.rubric_md:
         raise LlmError("this account has no rubric — confirm a profile first")
@@ -104,8 +76,7 @@ def run_shadow(session: Session, user_id: _uuid.UUID, client: LlmClient, *,
         compared += 1
         disagreements += agreement is False
 
-    # The judge's answer is the training signal, so a shadow run is also a label. Paying for the
-    # same opinion twice would be the alternative.
+    # The judge's answer is the training signal, so a shadow run is also a label.
     write_labels(session, user_id, scored, jobs)
     session.flush()
 
@@ -116,12 +87,7 @@ def run_shadow(session: Session, user_id: _uuid.UUID, client: LlmClient, *,
 
 def agreement_rate(session: Session, user_id: _uuid.UUID, *, model_version: int | None = None,
                    limit: int = 200) -> tuple[int, float | None]:
-    """How often the judge and the model have agreed lately. Returns (pairs, rate).
-
-    Scoped to a model version by default at the call site, because a pair collected before a
-    retrain says nothing about the model serving now — averaging across versions would smear a
-    fixed problem over the fix.
-    """
+    """How often the judge and the model have agreed lately."""
     query = (select(ShadowScore.agreed)
              .where(ShadowScore.user_id == user_id, ShadowScore.agreed.is_not(None))
              .order_by(ShadowScore.created_at.desc())

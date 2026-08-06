@@ -1,28 +1,4 @@
-"""Turning one job posting into one tailored CV. The port of `pipeline/cv_builder.py`'s middle.
-
-**Python does the mechanics, Claude makes one call.** The reference instance measured the
-alternative: an agentic build re-reading the profile, the skills and the template every turn, where
-that loop rather than the writing was most of the cost. Here the user's own base CV — the
-`base_cv.html` the setup agent wrote, with their real experience in it — is handed to the model with
-the posting, and the model returns a tailored copy of it.
-
-**Three things are enforced mechanically after generation, not asked for.** Every one of them is a
-rule the prompt already states and the model still breaks intermittently, and asking twice is not a
-control:
-
-- **The CSS is re-injected from the template.** It is stripped before sending — the model only
-  changes text — and restored byte-for-byte after. So the layout, the page rules and the font
-  family are always the platform's, whatever came back.
-- **Em-dashes are stripped from prose and bullets.** They are the model's default habit and the
-  prompt's most-broken rule. Entry titles keep theirs, where the prompt allows them.
-- **Hidden content is scanned for.** Zero-width characters and inline hiding styles in the body.
-  Keyword-stuffing a CV with invisible text is a thing people do to ATS systems, and a document
-  that does it under a user's name is a document that gets them blacklisted, not shortlisted.
-
-**Nothing here writes a file or touches the queue.** It takes strings and returns strings, so the
-whole tailoring path is testable without Chrome, without Postgres and without spending anybody's
-credential.
-"""
+"""Turning one job posting into one tailored CV."""
 from __future__ import annotations
 
 import logging
@@ -36,46 +12,23 @@ from libs.templates import load as load_template
 
 logger = logging.getLogger(__name__)
 
-# Haiku, deliberately. `MODEL_SELECTION_RESEARCH.md` §5's verdict for writing is "stay on Claude,
-# cost-optimise within it": Haiku for the single-shot build, Sonnet only when an A/B on real outputs
-# justifies the ~20x. The user pays for this call, so the default has to be the one that is cheap
-# enough to press twice.
+# Haiku, deliberately.
 CV_MODEL = "claude-haiku-4-5"
 
-# Enough for a two-page CV with room to spare. A truncated document is not a shorter CV — it is an
-# HTML fragment that will not compile.
-#
-# **32,000, raised from 16,000 on 2026-07-30 after watching it fail.** The thinking budget is spent
-# *inside* this ceiling, and a CV document is itself around 6,000 tokens of HTML — so 16,000 left
-# too little margin, and observed builds hit the ceiling with the reasoning finished and the
-# document not yet started: `stop_reason=max_tokens` with zero text blocks. The user's outcome was
-# a failed build with no explanation.
-#
-# The cost of a higher ceiling is nothing until it is used, because output is billed per token
-# produced rather than per token allowed.
+# Enough for a two-page CV with room to spare.
 MAX_TOKENS = 32_000
 
-# 4096 measured better on writing quality than the adaptive default (2026-07-20, reference
-# instance). `None` would mean adaptive; `0` disables thinking, which measured ~8x faster and
-# visibly worse — see `libs/llm/client.py`.
+# 4096 measured better on writing quality than the adaptive default (2026-07-20, reference instance).
 THINKING_TOKENS = 4_096
 
-# The posting, capped. The full description is what makes tailoring specific rather than generic,
-# so this is deliberately far above the labeller's 2,500: there, the tail is EEO boilerplate nobody
-# scores on; here, a requirement buried at the bottom is exactly what the CV has to answer.
+# The posting, capped.
 JD_MAX_CHARS = 6_000
 
 _HTML = re.compile(r"(?is)(<!doctype html.*?</html>|<html\b.*?</html>)")
 _STYLE = re.compile(r"(?is)<style\b.*?</style>")
 _EMDASH = re.compile(r"\s*(?:—|&mdash;|&#8212;)\s*")
 
-# Invisible characters and the inline styles that hide text. Scanned in the body only — the
-# canonical CSS is the platform's own and contains legitimate print rules.
-#
-# Written as escapes rather than as the characters themselves, which is not a style preference: a
-# literal class of invisible characters is a line no reviewer can read, in the one place where
-# reading it is the whole point. The ranges are the zero-width and bidirectional-control blocks —
-# spaces and joiners, the LTR/RTL overrides, the word joiner and its neighbours, and the BOM.
+# Invisible characters and the inline styles that hide text.
 _ZERO_WIDTH = re.compile("[\u200b-\u200f\u2060-\u2064\ufeff\u202a-\u202e]")
 _HIDE_STYLE = re.compile(
     r"(?is)(display\s*:\s*none|visibility\s*:\s*hidden|opacity\s*:\s*0(?!\.)|"
@@ -89,17 +42,7 @@ class BuildFailed(RuntimeError):
 
 def job_context(job, *, score: float | None = None, description: str | None = None,
                 fit_notes: str | None = None, salary_bands: dict | None = None) -> str:
-    """What the model is told about the posting — the reference instance's context, ported whole.
-
-    **This was trimmed to four lines once and the CVs got worse.** The reasoning was that salary
-    intel and assessment notes are context for a human reading a log; that was wrong. A model given
-    only a description matches keywords against it. A model told *what we already concluded about
-    this role and why it fits this person* has an angle to write toward, which is the difference
-    between a document that reads as tailored and one that reads as search-and-replace.
-
-    `fit_notes` is the scoring-time read, written by the labeller into `user_labels.rationale` —
-    fifteen words on what the role is and why it matched.
-    """
+    """What the model is told about the posting — the reference instance's context, ported whole."""
     lines = [f"Title: {job.title or ''}",
              f"Company: {job.company or ''}",
              f"Location: {job.location or ''}",
@@ -114,8 +57,7 @@ def job_context(job, *, score: float | None = None, description: str | None = No
     if posted:
         lines.append(f"Posted: {posted}")
     if getattr(job, "applicants", None) is not None:
-        # How contested it is. A role with two hundred applicants deserves a sharper opening than
-        # one with six, and the model can only weigh that if it is told.
+        # How contested it is.
         lines.append(f"Applicants: {job.applicants}")
     if getattr(job, "workplace", None):
         lines.append(f"Workplace: {job.workplace}")
@@ -133,12 +75,7 @@ def job_context(job, *, score: float | None = None, description: str | None = No
 
 
 def _salary_lines(job, description: str, bands: dict | None) -> list[str]:
-    """What the posting pays and what this candidate should be asking for.
-
-    Both, because they answer different questions: the first is a fact about the role, the second
-    is the do-not-undersell position the reference instance takes deliberately. A gap between them
-    is information a cover letter may need, not an error.
-    """
+    """What the posting pays and what this candidate should be asking for."""
     from libs.corpus import salary as salarylib  # noqa: PLC0415 - one caller, kept local
 
     payload = {"title": job.title or "", "location": job.location or "",
@@ -166,14 +103,7 @@ def _age(posted_at) -> str:
 
 
 def fill_role_angles(template: str, role_angles: str | None) -> str:
-    """Put this candidate's role angles into the prompt, or take the instruction out.
-
-    An unfilled placeholder reaching the model would ask it to write against a literal
-    `<<ROLE_ANGLES>>`, and an *empty* one would leave a heading with nothing under it — which reads
-    as "this section was meant to say something" and invites the model to invent it. So a user
-    without the file gets the sentence removed entirely and the rest of the prompt, which is the
-    honest degradation: general instructions, no invented specialism.
-    """
+    """Put this candidate's role angles into the prompt, or take the instruction out."""
     if "<<ROLE_ANGLES>>" not in template:
         return template                       # a prompt from before the split, or the user's own
     angles = (role_angles or "").strip()
@@ -185,17 +115,7 @@ def fill_role_angles(template: str, role_angles: str | None) -> str:
 def build_prompt(profile: ProfileSchema, base_html: str, context: str, *,
                  template: str | None = None, feedback: str | None = None,
                  role_angles: str | None = None) -> str:
-    """The SACRED prompt, filled: the candidate, the job, and the base document.
-
-    **`template` is the user's own `tailor_cv.md`.** They ship field-agnostic and get tuned per
-    person — `/setup-prompts` calls it "a short interview to set the handful of things that
-    genuinely differ". Somebody who has tuned theirs over months keeps it; a new account starts
-    from the platform's.
-
-    `render_cv_prompt` fills the candidate placeholders on a generalised copy. A copy that already
-    names its subject has none to fill and passes through untouched, which is what makes importing
-    a hand-tuned prompt a straight copy rather than a conversion.
-    """
+    """The SACRED prompt, filled: the candidate, the job, and the base document."""
     prompt = (fill_role_angles(render_cv_prompt(profile, template=template), role_angles)
               .replace("<JOB_CONTEXT>", context)
               .replace("<BASE_TEMPLATE>", base_html))
@@ -207,13 +127,7 @@ def build_prompt(profile: ProfileSchema, base_html: str, context: str, *,
 def tailor(client, profile: ProfileSchema, base_html: str, context: str, *,
            facts_md: str | None = None, feedback: str | None = None, template: str | None = None,
            role_angles: str | None = None, model: str = CV_MODEL) -> str:
-    """One call. Returns the tailored document with the platform's own CSS restored.
-
-    **The facts block is the system prompt**, and that is the single most important line in this
-    module. The reference instance measured what happens without its equivalent: stripped of profile
-    grounding, the model invented an employer and fabricated metrics. In a hosted product that lands
-    on a real application under a real person's name (`libs/scoring/facts.py`).
-    """
+    """One call."""
     stripped, style = strip_style(base_html)
     prompt = build_prompt(profile, strip_comments(stripped), context, template=template,
                           role_angles=role_angles,
@@ -228,11 +142,7 @@ def tailor(client, profile: ProfileSchema, base_html: str, context: str, *,
 
     html = extract_html(reply)
     if html is None:
-        # Never log the reply: it is the candidate's CV. The length is what distinguishes "refused"
-        # from "wrote prose instead of HTML" from "truncated", which is all triage needs.
-        # `<html` present without `</html>` is the signature of a cut-off document, and it is a
-        # different fault from a reply that never started one — the first wants a higher ceiling,
-        # the second wants a look at the prompt. The client logs the stop reason alongside this.
+        # Never log the reply: it is the candidate's CV.
         started = "<html" in reply.lower()
         logger.error("the tailor call returned %d chars with no complete HTML document "
                      "(document %s)", len(reply),
@@ -242,29 +152,21 @@ def tailor(client, profile: ProfileSchema, base_html: str, context: str, *,
     return sanitise(restore_style(html, style))
 
 
-# Used only when a user somehow has no rendered facts block. Not a fallback anybody should reach:
-# `TenantRepository.save_profile` renders one whenever a profile is confirmed.
+# Used only when a user somehow has no rendered facts block.
 _MINIMAL_SYSTEM = ("Write only what the base template below already states about the candidate. "
                    "Never invent an employer, a date, a metric, or a technology.")
 
 
 # ── the cover letter ──────────────────────────────────────────────────────────────────────────
 
-# Chars of plain-text CV sent to the cover prompt. The reference's number: the cover model needs the
-# candidate's facts, not the markup, and sending the full HTML costs ~1,000–1,500 tokens for nothing.
+# Chars of plain-text CV sent to the cover prompt.
 CV_TEXT_MAX = 1_500
 
 
 def tailor_cover(client, profile: ProfileSchema, cv_html: str, context: str, *,
                  facts_md: str | None = None, template: str | None = None,
                  model: str = CV_MODEL) -> str:
-    """The cover letter for one job, built from the CV that was just tailored for it.
-
-    **The CV goes in as plain text, not markup** — the reference's own decision, for the reason
-    above. The head block goes in as-is because the prompt asks for it byte-for-byte: the letter is
-    a second document that has to print with the same fonts and the same A4 rules as the CV, and it
-    is the only part of the layout the model is trusted to carry.
-    """
+    """The cover letter for one job, built from the CV that was just tailored for it."""
     head = head_block(cv_html)
     prompt = (render_cover_prompt(profile, template=template)
               .replace("<HEAD_BLOCK>", head)
@@ -283,9 +185,7 @@ def tailor_cover(client, profile: ProfileSchema, cv_html: str, context: str, *,
         logger.error("the cover call returned %d chars with no HTML document in it", len(reply))
         raise BuildFailed("the model did not return an HTML document")
 
-    # **Em-dashes come out of the whole letter, not just its bullets.** A cover letter is prose end
-    # to end, so there is no entry-title header where one is legitimate — the reference strips them
-    # everywhere except the trusted style block, and so does this.
+    # Em-dashes come out of the whole letter, not just its bullets.
     return strip_hidden(_strip_cover_emdashes(letter))
 
 
@@ -311,23 +211,12 @@ def _strip_cover_emdashes(letter: str) -> str:
 
 
 def sanitise(html: str) -> str:
-    """The mechanical enforcement of the rules the prompt states and the model breaks.
-
-    Removal, then `scan_hidden` verifies. Two steps rather than one because they answer different
-    questions: this strips what can be stripped safely, and the scan says whether anything invisible
-    is left — and if something is, the caller refuses to deliver rather than shipping a document
-    that could get somebody blacklisted by an ATS.
-    """
+    """The mechanical enforcement of the rules the prompt states and the model breaks."""
     return strip_hidden(strip_prose_emdashes(html))
 
 
 def strip_hidden(html: str) -> str:
-    """Zero-width characters out, and any inline `style` attribute that hides text.
-
-    Safe to do mechanically because the platform's own template has no inline styles at all: every
-    one of them arrived in the model's output, so removing the hiding ones takes nothing the layout
-    depends on. The `<style>` block is left alone — it is restored from the template anyway.
-    """
+    """Zero-width characters out, and any inline `style` attribute that hides text."""
     style = _STYLE.search(html)
     if style:
         head, block, tail = html[:style.start()], style.group(0), html[style.end():]
@@ -343,11 +232,7 @@ def _clean_body(fragment: str) -> str:
 
 
 def strip_style(html: str) -> tuple[str, str]:
-    """Remove the `<style>` block before sending, and hand it back for restoration.
-
-    Saves ~700 tokens each way, and the prompt is told CSS is managed externally. The saving is the
-    lesser reason: the point is that the model cannot change the layout even if it tries.
-    """
+    """Remove the `<style>` block before sending, and hand it back for restoration."""
     match = _STYLE.search(html)
     if not match:
         return html, ""
@@ -355,31 +240,12 @@ def strip_style(html: str) -> tuple[str, str]:
 
 
 def strip_comments(html: str) -> str:
-    """Drop the template's HTML comments before sending.
-
-    They are notes to whoever maintains the layout — which markers exist, why the page rules are
-    load-bearing, that the file is data rather than a document. To the model they are tokens the
-    user pays for and instructions aimed at somebody else, and "the CSS below is load-bearing" is
-    exactly the sort of line that invites it to reason about CSS it was told not to touch.
-    """
+    """Drop the template's HTML comments before sending."""
     return re.sub(r"(?s)<!--.*?-->", "", html)
 
 
 def restore_style(tailored: str, style: str) -> str:
-    """Re-inject the canonical CSS, replacing whatever the model emitted.
-
-    **The last branch used to return the document unstyled, and that shipped.** Told the CSS is
-    managed externally, the model sometimes returns `<html><body>…` with no `<head>` at all — and
-    with no `</head>` to inject into, this handed back a document with no stylesheet. Chrome then
-    rendered it at browser defaults: no A4 page rule, no `@page` margin, so it printed its own
-    header and footer over the page, and the first real CV a user received was an unstyled sheet of
-    text with a file path along the bottom.
-
-    It failed silently because every other check still passed — the HTML was valid, the text was
-    correct, the PDF compiled, and it was one page. So the head is now *built* when it is missing
-    rather than skipped, and `tests/test_docgen.py` asserts the stylesheet survives every shape of
-    reply.
-    """
+    """Re-inject the canonical CSS, replacing whatever the model emitted."""
     if not style:
         return tailored
 
@@ -395,8 +261,7 @@ def restore_style(tailored: str, style: str) -> str:
     if body:
         return tailored[:body.start()] + f"<head>\n{style}\n</head>\n" + tailored[body.start():]
 
-    # No head, no body: whatever came back is the content. Wrapping it is the only way the layout
-    # survives, and a document without the platform's CSS must never reach a PDF.
+    # No head, no body: whatever came back is the content.
     return ("<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n"
             f"{style}\n</head>\n<body>\n{tailored}\n</body>\n</html>")
 
@@ -410,12 +275,7 @@ def extract_html(reply: str) -> str | None:
 
 
 def strip_prose_emdashes(html: str) -> str:
-    """Em-dashes out of bullets and the profile paragraph, left alone in entry titles.
-
-    The prompt bans them in prose and allows them in an entry's title header, and the model ignores
-    that intermittently because em-dashes are its default habit. Its self-check is aspirational; the
-    regex is not.
-    """
+    """Em-dashes out of bullets and the profile paragraph, left alone in entry titles."""
     def fix(match: re.Match[str]) -> str:
         return _EMDASH.sub(", ", match.group(0))
 
@@ -424,11 +284,7 @@ def strip_prose_emdashes(html: str) -> str:
 
 
 def scan_hidden(html: str) -> list[str]:
-    """Invisible content in the body. Empty list means clean.
-
-    Runs on every build because the failure is undetectable by looking at the PDF — which is the
-    entire point of hidden text, and why a human reviewing the output is not a control.
-    """
+    """Invisible content in the body."""
     body = _STYLE.sub("", html)
     issues: list[str] = []
 
@@ -444,13 +300,7 @@ def scan_hidden(html: str) -> list[str]:
 
 
 def page_feedback(pages: int | None, *, maximum: int = 2) -> str | None:
-    """What to tell the model when the PDF came out too long, or nothing when it did not.
-
-    One page is the goal and two is the ceiling. The instruction says *cut*, never *shrink*: a model
-    told a document is too long will otherwise reduce the font size, which produces a CV that fits
-    and is unreadable — and the CSS is restored from the template afterwards anyway, so the attempt
-    would be silently undone and the length unchanged.
-    """
+    """What to tell the model when the PDF came out too long, or nothing when it did not."""
     if pages is None or pages <= maximum:
         return None
     return (f"Your CV compiled to {pages} pages. It must not exceed {maximum} pages of A4, and one "

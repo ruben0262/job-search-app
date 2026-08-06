@@ -1,27 +1,4 @@
-"""Salary extraction from posting text + Ruben's suggested-ask bands (feed card 💰/🎯 lines).
-
-Two jobs, both free (regex + a static table — no LLM, watcher-safe):
-
-  extract(text)        -> {"min", "max", "currency", "period", "raw"} | None
-      Parses the FIRST plausible salary mention in a JD: £/€/$ symbols and ISO/local codes
-      (GBP EUR USD CHF PLN HUF Ft zł CZK RON SEK NOK DKK), "60k–80k" k-suffixes, spaced or
-      comma thousands ("1 200 000"), single amounts, and a nearby per-period marker
-      (year/month/day/hour; Hungarian hó/havi; Polish mies). Returns None when nothing
-      parses — the feed line then reads "not listed". Deliberately conservative: a missed
-      salary is a cosmetic gap, a hallucinated one is misinformation.
-
-  suggest(job, posted) -> {"min", "max", "currency", "period", "below_target"}
-      Ruben's target ask band for the job's region + role bucket. Bands come from config
-      `salary_bands` (region -> {dev: [lo, hi], quant: [lo, hi], currency, period}) with
-      the defaults below; they are deliberately assertive (do-not-undersell policy — a gap
-      between posted pay and the ask is information, not an error). When the posting's top
-      is clearly under the band floor (rough static FX to compare currencies),
-      below_target=True so the feed can flag "they pay under your target".
-
-Region resolution is a keyword scan over location + title (HU/PL/UK/CH/EU/GLOBAL) with the
-posting's currency as a tie-breaker; role bucket (dev vs quant) mirrors cv_builder's
-template heuristic. All numbers are gross.
-"""
+"""Salary extraction from posting text + Ruben's suggested-ask bands (feed card 💰/🎯 lines)."""
 from __future__ import annotations
 
 import re
@@ -72,8 +49,7 @@ def _amount(tok: str) -> float | None:
         mult = 1.0
     for ch in "'   ,":
         tok = tok.replace(ch, "")
-    # Dots: thousands separators when every group after the first has 3 digits
-    # ("1.200.000", "45.000"); otherwise a decimal point ("62.5").
+    # Dots: thousands separators when every group after the first has 3 digits ("1.200.000", "45.000"); otherwise a decimal point ("62.5").
     if "." in tok:
         head, *rest = tok.split(".")
         if rest and all(len(g) == 3 for g in rest):
@@ -93,8 +69,7 @@ def _period(context: str, currency: str, top: float) -> str:
         return "month"
     if _P_YEAR.search(context):
         return "year"
-    # No explicit marker: infer from magnitude conventions. HUF/PLN/CZK boards quote monthly
-    # (1.2M HUF/mo, 25k PLN/mo); a 7-digit HUF or 5-digit PLN is a monthly number.
+    # No explicit marker: infer from magnitude conventions.
     if currency == "HUF":
         return "month" if top < 8_000_000 else "year"
     if currency in ("PLN", "CZK", "RON"):
@@ -103,7 +78,7 @@ def _period(context: str, currency: str, top: float) -> str:
 
 
 def extract(text: str | None) -> dict[str, Any] | None:
-    """First plausible salary mention in `text`, or None. See module docstring for shape."""
+    """First plausible salary mention in `text`, or None."""
     if not text:
         return None
     hay = text[:12000]
@@ -123,15 +98,13 @@ def extract(text: str | None) -> dict[str, Any] | None:
                 continue
             lo, hi = (min(a, b), max(a, b)) if b is not None else (a, a)
             period = _period(ctx, currency, hi)
-            # Plausibility gates: an hourly/day rate can be small; otherwise tiny numbers
-            # ("save $5", "€2 coffee") and absurd ones are noise, not compensation.
+            # Plausibility gates: an hourly/day rate can be small; otherwise tiny numbers ("save $5", "€2 coffee") and absurd ones are noise, not compensation.
             if period in ("hour", "day"):
                 if not (5 <= lo <= 5000):
                     continue
             elif hi < 500 or hi > 100_000_000:
                 continue
-            # Ranges are more trustworthy than single amounts: return the FIRST range
-            # immediately; remember the first single as a fallback.
+            # Ranges are more trustworthy than single amounts: return the FIRST range immediately; remember the first single as a fallback.
             cand = {"min": lo, "max": hi, "currency": currency, "period": period,
                     "raw": m.group(0).strip()}
             if b is not None:
@@ -143,15 +116,12 @@ def extract(text: str | None) -> dict[str, Any] | None:
 # ── suggested ask ─────────────────────────────────────────────────────
 
 # Rough static FX to EUR for the below-target comparison ONLY (never displayed).
-# Ballpark July 2026 rates; a stale rate skews a boolean flag, not a shown number.
 _TO_EUR = {"EUR": 1.0, "GBP": 1.17, "USD": 0.92, "CHF": 1.06, "PLN": 0.235,
            "HUF": 0.0025, "CZK": 0.041, "RON": 0.20, "SEK": 0.088, "NOK": 0.086, "DKK": 0.134}
 
 _ANNUAL = {"year": 1, "month": 12, "day": 260, "hour": 2080, "": 1}
 
 # Default target bands (gross; HU/PL monthly per local convention, others annual).
-# Deliberately assertive — Ruben's do-not-undersell policy. Override in config.yaml
-# under `salary_bands:` with the same shape.
 _DEFAULT_BANDS: dict[str, dict[str, Any]] = {
     "UK":     {"currency": "GBP", "period": "year",  "dev": [48_000, 65_000],  "quant": [70_000, 100_000]},
     "EU":     {"currency": "EUR", "period": "year",  "dev": [55_000, 75_000],  "quant": [70_000, 95_000]},
@@ -199,13 +169,7 @@ def _region(job: dict[str, Any], posted: dict[str, Any] | None) -> str:
 
 
 def _bands(user: dict[str, Any] | None = None) -> dict[str, dict[str, Any]]:
-    """The defaults, with this user's overrides on top.
-
-    **The one multi-tenant seam in this module.** The reference read a process-wide config file
-    because it served one person; here the bands are a per-user setting and arrive as an argument,
-    so two users' asks cannot leak into each other. Every number, regex and threshold below is the
-    reference's, unchanged.
-    """
+    """The defaults, with this user's overrides on top."""
     user = user or {}
     merged = {k: dict(v) for k, v in _DEFAULT_BANDS.items()}
     for region, band in user.items():

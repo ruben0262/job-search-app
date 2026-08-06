@@ -1,15 +1,4 @@
-"""The generation prompts must not carry one person's identity into another person's documents.
-
-`label_template.md` was generalised in Phase 2 — `<<NAME>>`, `<<WHO>>`, `<<HARD_GATES>>` filled from
-the profile. The task prompts were ported from the reference instance and generalised the same way,
-and this test is what stops a half-way state from shipping: a prompt is only allowed into
-`SEEDED_PROMPTS` once it has no hardcoded identity left, because a scaffold carrying a stranger's
-name is seeded into *every new account*.
-
-**These read the scaffolds, not a wired-in file.** Since 2026-07-29 the task prompts are per-user
-(`libs/profiles`), so what is checked here is what a new account is seeded with — the platform's
-default, and the only version a user who never edits theirs will ever run.
-"""
+"""The generation prompts must not carry one person's identity into another person's documents."""
 from __future__ import annotations
 
 import pathlib
@@ -19,27 +8,20 @@ import pytest
 
 from libs.profiles import scaffold as load
 
-# Every prompt seeded into a new account. **Adding a name here is the deliberate act** the tests
-# below then check — a scaffold is copied to every user, so an identity left in one propagates.
+# Every prompt seeded into a new account.
 SEEDED_PROMPTS: tuple[str, ...] = ("tailor_cv.md", "tailor_cover.md", "score.md", "interview.md",
                                    "outreach.md", "build_cvs.md")
 
-# Kept under the same name so the parametrised tests read unchanged: what docgen uses is a subset
-# of what is seeded, and both need the identical guarantee.
+# Kept under the same name so the parametrised tests read unchanged.
 DOCGEN_TEMPLATES = SEEDED_PROMPTS
 
-# Anything ported but not yet generalised. Empty since 2026-07-28, and kept so the state is
-# asserted rather than assumed the next time something is ported in.
+# Anything ported but not yet generalised.
 PORTED_NOT_YET_GENERALISED: tuple[str, ...] = ()
 
 # The reference instance's owner. A generalised prompt reads its subject from the profile.
 _IDENTITY = re.compile(r"\bRuben\b|\bLekli\b", re.IGNORECASE)
 
-# **A name is the easy half.** These are the reference instance's *specifics* — its employers, its
-# tools, its metrics, its entry titles — and they survived the first generalisation pass because
-# they name no person. They are worse than a stray name in one way: "keep the quant tooling
-# (Bloomberg, ByBit API)" is an instruction to surface something a stranger's profile may not
-# contain, and the model will find a way to comply.
+# A name is the easy half.
 _REFERENCE_SPECIFICS = (
     "Bloomberg", "ByBit", "Syntagma", "FlowSolutions", "Global Liquidity", "Crypto Screener",
     "Sharpe", "Sortino", "DSR/PSR", "Lotka", "Lyapunov", "magázás", "Ön/Önök",
@@ -55,8 +37,7 @@ def test_a_wired_prompt_names_nobody(name):
 
 @pytest.mark.parametrize("name", PORTED_NOT_YET_GENERALISED)
 def test_an_ungeneralised_prompt_is_not_wired_in(name):
-    """The guard that matters. These are byte-identical ports and still carry an identity, so the
-    failure this prevents is real: a user receiving a CV written about somebody else."""
+    """The guard that matters."""
     assert _IDENTITY.search(load(name)), (
         f"{name} looks generalised now — move it into DOCGEN_TEMPLATES so it is checked")
     assert name not in DOCGEN_TEMPLATES, f"{name} is wired in but still names a person"
@@ -65,9 +46,7 @@ def test_an_ungeneralised_prompt_is_not_wired_in(name):
 # ── what the placeholders must survive ────────────────────────────────────────────────────────
 
 def test_every_placeholder_a_prompt_uses_is_one_the_renderer_fills():
-    """A prompt reaching Claude with a literal `<<LANGUAGES>>` in it would ask the model to invent
-    the candidate's languages — which is the fabrication the whole facts-block design exists to
-    stop."""
+    """A prompt reaching Claude with a literal `<<LANGUAGES>>` in it would ask the model to invent the."""
     import re
 
     from libs.contracts.profile import ProfileSchema
@@ -80,9 +59,7 @@ def test_every_placeholder_a_prompt_uses_is_one_the_renderer_fills():
         "constraints": {"languages": ["English (Native)", "German (C1)"]},
     })
 
-    # `<<ROLE_ANGLES>>` is filled a stage later, at build time, from the user's own
-    # `08-role-angles.md` — the renderer knows the profile and not the file. Everything else must
-    # be gone by here.
+    # `<<ROLE_ANGLES>>` is filled a stage later, at build time, from the user's own `08-role-angles.md`.
     for rendered in (render_cv_prompt(profile), render_cover_prompt(profile)):
         left = set(re.findall(r"<<[A-Z_]+>>", rendered))
         assert left <= {"<<ROLE_ANGLES>>"}, f"an unfilled placeholder reached the prompt: {left}"
@@ -91,8 +68,7 @@ def test_every_placeholder_a_prompt_uses_is_one_the_renderer_fills():
 
 
 def test_the_role_angles_placeholder_never_survives_to_the_model():
-    """An unfilled `<<ROLE_ANGLES>>` would ask the model to write against a literal token, and an
-    empty heading would read as "this was meant to say something" and invite it to invent one."""
+    """An unfilled `<<ROLE_ANGLES>>` would ask the model to write against a literal token."""
     from libs.profiles import scaffold
     from services.docgen.build import fill_role_angles
 
@@ -109,16 +85,14 @@ def test_the_role_angles_placeholder_never_survives_to_the_model():
 
 
 def test_a_prompt_that_predates_the_split_is_left_alone():
-    """An imported hand-tuned prompt has its angles written inline and no placeholder. Injecting a
-    heading into it would be editing somebody's SACRED prompt behind their back."""
+    """An imported hand-tuned prompt has its angles written inline and no placeholder."""
     from services.docgen.build import fill_role_angles
 
     assert fill_role_angles("no placeholder here", "angles") == "no placeholder here"
 
 
 def test_a_profile_with_no_languages_still_yields_a_writable_prompt():
-    """A prompt told the candidate writes no languages has no language to write in, and the failure
-    would be a blank CV rather than an error."""
+    """A prompt told the candidate writes no languages has no language to write in."""
     from libs.contracts.profile import ProfileSchema
     from libs.scoring.docprompt import DEFAULT_LANGUAGES, render_cv_prompt
 
@@ -127,8 +101,7 @@ def test_a_profile_with_no_languages_still_yields_a_writable_prompt():
 
 
 def test_unstated_work_eligibility_is_never_invented():
-    """The prompt's own rule is "never claim a location the candidate has no right to work in", and
-    an invented eligibility is the claim that gets somebody into an interview they cannot accept."""
+    """The prompt's own rule is "never claim a location the candidate has no right to work in"."""
     from libs.contracts.profile import ProfileSchema
     from libs.scoring.docprompt import render_cv_prompt
 
@@ -137,13 +110,7 @@ def test_unstated_work_eligibility_is_never_invented():
 
 
 def test_the_language_rule_is_about_the_candidate_not_one_language():
-    """The original chose between English and Hungarian because that is what its owner writes. A
-    French speaker must get a French CV for a French posting, and an English-only speaker must never
-    get a CV they cannot read.
-
-    Case-insensitive, which is not pedantry: the cover letter's rule said "HUNGARIAN" in capitals
-    and passed this test for a day, complete with the Hungarian formal-address grammar under it.
-    """
+    """The original chose between English and Hungarian because that is what its owner writes."""
     for name in ("tailor_cv.md", "tailor_cover.md"):
         body = load(name)
         assert not re.search(r"hungarian", body, re.IGNORECASE), f"{name} names one language"
@@ -152,12 +119,7 @@ def test_the_language_rule_is_about_the_candidate_not_one_language():
 
 @pytest.mark.parametrize("name", DOCGEN_TEMPLATES)
 def test_a_wired_prompt_carries_none_of_the_reference_instance_s_specifics(name):
-    """A prompt that names no person can still be about one.
-
-    Left in, these are dead instructions for most users and an active hazard for the rest: told to
-    "keep the quant tooling", a model writing for somebody who has never touched a trading terminal
-    will still find something to put there.
-    """
+    """A prompt that names no person can still be about one."""
     body = load(name)
 
     for specific in _REFERENCE_SPECIFICS:
@@ -169,8 +131,7 @@ def test_a_wired_prompt_carries_none_of_the_reference_instance_s_specifics(name)
 # ── the CV template ───────────────────────────────────────────────────────────────────────────
 
 def test_the_cv_template_carries_no_identity():
-    """It is the layout every user's CV is built from. A name, address or link left in it would
-    appear on a document a stranger sends to an employer — and it would look entirely correct."""
+    """It is the layout every user's CV is built from."""
     template = (pathlib.Path("libs/templates/base_cv.html")).read_text(encoding="utf-8")
 
     assert not _IDENTITY.search(template)
@@ -179,8 +140,7 @@ def test_the_cv_template_carries_no_identity():
 
 
 def test_the_cv_template_keeps_the_layout_rules_that_are_load_bearing():
-    """A4 sizing and the `@page` margin rule are why the PDF does not get a Chrome header drawn
-    over it. Losing them during a generalisation pass is the silent kind of damage."""
+    """A4 sizing and the `@page` margin rule are why the PDF does not get a Chrome header drawn over it."""
     template = (pathlib.Path("libs/templates/base_cv.html")).read_text(encoding="utf-8")
 
     assert "@page" in template
@@ -192,13 +152,7 @@ def test_the_cv_template_keeps_the_layout_rules_that_are_load_bearing():
 @pytest.mark.parametrize("name", ("SKILL.md", "03-writing-style.md",
                                   "06-cover-letter-templates.md", "eval_cv.md"))
 def test_a_platform_prompt_is_the_same_bytes_for_everyone(name):
-    """These are not seeded per user — every account reads the identical file, so an identity in one
-    is not one user's problem but everyone's.
-
-    `eval_cv.md` is here on the strength of a measurement rather than a hope: the reference
-    instance's own copy names its owner zero times, which is why it could be lifted as-is while the
-    four task prompts beside it had to be generalised first.
-    """
+    """These are not seeded per user — every account reads the identical file."""
     from libs.prompts import load as platform
 
     body = platform(name)
@@ -209,13 +163,7 @@ def test_a_platform_prompt_is_the_same_bytes_for_everyone(name):
 
 
 def test_every_command_forbids_naming_internals_to_the_user():
-    """**One block, every command.** The rule lives in `ENVIRONMENT`, which is appended to each
-    prompt, so a new command cannot be added without it.
-
-    Written after a real setup transcript ended with a table of `context.md`, `base_cv.html` and
-    `08-role-angles.md`, plus an instruction to run `powershell -File cv/compile.ps1`. Those are the
-    platform's names for its own storage and a script that does not exist on the user's machine.
-    """
+    """One block, every command."""
     from libs.agents import STARTABLE, system_prompt
 
     for name in STARTABLE:
@@ -225,14 +173,10 @@ def test_every_command_forbids_naming_internals_to_the_user():
 
 
 def test_every_command_says_how_to_reach_another_one():
-    """A conversation runs one command and cannot hand off inside itself. The transcript that
-    prompted this said "start it as a new command", which a user reasonably read as "type it here"
-    -- and typing it there does nothing."""
+    """A conversation runs one command and cannot hand off inside itself."""
     from libs.agents import STARTABLE, system_prompt
 
-    # Every command except the director, which runs all four steps itself. Telling it to hand off
-    # would strand a user already sitting in the only chat they need -- and it did: a live run ended
-    # by sending somebody to open two more chats for work that conversation could have done.
+    # Every command except the director, which runs all four steps itself.
     for name in STARTABLE:
         prompt = system_prompt(name)
         if name == "setup-director":
@@ -244,10 +188,7 @@ def test_every_command_says_how_to_reach_another_one():
 
 
 def test_every_command_is_told_which_commands_exist_here():
-    """The ported instructions name commands from the single-user checkout -- /setup-boards,
-    /setup-companies, /apply. A user reading one types it, and an agent asked to honour one
-    improvises: in a live run it announced it would write search configuration into two profile
-    files, where nothing reads it as search configuration."""
+    """The ported instructions name commands from the single-user checkout -- /setup-boards."""
     from libs.agents import STARTABLE, system_prompt
 
     for name in STARTABLE:

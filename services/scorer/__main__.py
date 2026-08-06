@@ -1,16 +1,4 @@
-"""The `score` lane worker.
-
-    python -m services.scorer
-
-One job is one batch of 500 rows through an already-loaded model, re-enqueued while rows remain.
-Free to run — CPU only, no credential, no provider — which is why this lane has no cost ceiling and
-the label lane does.
-
-**A missing model is not a failure.** A new account has no artifact until its first train, and the
-harvest cycle enqueues for everybody; dead-lettering those would fill the queue with red for the one
-state every account passes through. `ModelUnavailable` ends the job quietly and the next cycle asks
-again.
-"""
+"""The `score` lane worker."""
 from __future__ import annotations
 
 import logging
@@ -31,15 +19,12 @@ def handle(session, job: QueueJob) -> None:
     try:
         scored, remaining = score_batch(session, job.user_id)
     except ModelUnavailable as exc:
-        # Quietly, and at info: "no model trained yet" is the normal state of a new account, and
-        # logging it as an error would teach whoever reads the logs to skim them.
+        # Quietly, at info: "no model trained yet" is the normal state of a new account.
         logger.info("score: nothing to do for %s — %s", job.user_id, exc)
         return
 
     if remaining:
-        # Release the dedup slot before claiming it again: `enqueue` collapses against any job in
-        # `ready` *or* `claimed` with the same key, and this job holds exactly the key its
-        # continuation needs. Left alone the chain stops after one batch and looks like success.
+        # Release the dedup slot before claiming again: `enqueue` collapses against `ready` or `claimed`.
         job.dedup_key = None
         session.flush()
         enqueue(session, "score", job.user_id, dedup_key="score")

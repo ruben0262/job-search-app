@@ -1,14 +1,4 @@
-"""Cold start: the rules-only score, pool selection, and what the label lane does next.
-
-The rules score is the whole of stage 0 — what a user sees in the seconds after saving a config,
-before any model exists. It is crude by construction, so the tests assert the things that would
-make it *wrong* rather than merely rough: that an exclusion beats a keyword match, that a missing
-location is not treated as a mismatch, and that `full-stack` matches "Full Stack".
-
-Pool selection is where a user's money goes. A pool drawn from the head of the ranking is 120
-near-identical jobs, which is 120 labels' worth of spend for one label's worth of information — so
-the striding and the banding are asserted, not assumed.
-"""
+"""Cold start: the rules-only score, pool selection, and what the label lane does next."""
 from __future__ import annotations
 
 import os
@@ -29,8 +19,7 @@ CONFIG = {"sections": [{"platform": "all", "keywords": ["backend engineer", "ful
 # ── stage 0: the rules-only score ─────────────────────────────────────────────────────────────
 
 def test_a_keyword_in_the_title_outranks_the_same_word_in_the_body():
-    """"Backend Engineer" as the title is what the job *is*. In the description it is usually "you
-    will work with our backend engineers", which is a different job."""
+    """"Backend Engineer" as the title is what the job *is*."""
     titled = score_job(CONFIG, title="Backend Engineer", description="We build things")
     buried = score_job(CONFIG, title="Product Manager",
                        description="You will work with our backend engineer team")
@@ -38,14 +27,12 @@ def test_a_keyword_in_the_title_outranks_the_same_word_in_the_body():
 
 
 def test_a_hyphenated_keyword_matches_its_spaced_spelling():
-    """The bug that shipped in the reference instance for months: `full-stack` matched nothing in
-    "Full Stack Developer" and the feature silently read 0."""
+    """The bug that shipped in the reference instance for months."""
     assert not score_job(CONFIG, title="Full Stack Developer").excluded
 
 
 def test_an_exclusion_beats_a_keyword_match():
-    """The user typed that term specifically to not see it. A strong title match must not outvote
-    it."""
+    """The user typed that term specifically to not see it."""
     result = score_job(CONFIG, title="Backend Engineer", description="This is an unpaid internship")
     assert result.excluded
     assert "unpaid" in result.reason
@@ -65,24 +52,7 @@ def test_remote_only_excludes_a_non_remote_job():
 
 
 def test_where_a_job_is_does_not_change_what_it_scores():
-    """**Location left the score on 2026-08-04, and it had never worked.**
-
-    A region selection matches nothing textually, so the old code awarded *full marks to every
-    posting* whenever a user had picked one — on the stated grounds that no posting spells
-    `european_union` in its location field. A user searching Europe scored a London job exactly like
-    a Berlin one, and a quarter of the scale moved nothing.
-
-    Eligibility is not a matter of degree: a job in a country somebody cannot work in is not a worse
-    match, it is not a match. So country became a hard filter applied before scoring
-    (`libs.corpus.geo`) and working arrangement its own filter, and what remains here is what the
-    job *is*.
-
-    **The parameter is now gone, which is the stronger form of the same claim.** This test used to
-    pass four different locations and assert the scores matched — a property the signature can
-    simply not express any more. `location` survived as an accepted-and-ignored argument for two
-    days after location left the score, which is how a reader concludes it still counts
-    (ROADMAP 6at).
-    """
+    """Location left the score on 2026-08-04, and it had never worked."""
     import inspect
 
     assert "location" not in inspect.signature(score_job).parameters, (
@@ -96,8 +66,7 @@ def test_where_a_job_is_does_not_change_what_it_scores():
 
 
 def test_a_job_matching_any_section_is_included():
-    """Sections express "different terms on LinkedIn than on the boards". They narrow the search,
-    not the results."""
+    """Sections express "different terms on LinkedIn than on the boards"."""
     config = {"sections": [{"platform": "linkedin", "keywords": ["quant researcher"]},
                            {"platform": "indeed", "keywords": ["backend engineer"]}]}
     assert not score_job(config, title="Backend Engineer").excluded
@@ -133,7 +102,7 @@ def db():
     session.add(user)
     session.flush()
 
-    # A spread: strong title matches, description-only matches, and jobs that only scrape in.
+    # A spread: strong title matches, description-only matches, and near-misses.
     for n in range(60):
         title = "Backend Engineer" if n % 3 == 0 else f"Analyst {n}"
         description = "backend engineer wanted" if n % 3 == 1 else "unrelated work"
@@ -151,8 +120,7 @@ def db():
 
 @pytestmark_db
 def test_the_pool_spans_the_score_range_rather_than_the_top_of_it(db):
-    """A pool drawn from the head of the ranking is near-identical jobs — a lot of money for one
-    job's worth of information. The boundary is where a classifier learns."""
+    """A pool drawn from the head of the ranking is near-identical jobs."""
     from services.labeller.pool import select_pool
 
     session, user = db
@@ -185,8 +153,7 @@ def test_jobs_the_user_has_already_labelled_are_not_bought_twice(db):
 
 @pytestmark_db
 def test_a_config_matching_nothing_yields_an_empty_pool_rather_than_noise(db):
-    """The `<150 jobs` failure mode. Returning arbitrary jobs would spend the user's money teaching
-    the model about roles they never asked for."""
+    """The `<150 jobs` failure mode."""
     from services.labeller.pool import select_pool
 
     session, user = db
@@ -233,8 +200,7 @@ def test_an_account_without_a_rubric_is_sent_back_to_confirm(db):
 
 @pytestmark_db
 def test_a_partial_cold_start_still_trains(db):
-    """A user with 280 labels and no model because the last 20 calls failed is the worst outcome
-    available (`COLD_START_PLAN.md` §7)."""
+    """A user with 280 labels and no model because the last 20 calls failed is the worst outcome."""
     from libs.db.models import CorpusJob, UserLabel
     from services.labeller.coldstart import MIN_LABELS_TO_TRAIN, ready_to_train
 
@@ -252,14 +218,7 @@ def test_a_partial_cold_start_still_trains(db):
 
 @pytest.mark.skipif("DATABASE_URL" not in __import__("os").environ, reason="needs live Postgres")
 def test_a_user_is_not_crowded_out_of_a_shared_corpus(db):
-    """**The bug that stalled a live cold start at ten labels.**
-
-    The candidate window was the newest rows on the platform, filtered against the config only
-    afterwards. The corpus is shared, so whoever harvests most owns recency: an account searching
-    for mechanical engineering roles had matching rows sitting in the corpus and saw none of them,
-    because thousands of fresher software postings stood in front of them. It labelled ten jobs,
-    found nothing more, and stopped at a tenth of what training needs.
-    """
+    """The bug that stalled a live cold start at ten labels."""
     from datetime import UTC, datetime, timedelta
 
     from libs.db.models import CorpusJob
@@ -294,12 +253,7 @@ def test_a_user_is_not_crowded_out_of_a_shared_corpus(db):
 
 @pytest.mark.skipif("DATABASE_URL" not in __import__("os").environ, reason="needs live Postgres")
 def test_the_label_budget_is_the_operators_to_set(db):
-    """**The catalogue entry existed and nothing read it.**
-
-    `label_pool` appeared in the admin panel as "Jobs bought per labelling run", and no code
-    consumed it -- a control that reads as a setting and behaves as decoration. Labelling runs on the
-    user's own credential, so how much of it to buy is a decision about their money.
-    """
+    """The catalogue entry existed and nothing read it."""
     from libs.labels import POOL_SIZE, labelling_state, target_for
 
     session, user = db
@@ -316,8 +270,7 @@ def test_the_label_budget_is_the_operators_to_set(db):
 
 @pytest.mark.skipif("DATABASE_URL" not in __import__("os").environ, reason="needs live Postgres")
 def test_an_unlimited_label_budget_still_has_a_finish_line(db):
-    """Unlimited resolves to the default rather than to no target: a cold start with no finish line
-    would label the entire corpus on somebody else's card."""
+    """Unlimited resolves to the default rather than to no target."""
     from libs.labels import POOL_SIZE, target_for
 
     session, user = db

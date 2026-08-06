@@ -1,18 +1,4 @@
-"""Query-set folding and the fan-out budget.
-
-Pure logic, no database, no network — these run anywhere. That is deliberate: this module decides
-how much scraping the platform does, and a decision that consequential should be provable without
-standing anything up.
-
-Two properties carry the weight:
-
-- **Folding** is what turns 50 users × 5 terms into something a 15-minute cycle can execute. If it
-  under-folds, the budget is spent on duplicate work; if it over-folds, users silently stop getting
-  results they asked for.
-- **Round-robin selection** is what stops one user with five niche terms crowding out four other
-  users' primary term. Ordering by demand instead would starve exactly the user with an unusual
-  search — the one for whom this product is most valuable.
-"""
+"""Query-set folding and the fan-out budget."""
 from __future__ import annotations
 
 import uuid
@@ -66,10 +52,7 @@ def test_plus_and_hash_survive_because_they_are_real_search_terms():
 
 
 def test_age_rounds_up_never_down():
-    """Rounding down would fetch a narrower window than a user asked for and lose postings silently.
-
-    Over-fetching is corrected by a local filter. Under-fetching is invisible.
-    """
+    """Rounding down would fetch a narrower window than a user asked for and lose postings silently."""
     assert bucket_age_hours(6) == 24
     assert bucket_age_hours(24) == 24
     assert bucket_age_hours(25) == 72
@@ -121,8 +104,7 @@ def test_a_user_with_no_location_still_gets_queries():
 def test_the_per_user_keyword_cap_is_enforced_at_the_fold():
     """The cap is on the user's keywords — the number the form shows them — not on the cross product."""
     user = _uid()
-    # More terms than the cap, derived from it — a literal here would silently stop testing the cap
-    # the moment the cap moved, which is exactly what happened when it went from 5 to 25.
+    # More terms than the cap, derived from it.
     over_cap = HARVEST_MAX_QUERIES_PER_USER + 5
     qs = build_query_set(
         {user: _config([f"term{i}" for i in range(over_cap)], ["london"])}, ["linkedin"])
@@ -149,17 +131,7 @@ def test_a_small_query_set_is_served_whole():
 
 
 def test_nobody_is_starved_across_cycles():
-    """**The property that replaced round-robin over users**, and the trade is worth stating.
-
-    Selection used to drain one query per user per round, so a user with five niche terms could not
-    crowd out four users' primary terms. That went with the global budget: the cap is per source
-    now, and within a source keys are taken in a stable order.
-
-    What protects a user is no longer the ordering — it is that a ceiling is sized to cover demand
-    (40 against 28 wanted, in production), and that anything deferred is served **first** on the
-    next cycle. So a term that loses this cycle wins the next one, and nothing is starved for more
-    than one cycle rather than being ordered fairly within each.
-    """
+    """The property that replaced round-robin over users, and the trade is worth stating."""
     greedy = _uid()
     others = [_uid() for _ in range(4)]
     configs = {greedy: _config([f"niche{i}" for i in range(5)], ["london"])}
@@ -175,9 +147,7 @@ def test_nobody_is_starved_across_cycles():
     second, still_waiting = select_within_budget(
         qs, limits={"linkedin": 4}, carried_over=list(waiting))
 
-    # **Every slot goes to work that already waited**, so a term cannot lose twice to the same
-    # rival. It is priority rather than a promise of service: five deferred keys do not fit a
-    # ceiling of four, and the fifth carries again.
+    # Every slot goes to work that already waited, so a term cannot lose twice to the same rival.
     assert {q.key for q in second} <= waiting
     assert {q.key for q in still_waiting} & waiting <= waiting
     # Nothing that waited is dropped — it is either served now or still queued.

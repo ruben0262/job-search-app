@@ -1,19 +1,4 @@
-/**
- * One account, for an operator.
- *
- * **Its own page, at its own address.** This started as a panel that unfolded inside the user list,
- * which meant no link to send somebody, no back button, and the thing you opened rendered
- * underneath the table you opened it from.
- *
- * The two questions an operator actually has are "why is this person's feed bad" and "did their
- * setup finish", so those are the two things above the fold. Setup completeness is computed by the
- * same predicate the trainer refuses on, which is what stops "their setup looks fine but training
- * is refused" from being possible without this page saying why.
- *
- * Read-only, and no credential material — not even `last_4`. An operator does not need it to answer
- * either question, and a support view showing a fragment of a key is one that leaks it over
- * somebody's shoulder.
- */
+/** One account, for an operator. */
 import { useEffect, useState } from "react";
 
 import { api } from "../api";
@@ -57,16 +42,13 @@ type UserDetail = {
   limits: Record<string, number | null>;
 };
 
-/** The values an operator picks from, plus Unlimited where the ceiling allows it. Coarse on
- *  purpose: these are judgements about a person's account, not a tuning dial. */
+/** The values an operator picks from, plus Unlimited where the ceiling allows it. */
 const CHOICES: Record<string, number[]> = {
   notifications_per_day: [25, 50, 100, 250, 500, 1000],
   items_per_run: [5, 10, 15, 20, 30, 50],
   send_gap_seconds: [3, 4, 5, 8, 12, 20],
   proxy_mb_per_day: [100, 200, 500, 1000, 2000],
-  // LinkedIn stops counting at 200 and shows "Over 200 applicants", so 200 is the top real step —
-  // anything above it would be a ceiling no posting can reach. Unlimited is the way to turn the
-  // drop off entirely.
+  // LinkedIn stops counting at 200 and shows "Over 200 applicants", so 200 is the top real step.
   applicant_cap: [25, 50, 100, 150, 200],
   linkedin_interval_min: [15, 30, 60, 120],
   describe_per_run: [20, 40, 60, 100, 200],
@@ -95,8 +77,7 @@ export function AdminUserPage({ userId }: { userId: string }) {
       .catch(() => setFailed(true));
   }, [userId]);
 
-  // The catalogue drives the form, so adding a ceiling is one entry in `libs.limits` rather than
-  // an entry plus a field plus a label somebody has to keep in step.
+  // The catalogue drives the form, so adding a ceiling is one entry in `libs.limits` rather than an entry.
   const save = async (key: string, raw: string) => {
     setSaving(key);
     try {
@@ -162,10 +143,7 @@ export function AdminUserPage({ userId }: { userId: string }) {
         </div>
       </dl>
 
-      {/* **Per account, and closed until somebody opens it.** These files are an assessment of a
-          person written by an agent and reviewed by nobody, so this is a decision about what one
-          particular set of them currently says. The tiles stay on their page either way; what this
-          controls is whether opening one works, enforced on the read and not only in the page. */}
+      {/* Per account, and closed until somebody opens it. */}
       <h2>Profile files</h2>
       <label className="pick">
         <input
@@ -203,11 +181,7 @@ export function AdminUserPage({ userId }: { userId: string }) {
         ))}
       </div>
 
-      {/* **Set here, and nowhere the user can reach.** Somebody who could raise their own delivery
-          ceiling could get their own Telegram bot rate-limited by Telegram, and the rest are spend.
-          Unlimited is a real value, stored as null, and is safe on delivery because sending is
-          paced — the cap used to be the only guard against rate limits, and it guarded them by
-          withholding jobs the user had matched. */}
+      {/* Set here, and nowhere the user can reach. */}
       <h2>Limits</h2>
       <p className="facts">
         Blank means the platform default. Sending is paced at the gap below, so an unlimited daily
@@ -232,8 +206,7 @@ export function AdminUserPage({ userId }: { userId: string }) {
                     {choice} {spec.unit}
                   </option>
                 ))}
-                {/* Only where the ceiling allows it. `send_gap_seconds` never does: that one is
-                    Telegram's rule rather than ours. */}
+                {/* Only where the ceiling allows it. */}
                 {spec.allow_unlimited ? <option value="unlimited">Unlimited</option> : null}
               </select>
             </label>

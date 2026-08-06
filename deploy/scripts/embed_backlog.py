@@ -1,15 +1,4 @@
-"""Embed every corpus row that is still missing a vector. Bounded, resumable, idempotent.
-
-    python deploy/scripts/embed_backlog.py --batches 40
-
-The harvest cycle embeds what it just ingested, but a history import drops several thousand rows in
-at once — more than one cycle should carry, and the cycle runs under a 14-minute systemd timeout.
-This does the same work through the same path, in bounded passes that can be stopped and resumed.
-
-Uses the **bulk** lane deliberately: the fast lane exists so a user-facing score is not stuck behind
-a backfill, and running a backfill through it would defeat exactly that
-(`services/embedder/README.md`).
-"""
+"""Embed every corpus row that is still missing a vector."""
 from __future__ import annotations
 
 import argparse
@@ -42,12 +31,9 @@ def main(argv: list[str] | None = None) -> int:
         print("EMBEDDER_URL is not set", file=sys.stderr)
         return 2
 
-    # The client's 120 s default is sized for the harvester's small batches. A backfill batch of
-    # 200 texts on a 4-CPU TEI takes several minutes, and the read timeout kills the pass mid-flight
-    # — which is how the first attempt at this backfill died.
+    # The client's 120 s default is sized for the harvester's small batches.
     client = EmbedderClient(args.url, timeout=args.timeout)
-    # Built exactly as services/harvester/__main__ builds it, so a backfill cannot write vectors
-    # the harvester would have refused.
+    # Built exactly as services/harvester/__main__ builds it.
     expected = EmbedderVersion(
         model=os.environ.get("EMBEDDER_MODEL", "BAAI/bge-base-en-v1.5"),
         dim=int(os.environ.get("EMBEDDER_DIM", "768")),
@@ -56,11 +42,7 @@ def main(argv: list[str] | None = None) -> int:
     total = 0
     for pass_number in range(1, args.batches + 1):
         with session_scope() as session:
-            # One batch per pass, so one commit per batch. `embed_all_pending` otherwise runs up to
-            # 50 batches inside a single transaction and commits at the end — which is right for the
-            # harvester (a cycle is atomic) and wrong here: at roughly two minutes per batch of 64,
-            # a backlog of a few thousand rows is hours of work that a dropped SSH session or a
-            # restart would throw away entirely. Learned the expensive way.
+            # One batch per pass, so one commit per batch.
             result = embed_all_pending(CorpusRepository(session), client, expected=expected,
                                        max_batches=1, batch_size=args.batch_size)
         total += result.embedded

@@ -1,12 +1,4 @@
-"""The description pass: which rows it picks up, what it writes, and what it refuses to erase.
-
-This is the stage that decides what the labeller reads. Before it existed the platform scored jobs
-from whatever teaser a listing API returned, so the tests that matter here are about *selection*
-(a thin row is picked up, a trimmed one is not) and about *not losing information* (a fetch that
-saw nothing must not clear what an earlier fetch knew).
-
-Needs a live Postgres; skips without `DATABASE_URL`.
-"""
+"""The description pass: which rows it picks up, what it writes, and what it refuses to erase."""
 from __future__ import annotations
 
 import os
@@ -32,8 +24,7 @@ JD = ('<div class="show-more-less-html__markup">' + "A real description. " * 30 
 
 @pytest.fixture(autouse=True)
 def _no_backoff(monkeypatch):
-    """LinkedIn's retry loop sleeps two seconds six times. Real seconds, in every test that hits a
-    LinkedIn row."""
+    """LinkedIn's retry loop sleeps two seconds six times."""
     monkeypatch.setattr(postings.time, "sleep", lambda _seconds: None)
 
 
@@ -88,8 +79,7 @@ def test_a_row_with_no_description_is_awaiting_one(repo):
 
 
 def test_a_row_whose_snippet_is_a_teaser_is_picked_up_again(repo):
-    """**The case the platform was silently getting wrong.** The row has text, so nothing looked
-    broken — it was 180 characters of advert, and every label came from it."""
+    """The case the platform was silently getting wrong."""
     corpus, session = repo
     job_id = _board(corpus)
     corpus.set_description(job_id, "Join our fast-growing team! " * 5)
@@ -106,8 +96,7 @@ def test_a_row_with_a_real_description_is_left_alone(repo):
 
 
 def test_a_trimmed_row_is_never_re_fetched(repo):
-    """Retention dropped that text on purpose. Re-fetching it would undo the sweep every cycle and
-    the corpus would never shrink."""
+    """Retention dropped that text on purpose."""
     corpus, session = repo
     job_id = _board(corpus)
     session.get(CorpusJob, job_id).trimmed_at = session.scalar(select(func.now()))
@@ -116,8 +105,7 @@ def test_a_trimmed_row_is_never_re_fetched(repo):
 
 
 def test_the_two_passes_do_not_take_each_other_s_work(repo):
-    """LinkedIn rows can only be filled by a caller holding a proxy lease. The split is what stops
-    the free shared pass burning its retries on pages that will always 403 it."""
+    """LinkedIn rows can only be filled by a caller holding a proxy lease."""
     corpus, session = repo
     linkedin_id, board_id = _linkedin(corpus), _board(corpus)
     session.flush()
@@ -145,8 +133,7 @@ def test_a_fetched_description_replaces_the_teaser(repo):
 
 
 def test_the_replaced_description_invalidates_the_vector(repo):
-    """A vector computed from the teaser does not match the text it now sits beside, and nothing
-    downstream would raise — it would just score wrong."""
+    """A vector computed from the teaser does not match the text it now sits beside."""
     corpus, session = repo
     job_id = _board(corpus)
     corpus.set_description(job_id, "teaser")
@@ -175,8 +162,7 @@ def test_a_fetch_that_returns_nothing_leaves_the_row_for_the_next_pass(repo):
 
 
 def test_the_outcome_tally_says_why_a_pass_found_nothing(repo):
-    """A run that fell back to snippets for everything looks identical from outside to one that
-    worked. The tally is the difference."""
+    """A run that fell back to snippets for everything looks identical from outside to one that worked."""
     corpus, session = repo
     _board(corpus)
     session.flush()
@@ -188,9 +174,7 @@ def test_the_outcome_tally_says_why_a_pass_found_nothing(repo):
 # ── the rule about not erasing ────────────────────────────────────────────────────────────────
 
 def test_a_none_never_overwrites_a_known_value(repo):
-    """Pages answer inconsistently — the guest fragment has the applicant count, the full page has
-    the apply button. A fetch that did not see a field must not erase what an earlier one did.
-    Clearing `workplace` this way would silently un-filter a job the user had excluded."""
+    """Pages answer inconsistently — the guest fragment has the applicant count."""
     corpus, session = repo
     job_id = _board(corpus, workplace="onsite", applicants=42)
     session.flush()
@@ -203,8 +187,7 @@ def test_a_none_never_overwrites_a_known_value(repo):
 
 
 def test_metadata_is_kept_even_when_the_description_came_back_thin(repo):
-    """An applicant count and a workplace tag are what the card and the filter read, and they
-    arrive on responses that carried no usable JD."""
+    """An applicant count and a workplace tag are what the card and the filter read."""
     corpus, session = repo
     job_id = _linkedin(corpus)
     session.flush()
@@ -263,8 +246,7 @@ CLOSED_POSTING = "<p>No longer accepting applications</p>" + "x" * 300
 
 
 def test_a_closed_posting_stops_the_build_before_anything_is_spent(repo):
-    """**The most annoying possible failure is the one where everything succeeds.** The document
-    arrives, it is good, and the apply link says the job closed three days ago."""
+    """The most annoying possible failure is the one where everything succeeds."""
     from services.docgen.refresh import PostingClosed, refresh_before_build
 
     session, job = _posting(repo)
@@ -281,8 +263,7 @@ def test_a_live_posting_lets_the_build_proceed(repo):
 
 
 def test_a_failed_fetch_never_reads_as_a_closed_job(repo):
-    """A proxy hiccup must not present to the user as "that job is gone". Only a page that says so
-    stops a build."""
+    """A proxy hiccup must not present to the user as "that job is gone"."""
     from services.docgen.refresh import refresh_before_build
 
     session, job = _posting(repo)
@@ -307,10 +288,7 @@ GUEST = ('<span class="num-applicants__caption"> 42 applicants </span>'
 
 
 def test_a_linkedin_row_with_a_description_but_no_signals_is_picked_up(repo):
-    """**A different question from "is it thin", and the corpus was full of the difference.**
-    JobSpy returns a usable description for most LinkedIn postings, so those rows never looked
-    thin — and all 3,494 of them still had a null applicant count, posted time, repost flag and
-    workplace tag, because nothing had ever opened the guest page."""
+    """A different question from "is it thin", and the corpus was full of the difference."""
     corpus, session = repo
     job_id = _linkedin(corpus)
     corpus.set_description(job_id, "A genuine job description. " * 40)
@@ -338,8 +316,7 @@ def test_the_refresh_writes_every_signal_the_page_carries(repo):
 
 
 def test_a_row_that_was_refreshed_is_not_asked_again(repo):
-    """The "never looked" test is the absence of both signals, not a timestamp — otherwise every
-    row would be re-fetched every hour forever."""
+    """The "never looked" test is the absence of both signals, not a timestamp."""
     from services.harvester.describe import refresh_metadata
 
     corpus, session = repo
@@ -353,8 +330,7 @@ def test_a_row_that_was_refreshed_is_not_asked_again(repo):
 
 
 def test_a_board_row_is_never_in_the_metadata_queue(repo):
-    """Only LinkedIn exposes any of these. A Greenhouse page has no applicant count to read, so
-    fetching it would be a proxied request that cannot succeed."""
+    """Only LinkedIn exposes any of these."""
     corpus, session = repo
     job_id = _board(corpus)
     corpus.set_description(job_id, "A genuine job description. " * 40)
@@ -369,8 +345,7 @@ CLOSED_GUEST = ('<p>No longer accepting applications</p>'
 
 
 def test_a_closed_posting_is_marked_and_leaves_the_queue(repo):
-    """**The failure the user saw.** A month-old, already-closed LinkedIn posting arrived as a live
-    card with two build buttons on it. The page said so plainly and nothing read it."""
+    """The failure the user saw."""
     from services.harvester.describe import refresh_metadata
 
     corpus, session = repo
@@ -387,8 +362,7 @@ def test_a_closed_posting_is_marked_and_leaves_the_queue(repo):
 
 
 def test_marking_closed_keeps_the_row_and_its_description(repo):
-    """Not a deletion and not a trim. A CV already built against it keeps its evidence; what stops
-    is delivery."""
+    """Not a deletion and not a trim."""
     corpus, session = repo
     job_id = _linkedin(corpus)
     corpus.set_description(job_id, "A genuine job description. " * 40)
@@ -418,19 +392,7 @@ def test_closing_twice_does_not_move_the_timestamp(repo):
 
 
 def test_the_pass_stops_when_it_runs_out_of_time(repo, monkeypatch):
-    """**A run that outlives its timer stops the next one starting.**
-
-    `linkedin.timer` ticks every fifteen minutes and `Type=oneshot` means an active run blocks the
-    next. Measured 2026-08-05: a pass still going after twenty minutes, the timer reporting no next
-    run, and five hours with no LinkedIn rows ingested while every other source stayed current.
-
-    A count cannot bound this — one row is a proxied fetch whose cost varies by an order of
-    magnitude — so the pass bounds itself in seconds. What is left stays thin and is first in line
-    next time, which is the same fail-forward the rest of the pipeline uses.
-
-    The clock is driven rather than slept through: this file's autouse fixture no-ops
-    `time.sleep` on the shared module, so a test that waited for real time would measure nothing.
-    """
+    """A run that outlives its timer stops the next one starting."""
     from services.harvester import describe as describe_module
 
     corpus, session = repo
@@ -455,8 +417,7 @@ def test_the_pass_stops_when_it_runs_out_of_time(repo, monkeypatch):
 
 
 def test_no_budget_means_the_pass_runs_to_completion(repo):
-    """The shared cycle has its own scheduling and passes no budget, so the bound must be opt-in
-    rather than a default that quietly truncates it."""
+    """The shared cycle has its own scheduling and passes no budget."""
     corpus, session = repo
     for _ in range(3):
         corpus.add(url=f"https://www.linkedin.com/jobs/view/{uuid.uuid4().int % 10**9}",

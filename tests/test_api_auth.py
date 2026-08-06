@@ -1,10 +1,4 @@
-"""The auth endpoints, through the real app.
-
-Narrow on purpose. What is worth pinning is the handful of things that are wrong in a way nobody
-notices: the endpoint must not reveal which addresses have accounts, an unverified account must not
-be able to log in, the refresh cookie must be scoped so an XSS elsewhere cannot reach it, and a
-replayed refresh must end the session rather than quietly working.
-"""
+"""The auth endpoints, through the real app."""
 from __future__ import annotations
 
 import os
@@ -32,11 +26,7 @@ PASSWORD = "a-perfectly-fine-passphrase"
 
 @pytest.fixture()
 def client():
-    """The real app, with the database session and mailer replaced.
-
-    One session across every request in a test, rolled back at the end — so a signup is visible to
-    the login that follows it without committing anything to the live database.
-    """
+    """The real app, with the database session and mailer replaced."""
     os.environ.setdefault("ACCESS_TOKEN_SECRET", "test-" + "x" * 40)
     os.environ["DISABLE_RATE_LIMIT"] = "1"
 
@@ -63,9 +53,7 @@ def client():
 
 
 def _email() -> str:
-    # `example.com` rather than the `.test` the other suites use: `.test` is a reserved special-use
-    # domain and `email_validator` rejects it, which is the validator doing its job. The rest of the
-    # tree writes User rows directly and never passes an address through validation.
+    # `example.com` rather than the `.test` the other suites use.
     return f"{uuid.uuid4()}@example.com"
 
 
@@ -87,8 +75,7 @@ def _link_token(mailer: ConsoleSender) -> str:
 # ── the account-existence oracle ──────────────────────────────────────────────────────────────
 
 def test_signup_answers_identically_for_a_new_and_an_existing_address(client):
-    """Differing responses turn the endpoint into a way to test whether someone has an account
-    here, which for an invite-only product is exactly what it must not be."""
+    """Differing responses turn the endpoint into a way to test whether someone has an account here."""
     http, session, _ = client
     email = _email()
 
@@ -108,8 +95,7 @@ def test_a_login_for_an_unknown_address_looks_like_a_wrong_password(client):
 
 
 def test_a_weak_password_is_refused_with_its_reasons(client):
-    """The rules are about the value the caller just chose, not about anyone else's account — so
-    unlike everything else here, they are told plainly."""
+    """The rules are about the value the caller just chose, not about anyone else's account."""
     http, _, _ = client
     response = _signup(http, _email(), "short")
     assert response.status_code in {400, 422}
@@ -118,8 +104,7 @@ def test_a_weak_password_is_refused_with_its_reasons(client):
 # ── verification ──────────────────────────────────────────────────────────────────────────────
 
 def test_an_unverified_account_cannot_log_in(client):
-    """Otherwise the verification step is decorative: anyone could sign up with an address they do
-    not control and use the account anyway."""
+    """Otherwise the verification step is decorative."""
     http, session, _ = client
     email = _email()
     _signup(http, email)
@@ -146,8 +131,7 @@ def test_verification_activates_the_account_and_works_once(client):
 
 
 def test_verification_does_not_log_the_user_in(client):
-    """A verification link travels through email and can be forwarded. Proving control of an
-    address should not hand out a session — that still requires the password."""
+    """A verification link travels through email and can be forwarded."""
     http, session, mailer = client
     _signup(http, _email())
     session.flush()
@@ -178,16 +162,12 @@ def _logged_in(http, session, mailer):
 
 
 def test_the_refresh_cookie_is_scoped_to_the_refresh_path(client):
-    """The detail most implementations miss (`AUTH_REUSE.md` §3). Scoped to one path, the
-    long-lived credential is absent from every ordinary request, so an XSS anywhere else cannot
-    reach it."""
+    """The detail most implementations miss (`AUTH_REUSE.md` §3)."""
     http, session, mailer = client
     _, response = _logged_in(http, session, mailer)
     assert response.status_code == 200
 
-    # Compared case-insensitively throughout: cookie attribute names are case-insensitive per
-    # RFC 6265 and this client hands them back lowercased, so matching on capitalisation would be
-    # asserting on the client's formatting rather than on the policy.
+    # Compared case-insensitively throughout.
     cookies = "; ".join(response.headers.get_list("set-cookie")).lower()
     assert "refresh_token=" in cookies
     assert "path=/auth/refresh" in cookies
@@ -195,8 +175,7 @@ def test_the_refresh_cookie_is_scoped_to_the_refresh_path(client):
 
 
 def test_both_cookies_are_httponly_and_secure(client):
-    """Unconditionally, not depending on the environment — a development exception is how the
-    production path ends up untested."""
+    """Unconditionally, not depending on the environment."""
     http, session, mailer = client
     _, response = _logged_in(http, session, mailer)
     for header in response.headers.get_list("set-cookie"):
@@ -219,8 +198,7 @@ def test_refresh_rotates_the_token(client):
 
 
 def test_a_replayed_refresh_token_ends_the_session_and_clears_the_cookies(client):
-    """Either the client is buggy or the token was stolen. On the second reading both holders must
-    end up with nothing, and the client must stop retrying a credential that will never work."""
+    """Either the client is buggy or the token was stolen."""
     http, session, mailer = client
     _logged_in(http, session, mailer)
     session.flush()
@@ -258,12 +236,7 @@ def test_logging_out_twice_is_not_an_error(client):
 # ── the sending cap ───────────────────────────────────────────────────────────────────────────
 
 def test_the_daily_cap_stops_sending_without_breaking_signup(client, monkeypatch):
-    """Gmail's own limit fails silently — messages stop arriving and nothing raises. A cap the
-    platform enforces turns that into a refusal it can see.
-
-    Signup still succeeds: the account exists and another link can be requested, and a provider
-    limit must not become a closed front door.
-    """
+    """Gmail's own limit fails silently — messages stop arriving and nothing raises."""
     http, session, mailer = client
     monkeypatch.setenv("MAIL_DAILY_CAP", "1")
 
@@ -277,8 +250,7 @@ def test_the_daily_cap_stops_sending_without_breaking_signup(client, monkeypatch
 
 
 def test_the_cap_counts_attempts_not_successes(client, monkeypatch):
-    """A provider outage would otherwise burn the allowance twice — once failing, once retrying —
-    and the provider counts attempts."""
+    """A provider outage would otherwise burn the allowance twice — once failing, once retrying."""
     from libs.mail import MailError, sent_last_24h
 
     http, session, mailer = client
@@ -295,8 +267,7 @@ def test_the_cap_counts_attempts_not_successes(client, monkeypatch):
 
 
 def test_no_recipient_address_is_stored(client):
-    """A cap needs a count, not a mailing list. This table must never become one more place a
-    user's email lives, or one more thing an account deletion has to reach into."""
+    """A cap needs a count, not a mailing list."""
     from libs.db.models import MailSend
 
     columns = set(MailSend.__table__.columns.keys())
@@ -319,8 +290,7 @@ def test_forgot_answers_identically_for_a_known_and_unknown_address(client):
 
 
 def test_the_emailed_links_point_at_the_spa_routes_not_the_api(client):
-    """`/auth/verify` is a POST-only API path; a mail client GETs, and would land on a 405. The
-    first real signup would have found this."""
+    """`/auth/verify` is a POST-only API path; a mail client GETs, and would land on a 405."""
     http, session, mailer = client
     email = _email()
     _signup(http, email)
@@ -378,8 +348,7 @@ def test_a_reset_token_works_once_and_a_verification_token_is_not_a_reset_token(
 
 
 def test_the_console_sender_shows_the_link_a_developer_must_click(capsys):
-    """The auth routes send inside `redacting(token)`, which scrubs tokens from every log record —
-    so the console fallback prints to stdout, or local signup is unfinishable."""
+    """The auth routes send inside `redacting(token)`, which scrubs tokens from every log record."""
     from libs.mail.sender import ConsoleSender
 
     sender = ConsoleSender()

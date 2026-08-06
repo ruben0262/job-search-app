@@ -1,14 +1,4 @@
-/**
- * Pages 2 and 3.
- *
- * **Uploads keep the text and discard the file.** The server extracts it in the request and the
- * bytes never reach disk — worth saying on the form, because "we store your CV" and "we store what
- * your CV says" are different promises to somebody handing over their employment history.
- *
- * The history page is a textarea rather than an upload: nobody has a long-form "everything I have
- * done" document lying around. They write one, and it is stored as a document like any other so
- * the processing step has a single input path.
- */
+/** Pages 2 and 3. */
 import { useEffect, useState } from "react";
 
 import { api, type DocumentList } from "../../api";
@@ -75,8 +65,7 @@ export function DocumentsStep({ onDone }: { onDone: () => void }) {
       </Field>
       <Error>{upload.error ?? remove.error}</Error>
 
-      {/* The history is its own page with its own single file, listing it here as one more row
-          would invite deleting or duplicating it from the wrong place. */}
+      {/* The history is its own page with its own single file. */}
       {list?.documents.filter((document) => document.kind !== "history").length ? (
         <table>
           <tbody>
@@ -119,12 +108,7 @@ export function HistoryStep({ onDone }: { onDone: () => void }) {
     onDone();
   });
 
-  // **Either is accepted, and both end up in the same place.** A file is extracted server-side and
-  // dropped into the box, so somebody who uploaded a document can still read and edit what was
-  // pulled out of it — rather than trusting that something invisible was understood correctly.
-  //
-  // There is exactly one history, so an upload over an existing one asks first: what is there now
-  // disappears, and that should be chosen rather than discovered.
+  // Either is accepted, and both end up in the same place.
   const upload = useAction(async (file: File) => {
     if (
       text.trim().length > 0 &&

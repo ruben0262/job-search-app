@@ -1,22 +1,4 @@
-"""Signup, verification, login, refresh, logout.
-
-The cookie policy is `AUTH_REUSE.md` §3, copied verbatim because each line of it is a decision
-already made correctly in production:
-
-- `HttpOnly` and `Secure` on both cookies, always. Not conditional on the environment — a
-  development exception is how the production path ends up untested.
-- Access cookie `SameSite=Lax`, refresh cookie `SameSite=Strict`.
-- **The refresh cookie is scoped to the refresh path**, not `/`. This is the detail most
-  implementations miss: it keeps the long-lived credential off every ordinary request, so an XSS on
-  any other route cannot reach it.
-
-Two behaviours worth stating because they look like bugs and are not:
-
-- **Login and signup answer the same way for an unknown address as for a known one.** Differing
-  responses turn the endpoint into an account-existence oracle (`TENANT_SAFETY.md` §5).
-- **A failed verification email does not fail the signup.** The account exists and the user can ask
-  for another link; making registration depend on Gmail being up would be worse.
-"""
+"""Signup, verification, login, refresh, logout."""
 from __future__ import annotations
 
 import logging
@@ -81,8 +63,7 @@ def _set_session_cookies(response: Response, access: str, refresh: str) -> None:
     response.set_cookie(
         ACCESS_COOKIE, access, httponly=True, secure=True, samesite="lax",
         max_age=int(ACCESS_TTL.total_seconds()), path="/")
-    # Strict, and scoped to the one path that consumes it. An XSS anywhere else cannot read it and
-    # an ordinary request never carries it.
+    # Strict, and scoped to the one path that consumes it.
     response.set_cookie(
         REFRESH_COOKIE, refresh, httponly=True, secure=True, samesite="strict",
         max_age=int(REFRESH_TTL.total_seconds()), path=REFRESH_PATH)
@@ -97,17 +78,12 @@ def _clear_session_cookies(response: Response) -> None:
 def signup(body: SignupRequest, request: Request,
            db: Session = Depends(get_db),
            mailer: EmailSender = Depends(get_mailer)) -> dict:
-    """Create an unverified account and email a link. Always answers the same way.
-
-    Invite-only at launch (D5), so an existing address is not an error the caller gets to see — it
-    would confirm that the address has an account here.
-    """
+    """Create an unverified account and email a link."""
     rate_limit(request, "signup", limit=5, per_seconds=3600)
 
     problems = password_problems(body.password, email=body.email)
     if problems:
-        # The password rules *are* told to the caller: they are about the value they just chose, not
-        # about anyone else's account.
+        # The password rules are told to the caller: they are about the value they just chose.
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             detail={"password": problems})
 
@@ -133,15 +109,7 @@ class VerifyRequest(BaseModel):
 
 @router.post("/verify")
 def verify(body: VerifyRequest, db: Session = Depends(get_db)) -> dict:
-    """Redeem a verification link. Activates the account.
-
-    Nothing here logs the user in. Verification proves control of the address; a session should
-    still start from a deliberate login, so a forwarded link cannot hand someone a session.
-
-    The token arrives in the body, matching what the SPA sends. It was a query parameter, which
-    the page never sent — so every human verification failed 422 while the tests, which used the
-    query form, stayed green. The e2e browser run is what caught it.
-    """
+    """Redeem a verification link."""
     user_id = consume_token(db, body.token, "verify_email")
     if user_id is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
@@ -164,14 +132,7 @@ class ForgotRequest(BaseModel):
 @router.post("/forgot", status_code=status.HTTP_202_ACCEPTED)
 def forgot(body: ForgotRequest, request: Request, db: Session = Depends(get_db),
            mailer: EmailSender = Depends(get_mailer)) -> dict:
-    """Email a reset link. Always answers the same way, whatever actually happened.
-
-    The other half of a flow whose libs half (`reset_password` tokens, the mail template) shipped
-    in Phase 3 with nothing calling it — until now a forgotten password was a locked account.
-    Answering opaquely for an unknown address is the same no-oracle rule login follows; issuing a
-    fresh token revokes the previous link (`issue_token` does), so the newest email is always the
-    one that counts.
-    """
+    """Email a reset link."""
     rate_limit(request, f"forgot:{body.email.lower()}", limit=3, per_seconds=3600)
 
     user = db.scalar(select(User).where(User.email == body.email.lower()))
@@ -197,12 +158,7 @@ class ResetRequest(BaseModel):
 
 @router.post("/reset")
 def reset(body: ResetRequest, request: Request, db: Session = Depends(get_db)) -> dict:
-    """Redeem a reset link and set the new password.
-
-    Every session dies with it — the reason a stranger resets somebody's password is that they are
-    already inside, or the owner fears they are. Nothing here logs the user in either: proving
-    control of an inbox is not a login, same as verification.
-    """
+    """Redeem a reset link and set the new password."""
     rate_limit(request, "reset", limit=10, per_seconds=900)
 
     user_id = consume_token(db, body.token, "reset_password")
@@ -234,8 +190,7 @@ def login(body: LoginRequest, request: Request, response: Response,
     rate_limit(request, f"login:{body.email.lower()}", limit=10, per_seconds=900)
 
     user = db.scalar(select(User).where(User.email == body.email.lower()))
-    # The hash is verified even when the user does not exist, against a throwaway value, so the
-    # response time does not reveal which addresses have accounts.
+    # The hash is verified even when the user does not exist, so timing reveals no addresses.
     stored = user.password_hash if user else _DUMMY_HASH
     if not verify_password(stored, body.password) or user is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail=OPAQUE_LOGIN_ERROR)
@@ -247,8 +202,7 @@ def login(body: LoginRequest, request: Request, response: Response,
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="this account is not active")
 
     if needs_rehash(user.password_hash):
-        # The parameters moved since this hash was written. Now is the only moment the plaintext is
-        # available to re-hash it.
+        # The parameters moved since this hash was written.
         user.password_hash = hash_password(body.password)
 
     session = issue_session(db, user.id,
@@ -262,8 +216,7 @@ def login(body: LoginRequest, request: Request, response: Response,
     return {"status": "ok"}
 
 
-# `response_model=None` because the handler returns either a dict or a Response, and FastAPI
-# cannot build a response model from that union.
+# `response_model=None`: the handler returns either a dict or a Response.
 @router.post("/refresh", response_model=None)
 def refresh(request: Request, response: Response,
             db: Session = Depends(get_db)) -> dict | JSONResponse:
@@ -277,10 +230,7 @@ def refresh(request: Request, response: Response,
                                  user_agent=request.headers.get("user-agent"),
                                  ip=_client_ip(request))
     except SessionExpired as exc:
-        # Returned, not raised. Raising `HTTPException` discards the injected `Response`, so the
-        # clear-cookie headers set on it never reach the client — and the client goes on presenting
-        # a token that will never work again, forever. Caught by CI: the 401 arrived with no
-        # `Set-Cookie` at all.
+        # Returned, not raised.
         failure = JSONResponse(status_code=status.HTTP_401_UNAUTHORIZED,
                                content={"detail": str(exc)})
         _clear_session_cookies(failure)
@@ -318,19 +268,11 @@ def logout_everywhere(request: Request, response: Response,
 
 
 def _send_verification(db: Session, mailer: EmailSender, email: str, token: str) -> None:
-    """Send the link, and treat any delivery failure as recoverable.
-
-    The account exists either way and the user can request another link. Making registration depend
-    on Gmail being reachable — or on there being allowance left today — would turn a provider
-    problem into a closed front door.
-    """
-    # The SPA's hash route, not the API's path. `/auth/verify` is a POST-only API endpoint, so a
-    # mail client GETting it lands on a 405 JSON error — which is exactly what the first user to
-    # click a real link would have seen.
+    """Send the link, and treat any delivery failure as recoverable."""
+    # The SPA's hash route, not the API's path.
     url = f"{_base_url()}/#/verify?token={token}"
     subject, body = verification_email(url)
-    # The token grants access to the account, so it is scrubbed from anything logged while it is in
-    # flight — including a traceback from `smtplib`.
+    # The token grants access to the account, so it is scrubbed from anything logged in flight.
     with redacting(token):
         try:
             send_within_cap(db, mailer, email, subject, body, purpose="verify_email")
@@ -344,11 +286,7 @@ def _owner(db: Session, session_id: _uuid.UUID) -> _uuid.UUID:
 
 
 def _client_ip(request: Request) -> str | None:
-    """The peer address. Deliberately not read from `X-Forwarded-For`.
-
-    That header is caller-controlled unless a trusted proxy overwrites it, and this is diagnostic
-    data shown on a sessions page — not worth accepting a spoofable value for.
-    """
+    """The peer address."""
     return request.client.host if request.client else None
 
 
@@ -356,6 +294,5 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
-# A real argon2 hash of a value nobody has. Verifying against it costs the same as a real check,
-# which is the point: a login for an unknown address must not return faster than one for a known.
+# A real argon2 hash of a value nobody has.
 _DUMMY_HASH = hash_password("not-a-real-password-" + "x" * 24)

@@ -1,10 +1,4 @@
-"""What the latency page measures, and the two ways it has already been wrong.
-
-The pure tests pin the stage table's shape and the judgements over it; the ones at the bottom run
-the statements against a real Postgres, because **a percentile over the wrong join is a number that
-looks entirely plausible and describes a population that never existed** — which is the failure
-mode this file exists for, not a crash.
-"""
+"""What the latency page measures, and the two ways it has already been wrong."""
 from __future__ import annotations
 
 import os
@@ -22,12 +16,7 @@ from libs.db.models import CorpusJob, User, UserJobState
 
 
 def test_a_verdict_is_judged_on_the_tail_not_the_median():
-    """**Half the jobs arriving promptly is not the claim this product makes.**
-
-    A median hides exactly the tail somebody loses a role in, so the verdict reads p90. A stage
-    whose median is excellent and whose p90 is an hour is a stage that is failing the people it
-    matters most to.
-    """
+    """Half the jobs arriving promptly is not the claim this product makes."""
     from libs.ops.latency import verdict
 
     flattering = {"p50": 2.0, "p90": 200.0, "p99": 400.0, "samples": 500}
@@ -35,9 +24,7 @@ def test_a_verdict_is_judged_on_the_tail_not_the_median():
 
 
 def test_too_few_samples_is_unknown_rather_than_a_colour():
-    """Below the floor a percentile is arithmetic rather than evidence. Colouring it invites
-    somebody to chase a number that three rows produced, and an operator who chases two of those
-    stops reading the column."""
+    """Below the floor a percentile is arithmetic rather than evidence."""
     from libs.ops.latency import MIN_SAMPLES, verdict
 
     assert verdict("found_to_delivered", {"p90": 999.0, "samples": MIN_SAMPLES - 1}) == "unknown"
@@ -47,11 +34,7 @@ def test_too_few_samples_is_unknown_rather_than_a_colour():
 
 
 def test_thresholds_follow_from_how_the_pipeline_actually_runs():
-    """Pinned to the cadence they were derived from rather than to literals.
-
-    If delivery cadence changes, these thresholds are wrong and this test says so — which is the
-    only thing standing between "amber means look at this" and "amber means nothing".
-    """
+    """Pinned to the cadence they were derived from rather than to literals."""
     from libs.ops.latency import THRESHOLDS
     from libs.settings import DELIVERY_INTERVAL_MIN
 
@@ -65,15 +48,13 @@ def test_thresholds_follow_from_how_the_pipeline_actually_runs():
 
 
 def test_the_worst_span_is_the_pipeline_verdict():
-    """One word for "is this healthy", derived from the rows rather than alongside them -- a summary
-    that can disagree with the table under it is worse than no summary."""
+    """One word for "is this healthy", derived from the rows rather than alongside them."""
     from libs.ops.latency import _worst
 
     assert _worst(["ok", "ok", "ok"]) == "ok"
     assert _worst(["ok", "warn", "ok"]) == "warn"
     assert _worst(["ok", "warn", "down"]) == "down"
-    # `unknown` never outranks a real verdict: one thin sample must not grey out a pipeline that
-    # another span says is on fire.
+    # `unknown` never outranks a real verdict.
     assert _worst(["unknown", "down"]) == "down"
     assert _worst(["unknown", "unknown"]) == "unknown"
 
@@ -81,13 +62,7 @@ def test_the_worst_span_is_the_pipeline_verdict():
 # ── the drill-down: one row per zone ─────────────────────────────────────────────────────────────
 
 def test_every_zone_the_posting_crosses_is_a_row_and_they_are_in_order():
-    """**The rows are the journey, and a gap in them is a gap nobody can see.**
-
-    A posting arrives as a link and leaves as a card, and each stage below is one boundary in
-    between. If a boundary has no row, the time it eats is silently attributed to its neighbour --
-    which is exactly what happened while embed had no timestamp, and why found -> scored could not
-    say whether the embedder or the score lane was slow.
-    """
+    """The rows are the journey, and a gap in them is a gap nobody can see."""
     from itertools import pairwise
 
     from libs.ops.latency import STAGES
@@ -110,9 +85,7 @@ def test_every_zone_the_posting_crosses_is_a_row_and_they_are_in_order():
 
 
 def test_a_shared_stage_is_never_measured_through_the_per_user_join():
-    """A description is fetched **once for everybody**, so counting it per account would multiply
-    every posting by the number of users holding it and report a sample count that never happened.
-    Only the stages that genuinely happen per account may join `user_job_state`."""
+    """A description is fetched once for everybody."""
     from libs.ops.latency import _SCOPE_FROM, STAGES
 
     for stage in STAGES:
@@ -124,10 +97,7 @@ def test_a_shared_stage_is_never_measured_through_the_per_user_join():
 
 
 def test_harvest_lag_is_reported_and_deliberately_not_judged():
-    """**Sources round what they publish** -- LinkedIn says "2 days ago" -- so a threshold on this
-    would be judging their precision rather than our lag, and a red pill produced by rounding is the
-    exact colour an operator learns to ignore. It stays on the page because harvest lag is part of
-    what a user waits, and dropping it would make the judged rows look like the whole story."""
+    """Sources round what they publish -- LinkedIn says "2 days ago"."""
     from libs.ops.latency import STAGES, THRESHOLD_REASONING, THRESHOLDS
 
     assert "posted_to_fetched" not in THRESHOLDS
@@ -141,8 +111,7 @@ def test_harvest_lag_is_reported_and_deliberately_not_judged():
 
 
 def test_every_judged_zone_says_why_its_threshold_is_where_it_is():
-    """A colour whose reasoning lives only in a Python constant is a colour nobody trusts, and this
-    project has already had one number turn out to be measuring something other than its label."""
+    """A colour whose reasoning lives only in a Python constant is a colour nobody trusts."""
     from libs.ops.latency import STAGES, THRESHOLD_REASONING, THRESHOLDS
 
     for stage in STAGES:
@@ -153,18 +122,14 @@ def test_every_judged_zone_says_why_its_threshold_is_where_it_is():
 
 
 def test_the_embed_zone_is_judged_tighter_than_the_ones_waiting_on_a_cadence():
-    """The embedder drains continuously and answers in milliseconds -- there is no schedule to wait
-    for -- so minutes there mean a queue, where minutes after a harvest mean the next cycle. Judging
-    them on the same threshold would forgive a stalled embedder for a quarter of an hour."""
+    """The embedder drains continuously and answers in milliseconds."""
     from libs.ops.latency import THRESHOLDS
 
     assert THRESHOLDS["described_to_embedded"][0] < THRESHOLDS["found_to_described"][0]
 
 
 def test_an_unjudged_zone_is_not_the_same_answer_as_too_little_data(monkeypatch):
-    """One means "we chose not to colour this, here is why"; the other means "not enough examples to
-    say". Collapsing them makes a deliberate decision look like missing data, and an operator who
-    reads a deliberate silence as a gap goes looking for a bug that is not there."""
+    """One means "we chose not to colour this, here is why"; the other means "not enough examples to say"."""
     from libs.ops import latency
 
     calls = {}
@@ -186,9 +151,7 @@ def test_an_unjudged_zone_is_not_the_same_answer_as_too_little_data(monkeypatch)
 
 
 def test_an_unknown_stage_key_never_reaches_sql():
-    """The key is a path segment, and the SQL for a stage is built by formatting column identifiers
-    into a template. Matching against the known stages first is what keeps that safe -- an
-    identifier cannot be a bound parameter, so nothing else could."""
+    """The key is a path segment, and the SQL for a stage is built by formatting column identifiers into."""
     from libs.ops.latency import stage_detail
 
     with pytest.raises(KeyError):
@@ -196,10 +159,6 @@ def test_an_unknown_stage_key_never_reaches_sql():
 
 
 # ── the same measurements, against a real Postgres ──────────────────────────────────────────────
-#
-# The tests above pin the stage table's shape; only these prove the statements run and count the
-# right rows. Both matter: a percentile over the wrong join is a number that looks entirely
-# plausible and describes something that never happened.
 
 pytestmark_db = pytest.mark.skipif(
     not os.environ.get("DATABASE_URL"), reason="DATABASE_URL not set (no live Postgres)")
@@ -241,13 +200,7 @@ def _posting(s, *, minutes_ago: float, described_after: float | None = None,
 
 @pytestmark_db
 def test_shared_work_is_counted_once_however_many_accounts_hold_the_posting(ctx):
-    """**A description is fetched once for everybody.**
-
-    Counting it through the per-user join would multiply one fetch by the number of accounts that
-    hold the row and report a sample count that never happened -- and the percentiles would be a
-    real measurement of a fictional population, which is worse than a missing number because it
-    looks right.
-    """
+    """A description is fetched once for everybody."""
     from libs.ops.latency import stage_breakdown
 
     job, _found = _posting(ctx, minutes_ago=60, described_after=10, embedded_after=12)
@@ -272,8 +225,7 @@ def test_shared_work_is_counted_once_however_many_accounts_hold_the_posting(ctx)
 
 @pytestmark_db
 def test_each_zone_reports_its_own_minutes_rather_than_the_whole_journey(ctx):
-    """The point of the breakdown: 36 minutes end to end is useless until it says *which* handoff
-    ate them. Each row must measure its own boundary and nothing either side of it."""
+    """The point of the breakdown: 36 minutes end to end is useless until it says *which* handoff ate them."""
     from libs.ops.latency import stage_breakdown
 
     job, found = _posting(ctx, minutes_ago=120, described_after=10, embedded_after=25)
@@ -297,9 +249,7 @@ def test_each_zone_reports_its_own_minutes_rather_than_the_whole_journey(ctx):
 
 @pytestmark_db
 def test_the_backlog_counts_what_has_not_got_through_rather_than_what_has(ctx):
-    """**The percentiles describe what already completed.** A stage with a fine p90 and four
-    thousand rows queued behind it is about to stop having a fine p90, and only this number says so
-    before it happens."""
+    """The percentiles describe what already completed."""
     from libs.ops.latency import stage_detail
 
     described, _ = _posting(ctx, minutes_ago=30, described_after=5)
@@ -318,9 +268,7 @@ def test_the_backlog_counts_what_has_not_got_through_rather_than_what_has(ctx):
 
 @pytestmark_db
 def test_a_backfill_never_reports_itself_as_pipeline_latency(ctx):
-    """A rescore of the whole corpus happens on every retrain, and without the recency guard it
-    reports the age of every old row as how fast a new job reaches somebody -- which is how this
-    number once came out as a median of 3,759 minutes describing nothing that happened today."""
+    """A rescore of the whole corpus happens on every retrain."""
     from libs.ops.latency import stage_breakdown
 
     old, _found = _posting(ctx, minutes_ago=60 * 24 * 9, described_after=10, embedded_after=12)
@@ -339,10 +287,6 @@ def test_a_backfill_never_reports_itself_as_pipeline_latency(ctx):
 
 
 # ── what the filter removed ─────────────────────────────────────────────────────────────────────
-#
-# The roadmap's stage-3 row. **Not a duration**: the filter costs microseconds a row, so timing it
-# would report noise, while what it removed is what says whether it is earning its place. These
-# tests are about the number being per account and being derivable from rows that already exist.
 
 
 def _judged(ctx, *, scored: int, skipped: int):
@@ -356,8 +300,7 @@ def _judged(ctx, *, scored: int, skipped: int):
     for index in range(scored + skipped):
         job, _ = _posting(ctx, minutes_ago=30, described_after=1, embedded_after=2)
         ctx.add(UserJobState(user_id=user.id, job_id=job.id,
-                             # `skip()` stores a null score with `scored_at` set — the row was
-                             # considered and rejected, which is exactly what is being counted.
+                             # `skip()` stores a null score with `scored_at` set.
                              score=None if index < skipped else 70.0,
                              scored_model_version=1, scored_at=now))
     ctx.flush()
@@ -367,12 +310,7 @@ def _judged(ctx, *, scored: int, skipped: int):
 
 @pytestmark_db
 def test_a_filtered_row_is_counted_as_removed_not_as_missing(ctx):
-    """**The before/after count the filter shipped without** (CLAUDE.md §4).
-
-    A row the filter rejected leaves no trace anywhere else: it is not in the feed, not in the
-    health count, and not in any log a week later. Without this it is only ever visible as an
-    absence, which is the same shape as a quiet week.
-    """
+    """The before/after count the filter shipped without (CLAUDE.md §4)."""
     _user, entry = _judged(ctx, scored=7, skipped=3)
 
     assert entry["considered"] == 10
@@ -383,12 +321,7 @@ def test_a_filtered_row_is_counted_as_removed_not_as_missing(ctx):
 
 @pytestmark_db
 def test_one_account_whose_filter_removes_everything_is_visible_on_its_own(ctx):
-    """**A total would hide it, and the total is what an operator reads first.**
-
-    A feed that goes silent because a filter is too tight looks exactly like a feed with nothing
-    new — which is the failure this platform has now shipped twice. So the row is per account, and
-    an account with nothing surviving is red even while the platform's own rate looks ordinary.
-    """
+    """A total would hide it, and the total is what an operator reads first."""
     from libs.ops.latency import MIN_SAMPLES, filter_effect
 
     _healthy, healthy = _judged(ctx, scored=MIN_SAMPLES, skipped=0)
@@ -397,15 +330,13 @@ def test_one_account_whose_filter_removes_everything_is_visible_on_its_own(ctx):
     assert silent["verdict"] == "down"
     assert silent["removed_pct"] == 100.0
     assert healthy["verdict"] == "ok", "removing nothing is cold start, not a fault"
-    # And the platform summary carries the worst of them rather than the average, which here would
-    # be a perfectly comfortable 50%.
+    # And the platform summary carries the worst of them rather than the average.
     assert filter_effect(ctx, hours=24)["verdict"] == "down"
 
 
 @pytestmark_db
 def test_a_row_nobody_has_scored_is_not_counted_as_filtered_out(ctx):
-    """`user_job_state` gains a row the first time anything touches a posting — a label, an applied
-    record. Those have a null score too, and counting them would report a filter that never ran."""
+    """`user_job_state` gains a row the first time anything touches a posting — a label, an applied record."""
     from libs.ops.latency import filter_effect
 
     user = User(email=f"{uuid.uuid4()}@example.test", password_hash="x")

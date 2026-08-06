@@ -11,10 +11,7 @@ const R_RIM = 186;
 const R_SPOKE = 170;
 const R_HUB = 36;
 
-/**
- * The Mahoraga wheel — a spoked wheel drawn once and reused by both the
- * nav wheel (one spoke per section) and the background wheel (8 spokes).
- */
+/** The Mahoraga wheel — a spoked wheel drawn once and reused by both the nav wheel. */
 export default function WheelSVG({ spokes, offset = 0, className }: WheelSVGProps) {
   const spokeAngles = Array.from({ length: spokes }, (_, i) => offset + (360 / spokes) * i);
   const ticks = Array.from({ length: 48 }, (_, i) => (360 / 48) * i);

@@ -1,13 +1,4 @@
-"""Re-render every account's facts block from its stored profile. Does not bump any generation.
-
-    python deploy/scripts/backfill_facts.py
-
-The facts block grounds what is *written* about a person, not what counts as a fit for them, so
-changing it cannot make a label wrong. Bumping `profile_generation` here would invalidate every
-label and force a retrain for a change that means nothing to either (`PROFILE_CAPTURE_PLAN.md` §7).
-
-Run after a facts-template change, and once for accounts created before the block existed.
-"""
+"""Re-render every account's facts block from its stored profile."""
 from __future__ import annotations
 
 import sys

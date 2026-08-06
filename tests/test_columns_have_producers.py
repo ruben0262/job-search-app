@@ -1,26 +1,4 @@
-"""Every column the product reads is written by something.
-
-**The second-most expensive failure class here, and it is invisible by construction.** A nullable
-column that nothing ever assigns reads as NULL forever, and NULL is a legal value — so no query
-fails, no exception is raised, and the feature that depends on it is simply absent. Twice in one
-week:
-
-- `users.telegram_webhook_secret` was declared, migrated and read by the webhook route, and written
-  by **nothing**. Every "Build my CV" tap on the account that lacked it arrived, matched no user and
-  404'd in silence for weeks (ROADMAP 6af).
-- `proxy_credentials` rows were created as placeholders with `status = healthy` and no secret behind
-  them, so an account whose LinkedIn tier had never run once reported a healthy credential
-  (ROADMAP 6ao).
-
-Both were found by a user noticing a missing feature, which is the most expensive way to find
-anything. This test asks the question directly: **for every column something reads, is there a line
-somewhere that writes it?**
-
-Deliberately crude — a grep for an assignment, not a dataflow analysis. The failure it catches is
-"nowhere at all", which is what both defects were, and a cleverer check would be one nobody trusts.
-
-No database. Runs in CI on every commit.
-"""
+"""Every column the product reads is written by something."""
 from __future__ import annotations
 
 import re
@@ -30,38 +8,24 @@ import pytest
 
 CODE = [Path("libs"), Path("services")]
 
-# Columns that are genuinely written by the database or by Alembic rather than by application code,
-# with the reason each one is exempt. **Adding a name here is a decision**: it says "nothing in
-# Python writes this and that is correct", and it is the only way to silence this test.
+# Columns that are genuinely written by the database or by Alembic rather than by application code.
 WRITTEN_ELSEWHERE = {
     "id": "primary keys are the database's",
     "created_at": "server_default",
     "first_seen_at": "server_default on insert",
     "updated_at": "server_default / onupdate",
     "sent_at": "server_default now() on the mail_sends insert",
-    # A column default on the model (`default="free"`), applied by SQLAlchemy on insert. The plan
-    # is a label shown on the account and admin pages; the limits that used to hang off it are now
-    # `libs.limits` (ROADMAP 6as).
+    # A column default on the model (`default="free"`), applied by SQLAlchemy on insert.
     "plan_id": "model column default, applied on insert",
 }
 
-# **Columns this test found on its first run, each a real answer to "what is silently absent".**
-#
-# Listed rather than deleted because removing a column is the owner's call, and listed rather than
-# ignored because a permanently red test is one nobody reads. A *new* unwritten column still fails
-# the build; these are the known ones, with what each actually costs (ROADMAP 6aq).
+# Columns this test found on its first run, each a real answer to "what is silently absent".
 KNOWN_UNWRITTEN = {
-    # Deliberate, and documented at the reader. `_cap` prefers `libs.limits.proxy_mb_per_day` and
-    # falls back to this column, which nothing but the server_default of 200 ever sets. Harmless as
-    # long as it stays a fallback — it is on this list so it cannot quietly become a second answer.
+    # Deliberate, and documented at the reader.
     "daily_cap_mb": "intentional fallback; libs.limits.proxy_mb_per_day is the live value",
-    # **A second source of truth that disagrees with the first.** The column defaults to 240 and the
-    # `libs.limits` entry of the same name defaults to 15; the governor reads the limit. The column
-    # is the loser of a migration nobody finished.
+    # A second source of truth that disagrees with the first.
     "linkedin_interval_min": "superseded by libs.limits; column default 240 vs limit default 15",
-    # `quota_overrides` and `profile_context` were here and are now dropped — the first with the
-    # whole second limits system it belonged to, the second because `context.md` in
-    # `user_profile_files` is the live version of the same idea (ROADMAP 6as).
+    # `quota_overrides` and `profile_context` were here and are now dropped.
 }
 
 
@@ -89,9 +53,7 @@ def bodies() -> str:
 
 
 def test_there_are_columns_to_check(bodies):
-    """The guard on the guard. A regex that silently matches nothing would make this file a
-    reassuring no-op, which is worse than not having it — that exact mistake shipped twice in the
-    CI drift check."""
+    """The guard on the guard."""
     columns = declared_columns()
     assert len(columns) >= 5, f"only found columns in {list(columns)} — the parser has drifted"
     assert sum(len(names) for names in columns.values()) > 60
@@ -118,9 +80,7 @@ def test_every_column_is_written_by_something(bodies):
 
 
 def test_the_known_unwritten_columns_still_exist(bodies):
-    """**An exemption list that outlives what it exempts is a lie.** If one of these is finally
-    written, or the column is dropped, the entry has to go — otherwise the list slowly becomes a
-    place where real findings are hidden."""
+    """An exemption list that outlives what it exempts is a lie."""
     declared = {name for names in declared_columns().values() for name in names}
 
     stale = [name for name in KNOWN_UNWRITTEN if name not in declared]
@@ -133,12 +93,7 @@ def test_the_known_unwritten_columns_still_exist(bodies):
 
 
 def test_the_check_would_have_caught_the_webhook_secret(bodies):
-    """**Proof the assertion above can fail**, pinned to the defect that motivated it.
-
-    `telegram_webhook_secret` now has exactly one producer — the connect route. If that assignment
-    is ever removed, the column goes back to being a promise nothing keeps, and the general test
-    above is what should fail. This asserts the mechanism it relies on actually finds a producer.
-    """
+    """Proof the assertion above can fail, pinned to the defect that motivated it."""
     assert re.search(r"\.telegram_webhook_secret\s*=[^=]", bodies), (
         "the column that started this has lost its producer again")
 
@@ -150,11 +105,8 @@ def test_the_check_would_have_caught_the_webhook_secret(bodies):
 # ── one name, one definition (ROADMAP 6at) ────────────────────────────────────────────────────
 
 # Names that legitimately appear in more than one module because they mean different things there.
-# **Each entry is a claim that the collision is intentional**, and the value differing between them
-# is the evidence — a per-call token ceiling for a CV is not the one for a setup chat.
 KNOWN_COLLISIONS = {
-    # Per-call model ceilings. A CV generation and a setup chat are different calls with different
-    # budgets; the values differing is the evidence that this is not one number written twice.
+    # Per-call model ceilings.
     "MAX_TOKENS": "per-call: agents 32k, capture 16k, docgen 32k",
     "THINKING_TOKENS": "per-call, same reason as MAX_TOKENS",
     # Per-adapter HTTP timeouts, tuned to what each board tolerates.
@@ -167,9 +119,7 @@ KNOWN_COLLISIONS = {
     "BATCH_SIZE": "per-lane",
     "MAX_RETRIES": "per-client",
     "MIN_DESCRIPTION": "corpus re-fetch threshold (200) vs the scorer's usable-text floor (100)",
-    # **Different regexes under one name.** `workfilter` matches the weak signals a title or
-    # location carries; `features` matches only the strong phrases that survive in a long
-    # description. Same name, deliberately different patterns.
+    # Different regexes under one name.
     "_ONSITE_RE": "title/location signals vs description-strength phrases",
     "_REMOTE_RE": "title/location signals vs description-strength phrases",
     # Idioms and fixtures, per-module by definition.
@@ -182,16 +132,7 @@ KNOWN_COLLISIONS = {
 
 
 def test_a_constant_is_defined_in_one_place():
-    """**The defect this project has shipped most often, caught by name.**
-
-    Six of one week's sixteen defects were one value defined twice: a daily cap in four places, a
-    retrain gate in two, a tick in three. The failure is invisible — both copies are plausible, one
-    is enforced, and nothing errors. Where two modules need the same number, it goes in `libs` and
-    both import it (CLAUDE.md §5).
-
-    A genuine collision — the same word meaning different things — goes in `KNOWN_COLLISIONS` with
-    what each one means, which forces the question to be answered rather than assumed.
-    """
+    """The defect this project has shipped most often, caught by name."""
     import ast
     from collections import defaultdict
 

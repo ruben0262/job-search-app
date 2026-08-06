@@ -1,15 +1,4 @@
-"""The feedback loop: what a tap records, and who is allowed to tap.
-
-Two clusters, and they fail in opposite ways.
-
-**The security boundary fails loudly if it is too tight and silently if it is too loose.** A
-stranger who can tap somebody else's buttons does not steal anything — they slowly corrupt the one
-thing the product is built on, and nothing reports it. So the tests are about who is refused: a
-wrong path, a wrong header, and a channel member who is not the account owner.
-
-**The label semantics fail silently either way.** Applied is 90 and not 100 on purpose; a second tap
-must not move `applied_at`, because that column is the date somebody actually applied.
-"""
+"""The feedback loop: what a tap records, and who is allowed to tap."""
 from __future__ import annotations
 
 import os
@@ -50,9 +39,7 @@ def api():
     session.add(user)
     session.flush()
 
-    # A finished profile, because the build button now refuses without one and these tests are
-    # about the quota and the queued payload rather than about readiness. The refusal has its own
-    # test below.
+    # A finished profile, because the build button now refuses without one.
     from libs.db.models import UserProfileFile
     from libs.profiles import GENERATION_FILES
 
@@ -96,16 +83,14 @@ def test_a_wrong_path_is_a_404(api):
 
 
 def test_a_leaked_path_without_the_header_is_still_refused(api):
-    """**Why there are two secrets.** A path leaks — into a proxy log, a browser history, a
-    screenshot — and the header is what makes a leaked path insufficient on its own."""
+    """Why there are two secrets."""
     http, _, _, job = api
     assert tap(http, job.id, header=None).status_code == 404
     assert tap(http, job.id, header="wrong").status_code == 404
 
 
 def test_a_channel_member_who_is_not_the_owner_teaches_nothing(api):
-    """A feed channel has other members. This is not a privacy leak — it is a slow, invisible
-    corruption of the training data, which is worse because nothing reports it."""
+    """A feed channel has other members."""
     from libs.db.models import UserJobState
 
     http, session, user, job = api
@@ -129,8 +114,7 @@ def test_an_update_that_is_not_a_button_tap_is_acknowledged(api):
 # ── what a tap records ────────────────────────────────────────────────────────────────────────
 
 def test_applying_writes_a_feedback_label_worth_five_llm_labels(api):
-    """`source='feedback'` and `weight=5` have been in the schema since Phase 2 with nothing writing
-    them. What somebody did outranks what a model guessed."""
+    """`source='feedback'` and `weight=5` have been in the schema since Phase 2 with nothing writing them."""
     from libs.db.models import UserLabel
     from libs.feedback import APPLIED_LABEL, FEEDBACK_WEIGHT
 
@@ -144,8 +128,7 @@ def test_applying_writes_a_feedback_label_worth_five_llm_labels(api):
 
 
 def test_applying_is_ninety_not_one_hundred(api):
-    """People apply to things they are unsure about. Saturating the scale would teach the model that
-    every applied job is identical, throwing away the ordering that makes a feed useful."""
+    """People apply to things they are unsure about."""
     from libs.feedback import APPLIED_LABEL, SKIPPED_LABEL
 
     assert 0 < SKIPPED_LABEL < APPLIED_LABEL < 100
@@ -168,8 +151,7 @@ def test_feedback_overwrites_the_model_guess_for_that_job(api):
 
 
 def test_a_second_tap_does_not_move_the_date_somebody_applied(api):
-    """`applied_at` is the durable record of a real event. A later tap is a person checking it
-    registered, not a new application."""
+    """`applied_at` is the durable record of a real event."""
     from libs.db.models import UserJobState
 
     http, session, user, job = api
@@ -200,8 +182,7 @@ def test_a_tap_on_a_job_the_user_never_had_is_not_an_error(api):
 
 
 def test_any_tap_counts_as_engagement(api):
-    """Delivery is Telegram, so a user who reads their feed every morning may never open the web app
-    again. Marking them dormant on login alone would pause the most engaged users' feeds."""
+    """Delivery is Telegram, so a user who reads their feed every morning may never open the web app again."""
     http, session, user, job = api
     assert user.last_active_at is None
 
@@ -213,8 +194,7 @@ def test_any_tap_counts_as_engagement(api):
 # ── the retrain trigger ───────────────────────────────────────────────────────────────────────
 
 def test_a_burst_of_taps_produces_exactly_one_retrain(api):
-    """Twenty taps is one fit, ten minutes after the last. A model refit on one extra label is the
-    same model and twice the CPU."""
+    """Twenty taps is one fit, ten minutes after the last."""
     from sqlalchemy import func, select
 
     from libs.db.models import CorpusJob, QueueJob, UserJobState
@@ -235,16 +215,7 @@ def test_a_burst_of_taps_produces_exactly_one_retrain(api):
 
 
 def test_the_enqueue_is_a_request_and_the_trainer_is_the_authority(api):
-    """**Two definitions of "enough new labels" put a red banner on the operator's health page.**
-
-    This side used to gate on "has this account five feedback labels at the current profile
-    generation"; `should_retrain` asks "are there five *more* labels than the active model was
-    fitted on". Two different questions with one name and one number — so once an account passed
-    five feedback labels the gate was permanently true, every later tap enqueued a retrain, and the
-    trainer correctly declined each one straight into a dead letter (ROADMAP 6ah).
-
-    So a tap asks; it does not decide. The debounce and the dedup key keep the cost at one job.
-    """
+    """Two definitions of "enough new labels" put a red banner on the operator's health page."""
     from sqlalchemy import func, select
 
     from libs.db.models import QueueJob
@@ -259,8 +230,7 @@ def test_the_enqueue_is_a_request_and_the_trainer_is_the_authority(api):
 
 
 def test_nothing_in_the_api_second_guesses_should_retrain():
-    """The decision lives in one place. `services.api` may not import `services.trainer`, which is
-    exactly why a copy of the rule grew here — and a copy is what drifted."""
+    """The decision lives in one place."""
     from pathlib import Path
 
     body = Path("services/api/telegram_routes.py").read_text(encoding="utf-8")
@@ -270,8 +240,7 @@ def test_nothing_in_the_api_second_guesses_should_retrain():
 
 
 def test_build_cv_queues_a_docgen_job_carrying_the_posting(api):
-    """The tap is the whole contract between the button and the worker: the lane says what to do and
-    the payload says which posting to do it for."""
+    """The tap is the whole contract between the button and the worker."""
     from sqlalchemy import select
 
     from libs.db.models import QueueJob
@@ -286,17 +255,13 @@ def test_build_cv_queues_a_docgen_job_carrying_the_posting(api):
 
 
 def test_a_cv_build_over_the_daily_limit_is_refused_at_the_tap(api):
-    """**The admission point, not the worker.** A quota checked inside the build has already spent
-    the Claude call it was protecting, and the popup has to name the limit — a button that silently
-    does nothing is how somebody concludes the product is broken."""
+    """The admission point, not the worker."""
     from sqlalchemy import select
 
     from libs.db.models import QueueJob
 
     http, session, user, job = api
-    # The ceiling comes from `libs.limits` — the one per-user limits system. It used to be set here
-    # through `users.quota_overrides`, a column of a second system that nothing ever wrote, so the
-    # exception this test grants could not actually be granted in production (ROADMAP 6as).
+    # The ceiling comes from `libs.limits` — the one per-user limits system.
     user.limits = {"cv_builds_per_day": 1}
     session.flush()
 
@@ -308,16 +273,14 @@ def test_a_cv_build_over_the_daily_limit_is_refused_at_the_tap(api):
     assert "1 documents for today" in second["answer"] and "resets" in second["answer"]
 
     assert len(session.scalars(select(QueueJob).where(QueueJob.lane == "docgen")).all()) == 1
-    # The per-account override is what the test drove; the catalogue default is what an untouched
-    # account gets, and it is the same number the plan system used to hold.
+    # The per-account override is what the test drove.
     from libs.limits import BY_KEY
 
     assert BY_KEY["cv_builds_per_day"].default == 10
 
 
 def test_the_keyboard_carries_three_buttons_within_telegrams_limit(api):
-    """`callback_data` is capped at 64 bytes, and every extra button is something to read on a phone
-    before deciding."""
+    """`callback_data` is capped at 64 bytes."""
     from services.api.telegram_routes import keyboard
 
     buttons = keyboard(123)["inline_keyboard"][0]
@@ -328,9 +291,7 @@ def test_the_keyboard_carries_three_buttons_within_telegrams_limit(api):
 # ── the two sides agree ───────────────────────────────────────────────────────────────────────
 
 def test_the_buttons_the_notifier_sends_are_the_ones_the_webhook_understands():
-    """The notifier renders the keyboard and the API parses the taps, and they may not import each
-    other. `callback_data` is the entire contract between them — so it is asserted here, reading
-    both sides, rather than left to whoever edits one of them next."""
+    """The notifier renders the keyboard and the API parses the taps, and they may not import each other."""
     from services.api.telegram_routes import CALLBACK_PREFIX, _parse
     from services.notifier.buttons import ACTION_CODES, keyboard
 
@@ -344,8 +305,7 @@ def test_the_buttons_the_notifier_sends_are_the_ones_the_webhook_understands():
 
 
 def test_a_malformed_callback_is_ignored_rather_than_guessed():
-    """It is attacker-supplied text. Guessing at it would be the one place a bad payload could
-    reach a write."""
+    """It is attacker-supplied text."""
     from services.api.telegram_routes import _parse
 
     for junk in ("", "ap", "ap:", "ap:abc", "xx:1", "ap:1:2", "'; DROP TABLE users--"):
@@ -376,8 +336,7 @@ def _scored(session, user, *, score, description="a real description " * 30, mod
 
 
 def test_rate_offers_the_job_closest_to_the_delivery_threshold(api):
-    """**The jobs where an answer teaches most are the ones the model is least sure about.** A 96
-    and a 4 are already decided; the boundary is where a label moves something."""
+    """The jobs where an answer teaches most are the ones the model is least sure about."""
     http, session, user, _ = api
     _scored(session, user, score=98)
     boundary = _scored(session, user, score=59)
@@ -389,9 +348,7 @@ def test_rate_offers_the_job_closest_to_the_delivery_threshold(api):
 
 
 def test_the_pool_includes_jobs_that_were_never_delivered(api):
-    """**The property that makes `/rate` worth building.** Rating only what reached the channel
-    would teach the boundary from one side: every "no" would come from jobs the model already
-    ranked highly, and it would never hear that something it rejected was worth sending."""
+    """The property that makes `/rate` worth building."""
     from libs.feedback import rating_pool
 
     _http, session, user, _ = api
@@ -412,8 +369,7 @@ def test_a_job_with_no_real_description_is_never_offered(api):
 
 
 def test_a_job_scored_by_an_older_model_is_not_offered(api):
-    """A score from a previous model says nothing about where the current model's boundary is,
-    which is the thing being probed."""
+    """A score from a previous model says nothing about where the current model's boundary is."""
     from libs.feedback import rating_pool
 
     _http, session, user, _ = api
@@ -439,16 +395,14 @@ def test_rate_says_so_when_there_is_nothing_left(api):
 
 
 def test_rate_from_a_channel_member_who_is_not_the_owner_is_refused(api):
-    """A command is not a lesser thing than a button: typing it would train somebody else's model
-    just as effectively."""
+    """A command is not a lesser thing than a button."""
     http, session, user, _ = api
     _scored(session, user, score=60)
     assert say(http, "/rate", from_id="9999999").json()["status"] == "not_yours"
 
 
 def test_an_ordinary_message_is_acknowledged_rather_than_refused(api):
-    """Telegram resends whatever is not answered with a 2xx, and a bot that argues with its own
-    channel is worse than one that says nothing."""
+    """Telegram resends whatever is not answered with a 2xx."""
     http, *_ = api
     response = say(http, "hello")
     assert response.status_code == 200
@@ -466,8 +420,7 @@ def test_the_rate_buttons_are_ones_the_webhook_understands():
 # ── /cv <link>: a job the harvest never saw ───────────────────────────────────────────────────
 
 def test_a_pasted_link_becomes_an_ordinary_corpus_row(api, monkeypatch):
-    """**Not a side table.** The build path is the ordinary one, so a pasted job produces the same
-    document as a delivered one — and the next user to be shown that job gets it described."""
+    """Not a side table."""
     from libs.corpus import ondemand
     from libs.db.models import CorpusJob
 
@@ -498,8 +451,7 @@ def test_a_pasted_link_already_in_the_corpus_is_not_added_twice(api, monkeypatch
 
 
 def test_a_page_that_yields_nothing_is_reported_rather_than_built(api, monkeypatch):
-    """A build against a job with no title and no description would cost the user to find out it
-    was about nothing."""
+    """A build against a job with no title and no description would cost the user to find out it was."""
     from libs.corpus import ondemand
 
     http, *_ = api
@@ -543,13 +495,7 @@ def test_a_pasted_link_from_a_channel_member_is_refused(api):
 
 
 def test_a_build_is_refused_at_the_tap_when_setup_is_unfinished(api):
-    """**A dead letter about a state only the user can fix.**
-
-    Two docgen jobs sat on the operator's health page reading "this account has no confirmed
-    profile — finish onboarding first", while the user who tapped the button had been told "it will
-    arrive shortly" and heard nothing. The refusal belongs at the admission point, in the popup,
-    like the quota beside it (ROADMAP 6aw).
-    """
+    """A dead letter about a state only the user can fix."""
     from sqlalchemy import delete, func, select
 
     from libs.db.models import QueueJob, UserProfileFile

@@ -1,18 +1,4 @@
-"""The seven onboarding pages, as endpoints.
-
-**No LLM runs behind any of these** (`ONBOARDING_AND_PROCESSING.md` §1). Onboarding collects; the
-dashboard's *process data* step is the only thing that spends the user's Claude credential. That is
-what lets a user finish signing up while Anthropic is down, at no cost, in one sitting.
-
-Three pages are already served elsewhere and are deliberately not duplicated here: documents by
-`/documents`, and Telegram, Claude and the proxy by `/credentials`. This module owns identity,
-history, config, and the completion gate — plus `GET /onboarding/state`, which is the single place
-that answers "what is left", so the front end never re-derives the rule and gets it subtly wrong.
-
-Nothing here is one-shot. Every field is editable afterwards from the account page, and re-saving
-after completion is normal rather than an error — onboarding is the only place this is *sequenced*,
-not the only place it can be set.
-"""
+"""The seven onboarding pages, as endpoints."""
 from __future__ import annotations
 
 import logging
@@ -38,21 +24,14 @@ from services.api.deps import current_user, get_db, rate_limit
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/onboarding", tags=["onboarding"])
 
-# How far back the config preview counts. Not the section's own `posted_within_hours`: at 24 hours a
-# correct config can legitimately show single digits, and a user reading that as "my keywords are
-# wrong" would go and break a working config.
+# How far back the config preview counts.
 PREVIEW_WINDOW_DAYS = 30
 PREVIEW_TITLE_LIMIT = 5
 
 
 @router.get("/state")
 def state(db: Session = Depends(get_db), user_id: _uuid.UUID = Depends(current_user)) -> dict:
-    """What is done, what is left, and where to send the user next.
-
-    Derived from the rows each page writes rather than from a stored progress marker, so deleting a
-    credential later correctly reopens that page instead of leaving an account "complete" and
-    unable to run (`libs.onboarding.state`).
-    """
+    """What is done, what is left, and where to send the user next."""
     return onboarding_state(db, user_id).as_dict()
 
 
@@ -69,12 +48,7 @@ def get_identity(db: Session = Depends(get_db),
 @router.put("/identity")
 def put_identity(body: IdentitySchema, db: Session = Depends(get_db),
                  user_id: _uuid.UUID = Depends(current_user)) -> dict:
-    """Store the name and links. Replaces both — the form submits the whole page.
-
-    Editing the name does **not** bump `profile_generation`. The generation counter scopes labels
-    and model artifacts to a rubric, and a name appears nowhere in a rubric; bumping it would
-    invalidate every label a user has for a typo fix (`PROFILE_CAPTURE_PLAN.md` §6.4).
-    """
+    """Store the name and links."""
     user = db.get(User, user_id)
     user.full_name = body.full_name
     user.links = [link.model_dump() for link in body.links]
@@ -91,16 +65,7 @@ class HistoryBody(BaseModel):
 @router.put("/history")
 def put_history(body: HistoryBody, request: Request, db: Session = Depends(get_db),
                 user_id: _uuid.UUID = Depends(current_user)) -> dict:
-    """The long-form write-up, typed rather than uploaded.
-
-    It exists as an endpoint because nobody has a "history document" lying around — they write one
-    in the box. Stored as a `history` document so there is exactly one path into the processing
-    step: whether the text was pasted or extracted from a `.docx` is not a distinction anything
-    downstream should have to know about.
-
-    The minimum length is a real requirement rather than politeness. This page feeds the parts of
-    the profile a CV omits, and two sentences produce a profile no better than the CV alone.
-    """
+    """The long-form write-up, typed rather than uploaded."""
     rate_limit(request, f"history:{user_id}", limit=60, per_seconds=3600)
     try:
         extracted = extract_text("history.txt", body.text.encode("utf-8"))
@@ -116,14 +81,12 @@ def put_history(body: HistoryBody, request: Request, db: Session = Depends(get_d
                                 chars=extracted.chars)
         db.add(document)
     else:
-        # Replaced rather than appended: this page is one document the user edits, and keeping
-        # every revision would feed the processing step the same history several times over.
+        # Replaced rather than appended: this page is one document the user edits.
         document.text = extracted.text
         document.text_sha256 = extracted.sha256
         document.chars = extracted.chars
     db.flush()
-    # The history is a document like any other, so changing it makes the profile stale like any
-    # other — and this is the page most likely to be edited after the fact.
+    # The history is a document like any other, so changing it makes the profile stale.
     db.get(User, user_id).documents_changed_at = func.now()
     audit(logger, "onboarding.history", user=user_id, chars=extracted.chars)
     return {"status": "saved", "chars": extracted.chars, "truncated": extracted.truncated}
@@ -144,11 +107,7 @@ def get_history(db: Session = Depends(get_db),
 @router.get("/config")
 def get_config(db: Session = Depends(get_db),
                user_id: _uuid.UUID = Depends(current_user)) -> dict:
-    """The stored config in the *current* shape, plus the schema the form is generated from.
-
-    A v1 row is upgraded on read rather than rewritten, so a user's stored config is never changed
-    by a deploy they did not ask for — it upgrades the next time they save.
-    """
+    """The stored config in the *current* shape, plus the schema the form is generated from."""
     stored = TenantRepository(db).get_config(user_id)
     return {"config": migrate_config(stored) if stored else None, "schema": config_schema()}
 
@@ -156,18 +115,7 @@ def get_config(db: Session = Depends(get_db),
 @router.put("/config")
 def put_config(body: UserConfigSchema, db: Session = Depends(get_db),
                user_id: _uuid.UUID = Depends(current_user)) -> dict:
-    """Validate and store. The server is the authority; the form is a convenience.
-
-    Saving does not schedule anything. The harvester picks the config up on its next cycle by
-    reading every active user's config — there is no per-user trigger to forget to fire.
-
-    **The keyword ceiling is checked here rather than in the schema**, because it is per account.
-    `UserConfigSchema` bounds each section at the platform maximum, which is the right hard stop for
-    everyone; the operator's `keywords` limit is what an individual account is allowed, and it went
-    unread until 2026-08-04 — the control existed, the panel rendered it, and the schema constant
-    was the only thing anybody was measured against. Counted **across sections**, matching the
-    harvester's own cap, or five sections would buy five times the allowance.
-    """
+    """Validate and store."""
     ceiling = limits.resolve(db.get(User, user_id), "keywords")
     total = sum(len(section.keywords) for section in body.sections)
     if ceiling is not None and total > ceiling:
@@ -186,21 +134,7 @@ def put_config(body: UserConfigSchema, db: Session = Depends(get_db),
 @router.post("/config/preview")
 def preview_config(body: UserConfigSchema, db: Session = Depends(get_db),
                    user_id: _uuid.UUID = Depends(current_user)) -> dict:
-    """How many jobs already in the corpus these terms would match, with a few example titles.
-
-    **An approximation, and the response says so.** The harvester sends keywords to each source's
-    own search, so the real feed is whatever LinkedIn and Indeed return — not a substring match over
-    what has been collected so far. What this genuinely catches is the failure it exists for: terms
-    that match *nothing at all*, which is a typo or a phrase nobody puts in a job title, and which
-    would otherwise show up as an empty feed a day later with no explanation.
-
-    Counted over `PREVIEW_WINDOW_DAYS` rather than the section's own window, because a correct
-    config can legitimately return single digits over 24 hours and a user reading that as failure
-    would go and break something that worked.
-
-    Takes the config in the request body rather than reading the stored one, so the number updates
-    as the user types and does not require saving a config to find out it is empty.
-    """
+    """How many jobs already in the corpus these terms would match, with a few example titles."""
     keywords = [keyword for section in body.sections for keyword in section.keywords]
     excluded = [keyword for section in body.sections for keyword in section.exclude_keywords]
 
@@ -229,15 +163,7 @@ def preview_config(body: UserConfigSchema, db: Session = Depends(get_db),
 
 @router.post("/complete")
 def complete(db: Session = Depends(get_db), user_id: _uuid.UUID = Depends(current_user)) -> dict:
-    """Finish onboarding, if every page is satisfied. 409 naming what is missing if not.
-
-    **This does not set `users.active`.** Completing onboarding means the account is configured;
-    `active` means the scheduler may dispatch notifications, and that is only safe once a model
-    exists to rank with. Setting it here would start a notify loop for an account whose scorer has
-    nothing to serve, and every cycle would fail identically for a reason no user could see.
-
-    Idempotent: pressing it twice keeps the original timestamp rather than moving it.
-    """
+    """Finish onboarding, if every page is satisfied."""
     current = onboarding_state(db, user_id)
     if not current.complete:
         raise HTTPException(
@@ -252,16 +178,11 @@ def complete(db: Session = Depends(get_db), user_id: _uuid.UUID = Depends(curren
         audit(logger, "onboarding.complete", user=user_id)
 
     return {"status": "complete",
-            # What the dashboard tells them to do next. Processing is the first thing that spends
-            # their credential, so it is a decision they make rather than something that just runs.
+            # What the dashboard tells them to do next.
             "next_action": "process_data"}
 
 
 @router.get("/schema")
 def schemas() -> dict:
-    """Both JSON Schemas the front end generates its forms from, in one call.
-
-    Exported from the models the server validates with, so a field cannot exist on one side and not
-    the other (`CODE_STRUCTURE.md` §8).
-    """
+    """Both JSON Schemas the front end generates its forms from, in one call."""
     return {"identity": identity_schema(), "config": config_schema()}

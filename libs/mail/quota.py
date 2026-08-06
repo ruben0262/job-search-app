@@ -1,18 +1,4 @@
-"""The platform-wide sending cap.
-
-Every provider caps a sending account, and **the failure mode is silent rejection**
-— messages stop arriving, nothing raises at send time, and the first symptom is a user saying they
-never got a link. A cap the platform enforces itself turns that into a log line and a refusal we
-can see.
-
-Counted over a **rolling 24 hours** rather than a calendar day, because that is how the provider
-actually meters it: sending 400 at 23:00 and 400 at 01:00 is 800 in two hours, and a midnight reset
-would call it two compliant days.
-
-**No recipient address is stored.** A cap needs a count, not a mailing list, and the per-address
-protection already exists in the signup rate limiter. Keeping this table free of addresses means it
-never becomes one more place a user's email lives.
-"""
+"""The platform-wide sending cap."""
 from __future__ import annotations
 
 import logging
@@ -27,21 +13,13 @@ from libs.mail.sender import EmailSender, MailError
 
 logger = logging.getLogger(__name__)
 
-# Below the provider's own limit on purpose — Zoho allows a few hundred a day on a standard
-# mailbox, Gmail nearer 500, and this sits under both. The headroom absorbs a burst and leaves room
-# for the provider
-# counting something slightly differently from us — being refused by our own cap is recoverable,
-# being silently throttled by the provider is not. Override with `MAIL_DAILY_CAP`.
+# Below the provider's own limit: Zoho allows a few hundred a day, Gmail nearer 500.
 DEFAULT_DAILY_CAP = 400
 WINDOW = timedelta(hours=24)
 
 
 class MailCapReached(MailError):
-    """The platform has sent its daily allowance. Deliberately a `MailError`.
-
-    Callers already treat a delivery failure as recoverable — the account still exists and the link
-    can be requested again — so a cap needs no new handling anywhere, only a different message.
-    """
+    """The platform has sent its daily allowance."""
 
 
 def daily_cap(env: dict[str, str] | None = None) -> int:
@@ -57,12 +35,7 @@ def sent_last_24h(session: Session) -> int:
 
 def send_within_cap(session: Session, mailer: EmailSender, to: str, subject: str, body: str,
                     *, purpose: str, cap: int | None = None) -> None:
-    """Send, unless the platform is at its cap. Records the attempt either way.
-
-    The row is written **before** the send and kept even when the send fails. A cap that only
-    counted successes would let a provider outage burn the allowance twice — once failing, once
-    retrying — and the provider counts attempts, not successes.
-    """
+    """Send, unless the platform is at its cap."""
     limit = cap if cap is not None else daily_cap()
     already = sent_last_24h(session)
     if already >= limit:

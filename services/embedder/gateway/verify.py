@@ -1,19 +1,4 @@
-"""Server-side enforcement of the version contract (PLAN §13).
-
-Callers assert their classifier's (model, dim) against `/health` before trusting a score. That
-assert is only worth anything if `/health` reports what TEI *actually loaded* — not merely what
-this container's `.env` claims. Without this check, an `EMBEDDER_MODEL`/`EMBEDDER_DIM` that drifts
-from the model TEI was started with passes every caller's assert and every score is silently wrong,
-which is precisely the failure §13 exists to prevent.
-
-So at startup the gateway probes the backend and refuses to declare itself healthy until:
-  - TEI's `/info.model_id` == `CONFIG.model`, and
-  - a real embed of a probe string returns exactly `CONFIG.dim` floats.
-
-A MISMATCH is terminal and loud: `/health.ok` stays false forever, so callers fail closed
-(PLAN §14.6) instead of scoring against the wrong vector space. An unreachable backend is
-transient (TEI downloads weights on first boot) and keeps retrying.
-"""
+"""Server-side enforcement of the version contract (PLAN §13)."""
 from __future__ import annotations
 
 import asyncio
@@ -41,8 +26,7 @@ class Verifier:
         self._task: asyncio.Task | None = None
         self.state: str = PENDING
         self.detail: str = "not probed yet"
-        # What TEI will actually accept in one call. Config can only ever LOWER the batch, never
-        # raise it past the backend's own --max-client-batch-size (which TEI enforces with a 413).
+        # What TEI will actually accept in one call.
         self.backend_max_batch: int | None = None
 
     @property
@@ -75,9 +59,7 @@ class Verifier:
         served_model = str(info.get("model_id", "")).strip()
         served_dim = len(vectors[0]) if vectors else -1
 
-        # Capacity, not correctness: a batch over the backend's limit is a 413, not a wrong vector,
-        # so this clamps rather than refuses. Left unclamped it would break only the BULK lane —
-        # training fails while scoring looks fine, the worst kind of thing to debug later.
+        # Capacity, not correctness: a batch over the backend's limit is a 413, so this clamps.
         limit = info.get("max_client_batch_size")
         if isinstance(limit, int) and limit > 0:
             self.backend_max_batch = limit

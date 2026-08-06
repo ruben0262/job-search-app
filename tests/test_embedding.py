@@ -1,13 +1,4 @@
-"""T8 — a job's text is embedded once, for everyone, ever.
-
-The whole scaling argument (`HARVESTER_PLAN.md` §7). A vector is a deterministic function of the
-text, so embedding the same posting for fifty users is fifty times the CPU for byte-identical
-output. **A regression here is invisible until the CPU bill** — nothing errors, feeds still
-populate, scores still look reasonable. So the backend call count is asserted rather than assumed.
-
-The counting fake is the point: `TEST_STRATEGY.md` §2.4 says assert observable outcomes through a
-counting stub, not by asserting a mock was called with particular arguments.
-"""
+"""T8 — a job's text is embedded once, for everyone, ever."""
 from __future__ import annotations
 
 import os
@@ -123,8 +114,7 @@ def test_a_truncated_blob_is_refused_rather_than_silently_reinterpreted():
 # ── the compatibility assert ──────────────────────────────────────────────────────────────────
 
 def test_a_mismatched_vector_space_is_refused():
-    """A vector from the wrong model is not a worse vector, it is a meaningless one — and no
-    downstream check catches it, because the dimensions match and the numbers look like numbers."""
+    """A vector from the wrong model is not a worse vector, it is a meaningless one."""
     with CountingEmbedder().client() as client:
         client.assert_compatible(EXPECTED)
         with pytest.raises(IncompatibleEmbedder, match="retrain"):
@@ -134,16 +124,14 @@ def test_a_mismatched_vector_space_is_refused():
 
 
 def test_an_unverified_embedder_is_refused():
-    """`ok` stays false until the gateway has probed its live backend, and forever after a
-    mismatch. Trusting it anyway would score against a vector space nobody confirmed."""
+    """`ok` stays false until the gateway has probed its live backend, and forever after a mismatch."""
     unverified = CountingEmbedder(health={"ok": False, "verify_detail": "backend unreachable"})
     with unverified.client() as client, pytest.raises(EmbedderError, match="not healthy"):
         client.version()
 
 
 def test_a_short_response_is_refused_rather_than_misaligned():
-    """Fewer vectors than texts means the mapping is unknown. Guessing would attach one job's
-    vector to another job's text, which scores confidently wrong forever."""
+    """Fewer vectors than texts means the mapping is unknown."""
     stub = CountingEmbedder()
 
     def short(request: httpx.Request) -> httpx.Response:
@@ -159,13 +147,7 @@ def test_a_short_response_is_refused_rather_than_misaligned():
 
 
 def test_a_transport_failure_arrives_as_an_embedder_error():
-    """**A read timeout is an embedder failure and must be catchable as one.**
-
-    It used to propagate raw out of httpx, so callers written to handle `EmbedderError` — which is
-    all of them — died on it anyway. That ended a 6,601-row corpus rebuild on its first batch on
-    2026-07-31: the gateway was working, the scheduled cycle was queued on the same single-threaded
-    encoder, and one call went past the deadline. Retrying that batch is cheap; losing the run is not.
-    """
+    """A read timeout is an embedder failure and must be catchable as one."""
     def times_out(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/health":
             return httpx.Response(200, json=SERVED)
@@ -178,8 +160,7 @@ def test_a_transport_failure_arrives_as_an_embedder_error():
 
 
 def test_a_gateway_503_fails_closed():
-    """503 is the gateway shedding load or refusing an unverified vector space. Either way the
-    answer is to stop, never to substitute something plausible."""
+    """503 is the gateway shedding load or refusing an unverified vector space."""
     stub = CountingEmbedder(status=503)
     with stub.client() as client, pytest.raises(EmbedderError, match="503"):
         client.embed_bulk(["anything"])
@@ -189,12 +170,7 @@ def test_a_gateway_503_fails_closed():
 
 @db_required
 def test_one_job_is_embedded_once_no_matter_how_many_users_want_it(ctx):
-    """**T8.** Two users, one shared posting, one embed.
-
-    Under a per-user design this would be two calls producing byte-identical vectors. The shared
-    corpus makes it structurally one — and this asserts the structure, because the failure mode is
-    silent and only shows up as CPU cost.
-    """
+    """T8."""
     corpus, tenant, s = ctx
     alice, bob = _user(s), _user(s)
     job_id = _job(corpus, s)
@@ -234,8 +210,7 @@ def test_a_second_pass_re_embeds_nothing(ctx):
 
 @db_required
 def test_the_bulk_lane_is_used_not_the_score_lane(ctx):
-    """Separate worker pools, not a priority flag. A harvest embed on the fast lane would sit in
-    front of on-arrival scoring — the head-of-line blocking the two lanes exist to prevent."""
+    """Separate worker pools, not a priority flag."""
     corpus, _, s = ctx
     _job(corpus, s)
     s.flush()
@@ -261,9 +236,7 @@ def test_provenance_is_recorded_with_every_vector(ctx):
     job = s.get(CorpusJob, job_id)
     assert job.embedding_model == SERVED["model"]
     assert job.embedding_dim == DIM
-    # The text mode is folded in, because a vector's provenance is not only which model produced it
-    # but which text it was given: two 768-dim vectors, one from `title+description` and one from
-    # `description` alone, are indistinguishable by inspection and mean different things.
+    # The text mode is folded in: provenance is more than which model produced the vector.
     from libs.corpus.embedtext import embedding_version
 
     assert job.embedding_version == embedding_version(SERVED["version"])
@@ -272,11 +245,7 @@ def test_provenance_is_recorded_with_every_vector(ctx):
 
 @db_required
 def test_text_changing_mid_flight_does_not_attach_a_stale_vector(ctx):
-    """The real race: a cold-start batch takes minutes while refresh.py mutates descriptions.
-
-    The `(model, dim, version)` assert cannot catch this — the vector space is right, the *content*
-    is wrong. The row is simply left for the next pass.
-    """
+    """The real race: a cold-start batch takes minutes while refresh.py mutates descriptions."""
     corpus, _, s = ctx
     job_id = _job(corpus, s, text="Original text. " * 20)
     s.flush()
@@ -303,8 +272,7 @@ def test_text_changing_mid_flight_does_not_attach_a_stale_vector(ctx):
 
 @db_required
 def test_rows_without_text_are_not_sent(ctx):
-    """A row exists from discovery; its description arrives later. Embedding an empty string would
-    produce a real vector for no content, and it would score."""
+    """A row exists from discovery; its description arrives later."""
     corpus, _, s = ctx
     corpus.add(url=f"https://example.test/{uuid.uuid4().hex}", source="board",
                title="No description yet", company="Acme")

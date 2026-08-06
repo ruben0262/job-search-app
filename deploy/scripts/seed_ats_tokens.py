@@ -1,20 +1,4 @@
-"""Seed the ATS company list from a reference-instance checkout.
-
-    python deploy/scripts/seed_ats_tokens.py <path-to-checkout>
-    python deploy/scripts/seed_ats_tokens.py <path-to-checkout> --dry-run
-
-**Without this, the ATS boards return nothing and say nothing.** Greenhouse, Ashby, Lever, Workday
-and the rest are not searchable — there is no query endpoint. Each is polled per *company*, using
-that company's board token, so an adapter with no tokens iterates an empty list and returns `[]`.
-That is its contract, and it is indistinguishable from a source having no new jobs.
-
-The tokens are a discovered asset, not a configuration choice: the reference accumulated 570 of
-them over months, from apply-link resolution and manual additions. They name public job boards and
-contain nothing personal — which is why they can be seeded wholesale rather than per user.
-
-**Idempotent.** `add_tokens` upserts, so re-running after the reference has found more is the
-intended way to top this up rather than a thing to be careful about.
-"""
+"""Seed the ATS company list from a reference-instance checkout."""
 from __future__ import annotations
 
 import argparse

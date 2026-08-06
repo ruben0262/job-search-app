@@ -1,20 +1,4 @@
-"""Workplace-mode filter — Ruben wants FULLY REMOTE work; hybrid is acceptable; direct
-office (on-site) work is out of scope unless the job is in Hungary.
-
-classify() infers remote / hybrid / onsite from the strongest available signal first:
-the source's structured is_remote flag and the title/location text, falling back to a few
-STRONG phrases in the description (weak signals are ignored — a JD merely mentioning
-"remote" proves nothing, and "hybrid" in a description is usually hybrid CLOUD, so there
-it must be followed by work/model/role-type words).
-
-Fails OPEN like the language filter: unknown mode = keep and let the scorer judge. Only an
-explicit on-site classification outside the allowed countries is dropped. The mode is also
-persisted on processed entries ("workplace") so apply-order ranking can prefer remote
-(see store.priority_key).
-
-Config: ONSITE_LOCATIONS env (comma-separated substrings, default "hungary,budapest";
-empty = allow on-site anywhere, disabling the drop).
-"""
+"""Workplace-mode filter — Ruben wants FULLY REMOTE work; hybrid is acceptable; direct office (on-site) work is out of scope unless the job is in Hungary."""
 from __future__ import annotations
 
 import os
@@ -34,11 +18,7 @@ _DESC_ONSITE_RE = re.compile(r"on-?site only|fully on-?site|no remote|office-bas
 
 
 def onsite_locations(allowed: "list[str] | str | None" = None) -> list[str]:
-    """Where on-site is acceptable. **Per user here, an env var in the reference.**
-
-    `constraints.onsite_locations` on the profile is the platform's source for this; the default
-    is kept so a call with nothing passed behaves exactly as the reference did.
-    """
+    """Where on-site is acceptable."""
     if isinstance(allowed, list):
         return [c.strip().lower() for c in allowed if c and c.strip()]
     raw = allowed if isinstance(allowed, str) else os.environ.get("ONSITE_LOCATIONS", _ONSITE_DEFAULT)
@@ -47,12 +27,7 @@ def onsite_locations(allowed: "list[str] | str | None" = None) -> list[str]:
 
 def classify(title: str, location: str, description: str | None,
              is_remote: "bool | None", explicit: "str | None" = None) -> str | None:
-    """'remote' | 'hybrid' | 'onsite' | None (= unknown, keep).
-
-    `explicit` is an authoritative workplace type already parsed from the posting itself
-    (scorer.fetch_desc._parse_workplace: LinkedIn's workplace pill / schema.org
-    jobLocationType). When present it wins over every heuristic below — it is the real tag on
-    the page, not an inference from title/JD text."""
+    """'remote' | 'hybrid' | 'onsite' | None (= unknown, keep)."""
     if explicit in ("remote", "hybrid", "onsite"):
         return explicit
     text = f"{title or ''} {location or ''}"
@@ -62,9 +37,7 @@ def classify(title: str, location: str, description: str | None,
         return "remote"
     if _ONSITE_RE.search(text):
         return "onsite"
-    # Description signals BEFORE the is_remote=False fallback: several sources flag any
-    # non-fully-remote job as not-remote, so falling to "onsite" first misclassified (and
-    # dropped) hybrid jobs whose hybrid-ness only shows in the JD text.
+    # Description signals BEFORE the is_remote=False fallback: several sources flag any non-fully-remote job as not-remote, so falling to "onsite" first misclassified (and dropped) hybrid jobs whose hybrid-ness only shows in the JD text.
     d = (description or "")[:3000]
     if _DESC_HYBRID_RE.search(d):
         return "hybrid"

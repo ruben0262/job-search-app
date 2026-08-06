@@ -1,16 +1,4 @@
-/**
- * The one place this app talks to the server.
- *
- * **Cookies, never a token in JavaScript.** The access token is `HttpOnly` and the refresh cookie
- * is scoped to `/auth/refresh`, so nothing here can read either — which is the point. A token in
- * `localStorage` is readable by any script that gets onto the page, and "no script ever will" is
- * not a property a frontend can promise.
- *
- * **One refresh at a time.** A dashboard load fires several requests at once; if each of them
- * refreshed on its 401, the second would replay a token the first had already rotated — and the
- * server treats a replayed refresh token as theft and revokes the whole session family. So the
- * first 401 starts a refresh and every other caller waits on that same promise.
- */
+/** The one place this app talks to the server. */
 
 export class ApiError extends Error {
   constructor(
@@ -68,8 +56,7 @@ export async function request<T>(path: string, options: Options = {}): Promise<T
     const detail = payload?.detail;
     throw new ApiError(
       response.status,
-      // FastAPI's validation errors arrive as a list of objects. Rendering `[object Object]` at a
-      // user is how a form becomes unusable, so a structured detail falls back to its own message.
+      // FastAPI's validation errors arrive as a list of objects.
       typeof detail === "string" ? detail : detailMessage(detail) ?? response.statusText,
       detail,
     );
@@ -98,14 +85,7 @@ export const api = {
   upload: <T,>(path: string, form: FormData) => request<T>(path, { method: "POST", form }),
 };
 
-/* ── the shapes this app reads ──────────────────────────────────────────────────────────────────
- *
- * Hand-written on purpose, and **only** the fields the UI renders. `src/api-types.ts` is generated
- * from `openapi.json` and is the contract of record; these are the narrow views the components use.
- * FastAPI types most of these handlers as a bare `dict`, so the generated types cannot describe
- * their contents — the honest options were to annotate every handler with a response model or to
- * write the views here, and the second does not put presentation concerns into the API.
- */
+/* ── the shapes this app reads ────────────────────────────────────────────────────────────────── */
 
 export type OnboardingPage = {
   key: string;
@@ -163,9 +143,7 @@ export type Dashboard =
         servable: boolean;
         stale_reason: string | null;
         trained_at: string | null;
-        /** Every version this account has had, newest first. `metrics` is a list rather than a
-         *  map so the table can render columns in a fixed, meaningful order, and so a run that
-         *  measured nothing simply contributes no entries. */
+        /** Every version this account has had, newest first. */
         history: {
           version: number;
           active: boolean;

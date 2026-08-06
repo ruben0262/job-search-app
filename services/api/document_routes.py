@@ -1,12 +1,4 @@
-"""Uploading the documents that "process data" will read.
-
-Upload is deliberately cheap and deterministic: text is extracted in the request, the row is
-written, and nothing else happens. No LLM runs here (`ONBOARDING_AND_PROCESSING.md` §1), so a user
-can finish onboarding while Anthropic is down and it costs them nothing.
-
-**The file itself is never written to disk.** Extraction happens in memory and the bytes are
-discarded — see `libs.documents` for why that trade is the right way round.
-"""
+"""Uploading the documents that "process data" will read."""
 from __future__ import annotations
 
 import logging
@@ -27,17 +19,11 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/documents", tags=["documents"])
 
 # Enough for a CV, a couple of covers, references, diplomas and a history file, with room to spare.
-# A ceiling exists because the processing step reads all of them into one conversation.
 MAX_DOCUMENTS_PER_USER = 25
 
 
 def _documents_changed(db: Session, user_id: _uuid.UUID) -> None:
-    """Mark the document set as changed, which is what makes the dashboard offer a re-process.
-
-    A timestamp compared against `processed_at` rather than a "needs processing" flag: a flag has to
-    be cleared by whoever remembers, and the first thing to go stale would be the one that says
-    whether anything is stale (`ONBOARDING_AND_PROCESSING.md` §4).
-    """
+    """Mark the document set as changed, which is what makes the dashboard offer a re-process."""
     db.get(User, user_id).documents_changed_at = func.now()
 
 
@@ -45,11 +31,7 @@ def _documents_changed(db: Session, user_id: _uuid.UUID) -> None:
 async def upload(request: Request, kind: str = Form(...), file: UploadFile = File(...),
                  db: Session = Depends(get_db),
                  user_id: _uuid.UUID = Depends(current_user)) -> dict:
-    """Extract and store one document's text. Re-uploading the same content replaces it.
-
-    Replacement rather than a duplicate row because users press the button twice, and two copies of
-    one CV in the processing conversation is one CV's worth of signal at twice the cost.
-    """
+    """Extract and store one document's text."""
     if kind not in DOCUMENT_KINDS:
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             detail=f"unknown document kind {kind!r}")
@@ -59,8 +41,7 @@ async def upload(request: Request, kind: str = Form(...), file: UploadFile = Fil
     try:
         extracted = extract_text(file.filename or "upload", data)
     except UnsupportedDocument as exc:
-        # 422: the request was well-formed, the file was not. The message is written for the person
-        # who uploaded it, not for a log.
+        # 422: the request was well-formed, the file was not.
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
     finally:
         # The bytes never reach disk and do not outlive the request.
@@ -77,11 +58,7 @@ async def upload(request: Request, kind: str = Form(...), file: UploadFile = Fil
                 "truncated": extracted.truncated}
 
     if kind == "history":
-        # **The history is one document, always** (owner, 2026-07-30). It is "the long-form
-        # write-up of what you have done" — a singular thing the profile is built from, edited in
-        # its own page. Two of them would both be read at processing time, and which one the user
-        # believes is current would be anybody's guess. New content replaces the old row; the form
-        # asks "are you sure" before sending, so the disappearance is chosen, not discovered.
+        # The history is one document, always (owner, 2026-07-30).
         existing = db.scalar(
             select(UserDocument).where(UserDocument.user_id == user_id,
                                        UserDocument.kind == "history"))
@@ -97,9 +74,7 @@ async def upload(request: Request, kind: str = Form(...), file: UploadFile = Fil
     total = db.scalar(
         select(func.count()).select_from(UserDocument)
         .where(UserDocument.user_id == user_id)) or 0
-    # The operator's ceiling. `None` is **Unlimited** and must not fall back to the constant —
-    # `resolve` already returns the catalogue default for a limit nobody has set, so `or DEFAULT`
-    # turns an explicit "no ceiling" back into one.
+    # The operator's ceiling.
     ceiling = limits.resolve(db.get(User, user_id), "documents")
     if ceiling is not None and total >= ceiling:
         raise HTTPException(
@@ -122,11 +97,7 @@ async def upload(request: Request, kind: str = Form(...), file: UploadFile = Fil
 @router.get("")
 def list_documents(db: Session = Depends(get_db),
                    user_id: _uuid.UUID = Depends(current_user)) -> dict:
-    """What the user has uploaded. Returns metadata and a short preview, never the whole text.
-
-    The full text is only ever read by the processing step. Returning it here would put a person's
-    complete employment history into a response that the dashboard has no use for.
-    """
+    """What the user has uploaded."""
     rows = db.scalars(
         select(UserDocument).where(UserDocument.user_id == user_id)
         .order_by(UserDocument.uploaded_at)).all()

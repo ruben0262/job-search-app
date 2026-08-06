@@ -1,28 +1,4 @@
-"""The key hierarchy: KEK in the environment, DEK on the user row, secrets in `user_secrets`.
-
-```
-KEK  (master, from the environment — never in the database, never in a backup)
- └── DEK (per user, random, stored wrapped-by-KEK on users.wrapped_dek)
-      └── secret ciphertext (per credential, with its own nonce)
-```
-
-Three properties this file exists to guarantee, each of which is asserted by a test rather than
-assumed:
-
-1. **A stolen database dump is useless.** Nothing here reads a key from the database. If the KEK is
-   absent the module refuses to start rather than falling back to something weaker — a fallback is
-   how this design gets quietly defeated (`TENANT_SAFETY.md` §2).
-2. **Ciphertext is bound to where it lives.** Every seal passes the owning `user_id` (and, for
-   secrets, the `kind`) as AES-GCM associated data. An attacker who can write to the database
-   cannot move a row from one user to another, or relabel a proxy password as a Claude key, and
-   have it decrypt. Without AAD both of those are silent successes.
-3. **Rotation is possible without guessing.** A wrapped DEK carries the id of the KEK that wrapped
-   it, so a retired key can still unwrap old rows while new writes use the current one. Recording
-   the id costs two bytes now; recovering it later, after a rotation, is impossible.
-
-The DEK is per user rather than global so that one compromised secret cannot decrypt the table, and
-so a single user can be rotated without touching anyone else.
-"""
+"""The key hierarchy: KEK in the environment, DEK on the user row, secrets in `user_secrets`."""
 from __future__ import annotations
 
 import base64
@@ -33,20 +9,14 @@ from dataclasses import dataclass
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-# AES-256-GCM: 32-byte keys, 12-byte nonces (the size GCM is specified for — a different length is
-# permitted by the standard and weakens the construction, so it is never parameterised here).
+# AES-256-GCM: 32-byte keys, 12-byte nonces, never parameterised.
 KEY_BYTES = 32
 NONCE_BYTES = 12
 
-# The environment variable holding the KEK. One or more comma-separated `key_id:base64url` entries;
-# the first is the one new writes use and the rest exist only to unwrap DEKs written before a
-# rotation. Base64url without padding so the value survives a shell, a .env file, and systemd's
-# EnvironmentFile parser unchanged.
+# The environment variable holding the KEK.
 KEK_ENV = "SECRETS_KEK"
 
-# Deliberately short and opaque: it ends up in every wrapped DEK, so it is an identifier, not a
-# description. Constrained so a mistyped entry fails at load rather than producing a key nobody can
-# name later.
+# Deliberately short and opaque: it ends up in every wrapped DEK, so it is an identifier, not a description.
 _MAX_KEY_ID = 16
 
 
@@ -59,19 +29,11 @@ class KeyUnavailable(SecretsError):
 
 
 class DecryptionFailed(SecretsError):
-    """Ciphertext did not authenticate: wrong key, wrong owner, or tampering.
-
-    Deliberately does not distinguish between those cases. Which one it was is useful to an
-    attacker probing the store and useless to the caller, whose only correct response is the same
-    either way.
-    """
+    """Ciphertext did not authenticate: wrong key, wrong owner, or tampering."""
 
 
 def generate_key() -> str:
-    """A fresh KEK, printable. For `deploy/` and the restore drill, not for runtime.
-
-        python -c "from libs.secrets import generate_key; print(generate_key())"
-    """
+    """A fresh KEK, printable."""
     return base64.urlsafe_b64encode(AESGCM.generate_key(bit_length=256)).decode().rstrip("=")
 
 
@@ -80,8 +42,7 @@ def _decode_key(raw: str) -> bytes:
     try:
         key = base64.urlsafe_b64decode(padded)
     except Exception as exc:
-        # Any decode failure is the same operator error, and the raw value must not reach the
-        # message — a malformed KEK is still key material.
+        # Any decode failure is the same operator error, and a malformed KEK is still key material.
         raise KeyUnavailable(f"{KEK_ENV} entry is not valid base64url") from exc
     if len(key) != KEY_BYTES:
         raise KeyUnavailable(
@@ -91,18 +52,13 @@ def _decode_key(raw: str) -> bytes:
 
 @dataclass(frozen=True)
 class WrappedDek:
-    """A DEK sealed by a KEK, plus the id of the KEK that sealed it.
-
-    Serialised to a single opaque blob for `users.wrapped_dek`, because splitting it across columns
-    would let a migration or a careless update separate a ciphertext from the id needed to read it.
-    """
+    """A DEK sealed by a KEK, plus the id of the KEK that sealed it."""
 
     key_id: str
     nonce: bytes
     ciphertext: bytes
 
-    # Version byte first so the format can change without the old rows becoming ambiguous. There is
-    # exactly one version today; the byte is what makes a second one possible.
+    # Version byte first so the format can change without the old rows becoming ambiguous.
     FORMAT_VERSION = 1
 
     def pack(self) -> bytes:
@@ -127,12 +83,7 @@ def _aad_dek(user_id) -> bytes:
 
 
 def _aad_secret(user_id, kind: str) -> bytes:
-    """Bind a secret to (owner, kind).
-
-    Two distinct attacks this closes, both of which are otherwise silent: copying user A's
-    ciphertext onto user B's row (a database write, not a key compromise), and relabelling a
-    credential so a worker that asks for one kind is handed another.
-    """
+    """Bind a secret to (owner, kind)."""
     return b"secret:" + str(user_id).encode("ascii") + b":" + kind.encode("ascii")
 
 
@@ -151,12 +102,7 @@ class KeyRing:
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> KeyRing:
-        """Load the ring from `SECRETS_KEK`. Raises if it is missing or malformed.
-
-        Refusing to start is the intended behaviour. A process that comes up without a KEK and only
-        fails later, on the first user who saves a credential, has already told the operator that
-        the deploy succeeded.
-        """
+        """Load the ring from `SECRETS_KEK`."""
         raw = (env if env is not None else os.environ).get(KEK_ENV, "").strip()
         if not raw:
             raise KeyUnavailable(
@@ -172,9 +118,7 @@ class KeyRing:
                 continue
             key_id, _, material = entry.partition(":")
             if not material:
-                # A bare key with no id: accepted, because the first deployment should not have to
-                # understand rotation to get started. It is named so later rotations have something
-                # to rotate away from.
+                # A bare key with no id: the first deployment should not have to understand rotation.
                 key_id, material = "k0", key_id
             key_id = key_id.strip()
             if not key_id or len(key_id) > _MAX_KEY_ID or not key_id.isalnum():
@@ -204,8 +148,7 @@ class KeyRing:
         wrapped = WrappedDek.unpack(blob)
         key = self._keys.get(wrapped.key_id)
         if key is None:
-            # Distinct from a failed decrypt: this is recoverable by putting the retired key back
-            # in the ring, and saying so is the difference between a five-minute fix and a restore.
+            # Distinct from a failed decrypt: putting the retired key back in the ring recovers this.
             raise KeyUnavailable(
                 f"this row was wrapped by KEK {wrapped.key_id!r}, which is not in {KEK_ENV}")
         try:
@@ -221,11 +164,7 @@ class KeyRing:
 # ── the inner layer: a secret under a DEK ────────────────────────────────────────────────────
 
 def seal(dek: bytes, plaintext: str, *, user_id, kind: str) -> tuple[bytes, bytes]:
-    """Encrypt one credential. Returns `(ciphertext, nonce)` for the two `user_secrets` columns.
-
-    A fresh nonce per call, always. Reusing a nonce under the same key is the one mistake that
-    breaks GCM outright, which is why it is generated here rather than accepted as an argument.
-    """
+    """Encrypt one credential."""
     nonce = _stdlib_secrets.token_bytes(NONCE_BYTES)
     ciphertext = AESGCM(dek).encrypt(nonce, plaintext.encode("utf-8"), _aad_secret(user_id, kind))
     return ciphertext, nonce

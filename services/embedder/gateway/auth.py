@@ -1,9 +1,4 @@
-"""Optional bearer-token auth.
-
-OFF by default (EMBEDDER_AUTH_TOKEN unset) → shared-Docker-network-only mode, where the network
-boundary is the security boundary (PLAN network decision). Set the token BEFORE publishing any
-host port / exposing remotely — an un-authed embedding endpoint is a CPU-DoS magnet.
-"""
+"""Optional bearer-token auth."""
 from __future__ import annotations
 
 from fastapi import Header, HTTPException, status

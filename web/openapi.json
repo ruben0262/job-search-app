@@ -52,7 +52,7 @@
       },
       "Certification": {
         "additionalProperties": false,
-        "description": "A course, licence or accreditation. Its own section on a CV, and a keyword an ATS looks for.\n\n`issuer` and `year` are free text and optional for the same reason experience dates are: a CV\nsays \"Bloomberg (2024)\", \"AWS, valid to 2027\", or nothing at all, and parsing that would reject\nreal profiles to gain a precision nothing downstream uses.",
+        "description": "A course, licence or accreditation.",
         "properties": {
           "issuer": {
             "anyOf": [
@@ -561,7 +561,7 @@
       },
       "IdentitySchema": {
         "additionalProperties": false,
-        "description": "Full name and links. Both are page 1; only the name is required.\n\nLinks are optional because plenty of good candidates have none, and a required field somebody\ncannot satisfy is a wall rather than a prompt.",
+        "description": "Full name and links.",
         "properties": {
           "full_name": {
             "maxLength": 120,
@@ -672,7 +672,7 @@
         "type": "string"
       },
       "Location": {
-        "description": "Controlled vocabulary. **Adding a value is a deliberate act, not a user typing.**\n\nEvery entry here becomes a distinct axis of the harvest query set, so this list is a direct\ninput to the fan-out budget. Growing it without measuring the cycle cost is how a 15-minute\nharvest becomes an hour (`HARVESTER_PLAN.md` \u00a73).\n\n**This is a list of places and nothing else** (2026-08-04). It used to carry `remote_worldwide`,\n`remote_eu`, `remote_uk` and `remote_us`, which are not places \u2014 they made \"where\" and \"how\" one\nquestion whose answers could contradict each other, and duplicated the `remote_policy` field\nevery section already has. Working arrangement is `remote_policy`; this is geography.\n\n**One region, and it is `europe`.** `european_union` and `europe` were two slugs nobody reading\na checkbox would tell apart, and getting it wrong silently changes which jobs somebody sees.\n`europe` means the 27 member states; the UK, Switzerland and Norway are named separately,\nbecause the UK not being in the EU is the case this whole filter exists for.\n\nEvery value here must resolve to countries in `libs.corpus.geo`, or a user can select something\nthe country filter cannot act on \u2014 and `test_geo` fails if one does not.",
+        "description": "Controlled vocabulary.",
         "enum": [
           "europe",
           "united_kingdom",
@@ -800,7 +800,7 @@
         "type": "object"
       },
       "Platform": {
-        "description": "Which sources a search section targets.\n\nOnly sources that *take a query* can be named. The ATS and board families are crawled rather\nthan searched \u2014 naming one here would silently produce no queries at all, which is exactly the\nkind of configuration that looks fine and returns nothing.",
+        "description": "Which sources a search section targets.",
         "enum": [
           "all",
           "linkedin",
@@ -1008,7 +1008,7 @@
       },
       "SearchSection": {
         "additionalProperties": false,
-        "description": "One search, targeted at one platform or at all of them.\n\nMost users have exactly one section, `platform: all`, and never see the concept. It exists for\nthe case a flat config cannot express: different terms or a different workplace policy on\nLinkedIn than on the job boards (`ONBOARDING_AND_PROCESSING.md` \u00a73).\n\nA section names *search* parameters only. Things that are true of the person rather than of a\nsearch \u2014 seniority, languages, salary floor \u2014 stay on the config, because a user is not a\ndifferent candidate on a different site.",
+        "description": "One search, targeted at one platform or at all of them.",
         "properties": {
           "exclude_keywords": {
             "items": {
@@ -1238,7 +1238,7 @@
       },
       "UserConfigSchema": {
         "additionalProperties": false,
-        "description": "Everything a user can configure about what they want to see.\n\nBounds come from `TENANT_SAFETY.md` \u00a74 and are enforced here **and** in the database. Two layers\non purpose: the form is the usability layer, the database is the authority, and a write path\nthat bypassed the form must not be able to bypass the bounds.\n\nNote what is *not* here: `notify_interval_min`, `timezone`, and the LinkedIn interval live as\nindexed columns on `users`, because the scheduler's dispatcher reads them every 60 seconds\nacross every active user. The split is by access pattern, and the form writes across both\nwithout caring.",
+        "description": "Everything a user can configure about what they want to see.",
         "properties": {
           "languages": {
             "items": {
@@ -1359,7 +1359,7 @@
   "paths": {
     "/account": {
       "delete": {
-        "description": "Erase the account. Everything cascades from `users`, and the credentials are crypto-shredded.\n\n**Both, deliberately.** The cascade removes the rows; `purge` destroys the user's DEK, so any\nciphertext that survives in a backup taken minutes ago is unreadable rather than merely deleted\n(`TENANT_SAFETY.md` \u00a72). A backup restore that resurrected a stranger's Claude key would be the\nworst possible outcome of a delete request.",
+        "description": "Erase the account.",
         "operationId": "delete_account_account_delete",
         "requestBody": {
           "content": {
@@ -1467,7 +1467,7 @@
     },
     "/account/consent": {
       "delete": {
-        "description": "Withdraw. Processing stops being available; nothing already produced is undone.\n\nSaid plainly rather than implied: a profile already built stays built, and what Anthropic\nalready processed cannot be recalled. Deleting the account is the stronger action and the one\nthat removes what this platform holds.",
+        "description": "Withdraw.",
         "operationId": "withdraw_consent_account_consent_delete",
         "responses": {
           "200": {
@@ -1489,7 +1489,7 @@
         ]
       },
       "get": {
-        "description": "Whether this account has agreed to the **current** disclosure.\n\nVersion-compared, not merely present. A policy that names a new processor is a new disclosure,\nand an old agreement is not an answer to it \u2014 so adding one re-asks everybody, which is the\npoint rather than a cost to route around.",
+        "description": "Whether this account has agreed to the current disclosure.",
         "operationId": "consent_state_account_consent_get",
         "responses": {
           "200": {
@@ -1554,7 +1554,7 @@
     },
     "/account/password": {
       "put": {
-        "description": "Change the password. The semantics are the reference implementation's\n(FlowSolutions `security/handler.go`, via `AUTH_REUSE.md`), because each was learned the\nhard way there:\n\n- **the current password is required** \u2014 a stolen session cookie must not be enough to lock\n  the owner out of their own account;\n- **the new password may not equal the current one** \u2014 accepting it would record a change\n  that changed nothing while still revoking every session;\n- **every session is revoked, including this one.** If the password is being changed because\n  it leaked, a session the thief already holds must die with it. The client signs the user\n  back in with the new password, which is one honest re-login rather than a silently\n  privileged session surviving the rotation.",
+        "description": "Change the password.",
         "operationId": "change_password_account_password_put",
         "requestBody": {
           "content": {
@@ -1598,7 +1598,7 @@
     },
     "/admin/corpus": {
       "get": {
-        "description": "Search the shared corpus. **No scores** -- those are per user and this is the shared table.\n\nThe only way to see what the corpus actually holds was SQL, which meant nobody looked. That\nmatters more than it sounds: a new account's training data is whatever this table already has\nfor their field, and the second account on this platform found 240 usable rows out of 14,359\nbecause the corpus had accumulated for weeks against one search and hours against theirs.\n\nFacets rather than a bare list: \"what is in here\" is answered by source and recency, and the\ncounts are the answer an operator is actually looking for.",
+        "description": "Search the shared corpus.",
         "operationId": "corpus_admin_corpus_get",
         "parameters": [
           {
@@ -1674,7 +1674,7 @@
     },
     "/admin/health": {
       "get": {
-        "description": "Every number, plus the conditions that currently need a person.\n\nThe alerts are computed here rather than left to the reader, because a page of numbers is\nsomething an operator scans and an alert list is something they act on \u2014 and the whole argument\nof `OPERATIONS_PLAN.md` \u00a71 is that a failure nobody is told about is a failure nobody fixes.",
+        "description": "Every number, plus the conditions that currently need a person.",
         "operationId": "health_admin_health_get",
         "responses": {
           "200": {
@@ -1698,7 +1698,7 @@
     },
     "/admin/keywords": {
       "get": {
-        "description": "Every term the harvest currently searches, and who it belongs to.\n\n**Users' terms are listed and are not deletable here.** They are what somebody's feed is built\nfrom; an operator seeing them is support, an operator able to remove them is an outage that\nlooks like a setting.",
+        "description": "Every term the harvest currently searches, and who it belongs to.",
         "operationId": "keywords_admin_keywords_get",
         "responses": {
           "200": {
@@ -1764,7 +1764,7 @@
     },
     "/admin/keywords/{keyword_id}": {
       "delete": {
-        "description": "Remove an injected term.\n\n**Only reaches `operator_keywords`.** A user's own search terms live on their config and are not\naddressable from here at all, which is why this takes a row id from that table rather than a\nstring that could match either.",
+        "description": "Remove an injected term.",
         "operationId": "remove_keyword_admin_keywords__keyword_id__delete",
         "parameters": [
           {
@@ -1809,7 +1809,7 @@
     },
     "/admin/latency": {
       "get": {
-        "description": "The drill-down: the spans, then where the time actually went, then when.\n\nThe health page reports that a posting took 36 minutes end to end. That is the number worth\npublishing and useless for fixing anything -- it does not say whether a worker was busy or the\nwork was slow, and those are repaired in completely different places. Nor does an average over a\nday show the hour it was four times worse, which is the hour worth looking at.\n\nBounded window: a fortnight of hourly buckets is a chart nobody can read and a query nobody\nshould run on a page load.",
+        "description": "The drill-down: the spans, then where the time actually went, then when.",
         "operationId": "latency_admin_latency_get",
         "parameters": [
           {
@@ -1855,7 +1855,7 @@
     },
     "/admin/latency/{key}": {
       "get": {
-        "description": "One zone, expanded: waiting versus running, the backlog, and the hour-by-hour shape.\n\n**Fetched on expansion rather than with the table.** Each of these costs a query and only one\nrow is ever open, so putting them on the page load would run six times the work to answer a\nquestion nobody asked yet.\n\n`key` is matched against the known stages rather than interpolated anywhere -- an unknown one is\na 404, and no part of it reaches SQL.",
+        "description": "One zone, expanded: waiting versus running, the backlog, and the hour-by-hour shape.",
         "operationId": "latency_stage_admin_latency__key__get",
         "parameters": [
           {
@@ -1910,7 +1910,7 @@
     },
     "/admin/limits": {
       "get": {
-        "description": "What can be set, what it defaults to, and what each one means.\n\nServed rather than hardcoded in the panel so adding a ceiling is one entry in `libs.limits`\nrather than an entry plus a form field plus a label somebody has to keep in step.",
+        "description": "What can be set, what it defaults to, and what each one means.",
         "operationId": "limit_catalogue_admin_limits_get",
         "responses": {
           "200": {
@@ -1934,7 +1934,7 @@
     },
     "/admin/pipeline": {
       "get": {
-        "description": "Where the jobs are right now, stage by stage.\n\n**The question the latency page cannot answer.** That one reports how long each handoff took for\npostings that already made it through; this reports how many are sitting at each stage at this\nmoment. Every outage here so far was a stage quietly stopping while the numbers around it looked\nfine, and the number that would have shown it existed the whole time (ROADMAP 6ax).",
+        "description": "Where the jobs are right now, stage by stage.",
         "operationId": "pipeline_shape_admin_pipeline_get",
         "parameters": [
           {
@@ -1980,7 +1980,7 @@
     },
     "/admin/pipeline/stream": {
       "get": {
-        "description": "The same numbers as `/pipeline`, pushed once a second.\n\n**Polling was right first and is not right now.** It proved the numbers before anything was\nbuilt on them, which is why three of them turned out to be lies worth fixing. But the platform\nworks in bursts: nothing happens for fifteen minutes and then a lane fills and drains inside\nthirty seconds, and that is exactly the interval where \"moving\" and \"stuck\" look identical\nunless you can watch it.\n\nServer-sent events rather than a websocket: this is one-way, it is text, it reconnects by itself\nand it needs no library on either side. A websocket would be a second protocol to keep alive for\na feature that never sends anything upstream.",
+        "description": "The same numbers as `/pipeline`, pushed once a second.",
         "operationId": "pipeline_stream_admin_pipeline_stream_get",
         "parameters": [
           {
@@ -2022,7 +2022,7 @@
     },
     "/admin/queue/dead": {
       "delete": {
-        "description": "Clear dead-lettered jobs an operator has read and dealt with.\n\n**A dead letter is a fact, not a task, and the panel had no way to say \"seen\".** The two rows\nthat sat on the health page were a Telegram outage from the night before: read, understood,\nfixed in code \u2014 and still paging, because nothing could retire them. An alert that cannot be\ncleared is one an operator learns to scroll past, which costs the next alert its meaning\n(ROADMAP 6af).\n\n**The row goes, the evidence does not.** Each discarded job is logged at WARNING with its lane,\nits owner and its final error before deletion, so the forensic trail lives where every other\nincident detail on this platform lives. Deleting without that would trade a noisy panel for a\nmissing record, which is the worse of the two.\n\nDeliberately does **not** retry. A dead letter has already had its attempts; re-running it is a\nnew decision that belongs to whoever fixed the cause, not to a button labelled \"discard\".",
+        "description": "Clear dead-lettered jobs an operator has read and dealt with.",
         "operationId": "discard_dead_letters_admin_queue_dead_delete",
         "parameters": [
           {
@@ -2074,7 +2074,7 @@
     },
     "/admin/settings": {
       "get": {
-        "description": "What the operator controls, with the defaults filled in for anything unset.\n\n**These are properties of the product, not preferences.** Freshness and delivery cadence used to\nbe per user, which meant every source had to be fetched at the widest window anybody asked for\nand filtered back down per person \u2014 and a user choosing a four-hour cadence was choosing to hear\nabout a two-hour-old job. One number per source, one cadence, set here.",
+        "description": "What the operator controls, with the defaults filled in for anything unset.",
         "operationId": "read_settings_admin_settings_get",
         "responses": {
           "200": {
@@ -2098,7 +2098,7 @@
     },
     "/admin/settings/{key}": {
       "put": {
-        "description": "Set one. Unknown keys are refused rather than stored \u2014 a typo that persists is a setting\nthat silently never applies, which is the failure the key list exists to prevent.",
+        "description": "Set one.",
         "operationId": "write_setting_admin_settings__key__put",
         "parameters": [
           {
@@ -2153,7 +2153,7 @@
     },
     "/admin/sources": {
       "get": {
-        "description": "Every source the harvester collects from, with the freshness window each one is using.\n\nRead from the harvester's own enabled list rather than from whatever happens to be in the\nsettings blob: a source nobody has tuned should still appear, with the default it is actually\nrunning at, or the panel silently omits the boards most likely to need attention.\n\n**`wanted` is what makes the limit meaningful.** A ceiling of 40 tells an operator nothing on\nits own; 40 against 28 queries waiting says the source is fully served, and 40 against 300 says\nit is four cycles behind. The number is how many distinct queries that source currently has \u2014\nthe same set the cycle budgets \u2014 so the two columns are the same arithmetic the harvest does.",
+        "description": "Every source the harvester collects from, with the freshness window each one is using.",
         "operationId": "sources_admin_sources_get",
         "responses": {
           "200": {
@@ -2177,7 +2177,7 @@
     },
     "/admin/users": {
       "get": {
-        "description": "The account list, with **no credential material of any kind**.\n\nNot even `last_4`. An operator does not need it to answer any question they have, and a support\nview that shows a fragment of a key is a support view that leaks one over somebody's shoulder.",
+        "description": "The account list, with no credential material of any kind.",
         "operationId": "users_admin_users_get",
         "responses": {
           "200": {
@@ -2201,7 +2201,7 @@
     },
     "/admin/users/{user_id}": {
       "delete": {
-        "description": "Delete an account and everything belonging to it, immediately and permanently.\n\n**The typed address is checked on the server, not only in the browser.** A confirmation enforced\nonly in the UI is a confirmation that a mis-aimed script skips entirely, and this endpoint\ndestroys a person's profile, labels, documents and model with no undo.\n\nDeletion cascades from the row: every per-user table declares `ondelete=\"CASCADE\"`, so this is\none statement rather than a list of tables somebody has to remember to extend. The shared corpus\nis untouched \u2014 those rows belong to the platform, not to any account.\n\nAn operator cannot delete themselves. The account performing the deletion is the one that would\nhave to clean up afterwards.",
+        "description": "Delete an account and everything belonging to it, immediately and permanently.",
         "operationId": "delete_user_admin_users__user_id__delete",
         "parameters": [
           {
@@ -2255,7 +2255,7 @@
         ]
       },
       "get": {
-        "description": "One account, for the two questions an operator actually has.\n\n**\"Why is this person's feed bad\" and \"did their setup finish\"** \u2014 both answerable here, and\nneither answerable from the list. The model history is the same builder the user's own Model\npage reads, so an operator and the person they are helping are looking at the same numbers.\n\n**Read-only, and no credential material of any kind** \u2014 not even `last_4`, on the same\nreasoning as the list: an operator does not need it to answer either question, and a support\nview that shows a fragment of a key is one that leaks it over somebody's shoulder. An operator\nwho could *edit* a user's model or profile from here is a different product with a different\nconsent story.",
+        "description": "One account, for the two questions an operator actually has.",
         "operationId": "user_detail_admin_users__user_id__get",
         "parameters": [
           {
@@ -2301,7 +2301,7 @@
     },
     "/admin/users/{user_id}/admin": {
       "put": {
-        "description": "Grant or revoke operator access.\n\n**An operator cannot revoke their own.** Not paternalism \u2014 `ADMIN_EMAILS` is the only route back\nin, and an operator whose address is not in it could lock themselves out of their own platform\nwith one click, with a redeploy as the only fix. Granting to yourself is meaningless (you\nalready have it) and revoking is the dangerous direction, so the guard covers the whole action.",
+        "description": "Grant or revoke operator access.",
         "operationId": "set_admin_admin_users__user_id__admin_put",
         "parameters": [
           {
@@ -2357,7 +2357,7 @@
     },
     "/admin/users/{user_id}/files": {
       "put": {
-        "description": "Open or close this account's profile files to the person they are about.\n\nPer account rather than platform-wide: the judgement is about what a particular set of files\ncurrently says, so one that has been read through can be opened without opening everyone's.\nClosed until somebody decides otherwise -- these are written by an agent and reviewed by nobody,\nand a half-settled sentence about a person is worse read than unread.",
+        "description": "Open or close this account's profile files to the person they are about.",
         "operationId": "set_files_visible_admin_users__user_id__files_put",
         "parameters": [
           {
@@ -2413,7 +2413,7 @@
     },
     "/admin/users/{user_id}/limits/{key}": {
       "put": {
-        "description": "Set one ceiling on one account, or clear it to unlimited.\n\n**The operator owns these, including their own.** A user who could raise their own delivery\nceiling could get their own Telegram bot rate-limited, and the rest are spend. There is no\nself-protection here as there is for operator access and deletion: raising your own limits is\nnot a way to lock yourself out, and an operator is exactly who should be able to.",
+        "description": "Set one ceiling on one account, or clear it to unlimited.",
         "operationId": "set_user_limit_admin_users__user_id__limits__key__put",
         "parameters": [
           {
@@ -2478,7 +2478,7 @@
     },
     "/auth/forgot": {
       "post": {
-        "description": "Email a reset link. Always answers the same way, whatever actually happened.\n\nThe other half of a flow whose libs half (`reset_password` tokens, the mail template) shipped\nin Phase 3 with nothing calling it \u2014 until now a forgotten password was a locked account.\nAnswering opaquely for an unknown address is the same no-oracle rule login follows; issuing a\nfresh token revokes the previous link (`issue_token` does), so the newest email is always the\none that counts.",
+        "description": "Email a reset link.",
         "operationId": "forgot_auth_forgot_post",
         "requestBody": {
           "content": {
@@ -2634,7 +2634,7 @@
     },
     "/auth/reset": {
       "post": {
-        "description": "Redeem a reset link and set the new password.\n\nEvery session dies with it \u2014 the reason a stranger resets somebody's password is that they are\nalready inside, or the owner fears they are. Nothing here logs the user in either: proving\ncontrol of an inbox is not a login, same as verification.",
+        "description": "Redeem a reset link and set the new password.",
         "operationId": "reset_auth_reset_post",
         "requestBody": {
           "content": {
@@ -2678,7 +2678,7 @@
     },
     "/auth/signup": {
       "post": {
-        "description": "Create an unverified account and email a link. Always answers the same way.\n\nInvite-only at launch (D5), so an existing address is not an error the caller gets to see \u2014 it\nwould confirm that the address has an account here.",
+        "description": "Create an unverified account and email a link.",
         "operationId": "signup_auth_signup_post",
         "requestBody": {
           "content": {
@@ -2722,7 +2722,7 @@
     },
     "/auth/verify": {
       "post": {
-        "description": "Redeem a verification link. Activates the account.\n\nNothing here logs the user in. Verification proves control of the address; a session should\nstill start from a deliberate login, so a forwarded link cannot hand someone a session.\n\nThe token arrives in the body, matching what the SPA sends. It was a query parameter, which\nthe page never sent \u2014 so every human verification failed 422 while the tests, which used the\nquery form, stayed green. The e2e browser run is what caught it.",
+        "description": "Redeem a verification link.",
         "operationId": "verify_auth_verify_post",
         "requestBody": {
           "content": {
@@ -2766,7 +2766,7 @@
     },
     "/credentials": {
       "get": {
-        "description": "What the account page shows: which credentials exist, never what they are.\n\nAlso reports whether onboarding's credential requirement is met, so the front end does not have\nto re-derive the rule from the list and get it subtly wrong.",
+        "description": "What the account page shows: which credentials exist, never what they are.",
         "operationId": "list_credentials_credentials_get",
         "responses": {
           "200": {
@@ -2834,7 +2834,7 @@
     },
     "/credentials/claude/oauth/finish": {
       "post": {
-        "description": "Exchange the code for a token, and store it **only if it works**.\n\nThe token goes through `validate_credential` like a pasted one: the CLI minting it proves the\nbrowser flow completed, not that the credential can reach the model, and those come apart on an\naccount with no active subscription.\n\n**Unlike a pasted credential, a failure here is never stored.** Everywhere else the platform\nkeeps an unvalidated value, because the user typed something they believe is right and a\nprovider outage must not block them. Nothing about that applies to a token this service minted\nitself: there is no typo to preserve, and if it does not authenticate then either Anthropic\nturned it down or we mishandled it on the way out of the CLI. Both are ours to fix.\n\nStoring it anyway is what hid a real bug (2026-08-01). A rendering fault dropped one character\nfrom the token, and the flow reported success while the account held a credential that could not\nmake a single request -- indistinguishable, on the page, from a temporary API blip.\n\nA previously stored credential survives, because nothing is written on this path unless the new\none is proven. Re-connecting with a subscription that has lapsed cannot cost somebody the\nworking token they already had.",
+        "description": "Exchange the code for a token, and store it only if it works.",
         "operationId": "claude_oauth_finish_credentials_claude_oauth_finish_post",
         "requestBody": {
           "content": {
@@ -2924,7 +2924,7 @@
         ]
       },
       "put": {
-        "description": "Point the job stream at a channel. Proven by posting to it, not by trusting the ID.\n\nOn success every route goes to the channel and the private chat keeps commands and documents \u2014\nthe reference's split. One channel rather than the per-stream routing the table supports,\nbecause that is the setup being asked for; the routes stay per-key underneath for the day\nsomebody wants the split back.",
+        "description": "Point the job stream at a channel.",
         "operationId": "set_channel_credentials_telegram_channel_put",
         "requestBody": {
           "content": {
@@ -2968,7 +2968,7 @@
     },
     "/credentials/telegram/chat": {
       "put": {
-        "description": "Set the chat id by hand, proven by messaging it.\n\n**The way through when auto-capture cannot work.** `telegram/connect` reads whoever last\nmessaged the bot, which depends on the update still being queued at Telegram and on nothing\nelse having consumed it. Neither is something the platform controls, and when it comes back\nempty there was nothing else to try: the page could not complete, so onboarding stopped dead at\na step whose only instruction was to press Start again.\n\nA chat id is not a secret and not guessable-into-harm: writing somebody else's here only means\nthe bot cannot message them, which the send below catches immediately.",
+        "description": "Set the chat id by hand, proven by messaging it.",
         "operationId": "set_chat_credentials_telegram_chat_put",
         "requestBody": {
           "content": {
@@ -3012,7 +3012,7 @@
     },
     "/credentials/telegram/connect": {
       "post": {
-        "description": "Re-read the chat id after the user has pressed Start. Idempotent.\n\nSeparate from saving the token because the two happen minutes apart: the token is pasted, then\nthe user goes to their phone, then they come back. Asking them to re-paste the token to finish\nconnecting would be gratuitous.",
+        "description": "Re-read the chat id after the user has pressed Start.",
         "operationId": "telegram_connect_credentials_telegram_connect_post",
         "responses": {
           "200": {
@@ -3036,7 +3036,7 @@
     },
     "/credentials/{kind}": {
       "delete": {
-        "description": "Revoke one credential. Removing the Telegram token also disconnects delivery.\n\nLeaving `telegram_status` as `connected` with no token would queue notify jobs that can only\nfail \u2014 and each one would look like a delivery problem rather than a missing credential.",
+        "description": "Revoke one credential.",
         "operationId": "delete_credential_credentials__kind__delete",
         "parameters": [
           {
@@ -3079,7 +3079,7 @@
         ]
       },
       "put": {
-        "description": "Store or replace one credential. Replaces in place; the previous value is gone.\n\nRotation overwrites rather than versions, because keeping history here would mean keeping a\nrevoked credential decryptable.",
+        "description": "Store or replace one credential.",
         "operationId": "put_credential_credentials__kind__put",
         "parameters": [
           {
@@ -3134,7 +3134,7 @@
     },
     "/credentials/{kind}/reveal": {
       "post": {
-        "description": "Hand back the plaintext, once, after the account password.\n\n**The exception to write-only, and the shape of the exception is the point** (owner's decision,\n2026-07-30). A copy button cannot exist without the browser receiving the plaintext \u2014 there is\nno cryptographic trick that yields a usable token without revealing it. So the security lives\nin the gate instead: the password is required (a stolen session cookie is not enough), the\nvalue is returned in this one response and never listed anywhere, the attempt is audited either\nway, and the rate limit keeps a stolen password from becoming a quiet bulk export.",
+        "description": "Hand back the plaintext, once, after the account password.",
         "operationId": "reveal_credential_credentials__kind__reveal_post",
         "parameters": [
           {
@@ -3189,7 +3189,7 @@
     },
     "/dashboard": {
       "get": {
-        "description": "Everything the front page shows, in one call.\n\nOne call rather than five, because the panels are not independent: \"you have 3,310 labels\" and\n\"your model is stale\" contradict each other if they are read a few seconds apart while a worker\nis running.",
+        "description": "Everything the front page shows, in one call.",
         "operationId": "dashboard_dashboard_get",
         "responses": {
           "200": {
@@ -3213,7 +3213,7 @@
     },
     "/documents": {
       "get": {
-        "description": "What the user has uploaded. Returns metadata and a short preview, never the whole text.\n\nThe full text is only ever read by the processing step. Returning it here would put a person's\ncomplete employment history into a response that the dashboard has no use for.",
+        "description": "What the user has uploaded.",
         "operationId": "list_documents_documents_get",
         "responses": {
           "200": {
@@ -3235,7 +3235,7 @@
         ]
       },
       "post": {
-        "description": "Extract and store one document's text. Re-uploading the same content replaces it.\n\nReplacement rather than a duplicate row because users press the button twice, and two copies of\none CV in the processing conversation is one CV's worth of signal at twice the cost.",
+        "description": "Extract and store one document's text.",
         "operationId": "upload_documents_post",
         "requestBody": {
           "content": {
@@ -3324,7 +3324,7 @@
     },
     "/feed": {
       "get": {
-        "description": "The ranked jobs \u2014 a page of them, with the filters the table offers.\n\nThe stage is in the response because a feed that silently changes how it ranks is one nobody can\nreason about \u2014 and a new account's first feed *is* the keyword one, which is worth saying rather\nthan passing off as the model's work.\n\n**The age filter keeps undated rows.** Same rule as delivery: a missing `posted_at` is unknown,\nnot old, and a preference filter fails open. `total` and `sources` are for the table's pager and\nsource dropdown \u2014 computed under the same filters as the page, or the counts would lie.\n\n**`min_score` defaults to the delivery cutoff, not to zero.** The corpus is shared and the\nharvest is broad, so most of what is scored for any given user is not for them: a page showing\neverything is a page of other people's jobs with a number beside them. The default is the same\nthreshold that decides what reaches Telegram, so the table and the channel agree about what\ncounts as a match. Passing `min_score=0` explicitly widens it, which is a thing a user may\ngenuinely want and should have to ask for.",
+        "description": "The ranked jobs \u2014 a page of them, with the filters the table offers.",
         "operationId": "feed_feed_get",
         "parameters": [
           {
@@ -3507,7 +3507,7 @@
     },
     "/health": {
       "get": {
-        "description": "Liveness only. Deliberately does not touch the database.\n\nA health check that fails when Postgres is briefly unreachable causes the orchestrator to\nrestart a process that was working fine, which is how a blip becomes an outage.",
+        "description": "Liveness only.",
         "operationId": "health_health_get",
         "responses": {
           "200": {
@@ -3528,7 +3528,7 @@
     },
     "/legal/privacy": {
       "get": {
-        "description": "Every processor, named. Public \u2014 it is linked from signup, before anyone has an account.\n\nNaming them individually rather than saying \"trusted third parties\" is the entire requirement:\na user deciding whether to upload their employment history is entitled to know it will be read\nby a US company, and which one.",
+        "description": "Every processor, named.",
         "operationId": "privacy_legal_privacy_get",
         "responses": {
           "200": {
@@ -3600,7 +3600,7 @@
     },
     "/notifications/delete": {
       "post": {
-        "description": "Dismiss notifications for good.\n\n**A real delete, not a hidden flag.** These are transient operational messages \u2014 a proxy\nquarantined, a delivery failed, a model trained \u2014 and once a user has acted on one there is no\nlater question that a kept row answers. Keeping them would mean a table that only grows and a\npanel whose \"clear\" button is a lie.\n\nScoped to `user_id` in the same statement as the id filter, so a guessed id belonging to another\naccount deletes nothing rather than deleting theirs. Unread state is irrelevant here: dismissing\nsomething without opening it is a legitimate way to say it does not matter.",
+        "description": "Dismiss notifications for good.",
         "operationId": "delete_notifications_notifications_delete_post",
         "requestBody": {
           "content": {
@@ -3687,7 +3687,7 @@
     },
     "/onboarding/complete": {
       "post": {
-        "description": "Finish onboarding, if every page is satisfied. 409 naming what is missing if not.\n\n**This does not set `users.active`.** Completing onboarding means the account is configured;\n`active` means the scheduler may dispatch notifications, and that is only safe once a model\nexists to rank with. Setting it here would start a notify loop for an account whose scorer has\nnothing to serve, and every cycle would fail identically for a reason no user could see.\n\nIdempotent: pressing it twice keeps the original timestamp rather than moving it.",
+        "description": "Finish onboarding, if every page is satisfied.",
         "operationId": "complete_onboarding_complete_post",
         "responses": {
           "200": {
@@ -3711,7 +3711,7 @@
     },
     "/onboarding/config": {
       "get": {
-        "description": "The stored config in the *current* shape, plus the schema the form is generated from.\n\nA v1 row is upgraded on read rather than rewritten, so a user's stored config is never changed\nby a deploy they did not ask for \u2014 it upgrades the next time they save.",
+        "description": "The stored config in the *current* shape, plus the schema the form is generated from.",
         "operationId": "get_config_onboarding_config_get",
         "responses": {
           "200": {
@@ -3733,7 +3733,7 @@
         ]
       },
       "put": {
-        "description": "Validate and store. The server is the authority; the form is a convenience.\n\nSaving does not schedule anything. The harvester picks the config up on its next cycle by\nreading every active user's config \u2014 there is no per-user trigger to forget to fire.\n\n**The keyword ceiling is checked here rather than in the schema**, because it is per account.\n`UserConfigSchema` bounds each section at the platform maximum, which is the right hard stop for\neveryone; the operator's `keywords` limit is what an individual account is allowed, and it went\nunread until 2026-08-04 \u2014 the control existed, the panel rendered it, and the schema constant\nwas the only thing anybody was measured against. Counted **across sections**, matching the\nharvester's own cap, or five sections would buy five times the allowance.",
+        "description": "Validate and store.",
         "operationId": "put_config_onboarding_config_put",
         "requestBody": {
           "content": {
@@ -3777,7 +3777,7 @@
     },
     "/onboarding/config/preview": {
       "post": {
-        "description": "How many jobs already in the corpus these terms would match, with a few example titles.\n\n**An approximation, and the response says so.** The harvester sends keywords to each source's\nown search, so the real feed is whatever LinkedIn and Indeed return \u2014 not a substring match over\nwhat has been collected so far. What this genuinely catches is the failure it exists for: terms\nthat match *nothing at all*, which is a typo or a phrase nobody puts in a job title, and which\nwould otherwise show up as an empty feed a day later with no explanation.\n\nCounted over `PREVIEW_WINDOW_DAYS` rather than the section's own window, because a correct\nconfig can legitimately return single digits over 24 hours and a user reading that as failure\nwould go and break something that worked.\n\nTakes the config in the request body rather than reading the stored one, so the number updates\nas the user types and does not require saving a config to find out it is empty.",
+        "description": "How many jobs already in the corpus these terms would match, with a few example titles.",
         "operationId": "preview_config_onboarding_config_preview_post",
         "requestBody": {
           "content": {
@@ -3843,7 +3843,7 @@
         ]
       },
       "put": {
-        "description": "The long-form write-up, typed rather than uploaded.\n\nIt exists as an endpoint because nobody has a \"history document\" lying around \u2014 they write one\nin the box. Stored as a `history` document so there is exactly one path into the processing\nstep: whether the text was pasted or extracted from a `.docx` is not a distinction anything\ndownstream should have to know about.\n\nThe minimum length is a real requirement rather than politeness. This page feeds the parts of\nthe profile a CV omits, and two sentences produce a profile no better than the CV alone.",
+        "description": "The long-form write-up, typed rather than uploaded.",
         "operationId": "put_history_onboarding_history_put",
         "requestBody": {
           "content": {
@@ -3908,7 +3908,7 @@
         ]
       },
       "put": {
-        "description": "Store the name and links. Replaces both \u2014 the form submits the whole page.\n\nEditing the name does **not** bump `profile_generation`. The generation counter scopes labels\nand model artifacts to a rubric, and a name appears nowhere in a rubric; bumping it would\ninvalidate every label a user has for a typo fix (`PROFILE_CAPTURE_PLAN.md` \u00a76.4).",
+        "description": "Store the name and links.",
         "operationId": "put_identity_onboarding_identity_put",
         "requestBody": {
           "content": {
@@ -3952,7 +3952,7 @@
     },
     "/onboarding/schema": {
       "get": {
-        "description": "Both JSON Schemas the front end generates its forms from, in one call.\n\nExported from the models the server validates with, so a field cannot exist on one side and not\nthe other (`CODE_STRUCTURE.md` \u00a78).",
+        "description": "Both JSON Schemas the front end generates its forms from, in one call.",
         "operationId": "schemas_onboarding_schema_get",
         "responses": {
           "200": {
@@ -3976,7 +3976,7 @@
     },
     "/onboarding/state": {
       "get": {
-        "description": "What is done, what is left, and where to send the user next.\n\nDerived from the rows each page writes rather than from a stored progress marker, so deleting a\ncredential later correctly reopens that page instead of leaving an account \"complete\" and\nunable to run (`libs.onboarding.state`).",
+        "description": "What is done, what is left, and where to send the user next.",
         "operationId": "state_onboarding_state_get",
         "responses": {
           "200": {
@@ -4000,7 +4000,7 @@
     },
     "/process": {
       "post": {
-        "description": "Queue a processing run. Idempotent while one is pending.\n\nQueued rather than run in the request: it is a single multi-minute Opus call over a whole\ndocument set, and holding an HTTP connection open for it would turn a slow model into a failed\nsignup.",
+        "description": "Queue a processing run.",
         "operationId": "start_process_post",
         "responses": {
           "200": {
@@ -4024,7 +4024,7 @@
     },
     "/process/confirm": {
       "post": {
-        "description": "Apply the profile the user has read and edited. **This is the only path to a live profile.**\n\nThe body is the *edited* draft rather than a bare \"yes\", because the confirmation form is where\na wrong `not_list` entry gets removed \u2014 and that is the entry that would otherwise silently\nsuppress jobs the user wanted for as long as the profile lasts.\n\n`confirmed` is forced here rather than trusted from the request. A client that posted the raw\ndraft back untouched would otherwise confirm on the user's behalf, which is the whole thing this\nstep exists to prevent.",
+        "description": "Apply the profile the user has read and edited.",
         "operationId": "confirm_process_confirm_post",
         "requestBody": {
           "content": {
@@ -4090,7 +4090,7 @@
         ]
       },
       "get": {
-        "description": "The proposal, plus the schema the confirmation form is generated from.\n\nReturned whole \u2014 unlike `/documents`, which previews. The user is being asked to agree to every\nline of it, so showing them a summary would make the confirmation meaningless.",
+        "description": "The proposal, plus the schema the confirmation form is generated from.",
         "operationId": "draft_process_draft_get",
         "responses": {
           "200": {
@@ -4114,7 +4114,7 @@
     },
     "/process/state": {
       "get": {
-        "description": "What the account needs next, and what it will cost.\n\nDerived from the counters that already exist rather than from a status column: a column would\nneed updating by whoever remembers, and the first thing to go stale would be the one that says\nwhether anything is stale.",
+        "description": "What the account needs next, and what it will cost.",
         "operationId": "state_process_state_get",
         "responses": {
           "200": {
@@ -4138,7 +4138,7 @@
     },
     "/process/training": {
       "get": {
-        "description": "What training is doing right now, for a page that polls.\n\n**The work does not live in the browser and never did.** Pressing the button enqueues rows in\nPostgres and the worker pools drain them, so closing the tab, switching pages or losing the\nlaptop changes nothing about whether it finishes. This endpoint exists because that was\ninvisible: the page said \"Starting\u2026\" once and then looked identical whether the run was halfway\nthrough or had died an hour ago.\n\nDerived on read rather than tracked in a column, for the reason every other state on this\nplatform is: a progress counter that can disagree with the queue eventually will.",
+        "description": "What training is doing right now, for a page that polls.",
         "operationId": "training_state_process_training_get",
         "responses": {
           "200": {
@@ -4162,7 +4162,7 @@
     },
     "/process/training/stop": {
       "post": {
-        "description": "Cancel queued training work for this account.\n\n**Queued only.** A row a worker has already claimed is mid-call on the user's own credential;\ndeleting it here would not stop that call, it would only lose the record of it \u2014 so the batch\nin flight finishes and nothing new is taken. That is also why the button warns rather than\npromises: stopping is prompt, not instant.\n\nLabels already written are kept. They were paid for, they are still true, and throwing them\naway would make stopping expensive enough that nobody would risk it.",
+        "description": "Cancel queued training work for this account.",
         "operationId": "stop_training_process_training_stop_post",
         "responses": {
           "200": {
@@ -4186,7 +4186,7 @@
     },
     "/setup": {
       "get": {
-        "description": "One chat's transcript, the list of chats, the files, and whether documents can be built.\n\n**The chat list and the open chat come back together** because they are always rendered\ntogether, and two calls would let the switcher disagree with the transcript beneath it.\n\nWith no `conversation_id` this opens the most recent chat, creating the first one if the\naccount has none \u2014 so a new user lands in a conversation without pressing anything.",
+        "description": "One chat's transcript, the list of chats, the files, and whether documents can be built.",
         "operationId": "conversation_setup_get",
         "parameters": [
           {
@@ -4239,7 +4239,7 @@
     },
     "/setup/conversations": {
       "post": {
-        "description": "Start a fresh chat, with an empty transcript and the same profile underneath.\n\n**The cap is enforced here and is not a setting** (owner, 2026-07-30). Every turn replays its\nwhole conversation on the user's own credential, so unbounded chats is unbounded spend on\nre-reading them. Hitting the cap is answered with what to do about it rather than a bare\nrefusal, because deleting one is the intended move.",
+        "description": "Start a fresh chat, with an empty transcript and the same profile underneath.",
         "operationId": "new_conversation_setup_conversations_post",
         "responses": {
           "201": {
@@ -4263,7 +4263,7 @@
     },
     "/setup/conversations/{conversation_id}": {
       "delete": {
-        "description": "Delete a chat and everything said in it. **The profile is untouched.**\n\nThat asymmetry is the point and is worth stating: the files are what the conversation was for,\nand throwing away the talking must not throw away the work. Deleting the last chat is allowed \u2014\nthe next visit opens a fresh one, which is the same place a new account starts.",
+        "description": "Delete a chat and everything said in it.",
         "operationId": "delete_conversation_setup_conversations__conversation_id__delete",
         "parameters": [
           {
@@ -4307,7 +4307,7 @@
         ]
       },
       "patch": {
-        "description": "Rename a chat.\n\nTitles were generated and only generated: the first thing the user said, or the step's name when\nthey pressed Start. That is a good default and a poor permanent label -- three chats called\n\"Your profile\" tell nobody which was which, and the switcher is how somebody finds the one they\nwant. Renaming is the cheapest possible fix and there was no way to do it.\n\nAuto-naming is unaffected: it only ever fills a chat still holding the default, so a renamed one\nkeeps its name however many messages follow.",
+        "description": "Rename a chat.",
         "operationId": "rename_conversation_setup_conversations__conversation_id__patch",
         "parameters": [
           {
@@ -4405,7 +4405,7 @@
         ]
       },
       "put": {
-        "description": "Edit a file by hand.\n\nEditing is allowed but the agent is the better route, especially for a prompt: it knows where a\nnew role belongs and what the surrounding structure expects. This exists because somebody who\nspots a wrong date should be able to fix it in ten seconds.",
+        "description": "Edit a file by hand.",
         "operationId": "write_file_setup_files__name__put",
         "parameters": [
           {
@@ -4460,7 +4460,7 @@
     },
     "/setup/message": {
       "post": {
-        "description": "Accept one turn and queue it. Answers immediately; the reply arrives in the transcript.\n\n**This used to run the turn inside the request, and that was the bug.** A turn takes minutes on\na frontier model, so switching tabs, opening another chat, refreshing or signing out aborted\nit \u2014 the user's message was committed, the reply never came, and nothing said why. Now the\npending assistant row is created here and `services/setupagent` fills it in, so a turn survives\neverything the browser can do to it.\n\n**On the user's own credential**, like every other call this platform makes. Their profile,\ntheir spend, no platform cost.",
+        "description": "Accept one turn and queue it.",
         "operationId": "send_setup_message_post",
         "requestBody": {
           "content": {
@@ -4504,7 +4504,7 @@
     },
     "/setup/message/{message_id}/stop": {
       "post": {
-        "description": "Ask the running turn to stop.\n\n**A request, not a kill.** The turn is on a worker that is usually mid-call to Anthropic, and\nthat call cannot be interrupted without abandoning a response already paid for. So this flips\nthe row to `cancelling` and the worker notices between tool steps, where everything so far is\ncommitted and the next call has not been made. The user sees \"stopping\u2026\" until it does, which\nis honest \u2014 claiming it had stopped while it was still writing files would be a lie the file\npanel would immediately contradict.\n\nIdempotent, and safe on a turn that has already finished: a stop arriving one second after the\nreply landed is the normal race, not an error, and answering it with a 409 would put a red\nbanner on a screen where nothing went wrong.",
+        "description": "Ask the running turn to stop.",
         "operationId": "stop_turn_setup_message__message_id__stop_post",
         "parameters": [
           {
@@ -4549,7 +4549,7 @@
     },
     "/setup/progress": {
       "get": {
-        "description": "Is setup finished, what is left, and which command produces each missing piece.\n\n**The success criterion lives here rather than in a prompt.** An agent asked to decide whether\nit has finished will either stop early or polish forever, and the ported director's gates read\na filesystem this platform does not have. This answers from the database: a file exists and is\nfilled, or it does not.\n\nIt is also what unblocks training. `train_user` refuses while anything here is outstanding, so\n\"setup complete\" and \"may train\" are the same sentence rather than two rules that can disagree.",
+        "description": "Is setup finished, what is left, and which command produces each missing piece.",
         "operationId": "setup_progress_setup_progress_get",
         "responses": {
           "200": {
@@ -4573,7 +4573,7 @@
     },
     "/setup/start": {
       "post": {
-        "description": "Begin the first labelling run \u2014 the step after setup, pressed rather than assumed.\n\nThe old flow queued this the moment a profile was confirmed. It is the most expensive thing the\nplatform does on somebody's behalf, and it should not begin because a form was submitted.",
+        "description": "Begin the first labelling run \u2014 the step after setup, pressed rather than assumed.",
         "operationId": "start_search_setup_start_post",
         "responses": {
           "200": {
@@ -4621,7 +4621,7 @@
     },
     "/telegram/webhook/{secret}": {
       "post": {
-        "description": "One button tap.\n\n**Always answers 200 once authenticated**, even when the tap does nothing. Telegram retries a\nnon-2xx, and retrying a tap that was already recorded is pointless at best; the response body\nsays what happened, for anybody reading a log.",
+        "description": "One button tap.",
         "operationId": "webhook_telegram_webhook__secret__post",
         "parameters": [
           {

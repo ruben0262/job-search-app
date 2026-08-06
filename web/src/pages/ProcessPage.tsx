@@ -1,15 +1,4 @@
-/**
- * Process data, and the confirmation step.
- *
- * **The confirmation is the point of this screen, not a formality.** Every entry in the "not a fit"
- * list becomes a hard gate — a wrong one silently suppresses jobs the person wanted, for as long as
- * the profile lasts — so the draft is shown in full and edited here before anything uses it. The
- * server forces `confirmed` itself, so posting the draft back untouched cannot confirm on somebody's
- * behalf; this form exists so they actually read it.
- *
- * **The warning names a number.** "About 3,310 jobs, roughly $5.96 on your own key" is something a
- * person weighs. "Are you sure?" is something they click past.
- */
+/** Process data, and the confirmation step. */
 import { useEffect, useState } from "react";
 
 import { api, type ProcessState } from "../api";
@@ -145,8 +134,7 @@ export function ProcessPage({ onChanged }: { onChanged: () => void }) {
   );
 }
 
-/** The consent screen, shown at the moment it is owed: nothing leaves this server until the button
- * below is pressed, so asking earlier would be asking about something that had not happened. */
+/** The consent screen, shown at the moment it is owed. */
 function Consent({ onGranted }: { onGranted: () => void }) {
   const [disclosure, setDisclosure] = useState<{
     version: string;

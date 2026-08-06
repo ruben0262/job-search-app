@@ -70,8 +70,7 @@ const STAGES = [
 
 export default function HowItWorks() {
   const pipelineRef = useRef<HTMLDivElement>(null);
-  // The rail fills as the pipeline moves through the middle of the viewport,
-  // and empties again when scrolling back up.
+  // The rail fills as the pipeline moves through the middle of the viewport.
   const { scrollYProgress } = useScroll({
     target: pipelineRef,
     offset: ["start 0.72", "end 0.55"],
@@ -116,8 +115,7 @@ interface StageProps {
   children: ReactNode;
 }
 
-/** One pipeline stage; its milestone dot lights up (and dims again on the
- *  way back up) as the progress rail sweeps past it. */
+/** One pipeline stage; its milestone dot lights up. */
 function Stage({ num, name, children }: StageProps) {
   const ref = useRef<HTMLDivElement>(null);
   const passed = useInView(ref, { margin: "0px 0px -42% 0px" });

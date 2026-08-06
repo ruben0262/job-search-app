@@ -1,17 +1,4 @@
-"""The claim protocol. One table, four lanes, at-least-once delivery.
-
-`SCHEDULER_PLAN.md` §3-§5 in code. The parts that matter and why:
-
-- **`FOR UPDATE SKIP LOCKED`** is what makes two workers claiming at once safe without a lock table.
-  A worker that would block on a row skips it and takes the next one instead.
-- **Attempts increment on claim, not on failure.** A worker killed mid-job never gets to report the
-  failure, and a counter that only moved on a reported failure would let it retry forever.
-- **`finished_at` drives fairness.** Ordering by `run_after` alone is FIFO, which is fine for lanes
-  whose work is naturally spread — but one user labelling a backlog would occupy `train` and `label`
-  entirely. Those two lanes order by "who has waited longest since their last completion" instead.
-- **Dead-lettering is loud.** After `MAX_ATTEMPTS` the row is `dead` and stays queryable. A job that
-  retries forever consumes a worker slot in perpetuity and reports nothing.
-"""
+"""The claim protocol."""
 from __future__ import annotations
 
 import logging
@@ -29,24 +16,12 @@ from libs.db.models.queue import CLAIM_TIMEOUT_MIN, LANES, MAX_ATTEMPTS
 
 logger = logging.getLogger(__name__)
 
-# Lanes where one user can enqueue a burst, so FIFO would let them occupy the pool
-# (`SCHEDULER_PLAN.md` §5). `notify` and `docgen` are naturally spread and stay FIFO — the fairness
-# subquery is not free, and paying for it where it changes nothing is just latency.
+# Lanes where one user can enqueue a burst, so FIFO would let them occupy the pool (`SCHEDULER_PLAN.md` §5).
 FAIR_LANES = frozenset({"train", "label"})
 
 
 def lane_paused(session: Session, lane: str) -> bool:
-    """Whether an operator has paused this lane (`deploy/scripts/pipeline_switch.py`).
-
-    The table is created on demand by that script and will usually not exist, so a missing table is
-    "nothing is paused" rather than an error. Reading it must never be the thing that breaks
-    enqueuing — a switch whose absence stops the platform is worse than no switch.
-
-    **Asked with `to_regclass` rather than by catching the failure.** A missing relation aborts the
-    surrounding transaction in Postgres, and the obvious `except` then has to roll back to recover
-    — which throws away the caller's uncommitted work. That is not a hypothetical: it deleted the
-    user row out from under thirty-four tests before this was written the other way round.
-    """
+    """Whether an operator has paused this lane (`deploy/scripts/pipeline_switch.py`)."""
     if session.scalar(text("SELECT to_regclass('lane_pauses')")) is None:
         return False
     return session.scalar(
@@ -56,17 +31,10 @@ def lane_paused(session: Session, lane: str) -> bool:
 def enqueue(session: Session, lane: str, user_id: _uuid.UUID, *,
             payload: dict | None = None, dedup_key: str | None = None,
             delay_min: int = 0) -> int | None:
-    """Add work. Returns the job id, or `None` when an identical pending job already exists.
-
-    The collapse is a partial unique index, not an application check — five labels arriving at once
-    must produce one retrain even when they race, and application-level "does one exist?" cannot
-    promise that.
-    """
+    """Add work."""
     _check_lane(lane)
     if lane_paused(session, lane):
-        # Refused at the door rather than claimed and dropped. A paused lane must not accumulate
-        # work it will process in a burst on resume — that is how a pause turns into an incident of
-        # its own — and the caller treats `None` as "already pending", which is the right shape.
+        # Refused at the door rather than claimed and dropped.
         logger.info("queue: %s is paused, not enqueuing", lane)
         return None
     result = session.execute(
@@ -80,11 +48,7 @@ def enqueue(session: Session, lane: str, user_id: _uuid.UUID, *,
 
 
 def claim(session: Session, lane: str, worker: str) -> QueueJob | None:
-    """Take the next ready job in this lane, or `None`.
-
-    `SKIP LOCKED` is the whole protocol: a concurrent claimer skips the row this one has locked
-    rather than blocking on it, so N workers claim N distinct jobs with no coordination.
-    """
+    """Take the next ready job in this lane, or `None`."""
     _check_lane(lane)
     order = _fair_order(lane) if lane in FAIR_LANES else "run_after"
     row = session.execute(
@@ -103,20 +67,12 @@ def claim(session: Session, lane: str, worker: str) -> QueueJob | None:
         {"lane": lane, "worker": worker}).scalar()
     if row is None:
         return None
-    # `populate_existing` because the claim was a raw UPDATE: without it, a session that has seen
-    # this row before returns the identity-mapped copy, whose `attempts` and `state` predate the
-    # claim. A worker loop is exactly that kind of long-lived session, so it would decide against a
-    # retry count that never moves — and a job that always kills its worker would retry forever.
+    # `populate_existing` because the claim was a raw UPDATE: the mapped copy predates it.
     return session.get(QueueJob, row, populate_existing=True)
 
 
 def complete(session: Session, job: QueueJob) -> None:
-    """Mark done. **Commit this in the same transaction as the job's own effect.**
-
-    That is what makes at-least-once delivery survivable: the `seen` row and "job done" either both
-    land or neither does, so a retry after a crash re-sends nothing already recorded
-    (`SCHEDULER_PLAN.md` §4).
-    """
+    """Mark done."""
     job.state = "done"
     job.finished_at = func.clock_timestamp()
     job.last_error = None
@@ -124,11 +80,7 @@ def complete(session: Session, job: QueueJob) -> None:
 
 def fail(session: Session, job: QueueJob, error: str, *,
          retry_in_min: int = 1, max_attempts: int = MAX_ATTEMPTS) -> str:
-    """Record a failure. Returns the resulting state: `ready` (will retry) or `dead`.
-
-    Attempts were already incremented at claim time, so this decides against a count that includes
-    workers that died without reporting anything.
-    """
+    """Record a failure."""
     job.last_error = error[:2000]
     if job.attempts >= max_attempts:
         job.state = "dead"
@@ -142,23 +94,14 @@ def fail(session: Session, job: QueueJob, error: str, *,
 
 
 def terminate(session: Session, job: QueueJob, reason: str) -> None:
-    """Dead-letter immediately, without spending the remaining attempts.
-
-    For conditions that will never succeed — a revoked Telegram token being the one that actually
-    happens (`SCHEDULER_PLAN.md` §6, G6). Retrying those five times wastes attempts and then goes
-    quiet anyway, which is the worst of both.
-    """
+    """Dead-letter immediately, without spending the remaining attempts."""
     job.state = "dead"
     job.finished_at = func.clock_timestamp()
     job.last_error = reason[:2000]
 
 
 def sweep_expired(session: Session, lane: str | None = None) -> int:
-    """Return claims older than the lane's visibility timeout to `ready`. Returns how many.
-
-    A worker killed mid-job costs one retry and never a lost job. Run it on a timer; it is cheap and
-    idempotent, and nothing else notices a dead worker.
-    """
+    """Return claims older than the lane's visibility timeout to `ready`."""
     lanes: Sequence[str] = (lane,) if lane else LANES
     recovered = 0
     for name in lanes:
@@ -173,31 +116,13 @@ def sweep_expired(session: Session, lane: str | None = None) -> int:
 
 
 def dispatch_due_notifications(session: Session) -> int:
-    """Enqueue a `notify` job for every user whose feed is due, and advance their next slot.
-
-    **`next_run_at` advances at enqueue, not at completion.** A slow or failed delivery must not
-    stall a user's feed forever — that is the single most likely silent failure on the platform and
-    the one a user would notice last (`SCHEDULER_PLAN.md` §4, §6).
-
-    Users whose bot is `broken` are skipped: retrying a revoked token cannot succeed, and the fix is
-    a reconnect email, not a queue entry.
-
-    **An unset `next_run_at` means due now, not never.** Nothing on the platform arms that column —
-    the dispatcher only ever advances one that is already set — so requiring it to be non-NULL made
-    a brand new account permanently silent: the second account signed up, connected its bot, scored
-    15,094 postings, and 73 matches sat undelivered because it had no first slot and nothing existed
-    to give it one. The LinkedIn loop already reads NULL as "due" for exactly this reason
-    (`services/harvester/linkedin.py`), and this is the fail-open half of the same idea: a missing
-    schedule must produce a delivery somebody can see, never a queue nobody is in.
-    """
+    """Enqueue a `notify` job for every user whose feed is due, and advance their next slot."""
     due = select(User.id).where(
         User.active.is_(True), User.status == "active",
         User.telegram_status == "connected",
         or_(User.next_run_at.is_(None), User.next_run_at <= func.now()))
 
-    # `rowcount` is not dependable for INSERT ... SELECT ... RETURNING, so the returned ids are
-    # counted directly. A dispatcher that reports a number it did not measure is worse than one
-    # that reports nothing.
+    # `rowcount` is not dependable for INSERT ...
     enqueued = len(session.execute(
         pg_insert(QueueJob)
         .from_select(["lane", "user_id", "dedup_key", "payload"],
@@ -207,9 +132,7 @@ def dispatch_due_notifications(session: Session) -> int:
                                 index_where=text("state IN ('ready','claimed')"))
         .returning(QueueJob.id)).scalars().all())
 
-    # **One cadence, the same for everyone.** It was a per-user column, and a user choosing four
-    # hours was choosing to hear about a two-hour-old job — which is the opposite of what this
-    # product is. The operator owns the number now (`libs.settings`).
+    # One cadence, the same for everyone.
     interval = int(settings.get(session, "delivery_interval_min"))
     session.execute(
         update(User)
@@ -219,15 +142,7 @@ def dispatch_due_notifications(session: Session) -> int:
 
 
 def jobs_today(session: Session, lane: str, user_id: _uuid.UUID) -> int:
-    """How many jobs this user has enqueued on `lane` since their own local midnight.
-
-    Counted from the queue rather than from what the work produced, which is the difference between
-    a quota and a scoreboard: a CV build that failed still spent the Claude call, and a limit that
-    only counted successes would let a broken account retry all day on the user's money.
-
-    In `users.timezone`, not UTC, for the same reason the notification cap is: "ten a day, resets at
-    midnight" has to keep meaning the same thing in November and for somebody three zones away.
-    """
+    """How many jobs this user has enqueued on `lane` since their own local midnight."""
     _check_lane(lane)
     timezone = session.scalar(select(User.timezone).where(User.id == user_id)) or "UTC"
     local_midnight = func.date_trunc("day", func.timezone(timezone, func.now()))
@@ -238,21 +153,12 @@ def jobs_today(session: Session, lane: str, user_id: _uuid.UUID) -> int:
 
 
 def _now_plus(minutes: int):
-    """`now() + N minutes`, server-side.
-
-    `make_interval` rather than an interpolated `interval '...'` literal: SQLAlchemy cannot type a
-    raw `text()` on the right of an addition (it raises at construction), and building the literal
-    by string formatting would put a caller-supplied number into SQL text.
-    """
+    """`now() + N minutes`, server-side."""
     return func.now() + func.make_interval(0, 0, 0, 0, 0, int(minutes)) if minutes else func.now()
 
 
 def _fair_order(lane: str) -> str:
-    """Round-robin: the user who has waited longest since their last completion in this lane.
-
-    Combined with duplicate collapse, this is what stops one user occupying the trainer
-    (`SCHEDULER_PLAN.md` §5, T6).
-    """
+    """Round-robin: the user who has waited longest since their last completion in this lane."""
     return ("(SELECT COALESCE(MAX(j2.finished_at), 'epoch') FROM jobs j2 "
             " WHERE j2.user_id = jobs.user_id AND j2.lane = jobs.lane AND j2.state = 'done'), "
             "run_after")

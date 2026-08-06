@@ -1,10 +1,4 @@
-"""What every account actually has. Read-only. The D6 side-by-side, in one place.
-
-    python deploy/scripts/show_accounts.py
-
-Answers the question the exit criteria ask — *does each account have its own model, feed, and
-schedule?* — from the database rather than from anyone's recollection.
-"""
+"""What every account actually has."""
 from __future__ import annotations
 
 import sys

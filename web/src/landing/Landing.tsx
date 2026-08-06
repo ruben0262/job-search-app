@@ -1,15 +1,4 @@
-/**
- * The landing page, ported from `mahoraga-jobs-web` (mahoraga.rubenlekli.com) on 2026-07-30.
- *
- * **Ported, not linked** — the owner wants one deployment where the front door and the app share
- * an origin, with Create account / Sign in wired straight into the hash router. The sections and
- * wheel are copied as close to verbatim as the two repos allow; the CSS is scoped under `.landing`
- * so the app's styles and this page's cannot reach into each other, and the landing pins its own
- * dark tokens because the brand page is dark whatever the app's toggle says.
- *
- * Copy edits are deliberate and minimal: the hero CTAs are auth buttons now, and the self-hosted
- * framing stays in the "Run it" section — the product is the same system, hosted or not.
- */
+/** The landing page, ported from `mahoraga-jobs-web` (mahoraga.rubenlekli.com) on 2026-07-30. */
 import { LazyMotion, domAnimation } from "framer-motion";
 import { useCallback, useEffect, useState } from "react";
 

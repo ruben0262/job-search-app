@@ -15,10 +15,7 @@ from libs.db.session import session_scope
 from libs.mail import EmailSender, sender_from_env
 from libs.secrets import SecretStore
 
-# Process-local, fixed window, self-sweeping — the shape FlowSolutions uses, carried with its
-# caveat intact (`AUTH_REUSE.md` §4.1): with more than one `api` replica each holds its own bucket,
-# so the effective limit is `limit x replicas`. Fine at one replica and ≤50 invited users; it must
-# move to Postgres before scaling out, and until then it is a courtesy rather than an abuse control.
+# Process-local, fixed window, self-sweeping: with N `api` replicas the limit is N x limit.
 _WINDOWS: dict[str, tuple[float, int]] = {}
 _LOCK = threading.Lock()
 
@@ -26,31 +23,18 @@ _MAILER: EmailSender | None = None
 
 
 def get_db() -> Iterator[Session]:
-    """One transaction per request, committed on a clean return.
-
-    The route handlers therefore never commit: a handler that did would break the property every
-    write path here depends on — that the effect and its audit trail land together.
-    """
+    """One transaction per request, committed on a clean return."""
     with session_scope() as session:
         yield session
 
 
 def get_store(session: Session = Depends(get_db)) -> SecretStore:
-    """The credential store for this request. Constructed per request, not per process.
-
-    `SecretStore` holds a session, and a process-lifetime one would outlive every transaction it was
-    handed. The KEK it reads is process-level and cached by `KeyRing.from_env`.
-    """
+    """The credential store for this request."""
     return SecretStore(session)
 
 
 def current_user(request: Request) -> uuid.UUID:
-    """Who is calling, from the access cookie. 401 if there is no valid one.
-
-    Reads the cookie rather than an `Authorization` header: the browser is the only client, the
-    token is `HttpOnly` so no script can put it in a header anyway, and accepting both would mean
-    two authentication paths to keep in step.
-    """
+    """Who is calling, from the access cookie."""
     token = request.cookies.get("access_token")
     if not token:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="not signed in")
@@ -70,11 +54,7 @@ def get_mailer() -> EmailSender:
 
 
 def rate_limit(request: Request, key: str, *, limit: int, per_seconds: int) -> None:
-    """Fixed window, keyed by caller-supplied string plus peer address.
-
-    Keyed on both so one address cannot lock another user out of logging in by burning their
-    per-email budget from elsewhere — the email is in the key, but so is the source.
-    """
+    """Fixed window, keyed by caller-supplied string plus peer address."""
     if os.environ.get("DISABLE_RATE_LIMIT") == "1":
         return
     peer = request.client.host if request.client else "unknown"
@@ -87,8 +67,7 @@ def rate_limit(request: Request, key: str, *, limit: int, per_seconds: int) -> N
             started, count = now, 0
         count += 1
         _WINDOWS[bucket] = (started, count)
-        # Sweep opportunistically rather than on a timer: the dictionary is only ever as large as
-        # the number of distinct callers inside one window.
+        # Swept opportunistically: the dictionary is only as large as the callers inside one window.
         if len(_WINDOWS) > 4096:
             for stale, (start, _) in list(_WINDOWS.items()):
                 if now - start >= per_seconds:

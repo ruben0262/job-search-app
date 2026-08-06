@@ -1,14 +1,4 @@
-"""Page 1 of onboarding: who the user is, as a recruiter would read it.
-
-Small, but not trivial — **the name here is not the account email**. The email is how someone signs
-in; this is what goes at the top of a generated CV, and getting it from the address (`r.lekli`,
-`andraslekli`) would put that on a document sent to an employer.
-
-Links are (URL, platform) pairs rather than free URLs so the generator can say "GitHub:" instead of
-printing a bare address, and so the profile step knows which link is worth reading. The platform is
-inferred from the host when the user does not pick one, because asking someone to classify their own
-GitHub URL is a question with one possible answer.
-"""
+"""Page 1 of onboarding: who the user is, as a recruiter would read it."""
 from __future__ import annotations
 
 from enum import StrEnum
@@ -16,8 +6,7 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-# Enough for the links a person actually has; a ceiling exists because every one of them is text
-# that ends up in the capture conversation.
+# Enough for the links a person has; every one of them ends up in the capture conversation.
 MAX_LINKS = 10
 
 
@@ -32,8 +21,7 @@ class LinkPlatform(StrEnum):
     OTHER = "other"
 
 
-# Host fragment -> platform. Deliberately a fragment match rather than an exact host: `github.com`,
-# `www.github.com` and `gist.github.com` are all GitHub, and a user pasting any of them is right.
+# Host fragment -> platform.
 _HOSTS = (
     ("linkedin.", LinkPlatform.LINKEDIN),
     ("github.", LinkPlatform.GITHUB),
@@ -51,12 +39,7 @@ class ProfileLink(BaseModel):
     @field_validator("url")
     @classmethod
     def _require_a_usable_url(cls, url: str) -> str:
-        """`https://` prefixed if missing, then required to have a host.
-
-        People paste `github.com/name` constantly. Rejecting that would be technically correct and
-        would make the form feel broken, so it is repaired rather than refused — but a string with
-        no host at all is a typo, and storing it would put a dead link on a CV.
-        """
+        """`https://` prefixed if missing, then required to have a host."""
         url = url.strip()
         if not url.startswith(("http://", "https://")):
             url = f"https://{url}"
@@ -75,11 +58,7 @@ class ProfileLink(BaseModel):
 
 
 class IdentitySchema(BaseModel):
-    """Full name and links. Both are page 1; only the name is required.
-
-    Links are optional because plenty of good candidates have none, and a required field somebody
-    cannot satisfy is a wall rather than a prompt.
-    """
+    """Full name and links."""
 
     model_config = ConfigDict(extra="forbid", use_enum_values=True)
 
@@ -108,6 +87,5 @@ class IdentitySchema(BaseModel):
 
 
 def json_schema() -> dict:
-    """Exported for the same reason `libs.contracts.config.json_schema` is: the form is generated
-    from it, so a field cannot exist on one side and not the other."""
+    """Exported like `libs.contracts.config.json_schema`: the form is generated from it."""
     return IdentitySchema.model_json_schema()

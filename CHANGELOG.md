@@ -14,6 +14,60 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-08-06 (late night)
+
+**One line per comment, across the whole tree** — the owner's instruction. Every module, class and
+function docstring is now a single sentence, every comment block is one line, and the reasoning that
+used to sit above a constant now lives where it is already recorded: this file, the roadmap, and
+`git blame`.
+
+The scale of it: **20,100 lines removed, 6,900 added, across 313 files** — `libs/` and `services/`
+first, then `tests/`, `deploy/scripts/`, `scripts/`, `web/src/` and `web/scripts/`. Comment and
+docstring lines were 39% of `libs/` before this.
+
+Nothing about behaviour changed, and two checks say so rather than one:
+
+- Every non-docstring string literal in every changed Python file is byte-identical before and
+  after — prompts, log messages, SQL, error text. The one file that differs is `ats.py`, and that is
+  the dead code below.
+- `web/dist/assets/index-CYtWZgGD.js` — **the same content hash as the build before the pass.** The
+  bundle is byte-identical, which is what a comments-only change to a TypeScript app should produce.
+
+**Three things deleted for having no consumer** (`services/harvester/sources/ats.py`, 46 lines):
+
+- `harvest_from_urls` — recorded ATS tokens found in apply-URLs from any source. Nothing has called
+  it since the port. The place it would plug into now is `services/harvester/describe.py`, which
+  resolves `application_url` on every described posting; if that is wanted, this is the function to
+  restore rather than rewrite.
+- `extract_tokens`, `_URL_PATTERNS`, `_NOT_A_TOKEN` — the pattern table `harvest_from_urls` read,
+  and its only caller. Dead with it.
+- `FETCHERS` — an ats-name → fetcher map with no reader. The `gather_*` wrappers pass
+  `fetch_company=` explicitly, so this was a second copy of that routing table that nothing
+  consulted and nothing would have failed on if it had drifted.
+
+**One dead test double deleted** — `DatingClient` in `tests/test_ranking.py`, 18 lines of stub
+client that nothing constructed. The section it belonged to now tests dating through
+`postings.parse_posted_at` directly.
+
+**Four tombstone comments deleted** — "`fetch_easy_apply` was removed on 2026-08-05", "`profile_context`
+was here", "Location is not scored here any more", "Removed 2026-08-05, and the removal is the fix".
+A note about something that is gone is the same maintenance burden as the thing itself; the removals
+are in this file and in the history.
+
+**Not touched: the ported source adapters** (`services/harvester/sources/{http_apis,hiringcafe,jobspy_source}.py`).
+They are lifted from the reference instance and deliberately kept diffable against it — the reason
+`pyproject.toml` exempts that glob from E501. They were slimmed and then reverted; `ats.py`,
+`base.py` and `__init__.py` in the same folder are this platform's own code and were kept slim.
+
+**Not touched: `libs/db/migrations/versions/`.** A migration is a record of what was applied, which
+is why `pyproject.toml` already excludes it from ruff.
+
+Gates, locally, all six: `lint-imports` 2 contracts kept; `ruff check .` clean; `alembic upgrade
+head` from empty on a throwaway database; **1,355 passed, 22 skipped** with `DATABASE_URL` set;
+the OpenAPI dump and `api-types.ts` regenerated — 72 endpoint descriptions shortened, **no type
+changed** (every line of the 482 removed from `api-types.ts` is a comment); `tsc --noEmit` and
+`npm run build` clean.
+
 ## 2026-08-06 (night)
 
 **One filter, once, before scoring** — the owner's instruction, and it turned out to be the cause of

@@ -1,25 +1,4 @@
-"""Leasing, metering, and health for per-user proxy credentials.
-
-The database side of `fetch.py`. `fetch.py` decides *how* a request is routed; this decides
-**whether a user may fetch at all**, and records what it cost.
-
-Three rules, each from a specific failure the design anticipates:
-
-1. **Admission, not interruption.** The cap is checked before the loop starts and again before each
-   request. A quota checked halfway through a job has already spent the resource it was protecting
-   (`TENANT_SAFETY.md` §3).
-2. **Usage is recorded in the same transaction as the fetch it paid for.** Crediting bytes
-   afterwards means a crash between the two silently gives the user free bandwidth, and the counter
-   drifts under exactly the conditions — errors, retries — that make it matter
-   (`HARVESTER_PLAN.md` §5.4).
-3. **Counters reset at the user's local midnight, never UTC.** Users are spread across timezones,
-   so a UTC day is the wrong day for most of them, and "resets at midnight your time" has to keep
-   meaning the same thing in November (G7).
-
-Health is a **consecutive** failure count, not a cumulative one. An occasional 407 on a working
-credential is normal; a run of them is a broken credential. Cumulative counting would eventually
-quarantine every healthy user.
-"""
+"""Leasing, metering, and health for per-user proxy credentials."""
 from __future__ import annotations
 
 import logging
@@ -37,15 +16,12 @@ from services.harvester.fetch import ProxyCapExceeded, ProxyLease
 
 logger = logging.getLogger(__name__)
 
-# Consecutive failures before a credential is quarantined. Low enough that a genuinely dead
-# credential stops burning the loop's time quickly; high enough that one flaky response does not
-# take a working user off LinkedIn.
+# Consecutive failures before a credential is quarantined.
 QUARANTINE_AFTER_FAILURES = 3
 
 
 class ProxyUsageRepository:
-    """Per-user, and `user_id` is required on every method — there is only ever one candidate
-    credential for a fetch, which is what makes attribution correct by construction."""
+    """Per-user: `user_id` is required on every method, which is what makes attribution correct."""
 
     def __init__(self, session: Session):
         self._s = session
@@ -53,15 +29,7 @@ class ProxyUsageRepository:
     # ── leasing ──────────────────────────────────────────────────────────────────────────────
 
     def acquire_lease(self, user_id: UUID, *, secret_resolver) -> ProxyLease | None:
-        """Authorise this user's LinkedIn loop, or return `None` if they may not run one.
-
-        `None` is the ordinary case, not an error: a user with no credential simply does not get the
-        LinkedIn tier, and still receives the ~2/3 of sources that cost nothing.
-
-        `secret_resolver` is injected rather than imported so the plaintext lives in the caller's
-        scope for the shortest possible time — decryption belongs in the worker making the call,
-        never anywhere it could be logged or persisted (`TENANT_SAFETY.md` §2).
-        """
+        """Authorise this user's LinkedIn loop, or return `None` if they may not run one."""
         credential = self._s.get(ProxyCredential, user_id)
         if credential is None or credential.status != "healthy":
             return None
@@ -91,30 +59,18 @@ class ProxyUsageRepository:
                 f"user {user_id} is at their daily proxy cap ({used:.1f}/{cap} MB)")
 
     def _cap(self, user_id: UUID, credential: ProxyCredential) -> float:
-        """This account's daily ceiling, **from the admin panel first**.
-
-        `proxy_mb_per_day` is a limit an operator can set and it governed nothing: both readers used
-        `proxy_credentials.daily_cap_mb`, a column the panel does not write. The column stays as the
-        fallback, so an account nobody has tuned behaves exactly as it did.
-        """
+        """This account's daily ceiling, from the admin panel first."""
         user = self._s.get(User, user_id)
         if user is None:
             return float(credential.daily_cap_mb)
         override = limits.resolve(user, "proxy_mb_per_day")
-        # **`None` is Unlimited, not "fall back to the column".** `resolve` returns the catalogue
-        # default for a limit nobody has set, so `None` only ever means the operator chose no
-        # ceiling — and a fallback here would quietly reimpose one.
+        # `None` is Unlimited, not "fall back to the column".
         return math.inf if override is None else float(override)
 
     # ── metering ─────────────────────────────────────────────────────────────────────────────
 
     def record_usage(self, user_id: UUID, megabytes: float) -> float:
-        """Add spend to the counter. Returns the new total.
-
-        **Call this in the same transaction as the work it paid for.** Crediting afterwards means a
-        crash between the two hands the user free bandwidth, and the drift accumulates exactly when
-        errors and retries make the counter most worth trusting.
-        """
+        """Add spend to the counter."""
         credential = self._s.get(ProxyCredential, user_id)
         if credential is None:
             return 0.0
@@ -123,11 +79,7 @@ class ProxyUsageRepository:
         return float(credential.mb_used_today)
 
     def roll_daily_window(self, user_id: UUID, *, now: datetime | None = None) -> bool:
-        """Reset the counter if the user's local day has turned. Returns True if it rolled.
-
-        Local, not UTC. A user in Budapest and one in Lisbon do not share a midnight, and a shared
-        reset would give one of them a short day and the other a long one every single day.
-        """
+        """Reset the counter if the user's local day has turned."""
         credential = self._s.get(ProxyCredential, user_id)
         if credential is None:
             return False
@@ -137,10 +89,7 @@ class ProxyUsageRepository:
         last = credential.usage_reset_at
 
         if last is None:
-            # First time this credential is seen: **initialise the window, do not zero the
-            # counter.** Treating a null timestamp as "the day has turned" would discard real usage
-            # the first time a credential is leased — a user who had already spent bandwidth would
-            # silently get their cap back. Initialising is not a reset, so it reports False.
+            # First time this credential is seen: initialise the window, do not zero the counter.
             credential.usage_reset_at = now
             return False
 
@@ -161,13 +110,7 @@ class ProxyUsageRepository:
             credential.last_error = None
 
     def record_failure(self, user_id: UUID, error: str) -> bool:
-        """Record a failure; quarantine after `QUARANTINE_AFTER_FAILURES` in a row.
-
-        Returns True if this failure caused a quarantine, so the caller can notify the owner —
-        `OPERATIONS_PLAN.md` §4b: the user must be told, by email and an in-app banner, never
-        through the Telegram feed. A credential that quietly stops working and tells nobody is the
-        failure mode where a user concludes the product is broken.
-        """
+        """Record a failure; quarantine after `QUARANTINE_AFTER_FAILURES` in a row."""
         credential = self._s.get(ProxyCredential, user_id)
         if credential is None:
             return False
@@ -189,18 +132,12 @@ class ProxyUsageRepository:
 
 
 def _tz(session: Session, user_id: UUID) -> ZoneInfo:
-    """The user's IANA timezone, defaulting to UTC if unset rather than raising.
-
-    A missing timezone must not stop a harvest — it makes the reset happen at the wrong hour for one
-    user, which is a nuisance; raising would take the whole loop down, which is an outage.
-    """
+    """The user's IANA timezone, defaulting to UTC if unset rather than raising."""
     name = session.scalar(select(User.timezone).where(User.id == user_id)) or "UTC"
     try:
         return ZoneInfo(name)
     except Exception:                                    # noqa: BLE001 - any bad tz falls back
-        # Logged, not swallowed. The fallback is right - a broken timezone must not take the
-        # harvest down - but silently resetting one user's caps at the wrong hour forever is
-        # exactly the kind of failure nobody ever notices.
+        # Logged, not swallowed.
         logger.warning("user %s has an unusable timezone %r; daily caps will reset at UTC "
                        "midnight until it is corrected", user_id, name)
         return ZoneInfo("UTC")

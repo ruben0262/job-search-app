@@ -1,19 +1,5 @@
 #!/usr/bin/env python3
-"""Load + memory gate (PLAN §14.5 / §12): drive realistic concurrent load at the shared embedder
-while sampling the TEI container's RSS, and report peak.
-
-The <2GB target is a claim about the box, not about the compose file — `mem_limit: 2g` is only a
-ceiling that gets the container OOM-killed, which is exactly the incident this whole service exists
-to prevent (PLAN §1). So measure it here BEFORE pointing production traffic at it.
-
-Run ON THE VPS, where docker is:
-    python3 scripts/load_rss.py --url http://localhost:8080 --callers 3 --corpus 2000
-
-`--url` needs the gateway reachable; either publish 8080 temporarily or run this from a container
-attached to embedder-net. RSS is read from `docker stats` (no extra deps).
-
-Exit code 1 if peak RSS exceeds --budget-mb — usable as a CI/pre-deploy gate.
-"""
+"""Load + memory gate (PLAN §14.5): drive concurrent load and report the backend's peak RSS."""
 from __future__ import annotations
 
 import argparse
@@ -142,7 +128,6 @@ def main() -> int:
         print(f"peak RSS ({args.container:<8}): {peak:.0f} MB   budget {args.budget_mb:.0f} MB")
 
     # Report the verdict LAST and only once, so a run with failed requests can never print OK.
-    # An RSS number from a run whose embeds failed is not a measurement of anything.
     if errors:
         print(f"\nFAIL — {len(errors)} request(s) failed; the RSS figure above is meaningless "
               f"because the load never ran.\n  Is the gateway up and published?  "

@@ -20,12 +20,7 @@ export interface paths {
         post?: never;
         /**
          * Delete Account
-         * @description Erase the account. Everything cascades from `users`, and the credentials are crypto-shredded.
-         *
-         *     **Both, deliberately.** The cascade removes the rows; `purge` destroys the user's DEK, so any
-         *     ciphertext that survives in a backup taken minutes ago is unreadable rather than merely deleted
-         *     (`TENANT_SAFETY.md` §2). A backup restore that resurrected a stranger's Claude key would be the
-         *     worst possible outcome of a delete request.
+         * @description Erase the account.
          */
         delete: operations["delete_account_account_delete"];
         options?: never;
@@ -46,11 +41,7 @@ export interface paths {
         };
         /**
          * Consent State
-         * @description Whether this account has agreed to the **current** disclosure.
-         *
-         *     Version-compared, not merely present. A policy that names a new processor is a new disclosure,
-         *     and an old agreement is not an answer to it — so adding one re-asks everybody, which is the
-         *     point rather than a cost to route around.
+         * @description Whether this account has agreed to the current disclosure.
          */
         get: operations["consent_state_account_consent_get"];
         put?: never;
@@ -58,11 +49,7 @@ export interface paths {
         post: operations["grant_consent_account_consent_post"];
         /**
          * Withdraw Consent
-         * @description Withdraw. Processing stops being available; nothing already produced is undone.
-         *
-         *     Said plainly rather than implied: a profile already built stays built, and what Anthropic
-         *     already processed cannot be recalled. Deleting the account is the stronger action and the one
-         *     that removes what this platform holds.
+         * @description Withdraw.
          */
         delete: operations["withdraw_consent_account_consent_delete"];
         options?: never;
@@ -80,18 +67,7 @@ export interface paths {
         get?: never;
         /**
          * Change Password
-         * @description Change the password. The semantics are the reference implementation's
-         *     (FlowSolutions `security/handler.go`, via `AUTH_REUSE.md`), because each was learned the
-         *     hard way there:
-         *
-         *     - **the current password is required** — a stolen session cookie must not be enough to lock
-         *       the owner out of their own account;
-         *     - **the new password may not equal the current one** — accepting it would record a change
-         *       that changed nothing while still revoking every session;
-         *     - **every session is revoked, including this one.** If the password is being changed because
-         *       it leaked, a session the thief already holds must die with it. The client signs the user
-         *       back in with the new password, which is one honest re-login rather than a silently
-         *       privileged session surviving the rotation.
+         * @description Change the password.
          */
         put: operations["change_password_account_password_put"];
         post?: never;
@@ -110,15 +86,7 @@ export interface paths {
         };
         /**
          * Corpus
-         * @description Search the shared corpus. **No scores** -- those are per user and this is the shared table.
-         *
-         *     The only way to see what the corpus actually holds was SQL, which meant nobody looked. That
-         *     matters more than it sounds: a new account's training data is whatever this table already has
-         *     for their field, and the second account on this platform found 240 usable rows out of 14,359
-         *     because the corpus had accumulated for weeks against one search and hours against theirs.
-         *
-         *     Facets rather than a bare list: "what is in here" is answered by source and recency, and the
-         *     counts are the answer an operator is actually looking for.
+         * @description Search the shared corpus.
          */
         get: operations["corpus_admin_corpus_get"];
         put?: never;
@@ -139,10 +107,6 @@ export interface paths {
         /**
          * Health
          * @description Every number, plus the conditions that currently need a person.
-         *
-         *     The alerts are computed here rather than left to the reader, because a page of numbers is
-         *     something an operator scans and an alert list is something they act on — and the whole argument
-         *     of `OPERATIONS_PLAN.md` §1 is that a failure nobody is told about is a failure nobody fixes.
          */
         get: operations["health_admin_health_get"];
         put?: never;
@@ -163,10 +127,6 @@ export interface paths {
         /**
          * Keywords
          * @description Every term the harvest currently searches, and who it belongs to.
-         *
-         *     **Users' terms are listed and are not deletable here.** They are what somebody's feed is built
-         *     from; an operator seeing them is support, an operator able to remove them is an outage that
-         *     looks like a setting.
          */
         get: operations["keywords_admin_keywords_get"];
         put?: never;
@@ -194,10 +154,6 @@ export interface paths {
         /**
          * Remove Keyword
          * @description Remove an injected term.
-         *
-         *     **Only reaches `operator_keywords`.** A user's own search terms live on their config and are not
-         *     addressable from here at all, which is why this takes a row id from that table rather than a
-         *     string that could match either.
          */
         delete: operations["remove_keyword_admin_keywords__keyword_id__delete"];
         options?: never;
@@ -215,14 +171,6 @@ export interface paths {
         /**
          * Latency
          * @description The drill-down: the spans, then where the time actually went, then when.
-         *
-         *     The health page reports that a posting took 36 minutes end to end. That is the number worth
-         *     publishing and useless for fixing anything -- it does not say whether a worker was busy or the
-         *     work was slow, and those are repaired in completely different places. Nor does an average over a
-         *     day show the hour it was four times worse, which is the hour worth looking at.
-         *
-         *     Bounded window: a fortnight of hourly buckets is a chart nobody can read and a query nobody
-         *     should run on a page load.
          */
         get: operations["latency_admin_latency_get"];
         put?: never;
@@ -243,13 +191,6 @@ export interface paths {
         /**
          * Latency Stage
          * @description One zone, expanded: waiting versus running, the backlog, and the hour-by-hour shape.
-         *
-         *     **Fetched on expansion rather than with the table.** Each of these costs a query and only one
-         *     row is ever open, so putting them on the page load would run six times the work to answer a
-         *     question nobody asked yet.
-         *
-         *     `key` is matched against the known stages rather than interpolated anywhere -- an unknown one is
-         *     a 404, and no part of it reaches SQL.
          */
         get: operations["latency_stage_admin_latency__key__get"];
         put?: never;
@@ -270,9 +211,6 @@ export interface paths {
         /**
          * Limit Catalogue
          * @description What can be set, what it defaults to, and what each one means.
-         *
-         *     Served rather than hardcoded in the panel so adding a ceiling is one entry in `libs.limits`
-         *     rather than an entry plus a form field plus a label somebody has to keep in step.
          */
         get: operations["limit_catalogue_admin_limits_get"];
         put?: never;
@@ -293,11 +231,6 @@ export interface paths {
         /**
          * Pipeline Shape
          * @description Where the jobs are right now, stage by stage.
-         *
-         *     **The question the latency page cannot answer.** That one reports how long each handoff took for
-         *     postings that already made it through; this reports how many are sitting at each stage at this
-         *     moment. Every outage here so far was a stage quietly stopping while the numbers around it looked
-         *     fine, and the number that would have shown it existed the whole time (ROADMAP 6ax).
          */
         get: operations["pipeline_shape_admin_pipeline_get"];
         put?: never;
@@ -318,16 +251,6 @@ export interface paths {
         /**
          * Pipeline Stream
          * @description The same numbers as `/pipeline`, pushed once a second.
-         *
-         *     **Polling was right first and is not right now.** It proved the numbers before anything was
-         *     built on them, which is why three of them turned out to be lies worth fixing. But the platform
-         *     works in bursts: nothing happens for fifteen minutes and then a lane fills and drains inside
-         *     thirty seconds, and that is exactly the interval where "moving" and "stuck" look identical
-         *     unless you can watch it.
-         *
-         *     Server-sent events rather than a websocket: this is one-way, it is text, it reconnects by itself
-         *     and it needs no library on either side. A websocket would be a second protocol to keep alive for
-         *     a feature that never sends anything upstream.
          */
         get: operations["pipeline_stream_admin_pipeline_stream_get"];
         put?: never;
@@ -351,20 +274,6 @@ export interface paths {
         /**
          * Discard Dead Letters
          * @description Clear dead-lettered jobs an operator has read and dealt with.
-         *
-         *     **A dead letter is a fact, not a task, and the panel had no way to say "seen".** The two rows
-         *     that sat on the health page were a Telegram outage from the night before: read, understood,
-         *     fixed in code — and still paging, because nothing could retire them. An alert that cannot be
-         *     cleared is one an operator learns to scroll past, which costs the next alert its meaning
-         *     (ROADMAP 6af).
-         *
-         *     **The row goes, the evidence does not.** Each discarded job is logged at WARNING with its lane,
-         *     its owner and its final error before deletion, so the forensic trail lives where every other
-         *     incident detail on this platform lives. Deleting without that would trade a noisy panel for a
-         *     missing record, which is the worse of the two.
-         *
-         *     Deliberately does **not** retry. A dead letter has already had its attempts; re-running it is a
-         *     new decision that belongs to whoever fixed the cause, not to a button labelled "discard".
          */
         delete: operations["discard_dead_letters_admin_queue_dead_delete"];
         options?: never;
@@ -382,11 +291,6 @@ export interface paths {
         /**
          * Read Settings
          * @description What the operator controls, with the defaults filled in for anything unset.
-         *
-         *     **These are properties of the product, not preferences.** Freshness and delivery cadence used to
-         *     be per user, which meant every source had to be fetched at the widest window anybody asked for
-         *     and filtered back down per person — and a user choosing a four-hour cadence was choosing to hear
-         *     about a two-hour-old job. One number per source, one cadence, set here.
          */
         get: operations["read_settings_admin_settings_get"];
         put?: never;
@@ -407,8 +311,7 @@ export interface paths {
         get?: never;
         /**
          * Write Setting
-         * @description Set one. Unknown keys are refused rather than stored — a typo that persists is a setting
-         *     that silently never applies, which is the failure the key list exists to prevent.
+         * @description Set one.
          */
         put: operations["write_setting_admin_settings__key__put"];
         post?: never;
@@ -428,15 +331,6 @@ export interface paths {
         /**
          * Sources
          * @description Every source the harvester collects from, with the freshness window each one is using.
-         *
-         *     Read from the harvester's own enabled list rather than from whatever happens to be in the
-         *     settings blob: a source nobody has tuned should still appear, with the default it is actually
-         *     running at, or the panel silently omits the boards most likely to need attention.
-         *
-         *     **`wanted` is what makes the limit meaningful.** A ceiling of 40 tells an operator nothing on
-         *     its own; 40 against 28 queries waiting says the source is fully served, and 40 against 300 says
-         *     it is four cycles behind. The number is how many distinct queries that source currently has —
-         *     the same set the cycle budgets — so the two columns are the same arithmetic the harvest does.
          */
         get: operations["sources_admin_sources_get"];
         put?: never;
@@ -456,10 +350,7 @@ export interface paths {
         };
         /**
          * Users
-         * @description The account list, with **no credential material of any kind**.
-         *
-         *     Not even `last_4`. An operator does not need it to answer any question they have, and a support
-         *     view that shows a fragment of a key is a support view that leaks one over somebody's shoulder.
+         * @description The account list, with no credential material of any kind.
          */
         get: operations["users_admin_users_get"];
         put?: never;
@@ -480,16 +371,6 @@ export interface paths {
         /**
          * User Detail
          * @description One account, for the two questions an operator actually has.
-         *
-         *     **"Why is this person's feed bad" and "did their setup finish"** — both answerable here, and
-         *     neither answerable from the list. The model history is the same builder the user's own Model
-         *     page reads, so an operator and the person they are helping are looking at the same numbers.
-         *
-         *     **Read-only, and no credential material of any kind** — not even `last_4`, on the same
-         *     reasoning as the list: an operator does not need it to answer either question, and a support
-         *     view that shows a fragment of a key is one that leaks it over somebody's shoulder. An operator
-         *     who could *edit* a user's model or profile from here is a different product with a different
-         *     consent story.
          */
         get: operations["user_detail_admin_users__user_id__get"];
         put?: never;
@@ -497,17 +378,6 @@ export interface paths {
         /**
          * Delete User
          * @description Delete an account and everything belonging to it, immediately and permanently.
-         *
-         *     **The typed address is checked on the server, not only in the browser.** A confirmation enforced
-         *     only in the UI is a confirmation that a mis-aimed script skips entirely, and this endpoint
-         *     destroys a person's profile, labels, documents and model with no undo.
-         *
-         *     Deletion cascades from the row: every per-user table declares `ondelete="CASCADE"`, so this is
-         *     one statement rather than a list of tables somebody has to remember to extend. The shared corpus
-         *     is untouched — those rows belong to the platform, not to any account.
-         *
-         *     An operator cannot delete themselves. The account performing the deletion is the one that would
-         *     have to clean up afterwards.
          */
         delete: operations["delete_user_admin_users__user_id__delete"];
         options?: never;
@@ -526,11 +396,6 @@ export interface paths {
         /**
          * Set Admin
          * @description Grant or revoke operator access.
-         *
-         *     **An operator cannot revoke their own.** Not paternalism — `ADMIN_EMAILS` is the only route back
-         *     in, and an operator whose address is not in it could lock themselves out of their own platform
-         *     with one click, with a redeploy as the only fix. Granting to yourself is meaningless (you
-         *     already have it) and revoking is the dangerous direction, so the guard covers the whole action.
          */
         put: operations["set_admin_admin_users__user_id__admin_put"];
         post?: never;
@@ -551,11 +416,6 @@ export interface paths {
         /**
          * Set Files Visible
          * @description Open or close this account's profile files to the person they are about.
-         *
-         *     Per account rather than platform-wide: the judgement is about what a particular set of files
-         *     currently says, so one that has been read through can be opened without opening everyone's.
-         *     Closed until somebody decides otherwise -- these are written by an agent and reviewed by nobody,
-         *     and a half-settled sentence about a person is worse read than unread.
          */
         put: operations["set_files_visible_admin_users__user_id__files_put"];
         post?: never;
@@ -576,11 +436,6 @@ export interface paths {
         /**
          * Set User Limit
          * @description Set one ceiling on one account, or clear it to unlimited.
-         *
-         *     **The operator owns these, including their own.** A user who could raise their own delivery
-         *     ceiling could get their own Telegram bot rate-limited, and the rest are spend. There is no
-         *     self-protection here as there is for operator access and deletion: raising your own limits is
-         *     not a way to lock yourself out, and an operator is exactly who should be able to.
          */
         put: operations["set_user_limit_admin_users__user_id__limits__key__put"];
         post?: never;
@@ -601,13 +456,7 @@ export interface paths {
         put?: never;
         /**
          * Forgot
-         * @description Email a reset link. Always answers the same way, whatever actually happened.
-         *
-         *     The other half of a flow whose libs half (`reset_password` tokens, the mail template) shipped
-         *     in Phase 3 with nothing calling it — until now a forgotten password was a locked account.
-         *     Answering opaquely for an unknown address is the same no-oracle rule login follows; issuing a
-         *     fresh token revokes the previous link (`issue_token` does), so the newest email is always the
-         *     one that counts.
+         * @description Email a reset link.
          */
         post: operations["forgot_auth_forgot_post"];
         delete?: never;
@@ -708,10 +557,6 @@ export interface paths {
         /**
          * Reset
          * @description Redeem a reset link and set the new password.
-         *
-         *     Every session dies with it — the reason a stranger resets somebody's password is that they are
-         *     already inside, or the owner fears they are. Nothing here logs the user in either: proving
-         *     control of an inbox is not a login, same as verification.
          */
         post: operations["reset_auth_reset_post"];
         delete?: never;
@@ -731,10 +576,7 @@ export interface paths {
         put?: never;
         /**
          * Signup
-         * @description Create an unverified account and email a link. Always answers the same way.
-         *
-         *     Invite-only at launch (D5), so an existing address is not an error the caller gets to see — it
-         *     would confirm that the address has an account here.
+         * @description Create an unverified account and email a link.
          */
         post: operations["signup_auth_signup_post"];
         delete?: never;
@@ -754,14 +596,7 @@ export interface paths {
         put?: never;
         /**
          * Verify
-         * @description Redeem a verification link. Activates the account.
-         *
-         *     Nothing here logs the user in. Verification proves control of the address; a session should
-         *     still start from a deliberate login, so a forwarded link cannot hand someone a session.
-         *
-         *     The token arrives in the body, matching what the SPA sends. It was a query parameter, which
-         *     the page never sent — so every human verification failed 422 while the tests, which used the
-         *     query form, stayed green. The e2e browser run is what caught it.
+         * @description Redeem a verification link.
          */
         post: operations["verify_auth_verify_post"];
         delete?: never;
@@ -780,9 +615,6 @@ export interface paths {
         /**
          * List Credentials
          * @description What the account page shows: which credentials exist, never what they are.
-         *
-         *     Also reports whether onboarding's credential requirement is met, so the front end does not have
-         *     to re-derive the rule from the list and get it subtly wrong.
          */
         get: operations["list_credentials_credentials_get"];
         put?: never;
@@ -824,25 +656,7 @@ export interface paths {
         put?: never;
         /**
          * Claude Oauth Finish
-         * @description Exchange the code for a token, and store it **only if it works**.
-         *
-         *     The token goes through `validate_credential` like a pasted one: the CLI minting it proves the
-         *     browser flow completed, not that the credential can reach the model, and those come apart on an
-         *     account with no active subscription.
-         *
-         *     **Unlike a pasted credential, a failure here is never stored.** Everywhere else the platform
-         *     keeps an unvalidated value, because the user typed something they believe is right and a
-         *     provider outage must not block them. Nothing about that applies to a token this service minted
-         *     itself: there is no typo to preserve, and if it does not authenticate then either Anthropic
-         *     turned it down or we mishandled it on the way out of the CLI. Both are ours to fix.
-         *
-         *     Storing it anyway is what hid a real bug (2026-08-01). A rendering fault dropped one character
-         *     from the token, and the flow reported success while the account held a credential that could not
-         *     make a single request -- indistinguishable, on the page, from a temporary API blip.
-         *
-         *     A previously stored credential survives, because nothing is written on this path unless the new
-         *     one is proven. Re-connecting with a subscription that has lapsed cannot cost somebody the
-         *     working token they already had.
+         * @description Exchange the code for a token, and store it only if it works.
          */
         post: operations["claude_oauth_finish_credentials_claude_oauth_finish_post"];
         delete?: never;
@@ -881,12 +695,7 @@ export interface paths {
         get?: never;
         /**
          * Set Channel
-         * @description Point the job stream at a channel. Proven by posting to it, not by trusting the ID.
-         *
-         *     On success every route goes to the channel and the private chat keeps commands and documents —
-         *     the reference's split. One channel rather than the per-stream routing the table supports,
-         *     because that is the setup being asked for; the routes stay per-key underneath for the day
-         *     somebody wants the split back.
+         * @description Point the job stream at a channel.
          */
         put: operations["set_channel_credentials_telegram_channel_put"];
         post?: never;
@@ -911,15 +720,6 @@ export interface paths {
         /**
          * Set Chat
          * @description Set the chat id by hand, proven by messaging it.
-         *
-         *     **The way through when auto-capture cannot work.** `telegram/connect` reads whoever last
-         *     messaged the bot, which depends on the update still being queued at Telegram and on nothing
-         *     else having consumed it. Neither is something the platform controls, and when it comes back
-         *     empty there was nothing else to try: the page could not complete, so onboarding stopped dead at
-         *     a step whose only instruction was to press Start again.
-         *
-         *     A chat id is not a secret and not guessable-into-harm: writing somebody else's here only means
-         *     the bot cannot message them, which the send below catches immediately.
          */
         put: operations["set_chat_credentials_telegram_chat_put"];
         post?: never;
@@ -940,11 +740,7 @@ export interface paths {
         put?: never;
         /**
          * Telegram Connect
-         * @description Re-read the chat id after the user has pressed Start. Idempotent.
-         *
-         *     Separate from saving the token because the two happen minutes apart: the token is pasted, then
-         *     the user goes to their phone, then they come back. Asking them to re-paste the token to finish
-         *     connecting would be gratuitous.
+         * @description Re-read the chat id after the user has pressed Start.
          */
         post: operations["telegram_connect_credentials_telegram_connect_post"];
         delete?: never;
@@ -963,19 +759,13 @@ export interface paths {
         get?: never;
         /**
          * Put Credential
-         * @description Store or replace one credential. Replaces in place; the previous value is gone.
-         *
-         *     Rotation overwrites rather than versions, because keeping history here would mean keeping a
-         *     revoked credential decryptable.
+         * @description Store or replace one credential.
          */
         put: operations["put_credential_credentials__kind__put"];
         post?: never;
         /**
          * Delete Credential
-         * @description Revoke one credential. Removing the Telegram token also disconnects delivery.
-         *
-         *     Leaving `telegram_status` as `connected` with no token would queue notify jobs that can only
-         *     fail — and each one would look like a delivery problem rather than a missing credential.
+         * @description Revoke one credential.
          */
         delete: operations["delete_credential_credentials__kind__delete"];
         options?: never;
@@ -995,13 +785,6 @@ export interface paths {
         /**
          * Reveal Credential
          * @description Hand back the plaintext, once, after the account password.
-         *
-         *     **The exception to write-only, and the shape of the exception is the point** (owner's decision,
-         *     2026-07-30). A copy button cannot exist without the browser receiving the plaintext — there is
-         *     no cryptographic trick that yields a usable token without revealing it. So the security lives
-         *     in the gate instead: the password is required (a stolen session cookie is not enough), the
-         *     value is returned in this one response and never listed anywhere, the attempt is audited either
-         *     way, and the rate limit keeps a stolen password from becoming a quiet bulk export.
          */
         post: operations["reveal_credential_credentials__kind__reveal_post"];
         delete?: never;
@@ -1020,10 +803,6 @@ export interface paths {
         /**
          * Dashboard
          * @description Everything the front page shows, in one call.
-         *
-         *     One call rather than five, because the panels are not independent: "you have 3,310 labels" and
-         *     "your model is stale" contradict each other if they are read a few seconds apart while a worker
-         *     is running.
          */
         get: operations["dashboard_dashboard_get"];
         put?: never;
@@ -1043,19 +822,13 @@ export interface paths {
         };
         /**
          * List Documents
-         * @description What the user has uploaded. Returns metadata and a short preview, never the whole text.
-         *
-         *     The full text is only ever read by the processing step. Returning it here would put a person's
-         *     complete employment history into a response that the dashboard has no use for.
+         * @description What the user has uploaded.
          */
         get: operations["list_documents_documents_get"];
         put?: never;
         /**
          * Upload
-         * @description Extract and store one document's text. Re-uploading the same content replaces it.
-         *
-         *     Replacement rather than a duplicate row because users press the button twice, and two copies of
-         *     one CV in the processing conversation is one CV's worth of signal at twice the cost.
+         * @description Extract and store one document's text.
          */
         post: operations["upload_documents_post"];
         delete?: never;
@@ -1094,21 +867,6 @@ export interface paths {
         /**
          * Feed
          * @description The ranked jobs — a page of them, with the filters the table offers.
-         *
-         *     The stage is in the response because a feed that silently changes how it ranks is one nobody can
-         *     reason about — and a new account's first feed *is* the keyword one, which is worth saying rather
-         *     than passing off as the model's work.
-         *
-         *     **The age filter keeps undated rows.** Same rule as delivery: a missing `posted_at` is unknown,
-         *     not old, and a preference filter fails open. `total` and `sources` are for the table's pager and
-         *     source dropdown — computed under the same filters as the page, or the counts would lie.
-         *
-         *     **`min_score` defaults to the delivery cutoff, not to zero.** The corpus is shared and the
-         *     harvest is broad, so most of what is scored for any given user is not for them: a page showing
-         *     everything is a page of other people's jobs with a number beside them. The default is the same
-         *     threshold that decides what reaches Telegram, so the table and the channel agree about what
-         *     counts as a match. Passing `min_score=0` explicitly widens it, which is a thing a user may
-         *     genuinely want and should have to ask for.
          */
         get: operations["feed_feed_get"];
         put?: never;
@@ -1128,10 +886,7 @@ export interface paths {
         };
         /**
          * Health
-         * @description Liveness only. Deliberately does not touch the database.
-         *
-         *     A health check that fails when Postgres is briefly unreachable causes the orchestrator to
-         *     restart a process that was working fine, which is how a blip becomes an outage.
+         * @description Liveness only.
          */
         get: operations["health_health_get"];
         put?: never;
@@ -1151,11 +906,7 @@ export interface paths {
         };
         /**
          * Privacy
-         * @description Every processor, named. Public — it is linked from signup, before anyone has an account.
-         *
-         *     Naming them individually rather than saying "trusted third parties" is the entire requirement:
-         *     a user deciding whether to upload their employment history is entitled to know it will be read
-         *     by a US company, and which one.
+         * @description Every processor, named.
          */
         get: operations["privacy_legal_privacy_get"];
         put?: never;
@@ -1198,15 +949,6 @@ export interface paths {
         /**
          * Delete Notifications
          * @description Dismiss notifications for good.
-         *
-         *     **A real delete, not a hidden flag.** These are transient operational messages — a proxy
-         *     quarantined, a delivery failed, a model trained — and once a user has acted on one there is no
-         *     later question that a kept row answers. Keeping them would mean a table that only grows and a
-         *     panel whose "clear" button is a lie.
-         *
-         *     Scoped to `user_id` in the same statement as the id filter, so a guessed id belonging to another
-         *     account deletes nothing rather than deleting theirs. Unread state is irrelevant here: dismissing
-         *     something without opening it is a legitimate way to say it does not matter.
          */
         post: operations["delete_notifications_notifications_delete_post"];
         delete?: never;
@@ -1243,14 +985,7 @@ export interface paths {
         put?: never;
         /**
          * Complete
-         * @description Finish onboarding, if every page is satisfied. 409 naming what is missing if not.
-         *
-         *     **This does not set `users.active`.** Completing onboarding means the account is configured;
-         *     `active` means the scheduler may dispatch notifications, and that is only safe once a model
-         *     exists to rank with. Setting it here would start a notify loop for an account whose scorer has
-         *     nothing to serve, and every cycle would fail identically for a reason no user could see.
-         *
-         *     Idempotent: pressing it twice keeps the original timestamp rather than moving it.
+         * @description Finish onboarding, if every page is satisfied.
          */
         post: operations["complete_onboarding_complete_post"];
         delete?: never;
@@ -1269,24 +1004,11 @@ export interface paths {
         /**
          * Get Config
          * @description The stored config in the *current* shape, plus the schema the form is generated from.
-         *
-         *     A v1 row is upgraded on read rather than rewritten, so a user's stored config is never changed
-         *     by a deploy they did not ask for — it upgrades the next time they save.
          */
         get: operations["get_config_onboarding_config_get"];
         /**
          * Put Config
-         * @description Validate and store. The server is the authority; the form is a convenience.
-         *
-         *     Saving does not schedule anything. The harvester picks the config up on its next cycle by
-         *     reading every active user's config — there is no per-user trigger to forget to fire.
-         *
-         *     **The keyword ceiling is checked here rather than in the schema**, because it is per account.
-         *     `UserConfigSchema` bounds each section at the platform maximum, which is the right hard stop for
-         *     everyone; the operator's `keywords` limit is what an individual account is allowed, and it went
-         *     unread until 2026-08-04 — the control existed, the panel rendered it, and the schema constant
-         *     was the only thing anybody was measured against. Counted **across sections**, matching the
-         *     harvester's own cap, or five sections would buy five times the allowance.
+         * @description Validate and store.
          */
         put: operations["put_config_onboarding_config_put"];
         post?: never;
@@ -1308,19 +1030,6 @@ export interface paths {
         /**
          * Preview Config
          * @description How many jobs already in the corpus these terms would match, with a few example titles.
-         *
-         *     **An approximation, and the response says so.** The harvester sends keywords to each source's
-         *     own search, so the real feed is whatever LinkedIn and Indeed return — not a substring match over
-         *     what has been collected so far. What this genuinely catches is the failure it exists for: terms
-         *     that match *nothing at all*, which is a typo or a phrase nobody puts in a job title, and which
-         *     would otherwise show up as an empty feed a day later with no explanation.
-         *
-         *     Counted over `PREVIEW_WINDOW_DAYS` rather than the section's own window, because a correct
-         *     config can legitimately return single digits over 24 hours and a user reading that as failure
-         *     would go and break something that worked.
-         *
-         *     Takes the config in the request body rather than reading the stored one, so the number updates
-         *     as the user types and does not require saving a config to find out it is empty.
          */
         post: operations["preview_config_onboarding_config_preview_post"];
         delete?: never;
@@ -1344,14 +1053,6 @@ export interface paths {
         /**
          * Put History
          * @description The long-form write-up, typed rather than uploaded.
-         *
-         *     It exists as an endpoint because nobody has a "history document" lying around — they write one
-         *     in the box. Stored as a `history` document so there is exactly one path into the processing
-         *     step: whether the text was pasted or extracted from a `.docx` is not a distinction anything
-         *     downstream should have to know about.
-         *
-         *     The minimum length is a real requirement rather than politeness. This page feeds the parts of
-         *     the profile a CV omits, and two sentences produce a profile no better than the CV alone.
          */
         put: operations["put_history_onboarding_history_put"];
         post?: never;
@@ -1372,11 +1073,7 @@ export interface paths {
         get: operations["get_identity_onboarding_identity_get"];
         /**
          * Put Identity
-         * @description Store the name and links. Replaces both — the form submits the whole page.
-         *
-         *     Editing the name does **not** bump `profile_generation`. The generation counter scopes labels
-         *     and model artifacts to a rubric, and a name appears nowhere in a rubric; bumping it would
-         *     invalidate every label a user has for a typo fix (`PROFILE_CAPTURE_PLAN.md` §6.4).
+         * @description Store the name and links.
          */
         put: operations["put_identity_onboarding_identity_put"];
         post?: never;
@@ -1396,9 +1093,6 @@ export interface paths {
         /**
          * Schemas
          * @description Both JSON Schemas the front end generates its forms from, in one call.
-         *
-         *     Exported from the models the server validates with, so a field cannot exist on one side and not
-         *     the other (`CODE_STRUCTURE.md` §8).
          */
         get: operations["schemas_onboarding_schema_get"];
         put?: never;
@@ -1419,10 +1113,6 @@ export interface paths {
         /**
          * State
          * @description What is done, what is left, and where to send the user next.
-         *
-         *     Derived from the rows each page writes rather than from a stored progress marker, so deleting a
-         *     credential later correctly reopens that page instead of leaving an account "complete" and
-         *     unable to run (`libs.onboarding.state`).
          */
         get: operations["state_onboarding_state_get"];
         put?: never;
@@ -1444,11 +1134,7 @@ export interface paths {
         put?: never;
         /**
          * Start
-         * @description Queue a processing run. Idempotent while one is pending.
-         *
-         *     Queued rather than run in the request: it is a single multi-minute Opus call over a whole
-         *     document set, and holding an HTTP connection open for it would turn a slow model into a failed
-         *     signup.
+         * @description Queue a processing run.
          */
         post: operations["start_process_post"];
         delete?: never;
@@ -1468,15 +1154,7 @@ export interface paths {
         put?: never;
         /**
          * Confirm
-         * @description Apply the profile the user has read and edited. **This is the only path to a live profile.**
-         *
-         *     The body is the *edited* draft rather than a bare "yes", because the confirmation form is where
-         *     a wrong `not_list` entry gets removed — and that is the entry that would otherwise silently
-         *     suppress jobs the user wanted for as long as the profile lasts.
-         *
-         *     `confirmed` is forced here rather than trusted from the request. A client that posted the raw
-         *     draft back untouched would otherwise confirm on the user's behalf, which is the whole thing this
-         *     step exists to prevent.
+         * @description Apply the profile the user has read and edited.
          */
         post: operations["confirm_process_confirm_post"];
         delete?: never;
@@ -1495,9 +1173,6 @@ export interface paths {
         /**
          * Draft
          * @description The proposal, plus the schema the confirmation form is generated from.
-         *
-         *     Returned whole — unlike `/documents`, which previews. The user is being asked to agree to every
-         *     line of it, so showing them a summary would make the confirmation meaningless.
          */
         get: operations["draft_process_draft_get"];
         put?: never;
@@ -1522,10 +1197,6 @@ export interface paths {
         /**
          * State
          * @description What the account needs next, and what it will cost.
-         *
-         *     Derived from the counters that already exist rather than from a status column: a column would
-         *     need updating by whoever remembers, and the first thing to go stale would be the one that says
-         *     whether anything is stale.
          */
         get: operations["state_process_state_get"];
         put?: never;
@@ -1546,15 +1217,6 @@ export interface paths {
         /**
          * Training State
          * @description What training is doing right now, for a page that polls.
-         *
-         *     **The work does not live in the browser and never did.** Pressing the button enqueues rows in
-         *     Postgres and the worker pools drain them, so closing the tab, switching pages or losing the
-         *     laptop changes nothing about whether it finishes. This endpoint exists because that was
-         *     invisible: the page said "Starting…" once and then looked identical whether the run was halfway
-         *     through or had died an hour ago.
-         *
-         *     Derived on read rather than tracked in a column, for the reason every other state on this
-         *     platform is: a progress counter that can disagree with the queue eventually will.
          */
         get: operations["training_state_process_training_get"];
         put?: never;
@@ -1577,14 +1239,6 @@ export interface paths {
         /**
          * Stop Training
          * @description Cancel queued training work for this account.
-         *
-         *     **Queued only.** A row a worker has already claimed is mid-call on the user's own credential;
-         *     deleting it here would not stop that call, it would only lose the record of it — so the batch
-         *     in flight finishes and nothing new is taken. That is also why the button warns rather than
-         *     promises: stopping is prompt, not instant.
-         *
-         *     Labels already written are kept. They were paid for, they are still true, and throwing them
-         *     away would make stopping expensive enough that nobody would risk it.
          */
         post: operations["stop_training_process_training_stop_post"];
         delete?: never;
@@ -1603,12 +1257,6 @@ export interface paths {
         /**
          * Conversation
          * @description One chat's transcript, the list of chats, the files, and whether documents can be built.
-         *
-         *     **The chat list and the open chat come back together** because they are always rendered
-         *     together, and two calls would let the switcher disagree with the transcript beneath it.
-         *
-         *     With no `conversation_id` this opens the most recent chat, creating the first one if the
-         *     account has none — so a new user lands in a conversation without pressing anything.
          */
         get: operations["conversation_setup_get"];
         put?: never;
@@ -1631,11 +1279,6 @@ export interface paths {
         /**
          * New Conversation
          * @description Start a fresh chat, with an empty transcript and the same profile underneath.
-         *
-         *     **The cap is enforced here and is not a setting** (owner, 2026-07-30). Every turn replays its
-         *     whole conversation on the user's own credential, so unbounded chats is unbounded spend on
-         *     re-reading them. Hitting the cap is answered with what to do about it rather than a bare
-         *     refusal, because deleting one is the intended move.
          */
         post: operations["new_conversation_setup_conversations_post"];
         delete?: never;
@@ -1656,11 +1299,7 @@ export interface paths {
         post?: never;
         /**
          * Delete Conversation
-         * @description Delete a chat and everything said in it. **The profile is untouched.**
-         *
-         *     That asymmetry is the point and is worth stating: the files are what the conversation was for,
-         *     and throwing away the talking must not throw away the work. Deleting the last chat is allowed —
-         *     the next visit opens a fresh one, which is the same place a new account starts.
+         * @description Delete a chat and everything said in it.
          */
         delete: operations["delete_conversation_setup_conversations__conversation_id__delete"];
         options?: never;
@@ -1668,14 +1307,6 @@ export interface paths {
         /**
          * Rename Conversation
          * @description Rename a chat.
-         *
-         *     Titles were generated and only generated: the first thing the user said, or the step's name when
-         *     they pressed Start. That is a good default and a poor permanent label -- three chats called
-         *     "Your profile" tell nobody which was which, and the switcher is how somebody finds the one they
-         *     want. Renaming is the cheapest possible fix and there was no way to do it.
-         *
-         *     Auto-naming is unaffected: it only ever fills a chat still holding the default, so a renamed one
-         *     keeps its name however many messages follow.
          */
         patch: operations["rename_conversation_setup_conversations__conversation_id__patch"];
         trace?: never;
@@ -1692,10 +1323,6 @@ export interface paths {
         /**
          * Write File
          * @description Edit a file by hand.
-         *
-         *     Editing is allowed but the agent is the better route, especially for a prompt: it knows where a
-         *     new role belongs and what the surrounding structure expects. This exists because somebody who
-         *     spots a wrong date should be able to fix it in ten seconds.
          */
         put: operations["write_file_setup_files__name__put"];
         post?: never;
@@ -1716,16 +1343,7 @@ export interface paths {
         put?: never;
         /**
          * Send
-         * @description Accept one turn and queue it. Answers immediately; the reply arrives in the transcript.
-         *
-         *     **This used to run the turn inside the request, and that was the bug.** A turn takes minutes on
-         *     a frontier model, so switching tabs, opening another chat, refreshing or signing out aborted
-         *     it — the user's message was committed, the reply never came, and nothing said why. Now the
-         *     pending assistant row is created here and `services/setupagent` fills it in, so a turn survives
-         *     everything the browser can do to it.
-         *
-         *     **On the user's own credential**, like every other call this platform makes. Their profile,
-         *     their spend, no platform cost.
+         * @description Accept one turn and queue it.
          */
         post: operations["send_setup_message_post"];
         delete?: never;
@@ -1746,17 +1364,6 @@ export interface paths {
         /**
          * Stop Turn
          * @description Ask the running turn to stop.
-         *
-         *     **A request, not a kill.** The turn is on a worker that is usually mid-call to Anthropic, and
-         *     that call cannot be interrupted without abandoning a response already paid for. So this flips
-         *     the row to `cancelling` and the worker notices between tool steps, where everything so far is
-         *     committed and the next call has not been made. The user sees "stopping…" until it does, which
-         *     is honest — claiming it had stopped while it was still writing files would be a lie the file
-         *     panel would immediately contradict.
-         *
-         *     Idempotent, and safe on a turn that has already finished: a stop arriving one second after the
-         *     reply landed is the normal race, not an error, and answering it with a 409 would put a red
-         *     banner on a screen where nothing went wrong.
          */
         post: operations["stop_turn_setup_message__message_id__stop_post"];
         delete?: never;
@@ -1775,14 +1382,6 @@ export interface paths {
         /**
          * Setup Progress
          * @description Is setup finished, what is left, and which command produces each missing piece.
-         *
-         *     **The success criterion lives here rather than in a prompt.** An agent asked to decide whether
-         *     it has finished will either stop early or polish forever, and the ported director's gates read
-         *     a filesystem this platform does not have. This answers from the database: a file exists and is
-         *     filled, or it does not.
-         *
-         *     It is also what unblocks training. `train_user` refuses while anything here is outstanding, so
-         *     "setup complete" and "may train" are the same sentence rather than two rules that can disagree.
          */
         get: operations["setup_progress_setup_progress_get"];
         put?: never;
@@ -1805,9 +1404,6 @@ export interface paths {
         /**
          * Start Search
          * @description Begin the first labelling run — the step after setup, pressed rather than assumed.
-         *
-         *     The old flow queued this the moment a profile was confirmed. It is the most expensive thing the
-         *     platform does on somebody's behalf, and it should not begin because a form was submitted.
          */
         post: operations["start_search_setup_start_post"];
         delete?: never;
@@ -1848,10 +1444,6 @@ export interface paths {
         /**
          * Webhook
          * @description One button tap.
-         *
-         *     **Always answers 200 once authenticated**, even when the tap does nothing. Telegram retries a
-         *     non-2xx, and retrying a tap that was already recorded is pointless at best; the response body
-         *     says what happened, for anybody reading a log.
          */
         post: operations["webhook_telegram_webhook__secret__post"];
         delete?: never;
@@ -1883,11 +1475,7 @@ export interface components {
         };
         /**
          * Certification
-         * @description A course, licence or accreditation. Its own section on a CV, and a keyword an ATS looks for.
-         *
-         *     `issuer` and `year` are free text and optional for the same reason experience dates are: a CV
-         *     says "Bloomberg (2024)", "AWS, valid to 2027", or nothing at all, and parsing that would reject
-         *     real profiles to gain a precision nothing downstream uses.
+         * @description A course, licence or accreditation.
          */
         Certification: {
             /** Issuer */
@@ -2071,10 +1659,7 @@ export interface components {
         };
         /**
          * IdentitySchema
-         * @description Full name and links. Both are page 1; only the name is required.
-         *
-         *     Links are optional because plenty of good candidates have none, and a required field somebody
-         *     cannot satisfy is a wall rather than a prompt.
+         * @description Full name and links.
          */
         IdentitySchema: {
             /** Full Name */
@@ -2110,24 +1695,7 @@ export interface components {
         LinkPlatform: "linkedin" | "github" | "gitlab" | "portfolio" | "stackoverflow" | "other";
         /**
          * Location
-         * @description Controlled vocabulary. **Adding a value is a deliberate act, not a user typing.**
-         *
-         *     Every entry here becomes a distinct axis of the harvest query set, so this list is a direct
-         *     input to the fan-out budget. Growing it without measuring the cycle cost is how a 15-minute
-         *     harvest becomes an hour (`HARVESTER_PLAN.md` §3).
-         *
-         *     **This is a list of places and nothing else** (2026-08-04). It used to carry `remote_worldwide`,
-         *     `remote_eu`, `remote_uk` and `remote_us`, which are not places — they made "where" and "how" one
-         *     question whose answers could contradict each other, and duplicated the `remote_policy` field
-         *     every section already has. Working arrangement is `remote_policy`; this is geography.
-         *
-         *     **One region, and it is `europe`.** `european_union` and `europe` were two slugs nobody reading
-         *     a checkbox would tell apart, and getting it wrong silently changes which jobs somebody sees.
-         *     `europe` means the 27 member states; the UK, Switzerland and Norway are named separately,
-         *     because the UK not being in the EU is the case this whole filter exists for.
-         *
-         *     Every value here must resolve to countries in `libs.corpus.geo`, or a user can select something
-         *     the country filter cannot act on — and `test_geo` fails if one does not.
+         * @description Controlled vocabulary.
          * @enum {string}
          */
         Location: "europe" | "united_kingdom" | "ireland" | "switzerland" | "norway" | "london" | "berlin" | "amsterdam" | "dublin" | "paris" | "madrid" | "lisbon" | "warsaw" | "budapest" | "zurich" | "stockholm" | "copenhagen";
@@ -2173,10 +1741,6 @@ export interface components {
         /**
          * Platform
          * @description Which sources a search section targets.
-         *
-         *     Only sources that *take a query* can be named. The ATS and board families are crawled rather
-         *     than searched — naming one here would silently produce no queries at all, which is exactly the
-         *     kind of configuration that looks fine and returns nothing.
          * @enum {string}
          */
         Platform: "all" | "linkedin" | "indeed" | "google";
@@ -2258,14 +1822,6 @@ export interface components {
         /**
          * SearchSection
          * @description One search, targeted at one platform or at all of them.
-         *
-         *     Most users have exactly one section, `platform: all`, and never see the concept. It exists for
-         *     the case a flat config cannot express: different terms or a different workplace policy on
-         *     LinkedIn than on the job boards (`ONBOARDING_AND_PROCESSING.md` §3).
-         *
-         *     A section names *search* parameters only. Things that are true of the person rather than of a
-         *     search — seniority, languages, salary floor — stay on the config, because a user is not a
-         *     different candidate on a different site.
          */
         SearchSection: {
             /** Exclude Keywords */
@@ -2338,15 +1894,6 @@ export interface components {
         /**
          * UserConfigSchema
          * @description Everything a user can configure about what they want to see.
-         *
-         *     Bounds come from `TENANT_SAFETY.md` §4 and are enforced here **and** in the database. Two layers
-         *     on purpose: the form is the usability layer, the database is the authority, and a write path
-         *     that bypassed the form must not be able to bypass the bounds.
-         *
-         *     Note what is *not* here: `notify_interval_min`, `timezone`, and the LinkedIn interval live as
-         *     indexed columns on `users`, because the scheduler's dispatcher reads them every 60 seconds
-         *     across every active user. The split is by access pattern, and the form writes across both
-         *     without caring.
          */
         UserConfigSchema: {
             /** Languages */

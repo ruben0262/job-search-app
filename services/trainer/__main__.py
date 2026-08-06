@@ -1,11 +1,4 @@
-"""The `train` lane worker. Concurrency 1, CPU-fenced by the container.
-
-    python -m services.trainer
-
-Queue concurrency alone is not enough: one fit can saturate every core through BLAS threading, so
-the thread caps are set here as well as in the container (`SCHEDULER_PLAN.md` §2). Setting them
-before numpy is imported is the only point at which they take effect.
-"""
+"""The `train` lane worker."""
 from __future__ import annotations
 
 import logging
@@ -27,13 +20,7 @@ ARTIFACT_DIR = Path(os.environ.get("MODEL_DIR", "/var/lib/jobsearch/models"))
 
 def handle(session, job: QueueJob) -> None:
     if not should_retrain(session, job.user_id):
-        # **Not a failure, and it must not be recorded as one.** This said `raise Terminal(...)`,
-        # which dead-letters — so every label added after a model was already current produced a
-        # red "1 job(s) dead-lettered in the train lane" on the operator's health page, about the
-        # trainer correctly deciding there was nothing to fit (ROADMAP 6ah).
-        #
-        # The job is complete. It asked "is a retrain worth it", the answer was no, and the answer
-        # is logged where an operator can find it rather than paged.
+        # Not a failure, and it must not be recorded as one.
         logging.getLogger(__name__).info(
             "trainer: %s has no new labels since its active model — nothing to fit", job.user_id)
         return

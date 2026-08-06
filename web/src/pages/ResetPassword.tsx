@@ -1,11 +1,4 @@
-/**
- * Forgot (ask for a link) and Reset (the link lands here: `#/reset?token=…`).
- *
- * **The forgot form answers the same whatever happened** — the server is opaque about which
- * addresses have accounts, and this page has to match it rather than helpfully narrowing it down.
- * A successful reset ends every session and does not sign the user in: proving control of an inbox
- * is not a login.
- */
+/** Forgot (ask for a link) and Reset (the link lands here: `#/reset?token=…`). */
 import { useState } from "react";
 
 import { api } from "../api";
@@ -74,9 +67,7 @@ export function ResetPassword({ onDone }: { onDone: () => void }) {
     const token = new URLSearchParams(query).get("token") ?? "";
     await api.post("/auth/reset", { token, new_password: password });
     setDone(true);
-    // The reset revoked every session, and this app may still be holding a signed-in state from
-    // before the link was opened — hash navigation never re-checks. Telling the app to re-ask now
-    // is what makes the Sign in button land on the sign-in form rather than a stale shell.
+    // The reset revoked every session, so any signed-in state this app still holds is stale.
     onDone();
   });
 

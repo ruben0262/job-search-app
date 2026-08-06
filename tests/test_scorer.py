@@ -1,13 +1,4 @@
-"""The multi-tenant scorer: hot-swap, isolation, and the four ways it must fail closed.
-
-Two things replace container-per-user here, and both are silent when broken: `users.model_version`
-driving a reload instead of a restart (`PLATFORM_ARCHITECTURE.md` §7), and a version check that
-refuses an artifact whose semantics no longer match. A scorer that serves a stale model does not
-error — it returns numbers, and the numbers are wrong.
-
-The estimator is a stub. What is worth testing is which model gets served to whom and when it is
-refused, not whether scikit-learn multiplies correctly.
-"""
+"""The multi-tenant scorer: hot-swap, isolation, and the four ways it must fail closed."""
 from __future__ import annotations
 
 import os
@@ -43,12 +34,7 @@ PROFILE = {
 
 
 class StubEstimator:
-    """Returns a fixed score, and records the input width it was handed.
-
-    `predict_proba` returns a real ndarray, not a list of lists: the serve path slices it as
-    `[:, 1]`, exactly as it would a scikit-learn estimator's output, and a list would pass a
-    unit test while failing on the shape the code actually uses.
-    """
+    """Returns a fixed score, and records the input width it was handed."""
 
     def __init__(self, value: float = 77.0):
         self.value = value
@@ -115,8 +101,7 @@ def _row(job_id: int, *, values=None, title="Backend Engineer", description="Go 
 # ── hot-swap: a retrain must be visible without a restart ─────────────────────────────────────
 
 def test_a_bumped_model_version_swaps_the_served_model(ctx):
-    """The single-tenant instance reloads by recreating the container. This is the whole reason
-    `users.model_version` exists."""
+    """The single-tenant instance reloads by recreating the container."""
     user = _user(ctx)
     _artifact(ctx, user, version=1, path="v1")
     first, second = StubEstimator(50.0), StubEstimator(90.0)
@@ -132,8 +117,7 @@ def test_a_bumped_model_version_swaps_the_served_model(ctx):
 
 
 def test_an_unchanged_version_is_served_from_cache(ctx):
-    """The version check runs on every score, so it has to be cheaper than the reload it prevents.
-    Loading again each call would make the check pointless."""
+    """The version check runs on every score, so it has to be cheaper than the reload it prevents."""
     user = _user(ctx)
     _artifact(ctx, user, path="v1")
     loads = []
@@ -148,8 +132,7 @@ def test_an_unchanged_version_is_served_from_cache(ctx):
 # ── isolation ─────────────────────────────────────────────────────────────────────────────────
 
 def test_each_user_is_served_their_own_model(ctx):
-    """The failure this replaces container isolation for. Serving one user's model to another is
-    not a crash — it is a feed of someone else's taste."""
+    """The failure this replaces container isolation for."""
     alice, bob = _user(ctx), _user(ctx)
     _artifact(ctx, alice, path="alice")
     _artifact(ctx, bob, path="bob")
@@ -175,8 +158,7 @@ def test_the_cache_evicts_rather_than_growing(ctx):
 # ── the four fail-closed cases ────────────────────────────────────────────────────────────────
 
 def test_an_untrained_user_has_no_model(ctx):
-    """Normal for a new account — cold start covers it. Flagged retrainable so the caller can tell
-    it apart from a corruption."""
+    """Normal for a new account — cold start covers it."""
     user = _user(ctx, model_version=0)
     with pytest.raises(ModelUnavailable) as exc:
         _registry(ctx, {}).get(user.id)
@@ -184,8 +166,7 @@ def test_an_untrained_user_has_no_model(ctx):
 
 
 def test_a_missing_artifact_row_refuses_rather_than_serving_the_previous_version(ctx):
-    """An interrupted trainer, or a pruned artifact. Serving the previous version would answer with
-    a model the user's own dashboard says is superseded."""
+    """An interrupted trainer, or a pruned artifact."""
     user = _user(ctx, model_version=3)
     _artifact(ctx, user, version=2, path="v2")
     with pytest.raises(ModelUnavailable, match="no artifact row"):
@@ -193,9 +174,7 @@ def test_a_missing_artifact_row_refuses_rather_than_serving_the_previous_version
 
 
 def test_a_profile_generation_mismatch_refuses(ctx):
-    """`core_stack_count` and `offstack_count` *mean* something different after a profile edit. The
-    estimator still predicts; the weights were fit against other semantics
-    (`PROFILE_CAPTURE_PLAN.md` §6.4)."""
+    """`core_stack_count` and `offstack_count` *mean* something different after a profile edit."""
     user = _user(ctx, generation=2)
     _artifact(ctx, user, generation=1, path="v1")
     with pytest.raises(ModelUnavailable, match="generation"):
@@ -203,8 +182,7 @@ def test_a_profile_generation_mismatch_refuses(ctx):
 
 
 def test_a_profile_edit_invalidates_an_already_cached_model(ctx):
-    """The dangerous ordering: the model was current when it was cached, and the profile moved
-    afterwards. Nothing about `model_version` changes, so only the generation check catches it."""
+    """The dangerous ordering: the model was current when it was cached, and the profile moved afterwards."""
     user = _user(ctx)
     _artifact(ctx, user, path="v1")
     registry = _registry(ctx, {"v1": _blob()})
@@ -217,8 +195,7 @@ def test_a_profile_edit_invalidates_an_already_cached_model(ctx):
 
 
 def test_a_feature_schema_mismatch_refuses(ctx):
-    """The column count still lines up, so nothing crashes — the weights are just attached to
-    features that no longer mean what they meant."""
+    """The column count still lines up, so nothing crashes."""
     user = _user(ctx)
     _artifact(ctx, user, feature_schema=FEATURE_SCHEMA_VERSION + 1, path="v1")
     with pytest.raises(ModelUnavailable, match="feature schema"):
@@ -236,8 +213,7 @@ def test_a_user_without_a_confirmed_profile_cannot_be_scored(ctx):
 # ── scoring ───────────────────────────────────────────────────────────────────────────────────
 
 def test_the_corpus_vector_is_used_rather_than_re_embedded(ctx):
-    """The economic argument for the shared corpus: N users over one posting is N predictions, not
-    N embeddings. It only holds if this path never embeds."""
+    """The economic argument for the shared corpus: N users over one posting is N predictions."""
     user = _user(ctx)
     _artifact(ctx, user, path="v1")
     estimator = StubEstimator()
@@ -259,8 +235,7 @@ def test_rows_that_are_not_embedded_yet_are_skipped_not_failed(ctx):
 
 
 def test_a_vector_from_a_different_embedder_is_refused(ctx):
-    """Fail closed, same as the embedder's own `(model, dim, version)` discipline. A dimension
-    mismatch would otherwise be a numpy error deep in a batch, or worse, silently broadcast."""
+    """Fail closed, same as the embedder's own `(model, dim, version)` discipline."""
     user = _user(ctx)
     _artifact(ctx, user, path="v1")
     model = _registry(ctx, {"v1": _blob()}).get(user.id)
@@ -291,8 +266,7 @@ def test_a_classifier_artifact_is_scaled_to_the_same_scale_as_a_regressor(ctx):
 
 
 def test_a_thin_description_is_flagged_not_dropped(ctx):
-    """The score means much less than it looks like it does; the caller may want to fetch the full
-    text first. Dropping it would hide a job that is probably fine."""
+    """The score means much less than it looks like it does."""
     user = _user(ctx)
     _artifact(ctx, user, path="v1")
     model = _registry(ctx, {"v1": _blob()}).get(user.id)
@@ -303,8 +277,7 @@ def test_a_thin_description_is_flagged_not_dropped(ctx):
 
 
 def test_two_users_score_the_same_posting_through_their_own_feature_spec(ctx):
-    """The per-user extractor reaching the served vector. If the registry built one shared spec,
-    every user would be scored against the same stack — the §6.3 bug, one layer up."""
+    """The per-user extractor reaching the served vector."""
     gopher = _user(ctx)
     javaist = _user(ctx, profile=PROFILE | {
         "skills": {"languages": ["Java"]}, "not_list": ["Go"]})
@@ -318,13 +291,7 @@ def test_two_users_score_the_same_posting_through_their_own_feature_spec(ctx):
 # ── artifact location ─────────────────────────────────────────────────────────────────────────
 
 def test_an_artifact_is_found_where_it_lives_now_not_where_it_was_written(monkeypatch, tmp_path):
-    """`models.path` records where the trainer wrote the file. The reader is usually somewhere
-    else — a container with the artifacts mounted at a different point, or a different host after a
-    restore — so the filename is the identity and `MODEL_DIR` is the location.
-
-    This is a real failure, not a hypothetical: the scorer container crash-looped on
-    `FileNotFoundError` for a path that was correct on the host that trained it.
-    """
+    """`models.path` records where the trainer wrote the file."""
     from services.scorer.registry import resolve_artifact
 
     monkeypatch.setenv("MODEL_DIR", str(tmp_path))

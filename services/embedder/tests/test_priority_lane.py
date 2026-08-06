@@ -1,19 +1,4 @@
-"""Priority-lane gate (PLAN §14.8 / §4c): under a training flood on the BULK lane, a single
-on-arrival score request on the FAST lane must still come back promptly.
-
-This is the whole justification for running one TEI instance with a gateway in front of it instead
-of two containers (which would double RAM against the <2GB budget, PLAN §12). If the fast lane
-queues behind the bulk lane, that design choice is not paying for itself.
-
-Integration test — needs a running stack (EMBEDDER_URL). Set the budget from a real measurement
-(`scripts/load_rss.py`), not from the default:
-    SCORE_LATENCY_BUDGET_S=8.0 pytest tests/test_priority_lane.py -v -s
-
-The flood only has to keep the bulk lane BUSY for the measurement window; it does not have to
-complete. Sizing it as "a realistic full corpus" was a mistake — on bge-base that is ~8 minutes of
-work per request, so the harness timed out and reported a failure that said nothing about the score
-lane. `FLOOD_TEXTS` is therefore modest by default and the flood loops continuously.
-"""
+"""Priority-lane gate (PLAN §14.8): a fast-lane request stays prompt under a bulk training flood."""
 from __future__ import annotations
 
 import os
@@ -66,9 +51,7 @@ def test_score_lane_bypasses_training_flood() -> None:
                 if r.status_code not in (200, 503):
                     r.raise_for_status()
             except httpx.ReadTimeout:
-                # The flood is background LOAD, not the thing under test. A bulk request still
-                # running when the window closes means the backend was busy — exactly the
-                # condition we wanted. Failing on it would report a harness limit as a defect.
+                # The flood is background LOAD, not the thing under test.
                 timeouts.append("bulk request outlived the measurement window")
                 return
             except Exception as exc:                       # noqa: BLE001 — reported after join

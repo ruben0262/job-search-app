@@ -1,26 +1,4 @@
-"""Every clock in the platform, checked against every other one.
-
-**This is the test for the failure class that has cost the most.** Four of the defects found on
-2026-08-05 were the same shape: a step allowed to run longer than a window somebody else set, in a
-different file, often in a different language. The suite could not catch any of them, because each
-component was individually correct — `send()` works, and the notify claim really is two minutes, and
-200 × 3 seconds is still greater than 120.
-
-So the thing under test here is not a component. It is the **relationships between them**, which is
-where this project's bugs actually live:
-
-- a systemd one-shot must finish inside its own timer, or the tick after it never starts;
-- a queue handler must finish inside its lane's claim, or the sweeper hands its work to a second
-  worker while the first is still going;
-- and a schedule written in a unit file must agree with the same schedule written in Python.
-
-`deploy/*.timer` and `deploy/*.service` are parsed as data. They are configuration, and
-configuration that nothing validates is configuration that drifts — `linkedin.service` carried a
-30-minute timeout against a 15-minute timer for weeks, and the symptom was five hours with no
-LinkedIn jobs and a timer reporting no next run (ROADMAP 6ap).
-
-No database, no network. This runs in CI on every commit.
-"""
+"""Every clock in the platform, checked against every other one."""
 from __future__ import annotations
 
 import re
@@ -58,13 +36,7 @@ def timers() -> list[Path]:
 
 @pytest.mark.parametrize("timer", timers(), ids=lambda p: p.stem)
 def test_a_one_shot_finishes_inside_its_own_tick(timer: Path):
-    """**The invariant that was broken and nothing checked.**
-
-    `Type=oneshot` means systemd will not start a run while one is active, so a timeout longer than
-    the interval does not delay the next tick — it cancels it. `linkedin.service` had
-    `TimeoutStartSec=30min` against `OnUnitActiveSec=15min`, so a stuck pass held the tier for two
-    whole ticks before systemd would even kill it.
-    """
+    """The invariant that was broken and nothing checked."""
     interval = directive(timer, "OnUnitActiveSec")
     if interval is None:
         return                                  # a calendar timer; the daily backup is not a tick
@@ -83,8 +55,7 @@ def test_a_one_shot_finishes_inside_its_own_tick(timer: Path):
 
 
 def test_the_python_tick_matches_the_unit_files():
-    """systemd cannot read Python, so the number exists twice. This is what stops them drifting —
-    they were identical by hand, and one of them was still wrong."""
+    """systemd cannot read Python, so the number exists twice."""
     from libs.settings import PLATFORM_TICK_MIN
 
     ticking = {timer.stem: directive(timer, "OnUnitActiveSec") for timer in timers()}
@@ -100,9 +71,7 @@ def test_the_python_tick_matches_the_unit_files():
 
 
 def test_the_linkedin_pass_fits_inside_the_harvest_tick_it_now_rides_on():
-    """**The LinkedIn pass runs on the back of the harvest tick**, so its budget is bounded by that
-    unit's timeout rather than by a timer of its own — which is the timer that was removed for
-    having a thirty-minute timeout on a fifteen-minute interval."""
+    """The LinkedIn pass runs on the back of the harvest tick."""
     from libs.settings import PLATFORM_TICK_MIN
     from services.harvester.linkedin import DESCRIBE_BUDGET_SECONDS
 
@@ -116,19 +85,12 @@ def test_the_linkedin_pass_fits_inside_the_harvest_tick_it_now_rides_on():
 
 
 def test_only_the_timers_that_have_to_exist_do():
-    """**Every clock is a unit to install, a timeout to get wrong, and a thing that can silently not
-    be running** — all three of which have happened here. This pins the reduction from five so that
-    adding a fourth is a deliberate decision somebody has to change this test to make.
-
-    `health` is deliberately not folded into a worker: a monitor inside the monitored process
-    reports healthy right up until it reports nothing.
-    """
+    """Every clock is a unit to install, a timeout to get wrong."""
     assert {timer.stem for timer in timers()} == {"harvester", "health", "backup"}
 
 
 def test_a_notify_run_fits_inside_the_notify_claim():
-    """The other half of the same rule, on the queue rather than on systemd. The refresh and the
-    send both happen inside one claim, and 200 messages at a 3-second gap does not."""
+    """The other half of the same rule, on the queue rather than on systemd."""
     from libs.db.models.queue import CLAIM_TIMEOUT_MIN
     from services.notifier.deliver import SEND_BUDGET_SECONDS
     from services.notifier.freshness import REFRESH_BUDGET_SECONDS
@@ -141,33 +103,21 @@ def test_a_notify_run_fits_inside_the_notify_claim():
 
 
 def test_every_timer_has_a_service_and_every_service_a_timer():
-    """A unit with no counterpart is either dead or never runs, and both are silent. Two dead
-    sweeps and a labeller that never started have already been found here by accident."""
+    """A unit with no counterpart is either dead or never runs, and both are silent."""
     stems = {p.stem for p in timers()}
     services = {p.stem for p in UNITS.glob("*.service")}
 
     orphan_timers = stems - services
     assert not orphan_timers, f"timers with no service: {sorted(orphan_timers)}"
 
-    # A service without a timer is legitimate only if something else starts it; none such exist
-    # today, so any new one is a deliberate decision that should update this test.
+    # A service without a timer is legitimate only if something else starts it; none such exist today.
     orphan_services = services - stems
     assert not orphan_services, (
         f"services no timer starts: {sorted(orphan_services)} — if that is intended, say so here")
 
 
 def test_an_embed_batch_can_finish_inside_the_client_timeout():
-    """**A batch that cannot finish is a deadlock, not a slow path.**
-
-    `EMBED_BATCH_SIZE` was 200 against a 120-second timeout, and the measured rate is ~840 ms a
-    text — so a full batch needed ~168 seconds and always timed out. The backlog is what produces a
-    full batch, so the timeout preserved the condition that caused it: 229 rows waiting, every
-    cycle dying at the same step, and the exception taking the scoring enqueue with it
-    (ROADMAP 6ba).
-
-    Same shape as the schedule invariants above — two numbers set independently, with the
-    relationship between them enforced nowhere.
-    """
+    """A batch that cannot finish is a deadlock, not a slow path."""
     from libs.contracts.embedder import DEFAULT_EMBED_TIMEOUT
     from services.harvester.embedding import EMBED_BATCH_SIZE, EMBED_SECONDS_PER_TEXT
 

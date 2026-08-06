@@ -1,9 +1,4 @@
-"""The bell: list, unread count, mark read.
-
-The read model for `libs.notify`. Three endpoints instead of FlowSolutions' eleven because the
-channels, mutes and preferences did not come across — polling every minute against a platform whose
-producers run on timers loses nothing a user could notice.
-"""
+"""The bell: list, unread count, mark read."""
 from __future__ import annotations
 
 import logging
@@ -50,8 +45,7 @@ def list_notifications(db: Session = Depends(get_db),
 
 
 class MarkRead(BaseModel):
-    # Explicit ids, or everything. Both exist because the panel marks what it showed, while the
-    # "mark all read" affordance must also cover what scrolled past the limit.
+    # Explicit ids, or everything.
     ids: list[int] | None = None
     all: bool = False
 
@@ -70,8 +64,7 @@ def mark_read(body: MarkRead, db: Session = Depends(get_db),
 
 
 class Discard(BaseModel):
-    # Same shape as `MarkRead` on purpose: the panel dismisses what it is showing, and the bin
-    # affordance must also reach what scrolled past the limit.
+    # Same shape as `MarkRead`: the bin must also reach what scrolled past the limit.
     ids: list[int] | None = None
     all: bool = False
 
@@ -79,17 +72,7 @@ class Discard(BaseModel):
 @router.post("/delete")
 def delete_notifications(body: Discard, db: Session = Depends(get_db),
                          user_id: _uuid.UUID = Depends(current_user)) -> dict:
-    """Dismiss notifications for good.
-
-    **A real delete, not a hidden flag.** These are transient operational messages — a proxy
-    quarantined, a delivery failed, a model trained — and once a user has acted on one there is no
-    later question that a kept row answers. Keeping them would mean a table that only grows and a
-    panel whose "clear" button is a lie.
-
-    Scoped to `user_id` in the same statement as the id filter, so a guessed id belonging to another
-    account deletes nothing rather than deleting theirs. Unread state is irrelevant here: dismissing
-    something without opening it is a legitimate way to say it does not matter.
-    """
+    """Dismiss notifications for good."""
     query = db.query(UserNotification).filter(UserNotification.user_id == user_id)
     if not body.all:
         if not body.ids:

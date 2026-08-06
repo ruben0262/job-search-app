@@ -1,9 +1,4 @@
-"""Auth: the policy decisions from `AUTH_REUSE.md` §3, and the two that must not be got wrong.
-
-Most of this file's value is in five tests — hashes are never reversible, tokens are single-use,
-refresh tokens rotate, a replayed refresh revokes the family, and a password change logs every
-device out. The rest of auth is library calls, and testing that argon2 hashes is testing argon2.
-"""
+"""Auth: the policy decisions from `AUTH_REUSE.md` §3, and the two that must not be got wrong."""
 from __future__ import annotations
 
 import os
@@ -36,8 +31,7 @@ from libs.db.models import AuthToken, User, UserSession
 # ── password policy ───────────────────────────────────────────────────────────────────────────
 
 def test_a_hash_reveals_nothing_about_the_password():
-    """The point of storing a hash. Also catches the classic mistake of storing the password with
-    an encoding step mistaken for hashing."""
+    """The point of storing a hash."""
     password = "correct-horse-battery-staple"
     stored = hash_password(password)
     assert password not in stored
@@ -67,9 +61,7 @@ def test_a_password_containing_the_email_is_refused():
 
 
 def test_the_minimum_is_nine_and_the_boundary_holds():
-    """**Pinned to the number, not to the constant.** The floor moved 12 -> 9 on 2026-07-31 at the
-    owner's decision, and the other tests read the constant — so without this one, a later change
-    to it would pass everything silently. Eight is refused, nine is accepted."""
+    """Pinned to the number, not to the constant."""
     assert MIN_PASSWORD_LENGTH == 9
     assert any("at least" in problem for problem in password_problems("x" * 8))
     assert password_problems("correct9!") == []
@@ -104,8 +96,7 @@ def _user(s) -> User:
 
 @pytestmark_db
 def test_only_the_token_hash_is_stored(ctx):
-    """The plaintext exists in the email and nowhere else — a dump must not let anyone verify an
-    address or reset a password."""
+    """The plaintext exists in the email and nowhere else."""
     user = _user(ctx)
     token = issue_token(ctx, user.id, "verify_email")
     ctx.flush()
@@ -128,8 +119,7 @@ def test_a_token_works_once(ctx):
 
 @pytestmark_db
 def test_a_token_cannot_be_used_for_a_different_purpose(ctx):
-    """A verification link must not double as a password reset — that would turn "can receive email"
-    into "can take the account" without the user ever asking for a reset."""
+    """A verification link must not double as a password reset."""
     user = _user(ctx)
     token = issue_token(ctx, user.id, "verify_email")
     ctx.flush()
@@ -165,9 +155,7 @@ def test_a_refresh_token_is_stored_hashed_and_rotates_on_use(ctx):
 
 @pytestmark_db
 def test_replaying_a_rotated_refresh_token_revokes_every_session(ctx):
-    """Either the client is buggy or the token was stolen. On the second reading, the thief and the
-    user must both end up holding invalid credentials rather than one of them silently keeping
-    access."""
+    """Either the client is buggy or the token was stolen."""
     user = _user(ctx)
     first = issue_session(ctx, user.id)
     ctx.flush()
@@ -192,8 +180,7 @@ def test_logging_out_one_device_leaves_the_others(ctx):
     assert revoke_session(ctx, laptop.refresh_token) is True
     ctx.flush()
 
-    # "logged out", not "replayed": a stale cookie after an ordinary logout is not evidence of
-    # theft, and treating it as such would end the phone's session too.
+    # "logged out", not "replayed": a stale cookie after an ordinary logout is not evidence of theft.
     with pytest.raises(SessionExpired, match="logged out"):
         rotate_session(ctx, laptop.refresh_token)
     assert rotate_session(ctx, phone.refresh_token) is not None
@@ -201,8 +188,7 @@ def test_logging_out_one_device_leaves_the_others(ctx):
 
 @pytestmark_db
 def test_revoking_everything_ends_every_live_session(ctx):
-    """What a password change must do. A change that left old sessions alive would not actually
-    remove whoever the user changed it because of."""
+    """What a password change must do."""
     user = _user(ctx)
     sessions = [issue_session(ctx, user.id) for _ in range(3)]
     ctx.flush()
@@ -216,8 +202,7 @@ def test_revoking_everything_ends_every_live_session(ctx):
 
 @pytestmark_db
 def test_one_users_session_is_never_another_users(ctx):
-    """T1 at the auth layer. Rotating with someone else's token must not hand back a session for
-    the caller."""
+    """T1 at the auth layer."""
     alice, mallory = _user(ctx), _user(ctx)
     alice_session = issue_session(ctx, alice.id)
     ctx.flush()

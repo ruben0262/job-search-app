@@ -1,8 +1,4 @@
-"""The pause switch, and the failure mode that made it dangerous to write naively.
-
-Built for the re-embed — between rebuilding every vector and refitting the model there is a window
-where scoring *should* refuse — and useful for every incident after it.
-"""
+"""The pause switch, and the failure mode that made it dangerous to write naively."""
 from __future__ import annotations
 
 import os
@@ -45,9 +41,7 @@ def _user(session) -> User:
 
 
 def test_a_missing_switch_table_means_nothing_is_paused(db):
-    """**The bug this is written around.** A missing relation aborts the transaction in Postgres,
-    so the obvious `try/except` has to roll back to recover — and that throws away the caller's
-    uncommitted work. It deleted the user row out from under thirty-four tests."""
+    """The bug this is written around."""
     db.execute(text("DROP TABLE IF EXISTS lane_pauses"))
     user = _user(db)
 
@@ -58,8 +52,7 @@ def test_a_missing_switch_table_means_nothing_is_paused(db):
 
 
 def test_a_paused_lane_refuses_new_work(db):
-    """Refused at the door rather than claimed and dropped. A paused lane must not accumulate work
-    to process in a burst on resume — that is how a pause becomes its own incident."""
+    """Refused at the door rather than claimed and dropped."""
     from deploy.scripts.pipeline_switch import pause
 
     user = _user(db)

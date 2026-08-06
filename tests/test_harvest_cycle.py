@@ -1,12 +1,4 @@
-"""One harvest cycle, end to end, with fake sources.
-
-What is worth testing here is the **orchestration**: the order of stages, that the budget is
-respected, that a dead source cannot sink the run, that overlapping runs cannot both proceed, and
-that dormant users cost nothing. Whether Greenhouse's JSON parsed is not testable without a network
-and is covered structurally instead (`tests/test_harvester_sources.py`).
-
-No network, per `TEST_STRATEGY.md` §2.2 — sources are injected.
-"""
+"""One harvest cycle, end to end, with fake sources."""
 from __future__ import annotations
 
 import os
@@ -127,8 +119,7 @@ def test_the_same_job_twice_is_ingested_once(ctx):
 
 
 def test_a_snippet_saves_the_description_fetch(ctx):
-    """Sources that supply usable text save a whole fetch per job — the difference between a
-    15-minute cycle and an hour, and on the proxied tier a bandwidth saving too."""
+    """Sources that supply usable text save a whole fetch per job."""
     s = ctx
     _active_user(s)
     with _embedder() as embedder:
@@ -149,9 +140,7 @@ def test_the_fan_out_budget_is_respected(ctx):
     for i in range(10):
         _active_user(s, keywords=[f"u{i}term{j}" for j in range(5)])
 
-    # **A source config, because the query set is built for the sources that are enabled.** It used
-    # to be built for a hardcoded pair that was enabled nowhere, so the budget could be exercised
-    # against `{}` -- which is precisely how the whole fold came to govern no requests at all.
+    # A source config, because the query set is built for the sources that are enabled.
     report, deferred = run_cycle(s, source_configs=_sources(himalayas={}, nofluffjobs={}),
                                  limits={"himalayas": 7, "nofluffjobs": 7},
                                  run_source=lambda *a: [])
@@ -162,8 +151,7 @@ def test_the_fan_out_budget_is_respected(ctx):
 
 
 def test_deferred_queries_are_returned_for_the_next_cycle(ctx):
-    """Advice for next time, not persisted state — a stored plan would have to be reconciled
-    against configs that have since changed."""
+    """Advice for next time, not persisted state."""
     s = ctx
     for i in range(4):
         _active_user(s, keywords=[f"u{i}a", f"u{i}b"])
@@ -179,14 +167,7 @@ def test_deferred_queries_are_returned_for_the_next_cycle(ctx):
 
 
 def test_one_sources_ceiling_does_not_starve_another(ctx):
-    """**The defect the global budget had, stated as behaviour.**
-
-    One number for every source made unrelated boards queue behind each other: keys sort by source,
-    so a cycle drained one board completely and then started the next. Simulated over the real
-    config that meant Remotive was not queried until the fifth cycle — seventy-five minutes — while
-    HiringCafe was finished. Remotive being starved has nothing to do with HiringCafe being
-    expensive, and per source is what makes that structurally impossible.
-    """
+    """The defect the global budget had, stated as behaviour."""
     s = ctx
     for i in range(20):
         _active_user(s, keywords=[f"u{i}term{j}" for j in range(3)])
@@ -200,8 +181,7 @@ def test_one_sources_ceiling_does_not_starve_another(ctx):
 
 
 def test_a_source_the_operator_has_not_tuned_still_gets_a_ceiling(ctx):
-    """Unbounded is not an option — 50 users × 5 terms is a ban and a cycle that takes an hour — so
-    an unnamed source falls back to the module default rather than to no limit at all."""
+    """Unbounded is not an option — 50 users × 5 terms is a ban and a cycle that takes an hour."""
     from services.harvester.query_set import DEFAULT_QUERIES_PER_CYCLE
 
     s = ctx
@@ -243,8 +223,7 @@ def test_an_unverified_signup_consumes_no_harvest_budget(ctx):
 # ── failure containment ───────────────────────────────────────────────────────────────────────
 
 def test_one_dead_source_cannot_sink_the_cycle(ctx):
-    """Sources break upstream constantly. A cycle that aborts on the first failure delivers
-    nothing to anybody."""
+    """Sources break upstream constantly."""
     s = ctx
     _active_user(s)
     good = _link()
@@ -267,11 +246,7 @@ def test_one_dead_source_cannot_sink_the_cycle(ctx):
 # ── overlap ───────────────────────────────────────────────────────────────────────────────────
 
 def test_two_cycles_cannot_run_at_once(ctx):
-    """A timer firing while the previous run is still going must SKIP, not queue.
-
-    Queueing turns one slow cycle into a backlog all doing the same work, and the fan-out budget is
-    per cycle — two at once spends it twice, against sources that are already grey-area.
-    """
+    """A timer firing while the previous run is still going must SKIP, not queue."""
     s = ctx
     _active_user(s)
 
@@ -303,11 +278,7 @@ def test_the_lock_is_released_after_a_cycle(ctx):
 # ── de-personalised source config ─────────────────────────────────────────────────────────────
 
 def test_source_filters_come_from_the_union_of_users_not_one_person(ctx):
-    """**The de-personalisation.** The reference pre-filters feed sources on Ruben's keywords.
-
-    Filtering a *shared* corpus on one person's terms would silently deny every other user the jobs
-    they asked for — and they would never know, because the rows would simply never arrive.
-    """
+    """The de-personalisation."""
     from services.harvester.source_config import build_source_configs, union_keywords
 
     s = ctx
@@ -318,24 +289,13 @@ def test_source_filters_come_from_the_union_of_users_not_one_person(ctx):
     configs = TenantRepository(s).active_configs()
     assert union_keywords(configs) == ["golang", "rust"], "deduplicated, lowercased, sorted"
 
-    # **Asserted on the queries, not on `keywords`.** The union drives what each board is *asked*
-    # for; it is deliberately no longer handed to the client-side `JobFilter`, which dropped every
-    # ATS and VC-board row for six hours the first time it ever actually ran (`PREFILTER_SOURCES`).
+    # Asserted on the queries, not on `keywords`.
     built = build_source_configs(configs, env={})
     assert built["himalayas"]["queries"] == [{"query": "golang"}, {"query": "rust"}]
 
 
 def test_the_filter_reads_the_sections_a_real_config_actually_stores(ctx):
-    """**Every test here wrote a flat config and every real one stores sections.**
-
-    That is the whole reason this survived: `union_keywords` and `union_locations` read
-    `config["keywords"]` at the top level, where the schema never puts it, so against production
-    they returned empty and every board on the free tier fetched its unfiltered recent feed while
-    the platform behaved as though nobody had signed up. The same mistake had already been found
-    and fixed for `posted_within_hours` four lines away.
-
-    The flat shape stays supported — older fixtures pass it — so this asserts both.
-    """
+    """Every test here wrote a flat config and every real one stores sections."""
     from services.harvester.source_config import union_keywords, union_locations
 
     sectioned = {
@@ -350,11 +310,7 @@ def test_the_filter_reads_the_sections_a_real_config_actually_stores(ctx):
 
 
 def test_each_board_is_asked_in_the_shape_it_reads(ctx):
-    """A query in the wrong shape is **silent**: the board answers its unfiltered feed and reports
-    success, which from outside is indistinguishable from a deliberately broad search.
-
-    One fixed dict used to go to all nine query-taking sources and only two of them read `search`.
-    """
+    """A query in the wrong shape is silent: the board answers its unfiltered feed and reports success."""
     from services.harvester.source_config import build_source_configs
 
     built = build_source_configs(
@@ -369,13 +325,7 @@ def test_each_board_is_asked_in_the_shape_it_reads(ctx):
 
 
 def test_a_board_with_no_geography_is_asked_once_per_keyword(ctx):
-    """**This is the redundancy, stated exactly.** Most boards take a search term and nothing else,
-    so crossing their keywords with four location slugs produces four byte-identical requests, four
-    times the budget, and one set of results.
-
-    Collapsing the axis is not a narrowing: the user still asked for those locations, and the source
-    was never going to apply them.
-    """
+    """This is the redundancy, stated exactly."""
     from services.harvester.query_set import build_query_set
 
     config = {uuid.uuid4(): {"sections": [
@@ -394,27 +344,11 @@ def test_a_board_with_no_geography_is_asked_once_per_keyword(ctx):
 
 
 def test_a_job_a_board_returned_survives_every_enabled_source_s_own_filtering(ctx):
-    """**The hole the ATS incident went through, closed for every source at once.**
-
-    Eleven sources went from hundreds of rows a day to exactly zero for six hours, and nothing
-    failed: no exception, no error count, no alert. A client-side filter simply started rejecting
-    everything a board returned, which is indistinguishable from a quiet day.
-
-    So this asserts the behaviour rather than any one filter: take an ordinary posting a source
-    genuinely returned, run it through the filtering the cycle would build for that source, and
-    require it to survive. Any future config change that starts silently discarding real postings
-    fails here instead of in production six hours later.
-
-    Deliberately an *ordinary* job — a title nobody's keyword list contains, a city nobody named.
-    That is the case the corpus exists to hold: harvest broadly, match per user.
-    """
+    """The hole the ATS incident went through, closed for every source at once."""
     from services.harvester.source_config import build_source_configs
     from services.harvester.sources.ats import JobFilter
 
-    # **A job the platform exists to catch and no keyword list would name.** This exact shape is
-    # the one 6o.1 measured: 239 of 376 jobs scoring >=60 had a keyword in the title, so a
-    # title-only match throws away a third of the good ones — and they are the unusually worded
-    # ones, which are often the interesting ones.
+    # A job the platform exists to catch and no keyword list would name.
     ordinary = JobLink(
         url="https://boards.greenhouse.io/acme/jobs/1",
         title="Vehicle Dynamics Specialist",
@@ -426,9 +360,7 @@ def test_a_job_a_board_returned_survives_every_enabled_source_s_own_filtering(ct
             {"keywords": ["software engineer"], "locations": ["europe"]}]}},
         env={})
 
-    # Only the sources that route through `JobFilter` — the ATS family. The others run their own
-    # matching over the whole posting rather than the title, which is a targeting decision the
-    # operator makes and not the accident this test exists for.
+    # Only the sources that route through `JobFilter` — the ATS family.
     routed = [name for name in built if name in
               {"greenhouse", "ashby", "lever", "smartrecruiters", "recruitee",
                "breezy", "workday", "personio", "workable"}]
@@ -441,14 +373,7 @@ def test_a_job_a_board_returned_survives_every_enabled_source_s_own_filtering(ct
 
 
 def test_a_keyword_filtered_source_keeps_what_matches_and_judges_nothing_else(ctx):
-    """The six sources that filter on keywords do it over **the whole posting**, and that is what
-    makes it a targeting decision rather than the accident above.
-
-    A posting matching a user's term must survive; one matching nothing is correctly not ours to
-    keep, since these boards are only worth querying at all because they answer a search. What must
-    never happen is a *second* reason to drop it — a location slug, or a window a platform constant
-    overrode — creeping back in beside the keyword.
-    """
+    """The six sources that filter on keywords do it over the whole posting."""
     from services.harvester.source_config import (
         KEYWORD_FILTER_SOURCES,
         build_source_configs,
@@ -462,41 +387,26 @@ def test_a_keyword_filtered_source_keeps_what_matches_and_judges_nothing_else(ct
     for name in KEYWORD_FILTER_SOURCES & set(built):
         cfg = built[name]
         assert cfg["keywords"] == ["software engineer"], f"{name} was asked for nothing"
-        # The keyword is the only filter these carry. A location list here would be the slug
-        # comparison that emptied the ATS family, arriving by a different door.
+        # The keyword is the only filter these carry.
         assert "location_keywords" not in cfg, f"{name} would also judge a posting on its location"
 
 
 def test_a_source_whose_window_an_operator_narrowed_actually_narrows(ctx):
-    """**A setting that reaches nothing is worse than no setting**, because it looks answered.
-
-    `source_freshness_hours` was rendered in the admin panel and read by exactly one caller: the
-    admin route that renders it. The harvest computed its own window from user configs, so an
-    operator moving this number moved a number on a page. Same shape as the label budget nothing
-    read and the rubric written where nothing looked.
-    """
+    """A setting that reaches nothing is worse than no setting, because it looks answered."""
     from services.harvester.source_config import build_source_configs
 
     default = build_source_configs({}, env={})
     narrowed = build_source_configs({}, env={}, freshness={"greenhouse": 3})
 
     assert narrowed["greenhouse"]["max_age_hours"] == 3
-    # `posted_within_hours` is what `ats.JobFilter` prefers, so leaving it at the platform default
-    # would let a 72-hour constant outrank the operator.
+    # `posted_within_hours` is what `ats.JobFilter` prefers.
     assert narrowed["greenhouse"]["posted_within_hours"] == 3
     # One source only. Narrowing Greenhouse must not quietly narrow everything else.
     assert narrowed["ashby"]["max_age_hours"] == default["ashby"]["max_age_hours"]
 
 
 def test_an_operators_window_reaches_a_source_under_every_key_it_reads(ctx):
-    """**Setting the window in three places was not enough, because a fourth exists.**
-
-    HiringCafe filters server-side and reads `posted_within_days` alone, so an operator asking for
-    48 hours left it on the platform default of three days — measured on the live box as 81-hour-old
-    postings arriving into a 48-hour window. Every adapter spells this differently and a window that
-    reaches only some of them is a setting that works only sometimes, which is worse than one that
-    never works because it looks correct.
-    """
+    """Setting the window in three places was not enough, because a fourth exists."""
     from services.harvester.source_config import build_source_configs
 
     built = build_source_configs({}, env={}, freshness={"hiringcafe": 48, "greenhouse": 3})
@@ -505,8 +415,7 @@ def test_an_operators_window_reaches_a_source_under_every_key_it_reads(ctx):
     assert built["hiringcafe"]["posted_within_days"] == 2, "48 hours is 2 days, rounded up"
     assert built["greenhouse"]["posted_within_hours"] == 3
 
-    # Rounded **up**: a board that thinks in calendar days cannot honour "36 hours", and the wider
-    # of the two is the direction that loses nobody a job.
+    # Rounded up: a board that thinks in calendar days cannot honour "36 hours".
     day_and_a_half = build_source_configs({}, env={}, freshness={"hiringcafe": 36})
     assert day_and_a_half["hiringcafe"]["posted_within_days"] == 2
     # And never zero, which would be "nothing qualifies".
@@ -515,22 +424,7 @@ def test_an_operators_window_reaches_a_source_under_every_key_it_reads(ctx):
 
 
 def test_the_union_is_asked_for_not_used_to_throw_away_what_a_board_sent(ctx):
-    """**Six hours of zero ingestion from eleven sources.**
-
-    `ats.JobFilter` drops a row whose title carries none of `cfg["keywords"]` and whose location
-    string matches none of `cfg["location_keywords"]`. Both were always empty, because the union
-    readers read the wrong level of the config, so the filter had never once executed. Fixing the
-    readers switched it on across the whole ATS and VC-board family at the same moment and
-    ingestion from them went to **zero** — not reduced.
-
-    Two reasons it must stay off until measured: the locations are *slugs* (`european_union`)
-    matched against real location text ("Berlin, Germany"), and a title-keyword prefilter is the
-    change this project has already measured as harmful — 239 of 376 jobs scoring ≥60 had a keyword
-    in the title, so it discards a third of the good matches (ROADMAP 6o.1).
-
-    Asking a board for a term is a different mechanism and stays on: it costs one request and
-    returns fewer, better rows, rather than throwing away what already arrived.
-    """
+    """Six hours of zero ingestion from eleven sources."""
     from services.harvester.source_config import PREFILTER_SOURCES, build_source_configs
 
     built = build_source_configs(
@@ -547,14 +441,7 @@ def test_the_union_is_asked_for_not_used_to_throw_away_what_a_board_sent(ctx):
 
 
 def test_a_board_is_asked_for_the_phrase_the_user_wrote(ctx):
-    """**The fold key is not a search term**, and sending it cost real quality on the first live
-    cycle: Arbeitnow was asked for `engineer stress` and `developer python`, and every Hungarian
-    keyword arrived truncated because the normaliser strips anything outside `a-z0-9+#`.
-
-    Sorting tokens and folding accents is right for deciding whether two users asked for the same
-    thing. It is wrong for asking a search engine, which is a different question about the same
-    string.
-    """
+    """The fold key is not a search term, and sending it cost real quality on the first live cycle."""
     from services.harvester.query_set import normalise_keyword, original_terms
 
     configs = {uuid.uuid4(): {"sections": [
@@ -569,8 +456,7 @@ def test_a_board_is_asked_for_the_phrase_the_user_wrote(ctx):
 
 
 def test_one_folded_key_emits_the_same_term_however_users_phrased_it(ctx):
-    """Several users writing one search differently must not make the emitted term depend on which
-    of them the database returned first — a cycle has to be reproducible."""
+    """Several users writing one search differently must not make the emitted term depend on which of."""
     from services.harvester.query_set import normalise_keyword, original_terms
 
     key = normalise_keyword("python developer")
@@ -583,9 +469,7 @@ def test_one_folded_key_emits_the_same_term_however_users_phrased_it(ctx):
 
 
 def test_no_locating_sources_is_not_the_same_as_not_saying(ctx):
-    """An empty iterable means "nothing locates"; `None` means "everything does". A falsy check
-    would collapse every axis on the caller that simply did not pass the argument — which is the
-    per-user LinkedIn pass, the one source where location is the whole point."""
+    """An empty iterable means "nothing locates"; `None` means "everything does"."""
     from services.harvester.query_set import build_query_set
 
     config = {uuid.uuid4(): {"sections": [
@@ -610,8 +494,7 @@ def test_a_dormant_users_keywords_leave_the_filter(ctx):
 
 
 def test_with_no_users_at_all_sources_stay_enabled_and_unfiltered(ctx):
-    """Cold start. The platform harvests broadly before anybody has configured anything, which is
-    what makes a new user's first feed non-empty on day one rather than in week three."""
+    """Cold start."""
     from services.harvester.source_config import build_source_configs
 
     built = build_source_configs({}, env={})
@@ -628,12 +511,7 @@ def test_key_gated_sources_stay_off_without_their_credential(ctx):
 
 
 def test_query_taking_sources_always_get_a_query(ctx):
-    """**Found on the first real cycle against live sources.**
-
-    `himalayas`, `nofluffjobs` and `hiringcafe` loop over `cfg["queries"]` and return `[]` when it is
-    absent — so they made no HTTP request, logged nothing, and the cycle reported success. An
-    adapter returning `[]` is the registry's contract, which is exactly why the silence was total.
-    """
+    """Found on the first real cycle against live sources."""
     from services.harvester.source_config import QUERY_TAKING_SOURCES, build_source_configs
 
     built = build_source_configs({}, env={})
@@ -642,8 +520,7 @@ def test_query_taking_sources_always_get_a_query(ctx):
 
 
 def test_with_no_users_the_query_is_a_broad_feed_read(ctx):
-    """Not a placeholder: an empty search fetches the board's unfiltered recent feed, which is
-    "harvest broadly, match per user" and is what gives a brand-new user a non-empty first feed."""
+    """Not a placeholder: an empty search fetches the board's unfiltered recent feed."""
     from services.harvester.source_config import build_source_configs
 
     assert build_source_configs({}, env={})["himalayas"]["queries"] == [{"query": ""}]
@@ -662,11 +539,7 @@ def test_users_keywords_become_the_queries(ctx):
 
 
 def test_the_recency_window_is_the_widest_any_user_asked_for(ctx):
-    """Same rule as the query-set fold: fetch once at the coarsest demand, filter down locally.
-
-    The adapters default to 24h internally, which was fetching a far narrower slice than the config
-    schema's own default of 72.
-    """
+    """Same rule as the query-set fold: fetch once at the coarsest demand, filter down locally."""
     from services.harvester.source_config import (
         DEFAULT_HARVEST_WINDOW_HOURS,
         build_source_configs,
@@ -690,14 +563,7 @@ def test_the_recency_window_is_the_widest_any_user_asked_for(ctx):
 # ── the age window actually reaching the sources ──────────────────────────────────────────────
 
 def test_the_jobspy_tier_is_given_the_age_window_under_the_key_it_reads():
-    """**The bug that put month-old, already-closed postings into live feeds.**
-
-    The ATS and REST adapters filter on `max_age_hours`; the JobSpy tier — LinkedIn, Indeed,
-    Google, which produce most of the volume — passes `hours_old` to the scraper and ignores
-    anything else. Only the first was ever set, so the age filter was real for two thirds of the
-    sources and absent for the ones that mattered. The reference's watcher sets both and its
-    comment says exactly why.
-    """
+    """The bug that put month-old, already-closed postings into live feeds."""
     from services.harvester.source_config import build_source_configs
 
     configs = build_source_configs({
@@ -707,16 +573,12 @@ def test_the_jobspy_tier_is_given_the_age_window_under_the_key_it_reads():
     for source, cfg in configs.items():
         assert cfg.get("hours_old") == cfg.get("max_age_hours"), (
             f"{source} would filter on one key and scrape on the other")
-        # **The number the user asked for, not merely a number.** The first version of this test
-        # checked only that the two keys agreed, which they did — both at the platform default,
-        # because the window was being read from the top level of the config where it has never
-        # lived. A user asking for four hours was harvested at seventy-two and nothing said so.
+        # The number the user asked for, not merely a number.
         assert cfg["hours_old"] == 4, f"{source} ignored the window the user asked for"
 
 
 def test_the_window_is_the_widest_any_active_account_asked_for():
-    """The corpus is shared, so one fetch serves everyone and it has to be the most generous ask.
-    Each user's own window is then applied at delivery, not here."""
+    """The corpus is shared, so one fetch serves everyone and it has to be the most generous ask."""
     from services.harvester.source_config import build_source_configs
 
     configs = build_source_configs({
@@ -728,21 +590,14 @@ def test_the_window_is_the_widest_any_active_account_asked_for():
 
 
 def test_an_account_may_ask_for_a_window_as_tight_as_the_reference_watcher():
-    """The reference's frequent loop runs at two hours, and being first to a posting is the single
-    biggest thing a candidate controls. A six-hour floor made the platform's tightest setting three
-    times looser than the instance it was ported from."""
+    """The reference's frequent loop runs at two hours."""
     from libs.contracts.config import SearchSection
 
     assert SearchSection(keywords=["python"], posted_within_hours=2).posted_within_hours == 2
 
 
 def test_the_operators_result_and_company_ceilings_reach_the_adapters(ctx):
-    """**Every adapter spells "how many" differently**, and a value under the wrong key is silent —
-    the board serves its own default and reports success, which is indistinguishable from the
-    setting having been applied.
-
-    Same shape as the freshness window that reached three keys and missed a fourth.
-    """
+    """Every adapter spells "how many" differently, and a value under the wrong key is silent."""
     from services.harvester.source_config import RESULT_KEYS, build_source_configs
 
     built = build_source_configs(
@@ -758,8 +613,7 @@ def test_the_operators_result_and_company_ceilings_reach_the_adapters(ctx):
     for name in ("greenhouse", "ashby", "workday"):
         assert built[name]["max_companies"] == 750
 
-    # A source with no result key must not silently acquire one — Working Nomads returns its whole
-    # list and TheMuse counts pages, so there is nothing to cap.
+    # A source with no result key must not silently acquire one.
     assert "themuse" not in RESULT_KEYS
     assert "workingnomads" not in RESULT_KEYS
 
@@ -774,9 +628,7 @@ def test_an_unset_ceiling_leaves_the_platform_default_alone(ctx):
 
 
 def test_a_removed_source_cannot_be_quietly_switched_back_on(ctx):
-    """`DEFERRED_SOURCES` records what was removed and why. **A record with no consumer is a comment
-    that drifts**, so it guards the list it describes: re-enabling one of these is a decision about
-    how to use a source that cannot be searched (ROADMAP 6t), not a config edit."""
+    """`DEFERRED_SOURCES` records what was removed and why."""
     from libs.settings import HARVEST_SOURCES, QUERY_TAKING_SOURCES
     from services.harvester.source_config import (
         DEFAULT_ENABLED,
@@ -795,12 +647,7 @@ def test_a_removed_source_cannot_be_quietly_switched_back_on(ctx):
 
 
 def test_the_operators_page_depth_reaches_the_two_sources_that_paginate():
-    """**Both were constants inside their adapters and neither appeared anywhere an operator looks.**
-
-    `hiringcafe._MAX_PAGES = 3` at 40 rows a page capped that source at 120 rows a cycle — on the
-    second-biggest proxied source — and `ats._WD_PAGES = 5` did the same for Workday. A ceiling
-    nobody can see is one nobody can raise when a source starts running behind.
-    """
+    """Both were constants inside their adapters and neither appeared anywhere an operator looks."""
     from services.harvester.source_config import build_source_configs
 
     built = build_source_configs({}, env={}, pages={"hiringcafe": 8, "workday": 2})
@@ -810,8 +657,7 @@ def test_the_operators_page_depth_reaches_the_two_sources_that_paginate():
 
 
 def test_a_source_with_no_page_setting_keeps_its_own_default():
-    """An operator who has tuned one source must not silently reset every other one — the same
-    ladder as freshness and results, for the same reason."""
+    """An operator who has tuned one source must not silently reset every other one."""
     from services.harvester.source_config import build_source_configs
 
     built = build_source_configs({}, env={}, pages={"hiringcafe": 8})
@@ -820,14 +666,12 @@ def test_a_source_with_no_page_setting_keeps_its_own_default():
 
 
 def test_workday_walks_the_number_of_pages_it_was_given():
-    """The setting has to reach the request, not just the config dict. A value that stops at the
-    config is the failure this file exists to catch — six of ten limits did exactly that."""
+    """The setting has to reach the request, not just the config dict."""
     from services.harvester.sources import ats
 
     seen: list[int] = []
 
-    # A full page of fresh postings, so the loop's own early exits — an empty page, a short page,
-    # a page gone stale — do not end the walk before the page count does.
+    # A full page of fresh postings, so the loop's own early exits — an empty page, a short page.
     page = {"jobPostings": [
         {"externalPath": f"/job/{n}", "title": f"Engineer {n}", "postedOn": "Posted Today",
          "locationsText": "Berlin"}
@@ -861,16 +705,7 @@ def test_workday_walks_the_number_of_pages_it_was_given():
 
 
 def test_a_failing_embedder_does_not_take_the_cycle_with_it(ctx):
-    """**One slow embed call killed the whole harvest, including the scoring enqueue.**
-
-    Measured on the live box: 229 rows described and waiting, an embedder answering `200 OK` with
-    `queue_depth: 0`, and an hour with no new rows — because `/embed/bulk` exceeded the client's
-    read timeout, the exception left `run_cycle`, and step 7 never ran. The gather, the ingest and
-    the describe had all succeeded and were reported as a failed cycle (ROADMAP 6ba).
-
-    Embedding is the one stage free to fail: a row stays unembedded and is picked up next cycle,
-    which is what `embed_all_pending` is built around. Everything after it is not.
-    """
+    """One slow embed call killed the whole harvest, including the scoring enqueue."""
     from libs.corpus.repository import CorpusRepository
     from services.harvester.cycle import run_cycle
 
@@ -883,8 +718,7 @@ def test_a_failing_embedder_does_not_take_the_cycle_with_it(ctx):
     corpus.set_description(job_id, "We build things with Go and gRPC. " * 20)
     session.flush()
 
-    # A real client whose backend times out on the bulk lane and is healthy everywhere else, which
-    # is exactly the live shape: `/health` answered `200 OK` with `queue_depth: 0` throughout.
+    # A real client whose backend times out on the bulk lane and is healthy everywhere else.
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/health":
             return httpx.Response(200, json=SERVED)

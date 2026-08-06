@@ -1,11 +1,4 @@
-"""Score the corpus for one account, through the scorer the platform actually serves with.
-
-    python deploy/scripts/score_user.py --email you@example.com
-
-The same registry and serve path a worker would use — this exists so a migrated account can be
-scored once, on demand, before a queue lane is driving it. Rows already scored by the current model
-version are skipped, so it is cheap to re-run and safe to interrupt.
-"""
+"""Score the corpus for one account, through the scorer the platform actually serves with."""
 from __future__ import annotations
 
 import argparse
@@ -55,9 +48,7 @@ def main(argv: list[str] | None = None) -> int:
     while scored < args.limit:
         with session_scope() as session:
             model = ModelRegistry(session).get(user_id)
-            # Rows this model has not seen. `scored_model_version` is what makes a re-run cheap:
-            # after a retrain everything is stale again, which is correct — the scores mean
-            # something different — and until then nothing is recomputed.
+            # Rows this model has not seen.
             rows = session.execute(
                 select(CorpusJob.id, CorpusJob.title, CorpusJob.description,
                        CorpusJob.embedding, CorpusJob.embedding_dim, CorpusJob.embedding_version)

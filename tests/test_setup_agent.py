@@ -1,10 +1,4 @@
-"""The setup conversation: what the agent can reach, and what it writes.
-
-Driven by a fake client, so the loop, the tools and the transcript are all exercised without a
-credential. What is worth testing here is the boundary — an agent interviewing somebody about their
-career is handed a stranger's uploaded documents and writes files that end up on real applications,
-so the tools must reach exactly one account and refuse names nothing reads.
-"""
+"""The setup conversation: what the agent can reach, and what it writes."""
 from __future__ import annotations
 
 import hashlib
@@ -18,8 +12,7 @@ pytestmark = pytest.mark.skipif(
 
 
 def _document(user_id, filename, kind, text):
-    """One uploaded document. `text_sha256` is the dedup key the schema requires — a document with
-    no hash could be uploaded twice and read twice by the agent."""
+    """One uploaded document."""
     from libs.db.models import UserDocument
 
     return UserDocument(user_id=user_id, filename=filename, kind=kind, chars=len(text), text=text,
@@ -74,11 +67,7 @@ class FakeClient:
 
 
 def use(tool, **arguments):
-    """One tool call, in the shape the adapter returns them.
-
-    The parameter is `tool`, not `name`: two of the tools take an argument called `name`, and a
-    helper that shadows it cannot express `read_document(name=...)` at all.
-    """
+    """One tool call, in the shape the adapter returns them."""
     return {"id": f"toolu_{tool}", "name": tool, "input": arguments}
 
 
@@ -96,8 +85,7 @@ def test_the_agent_sees_the_documents_the_user_uploaded(account):
 
 
 def test_an_account_with_no_documents_is_told_to_interview_instead(account):
-    """Path C. The agent should ask questions rather than sit waiting for files that do not
-    exist — and it can only know that if the tool says so."""
+    """Path C."""
     from libs.agents.tools import SetupTools
     from libs.db.models import UserDocument
 
@@ -109,8 +97,7 @@ def test_an_account_with_no_documents_is_told_to_interview_instead(account):
 
 
 def test_a_missing_document_is_an_answer_not_an_exception(account):
-    """A model that guessed a filename should be corrected and try again, not end the
-    conversation."""
+    """A model that guessed a filename should be corrected and try again, not end the conversation."""
     from libs.agents.tools import SetupTools
 
     result = SetupTools(*account[::-1] if False else (account[0], account[1].id)).run(
@@ -134,8 +121,7 @@ def test_writing_a_profile_file_marks_it_filled(account):
 
 
 def test_a_file_nothing_reads_is_refused(account):
-    """A model inventing `08-references.md` would write a section the user never sees again, and
-    would have no way of knowing."""
+    """A model inventing `08-references.md` would write a section the user never sees again."""
     from libs.agents.tools import SetupTools
 
     session, user = account
@@ -154,19 +140,7 @@ def test_emptying_a_file_is_refused(account):
 
 
 def test_the_written_rubric_reaches_the_column_the_labeller_reads(account):
-    """**Written here, read there — the family that cost this platform the most.**
-
-    `label.md` is a profile file; cold start, relabelling and label scoping all read
-    `users.rubric_md`, which only the superseded capture flow ever populated. An account set up by
-    the conversation therefore had a complete 13,809-character rubric and a labeller answering
-    `confirm_profile` forever: no pool, no labels, no model, and nothing anywhere saying why. It was
-    invisible on the founder's account because the old flow had filled that column before the
-    rebuild.
-
-    `profile_version` is `sha256(rubric_md)[:8]` and scopes which labels a training run may use, so
-    it has to move with the text or a retrain silently reads labels written against a different
-    rubric.
-    """
+    """Written here, read there — the family that cost this platform the most."""
     from libs.agents.tools import SetupTools
     from libs.scoring.rubric import profile_version
 
@@ -182,9 +156,7 @@ def test_the_written_rubric_reaches_the_column_the_labeller_reads(account):
 
 
 def test_a_rewritten_rubric_only_stales_labels_when_it_actually_changed(account):
-    """`profile_generation` is what marks existing labels stale. Bumping it on an identical rewrite
-    would send somebody back through relabelling they did not need — and relabelling runs on their
-    own Claude credential, so that is their money."""
+    """`profile_generation` is what marks existing labels stale."""
     from libs.agents.tools import SetupTools
 
     session, user = account
@@ -210,8 +182,7 @@ def test_a_rewritten_rubric_only_stales_labels_when_it_actually_changed(account)
 
 
 def test_a_scoring_relevant_write_is_reported_but_not_acted_on(account):
-    """The whole retraining policy: the tool says the rubric moved and stops there. Relabelling
-    3,310 jobs costs the user real money, so it is their decision (`REBUILD_PLAN.md`)."""
+    """The whole retraining policy: the tool says the rubric moved and stops there."""
     from libs.agents.tools import SetupTools
 
     session, user = account
@@ -225,8 +196,7 @@ def test_a_scoring_relevant_write_is_reported_but_not_acted_on(account):
 
 
 def test_the_tools_reach_one_account_only(account):
-    """The executor is constructed with a user id and every query carries it. A second account's
-    documents must be invisible even by exact filename."""
+    """The executor is constructed with a user id and every query carries it."""
     from libs.agents.tools import SetupTools
     from libs.db.models import User
 
@@ -275,8 +245,7 @@ def test_a_turn_runs_tools_then_answers(account):
 
 
 def test_the_transcript_replays_tool_calls_so_the_model_sees_what_it_wrote(account):
-    """The difference between the agent knowing what is in `context.md` and guessing. A summary in
-    place of the result would make the second turn re-read or re-invent the file."""
+    """The difference between the agent knowing what is in `context.md` and guessing."""
     from libs.agents.loop import history, run_turn
 
     session, user = account
@@ -294,8 +263,7 @@ def test_the_transcript_replays_tool_calls_so_the_model_sees_what_it_wrote(accou
 
 
 def test_the_conversation_resumes_rather_than_restarting(account):
-    """No session object holds the thread — a closed tab, a restarted worker and a user returning a
-    week later all rebuild the same history from the table."""
+    """No session object holds the thread — a closed tab."""
     from libs.agents.loop import run_turn
 
     session, user = account
@@ -312,8 +280,7 @@ def test_the_conversation_resumes_rather_than_restarting(account):
 
 
 def test_a_runaway_turn_stops_and_says_so(account):
-    """Everything written before the limit is already saved, so the honest recovery is to say where
-    it got to rather than to drop the turn."""
+    """Everything written before the limit is already saved."""
     from libs.agents import MAX_TOOL_ITERATIONS
     from libs.agents.loop import ITERATION_LIMIT_MESSAGE, run_turn
 
@@ -354,9 +321,7 @@ def test_text_is_streamed_as_it_arrives(account):
 
 
 def test_seeding_reports_what_it_actually_wrote(account):
-    """`ON CONFLICT DO NOTHING` reports `rowcount = -1` through this driver, so the first seed of
-    eight files announced "-8 scaffolds" to an operator. A count nobody can trust is worse than no
-    count at all."""
+    """`ON CONFLICT DO NOTHING` reports `rowcount = -1` through this driver."""
     from libs.db.models import User
     from libs.profiles import SEED_FILES
     from libs.profiles.repository import ProfileFiles
@@ -375,8 +340,7 @@ def test_seeding_reports_what_it_actually_wrote(account):
 # ── the role-angles command ───────────────────────────────────────────────────────────────────
 
 def test_the_role_angles_command_is_loadable_and_names_nobody():
-    """It is platform-authored rather than ported, and it is served to every account — an example
-    from one person's career in it would be aimed at everybody."""
+    """It is platform-authored rather than ported, and it is served to every account."""
     import re
 
     from libs.agents import command
@@ -387,8 +351,7 @@ def test_the_role_angles_command_is_loadable_and_names_nobody():
 
 
 def test_the_role_angles_file_is_writeable_by_the_agent():
-    """A command that cannot write the file it exists to write would fail at the last step, after
-    the user had answered every question."""
+    """A command that cannot write the file it exists to write would fail at the last step."""
     from services.api.setup_routes import WRITEABLE
 
     assert "08-role-angles.md" in WRITEABLE
@@ -401,9 +364,7 @@ def test_the_role_angles_agent_is_one_the_api_will_accept():
 
 
 def test_the_scaffold_says_one_angle_is_an_acceptable_answer():
-    """**The failure mode is invention.** Asked for two or three angles, a model will produce two
-    or three whatever the profile holds — and an angle written for a job the candidate cannot do
-    produces a CV they cannot defend in the interview it wins."""
+    """The failure mode is invention."""
     from libs.agents import command
     from libs.profiles import scaffold
 
@@ -412,13 +373,7 @@ def test_the_scaffold_says_one_angle_is_an_acceptable_answer():
 
 
 def test_writing_the_rubric_reaches_the_column_the_labeller_reads(account):
-    """**A finished rubric that nothing downstream could see.**
-
-    `label.md` is written as a profile file; cold start, relabelling and label scoping all read
-    `users.rubric_md`, which only the superseded capture flow ever populated. So an account set up
-    by the conversation had a complete rubric and a labeller answering "confirm_profile" forever:
-    no pool, no labels, no model, and nothing saying why.
-    """
+    """A finished rubric that nothing downstream could see."""
     from libs.agents.tools import SetupTools
     from libs.scoring.rubric import profile_version
 
@@ -434,9 +389,7 @@ def test_writing_the_rubric_reaches_the_column_the_labeller_reads(account):
 
 
 def test_rewriting_the_rubric_marks_existing_labels_stale(account):
-    """`profile_generation` is what makes a label stale, and a changed rubric asks a different
-    question of every job already judged. An identical rewrite must not, or a user is sent through
-    relabelling they did not need."""
+    """`profile_generation` is what makes a label stale."""
     from libs.agents.tools import SetupTools
 
     session, user = account

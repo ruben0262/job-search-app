@@ -1,14 +1,4 @@
-"""The LinkedIn visibility gate and the tier's global governor.
-
-The gate is what makes free-riding impossible **by construction** rather than by policy. LinkedIn
-rows sit in the shared corpus so dedup and embed-once keep working, but the tier costs real proxy
-bandwidth paid by a specific user. Without the gate, anyone could read results other people paid
-for, and the whole D3 revision — strictly per-user credentials, never pooled — would be decorative.
-
-The governor tests cover what per-user proxies do *not* solve: proxies give IP diversity and handle
-ban risk, but nothing about them stops the platform issuing hundreds of concurrent requests or a
-herd forming when users share an interval.
-"""
+"""The LinkedIn visibility gate and the tier's global governor."""
 from __future__ import annotations
 
 import os
@@ -117,10 +107,7 @@ def test_an_unhealthy_credential_closes_the_gate_again(ctx, status):
 
 @db_required
 def test_the_gate_is_applied_before_the_limit_not_after(ctx):
-    """Filtering after LIMIT would hand short pages to exactly the users who have no credential.
-
-    A gated user with plenty of eligible jobs must still get a full page.
-    """
+    """Filtering after LIMIT would hand short pages to exactly the users who have no credential."""
     t, c, s = ctx
     user = _user(s)
     for i in range(6):
@@ -151,13 +138,7 @@ def test_the_gate_is_per_user_on_the_same_shared_row(ctx):
 # ── the governor ──────────────────────────────────────────────────────────────────────────────
 
 def test_the_floor_never_overrides_what_an_operator_asked_for():
-    """**The floor was 60 and the panel's own default is 15**, so an operator setting the documented
-    value silently got four times it — and wiring the control without moving the floor would have
-    fixed the plumbing while leaving the behaviour exactly as it was.
-
-    A floor still exists, at the delivery cadence: fetching a paid tier more often than the feed is
-    ever sent is spend with nowhere to go.
-    """
+    """The floor was 60 and the panel's own default is 15."""
     from libs.settings import DELIVERY_INTERVAL_MIN
 
     assert LINKEDIN_MIN_INTERVAL_MIN == DELIVERY_INTERVAL_MIN

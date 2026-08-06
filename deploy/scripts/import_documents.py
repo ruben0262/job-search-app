@@ -1,20 +1,4 @@
-"""Import a directory of a user's real documents into their account.
-
-    python deploy/scripts/import_documents.py --email you@example.com --dir /tmp/docs --dry-run
-    python deploy/scripts/import_documents.py --email you@example.com --dir /tmp/docs
-
-For migrating the reference instances' owners, whose documents live in a folder rather than behind
-the upload form. Everything the form does, this does: the same extractor, the same content hash, the
-same replace-on-re-upload, and **the file is never stored** — only the text
-(`libs/documents/extract.py`).
-
-**The kind is inferred from the filename and can be overridden**, because the guess is right most of
-the time and wrong in a way that matters occasionally: kind drives nothing structural, but it is
-what lets a user see at a glance that their CV is in there.
-
-Marks `documents_changed_at`, so the dashboard tells the account it has something new to process
-rather than leaving the import invisible.
-"""
+"""Import a directory of a user's real documents into their account."""
 from __future__ import annotations
 
 import argparse
@@ -30,9 +14,7 @@ from libs.db.session import session_scope
 from libs.documents import SUPPORTED, UnsupportedDocument, extract_text
 from libs.obs import configure
 
-# Filename fragment -> document kind, first match wins. Ordered so the more specific patterns are
-# tested before the general ones — "cover_letter" must not be read as a CV because it contains "cv"
-# nowhere but "letter" everywhere.
+# Filename fragment -> document kind, first match wins.
 PATTERNS = (
     ("cover", "cover_letter"),
     ("reference", "reference"),
@@ -51,13 +33,7 @@ PATTERNS = (
 
 
 def infer_kind(path: Path | str, root: Path | None = None) -> str:
-    """Guess from the **folder first, then the filename**.
-
-    The reference instances put the meaning in the directory — `documents/cv/`,
-    `documents/linkedin/`, `documents/references/` — and the filenames inside are whatever the file
-    was called when it was downloaded. Reading only the name got `Profile (1).pdf` wrong: it is a
-    LinkedIn export sitting in `linkedin/`, and nothing in its name says so.
-    """
+    """Guess from the folder first, then the filename."""
     path = Path(path)
     parents = ""
     if root is not None:
@@ -110,8 +86,7 @@ def main(argv: list[str] | None = None) -> int:
             try:
                 extracted = extract_text(path.name, path.read_bytes())
             except UnsupportedDocument as exc:
-                # Named rather than counted: a CV that failed to read is the one file whose absence
-                # actually matters, and a bare "3 skipped" hides it.
+                # Named rather than counted: a CV that failed to read is the one absence that matters.
                 print(f"  SKIP  {path.name}: {exc}")
                 skipped += 1
                 continue
@@ -138,8 +113,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"\n--dry-run: {len(files)} file(s) considered, nothing written")
             return 0
 
-        # What makes the dashboard say "you have added documents, process them to update your
-        # profile" rather than leaving the import invisible.
+        # What makes the dashboard say "you have added documents.
         user.documents_changed_at = func.now()
         print(f"\n{imported} imported, {replaced} replaced, {skipped} skipped for {args.email}")
     return 0

@@ -1,15 +1,4 @@
-"""argon2id, with FlowSolutions' production parameters.
-
-The parameters are the payload here — they are a real tuning decision already made correctly
-(`AUTH_REUSE.md` §3) and re-deriving them is how a deployment ends up with defaults nobody checked.
-
-The one deliberate departure is the minimum length. FlowSolutions allows 8 and `AUTH_REUSE.md` §4
-called that low for a product holding users' live API keys; this was 12 on that reasoning, and is
-**9 since 2026-07-31** at the owner's decision — 12 was turning people away at the door of an
-invited beta, which costs more than the marginal entropy buys. What actually defends this surface
-is unchanged: argon2id at production parameters, a per-address login rate limit, and the fact that
-a stolen password still cannot reveal a stored credential without being re-entered.
-"""
+"""argon2id, with FlowSolutions' production parameters."""
 from __future__ import annotations
 
 from argon2 import PasswordHasher
@@ -22,12 +11,7 @@ _HASHER = PasswordHasher(time_cost=1, memory_cost=65536, parallelism=4,
 MIN_PASSWORD_LENGTH = 9
 MAX_PASSWORD_LENGTH = 256
 
-# Not an abuse control — a courtesy. The real defence is argon2 plus rate limiting; this only stops
-# the handful of passwords that would otherwise be guessed on the first attempt.
-#
-# **Every entry must be at least `MIN_PASSWORD_LENGTH` long to do anything**, since a shorter one is
-# already refused for its length and would never reach this check. The list was written against a
-# 12-character minimum, so the nine-character common passwords were added when the floor dropped.
+# Not an abuse control — a courtesy.
 _OBVIOUS = frozenset({
     "password", "password1", "passw0rd", "123456789012", "qwertyuiop12",
     "letmein12345", "iloveyou1234", "administrator", "welcome12345",
@@ -42,11 +26,7 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(stored: str, password: str) -> bool:
-    """Constant-time verify. Returns False rather than raising on a malformed stored hash.
-
-    A malformed hash means a corrupted or hand-edited row, and the only safe reading of it is "this
-    password does not match" — raising would turn a data problem into a login endpoint that 500s.
-    """
+    """Constant-time verify."""
     try:
         return _HASHER.verify(stored, password)
     except (VerifyMismatchError, InvalidHashError, ValueError):
@@ -62,15 +42,7 @@ def needs_rehash(stored: str) -> bool:
 
 
 def password_problems(password: str, *, email: str | None = None) -> list[str]:
-    """Everything wrong with this password, as plain sentences. Empty means acceptable.
-
-    All of them at once rather than the first: a form that reveals one rule per attempt is how a
-    user ends up trying six times. The strings are user-facing.
-
-    A breached-password check (HIBP k-anonymity) belongs here too and is not implemented — it needs
-    a network call, and adding one to the signup path without a timeout and a fail-open decision
-    would make registration depend on a third party being up.
-    """
+    """Everything wrong with this password, as plain sentences."""
     problems: list[str] = []
     if len(password) < MIN_PASSWORD_LENGTH:
         problems.append(f"must be at least {MIN_PASSWORD_LENGTH} characters")

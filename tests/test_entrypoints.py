@@ -1,22 +1,11 @@
-"""Every deployable entrypoint imports.
-
-Trivial-looking, and it exists because the absence of it cost a full CI cycle: `process_routes.py`
-imported a name `libs/queue/__init__.py` did not export, which broke **every** API route at import
-time. Nothing caught it locally, because the tests that import the app are the DB-backed ones and
-they skip without Postgres — so the one failure that takes down the whole service was invisible on
-the machine where the code was written.
-
-This runs without a database, without credentials, and without the network. It asserts one thing:
-the module a systemd unit or `uvicorn` invocation names can be loaded at all.
-"""
+"""Every deployable entrypoint imports."""
 from __future__ import annotations
 
 import importlib
 
 import pytest
 
-# Every module named by a deploy artifact — a systemd unit, a compose service, or the uvicorn
-# target. Add a row here when a service gains an entrypoint, not after it fails to start.
+# Every module named by a deploy artifact — a systemd unit, a compose service, or the uvicorn target.
 ENTRYPOINTS = [
     "services.api.app",
     "services.capture.__main__",
@@ -35,11 +24,7 @@ def test_the_entrypoint_imports(module):
 
 
 def test_the_api_registers_its_routers():
-    """An unregistered router is a 404 on every one of its paths, which looks like a client bug.
-
-    Checked through the OpenAPI schema rather than by counting `app.routes`, because the routers are
-    included lazily and the schema is what a client actually sees.
-    """
+    """An unregistered router is a 404 on every one of its paths, which looks like a client bug."""
     pytest.importorskip("fastapi")
     import os
 
@@ -58,9 +43,7 @@ def test_the_api_registers_its_routers():
 
 
 def test_the_api_serves_the_site_without_swallowing_its_own_routes(tmp_path):
-    """FastAPI matches in registration order, so a mount at `/` registered before a route swallows
-    it. That is not hypothetical: mounting the SPA one block too early made `/health` return 404 —
-    the endpoint the container healthcheck and the monitoring both depend on."""
+    """FastAPI matches in registration order, so a mount at `/` registered before a route swallows it."""
     pytest.importorskip("fastapi")
     import importlib
     import os
@@ -85,8 +68,7 @@ def test_the_api_serves_the_site_without_swallowing_its_own_routes(tmp_path):
 
 
 def test_a_missing_web_build_is_a_warning_not_a_silent_404(caplog, tmp_path):
-    """An API answering 404 at `/` looks like a broken site rather than a missing build, and that
-    is exactly the hour somebody wastes."""
+    """An API answering 404 at `/` looks like a broken site rather than a missing build."""
     pytest.importorskip("fastapi")
     import importlib
     import logging

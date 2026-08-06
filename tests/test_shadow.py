@@ -1,13 +1,4 @@
-"""Shadow scoring — the sampling, and what a pair means.
-
-**The sampling is the part that has to be right.** It decides what the user pays for, and two
-properties are non-negotiable: the same pair is drawn every time (so a queue replay does not
-re-spend), and every process draws the same sample (so a job is not shadowed twice by two workers).
-
-The second one is easy to get wrong in a way tests catch and review does not: Python's built-in
-`hash()` is salted per interpreter, so a sampler built on it would be stable within one process and
-different in the next.
-"""
+"""Shadow scoring — the sampling, and what a pair means."""
 from __future__ import annotations
 
 import ast
@@ -32,8 +23,7 @@ def test_the_same_pair_is_always_sampled_the_same_way():
 
 
 def test_the_sample_is_stable_across_processes():
-    """**The bug this test exists for.** `hash()` is salted per interpreter, so a sampler built on
-    it agrees with itself and with nothing else. A fresh process must draw the same sample."""
+    """The bug this test exists for."""
     code = ("import uuid;from libs.scoring.shadow import is_sampled;"
             f"print([is_sampled(uuid.UUID('{USER}'), n) for n in range(40)])")
     first = subprocess.run([sys.executable, "-c", code],   # noqa: S603 - the code is right above
@@ -46,15 +36,13 @@ def test_the_sample_is_stable_across_processes():
 
 
 def test_roughly_the_requested_percentage_is_drawn():
-    """Not exact — it is a hash, not a quota — but a rate that produced 2% or 40% would be a bug
-    nobody would notice except in the bill."""
+    """Not exact — it is a hash, not a quota."""
     drawn = sum(is_sampled(USER, n, rate=DEFAULT_SAMPLE_RATE) for n in range(5_000))
     assert 350 <= drawn <= 650          # 10% of 5,000, with room for hash variance
 
 
 def test_two_users_do_not_get_the_same_sample():
-    """The user id is in the digest, so one user's shadowed jobs are not another's. Otherwise every
-    account would pay to grade the same postings."""
+    """The user id is in the digest, so one user's shadowed jobs are not another's."""
     other = uuid.UUID("99999999-8888-7777-6666-555555555555")
     mine = {n for n in range(2_000) if is_sampled(USER, n)}
     theirs = {n for n in range(2_000) if is_sampled(other, n)}
@@ -82,8 +70,7 @@ def test_scores_further_apart_disagree():
 
 
 def test_a_missing_score_is_neither_agreement_nor_disagreement():
-    """"We never asked" and "they disagreed" are different facts. Collapsing them would make a
-    quiet outage look like a drifting model."""
+    """"We never asked" and "they disagreed" are different facts."""
     assert agrees(None, 80) is None
     assert agrees(80, None) is None
 
@@ -158,18 +145,14 @@ def test_only_the_sampled_jobs_are_compared(db):
     session, user, jobs = db
     selected = candidates(session, user.id, limit=100)
 
-    # Not "some were selected": the sample is a digest of ids from an ever-advancing sequence, so
-    # a run where none of these forty jobs happens to be drawn is legitimate and is not a bug. What
-    # must always hold is that nothing outside the sample is ever graded, and that asking for
-    # everything gets everything.
+    # Not "some were selected": the sample is a digest of ids from an ever-advancing sequence.
     assert len(selected) < len(jobs)
     assert all(is_sampled(user.id, job_id) for job_id in selected)
     assert len(candidates(session, user.id, limit=100, rate=100)) == len(jobs)
 
 
 def test_a_job_with_no_real_description_is_never_shadowed(db):
-    """The judge would be grading a title while the model scored an embedding of the same title.
-    They would agree for reasons that say nothing about drift."""
+    """The judge would be grading a title while the model scored an embedding of the same title."""
     from services.labeller.shadow_lane import candidates
 
     session, user, jobs = db
@@ -202,8 +185,7 @@ def test_a_judge_that_disagrees_is_recorded_as_such(db):
 
 
 def test_a_shadow_run_also_produces_labels(db):
-    """The judge's opinion *is* the training signal here, so discarding it would mean paying for
-    the same answer twice."""
+    """The judge's opinion *is* the training signal here."""
     from libs.db.models import UserLabel
     from services.labeller.shadow_lane import run_shadow
 
@@ -215,8 +197,7 @@ def test_a_shadow_run_also_produces_labels(db):
 
 
 def test_a_second_run_does_not_re_ask_about_the_same_pair(db):
-    """A replayed queue job must not re-spend. The sampling is deterministic, so without this the
-    same jobs would be re-graded on every run."""
+    """A replayed queue job must not re-spend."""
     from services.labeller.shadow_lane import run_shadow
 
     session, user, jobs = db
@@ -227,8 +208,7 @@ def test_a_second_run_does_not_re_ask_about_the_same_pair(db):
 
 
 def test_the_agreement_rate_is_scoped_to_one_model_version(db):
-    """A pair collected before a retrain says nothing about the model serving now. Averaging across
-    versions would smear a fixed problem over the fix."""
+    """A pair collected before a retrain says nothing about the model serving now."""
     from services.labeller.shadow_lane import agreement_rate, run_shadow
 
     session, user, _ = db

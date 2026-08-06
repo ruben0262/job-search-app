@@ -1,21 +1,4 @@
-"""Import a reference instance's labelled history into the shared corpus and one user's tail.
-
-    python deploy/scripts/migrate_reference_history.py --email you@example.com \\
-        --reference /opt/job-search --dry-run
-
-Deferred during Phase 1 for a reason that has since gone away: labels are the output of a rubric,
-and there was no per-user rubric to attach them to. There is one now, so they can be imported and
-stamped with the generation they actually belong to.
-
-**Only labels from the reference's newest rubric are imported.** Its `profile_version` changed
-several times, and a label written under an older one is not merely old — it is an answer to a
-different question. Importing the lot would train on two contradictory definitions of "good match"
-(`PROFILE_CAPTURE_PLAN.md` §6.4).
-
-The job text rides along in `labels.jsonl`, so this also backfills the shared corpus: each posting
-becomes one corpus row, deduplicated against what is already there, embedded once, and reachable by
-every other account. Nothing in the reference is written — it is opened for reading and that is all.
-"""
+"""Import a reference instance's labelled history into the shared corpus and one user's tail."""
 from __future__ import annotations
 
 import argparse
@@ -33,9 +16,7 @@ from libs.db.models import User
 from libs.db.session import session_scope
 from libs.tenant.repository import TenantRepository
 
-# Committed periodically rather than in one transaction: a few thousand rows in a single
-# transaction holds locks on the shared corpus for the whole run, and the harvester is on a
-# 15-minute timer against the same table.
+# Committed periodically rather than in one transaction.
 BATCH = 250
 
 
@@ -77,8 +58,7 @@ def _upsert_job(corpus: CorpusRepository, row: dict) -> int | None:
 
 
 def _import_applied(path: Path, user_id) -> int:
-    """The applied log. Each row pins its corpus entry, so retention can never remove the JD
-    underneath a record of having applied to it."""
+    """The applied log."""
     rows = [r for r in _rows(path) if r.get("url")]
     imported = 0
     for start in range(0, len(rows), BATCH):
@@ -136,9 +116,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"no such account: {args.email}", file=sys.stderr)
             return 2
         if not user.profile or not user.profile_generation:
-            # Labels carry a generation stamp. With no profile there is nothing for that stamp to
-            # mean, and the trainer would later select them against a rubric that did not exist
-            # when they were written.
+            # Labels carry a generation stamp.
             print("ERROR: this account has no confirmed profile — run set_profile.py first",
                   file=sys.stderr)
             return 2

@@ -1,13 +1,4 @@
-"""Who else sees a user's data, in the words the user is shown.
-
-**In `libs` and not in a template, because two things must agree.** The consent screen shows this
-list, and the privacy policy publishes it; if a processor were added to one and not the other, the
-consent recorded would be to a disclosure that no longer describes what happens. The version below
-is what `users.processing_consent_version` stores, so "they consented" has an answer to "to what".
-
-**Bump `DISCLOSURE_VERSION` whenever this list changes.** Adding a processor means every account is
-asked again — that is the point, not an inconvenience to route around.
-"""
+"""Who else sees a user's data, in the words the user is shown."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -21,8 +12,7 @@ class Processor:
     name: str
     purpose: str
     data: str
-    # Whose credential pays for it. "Your own key" is materially different from "ours" to a person
-    # deciding whether to agree, and it is true of every LLM call this platform makes.
+    # Whose credential pays for it.
     on_your_credential: bool
     location: str
 
@@ -53,8 +43,7 @@ PROCESSORS = (
     ),
 )
 
-# What the consent screen says above the list. Deliberately short and specific: a wall of text is a
-# wall people click past, and a consent nobody read is not one.
+# What the consent screen says above the list.
 CONSENT_HEADLINE = "Processing your documents sends their text to Anthropic."
 
 CONSENT_BODY = (

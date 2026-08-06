@@ -1,9 +1,4 @@
-"""The bell: producing, collapsing, listing, marking read.
-
-The collapse rule carries the weight. Every producer runs on a timer, so a persistent fact would
-otherwise be re-announced every cycle — and forty copies of "Telegram is broken" is how a bell gets
-ignored and the one real error scrolls away.
-"""
+"""The bell: producing, collapsing, listing, marking read."""
 from __future__ import annotations
 
 import dataclasses
@@ -128,16 +123,7 @@ def test_notify_never_raises(api):
 
 
 def test_the_pre_send_refresh_cannot_overrun_the_lanes_claim_timeout():
-    """**The failure this prevents stops delivery entirely and reports success.**
-
-    Each refresh is a proxied fetch with retries and backoff. Twelve of them can take minutes, and
-    the `notify` lane reclaims a job after two — so the job re-runs, overruns again, and
-    `notified_at` is never committed. Every job reads `done`, every account stops receiving
-    anything, and nothing errors. That happened within an hour of this refresh first being allowed
-    to run.
-
-    The budget has to leave room for rendering and sending inside the same claim.
-    """
+    """The failure this prevents stops delivery entirely and reports success."""
     from libs.db.models.queue import CLAIM_TIMEOUT_MIN
     from services.notifier.freshness import REFRESH_BUDGET_SECONDS
 
@@ -148,8 +134,7 @@ def test_the_pre_send_refresh_cannot_overrun_the_lanes_claim_timeout():
 
 
 def test_a_slow_refresh_stops_at_the_budget_and_passes_the_rest_through(monkeypatch):
-    """Fail open: whatever is not refreshed in time is sent unchanged. A proxy having a bad minute
-    must never empty somebody's feed."""
+    """Fail open: whatever is not refreshed in time is sent unchanged."""
     import time as _time
 
     from services.notifier import freshness
@@ -193,39 +178,23 @@ class _Item:
 
 
 def test_unlimited_still_fits_inside_one_claim():
-    """**Unlimited means "withhold nothing", not "clear the backlog in one transaction".**
-
-    An account with 1,282 waiting and no per-run ceiling built a candidate pool five times that,
-    and ranking it did not finish inside the `notify` lane's two-minute claim — so the job was
-    reclaimed, re-ran, and the account received nothing while every job reported done.
-
-    The limit's own description already promises the right behaviour: anything over stays queued for
-    the next run and nothing is dropped.
-    """
+    """Unlimited means "withhold nothing", not "clear the backlog in one transaction"."""
     from libs.limits import DEFAULT_SEND_GAP_SECONDS
     from services.notifier.deliver import SEND_BUDGET_SECONDS, unlimited_items
     from services.notifier.eligibility import CANDIDATE_MULTIPLIER
 
     fetched = unlimited_items(DEFAULT_SEND_GAP_SECONDS)
 
-    # **Derived from the run's own budget rather than picked**, so the two cannot drift: whatever
-    # the claim timeout or the pacing becomes, this stays the number a run could actually send.
+    # Derived from the run's own budget rather than picked, so the two cannot drift.
     assert fetched == int(SEND_BUDGET_SECONDS / DEFAULT_SEND_GAP_SECONDS) + 1
     assert fetched * CANDIDATE_MULTIPLIER <= 1_000, (
         "the candidate pool this implies is too large to rank inside one claim")
-    # Never withhold what the run had time for: fetching fewer than it can send is a cap by
-    # accident, which is the defect this whole change removes.
+    # Never withhold what the run had time for: fetching fewer than it can send is a cap by accident.
     assert fetched > SEND_BUDGET_SECONDS / DEFAULT_SEND_GAP_SECONDS
 
 
 def test_the_card_says_what_linkedin_said_about_applicants():
-    """**The number alone says the opposite of the page.**
-
-    Measured against eight live postings: LinkedIn writes "Be among the first 25 applicants" when
-    *fewer than* 25 have applied, and "Over 200 applicants" when it has stopped counting. Both parse
-    to a bare integer, and `👥25` tells somebody twenty-five people are ahead of them when the page
-    is saying the opposite — the difference between a job worth opening now and one worth skipping.
-    """
+    """The number alone says the opposite of the page."""
     from services.notifier.card import applicant_label
 
     assert applicant_label(25, "Be among the first 25 applicants").startswith("<25")
@@ -237,8 +206,7 @@ def test_the_card_says_what_linkedin_said_about_applicants():
 
 
 def test_the_feed_item_columns_line_up_with_the_query():
-    """`FeedItem(*row[:-1])` maps by position, so a column added to one and not the other shifts
-    every field after it — silently, into a card that looks plausible and is wrong."""
+    """`FeedItem(*row[:-1])` maps by position."""
     import dataclasses as dc
 
     from services.notifier.card import FeedItem

@@ -1,22 +1,4 @@
-"""T2 — the dedup regression suite. `libs.corpus.keys` must match the reference exactly.
-
-**Written before the port, and it stays green through it.** The roadmap names the `store.py` port
-the critical path precisely because its semantics are tuned, quietly load-bearing, and fail
-*silently*: a dedup rule that changes does not raise, it just starts admitting duplicates into every
-user's feed or swallowing real postings. There is no error message for that — only a suite that
-notices.
-
-The expected values in `golden/dedup_cases.json` were produced by **executing** the reference
-(`job-search/pipeline/lib/store.py`), not by reading it and writing down what the rules appear to
-say. That distinction is the whole value: a misreading transcribed into a test would be confirmed by
-that test forever. Provenance and regeneration: `golden/generate_dedup_golden.py`.
-
-The golden file is committed rather than generated at test time, because the reference is a separate
-repository and is not present in CI.
-
-**If a case here fails, the port changed behaviour.** Fix the port. Regenerating the golden to make
-it pass is the one move that defeats the suite entirely.
-"""
+"""T2 — the dedup regression suite."""
 from __future__ import annotations
 
 import json
@@ -43,9 +25,7 @@ def test_content_key_matches_reference(case):
 
 
 # ── The rules above, restated as behaviour rather than as table rows ──────────────────────────
-# The parametrised cases prove equality with the reference. These say *what the equality means*, so
-# that a future reader learns the intent from the test suite rather than from a comment that may
-# have drifted from the code.
+# The parametrised cases prove equality with the reference.
 
 
 def test_the_same_job_on_both_greenhouse_hosts_is_one_job():
@@ -67,11 +47,7 @@ def test_tracking_parameters_do_not_make_a_new_job():
 
 
 def test_unusable_input_yields_no_opinion_rather_than_a_shared_key():
-    """`None` must mean "no opinion", and callers must fail open.
-
-    If a caller instead treated `None` as a key, every posting with an unparseable title would
-    collapse into a single row and the rest would be silently discarded.
-    """
+    """`None` must mean "no opinion", and callers must fail open."""
     for junk in ("", "   ", "not-a-url", "/relative/path"):
         assert canonical_url(junk) is None, junk
     assert content_key("", "Acme", "London") is None
@@ -111,13 +87,7 @@ def test_legal_suffixes_are_stripped_but_never_the_whole_name():
 
 
 def test_remote_and_remote_emea_do_not_collapse():
-    """The reference's own comment claims these are equal. They are not, and the behaviour wins.
-
-    `remote` is stripped from the location but `EMEA` survives, so "Remote" yields no location
-    component while "Remote - EMEA" keys as `…|emea`. Recorded as a test rather than left as a
-    surprise, because the comment says otherwise and someone will eventually "fix" the code to
-    match the comment.
-    """
+    """The reference's own comment claims these are equal."""
     assert content_key("Backend Engineer", "Acme", "Remote") == "acme|backend engineer"
     assert content_key("Backend Engineer", "Acme", "Remote - EMEA") == "acme|backend engineer|emea"
     assert (content_key("Backend Engineer", "Acme", "Remote")
@@ -125,16 +95,13 @@ def test_remote_and_remote_emea_do_not_collapse():
 
 
 def test_hybrid_location_keeps_the_city():
-    """"Hybrid - Budapest" is a Budapest job. Dropping the city would collapse it with every other
-    hybrid role at the same company, anywhere."""
+    """"Hybrid - Budapest" is a Budapest job."""
     assert content_key("Backend Engineer", "Acme", "Hybrid - Budapest") == "acme|backend engineer|budapest"
     assert content_key("Backend Engineer", "Acme", "Budapest (Hybrid)") == "acme|backend engineer|budapest"
 
 
 # ── Differential fuzz against the live reference ──────────────────────────────────────────────
-# The golden cases prove the inputs someone thought to write down. This proves the ones nobody did.
-# It needs the reference repository, so it skips wherever that is absent — including CI, which is
-# why it supplements the committed goldens rather than replacing them.
+# The golden cases prove the inputs someone thought to write down.
 
 REFERENCE = Path(r"d:\Projects\job-search")
 _have_reference = (REFERENCE / "pipeline" / "lib" / "store.py").exists()
@@ -142,10 +109,7 @@ _have_reference = (REFERENCE / "pipeline" / "lib" / "store.py").exists()
 
 @pytest.mark.skipif(not _have_reference, reason=f"reference instance not present at {REFERENCE}")
 def test_no_divergence_from_the_reference_on_random_input():
-    """40,000 random strings through both implementations. Any mismatch is a porting bug.
-
-    Seeded, so a failure is reproducible rather than a story about a run that once went red.
-    """
+    """40,000 random strings through both implementations."""
     import random
     import string
     import sys

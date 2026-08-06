@@ -1,11 +1,4 @@
-"""Fit one account's model from its labelled history, and publish it.
-
-    python deploy/scripts/train_user.py --email you@example.com
-
-The same code path the `train` lane worker runs — this exists so a migrated account can be trained
-once, on demand, before the queue is driving anything. It writes the artifact, inserts the `models`
-row, and bumps `users.model_version` in one transaction, so the scorer picks it up on next serve.
-"""
+"""Fit one account's model from its labelled history, and publish it."""
 from __future__ import annotations
 
 import argparse

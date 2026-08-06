@@ -1,10 +1,4 @@
-"""Refresh sessions: hashed at rest, rotated on use.
-
-The policy is FlowSolutions' (`AUTH_REUSE.md` §3): 15-minute access tokens, 30-day refresh tokens,
-refresh stored hashed and never in plaintext. Rotation on every refresh is what makes a stolen
-refresh token detectable — the legitimate client and the thief cannot both keep using it, and the
-second one to present the old value finds it already spent.
-"""
+"""Refresh sessions: hashed at rest, rotated on use."""
 from __future__ import annotations
 
 import hashlib
@@ -51,28 +45,17 @@ def issue_session(session: Session, user_id: _uuid.UUID, *,
 
 def rotate_session(session: Session, refresh_token: str, *,
                    user_agent: str | None = None, ip: str | None = None) -> IssuedSession:
-    """Spend a refresh token and issue its successor. Raises `SessionExpired` if it is not usable.
-
-    **Reuse of an already-rotated token revokes the whole family.** That is the standard response to
-    a replayed refresh token: either the client is buggy or the token was stolen, and in the second
-    case the thief and the user are now both holding invalid credentials rather than one of them
-    silently keeping access.
-
-    A *revoked* token is different and must not trigger it. That is an ordinary logout followed by a
-    stale cookie, and treating it as theft would log a user out of every device for closing a tab.
-    """
+    """Spend a refresh token and issue its successor."""
     row = session.scalar(select(UserSession).where(UserSession.refresh_hash == _hash(refresh_token)))
     if row is None:
         raise SessionExpired("unknown refresh token")
 
     if row.rotated_at is not None:
-        # Only a *rotated* token counts as a replay. It was exchanged for a successor, so a second
-        # presentation means two parties hold it.
+        # Only a *rotated* token counts as a replay.
         revoke_all(session, row.user_id)
         raise SessionExpired("refresh token replayed — every session for this user was revoked")
     if row.revoked_at is not None:
-        # An explicit logout, then a stale cookie. Ordinary, and not evidence of anything: treating
-        # it as a replay would log the user out of every other device for closing a tab.
+        # An explicit logout, then a stale cookie.
         raise SessionExpired("session was logged out")
     if row.expires_at <= datetime.now(UTC):
         raise SessionExpired("refresh token expired")

@@ -1,10 +1,4 @@
-"""The three GDPR obligations, as behaviour rather than as claims in a document.
-
-The erasure test is the one that carries real weight, and it is written to **fail when a new table
-is added and forgotten**: it enumerates every table in the metadata that has a `user_id` column and
-asserts none of them still has a row. A test naming the tables by hand would keep passing forever
-after somebody adds the eleventh.
-"""
+"""The three GDPR obligations, as behaviour rather than as claims in a document."""
 from __future__ import annotations
 
 import os
@@ -62,8 +56,7 @@ def api():
 # ── the disclosure ────────────────────────────────────────────────────────────────────────────
 
 def test_the_policy_names_each_processor_rather_than_trusted_third_parties(api):
-    """The entire requirement. A user deciding whether to upload their employment history is
-    entitled to know it will be read by a US company, and which one."""
+    """The entire requirement."""
     http, _, _ = api
     body = http.get("/legal/privacy").json()
 
@@ -81,8 +74,7 @@ def test_the_policy_is_public(api):
 
 
 def test_the_consent_screen_and_the_policy_come_from_one_source():
-    """Two copies drift, and the drift is invisible: a consent recorded against a disclosure that
-    no longer describes what happens is worse than no consent screen at all."""
+    """Two copies drift, and the drift is invisible."""
     from libs.legal import disclosure
     from services.api.account_routes import privacy
 
@@ -92,8 +84,7 @@ def test_the_consent_screen_and_the_policy_come_from_one_source():
 # ── consent, at the moment it is owed ─────────────────────────────────────────────────────────
 
 def test_processing_is_refused_before_consent(api):
-    """The only place document text crosses a processor boundary, so the only place it is checked —
-    and checked here rather than in the worker, where the failure would be invisible for hours."""
+    """The only place document text crosses a processor boundary, so the only place it is checked."""
     from libs.db.models import UserDocument, UserSecret
 
     http, session, user = api
@@ -113,8 +104,7 @@ def test_processing_is_refused_before_consent(api):
 
 
 def test_consent_to_a_superseded_disclosure_is_refused(api):
-    """A policy naming a new processor is a new disclosure, and an old agreement is not an answer
-    to it."""
+    """A policy naming a new processor is a new disclosure, and an old agreement is not an answer to it."""
     http, _, _ = api
     response = http.post("/account/consent", json={"version": "1999-01-01"})
     assert response.status_code == 409
@@ -122,8 +112,7 @@ def test_consent_to_a_superseded_disclosure_is_refused(api):
 
 
 def test_adding_a_processor_re_asks_everyone(api):
-    """The mechanism, not the intention: consent is version-compared, so a bumped disclosure makes
-    every stored agreement stale by construction rather than by anyone remembering."""
+    """The mechanism, not the intention: consent is version-compared."""
     http, session, user = api
     http.post("/account/consent",
               json={"version": http.get("/account/consent").json()["current_version"]})
@@ -136,8 +125,7 @@ def test_adding_a_processor_re_asks_everyone(api):
 
 
 def test_withdrawing_says_what_it_does_not_undo(api):
-    """A profile already built stays built, and what Anthropic processed cannot be recalled.
-    Implying otherwise would be the misleading part."""
+    """A profile already built stays built, and what Anthropic processed cannot be recalled."""
     http, session, _ = api
     http.post("/account/consent",
               json={"version": http.get("/account/consent").json()["current_version"]})
@@ -153,9 +141,7 @@ def test_withdrawing_says_what_it_does_not_undo(api):
 # ── erasure ───────────────────────────────────────────────────────────────────────────────────
 
 def test_deleting_an_account_leaves_no_row_anywhere(api):
-    """**The obligation, proved rather than asserted.** Enumerates every table with a `user_id`
-    column from the metadata, so adding an eleventh table and forgetting its cascade fails here
-    instead of leaving a stranger's rows behind for a year."""
+    """The obligation, proved rather than asserted."""
     from sqlalchemy import func, select
 
     from libs.db.base import Base
@@ -194,13 +180,12 @@ def test_deleting_an_account_leaves_no_row_anywhere(api):
             select(func.count()).select_from(table).where(table.c.user_id == user.id))
         assert remaining == 0, f"{table.name} still holds {remaining} rows for a deleted account"
 
-    # And the shared corpus is untouched: one user leaving must not remove a job another user has.
+    # The shared corpus is untouched: one user leaving must not remove another user's job.
     assert session.get(CorpusJob, job.id) is not None
 
 
 def test_deleting_requires_the_password_not_just_a_session(api):
-    """Irreversible, and it unwinds an account somebody spent real money building. A stolen session
-    cookie must not be enough."""
+    """Irreversible, and it unwinds an account somebody spent real money building."""
     from libs.db.models import User
 
     http, session, user = api
@@ -212,8 +197,7 @@ def test_deleting_requires_the_password_not_just_a_session(api):
 
 
 def test_changing_the_password_needs_the_old_one_and_ends_every_session(api):
-    """The reference's semantics (`security/handler.go`): a stolen cookie must not be enough to
-    rotate the owner out, and a session the thief already holds must die with the change."""
+    """The reference's semantics (`security/handler.go`)."""
     from libs.auth.passwords import verify_password
     from libs.auth.sessions import issue_session
     from libs.db.models import UserSession
@@ -246,9 +230,7 @@ def test_changing_the_password_refuses_a_wrong_current_or_a_weak_new_one(api):
 
 
 def test_the_delivery_interval_is_not_a_user_setting(api):
-    """**The cadence belongs to the platform** (owner, 2026-08-01). A user choosing four hours was
-    choosing to hear about a two-hour-old job, which is the opposite of what this product is, so
-    the field is gone rather than merely ignored. What a user still controls is on/off."""
+    """The cadence belongs to the platform (owner, 2026-08-01)."""
     http, session, user = api
 
     # Ignored, not honoured: the field is not part of the request model any more.

@@ -1,6 +1,4 @@
-"""Integration test — needs a running stack. Set EMBEDDER_URL (e.g. http://localhost:8080)
-after publishing the gateway port locally. Skips when unset so CI without a stack stays green.
-"""
+"""Integration test — needs a running stack."""
 from __future__ import annotations
 
 import os

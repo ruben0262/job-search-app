@@ -1,22 +1,4 @@
-"""Choosing which jobs a new account pays to have labelled.
-
-**Labelling a random sample is mostly wasted money.** Most of the corpus is an obvious reject for
-any given person, and an obvious reject teaches a classifier almost nothing — it already knows.
-`COLD_START_PLAN.md` §4 selects for *balance and boundary* instead: 40% likely positives so the
-model learns what good looks like, 40% from the middle where the decision boundary actually is, and
-20% clear negatives as a calibration floor.
-
-Ranked by the rules-only score (`libs.scoring.rules`) rather than by a bootstrap model. That is a
-deliberate simplification for launch: a bootstrap model trained on other users' labels is a
-data-use question needing consent, and one trained only on the operator's labels is a separate
-artifact to build and version. The rules score is free, needs no consent, and is good enough to
-*stratify* — which is all it is asked to do here. It picks which jobs to ask about; Haiku still
-answers.
-
-The spread across sources and recency is not decoration. A pool drawn only from the largest source
-teaches the model that source's phrasing, and one drawn only from this week teaches whatever this
-week's market happens to be hiring for.
-"""
+"""Choosing which jobs a new account pays to have labelled."""
 from __future__ import annotations
 
 import logging
@@ -33,31 +15,22 @@ from libs.scoring.rules import POOL_BANDS
 logger = logging.getLogger(__name__)
 
 
-# Below this, the config is too narrow to train on and the honest answer is to say so rather than
-# to train a model on 40 examples and let the user discover it is useless.
+# Below this the config is too narrow to train on, and saying so beats a useless model.
 MIN_VIABLE_POOL = 150
 
-# How far back to draw from. Wider than the 24-hour steady-state window on purpose: a new account
-# has no history, and the last day alone would show it almost nothing.
+# How far back to draw from.
 LOOKBACK_DAYS = 90
 
-# How many candidates to rank before banding. Bounded because this runs in a worker on a corpus
-# that will keep growing, and the bands do not get better for having sorted ten times as many.
+# How many candidates to rank before banding.
 MAX_CANDIDATES = 5_000
 
-# How many of the user's keywords narrow the candidate query. Each is an ILIKE, and the
-# keyword ceiling is 25, so this bounds the worst case without truncating a normal config.
+# How many of the user's keywords narrow the candidate query.
 MAX_TERMS_IN_QUERY = 25
 
 
 
 def _config_terms(config: dict) -> list[str]:
-    """The user's own search words, for narrowing the candidate query.
-
-    Bounded and de-duplicated: this becomes an `ILIKE` per term, and a config with fifty near
-    identical keywords should not turn one query into fifty scans. Short fragments are dropped --
-    a two-letter term matches most of the corpus and narrows nothing.
-    """
+    """The user's own search words, for narrowing the candidate query."""
     terms: list[str] = []
     for section in (config or {}).get("sections") or []:
         for keyword in section.get("keywords") or []:
@@ -69,11 +42,7 @@ def _config_terms(config: dict) -> list[str]:
 
 def select_pool(session: Session, user_id: _uuid.UUID, config: dict, *,
                 size: int = POOL_SIZE) -> list[int]:
-    """Corpus ids to label for this account, banded high/mid/low. Excludes anything already labelled.
-
-    Returns fewer than `size` when the corpus cannot supply it — the caller decides whether that is
-    too few to train on, because "too few" is a product judgement and this is a selection function.
-    """
+    """Corpus ids to label for this account, banded high/mid/low."""
     from datetime import UTC, datetime, timedelta  # noqa: PLC0415 - one caller, one path
 
     from libs.scoring.rules import score_job  # noqa: PLC0415 - avoids a cycle at import time
@@ -83,19 +52,7 @@ def select_pool(session: Session, user_id: _uuid.UUID, config: dict, *,
 
     since = datetime.now(UTC) - timedelta(days=LOOKBACK_DAYS)
 
-    # **Drawn per user, not "the newest rows on the platform".**
-    #
-    # This took the newest `MAX_CANDIDATES` corpus rows and then filtered them against the config in
-    # Python. The corpus is shared, so whoever harvests most owns recency: an account searching for
-    # mechanical engineering roles had 159 matching rows in the corpus and saw none of them, because
-    # five thousand fresher software postings stood in front of them. Its cold start labelled ten
-    # jobs, found nothing further, and stopped forever at a tenth of what training needs -- with the
-    # only explanation a warning in a log nobody reads.
-    #
-    # So the user's own terms narrow the query first, and the budget is spent on rows that could
-    # plausibly be theirs. A share of the newest rows regardless of terms is kept alongside: the
-    # rules score reads remoteness too, and a pool drawn only from title matches would
-    # never surface a job whose title uses a word the user did not think of.
+    # Drawn per user, not "the newest rows on the platform".
     terms = _config_terms(config)
     rows: list[CorpusJob] = []
     seen_ids: set[int] = set()
@@ -110,8 +67,7 @@ def select_pool(session: Session, user_id: _uuid.UUID, config: dict, *,
         rows.extend(matched)
         seen_ids.update(row.id for row in matched)
 
-    # The remainder of the budget, newest first, so a config with no usable terms still works and a
-    # user whose next good match is worded unexpectedly can still be shown it.
+    # The remainder of the budget, newest first, so a config with no usable terms still works.
     spare = max(MAX_CANDIDATES - len(rows), MAX_CANDIDATES // 5)
     for row in session.scalars(
             select(CorpusJob)
@@ -140,12 +96,7 @@ def select_pool(session: Session, user_id: _uuid.UUID, config: dict, *,
 
 
 def _band(scored: list[tuple[int, int, str]], size: int) -> list[int]:
-    """Split the ranked list into three bands and draw the configured share from each.
-
-    Drawn by **striding** through each band rather than taking its head. Taking the head of the
-    high band gives 120 near-identical top-scoring jobs — the same phrasing, often the same
-    employer — which is 120 labels' worth of money for one label's worth of information.
-    """
+    """Split the ranked list into three bands and draw the configured share from each."""
     total = len(scored)
     third = max(total // 3, 1)
     bands = {"high": scored[:third], "mid": scored[third:third * 2], "low": scored[third * 2:]}
@@ -158,8 +109,7 @@ def _band(scored: list[tuple[int, int, str]], size: int) -> list[int]:
             stride = max(len(band) // want, 1)
             picked.extend(job_id for _, job_id, _ in band[::stride][:want])
 
-    # Top up from whatever is left if a band ran short, so a lopsided corpus still yields a full
-    # pool rather than silently returning 180 of 300.
+    # Top up from what is left if a band ran short, rather than silently returning 180 of 300.
     if len(picked) < size:
         chosen = set(picked)
         picked.extend(job_id for _, job_id, _ in scored

@@ -1,30 +1,11 @@
-/**
- * Build your profile — a conversation with the setup agents.
- *
- * **The user is answering questions about themselves.** That the answers become eight markdown
- * files is the platform's business, not theirs: nothing here asks them to approve a filename,
- * read a diff, or understand what a scaffold is. The file list is on the right for anyone curious
- * enough to look, and it is the only place the machinery shows.
- *
- * This replaces "process your documents", which spent one call on a schema and produced a profile
- * with no career in it (`REBUILD_PLAN.md`).
- *
- * **A turn can take minutes.** Opus 5 reads a document set and writes several files in one go, so
- * the pending state has to be honest rather than optimistic — a spinner that implies seconds is
- * worse than a line that says what is happening.
- */
+/** Build your profile — a conversation with the setup agents. */
 import { useEffect, useRef, useState } from "react";
 
 import { api } from "../api";
 import { Markdown } from "../markdown";
 import { Error, useAction } from "../ui";
 
-/** Split a reply into the steps it is made of.
- *
- *  A blank line is what the model already uses to separate one thing it did from the next, so this
- *  reads that rather than inventing a protocol. Fenced code blocks are left whole — a blank line
- *  inside one is part of the code, not a boundary — which is the only case where the naive split
- *  gets it wrong and produces a container holding half a snippet. */
+/** Split a reply into the steps it is made of. */
 function steps(text: string): string[] {
   const blocks: string[] = [];
   let current: string[] = [];
@@ -43,8 +24,7 @@ function steps(text: string): string[] {
   return blocks.length ? blocks : [text];
 }
 
-/** What setup still needs. Computed server-side from the files themselves, so "done" is a fact
- *  about the database rather than something an agent decided about itself. */
+/** What setup still needs. */
 type Progress = {
   complete: boolean;
   missing: string[];
@@ -59,8 +39,7 @@ type Message = {
   id?: number;
   role: "user" | "assistant";
   content: string;
-  // `cancelling` is the stop requested and the worker not having noticed yet; `cancelled` is a
-  // finished state, deliberately not `failed` — nothing went wrong.
+  // `cancelling` is the stop requested and the worker not having noticed yet.
   status: "pending" | "streaming" | "done" | "failed" | "cancelling" | "cancelled";
   error: string | null;
   files_written: string[];
@@ -92,8 +71,7 @@ type Conversation = {
   ready: boolean;
 };
 
-/** What each file is called, in the user's terms rather than the platform's. A filename like
- *  `02-behavioral-profile.md` tells a non-technical user nothing; "How you work" does. */
+/** What each file is called, in the user's terms rather than the platform's. */
 const NAMES: Record<string, string> = {
   "context.md": "Who you are",
   "01-candidate-profile.md": "Your history",
@@ -136,8 +114,7 @@ function autogrow(box: HTMLTextAreaElement): void {
   box.style.height = `${Math.min(box.scrollHeight, 200)}px`;
 }
 
-// The last conversation, kept across mounts so returning to the page renders it instantly while
-// the fresh one loads — the split-second "Loading…" was the page throwing away what it knew.
+// The last conversation, kept across mounts so returning to the page renders it instantly while the fresh.
 let cachedConversation: Conversation | null = null;
 
 /** Forgotten on sign-out, or the next account flashes this one's conversation. */
@@ -162,9 +139,7 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
   const [renaming, setRenaming] = useState<string | null>(null);
   const [draftTitle, setDraftTitle] = useState("");
 
-  /** Save the typed name, or quietly drop the edit if it is unchanged or empty. A rename that
-   *  failed silently would leave the old name on screen and look like nothing happened, so the
-   *  reload after it is what confirms the save. */
+  /** Save the typed name, or quietly drop the edit if it is unchanged or empty. */
   const commitRename = async (id: string) => {
     const wanted = draftTitle.trim();
     setRenaming(null);
@@ -179,22 +154,19 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
     cachedConversation = fresh;
     setState(fresh);
   };
-  // What setup still needs, answered by the server from the database rather than by the agent's
-  // opinion of its own work. It drives the Start button's step and the outstanding list.
+  // What setup still needs, answered by the server from the database rather than by the agent.
   const loadProgress = async () => {
     const body = await api.get<Progress>("/setup/progress").catch(() => null);
     if (body) setProgress(body);
   };
 
   useEffect(() => {
-    // A load that fails silently leaves "Loading…" on screen forever, which reads as a hang
-    // rather than an error — the one state a user cannot act on.
+    // A load that fails silently leaves "Loading…" on screen forever.
     load().catch(() => setFailed(true));
     void loadProgress();
   }, []);
 
-  // Switching chats replaces the transcript wholesale — the cached one belongs to whichever chat
-  // was open, and showing it under a different title would be a lie about what was said.
+  // Switching chats replaces the transcript wholesale — the cached one belongs to whichever chat was open.
   const openChat = useAction(async (id: string) => {
     await load(id);
   });
@@ -209,19 +181,7 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
     await api.del(`/setup/conversations/${id}`);
     await load();
   });
-  /**
-   * Follow the reply as it is written.
-   *
-   * **The old effect keyed on the message count**, so it fired once when a reply appeared and then
-   * never again while that reply grew. A long turn wrote itself off the bottom of the viewport and
-   * the user scrolled by hand to watch it, which is the one thing a transcript should not ask for.
-   * Keying on the last message's length as well means every appended chunk brings the view with it.
-   *
-   * **Unless they have scrolled away.** Somebody reading back through what was written earlier is
-   * doing something deliberate, and yanking them to the bottom every second and a half would make
-   * the page unusable during exactly the turn they want to re-read. `pinned` goes false the moment
-   * they leave the bottom and true again when they return.
-   */
+  /** Follow the reply as it is written. */
   const messages = state?.messages;
   const tail = messages?.length
     ? `${messages.length}:${messages[messages.length - 1]!.content.length}`
@@ -231,8 +191,7 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
     const element = scroller.current;
     if (!element) return;
     const onScroll = () => {
-      // A margin rather than an exact match: smooth scrolling lands a pixel or two short, and
-      // rounding at fractional zoom levels means the exact bottom is rarely the exact bottom.
+      // A margin rather than an exact match: smooth scrolling lands a pixel or two short.
       const gap = element.scrollHeight - element.scrollTop - element.clientHeight;
       setPinned(gap < 120);
     };
@@ -244,11 +203,7 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
     if (pinned) bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [tail, pinned]);
 
-  // **The turn runs on a worker, so the page's job is to watch.** While any message is unfinished
-  // this re-reads the transcript every second and a half, which is what makes a reply appear as it
-  // is written — and what makes leaving and coming back show the same thing rather than nothing.
-  // `cancelling` counts as in flight: the worker has not noticed the stop yet, so the turn is
-  // still running and the page must keep polling until it settles.
+  // The turn runs on a worker, so the page's job is to watch.
   const inFlight = state?.messages.some((message) =>
     ["pending", "streaming", "cancelling"].includes(message.status),
   );
@@ -262,14 +217,7 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
     return () => window.clearInterval(timer);
   }, [inFlight, openConversation]);
 
-  /**
-   * Re-read progress the moment a turn stops running.
-   *
-   * **It was only read on mount and when a message was sent**, so the turn that wrote the last file
-   * left "setup complete" unsaid until the page was reloaded — the one moment the page has good news
-   * and it withheld it. The turn that finishes setup is by definition one nobody sends a message
-   * after, so waiting for the next send was waiting forever.
-   */
+  /** Re-read progress the moment a turn stops running. */
   const wasInFlight = useRef(false);
   useEffect(() => {
     if (wasInFlight.current && !inFlight) {
@@ -280,8 +228,7 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
   }, [inFlight]);
 
   const send = useAction(async (text: string) => {
-    // Shown immediately: a message that vanishes for two minutes reads as a dropped message, and
-    // the user retypes it. The server writes the same two rows, so the poll replaces these.
+    // Shown immediately: a message that vanishes for two minutes reads as a dropped message.
     setState((previous) =>
       previous
         ? {
@@ -298,13 +245,7 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
     if (box.current) {
       box.current.style.height = "auto";
     }
-    // Named explicitly rather than left to "the most recent": a turn that takes two minutes must
-    // land in the chat it was typed in, even if something else touched another one meanwhile.
-    // This returns as soon as the turn is queued — the reply arrives through the poll below.
-    //
-    // **A leading `/command` selects the step.** The server accepts the command name separately
-    // from the message; without this the page could only ever run the first one, and three of the
-    // eight profile files belong to steps nothing could start.
+    // Named explicitly rather than left to "the most recent".
     const named = /^\/([a-z-]+)\s*/.exec(text)?.[1];
     const agent = named && commands.includes(named) ? named : undefined;
     await api.post("/setup/message", {
@@ -317,9 +258,7 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
     onChanged();
   });
 
-  // **Stopping is a request, not a kill.** The worker is usually mid-call and notices between tool
-  // steps, so the button reports "stopping" until the row actually settles — claiming otherwise
-  // would be contradicted by the file panel a second later.
+  // Stopping is a request, not a kill.
   const stop = useAction(async () => {
     const running = state?.messages.find(
       (message) => message.role === "assistant" && ["pending", "streaming"].includes(message.status),
@@ -377,11 +316,7 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
         <p className="kicker">Your profile</p>
         <div className="spread">
           <h1>Build your profile</h1>
-          {/* {state.ready ? (
-            <span className="small muted">
-              Ready, <a href="#/model">train your model</a> when you like
-            </span>
-          ) : null} */}
+          {/* {state.ready ? */}
         </div>
 
         <p className="muted" style={{ maxWidth: "44rem" }}>
@@ -390,8 +325,7 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
             : "Talk to it like you would to a person: new roles, corrections, changes of direction. It knows where things belong. Each chat remembers only itself; your profile is shared across all of them. Training the model that ranks your jobs happens on the Model page, not here."}
         </p>
 
-        {/* The chat switcher. Every chat has its own memory; the profile underneath is shared,
-            which is what makes starting a fresh one cheap rather than a loss. */}
+        {/* The chat switcher. */}
         <div className="chat-tabs">
           {state.conversations.map((chat) => (
             <span
@@ -399,10 +333,7 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
               className={`chat-tab${chat.id === state.conversation_id ? " on" : ""}`}
             >
               {renaming === chat.id ? (
-                /* **Editing in place, in the tab itself.** A dialog for a two-word label is more
-                   ceremony than the thing is worth, and the switcher is where somebody is looking
-                   when they decide a name is wrong. Enter saves, Escape abandons, and blurring
-                   saves too -- clicking away from a name you have just typed means you meant it. */
+                /* Editing in place, in the tab itself. */
                 <input
                   className="chat-tab-rename"
                   value={draftTitle}
@@ -417,9 +348,7 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
                 />
               ) : (
                 <button type="button" onClick={() => void openChat.run(chat.id)}>
-                  {/* The title truncates on its own element. On the button it did not: a flex item
-                      with padding kept its full text width and the pill clipped it at the border,
-                      losing the first character as well as the last. */}
+                  {/* The title truncates on its own element. */}
                   <span className="chat-tab-title">{chat.title}</span>
                 </button>
               )}
@@ -467,10 +396,7 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
         </div>
         <Error>{openChat.error ?? newChat.error ?? deleteChat.error}</Error>
 
-        {/* **Success is stated, not inferred.** An agent that has finished and a user who believes
-            it has finished are different things, and the gap between them is where "why is my feed
-            empty" comes from. This is the same check the trainer refuses on, so the page and the
-            trainer cannot disagree. */}
+        {/* Success is stated, not inferred. */}
         {progress ? (
           progress.complete ? (
             <p className="small" style={{ color: "var(--score)" }}>
@@ -483,10 +409,7 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
         <div className="chat" ref={scroller}>
           {state.messages.length === 0 ? (
             <div className="chat-empty">
-              {/* **A button, not a blank box.** Asking a new user to invent the first message is
-                  the least helpful screen the product has, and the command they would need to
-                  guess is one they have never seen. `next_command` comes from the server, which
-                  knows which files are still missing and therefore which step runs next. */}
+              {/* A button, not a blank box. */}
               <p className="md-heading">Let's build your profile</p>
               <p className="muted">
                 This is a conversation about your career. It asks the questions, and sorts your
@@ -509,9 +432,7 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
             <div key={index} className={`turn ${message.role}`}>
               {message.role === "assistant" ? (
                 <div className={`turn-body${message.status === "failed" ? " turn-failed" : ""}`}>
-                  {/* Nothing written yet: the turn is queued or the model is still thinking. The
-                      dots say working; the sentence says how long, because a turn really can take
-                      minutes and an animation alone would imply seconds. */}
+                  {/* Nothing written yet: the turn is queued or the model is still thinking. */}
                   {message.status === "pending" && !message.content ? (
                     <span className="pending">
                       <span className="typing" aria-hidden="true">
@@ -524,18 +445,14 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
                     </span>
                   ) : (
                     <>
-                      {/* **One container per step, not one per turn.** A reply that alternates a
-                          line, a paragraph and a line is several things the agent did, and running
-                          them together reads as an undifferentiated wall. The model separates them
-                          with blank lines already; this renders that separation. */}
+                      {/* One container per step, not one per turn. */}
                       {steps(message.content).map((step, position) => (
                         <div key={position} className="turn-step">
                           <span className="turn-step-dot" aria-hidden="true" />
                           <Markdown text={step} />
                         </div>
                       ))}
-                      {/* A caret while text is still arriving: the difference between "writing" and
-                          "stopped mid-sentence". */}
+                      {/* A caret while text is still arriving. */}
                       {message.status === "streaming" ? <span className="caret" /> : null}
                     </>
                   )}
@@ -547,10 +464,7 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
                   {message.status === "failed" && message.error ? (
                     <span className="turn-error">{message.error}</span>
                   ) : null}
-                  {/* **What it did, as a list of steps rather than a sentence.** A turn can write
-                      several files and the old single line ran them together with separators, which
-                      reads as one event. A rail with a dot per step says how many things happened
-                      and lets a reader check the one they care about. */}
+                  {/* What it did, as a list of steps rather than a sentence. */}
                   {message.files_written.length > 0 ? (
                     <ul className="activity">
                       {message.files_written.map((name) => (
@@ -573,10 +487,7 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
         </div>
 
         <Error>{send.error}</Error>
-        {/* **Bottom-left, next to the composer, not up in the transcript.** A long turn's only
-            sign of life was a caret somewhere above the fold; a user who had scrolled could not
-            tell working from stuck. Stop lives here too, because the two belong together: this is
-            the one place that says something is running and the one place to end it. */}
+        {/* Bottom-left, next to the composer, not up in the transcript. */}
         {inFlight ? (
           <div className="working">
             <span className="typing" aria-hidden="true">
@@ -620,10 +531,7 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
               }
             }}
           />
-          {/* **One control, two jobs.** Stop used to sit up beside the working indicator while
-              the send button was greyed out next to it -- two controls, one of them dead, at the
-              moment there is exactly one thing a person wants to do. The button a user is already
-              looking at becomes the stop. */}
+          {/* One control, two jobs. */}
           {inFlight ? (
             <button
               type="button"
@@ -651,10 +559,7 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
       <div style={{ marginTop: "3rem", maxWidth: "48rem" }}>
         <p className="kicker">Your files</p>
         <h2>What we have written down</h2>
-        {/* **Listed either way, openable only when the operator has said so.** Seeing that a file
-            exists is not the same as reading what it says about you, and hiding the tiles entirely
-            would leave somebody unable to tell whether their setup had produced anything. `state`
-            is repolled, so closing it reaches an open tab without a reload. */}
+        {/* Listed either way, openable only when the operator has said so. */}
         <p className="facts">
           {state.files_visible === false
             ? "These are being reviewed, so they cannot be opened yet."
@@ -692,8 +597,7 @@ function StopIcon() {
   );
 }
 
-/** A pencil, for renaming. Small and quiet: it sits beside the delete cross and must not compete
- *  with it for attention -- one of the two is destructive and the other is not. */
+/** A pencil, for renaming. */
 function PencilIcon() {
   return (
     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -721,8 +625,7 @@ function SendIcon() {
   );
 }
 
-/* Monochrome inline SVGs, one per file kind — an emoji renders as a colour image on most
-   platforms, which is the one thing this palette does not have. */
+/* Monochrome inline SVGs, one per file kind — an emoji renders as a colour image on most platforms. */
 function FileIcon({ kind }: { kind: string }) {
   const stroke = { stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round" } as const;
   if (kind === "context")

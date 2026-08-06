@@ -1,18 +1,4 @@
-"""The GDPR surface: what we disclose, what the user agreed to, and erasure.
-
-Three obligations the cleared legal review depends on (`ROADMAP.md` Phase 3 step 11), all of them
-things the product must *do* rather than things a document must claim:
-
-- **`GET /legal/privacy` names every processor.** Anthropic, Telegram, the proxy provider — what
-  each receives, what for, and whose credential pays. Served from `libs.legal` so it cannot drift
-  from the consent screen.
-- **`POST /account/consent` before any document text reaches Anthropic.** Reshaped once the sandbox
-  went away: files no longer leave this server, so the moment consent is owed is *process data*,
-  not upload. `/process` refuses without it.
-- **`DELETE /account` erases, and the erasure is provable.** With no Files API objects outside
-  Postgres there is nothing to orphan, so the cascade is the whole story — and a test asserts no
-  row referencing the user survives in any table.
-"""
+"""The GDPR surface: what we disclose, what the user agreed to, and erasure."""
 from __future__ import annotations
 
 import logging
@@ -39,24 +25,14 @@ router = APIRouter(tags=["account"])
 
 @router.get("/legal/privacy")
 def privacy() -> dict:
-    """Every processor, named. Public — it is linked from signup, before anyone has an account.
-
-    Naming them individually rather than saying "trusted third parties" is the entire requirement:
-    a user deciding whether to upload their employment history is entitled to know it will be read
-    by a US company, and which one.
-    """
+    """Every processor, named."""
     return disclosure()
 
 
 @router.get("/account/consent")
 def consent_state(db: Session = Depends(get_db),
                   user_id: _uuid.UUID = Depends(current_user)) -> dict:
-    """Whether this account has agreed to the **current** disclosure.
-
-    Version-compared, not merely present. A policy that names a new processor is a new disclosure,
-    and an old agreement is not an answer to it — so adding one re-asks everybody, which is the
-    point rather than a cost to route around.
-    """
+    """Whether this account has agreed to the current disclosure."""
     user = db.get(User, user_id)
     given = (user.processing_consent_at is not None
              and user.processing_consent_version == DISCLOSURE_VERSION)
@@ -70,9 +46,7 @@ def consent_state(db: Session = Depends(get_db),
 
 
 class ConsentBody(BaseModel):
-    # The client echoes back the version it displayed. If it does not match what the server would
-    # serve, the user agreed to a screen that is no longer current and the answer is refused rather
-    # than recorded against the wrong text.
+    # The client echoes back the version it displayed.
     version: str = Field(min_length=4, max_length=16)
 
 
@@ -94,12 +68,7 @@ def grant_consent(body: ConsentBody, db: Session = Depends(get_db),
 @router.delete("/account/consent")
 def withdraw_consent(db: Session = Depends(get_db),
                      user_id: _uuid.UUID = Depends(current_user)) -> dict:
-    """Withdraw. Processing stops being available; nothing already produced is undone.
-
-    Said plainly rather than implied: a profile already built stays built, and what Anthropic
-    already processed cannot be recalled. Deleting the account is the stronger action and the one
-    that removes what this platform holds.
-    """
+    """Withdraw."""
     user = db.get(User, user_id)
     user.processing_consent_at = None
     user.processing_consent_version = None
@@ -117,19 +86,7 @@ class PasswordChange(BaseModel):
 @router.put("/account/password")
 def change_password(body: PasswordChange, response: Response, db: Session = Depends(get_db),
                     user_id: _uuid.UUID = Depends(current_user)) -> dict:
-    """Change the password. The semantics are the reference implementation's
-    (FlowSolutions `security/handler.go`, via `AUTH_REUSE.md`), because each was learned the
-    hard way there:
-
-    - **the current password is required** — a stolen session cookie must not be enough to lock
-      the owner out of their own account;
-    - **the new password may not equal the current one** — accepting it would record a change
-      that changed nothing while still revoking every session;
-    - **every session is revoked, including this one.** If the password is being changed because
-      it leaked, a session the thief already holds must die with it. The client signs the user
-      back in with the new password, which is one honest re-login rather than a silently
-      privileged session surviving the rotation.
-    """
+    """Change the password."""
     user = db.get(User, user_id)
     if not verify_password(user.password_hash, body.current_password):
         # Deliberately the same shape as a failed login: no oracle, no timing shortcut.
@@ -147,17 +104,14 @@ def change_password(body: PasswordChange, response: Response, db: Session = Depe
                      "Every session was signed out. If this was not you, reset your password "
                      "from the sign-in page immediately.")
     revoked = revoke_all(db, user_id)
-    # The refresh sessions are dead in the database; the cookies still sitting in this browser are
-    # what would otherwise keep presenting them. The access cookie dies here too rather than at its
-    # natural expiry — sixty seconds of ghost session after "your password changed" reads as broken.
+    # The refresh sessions are dead; the cookies in this browser would keep presenting them.
     _clear_session_cookies(response)
     audit(logger, "account.password_changed", user=user_id, sessions_revoked=revoked)
     return {"status": "changed", "force_relogin": True}
 
 
 class DeleteBody(BaseModel):
-    # Not a checkbox. Erasure is irreversible and unwinds an account somebody spent real money
-    # building, so it asks for the one thing an attacker with a stolen session does not have.
+    # Not a checkbox.
     password: str = Field(min_length=1, max_length=1024)
 
 
@@ -165,13 +119,7 @@ class DeleteBody(BaseModel):
 def delete_account(body: DeleteBody, db: Session = Depends(get_db),
                    store: SecretStore = Depends(get_store),
                    user_id: _uuid.UUID = Depends(current_user)) -> dict:
-    """Erase the account. Everything cascades from `users`, and the credentials are crypto-shredded.
-
-    **Both, deliberately.** The cascade removes the rows; `purge` destroys the user's DEK, so any
-    ciphertext that survives in a backup taken minutes ago is unreadable rather than merely deleted
-    (`TENANT_SAFETY.md` §2). A backup restore that resurrected a stranger's Claude key would be the
-    worst possible outcome of a delete request.
-    """
+    """Erase the account."""
     user = db.get(User, user_id)
     if not verify_password(user.password_hash, body.password):
         # Deliberately the same shape as a failed login: no oracle, no timing shortcut.
@@ -184,13 +132,7 @@ def delete_account(body: DeleteBody, db: Session = Depends(get_db),
 
 
 class AccountPatch(BaseModel):
-    # **How often the feed is sent is no longer here.** It was a per-user field, and a user setting
-    # four hours was asking to be told about a two-hour-old job; the operator owns one cadence for
-    # everyone now (`libs.settings`). What remains is the on/off switch, which is a real choice.
-    #
-    # The feed's on/off switch. **Messages stop; nothing else does.** The dispatcher reads this
-    # before queueing notify jobs, so pausing stops delivery while collection, scoring and the bot
-    # itself keep running — resuming picks up a warm feed rather than a cold start.
+    # How often the feed is sent is no longer here.
     active: bool | None = None
 
 

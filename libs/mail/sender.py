@@ -22,16 +22,7 @@ class EmailSender(Protocol):
 
 
 class SmtpSender:
-    """SMTP over STARTTLS, authenticated with a username and password.
-
-    **Provider-agnostic on purpose** — host, port, user and sender all come from the environment.
-    The platform sends as `no-reply@flow-solutions.xyz` through Zoho, matching the other
-    FlowSolutions services; nothing here knows or cares about that, which is what made switching
-    from the originally-planned Gmail a configuration change and not a code change.
-
-    The password comes from the environment and is never logged: `libs.secrets`' redaction filter
-    covers the process, and `smtplib` puts credentials in its debug output, so debug is left off.
-    """
+    """SMTP over STARTTLS, authenticated with a username and password."""
 
     def __init__(self, host: str, port: int, user: str, password: str, sender: str):
         self._host, self._port = host, port
@@ -50,23 +41,12 @@ class SmtpSender:
                 smtp.login(self._user, self._password)
                 smtp.send_message(message)
         except Exception as exc:
-            # The address is logged; the subject and body are not. A verification body contains a
-            # token that grants access to the account.
+            # The address is logged; the subject and body are not.
             raise MailError(f"could not send to {to}: {type(exc).__name__}") from exc
 
 
 class ConsoleSender:
-    """Prints instead of sending. For development and tests — never wired in production.
-
-    Deliberately keeps the message: a test that asserts a link was generated needs to read it, and
-    a developer running the signup flow locally needs to click it.
-
-    **The body goes to stdout via `print`, not through logging.** The auth routes send inside
-    `redacting(token)`, which scrubs the token from every log record — correct in production and
-    fatal here, because the whole point of this sender is that the developer can click the link.
-    Before this, "email (not sent)" logged only the subject and the signup flow was locally
-    unfinishable: the verification link existed nowhere a human could see.
-    """
+    """Prints instead of sending."""
 
     def __init__(self) -> None:
         self.sent: list[tuple[str, str, str]] = []
@@ -78,12 +58,7 @@ class ConsoleSender:
 
 
 def sender_from_env(env: dict[str, str] | None = None) -> EmailSender:
-    """`SmtpSender` when SMTP is configured, `ConsoleSender` otherwise.
-
-    Falling back rather than raising is deliberate: a developer with no mail credentials should be
-    able to run the whole signup flow, and the console sender makes the link visible. Production
-    sets the variables, and `OPERATIONS_PLAN.md` §4's checks are what catch a box that does not.
-    """
+    """`SmtpSender` when SMTP is configured, `ConsoleSender` otherwise."""
     env = env if env is not None else dict(os.environ)
     host, user, password = env.get("SMTP_HOST"), env.get("SMTP_USER"), env.get("SMTP_PASSWORD")
     if not (host and user and password):

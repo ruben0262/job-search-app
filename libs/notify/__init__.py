@@ -1,19 +1,4 @@
-"""Producing an in-app notification, from any service.
-
-One function, `notify`, called at the moment a service learns something the user should know —
-a bot token stopped working, a training run finished, the password changed. The dashboard's bell
-polls what accumulates here.
-
-**Collapse is the default.** Every producer in this platform runs on a timer, so any persistent
-fact ("Telegram is broken") would otherwise be re-announced every cycle; forty copies of the same
-truth is how a bell gets ignored and the one real error scrolls away. An unread notification for
-the same event is refreshed in place — its timestamp moves, its body updates — and only a *read*
-one allows a new unread row, which is exactly the reader's view: "this is still true" versus "this
-happened again since you looked".
-
-Templates are here rather than at call sites (FlowSolutions' `events.go` arrangement) so two
-services reporting the same event cannot word it two ways.
-"""
+"""Producing an in-app notification, from any service."""
 from __future__ import annotations
 
 import logging
@@ -44,13 +29,11 @@ PROCESSING_DONE = Event("processing.done", "info", "Your profile is ready to rev
 PROCESSING_FAILED = Event("processing.failed", "error", "Processing your documents failed",
                           "#/process")
 PASSWORD_CHANGED = Event("account.password_changed", "warning", "Your password was changed")
-# A build was asked for and cannot happen yet. **The user is the only one who can fix it**, so they
-# are the one told — this used to dead-letter to the operator and say nothing to anybody.
+# A build was asked for and cannot happen yet.
 DOCUMENT_NOT_READY = Event("document.not_ready", "warning", "A document could not be built",
                            "#/setup")
 def notify(session: Session, user_id: _uuid.UUID, event: Event, body: str = "") -> None:
-    """Record one. Never raises — a notification about a failure must not become a second failure
-    inside the same transaction as the recovery it is describing."""
+    """Record one."""
     try:
         existing = session.scalar(
             select(UserNotification)

@@ -71,15 +71,7 @@ def test_every_component_answers_with_a_state_and_a_sentence(api):
 
 
 def test_matches_waiting_and_nothing_sent_is_reported_as_broken(api):
-    """**The shape of the outage this page slept through** (2026-07-31).
-
-    Collection was running, scoring was running, the bot and channel were connected, and the
-    notifier was completing its jobs while delivering nothing — it selected fifty candidates a run
-    and dropped all fifty. Every component was green for six hours and the product was not working.
-
-    Neither fact alone means anything: an account with nothing to send is quiet for good reasons,
-    and a backlog right after a harvest is normal. The conjunction is the signal.
-    """
+    """The shape of the outage this page slept through (2026-07-31)."""
     from datetime import timedelta
 
     from libs.db.models import CorpusJob, UserJobState
@@ -111,8 +103,7 @@ def test_matches_waiting_and_nothing_sent_is_reported_as_broken(api):
     assert next(c for c in http.get("/status").json()["components"]
                 if c["key"] == "delivery")["state"] == "ok"
 
-    # A second match arrives, and the last delivery recedes past the threshold. Same components
-    # green as before — this is the conjunction the check exists for.
+    # A second match arrives, and the last delivery recedes past the threshold.
     second = CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
                        title="Platform Engineer", first_seen_at=datetime.now(UTC))
     session.add(second)
@@ -140,21 +131,13 @@ def test_a_broken_bot_is_red_with_the_fix_in_words(api):
 
 
 def test_pausing_delivery_is_reported_as_paused_not_broken(api):
-    """**A pause is a decision, not a fault.**
-
-    With messages off, matches pile up and nothing is sent — which is exactly the shape the stall
-    check looks for. Without knowing about the switch, the page would show a red light for the
-    thing the user themselves turned off, on the one screen that exists to say what is genuinely
-    wrong. `dispatch_due_notifications` filters on the same flag, so the page and the pipeline
-    cannot disagree about whether anything is being sent.
-    """
+    """A pause is a decision, not a fault."""
     from datetime import timedelta
 
     from libs.db.models import CorpusJob, UserJobState
 
     http, session, user = api
-    # A finished account with messages on. `active` starts false and means "not started yet" until
-    # onboarding completes — which is why the check reads both.
+    # A finished account with messages on.
     user.active = True
     user.onboarding_completed_at = datetime.now(UTC)
     job = CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test", title="Backend Engineer",
@@ -164,8 +147,7 @@ def test_pausing_delivery_is_reported_as_paused_not_broken(api):
     session.add(UserJobState(user_id=user.id, job_id=job.id, score=95.0,
                              scored_at=datetime.now(UTC),
                              notified_at=datetime.now(UTC) - timedelta(hours=48)))
-    # A match still waiting behind it — without one, two days of quiet is an account with nothing
-    # to send rather than a stall, which is the distinction the check is built on.
+    # A match still waiting behind it — without one.
     waiting = CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
                         title="Platform Engineer", first_seen_at=datetime.now(UTC))
     session.add(waiting)
@@ -187,28 +169,14 @@ def test_pausing_delivery_is_reported_as_paused_not_broken(api):
 
 
 def test_there_is_no_mirrored_daily_cap_left_to_drift(api):
-    """**The mirror is gone, because it never had to exist.**
-
-    This used to assert that `status_routes.DEFAULT_NOTIFICATIONS_PER_DAY` equalled
-    `deliver.MAX_NOTIFICATIONS_PER_DAY` — two constants kept equal by a test, on the reasoning that
-    `services.api` may not import `services.notifier`. Both were 100 and both were fiction: the
-    notifier reads `libs.limits`, whose default is unlimited, and neither constant governed a single
-    delivery. `libs` is exactly where a value two services share belongs, so there is nothing left
-    to mirror (ROADMAP 6af).
-    """
+    """The mirror is gone, because it never had to exist."""
     from services.notifier import deliver
 
     assert not hasattr(deliver, "MAX_NOTIFICATIONS_PER_DAY")
 
 
 def test_spending_the_daily_allowance_is_not_a_stall(api):
-    """**Today's jobs having already arrived is the system working, not failing.**
-
-    The notifier defers once an account is at its cap and logs exactly that. Without knowing it, the
-    stall check sees matches piling up with nothing sent and reports a warning: observed live on
-    2026-08-01 as "802 matches waiting; last delivery 4 hours ago", where the real answer was that
-    the day's jobs had been delivered hours earlier.
-    """
+    """Today's jobs having already arrived is the system working, not failing."""
     from datetime import timedelta
 
     from libs.db.models import CorpusJob, UserJobState
@@ -216,9 +184,7 @@ def test_spending_the_daily_allowance_is_not_a_stall(api):
     http, session, user = api
     user.active = True
     user.onboarding_completed_at = datetime.now(UTC)
-    # **A cap has to exist for "the allowance is spent" to be a state at all.** The catalogue
-    # default is unlimited, and reporting a spent allowance against no limit is what told an
-    # account "today's 20 jobs have been sent" on a day it received 908.
+    # A cap has to exist for "the allowance is spent" to be a state at all.
     cap = 25
     user.limits = {"notifications_per_day": cap}
     session.flush()

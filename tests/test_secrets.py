@@ -1,24 +1,4 @@
-"""T4 — a user's credentials never leave the system in readable form.
-
-`TEST_STRATEGY.md` §4.3 puts this test in the same commit as `libs/secrets`, and the reason is that
-every property here is one nobody notices the absence of. A leaked key does not fail a build; it
-shows up as someone else's bill. So these tests assert the *negative* — that a value is **not**
-present — which only works if the assertion is written at the same time as the code, against the
-same threat model.
-
-Three claims, from `TENANT_SAFETY.md` §2:
-
-1. **A stolen database dump is useless.** The plaintext appears nowhere in the row, and the key that
-   would decrypt it is not in the database at all.
-2. **A known secret cannot appear in captured logs.** Including through paths nobody wrote: an
-   exception message, a `%s` of an object that happens to contain it, a library's own log line.
-3. **Nothing returns the value.** The read path the API uses exposes `last_4` and timestamps.
-
-Everything is asserted through the public surface — store it, try to get it back out the ways an
-attacker or an accident would, and check what came back. None of these tests reach into a private
-attribute or assert on a ciphertext layout, because those would break on a refactor that changed
-nothing about whether the credential is safe.
-"""
+"""T4 — a user's credentials never leave the system in readable form."""
 from __future__ import annotations
 
 import base64
@@ -50,8 +30,7 @@ from libs.secrets import (
 from libs.secrets.keyring import open_sealed, seal
 from libs.tenant.repository import TenantRepository
 
-# Shaped like the real thing, because the pattern-based half of the redaction filter recognises
-# credential shapes — a placeholder like "hunter2" would pass tests the real value would fail.
+# Shaped like the real thing, because the pattern-based half of the redaction filter recognises credential.
 CLAUDE_KEY = "sk-ant-api03-" + "Zx9" * 20
 TELEGRAM_TOKEN = "7123456789:AAF" + "q7Kd2mNp" * 4
 PROXY_URL = "http://tenant-alice:s3cr3t-p4ssw0rd@gate.smartproxy.test:7000"
@@ -73,8 +52,7 @@ def test_a_sealed_secret_round_trips():
 
 
 def test_the_plaintext_does_not_survive_anywhere_in_the_ciphertext():
-    """The most basic dump property, and the one a broken encryption path passes every other test
-    while failing: encoding is not encryption."""
+    """The most basic dump property, and the one a broken encryption path passes every other test while."""
     ring, user = _ring(), uuid.uuid4()
     ciphertext, nonce = seal(ring.new_dek(), CLAUDE_KEY, user_id=user, kind="claude_api")
     blob = ciphertext + nonce
@@ -83,8 +61,7 @@ def test_the_plaintext_does_not_survive_anywhere_in_the_ciphertext():
 
 
 def test_sealing_the_same_value_twice_produces_different_ciphertext():
-    """A fresh nonce per call. Reuse under one key is the single mistake that breaks GCM outright,
-    and it is invisible without this: identical ciphertexts also decrypt correctly."""
+    """A fresh nonce per call."""
     ring, user = _ring(), uuid.uuid4()
     dek = ring.new_dek()
     first, _ = seal(dek, CLAUDE_KEY, user_id=user, kind="claude_api")
@@ -93,9 +70,7 @@ def test_sealing_the_same_value_twice_produces_different_ciphertext():
 
 
 def test_a_ciphertext_cannot_be_moved_to_another_user():
-    """An attacker with database *write* access, not key access. Without associated data binding the
-    owner in, copying a row from one user to another is a silent success and the victim's worker
-    starts spending the attacker's — or the attacker starts spending the victim's."""
+    """An attacker with database *write* access, not key access."""
     ring = _ring()
     dek = ring.new_dek()
     alice, mallory = uuid.uuid4(), uuid.uuid4()
@@ -106,8 +81,7 @@ def test_a_ciphertext_cannot_be_moved_to_another_user():
 
 
 def test_a_ciphertext_cannot_be_relabelled_as_another_kind():
-    """Relabelling a proxy password as a Claude key would hand a worker a credential it will send
-    to the wrong third party."""
+    """Relabelling a proxy password as a Claude key would hand a worker a credential it will send to the."""
     ring, user = _ring(), uuid.uuid4()
     dek = ring.new_dek()
     ciphertext, nonce = seal(dek, PROXY_URL, user_id=user, kind="proxy")
@@ -128,8 +102,7 @@ def test_tampering_with_the_ciphertext_is_detected():
 
 
 def test_a_wrapped_dek_is_useless_to_a_different_kek():
-    """The whole claim. Two rings, same wrapped DEK, and the one that did not wrap it cannot read
-    it — which is what "a stolen dump without the environment is useless" means concretely."""
+    """The whole claim."""
     user = uuid.uuid4()
     theirs, ours = _ring(), _ring()
     wrapped = ours.wrap_dek(ours.new_dek(), user_id=user)
@@ -139,9 +112,7 @@ def test_a_wrapped_dek_is_useless_to_a_different_kek():
 
 
 def test_no_hardcoded_fallback_when_the_kek_is_missing():
-    """A default key would make every test above pass and the design worthless. Refusing to start
-    is the intended behaviour: a service that comes up without a KEK has told the operator the
-    deploy succeeded."""
+    """A default key would make every test above pass and the design worthless."""
     with pytest.raises(KeyUnavailable):
         KeyRing.from_env({})
     with pytest.raises(KeyUnavailable):
@@ -160,8 +131,7 @@ def test_a_malformed_kek_is_rejected_rather_than_padded_to_length():
 # ══ 2. KEK rotation: possible without re-encrypting anything ═══════════════════════════════════
 
 def test_a_retired_kek_still_reads_rows_it_wrapped():
-    """Rotation is not an outage. New writes use the new key; old rows keep working until the
-    rewrap job reaches them."""
+    """Rotation is not an outage."""
     user = uuid.uuid4()
     old = generate_key()
     ring_before = KeyRing.from_env({"SECRETS_KEK": f"k1:{old}"})
@@ -176,8 +146,7 @@ def test_a_retired_kek_still_reads_rows_it_wrapped():
 
 
 def test_dropping_a_key_that_is_still_in_use_says_so():
-    """The recoverable failure. Distinguished from a decryption failure on purpose — one is fixed by
-    putting the key back, the other by a restore, and confusing them costs hours."""
+    """The recoverable failure."""
     user = uuid.uuid4()
     old_ring = _ring()
     wrapped = old_ring.wrap_dek(old_ring.new_dek(), user_id=user)
@@ -192,12 +161,10 @@ def test_dropping_a_key_that_is_still_in_use_says_so():
 @pytest.mark.parametrize(
     "render",
     [str, repr, lambda s: f"{s}", lambda s: f"{s!r}", lambda s: format(s, ""),
-     # Percent-formatting on purpose, not an oversight: it is what `logging` itself does to a `%s`
-     # argument, so it is the exact path a credential passed to a logger takes.
+     # Percent-formatting on purpose, not an oversight: it is what `logging` itself does to a `%s` argument.
      lambda s: "%s" % (s,)])  # noqa: UP031
 def test_no_way_of_rendering_a_secret_shows_the_value(render):
-    """The type-level half of "never logged". Every one of these is a real leak path someone writes
-    without thinking — an f-string in a debug line, a `%r` in an assertion, a formatted container."""
+    """The type-level half of "never logged"."""
     secret = Secret(CLAUDE_KEY, kind="claude_api")
     rendered = render(secret)
     assert CLAUDE_KEY not in rendered
@@ -218,13 +185,7 @@ def test_reveal_is_the_only_way_out():
 
 @pytest.fixture()
 def captured():
-    """A logger with a real handler, filtered the way `install()` does it.
-
-    The filter goes on the **handler**, not the logger, because a logger's filters only run for
-    records logged on that logger — a record from a child logger propagates straight to the parent's
-    handlers. A redaction filter installed on the root logger alone protects almost nothing, and it
-    looks like it is working.
-    """
+    """A logger with a real handler, filtered the way `install()` does it."""
     stream = io.StringIO()
     handler = logging.StreamHandler(stream)
     handler.setFormatter(logging.Formatter("%(name)s %(levelname)s %(message)s"))
@@ -250,8 +211,7 @@ def test_a_live_secret_is_scrubbed_from_a_log_message(captured, value):
 
 
 def test_a_secret_is_scrubbed_from_a_child_loggers_record(captured):
-    """The propagation case. This is the test that fails if the filter is installed on the logger
-    instead of the handler, and it is exactly how every real service logs."""
+    """The propagation case."""
     _, stream = captured
     child = logging.getLogger("t4.services.notifier")
     with redacting(TELEGRAM_TOKEN):
@@ -260,12 +220,7 @@ def test_a_secret_is_scrubbed_from_a_child_loggers_record(captured):
 
 
 def test_a_secret_is_scrubbed_from_a_traceback(captured):
-    """Where credentials actually leak. An HTTP client that fails to connect puts the URL it dialled
-    — userinfo and all — into the exception, and `logger.exception` renders the whole traceback.
-
-    Tracebacks are formatted *after* filters run, so a filter that only rewrites `record.msg` passes
-    every other test in this file and leaks here.
-    """
+    """Where credentials actually leak."""
     logger, stream = captured
     with redacting(PROXY_URL):
         try:
@@ -278,8 +233,7 @@ def test_a_secret_is_scrubbed_from_a_traceback(captured):
 
 
 def test_a_secret_carried_by_an_object_argument_is_scrubbed(captured):
-    """`logger.info("config: %s", cfg)` where cfg is a dict holding a proxy URL. The value never
-    appears in the format string, so a filter that inspects only the message misses it."""
+    """`logger.info("config: %s", cfg)` where cfg is a dict holding a proxy URL."""
     logger, stream = captured
     with redacting(PROXY_URL):
         logger.info("proxy config: %s", {"url": PROXY_URL, "user_id": "alice"})
@@ -287,17 +241,14 @@ def test_a_secret_carried_by_an_object_argument_is_scrubbed(captured):
 
 
 def test_credential_shapes_are_masked_even_when_never_registered(captured):
-    """The registry cannot cover a value the process never held — a key echoed by a library, or one
-    a user pasted into a support field. Recognisable shapes are masked on sight as a second line."""
+    """The registry cannot cover a value the process never held — a key echoed by a library."""
     logger, stream = captured
     logger.info("upstream said: invalid key %s", CLAUDE_KEY)
     assert CLAUDE_KEY not in stream.getvalue()
 
 
 def test_redaction_stops_when_the_credential_is_no_longer_in_use(captured):
-    """The window is the call, not the process. A registry that only grows would eventually hold
-    every credential the process has ever touched, and mask unrelated log text that happens to
-    match."""
+    """The window is the call, not the process."""
     logger, stream = captured
     with redacting(TELEGRAM_TOKEN):
         pass
@@ -314,8 +265,7 @@ def test_ordinary_log_lines_are_left_alone(captured):
 
 
 def test_short_values_are_never_registered():
-    """Redacting a 4-character string globally would corrupt unrelated lines, and no real credential
-    is that short."""
+    """Redacting a 4-character string globally would corrupt unrelated lines."""
     with redacting("abc"):
         assert redact("abc is a common substring") == "abc is a common substring"
 
@@ -368,8 +318,7 @@ def test_a_stored_credential_comes_back(store_ctx):
 
 @pytestmark_db
 def test_nothing_the_database_holds_contains_the_plaintext(store_ctx):
-    """T4's headline assertion, made the way an attacker would: dump every column of every row
-    belonging to this user and search the lot. Not "the ciphertext column differs" — *nothing*."""
+    """T4's headline assertion, made the way an attacker would."""
     from sqlalchemy import text
 
     store, s = store_ctx
@@ -392,11 +341,7 @@ def test_nothing_the_database_holds_contains_the_plaintext(store_ctx):
 
 @pytestmark_db
 def test_the_key_that_would_decrypt_it_is_not_in_the_database(store_ctx):
-    """The other half. Ciphertext plus its key in the same dump is not encryption at rest — and it
-    is the way this design is most often quietly defeated.
-
-    Proven the way a thief would experience it: same database, same rows, different environment.
-    """
+    """The other half."""
     from sqlalchemy import text
 
     store, s = store_ctx
@@ -415,8 +360,7 @@ def test_the_key_that_would_decrypt_it_is_not_in_the_database(store_ctx):
 
 @pytestmark_db
 def test_one_user_cannot_read_another_users_credential(store_ctx):
-    """T1's isolation claim, at the layer where getting it wrong is worst. Even copying the raw
-    ciphertext onto the other row does not work — the owner is authenticated, not just filtered."""
+    """T1's isolation claim, at the layer where getting it wrong is worst."""
     store, s = store_ctx
     alice, mallory = _user(s), _user(s)
     store.put(alice.id, "claude_api", CLAUDE_KEY)
@@ -454,8 +398,7 @@ def test_the_api_read_path_returns_metadata_and_never_a_value(store_ctx):
 
 @pytestmark_db
 def test_rotation_replaces_and_the_old_credential_is_gone(store_ctx):
-    """"`PUT` replaces; old ciphertext deleted, not versioned." Versioning here would keep a revoked
-    credential decryptable, which is the opposite of what revoking means."""
+    """"`PUT` replaces; old ciphertext deleted."""
     from sqlalchemy import text
 
     store, s = store_ctx
@@ -474,8 +417,7 @@ def test_rotation_replaces_and_the_old_credential_is_gone(store_ctx):
 
 @pytestmark_db
 def test_validation_state_is_recorded_not_assumed(store_ctx):
-    """A credential is unvalidated until something proved it works. Defaulting to validated would
-    mean a typo'd key fails silently at 3 a.m. instead of at the form."""
+    """A credential is unvalidated until something proved it works."""
     store, s = store_ctx
     user = _user(s)
     store.put(user.id, "claude_api", CLAUDE_KEY)
@@ -501,8 +443,7 @@ def test_rotating_a_credential_clears_its_validation(store_ctx):
 
 @pytestmark_db
 def test_purge_destroys_the_key_as_well_as_the_rows(store_ctx):
-    """Deleting rows is undone by restoring a backup. Deleting the DEK is not — which is what makes
-    "destroyed on account deletion" true across the backups too."""
+    """Deleting rows is undone by restoring a backup."""
     store, s = store_ctx
     user = _user(s)
     store.put(user.id, "claude_api", CLAUDE_KEY)
@@ -518,8 +459,7 @@ def test_purge_destroys_the_key_as_well_as_the_rows(store_ctx):
 
 @pytestmark_db
 def test_a_kek_rotation_rewraps_without_touching_the_secrets(store_ctx):
-    """The point of the envelope. Rotating touches one small column per user; no credential is
-    re-encrypted, and every one still reads afterwards."""
+    """The point of the envelope."""
     _, s = store_ctx
     user = _user(s)
 
@@ -571,8 +511,7 @@ def test_asking_for_a_credential_that_was_never_set_is_not_an_error(store_ctx):
 
 @pytestmark_db
 def test_a_secret_row_without_its_key_fails_loudly(store_ctx):
-    """Only reachable through a partial restore. Failing loudly beats a credential that silently
-    never works, because the second one presents as "the integration is broken"."""
+    """Only reachable through a partial restore."""
     store, s = store_ctx
     user = _user(s)
     store.put(user.id, "claude_api", CLAUDE_KEY)

@@ -1,19 +1,4 @@
-"""What a button tap means, in rows.
-
-**This is the half that makes the product improve.** Everything upstream ranks jobs by what Haiku
-thought of them against a rubric; this records what the person actually did, which is the higher-
-quality signal and the only one that reflects a decision rather than an opinion
-(`ONBOARDING_AND_PROCESSING.md` §5).
-
-`user_labels.source = 'feedback'` and `weight = 5` have been in the schema since Phase 2 with
-nothing writing them. The 5 is carried from the reference instance, where it was arrived at by
-measurement rather than chosen.
-
-**In `libs` because two callers need identical behaviour**: the Telegram webhook, and the web
-dashboard when it grows the same buttons. A second implementation would drift, and the drift would
-be silent — two ways of recording "applied" that disagree about the label, and a training set that
-quietly means two things.
-"""
+"""What a button tap means, in rows."""
 from __future__ import annotations
 
 import logging
@@ -29,16 +14,10 @@ from libs.obs import audit
 
 logger = logging.getLogger(__name__)
 
-# 5x an LLM label. Carried from the reference instance rather than invented: what somebody does is
-# worth more than what a model thought, but not so much more that a handful of taps overwhelms a
-# few thousand rubric labels.
+# 5x an LLM label.
 FEEDBACK_WEIGHT = 5.0
 
 # What each action asserts about the job, on the same 0-100 scale the rubric uses.
-#
-# **Not 100 and 0.** An application is strong evidence of a good match and not proof of a perfect
-# one; people apply to things they are unsure about. Saturating the scale would teach the model that
-# every applied job is identical, which throws away the ordering that makes a feed useful.
 APPLIED_LABEL = 90
 SKIPPED_LABEL = 10
 
@@ -49,24 +28,13 @@ ACTIONS = ("applied", "skipped", "dismissed")
 class FeedbackResult:
     action: str
     job_id: int
-    # Whether this changed anything. A second tap on the same button is a person checking it
-    # registered, not a new opinion — and it must not enqueue a second retrain.
+    # Whether this changed anything.
     changed: bool
 
 
 def record(session: Session, user_id: _uuid.UUID, job_id: int, action: str, *,
            create_missing: bool = False) -> FeedbackResult:
-    """Record one action. Idempotent per (user, job, action).
-
-    **Does not commit** — the caller owns the transaction, so the label and whatever the caller does
-    with the result land together.
-
-    `create_missing` is for the one caller that legitimately acts on a job this user was never
-    shown: `/cv <link>`, where they pasted the posting themselves. It is opt-in rather than the
-    default because the usual cause of a missing state row is a tap on a months-old message whose
-    row has been trimmed, and silently creating state for that would manufacture training data out
-    of an accident.
-    """
+    """Record one action."""
     if action not in ACTIONS:
         raise ValueError(f"unknown action {action!r}")
 
@@ -80,16 +48,14 @@ def record(session: Session, user_id: _uuid.UUID, job_id: int, action: str, *,
         session.add(state)
         session.flush()
     if state is None:
-        # A tap on a job this user was never shown. Not an error worth raising at somebody — the
-        # message may be old and the row trimmed — but never silent either.
+        # A tap on a job this user was never shown.
         logger.warning("feedback: user %s has no state for job %s", user_id, job_id)
         return FeedbackResult(action, job_id, changed=False)
 
     changed = _apply(state, action)
     if changed and action in ("applied", "skipped"):
         label = APPLIED_LABEL if action == "applied" else SKIPPED_LABEL
-        # Upserted: an LLM label for this job almost certainly exists, and the whole point is that
-        # what the user did replaces what the model guessed.
+        # Upserted: what the user did replaces what the model guessed.
         session.execute(
             pg_insert(UserLabel)
             .values(user_id=user_id, job_id=job_id, label=label, source="feedback",
@@ -101,15 +67,12 @@ def record(session: Session, user_id: _uuid.UUID, job_id: int, action: str, *,
                       "profile_version": user.profile_version,
                       "profile_generation": user.profile_generation}))
 
-    # Any action is engagement, and engagement is what keeps an account out of `dormant` — a user
-    # who reads their feed every morning may never open the web app again after onboarding.
+    # Any action is engagement, and engagement is what keeps an account out of `dormant`.
     user.last_active_at = func.now()
     session.flush()
 
     if changed:
-        # Only counted when it is about to be written down. It used to be read on every call to
-        # feed a retrain gate that has since gone — `should_retrain` is the one authority on that
-        # question — so an unchanged tap now costs one query fewer.
+        # Only counted when it is about to be written down.
         count = session.scalar(
             select(func.count()).select_from(UserLabel)
             .where(UserLabel.user_id == user_id, UserLabel.source == "feedback",
@@ -122,9 +85,7 @@ def _apply(state: UserJobState, action: str) -> bool:
     """Set the timestamp for this action. Returns whether it was not already set."""
     if action == "applied":
         if state.applied_at is not None:
-            # **Never moved.** `applied_at` is the date the person actually applied, and a later tap
-            # must not rewrite history — the reference instance sets it on the first build and
-            # leaves it, and the applied-log is the durable record of a real event.
+            # Never moved.
             return False
         state.applied_at = func.now()
         return True

@@ -1,26 +1,4 @@
-"""Per-user repository: job state, applied log, labels, and feedback.
-
-Ports four of the reference's JSONL stores at once, because in the multi-tenant schema they are the
-same two tables rather than four files:
-
-| Reference file | Here |
-|---|---|
-| `applied.jsonl` | `user_job_state.applied_at` / `.cover_built` |
-| `labels.jsonl` | `user_labels` with `source='llm'` |
-| `feedback.jsonl` | `user_labels` with `source='feedback'`, `weight=5` |
-| per-user `seen` | `user_job_state.notified_at` |
-
-**Feedback is not a separate store — it is a label with a different provenance and weight.** The
-reference keeps it apart and blends it at train time by duplicating rows five times so the weighting
-survives sklearn Pipelines. Recording `source` and `weight` on the row instead makes the blend a
-query rather than a data-munging step, and means a change to the weighting policy does not silently
-rewrite what historical rows meant.
-
-**Nothing here stores job text.** Every row references `job_id`; the description lives once in the
-shared corpus. That is what takes a label row from ~2,937 bytes to ~200 and is the entire storage
-argument for the shared design (`PLATFORM_ARCHITECTURE.md` §4). The corpus row is `pin()`ned
-whenever a user acts on it, so retention cannot remove text a label or applied-record depends on.
-"""
+"""Per-user repository: job state, applied log, labels, and feedback."""
 from __future__ import annotations
 
 import uuid as _uuid
@@ -52,12 +30,10 @@ from libs.feedback.actions import FEEDBACK_WEIGHT
 from libs.scoring.facts import render_facts
 from libs.scoring.rubric import profile_version, render_rubric, rubric_relevant_digest
 
-# The reference maps its two explicit verdicts onto scores at these points, so a feedback row sits
-# unambiguously above/below the keep threshold when blended with LLM labels.
+# The reference maps its two verdicts onto these scores, so feedback blends with LLM labels.
 APPLIED_SCORE, SKIPPED_SCORE = 90, 10
 
-# Current plus one previous (GAPS_REVIEW G12). The previous one is the rollback when a retrain
-# produces a worse model - the trainer writes a `.bak` for the same reason.
+# Current plus one previous (GAPS_REVIEW G12).
 KEEP_MODEL_VERSIONS = 2
 
 
@@ -84,12 +60,7 @@ class AppliedRecord:
 
 
 class TenantRepository:
-    """All per-user reads and writes. **`user_id` is required on every method.**
-
-    Not optional, not defaulted, not inferred from ambient state. A tenant-scoped query that forgets
-    its tenant should fail to construct rather than return another user's rows
-    (`TENANT_SAFETY.md` §1.3).
-    """
+    """All per-user reads and writes."""
 
     def __init__(self, session: Session):
         self._s = session
@@ -108,11 +79,7 @@ class TenantRepository:
 
     def record_score(self, user_id: _uuid.UUID, job_id: int, *, score: float,
                      model_version: int) -> None:
-        """Store a fit score and which model produced it.
-
-        `model_version` is recorded so a retrain can invalidate stale scores without a full rescore,
-        and so "why did this rank differently yesterday" is answerable.
-        """
+        """Store a fit score and which model produced it."""
         row = self._state(user_id, job_id)
         row.score = score
         row.scored_at = func.now()
@@ -122,16 +89,7 @@ class TenantRepository:
 
     def record_applied(self, user_id: _uuid.UUID, job_id: int, *,
                        cover_built: bool = False) -> bool:
-        """Log that this user built a CV for this job. Returns True if it is newly applied.
-
-        Two behaviours carried from the reference:
-
-        - **`applied_at` is set once and never moved.** A later cover build supersedes the row but
-          must not rewrite the date the user actually applied.
-        - **The corpus row is pinned**, so retention can never remove the JD underneath an applied
-          record. This is the one place where a per-user action has to reach into shared state, and
-          it is why `pin()` exists.
-        """
+        """Log that this user built a CV for this job."""
         row = self._state(user_id, job_id)
         is_new = row.applied_at is None
         if is_new:
@@ -167,13 +125,7 @@ class TenantRepository:
 
     def save_config(self, user_id: _uuid.UUID, config: dict, *,
                     schema_version: int = CONFIG_SCHEMA_VERSION) -> None:
-        """Replace this user's config.
-
-        Validation belongs to `libs.contracts.config` and happens before this is called — the
-        repository stores what it is given. Keeping validation out of the write path means there is
-        exactly one definition of "valid", rather than a second, weaker one here that a caller might
-        satisfy instead.
-        """
+        """Replace this user's config."""
         self._s.execute(
             pg_insert(UserConfig)
             .values(user_id=user_id, config=config, schema_version=schema_version)
@@ -186,26 +138,7 @@ class TenantRepository:
 
     def save_profile(self, user_id: _uuid.UUID, profile: dict, *,
                      schema_version: int = PROFILE_SCHEMA_VERSION) -> int:
-        """Store a **confirmed** profile, render its rubric and facts block, bump the generation.
-
-        Returns the generation. All of it happens here rather than in the caller, because a user
-        with a profile and no rubric — or a facts block that lagged a version behind — is a silent
-        corruption: the first mis-scores their feed, the second grounds a real application in a
-        previous version of the person. One write path means it cannot be half-done
-        (`PROFILE_CAPTURE_PLAN.md` §6.2, §6.4).
-
-        **The generation only moves when the rubric-relevant subset does** (§7). It used to move on
-        every save, which made adding a contact detail cost a relabel of the user's entire labelled
-        history on their own credential — thousands of Haiku calls to answer a question that had not
-        changed. `rubric_relevant_digest` existed for exactly this and nothing called it.
-
-        The facts block and the stored profile are rewritten either way: they are not rubric-relevant
-        (`refresh_facts` says why), and a new link belongs on the next CV immediately rather than
-        waiting for a change that happens to re-version.
-
-        Refuses an unconfirmed profile. That is the prompt-injection boundary: an uploaded CV is
-        untrusted text, and nothing an agent wrote may reach a hard gate without a human click (§5).
-        """
+        """Store a confirmed profile, render its rubric and facts block, bump the generation."""
         if not profile.get("confirmed"):
             raise ValueError("refusing to store an unconfirmed profile — see PROFILE_CAPTURE_PLAN §5")
         user = self._s.get(User, user_id)
@@ -213,9 +146,7 @@ class TenantRepository:
             raise ValueError(f"no such user: {user_id}")
 
         validated = ProfileSchema.model_validate(profile)
-        # Compared before anything is written. A stored profile that no longer validates — one
-        # written under an older schema that has since gained a required field — must not block an
-        # edit, so it is treated as "changed" rather than raising.
+        # Compared before anything is written.
         previous = user.profile
         try:
             unchanged = (previous is not None
@@ -228,9 +159,7 @@ class TenantRepository:
         user.profile = profile
         user.profile_schema_version = schema_version
         user.rubric_md = rubric
-        # Rendered in the same write as the rubric. A profile whose facts block lagged behind would
-        # ground a generated CV in a previous version of the person — silently, and on a real
-        # application.
+        # Rendered in the same write as the rubric.
         user.facts_md = render_facts(validated)
         user.profile_version = profile_version(rubric)
         if not unchanged:
@@ -238,16 +167,7 @@ class TenantRepository:
         return user.profile_generation
 
     def refresh_facts(self, user_id: _uuid.UUID) -> bool:
-        """Re-render the facts block from the stored profile. **Does not bump the generation.**
-
-        The facts block is not rubric-relevant: it grounds what is *written* about a person, not
-        what counts as a fit. Changing it cannot make a label wrong, so bumping the generation would
-        invalidate every label and force a retrain for a change that means nothing to either
-        (`PROFILE_CAPTURE_PLAN.md` §7 — only re-version when the rubric-relevant subset changes).
-
-        Used to backfill after a facts-template change, and after adding the block to accounts that
-        predate it.
-        """
+        """Re-render the facts block from the stored profile."""
         user = self._s.get(User, user_id)
         if user is None or not user.profile:
             return False
@@ -259,27 +179,12 @@ class TenantRepository:
         return user.profile if user is not None else None
 
     def touch_activity(self, user_id: _uuid.UUID) -> None:
-        """Record engagement. Call from login **and from every Telegram action**.
-
-        Applying, skipping, dismissing, and building a CV all count — for a Telegram-delivered
-        product they are stronger evidence of a live user than a login is (GAPS_REVIEW G11).
-        """
+        """Record engagement."""
         self._s.execute(
             update(User).where(User.id == user_id).values(last_active_at=func.now()))
 
     def mark_dormant(self, *, after_days: int = DORMANT_AFTER_DAYS) -> list[_uuid.UUID]:
-        """Pause accounts with no engagement for `after_days`. Returns who was paused.
-
-        **This is a cost control, not a punishment.** A dormant account stops consuming harvest
-        budget and stops running its own LinkedIn tier against its own paid proxy — which, left
-        unchecked, an abandoned account does indefinitely (G11).
-
-        Reversal is automatic: any activity restores the account, because `reactivate` is called from
-        the same paths that bump `last_active_at`. Nobody has to notice and nobody has to ask.
-
-        Accounts that have never been active are measured from `created_at`, so a signup that never
-        completed onboarding is eventually paused too.
-        """
+        """Pause accounts with no engagement for `after_days`."""
         cutoff = datetime.now(UTC) - timedelta(days=after_days)
         rows = self._s.scalars(
             select(User.id).where(
@@ -293,11 +198,7 @@ class TenantRepository:
         return paused
 
     def reactivate(self, user_id: _uuid.UUID) -> bool:
-        """Bring a dormant account back. Returns True if it had been dormant.
-
-        Only `dormant` is reversed here. A `suspended` account is suspended for a reason and must
-        not be un-suspended by the user simply doing something.
-        """
+        """Bring a dormant account back."""
         user = self._s.get(User, user_id)
         if user is None or user.status != "dormant":
             return False
@@ -307,17 +208,7 @@ class TenantRepository:
         return True
 
     def active_configs(self) -> dict[_uuid.UUID, dict]:
-        """Every active user's config, for the harvester's query-set fold.
-
-        **The one method here that is legitimately not scoped to a single user** — the shared
-        harvest loop's whole purpose is to serve everyone at once, and the result feeds
-        `build_query_set`, which attributes each query back to the users who wanted it.
-
-        It is still not a tenant leak: configs are *inputs* to a shared fetch, and the rows it
-        returns never reach another user's feed. Named plainly so the exception is visible rather
-        than hidden behind an optional `user_id=None` parameter, which is exactly the shape
-        `TENANT_SAFETY.md` §1.3 warns about.
-        """
+        """Every active user's config, for the harvester's query-set fold."""
         rows = self._s.execute(
             select(UserConfig.user_id, UserConfig.config)
             .join(User, User.id == UserConfig.user_id)
@@ -327,14 +218,7 @@ class TenantRepository:
     # ── secrets: metadata only, never values ─────────────────────────────────────────────────
 
     def secret_metadata(self, user_id: _uuid.UUID) -> list[SecretMetadata]:
-        """What the UI may show about this user's credentials. **Never the ciphertext.**
-
-        Secrets are write-only through the API (`TENANT_SAFETY.md` §2): the response carries
-        `last_4` and timestamps so a user can recognise which key they saved, and nothing that could
-        reconstruct it. There is deliberately no repository method that returns `ciphertext` — the
-        worker that needs a plaintext decrypts it in memory for the duration of one call, and that
-        path does not go through here.
-        """
+        """What the UI may show about this user's credentials."""
         rows = self._s.execute(
             select(UserSecret.kind, UserSecret.last_4, UserSecret.validated_at,
                    UserSecret.updated_at)
@@ -345,11 +229,7 @@ class TenantRepository:
     # ── queue ────────────────────────────────────────────────────────────────────────────────
 
     def pending_jobs(self, user_id: _uuid.UUID, lane: str | None = None) -> list[QueueJob]:
-        """This user's queued work. Read-only; claiming belongs to `libs.queue` (Phase 2).
-
-        Exists now so the dashboard can answer "is anything happening?" and so T1 can prove queue
-        rows are tenant-scoped from the first row rather than once a worker exists.
-        """
+        """This user's queued work."""
         stmt = select(QueueJob).where(
             QueueJob.user_id == user_id, QueueJob.state.in_(("ready", "claimed")))
         if lane is not None:
@@ -360,20 +240,7 @@ class TenantRepository:
 
     def prune_model_artifacts(self, user_id: _uuid.UUID, *,
                               keep: int = KEEP_MODEL_VERSIONS) -> list[str]:
-        """Keep the current artifact and one previous; return the paths of the rest (G12).
-
-        A classifier over 768-dim vectors is a few MB, so this is trivial at 50 users — and
-        unbounded if old versions accumulate, which is exactly the kind of growth nobody notices
-        until a disk alert.
-
-        **Returns paths rather than deleting files.** The repository owns rows, not the filesystem;
-        the trainer deletes what this hands back, in the same step that writes the new artifact.
-        Splitting it that way means a database rollback cannot leave the rows and the files
-        disagreeing about which versions exist.
-
-        One previous is kept deliberately rather than only the current: it is the rollback if a
-        retrain produces a worse model, and the trainer already writes a `.bak` for the same reason.
-        """
+        """Keep the current artifact and one previous; return the paths of the rest (G12)."""
         rows = list(self._s.scalars(
             select(UserModel)
             .where(UserModel.user_id == user_id)
@@ -386,31 +253,14 @@ class TenantRepository:
     # ── the LinkedIn visibility gate ─────────────────────────────────────────────────────────
 
     def linkedin_visible(self, user_id: _uuid.UUID) -> bool:
-        """Whether this user may see `source='linkedin'` rows.
-
-        **This is what makes free-riding impossible by construction** (`HARVESTER_PLAN.md` §5.2).
-        LinkedIn rows land in the shared corpus so dedup and embed-once keep working, but the tier
-        costs real proxy bandwidth paid by whoever fetched it. Without a gate, a user with no
-        credential would read results other people paid for.
-
-        One predicate on a column the corpus already records — no per-row provenance, no
-        partitioning, no duplicated storage.
-
-        A user without a credential still gets the ~2/3 of sources that cost nothing, which is a
-        genuinely useful product on its own and a clear reason to add one.
-        """
+        """Whether this user may see `source='linkedin'` rows."""
         status = self._s.scalar(
             select(ProxyCredential.status).where(ProxyCredential.user_id == user_id))
         return status == "healthy"
 
     def visible_feed(self, user_id: _uuid.UUID, *, limit: int = 50,
                      min_score: float | None = None) -> list[CorpusJob]:
-        """This user's feed, with the gate applied.
-
-        Ordering is by score, then recency. The gate is a `WHERE` clause rather than a
-        post-filter on purpose: filtering after the `LIMIT` would silently return short pages to
-        exactly the users who have no credential.
-        """
+        """This user's feed, with the gate applied."""
         stmt = (
             select(CorpusJob)
             .join(UserJobState, UserJobState.job_id == CorpusJob.id)
@@ -431,17 +281,7 @@ class TenantRepository:
                      source: str = "llm", rationale: str | None = None,
                      weight: float | None = None, profile_version: str | None = None,
                      profile_generation: int = 0) -> None:
-        """Write a training label, replacing any existing one for this `(user, job)`.
-
-        Upsert rather than append, matching the reference's `(user_id, job_id)` keying: a job
-        relabelled under a newer rubric must supersede its old label, not sit beside it and let the
-        trainer see the same job twice with two verdicts.
-
-        `profile_version` and `profile_generation` are copied onto the row at write time, because a
-        user editing their profile changes what "good match" means — labels from the old rubric are
-        answers to a different question, and recording the generation is what lets the trainer
-        select only the ones that still apply (`PROFILE_CAPTURE_PLAN.md` §6.4).
-        """
+        """Write a training label, replacing any existing one for this `(user, job)`."""
         if weight is None:
             weight = FEEDBACK_WEIGHT if source == "feedback" else 1.0
         values = {
@@ -459,15 +299,7 @@ class TenantRepository:
     def record_feedback(self, user_id: _uuid.UUID, job_id: int, *, applied: bool,
                         profile_version: str | None = None,
                         profile_generation: int = 0) -> None:
-        """An explicit user decision — the flywheel.
-
-        Positive is "worth applying to" (an explicit `/applied`, or a successful CV build, which the
-        reference treats as the same strong signal). Negative is an explicit `/skip`.
-
-        **Passive non-application is never recorded.** Only explicit decisions count, which is what
-        keeps the signal clean — a job the user simply did not get to is not a rejection, and
-        training on that assumption would teach the model the opposite of what they meant.
-        """
+        """An explicit user decision — the flywheel."""
         self.upsert_label(
             user_id, job_id,
             label=APPLIED_SCORE if applied else SKIPPED_SCORE,
@@ -476,15 +308,7 @@ class TenantRepository:
 
     def training_labels(self, user_id: _uuid.UUID, *, profile_generation: int,
                         min_description_chars: int = 100) -> Sequence[UserLabel]:
-        """This user's labels for the current profile generation, joined to usable job text.
-
-        Two filters, both carried from the reference's `load_clean()`:
-
-        - **Only the current `profile_generation`.** Labels from an older rubric answer a different
-          question; mixing them trains on a blend of two definitions of "good".
-        - **Drop thin descriptions.** Under ~100 characters means the fetch failed, and the label
-          describes a page that was never really read. Training on those teaches noise.
-        """
+        """This user's labels for the current profile generation, joined to usable job text."""
         return list(self._s.scalars(
             select(UserLabel)
             .join(CorpusJob, CorpusJob.id == UserLabel.job_id)

@@ -1,13 +1,4 @@
-"""The posting fetcher: what it reads off a page, and what it refuses to guess.
-
-Every test here is a fixed HTML fragment rather than a live fetch. The parsers are the part that
-decides what the labeller reads and what the workplace filter drops, and they have to be pinned
-against the exact markup shapes the reference arrived at by reading real postings.
-
-**The refusals matter as much as the extractions.** A parser that guesses `onsite` from prose
-deletes a good remote job from someone's feed and reports success, so the "returns None" tests are
-not filler — they are the behaviour under test.
-"""
+"""The posting fetcher: what it reads off a page, and what it refuses to guess."""
 from __future__ import annotations
 
 import datetime as dt
@@ -34,9 +25,7 @@ GUEST_FRAGMENT = """
 </div>
 """
 
-# Serialised rather than written out, because a job description is long enough that hand-writing it
-# inside a JSON string invites the newline that quietly makes the block unparseable — at which point
-# the parser under test correctly returns None and the test is measuring its own fixture.
+# Serialised rather than written out: a job description is too long to hand-write inline.
 JSONLD_PAGE = """
 <html><head>
 <script type="application/ld+json">
@@ -87,8 +76,7 @@ def test_the_applicant_count_is_the_number_in_the_caption():
 
 
 def test_a_page_with_no_applicant_caption_reports_none_rather_than_zero():
-    """Zero applicants and an unknown count are opposite signals — one is an opportunity and the
-    other is no information — and a card that prints "0 applicants" for the second is lying."""
+    """Zero applicants and an unknown count are opposite signals."""
     assert postings.parse_applicants("<div>no caption here</div>") is None
 
 
@@ -110,9 +98,7 @@ def test_every_unit_linkedin_uses_is_understood(caption, delta):
 
 
 def test_a_repost_is_distinguished_from_a_posting():
-    """LinkedIn resurfaces stale listings with a fresh timestamp. The word is the only tell — and a
-    caption without it is **no evidence either way**, because no page a logged-out fetch can reach
-    carries the word at all (2026-08-05)."""
+    """LinkedIn resurfaces stale listings with a fresh timestamp."""
     reposted = '<span class="posted-time-ago__text"> Reposted 1 day ago </span>'
     assert postings.parse_reposted(reposted) is True
     assert postings.parse_reposted(GUEST_FRAGMENT) is None
@@ -143,17 +129,14 @@ def test_the_workplace_pill_is_read_in_its_bracketed_and_middot_forms(markup, ex
 
 
 def test_prose_about_being_onsite_never_classifies_a_job_as_onsite():
-    """**The test this parser exists for.** The filter downstream drops on `onsite`, so a remote
-    posting mentioning "occasional onsite workshops" would be deleted from a feed by a looser
-    match — and the user would never know the job existed."""
+    """The test this parser exists for."""
     body = ("<div>This is a fully distributed team. Expect occasional onsite workshops and "
             "on-site client visits twice a year.</div>")
     assert postings.parse_workplace(body) is None
 
 
 def test_a_pill_far_down_the_page_is_ignored():
-    """Only the first 6KB is scanned, because that is where the top-card lives. A "(Remote)" in a
-    similar-jobs list at the bottom is about a different job."""
+    """Only the first 6KB is scanned, because that is where the top-card lives."""
     assert postings.parse_workplace("x" * 7000 + "<span>· Remote</span>") is None
 
 
@@ -218,8 +201,7 @@ def test_a_description_is_capped():
 
 
 def test_a_throttled_linkedin_fetch_is_retried_and_then_falls_back_to_the_snippet():
-    """A job whose fetch fails still has to be scored — dropping it would be worse than scoring it
-    on a teaser, and the tally is what makes the fallback visible."""
+    """A job whose fetch fails still has to be scored."""
     client = FakeClient(*[FakeResponse("", 429) for _ in range(postings.LI_RETRIES)])
     stats: dict[str, int] = {}
     result = postings.fetch_job("https://www.linkedin.com/jobs/view/9", client=client,
@@ -230,18 +212,7 @@ def test_a_throttled_linkedin_fetch_is_retried_and_then_falls_back_to_the_snippe
 
 
 def test_a_two_hundred_with_an_empty_body_is_asked_once(monkeypatch):
-    """**The assumption this test used to encode was wrong, and the live log disproved it.**
-
-    It asserted six attempts, on the reasoning that LinkedIn answers a rate-limited guest fetch with
-    200 and an empty body — so a retry on a fresh residential IP would get the text. Watched on the
-    box 2026-08-05: the same posting returned 200 with the same short body six times consecutively,
-    each on a different IP. It is not throttling, it is a fragment served without
-    `show-more-less-html__markup`, and asking again spent six times the user's paid bandwidth for a
-    byte-identical page (ROADMAP 6am).
-
-    Everything else on that page — applicants, workplace, posted time — is parsed and kept on the
-    first response, so stopping loses nothing.
-    """
+    """The assumption this test used to encode was wrong, and the live log disproved it."""
     client = FakeClient(*[FakeResponse("<div></div>") for _ in range(postings.LI_RETRIES)])
     stats: dict[str, int] = {}
     result = postings.fetch_job("https://www.linkedin.com/jobs/view/9", client=client,
@@ -252,8 +223,7 @@ def test_a_two_hundred_with_an_empty_body_is_asked_once(monkeypatch):
 
 
 def test_a_posting_that_is_gone_is_not_asked_six_times():
-    """404 is an answer a fresh IP cannot change. Six requests per deleted posting, on somebody's
-    paid residential proxy, for the same 404."""
+    """404 is an answer a fresh IP cannot change."""
     client = FakeClient(*[FakeResponse("", 404) for _ in range(postings.LI_RETRIES)])
     stats: dict[str, int] = {}
     postings.fetch_job("https://www.linkedin.com/jobs/view/9", client=client,
@@ -263,8 +233,7 @@ def test_a_posting_that_is_gone_is_not_asked_six_times():
 
 
 def test_throttling_and_server_errors_keep_every_attempt():
-    """The other half of the rule: 429 and 5xx are exactly what the IP rotation exists for, so they
-    are not swept up by the change above."""
+    """The other half of the rule: 429 and 5xx are exactly what the IP rotation exists for."""
     client = FakeClient(*[FakeResponse("", 429) for _ in range(postings.LI_RETRIES)])
     stats: dict[str, int] = {}
     postings.fetch_job("https://www.linkedin.com/jobs/view/9", client=client,
@@ -329,8 +298,7 @@ def test_an_apply_link_that_bounces_back_to_linkedin_is_dropped():
 
 
 def test_the_easy_apply_signal_is_read_from_where_the_application_happens():
-    """Not from the button text: the logged-out page rarely says "Easy Apply", and keying off that
-    made almost every job read as external."""
+    """Not from the button text: the logged-out page rarely says "Easy Apply"."""
     assert postings.parse_easy_apply('<a class="apply-link-onsite">Apply</a>') is True
     assert postings.parse_easy_apply('<a class="apply-link-offsite">Apply</a>') is False
     assert postings.parse_easy_apply("<div>a job</div>") is None
@@ -369,10 +337,7 @@ class ProxyRefusing:
 
 
 def test_a_refusing_proxy_stops_immediately_rather_than_retrying_six_times():
-    """**"This posting would not load" is worth six retries on a rotating IP. "Your proxy account
-    is out of traffic" is worth none** — and retrying it turns one dead credential into six
-    requests per row for as long as the pass runs. Seen in production on 2026-07-29: thirty
-    requests to fetch five jobs, all of them refused before they left the box."""
+    """"This posting would not load" is worth six retries on a rotating IP."""
     stats: dict[str, int] = {}
     with pytest.raises(postings.ProxyUnusable):
         postings.fetch_job("https://www.linkedin.com/jobs/view/1", client=ProxyRefusing(),
@@ -389,8 +354,7 @@ def test_the_metadata_refresh_reports_a_refusing_proxy_the_same_way():
 
 
 def test_an_ordinary_transport_failure_is_still_retried():
-    """The distinction has to be narrow: a dropped connection is exactly what the retries exist
-    for, and treating it as a dead credential would quarantine a working proxy."""
+    """The distinction has to be narrow: a dropped connection is exactly what the retries exist for."""
     class Flaky:
         def get(self, _url, **_):
             raise httpx.ConnectError("reset by peer")
@@ -402,13 +366,7 @@ def test_an_ordinary_transport_failure_is_still_retried():
 
 
 def test_a_missing_repost_marker_is_unknown_not_a_denial():
-    """**The word appears on no page a logged-out fetch can reach.**
-
-    Confirmed twice: absent from the guest fragment and from the 250 KB full page on every sample,
-    while the same posting reads "Reposted 5 hours ago" in a signed-in browser. So a caption without
-    it is no evidence either way — and returning False told 2,584 rows they were not reposts on the
-    strength of a page that never mentions reposts.
-    """
+    """The word appears on no page a logged-out fetch can reach."""
     from libs.corpus import postings
 
     assert postings.parse_reposted('<span class="posted-time-ago__text">Posted 3 days ago</span>') \
@@ -419,8 +377,7 @@ def test_a_missing_repost_marker_is_unknown_not_a_denial():
 
 
 def test_the_easy_apply_fetch_is_gone():
-    """It streamed 96 KB of a user's paid proxy per posting to read one boolean that is not on the
-    page. `parse_easy_apply` stays — pure, tested, and correct the day a logged-in page exists."""
+    """It streamed 96 KB of a user's paid proxy per posting to read one boolean that is not on the page."""
     from libs.corpus import postings
 
     assert not hasattr(postings, "fetch_easy_apply")

@@ -1,34 +1,11 @@
-/**
- * What to search for.
- *
- * **The live match count is switched off as of 2026-07-31**, display and request both, commented
- * rather than deleted. The argument for it still stands and is why it is kept: a misspelled keyword
- * otherwise surfaces as an empty feed a day later with nothing to explain it, and the person
- * concludes the product does not work. `/onboarding/config/preview` is still served, so turning it
- * back on is two uncomments and restoring the `ConfigPreview` import.
- *
- * **Rebuilt for people who do not read forms** (owner, 2026-07-30). It was two textareas of
- * newline-separated text and a `<select multiple>` — three controls whose rules you have to be told:
- * that Enter makes a new item, that ctrl-click adds a second place, that a blank line is ignored.
- * Now search terms are chips you add one at a time, and places are labelled checkboxes in groups,
- * so the whole page can be operated without instructions.
- *
- * Locations stay a fixed list rather than free text, and that is not only a UI choice: the
- * harvester folds queries on a normalised location, so free text would spend the shared fan-out
- * budget on three spellings of one place.
- *
- * **How fresh a job must be is not here.** It lives in Settings beside the delivery interval, which
- * is the other half of the same question, and having it in two places meant nobody could say which
- * one was in force (owner, 2026-07-30).
- */
+/** What to search for. */
 import { useEffect, useMemo, useState } from "react";
 
 // `ConfigPreview` goes back on this import when the match count is switched on again.
 import { api } from "../../api";
 import { Error, useAction } from "../../ui";
 
-/** Mirrors `MAX_LOCATIONS_PER_USER` in libs/contracts/config.py. A test pins them together:
- *  the form silently allowing one more than the schema accepts is how this surfaced. */
+/** Mirrors `MAX_LOCATIONS_PER_USER` in libs/contracts/config.py. */
 const MAX_LOCATIONS = 12;
 
 type Section = {
@@ -70,8 +47,7 @@ const BLANK: Config = {
   max_notifications_per_day: 20,
 };
 
-/** Places, grouped the way somebody thinks about them rather than the order the enum happens to
- *  be in. Anything the schema adds that is not listed here still appears, under "Other". */
+/** Places, grouped the way somebody thinks about them rather than the order the enum happens to be in. */
 const PLACE_GROUPS: { label: string; hint: string; values: string[] }[] = [
   {
     label: "Regions and countries",
@@ -89,8 +65,7 @@ const PLACE_GROUPS: { label: string; hint: string; values: string[] }[] = [
 /** Plain names for the values that do not read well spelled out. */
 const PLACE_NAMES: Record<string, string> = {
   united_kingdom: "United Kingdom",
-  // **Named for what it admits.** The whole point of the country filter is that a UK job does not
-  // reach somebody who chose the EU, and "Europe" alone would read as including it.
+  // Named for what it admits.
   europe: "European Union (27 countries)",
 };
 
@@ -106,11 +81,7 @@ const title = (value: string) =>
 export function ConfigStep({ onDone }: { onDone: () => void }) {
   const [config, setConfig] = useState<Config>(BLANK);
   const [schema, setSchema] = useState<Schema | null>(null);
-  // **The live match count is switched off** (2026-07-31). The block that rendered it is commented
-  // out below; the debounced request that fed it is commented out with it, because a POST every
-  // 500 keystrokes whose answer nothing displays is pure cost on a page people edit slowly.
-  // Both halves are kept rather than deleted — turning it back on is two uncomments and no
-  // rewriting, and the reasoning for having it at all is in this file's header.
+  // The live match count is switched off (2026-07-31).
   const [keywords, setKeywords] = useState<string[]>([]);
   const [excluded, setExcluded] = useState<string[]>([]);
 
@@ -141,32 +112,14 @@ export function ConfigStep({ onDone }: { onDone: () => void }) {
     return {
       ...config,
       sections: [
-        // **Defaults under the stored section, not merely in place of a missing one.** A config
-        // written before a field existed has the key absent rather than empty, and every list on
-        // this form calls `.includes` on it — a stored section with no `locations` took the whole
-        // page down until this spread was here.
+        // Defaults under the stored section, not merely in place of a missing one.
         { ...BLANK.sections[0]!, ...(first ?? {}), keywords, exclude_keywords: excluded },
         ...rest,
       ],
     };
   }, [config, keywords, excluded]);
 
-  // Debounced, because it runs while somebody is still typing and a request per keystroke is a
-  // request per keystroke.
-  //
-  // useEffect(() => {
-  //   if (!draft.sections[0]?.keywords.length) {
-  //     setPreview(null);
-  //     return;
-  //   }
-  //   const timer = window.setTimeout(() => {
-  //     void api
-  //       .post<ConfigPreview>("/onboarding/config/preview", draft)
-  //       .then(setPreview)
-  //       .catch(() => setPreview(null));
-  //   }, 500);
-  //   return () => window.clearTimeout(timer);
-  // }, [draft]);
+  // Debounced: it runs while somebody is still typing, and a request per keystroke is waste.
 
   const save = useAction(async () => {
     await api.put("/onboarding/config", draft);
@@ -177,10 +130,7 @@ export function ConfigStep({ onDone }: { onDone: () => void }) {
   const patch = (changes: Partial<Section>) =>
     setConfig({ ...config, sections: [{ ...section, ...changes }, ...config.sections.slice(1)] });
 
-  // **The schema's bound, enforced where the choices are made.** It used to be discovered by
-  // submitting: tick a sixth, press save, get "at most 5 items after validation, not 6" under a
-  // form with no indication which tick was the problem. The count is shown as it fills and further
-  // ticks stop responding, so the limit is a property of the list rather than a surprise.
+  // The schema's bound, enforced where the choices are made.
   const atLimit = section.locations.length >= MAX_LOCATIONS;
 
   const toggleLocation = (value: string) => {
@@ -209,14 +159,7 @@ export function ConfigStep({ onDone }: { onDone: () => void }) {
         max={25}
       />
 
-      {/* {preview ? (
-        <p className={preview.matches === 0 ? "error" : "muted"}>
-          <strong>{preview.matches}</strong> matching jobs in the last {preview.window_days} days
-          {preview.examples.length ? `, e.g. ${preview.examples.slice(0, 2).join("; ")}` : ""}.
-          <br />
-          <span className="small">{preview.detail}</span>
-        </p>
-      ) : null} */}
+      {/* {preview ? */}
 
       <ChipInput
         label="Anything you never want to see?"
@@ -312,11 +255,7 @@ export function ConfigStep({ onDone }: { onDone: () => void }) {
   );
 }
 
-/**
- * A list you build one item at a time. Enter or comma commits, backspace on an empty box removes
- * the last one — the pattern every tag input has taught, and the reason this is not a textarea:
- * a newline-separated box needs a sentence explaining that newlines separate.
- */
+/** A list you build one item at a time. */
 function ChipInput({
   label,
   hint,
@@ -336,8 +275,7 @@ function ChipInput({
 
   const commit = () => {
     const value = draft.trim().replace(/,$/, "").trim();
-    // Case-insensitive: "Backend Engineer" and "backend engineer" are the same search, and two
-    // chips that look identical is the kind of thing people assume is broken.
+    // Case-insensitive: "Backend Engineer" and "backend engineer" are the same search.
     if (!value || values.length >= max) return setDraft("");
     if (values.some((each) => each.toLowerCase() === value.toLowerCase())) return setDraft("");
     onChange([...values, value]);

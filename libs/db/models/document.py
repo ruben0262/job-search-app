@@ -1,9 +1,4 @@
-"""Document text belonging to one user.
-
-Holds the *extracted text* and never the original bytes (`libs.documents`). One row per uploaded
-file, cascading from the user like everything else — which is what keeps account deletion a single
-statement rather than cleanup somebody has to remember.
-"""
+"""Document text belonging to one user."""
 from __future__ import annotations
 
 import uuid
@@ -13,8 +8,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from libs.db.base import Base, timestamptz
 
-# What the user said the document is. Drives nothing structural — the processing step reads all of
-# them — but it lets the form group uploads and lets a user see what is missing.
+# What the user said the document is.
 DOCUMENT_KINDS = ("cv", "cover_letter", "reference", "achievement", "diploma", "linkedin",
                   "history", "other")
 
@@ -30,8 +24,7 @@ class UserDocument(Base):
     filename: Mapped[str] = mapped_column(Text)
 
     text: Mapped[str] = mapped_column(Text)
-    # Of the extracted text, not the file: two exports of the same CV in different formats should
-    # be recognisable as the same content, and the file bytes would differ.
+    # Of the extracted text, not the file: two exports of one CV are the same content.
     text_sha256: Mapped[str] = mapped_column(String(64))
     chars: Mapped[int] = mapped_column(Integer)
 

@@ -1,30 +1,14 @@
-"""Client-side recency filtering for sources without a native date cutoff.
-
-Lifted from `job-search/pipeline/lib/timefilter.py`, unchanged apart from using `datetime.UTC`.
-
-Two behaviours here are load-bearing and easy to "fix" into bugs:
-
-- **An unparseable date returns True from `is_within_hours`.** Keeping a possibly-fresh posting and
-  letting a later stage judge it is the safe direction; silently dropping it is not, and a source
-  that changes its date format would otherwise make the feed quietly go empty.
-- **`age_label` treats a midnight timestamp as date-only.** JobSpy's LinkedIn dates are midnight, so
-  reporting an hour count for them would be confidently wrong; it labels by calendar day instead.
-"""
+"""Client-side recency filtering for sources without a native date cutoff."""
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-# Non-ISO formats seen across the various job-board APIs (everything ISO-shaped —
-# with/without tz, 'Z', fractional seconds, space separator — is handled by fromisoformat).
+# Non-ISO formats seen across job-board APIs; ISO-shaped strings go through `fromisoformat`.
 _FORMATS = ("%d-%m-%Y",)
 
 
 def parse_date(date_str: str | None) -> datetime | None:
-    """Best-effort parse to an aware UTC datetime. Returns None if unparseable.
-
-    Fast path first: nearly every source emits ISO-8601 (the adapters normalise epochs and
-    RSS dates to ISO), and this runs per job in every filter/sort/bucket — so one
-    fromisoformat call beats a strptime format loop."""
+    """Best-effort parse to an aware UTC datetime."""
     if not date_str:
         return None
     s = date_str.strip()
@@ -44,10 +28,7 @@ def parse_date(date_str: str | None) -> datetime | None:
 
 
 def epoch_to_iso(value: int | float | str | None) -> str | None:
-    """Convert a Unix epoch (seconds or milliseconds) to an ISO-8601 UTC string.
-
-    Auto-detects ms vs s by magnitude. Returns None if not a usable number.
-    """
+    """Convert a Unix epoch (seconds or milliseconds) to an ISO-8601 UTC string."""
     if value is None:
         return None
     try:
@@ -63,11 +44,7 @@ def epoch_to_iso(value: int | float | str | None) -> str | None:
 
 
 def is_within_hours(date_str: str | None, max_hours: int = 24) -> bool:
-    """True if date_str is within the last max_hours.
-
-    Unparseable/empty dates return True — keep the link and let Claude verify
-    recency later rather than silently dropping a possibly-fresh posting.
-    """
+    """True if date_str is within the last max_hours."""
     dt = parse_date(date_str)
     if dt is None:
         return True
@@ -76,9 +53,7 @@ def is_within_hours(date_str: str | None, max_hours: int = 24) -> bool:
 
 
 def age_label(date_str: str | None) -> str:
-    """Compact 'how long ago posted' label. Handles DATE-ONLY timestamps (JobSpy's LinkedIn
-    dates are midnight) — for those we don't know the hour, so we label by calendar day
-    ('today' / 'Nd') instead of reporting a misleading hour count. '' if unknown."""
+    """Compact 'how long ago posted' label."""
     dt = parse_date(date_str)
     if not dt:
         return ""

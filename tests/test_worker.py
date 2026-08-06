@@ -1,12 +1,4 @@
-"""The worker loop's one real invariant: the handler's effect and the job's completion are atomic.
-
-Everything else here follows from it. If a handler's write could land while the job stayed `ready`,
-the retry would re-do it — a duplicate digest, a duplicate retrain — and at-least-once delivery
-would stop being safe.
-
-Deliberately five tests. The loop is claim / run / commit; testing that it sleeps or counts is
-testing the standard library.
-"""
+"""The worker loop's one real invariant: the handler's effect and the job's completion are atomic."""
 from __future__ import annotations
 
 import os
@@ -29,11 +21,7 @@ pytestmark = pytest.mark.skipif(
 
 @pytest.fixture()
 def stack():
-    """A real engine, because the worker commits — a rolled-back outer transaction would hide it.
-
-    Rows are cleaned up explicitly instead, and every job is scoped to a user created here so a
-    concurrent test's queue entries are never claimed.
-    """
+    """A real engine, because the worker commits — a rolled-back outer transaction would hide it."""
     engine = create_engine(os.environ["DATABASE_URL"])
     factory = sessionmaker(engine)
     created: list[uuid.UUID] = []
@@ -78,8 +66,7 @@ def _state(factory, user_id) -> str:
 
 
 def test_the_handlers_effect_and_the_completion_commit_together(stack):
-    """The invariant the whole protocol rests on. A handler write that survived while the job
-    stayed `ready` would be re-done on the retry."""
+    """The invariant the whole protocol rests on."""
     factory, make_user = stack
     user_id = make_user()
     enqueue_in(factory, "notify", user_id)
@@ -98,8 +85,7 @@ def test_the_handlers_effect_and_the_completion_commit_together(stack):
 
 
 def test_a_failing_handler_rolls_back_its_effect_and_the_job_retries(stack):
-    """Both halves. The write must not survive, and the job must go back to `ready` — a failure
-    that left the job `claimed` would stall the lane until the sweeper noticed."""
+    """Both halves."""
     factory, make_user = stack
     user_id = make_user()
     enqueue_in(factory, "notify", user_id)
@@ -114,8 +100,7 @@ def test_a_failing_handler_rolls_back_its_effect_and_the_job_retries(stack):
     assert stats.failed == 1
     assert _state(factory, user_id) == "ready"
     with factory() as s:
-        # The rollback that undid the handler's write also undid the claim. If the attempt count
-        # went back with it, a job that fails every time would retry forever.
+        # The rollback that undid the handler's write also undid the claim.
         assert s.scalar(text("SELECT attempts FROM jobs WHERE user_id = :u")
                         .bindparams(u=user_id)) == 1
     with factory() as s:
@@ -124,8 +109,7 @@ def test_a_failing_handler_rolls_back_its_effect_and_the_job_retries(stack):
 
 
 def test_the_failure_is_recorded_even_though_the_handlers_transaction_was_poisoned(stack):
-    """The failure has to be written in a fresh transaction. Writing it in the rolled-back one
-    silently loses the reason, which is the only thing an operator has to go on."""
+    """The failure has to be written in a fresh transaction."""
     factory, make_user = stack
     user_id = make_user()
     enqueue_in(factory, "notify", user_id)
@@ -141,8 +125,7 @@ def test_the_failure_is_recorded_even_though_the_handlers_transaction_was_poison
 
 
 def test_a_terminal_handler_dead_letters_without_spending_the_retries(stack):
-    """A revoked token, or a retrain that is not owed. Retrying either wastes attempts and ends in
-    the same silence."""
+    """A revoked token, or a retrain that is not owed."""
     factory, make_user = stack
     user_id = make_user()
     enqueue_in(factory, "notify", user_id)

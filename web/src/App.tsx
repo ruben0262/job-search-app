@@ -1,15 +1,4 @@
-/**
- * Routing, and the one decision the whole app hangs off: where a signed-in user belongs.
- *
- * **The server decides, not the client.** `/dashboard` answers `stage: "onboarding"` with the page
- * list when signup is unfinished, so this file never re-derives "are they done yet" from a pile of
- * booleans. That rule already exists once, in `libs/onboarding/state.py`, and a second copy here
- * would be the one that goes stale.
- *
- * A hash router rather than a dependency: this is a wizard plus three screens, and `react-router`
- * would be more configuration than routing. Hash rather than history so Cloudflare Pages serves
- * `index.html` for every URL without a rewrite rule anyone has to remember.
- */
+/** Routing, and the one decision the whole app hangs off: where a signed-in user belongs. */
 import { useCallback, useEffect, useState } from "react";
 
 import { ApiError, api, type Dashboard } from "./api";
@@ -58,12 +47,9 @@ export function App() {
     try {
       setSession({ state: "in", dashboard: await api.get<Dashboard>("/dashboard") });
     } catch (error) {
-      // 401 is the ordinary signed-out case — `request` has already tried a refresh. Anything else
-      // is a real failure and must not be disguised as a logout, or an outage looks like a bug in
-      // the user's own session.
+      // 401 is the ordinary signed-out case — `request` has already tried a refresh.
       if (error instanceof ApiError && error.status === 401) {
-        // The page caches die with the session, or the next account to sign in on this browser
-        // flashes this one's jobs and details.
+        // The page caches die with the session.
         clearFeedCache();
         clearConversationCache();
         clearAccountCache();
@@ -76,8 +62,7 @@ export function App() {
     void reload();
   }, [reload]);
 
-  // Public, and reachable signed out: signup links it before anybody has an account, and the two
-  // email links must work whatever session state the browser happens to be in.
+  // Public, and reachable signed out: signup links it before anybody has an account.
   if (hash.startsWith("/privacy")) return <PrivacyPage />;
   if (hash.startsWith("/verify")) return <Verify onDone={reload} />;
   if (hash.startsWith("/forgot")) return <ForgotPassword />;
@@ -86,9 +71,7 @@ export function App() {
   if (session.state === "loading") return <main className="centered">Loading…</main>;
 
   if (session.state === "out") {
-    // The landing page is the ported `mahoraga-jobs-web` (decision reversed 2026-07-30: one
-    // deployment, one origin, auth CTAs wired straight into the router). The auth screen keeps
-    // its own routes so the hero buttons and old bookmarks both land somewhere sensible.
+    // The landing page is the ported `mahoraga-jobs-web` (decision reversed 2026-07-30: one deployment.
     if (hash.startsWith("/signin") || hash.startsWith("/signup")) {
       return <SignIn onSignedIn={reload} initialMode={hash.startsWith("/signup") ? "up" : "in"} />;
     }
@@ -97,8 +80,7 @@ export function App() {
 
   const { dashboard } = session;
   if (dashboard.stage === "onboarding") {
-    // Deliberately not routable past: a half-configured account produces a bad feed and the user
-    // concludes the product does not work rather than that they skipped a step.
+    // Deliberately not routable past: a half-configured account produces a bad feed and the user concludes.
     return <Onboarding state={dashboard.onboarding} onChanged={reload} />;
   }
 
@@ -137,8 +119,6 @@ export function App() {
             <DataPage onChanged={reload} />
           ) : section === "admin" ? (
             // `#/admin/users/<id>` is its own page, not a panel that unfolds inside the list.
-            // A detail view rendered in place has no address to link, no back button, and puts the
-            // thing you opened underneath the table you opened it from.
             hash.startsWith("/admin/users/") ? (
               <AdminUserPage userId={hash.slice("/admin/users/".length)} />
             ) : (
@@ -163,8 +143,7 @@ function Nav({ current, isAdmin }: { current: string; isAdmin: boolean }) {
     ["/model", "Model"],
     ["/data", "Your details"],
     ["/settings", "Settings"],
-    // Only for whoever `ADMIN_EMAILS` names. The API refuses `/admin/*` regardless; this keeps the
-    // link out of everybody else's navigation rather than out of their reach.
+    // Only for whoever `ADMIN_EMAILS` names.
     ...(isAdmin ? ([["/admin", "Platform"]] as const) : []),
   ] as const;
   return (

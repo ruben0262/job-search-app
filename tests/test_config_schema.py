@@ -1,22 +1,4 @@
-"""T9 — config validation. The primary onboarding failure mode.
-
-`TENANT_SAFETY.md` §4's requirement is that a non-technical user **cannot** produce a config that is
-broken or unrealistic. The way to get that is bounded types and controlled vocabularies, not free
-text plus a wall of error messages — so most of these tests assert that something is *impossible*,
-not that an error message is pretty.
-
-Two rules carry the weight:
-
-- **Nothing is silently clamped.** An out-of-range value is a rejection naming the field. Silent
-  truncation is how a user concludes the product is broken rather than that they hit a limit.
-- **The server is the authority.** These same bounds exist in the database; the form is the
-  usability layer. A write path that bypassed the form must not bypass the bounds.
-
-The last section tests the seam nobody would notice breaking: a *validated* config has to actually
-drive the harvester. Testing the schema and the query-set builder separately would leave the join
-between them unproven, and that join is where a rename or an enum change would silently stop
-producing queries.
-"""
+"""T9 — config validation."""
 from __future__ import annotations
 
 import pytest
@@ -40,9 +22,7 @@ from libs.contracts.config import (
 )
 from services.harvester.query_set import HARVEST_MAX_QUERIES_PER_USER, build_query_set
 
-# Which overrides belong to a search section and which to the account. The helper routes them so
-# each test keeps saying what it means - `_valid(min_salary=...)` and `_valid(locations=...)`
-# read as they did under the flat schema, and the tests stay about behaviour rather than shape.
+# Which overrides belong to a search section and which to the account.
 SECTION_FIELDS = {"platform", "keywords", "exclude_keywords", "locations", "remote_policy",
                   "posted_within_hours"}
 
@@ -86,12 +66,7 @@ def test_a_config_with_no_keywords_is_rejected():
 # ── bounds are rejections, never silent clamps ────────────────────────────────────────────────
 
 def test_too_many_keywords_is_rejected_not_truncated():
-    """Truncating would silently drop terms the user chose, leaving them wondering why a search
-    they configured never returns anything.
-
-    Derived from the constant, not a literal. An earlier version hardcoded 6 against a cap of 5, so
-    raising the cap to 25 turned a real assertion into one that passed by accident.
-    """
+    """Truncating would silently drop terms the user chose."""
     with pytest.raises(ValidationError) as exc:
         UserConfigSchema(sections=[
             {"keywords": [f"term{i}" for i in range(MAX_KEYWORDS_PER_USER + 1)]}])
@@ -99,8 +74,7 @@ def test_too_many_keywords_is_rejected_not_truncated():
 
 
 def test_the_cap_spans_sections_rather_than_applying_to_each():
-    """Per-section caps would let five sections buy five times the fan-out budget - silently,
-    since each section on its own would look compliant."""
+    """Per-section caps would let five sections buy five times the fan-out budget - silently."""
     half = MAX_KEYWORDS_PER_USER // 2 + 1
     with pytest.raises(ValidationError, match="exceeds the limit"):
         UserConfigSchema(sections=[
@@ -109,8 +83,7 @@ def test_the_cap_spans_sections_rather_than_applying_to_each():
 
 
 def test_one_platform_cannot_have_two_sections():
-    """The fold would merge them, so the user would see terms they believed they had kept
-    separate."""
+    """The fold would merge them, so the user would see terms they believed they had kept separate."""
     with pytest.raises(ValidationError, match="at most one section"):
         UserConfigSchema(sections=[{"platform": "linkedin", "keywords": ["go"]},
                                    {"platform": "linkedin", "keywords": ["rust"]}])
@@ -139,9 +112,7 @@ def test_out_of_range_values_are_rejected_with_the_field_named(field, value):
     ("field", "value"),
     [("min_salary", 0), ("min_salary", 500_000),
      ("max_notifications_per_day", 1), ("max_notifications_per_day", 100),
-     # 1 hour, not 6. The reference's frequent loop runs at two, and being first to a posting is
-     # the single biggest thing a candidate controls — a six-hour floor made the platform's
-     # tightest setting three times looser than the instance it was ported from.
+     # 1 hour, not 6.
      ("posted_within_hours", 1), ("posted_within_hours", 168)])
 def test_the_boundaries_themselves_are_accepted(field, value):
     """Off-by-one on a bound is a real bug: it makes a documented-legal value mysteriously fail."""
@@ -149,10 +120,7 @@ def test_the_boundaries_themselves_are_accepted(field, value):
 
 
 def test_too_many_locations_is_rejected():
-    """Bound at `MAX_LOCATIONS_PER_USER` rather than a literal, because the number moved: five was
-    fewer than an honest answer to the form's own question, and the picker offers about twenty
-    choices. The cap still exists -- queries are keywords x locations x sources -- so this asserts
-    that one more than the limit is refused, whatever the limit currently is."""
+    """Bound at `MAX_LOCATIONS_PER_USER` rather than a literal, because the number moved."""
     from libs.contracts.config import MAX_LOCATIONS_PER_USER
 
     assert len(list(Location)) > MAX_LOCATIONS_PER_USER, "otherwise this proves nothing"
@@ -163,9 +131,7 @@ def test_too_many_locations_is_rejected():
 # ── controlled vocabularies ───────────────────────────────────────────────────────────────────
 
 def test_locations_are_a_picklist_not_free_text():
-    """Not only a UI decision. Harvest dedup folds on a normalised location, so free text would
-    multiply the query set with spellings of the same place and spend the fan-out budget on
-    duplicates (`HARVESTER_PLAN.md` §2)."""
+    """Not only a UI decision."""
     with pytest.raises(ValidationError):
         _valid(locations=["Greater London Area, United Kingdom"])
     assert _valid(locations=["london"]).sections[0].locations == [Location.LONDON]
@@ -181,8 +147,7 @@ def test_every_enum_field_refuses_values_outside_its_vocabulary(field, bad):
 
 
 def test_unknown_fields_are_refused():
-    """`extra="forbid"` so a typo'd or stale field fails loudly instead of being silently ignored —
-    which would otherwise present as "I set that and nothing happened"."""
+    """`extra="forbid"` so a typo'd or stale field fails loudly instead of being silently ignored."""
     with pytest.raises(ValidationError):
         _valid(remote_ploicy="any")
 
@@ -212,8 +177,7 @@ def test_duplicate_enum_selections_collapse():
 # ── the contract the frontend is generated from ───────────────────────────────────────────────
 
 def test_the_json_schema_exposes_every_field_and_its_bounds():
-    """The form and the TypeScript types are generated from this, so a field missing here is a
-    field the user can never set (`CODE_STRUCTURE.md` §8)."""
+    """The form and the TypeScript types are generated from this."""
     schema = json_schema()
     for field in UserConfigSchema.model_fields:
         assert field in schema["properties"], f"{field} would be invisible to the form"
@@ -230,11 +194,7 @@ def test_the_schema_version_is_recorded_so_old_rows_stay_readable():
 # ── the seam: a validated config must actually drive the harvester ────────────────────────────
 
 def test_a_validated_config_produces_the_expected_query_set():
-    """Neither test above would notice if the schema and the harvester stopped agreeing.
-
-    This is the join where a renamed field or a changed enum value would silently produce **zero**
-    queries — a user configured, saved, and simply never harvested for.
-    """
+    """Neither test above would notice if the schema and the harvester stopped agreeing."""
     import uuid
 
     user = uuid.uuid4()
@@ -253,13 +213,7 @@ def test_a_validated_config_produces_the_expected_query_set():
 
 
 def test_the_per_user_cap_is_one_definition_not_two():
-    """This rule was briefly written twice — a literal in the schema and a constant in the harvester.
-
-    That is exactly how limits drift: raise one and the other silently accepts terms it will never
-    serve. The fix was to move the cap into `libs`, the only package both may import from, rather
-    than to write a test asserting two numbers happen to agree. This asserts the single definition
-    is genuinely the one in force on both sides, and that it actually binds.
-    """
+    """This rule was briefly written twice — a literal in the schema and a constant in the harvester."""
     assert HARVEST_MAX_QUERIES_PER_USER is MAX_KEYWORDS_PER_USER
     assert _section_schema()["keywords"]["maxItems"] == MAX_KEYWORDS_PER_USER
 
@@ -293,8 +247,7 @@ def test_a_platform_section_only_reaches_that_platform():
 
 
 def test_a_v1_config_still_folds_exactly_as_it_did():
-    """Stored rows are read through `migrate_config` rather than rewritten by a deploy. A user's
-    config must not change because the platform shipped."""
+    """Stored rows are read through `migrate_config` rather than rewritten by a deploy."""
     import uuid
 
     user = uuid.uuid4()
@@ -311,7 +264,6 @@ def test_a_v1_config_still_folds_exactly_as_it_did():
 
 
 def test_migrating_a_config_twice_changes_nothing():
-    """It runs on every read. Wrapping an already-sectioned config would nest it and lose the
-    keywords entirely."""
+    """It runs on every read."""
     once = migrate_config({"keywords": ["go"], "locations": ["london"]})
     assert migrate_config(once) == once

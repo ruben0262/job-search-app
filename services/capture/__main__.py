@@ -1,15 +1,4 @@
-"""The `process` lane worker.
-
-    python -m services.capture
-
-One job is one user's whole document set read by Opus on that user's own credential. Concurrency is
-low by design: the work is IO-bound on one long call, and the cost of running several is somebody
-else's money, not this box's CPU.
-
-**The credential is decrypted here and nowhere else.** `SecretStore.use` holds it in memory for the
-duration of the call and the redaction filter covers the traceback an SDK raises on a bad key —
-which is the one place a credential most often escapes into a log.
-"""
+"""The `process` lane worker."""
 from __future__ import annotations
 
 import logging
@@ -40,9 +29,7 @@ def handle(session, job: QueueJob) -> None:
                 try:
                     draft = process_user(session, job.user_id, client_for(value, kind))
                 except CaptureFailed as exc:
-                    # Terminal, not a retry: the same documents and the same prompt will fail the
-                    # same way, and each attempt costs the user another call. The dashboard offers
-                    # manual entry instead (`services.capture.manual`).
+                    # Terminal, not a retry: the same documents and prompt fail the same way.
                     notifylib.notify(session, job.user_id, notifylib.PROCESSING_FAILED,
                                      "The documents could not be turned into a profile. You can "
                                      "enter it by hand instead, or fix the documents and retry.")

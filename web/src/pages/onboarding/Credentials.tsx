@@ -1,13 +1,4 @@
-/**
- * Pages 4, 5 and 6 — the three credentials.
- *
- * **Write-only, everywhere.** No response ever contains a credential value, so there is nothing to
- * prefill and no "show" toggle to build. A saved credential shows as saved and nothing more.
- *
- * **The Telegram chat id is captured for the user.** It is the step that confuses people more than
- * the rest of setup put together, so the form asks for the bot token, then waits while they press
- * Start on their phone and reads the id itself.
- */
+/** Pages 4, 5 and 6 — the three credentials. */
 import { useCallback, useEffect, useState } from "react";
 
 import { ClaudeConnect } from "../../components/ClaudeConnect";
@@ -16,8 +7,7 @@ import { Error, Field, useAction } from "../../ui";
 
 type StoredCredential = { kind: string; last_4: string | null; validated: boolean };
 
-/** What each deletion actually costs, named. "Are you sure?" is something people click past;
- *  "job delivery stops" is something they read. */
+/** What each deletion actually costs, named. */
 const CONFIRM: Record<string, string> = {
   telegram_bot:
     "Remove your Telegram bot token? Job delivery stops immediately and you will need to paste a "
@@ -34,11 +24,7 @@ const CONFIRM: Record<string, string> = {
   default: "Remove this credential? Whatever depends on it stops working until you add another.",
 };
 
-/**
- * What is stored for one credential kind: a masked preview, a copy that costs the account
- * password, and a delete. The plaintext is fetched once at the moment of copying and handed to the
- * clipboard — it is never rendered, so it is on screen for exactly zero frames.
- */
+/** What is stored for one credential kind: a masked preview, a copy that costs the account password. */
 function Stored({
   kind,
   onChanged,
@@ -46,9 +32,7 @@ function Stored({
 }: {
   kind: string;
   onChanged: () => void;
-  /** Bumped by the caller whenever a credential is written. **This is what makes a saved value
-   *  appear without a page reload** -- the fetch used to run only on mount, so connecting or
-   *  pasting left the panel insisting nothing was stored until the user refreshed. */
+  /** Bumped by the caller whenever a credential is written. */
   version?: number;
 }) {
   const [stored, setStored] = useState<StoredCredential | null>(null);
@@ -100,10 +84,7 @@ function Stored({
         >
           {copied ? <CheckIcon /> : <CopyIcon />}
         </button>
-        {/* **Asked, not assumed.** Removing a credential stops whatever depends on it, delivery,
-            document generation, LinkedIn, and it cannot be undone from here: the value is gone and
-            has to be pasted again. A one-click destructive control next to a copy button is a
-            mis-click waiting to happen. */}
+        {/* Asked, not assumed. */}
         <button
           type="button"
           className="icon-btn"
@@ -182,9 +163,7 @@ function CredentialForm({
       allow_unvalidated: allowUnvalidated,
     });
     setValue("");
-    // Stored but unchecked: the provider could not be reached. Not a failure — an outage on their
-    // side must not stop somebody finishing setup — but it is worth saying so it is not a surprise
-    // at three in the morning.
+    // Stored but unchecked: the provider could not be reached.
     setWarning(result.validated ? null : result.detail);
     onDone();
   });
@@ -240,9 +219,7 @@ export function TelegramStep({ onDone }: { onDone: () => void }) {
   const [state, setState] = useState<TelegramState | null>(null);
   const [saved, setSaved] = useState(0);
 
-  // What is actually configured, read back from the server rather than inferred from what this
-  // form last submitted. The ids are the whole point: a user asking "is it connected, and where do
-  // jobs go" cannot answer it from a token field showing four characters.
+  // What is actually configured, read back from the server rather than inferred from what this form last.
   const refresh = useCallback(() => {
     api
       .get<{ telegram?: TelegramState }>("/credentials")
@@ -303,14 +280,7 @@ export function TelegramStep({ onDone }: { onDone: () => void }) {
         onDone={reload}
       />
 
-      {/* **A field, not a status readout.** This was four rows of state and an "I pressed Start"
-          button, which read the chat id from whoever last messaged the bot. That depends on the
-          update still being queued at Telegram and on nothing else having consumed it, and when it
-          came back empty there was nothing else to try: the page could not complete and onboarding
-          stopped at a step whose only instruction was to press Start again.
-
-          The chat id is needed. Delivery refuses without it and finished CVs are sent to it, so a
-          channel alone is not enough however complete the page looks. */}
+      {/* A field, not a status readout. */}
       <div style={{ marginTop: "1.5rem" }}>
         <p className="small muted">
           <strong>Required: your own chat with the bot.</strong> Commands and your finished CVs
@@ -347,8 +317,7 @@ export function TelegramStep({ onDone }: { onDone: () => void }) {
           >
             {saveChat.busy ? "Checking…" : "Connect my chat"}
           </button>
-          {/* Kept as the shortcut for anyone who has just pressed Start: when it works it saves
-              them the trip to @getidsbot, and when it does not the field above still does. */}
+          {/* Kept as the shortcut for anyone who has just pressed Start. */}
           <button
             className="secondary"
             style={{ marginLeft: "0.6rem" }}
@@ -417,9 +386,7 @@ export function TelegramStep({ onDone }: { onDone: () => void }) {
 
 export function ClaudeStep({ onDone }: { onDone: () => void }) {
   const [kind, setKind] = useState<"claude_api" | "claude_oauth">("claude_api");
-  // **What makes the saved credential appear without a reload.** `Stored` fetches once on mount, so
-  // connecting or pasting left the page insisting nothing was stored until the user refreshed it.
-  // Bumping this remounts it, which re-reads `/credentials`.
+  // What makes the saved credential appear without a reload.
   const [saved, setSaved] = useState(0);
   const refresh = () => {
     setSaved((n) => n + 1);
@@ -438,10 +405,7 @@ export function ClaudeStep({ onDone }: { onDone: () => void }) {
         </select>
       </Field>
       <Stored key={`stored-${kind}`} kind={kind} onChanged={refresh} version={saved} />
-      {/* **The subscription path is a button, not a paste field.** It used to say "From your
-          Claude subscription", which left the user to discover the CLI, the command, and the copy
-          themselves — the step people abandoned. The paste field stays underneath for anyone who
-          already has a token or whose browser blocks the popup. */}
+      {/* The subscription path is a button, not a paste field. */}
       {kind === "claude_oauth" ? (
         <>
           <ClaudeConnect onConnected={refresh} />

@@ -1,14 +1,4 @@
-"""Rendering a user's rubric from their confirmed profile. Deterministic, no LLM.
-
-`profile_version = sha256(rubric_md)[:8]` scopes which labels a training run may use, so the render
-must be reproducible byte-for-byte from the same profile. That is the whole reason capture is
-agentic and rendering is not (`PROFILE_CAPTURE_PLAN.md` §2): if an agent authored rubrics freely,
-the hash would stop being reproducible, the SACRED template would drift per user, and a template
-change could no longer be A/B measured.
-
-The template owns the scaffolding — decision procedure, score anchors, calibration examples, output
-contract. The profile fills the WHO block and the hard gates, and nothing else.
-"""
+"""Rendering a user's rubric from their confirmed profile."""
 from __future__ import annotations
 
 import hashlib
@@ -17,15 +7,7 @@ import json
 from libs.contracts.profile import Constraints, ProfileSchema, Targets
 from libs.prompts import LABEL_TEMPLATE, load
 
-# Which parts of the profile actually change the rubric. Hashed separately so editing a phone
-# number does not re-version a user and trigger a relabel of their whole history
-# (`PROFILE_CAPTURE_PLAN.md` §7).
-#
-# **`identity.name`, not `identity`.** The rubric substitutes the name and reads nothing else about
-# a person — not their links, not their location, not their eligibility. Hashing the whole object
-# made a contact detail rubric-relevant, so adding an email address would have re-versioned the
-# user and relabelled thousands of jobs on their own credential. That is the precise failure the
-# comment above claims this prevents, so the paths are dotted and resolved rather than trusted.
+# Which parts of the profile actually change the rubric.
 RUBRIC_RELEVANT_FIELDS = ("identity.name", "skills", "targets", "constraints", "not_list",
                           "experience")
 
@@ -44,11 +26,7 @@ def profile_version(rubric_md: str) -> str:
 
 
 def rubric_relevant_digest(profile: ProfileSchema) -> str:
-    """A hash of only the fields the rubric reads.
-
-    Compared before re-rendering: unchanged means no new `profile_version`, no relabel, no retrain.
-    Sorted keys so dict ordering cannot produce two digests for one profile.
-    """
+    """A hash of only the fields the rubric reads."""
     dumped = profile.model_dump()
     subset = {path: _resolve(dumped, path) for path in RUBRIC_RELEVANT_FIELDS}
     return hashlib.sha256(
@@ -56,12 +34,7 @@ def rubric_relevant_digest(profile: ProfileSchema) -> str:
 
 
 def _resolve(dumped: dict, path: str):
-    """`"identity.name"` → the value at that path. Raises rather than defaulting.
-
-    A typo'd path returning `None` would silently drop a field from the digest, and the symptom
-    would be a rubric change that does not re-version the user — labels answering the old question
-    while claiming to answer the new one, which nothing downstream could detect.
-    """
+    """`"identity.name"` → the value at that path."""
     value = dumped
     for key in path.split("."):
         value = value[key]
@@ -104,11 +77,7 @@ def _who_block(profile: ProfileSchema) -> str:
 
 
 def _strengths(profile: ProfileSchema) -> list[str]:
-    """One line per skill category, plus the stacks actually shipped in roles and projects.
-
-    Categories are emitted in a fixed order and their contents are left in the user's own order —
-    the profile is confirmed, so the ordering is a human decision, not noise to be sorted away.
-    """
+    """One line per skill category, plus the stacks actually shipped in roles and projects."""
     out = []
     for label, values in (("Languages", profile.skills.languages),
                           ("Frameworks and tools", profile.skills.frameworks + profile.skills.tools),
@@ -136,10 +105,7 @@ def _workplace_lines(constraints: Constraints) -> list[str]:
     onsite = ", ".join(constraints.onsite_locations) if constraints.onsite_locations else None
 
     if policy == "any":
-        # Workplace *mode* and acceptable *region* are independent, and conflating them loses a real
-        # constraint: a candidate can be happy with on-site, hybrid or remote and still only be able
-        # to take it in four countries. So the mode clause says "all acceptable" and the region
-        # clause is emitted from `onsite_locations` either way.
+        # Workplace mode and acceptable region are independent; conflating them loses a real constraint.
         line = "- Workplace policy: remote, hybrid, and on-site are all equally acceptable"
         line += (f". On-site work is acceptable in {onsite}, and nowhere else without relocation "
                  f"or visa support." if onsite else ".")
@@ -166,8 +132,7 @@ def _hard_gates(constraints: Constraints) -> str:
     policy = constraints.remote_policy or "remote_or_hybrid"
     onsite = ", ".join(constraints.onsite_locations)
     if onsite:
-        # Named regions mean anywhere else is gated, whatever the workplace mode. This holds even
-        # for `any`: "I will work on-site" is not "I will work on-site anywhere on earth".
+        # Named regions mean anywhere else is gated, whatever the workplace mode.
         gates.append(f"   - on-site-only outside {onsite}, with no relocation or visa support")
     elif policy != "any":
         gates.append("   - on-site-only, or mandatory relocation")

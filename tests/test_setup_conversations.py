@@ -1,14 +1,4 @@
-"""Several chats per account, each with its own context, capped at three.
-
-The two properties that matter, and they pull in opposite directions:
-
-- **a chat remembers**, across a closed tab, a sign-out, and a week away — the transcript is a
-  table, so there is nothing to lose;
-- **a chat forgets everything said in the other chats**, which is the whole reason for having more
-  than one.
-
-What crosses between them is the profile the tools write, not the talking.
-"""
+"""Several chats per account, each with its own context, capped at three."""
 from __future__ import annotations
 
 import os
@@ -69,8 +59,7 @@ def _say(session, user_id, conversation_id, role, text):
 
 
 def _with_claude(session, user):
-    """A real stored credential — the secret store wraps a per-user key, so a hand-written row is
-    a secret nothing can decrypt."""
+    """A real stored credential — the secret store wraps a per-user key."""
     from libs.secrets import SecretStore
 
     SecretStore(session).put(user.id, "claude_api", "sk-ant-api03-" + "x" * 40)
@@ -138,8 +127,7 @@ def test_the_model_is_never_shown_another_chats_transcript(api):
 
 
 def test_three_chats_is_the_ceiling_and_the_refusal_says_what_to_do(api):
-    """Fixed, and not a user setting: every turn replays its whole transcript on the user's own
-    credential, so unbounded chats is unbounded spend on re-reading them."""
+    """Fixed, and not a user setting: every turn replays its whole transcript on the user's own."""
     http, _, _ = api
     http.get("/setup")  # the first one
     assert http.post("/setup/conversations").status_code == 201
@@ -211,9 +199,7 @@ def test_another_accounts_conversation_is_not_reachable(api):
 # ── a turn that outlives the request ──────────────────────────────────────────────────────────
 
 def test_sending_queues_a_turn_and_returns_at_once(api):
-    """**The bug this replaced:** the turn ran inside the request, so switching tabs, refreshing or
-    signing out aborted it — the question was committed, the answer never came, and nothing said
-    why. Now the request only accepts the turn."""
+    """The bug this replaced: the turn ran inside the request, so switching tabs."""
     from libs.db.models import QueueJob
 
     http, session, user = api
@@ -297,8 +283,7 @@ def test_the_worker_streams_into_the_pending_row_and_marks_it_done(api):
 
 
 def test_a_retry_after_the_turn_finished_does_not_run_it_again(api):
-    """At-least-once delivery is normal; spending the user's credential twice for one question
-    is not."""
+    """At-least-once delivery is normal; spending the user's credential twice for one question is not."""
     from libs.db.models import QueueJob, SetupMessage
     from services.setupagent.__main__ import handle
 
@@ -322,18 +307,7 @@ def test_a_retry_after_the_turn_finished_does_not_run_it_again(api):
 
 
 def test_setup_progress_names_the_command_that_produces_each_missing_file(api):
-    """**The definition of done belongs to the code, not to an agent's opinion of itself.**
-
-    Two failures this pins, both found on 2026-07-31. The chat sent no command name, so it always
-    ran `setup` — which writes five of the eight required files. `context.md`, `08-role-angles.md`
-    and `label.md` belong to commands nothing could start, so a new account could not finish setup
-    and therefore could never train. And an agent asked to judge its own completeness will either
-    stop early or polish forever; the ported director's gates read paths (`pipeline/config.yaml`,
-    `scorer/models/scorer.joblib`) that do not exist on this platform at all.
-
-    So progress is answered from the database, and every missing file names the command that
-    produces it.
-    """
+    """The definition of done belongs to the code, not to an agent's opinion of itself."""
     from libs.profiles import setup_files
     from libs.profiles.repository import ProfileFiles
 
@@ -345,9 +319,7 @@ def test_setup_progress_names_the_command_that_produces_each_missing_file(api):
     assert body["complete"] is False
     assert body["may_train"] is False
     assert set(body["missing"]) == set(setup_files())
-    # The button runs the director, which does all four steps in one chat. The ordering this used
-    # to assert here -- context first, because `setup-role-angles` says outright that it must
-    # already exist -- now lives in `DIRECTOR_STEPS`, which is what the director works through.
+    # The button runs the director, which does all four steps in one chat.
     assert body["next_command"] == "setup-director"
     from libs.agents import DIRECTOR_STEPS
 
@@ -371,13 +343,7 @@ def test_setup_progress_names_the_command_that_produces_each_missing_file(api):
 # ── stopping a turn ───────────────────────────────────────────────────────────────────────────
 
 def test_stopping_a_turn_asks_rather_than_kills(api):
-    """**A stop is a request, not a kill.**
-
-    The turn runs on a worker that is usually mid-call to Anthropic, and that call cannot be
-    interrupted without abandoning a response already paid for. So the API flips the row to
-    `cancelling` and the worker notices at its next safe seam. Claiming it had stopped while it was
-    still writing files would be a lie the file panel would immediately contradict.
-    """
+    """A stop is a request, not a kill."""
     from libs.db.models import SetupMessage
 
     http, session, user = api
@@ -390,8 +356,7 @@ def test_stopping_a_turn_asks_rather_than_kills(api):
 
 
 def test_stopping_a_finished_turn_is_not_an_error(api):
-    """A stop arriving a second after the reply landed is the normal race. Answering it with a 409
-    would put a red banner on a screen where nothing went wrong."""
+    """A stop arriving a second after the reply landed is the normal race."""
     from libs.db.models import SetupMessage
 
     http, session, user = api
@@ -428,9 +393,7 @@ def test_another_users_turn_cannot_be_stopped(api):
 
 
 def test_a_stopped_turn_keeps_what_it_had_already_written(api):
-    """**A stop is not a rollback.** Files the turn wrote before the stop are the user's — they were
-    written on their credential and are already in the profile — so the row keeps its text and its
-    tool calls, and lands in `cancelled` rather than `failed`: nothing went wrong."""
+    """A stop is not a rollback."""
     from sqlalchemy import text
 
     from libs.agents.loop import run_turn
@@ -446,8 +409,7 @@ def test_a_stopped_turn_keeps_what_it_had_already_written(api):
     session.flush()
 
     class StopsAfterOneTool:
-        """Writes a file, and the user presses stop while that call is still in flight — which is
-        when somebody actually presses it, having seen the reply start."""
+        """Writes a file, and the user presses stop while that call is still in flight."""
 
         def __init__(self):
             self.calls = 0
@@ -475,12 +437,7 @@ def test_a_stopped_turn_keeps_what_it_had_already_written(api):
 
 
 def test_profile_files_are_closed_until_an_operator_opens_them(api):
-    """**Closed by default, and the gate is on the endpoint rather than the tiles.**
-
-    These files are an assessment of a person, written by an agent and reviewed by nobody, so a new
-    account cannot read its own until somebody has looked. Greying the tiles while this still
-    returned the contents would be a curtain: the URL is guessable and the response is JSON.
-    """
+    """Closed by default, and the gate is on the endpoint rather than the tiles."""
     from libs.profiles.repository import ProfileFiles
 
     http, session, user = api
@@ -521,29 +478,19 @@ def test_one_account_being_opened_does_not_open_another(api):
 
 
 def test_a_command_for_another_chat_is_refused_rather_than_improvised(api):
-    """**A typed slash command used to be delivered as ordinary text.**
-
-    In a live run `/setup-boards` went into a `/setup` chat. The model could not run it, so it did
-    the reasonable thing with an instruction it could not carry out: it invented a destination,
-    announcing it would write the search configuration into two profile files -- which nothing reads
-    as search configuration. Nothing errored. The user was told a plausible sentence about work that
-    could not happen.
-    """
+    """A typed slash command used to be delivered as ordinary text."""
     http, _session, _user = api
 
     other = http.post("/setup/message", json={"message": "/setup-scorer", "agent": "setup"})
     assert other.status_code == 400
     assert "own chat" in other.json()["detail"]
 
-    # Ported prompts still name commands that only existed on the single-tenant instance, so a user
-    # reading one will type them. They have to land somewhere honest.
+    # Ported prompts still name commands that only existed on the single-tenant instance.
     absent = http.post("/setup/message", json={"message": "/setup-boards", "agent": "setup"})
     assert absent.status_code == 400
     assert "no /setup-boards" in absent.json()["detail"]
 
     # The conversation's own command is how a chat is kicked off, and this guard lets it by.
-    # Asserted on the reason rather than the status: the handler has its own preconditions -- a
-    # stored Claude credential, for one -- and this test is about which messages the guard stops.
     own = http.post("/setup/message", json={"message": "/setup", "agent": "setup"})
     assert "own chat" not in own.text and "no /setup" not in own.text
 
@@ -554,13 +501,7 @@ def test_a_command_for_another_chat_is_refused_rather_than_improvised(api):
 
 
 def test_the_start_button_runs_the_director(api):
-    """**One button, one chat, the whole setup.**
-
-    `next_command` used to be the first command that *owned* an outstanding file, which could never
-    be the director: it owns none, because it writes nothing itself. So Start ran a single step, and
-    finishing that step offered a button for the next -- four chats to do what the director now does
-    in one, which is the thing it exists to avoid.
-    """
+    """One button, one chat, the whole setup."""
     http, _session, _user = api
 
     progress = http.get("/setup/progress").json()
@@ -570,8 +511,7 @@ def test_the_start_button_runs_the_director(api):
     assert progress["outstanding_by_command"]
     assert "setup-director" in progress["commands"]
 
-    # And the command the button sends is accepted as its own agent rather than refused as a
-    # misdirected one -- the page reads the leading slash and sends it as the agent.
+    # And the command the button sends is accepted as its own agent rather than refused as a misdirected one.
     sent = http.post("/setup/message",
                      json={"message": "/setup-director", "agent": "setup-director"})
     assert "own chat" not in sent.text
@@ -595,14 +535,7 @@ def test_a_finished_profile_offers_no_next_command(api):
 
 
 def test_a_conversation_keeps_the_command_it_started_with(api):
-    """**The bug that made the director hand off after one turn.**
-
-    Only a message opening with a slash names an agent; every ordinary reply omits it, and the field
-    defaulted to `setup`. So a chat started as the director ran the director once, and every answer
-    the user typed afterwards was handled by `/setup` -- which knows nothing about the four-step map
-    and is told, correctly for itself, to send the user elsewhere for anything it cannot do. It kept
-    handing off because after the first turn it was no longer the director.
-    """
+    """The bug that made the director hand off after one turn."""
     from libs.db.models import SetupMessage
 
     http, session, user = api
@@ -623,8 +556,7 @@ def test_a_conversation_keeps_the_command_it_started_with(api):
 
 
 def test_a_different_conversation_keeps_its_own_command(api):
-    """Per conversation, not per account: somebody redoing one step in a second chat must not
-    retarget the director chat they left open."""
+    """Per conversation, not per account."""
     from libs.db.models import SetupMessage
 
     http, session, user = api
@@ -645,13 +577,7 @@ def test_a_different_conversation_keeps_its_own_command(api):
 
 
 def test_a_chat_can_be_renamed_and_keeps_the_name(api):
-    """**Titles were generated and only generated** — the first thing said, or the step's name when
-    Start was pressed. A good default and a poor permanent label: three chats called "Your profile"
-    tell nobody which is which, and the switcher is how somebody finds the one they want.
-
-    Auto-naming only ever fills a chat still holding the default, so a renamed one keeps its name
-    however many messages follow it.
-    """
+    """Titles were generated and only generated — the first thing said."""
     from libs.db.models import DEFAULT_TITLE, SetupConversation
 
     http, session, user = api
@@ -672,8 +598,7 @@ def test_a_chat_can_be_renamed_and_keeps_the_name(api):
 
 
 def test_a_chat_belonging_to_somebody_else_cannot_be_renamed(api):
-    """Ownership is checked by the same helper every other conversation route uses, and answers 404
-    rather than 403: whether a stranger's chat exists is not this caller's business."""
+    """Ownership is checked by the same helper every other conversation route uses."""
     from libs.db.models import SetupConversation, User
 
     http, session, _user = api

@@ -1,27 +1,4 @@
-"""The one process that owns Claude sign-in sessions.
-
-**Why this is a service and not three functions in the API.** `claude setup-token` is interactive:
-it prints a URL, blocks on stdin, and prints the token only after the code comes back. The PKCE
-verifier lives in that process's memory, so the request that hands out the URL and the request that
-brings the code back must reach *the same* process. Inside the API that made sessions accidentally
-correct — correct only while exactly one worker existed, and silently broken the moment a second
-one started answering requests, because the second worker would look up a session it had never
-heard of and tell the user their sign-in had expired.
-
-So the sessions live here instead, in a service pinned to one replica, and the API talks to it over
-HTTP. The API can now run as many workers as it likes. This is the same shape as any other
-single-owner resource: one holder, many callers.
-
-Two properties this buys beyond correctness:
-
-- **A slow sign-in cannot starve the API.** Reading a pty blocks a thread for up to a minute; here
-  that thread is this service's, not the one serving everybody's dashboards.
-- **The Claude CLI is installed in one image**, not in the image that also serves the SPA.
-
-**Not exposed to the internet.** It has no authentication of its own and takes a user id as an
-argument, so it is reachable only on the compose network. The API is what authenticates the caller
-and it passes the id of the user it has already authenticated.
-"""
+"""The one process that owns Claude sign-in sessions."""
 from __future__ import annotations
 
 import logging
@@ -56,8 +33,7 @@ class CancelBody(BaseModel):
 
 @app.get("/health")
 def health() -> dict:
-    """Whether a sign-in could actually start. **Reports the CLI, because its absence is the one
-    failure that looks like nothing until a user clicks the button.**"""
+    """Whether a sign-in could actually start."""
     from shutil import which  # noqa: PLC0415
 
     found = which(claudeauth.CLI)
@@ -78,8 +54,7 @@ def start(body: StartBody) -> dict:
 
 @app.post("/finish")
 def finish(body: FinishBody) -> dict:
-    """Returns the token. **The only response in the platform that carries a credential**, and it
-    crosses the compose network to the API, which stores it and drops it."""
+    """Returns the token."""
     try:
         token = claudeauth.finish(body.session_id, body.user_id, body.code)
     except claudeauth.OAuthError as exc:
@@ -97,9 +72,6 @@ def cancel(body: CancelBody) -> dict:
 if __name__ == "__main__":  # pragma: no cover
     import uvicorn
 
-    # One worker, and here that is a correctness requirement rather than a sizing choice: a second
-    # worker would own a different set of sessions and answer for sessions it does not have.
-    # Bound to every interface because it is reachable only on the compose network: the service
-    # publishes no ports, so there is no host interface for this to be exposed on.
+    # One worker, a correctness requirement: a second would answer for sessions it does not have.
     uvicorn.run(app, host="0.0.0.0",  # noqa: S104
                 port=int(os.environ.get("PORT", "8100")), workers=1)

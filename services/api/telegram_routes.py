@@ -1,24 +1,4 @@
-"""Telegram button taps, arriving as a webhook.
-
-**A webhook rather than polling**, because the API is publicly reachable through the tunnel: one
-request per tap, instead of a process asking "anything yet?" forever and a per-user `getUpdates`
-loop that would need its own worker and its own offset bookkeeping.
-
-## Three things stand between a stranger and somebody else's training data
-
-1. **A per-user path secret.** Every user runs their own bot, so the URL is what says *which*
-   account a tap belongs to — a single shared path could only answer that from the request body,
-   which is attacker-supplied.
-2. **Telegram's own `secret_token` header**, checked in constant time. The path can leak: into a
-   proxy log, a browser history, a screenshot. The header is what makes a leaked path insufficient.
-3. **The tapper must be the account owner.** A feed channel has other members. Without this check,
-   anybody who joined the channel to browse jobs could teach somebody else's model — which is not a
-   privacy leak but is a slow, invisible corruption of the one thing the product is built on. The
-   reference instance learned this and checks it too.
-
-Neither of the first two is sufficient alone, and the third is about a different attacker entirely:
-one who is *supposed* to see the messages.
-"""
+"""Telegram button taps, arriving as a webhook."""
 from __future__ import annotations
 
 import hmac
@@ -49,15 +29,7 @@ class OverBuildQuota(RuntimeError):
 
 
 def _check_build_quota(db, user) -> None:
-    """Refuse a build once the account is at its daily ceiling.
-
-    **Checked at the admission point**, never inside the worker (`TENANT_SAFETY.md` §3): a limit
-    checked halfway through a build has already spent the Claude call it was protecting.
-
-    Reads `libs.limits`, which is the one per-user limits system. It used to read a second one —
-    plan quotas with a `users.quota_overrides` column that nothing ever wrote, so the exception it
-    existed to grant could not be granted (ROADMAP 6as).
-    """
+    """Refuse a build once the account is at its daily ceiling."""
     allowed = limits.resolve(user, "cv_builds_per_day")
     if allowed is None:
         return                                    # the catalogue forbids unlimited here, but honour
@@ -67,48 +39,23 @@ def _check_build_quota(db, user) -> None:
             f"you have had your {allowed} documents for today — the count resets at midnight")
 router = APIRouter(prefix="/telegram", tags=["telegram"])
 
-# A retrain is debounced so a burst of taps produces one fit, ten minutes after the last
-# (`SCHEDULER_PLAN.md` §5). Below this many new feedback labels there is nothing worth refitting —
-# a model rebuilt on one extra label is not a different model, it is the same CPU spent twice.
+# A retrain is debounced so a burst of taps produces one fit (`SCHEDULER_PLAN.md` §5).
 TRAIN_DEBOUNCE_MIN = 10
-# **Removed 2026-08-05, and the removal is the fix.** This gate asked "has this account produced
-# five feedback labels at the current profile generation" and the trainer's `should_retrain` asks
-# "are there five *more* labels than the active model was fitted on". Two different questions with
-# one name and one number, so once an account passed five feedback labels the gate was permanently
-# true, every subsequent tap enqueued a retrain, and the trainer correctly declined each one — onto
-# the operator's health page as a dead letter (ROADMAP 6ah).
-#
-# The trainer is the authority now and this side does not second-guess it. Nothing is lost: the
-# debounce below and the `retrain` dedup key already collapse a burst into one job, which is all
-# this was contributing when it happened to be right.
-
-# `callback_data` is capped at 64 bytes by Telegram, so it carries an action and a job id and
-# nothing else. Everything about *who* comes from the URL and the header.
-# `ap` and `sk` are still understood: cards delivered before the two-button change are sitting in
-# channels with those buttons on them, and a tap months later must not read as an unknown action.
+# `callback_data` is capped at 64 bytes, so it carries an action and a job id, nothing else.
 CALLBACK_PREFIX = {"ap": "applied", "sk": "skipped", "bc": "build_cv", "co": "build_cover"}
 
 
 def _authenticate(secret: str, db: Session, header_token: str | None) -> User:
-    """Resolve the path secret to a user, and check Telegram's header. 404 on any failure.
-
-    404 rather than 401 throughout: a probe should not learn that a path exists, nor which of the
-    two checks it failed.
-    """
+    """Resolve the path secret to a user, and check Telegram's header."""
     user = db.scalar(select(User).where(User.telegram_webhook_secret == secret))
     if user is None:
-        # **This 404 was silent, and it hid a dead feature for every account but one.** A bot whose
-        # webhook is registered but whose row carries no secret sends taps that match nobody: the
-        # user presses "Build my CV", Telegram gets a 404, and nothing anywhere records that the
-        # button does not work. Logged at WARNING with the path secret's prefix so it can be tied
-        # back to a bot without writing the whole credential-shaped value to a log (ROADMAP 6af).
+        # This 404 was silent, and it hid a dead feature for every account but one.
         logger.warning("telegram: a tap arrived for webhook %s… and matched no account — that "
                        "bot's owner has no telegram_webhook_secret, so their buttons are dead",
                        secret[:8])
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="not found")
 
-    # `compare_digest`, not `==`. The comparison is against a value an attacker supplies and can
-    # vary freely, which is the textbook shape for a timing oracle.
+    # `compare_digest`, not `==`.
     if not header_token or not hmac.compare_digest(header_token, secret):
         logger.warning("telegram: webhook for %s had a bad secret header", user.id)
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="not found")
@@ -116,36 +63,23 @@ def _authenticate(secret: str, db: Session, header_token: str | None) -> User:
 
 
 def _build(db, user, action: str, job_id: int) -> dict:
-    """A tap on Build my CV or Build my cover letter.
-
-    Extracted from `webhook` so each refusal is one early return in a function about building,
-    rather than a seventh branch in a function about routing taps.
-    """
+    """A tap on Build my CV or Build my cover letter."""
     kind = "cover" if action == "build_cover" else "cv"
 
-    # **The quota is checked here, at the admission point**, never inside the worker
-    # (`TENANT_SAFETY.md` §3): a limit checked halfway through a build has already spent the
-    # Claude call it was protecting. The popup names the limit, because a button that silently
-    # does nothing is how somebody concludes the product is broken.
+    # The quota is checked at the admission point, never inside the worker (`TENANT_SAFETY.md` §3).
     try:
         _check_build_quota(db, user)
     except OverBuildQuota as exc:
         audit(logger, "telegram.build_over_quota", user=user.id, job=job_id, kind=kind)
         return {"status": "over_quota", "answer": str(exc)}
 
-    # **Refused here rather than dead-lettered there.** An account that has not finished setup
-    # has no `context.md` and no base CV, so the build cannot succeed — and queueing it anyway
-    # produced a dead letter on the operator's health page about a state only the user can fix,
-    # while the user was told "it will arrive shortly" and nothing arrived (ROADMAP 6aw).
+    # Refused here rather than dead-lettered there.
     if not ProfileFiles(db, user.id).is_ready():
         return {"status": "not_ready",
                 "answer": "Finish your setup chat first — a CV needs your profile to build "
                           "from."}
 
-    # **A build is the positive label** (decided 2026-07-29). It spends the user's own credit,
-    # so nobody presses it on a job they are not going to apply to — which makes it a stronger
-    # signal than a tap on "Applied", backed by spending rather than by intention. The feed
-    # carries no Applied button any more, so this is where the label comes from.
+    # A build is the positive label (decided 2026-07-29).
     result = record(db, user.id, job_id, "applied")
     if result.changed:
         enqueue(db, "train", user.id, dedup_key="retrain", delay_min=TRAIN_DEBOUNCE_MIN)
@@ -161,12 +95,7 @@ def _build(db, user, action: str, job_id: int) -> dict:
 @router.post("/webhook/{secret}")
 async def webhook(secret: str, request: Request, db: Session = Depends(get_db),
                   x_telegram_bot_api_secret_token: str | None = Header(default=None)) -> dict:
-    """One button tap.
-
-    **Always answers 200 once authenticated**, even when the tap does nothing. Telegram retries a
-    non-2xx, and retrying a tap that was already recorded is pointless at best; the response body
-    says what happened, for anybody reading a log.
-    """
+    """One button tap."""
     user = _authenticate(secret, db, x_telegram_bot_api_secret_token)
     update = await request.json()
 
@@ -176,9 +105,7 @@ async def webhook(secret: str, request: Request, db: Session = Depends(get_db),
 
     tapper = str((query.get("from") or {}).get("id") or "")
     if not _is_owner(user, tapper):
-        # A channel member who is not the account owner. Silently ignoring would be worse than
-        # refusing — the tap looks like it worked and teaches nothing — so it is logged and the
-        # popup below tells them.
+        # A channel member who is not the account owner.
         audit(logger, "telegram.foreign_tap", user=user.id)
         return {"status": "not_yours",
                 "answer": "Only the owner of this feed can use these buttons."}
@@ -192,8 +119,7 @@ async def webhook(secret: str, request: Request, db: Session = Depends(get_db),
 
     result = record(db, user.id, job_id, action)
     if result.changed:
-        # Debounced: `run_after` in ten minutes, collapsed on the dedup key, so twenty taps in a
-        # burst produce exactly one retrain ten minutes after the last of them.
+        # Debounced on the dedup key, so a burst of taps produces exactly one retrain.
         enqueue(db, "train", user.id, dedup_key="retrain", delay_min=TRAIN_DEBOUNCE_MIN)
 
     return {"status": "recorded" if result.changed else "already",
@@ -202,20 +128,13 @@ async def webhook(secret: str, request: Request, db: Session = Depends(get_db),
 
 
 def _command(db: Session, user: User, message: dict) -> dict:
-    """A typed command rather than a button tap.
-
-    Anything unrecognised is acknowledged rather than refused: a plain message, a channel post, a
-    sticker. Telegram resends whatever is not answered with a 2xx, and a bot that argues with its
-    own channel is worse than one that says nothing.
-    """
+    """A typed command rather than a button tap."""
     parts = (message.get("text") or "").strip().split()
     command = parts[0].split("@")[0].lower() if parts else ""
     if command not in ("/rate", "/cv", "/cover"):
         return {"status": "ignored"}
 
-    # The same ownership check a button tap gets. The bot may sit in a channel, and a member of it
-    # must not be able to train somebody else's model — or spend its owner's credit — by typing a
-    # command.
+    # The same ownership check a button tap gets.
     if not _is_owner(user, str((message.get("from") or {}).get("id") or "")):
         audit(logger, "telegram.foreign_command", user=user.id)
         return {"status": "not_yours"}
@@ -228,16 +147,7 @@ def _command(db: Session, user: User, message: dict) -> dict:
 
 @contextmanager
 def _fetching_as(db: Session, user: User):
-    """An HTTP client on this user's own proxy, or an unproxied one if they have no credential.
-
-    Their proxy or nothing — never another user's, and never a shared one. Unproxied still works
-    for most boards; it is LinkedIn specifically that refuses datacenter addresses, so a user
-    without a proxy can still paste a company careers page and get a CV.
-
-    `KeyUnavailable` is caught rather than propagated: the secret store being unreachable means
-    nothing can be decrypted, and refusing the whole command over an *optional* credential would
-    turn a degraded key service into a broken feature.
-    """
+    """An HTTP client on this user's own proxy, or an unproxied one if they have no credential."""
     try:
         with SecretStore(db).use(user.id, "proxy") as secret:
             proxy = secret.reveal() if secret is not None else None
@@ -252,15 +162,7 @@ def _fetching_as(db: Session, user: User):
 
 
 def _build_from_link(db: Session, user: User, *, kind: str, link: str) -> dict:
-    """`/cv <link>` — build a document for a job the harvest never saw.
-
-    The link is resolved into an ordinary corpus row first (`libs.corpus.ondemand`), so the build
-    is the ordinary build: same prompts, same grounding, same record on the applications page. A
-    second code path for pasted jobs would be a second code path nobody exercises.
-
-    The quota is checked here, at the admission point, for the same reason the button checks it:
-    a limit checked inside the worker has already spent the call it was protecting.
-    """
+    """`/cv <link>` — build a document for a job the harvest never saw."""
     if not link:
         return {"status": "no_link",
                 "message": f"Send it as {kind} followed by the job's link."}
@@ -277,10 +179,6 @@ def _build_from_link(db: Session, user: User, *, kind: str, link: str) -> dict:
         return {"status": "bad_link", "message": str(exc)}
 
     # A build is the positive label, whether the job came from the feed or from a paste.
-    #
-    # `create_missing` because this user was never shown the job — they pasted it. Without it
-    # `record` refuses, correctly for a tap on a trimmed old message and wrongly here, and the
-    # paste would silently produce no training signal at all.
     result = record(db, user.id, resolved.job_id, "applied", create_missing=True)
     if result.changed:
         enqueue(db, "train", user.id, dedup_key="retrain", delay_min=TRAIN_DEBOUNCE_MIN)
@@ -296,13 +194,7 @@ def _build_from_link(db: Session, user: User, *, kind: str, link: str) -> dict:
 
 
 def _rate(db: Session, user: User) -> dict:
-    """Hand back the job whose answer would teach the model most.
-
-    **Not the highest-scoring job, and not one from the feed.** The pool is ordered by distance
-    from the delivery threshold, and about half of it sits below that threshold and was therefore
-    never sent — which is the only way the model hears that something it rejected was worth
-    sending (`libs/feedback/rating.py`).
-    """
+    """Hand back the job whose answer would teach the model most."""
     job_id = next_to_rate(db, user.id)
     if job_id is None:
         return {"status": "nothing_to_rate",
@@ -326,12 +218,7 @@ def rating_keyboard(job_id: int) -> dict:
 
 
 def _is_owner(user: User, tapper_id: str) -> bool:
-    """The tap came from the person whose account this is.
-
-    Compared against the **personal** chat id, which is the account owner by construction: it was
-    captured from the conversation they had with their own bot. A channel id would not do — that is
-    the thing other people are in.
-    """
+    """The tap came from the person whose account this is."""
     return bool(tapper_id) and tapper_id == (user.telegram_chat_id or "")
 
 
@@ -355,11 +242,7 @@ def _confirmation(action: str, changed: bool) -> str:
 
 
 def keyboard(job_id: int) -> dict:
-    """The inline keyboard attached to a delivered job.
-
-    Three buttons and no more. Every extra one is a thing to read on a phone before deciding, and
-    the whole value of the digest is that it can be triaged quickly.
-    """
+    """The inline keyboard attached to a delivered job."""
     return {
         "inline_keyboard": [[
             {"text": "✅ Applied", "callback_data": f"ap:{job_id}"},

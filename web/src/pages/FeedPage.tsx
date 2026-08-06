@@ -1,14 +1,4 @@
-/**
- * The jobs, as a real table: the columns that matter, filters on them, search, pagination.
- *
- * **The server does the filtering.** Every control here becomes a query parameter and the page
- * refetches — the alternative (filter the loaded page in the client) silently lies whenever the
- * answer lives on a page that was never fetched.
- *
- * **It says which stage ranked them.** Before a trained model exists this is keyword matching, and
- * presenting that as "your model" would make the product look broken the moment the real model
- * arrives and reorders everything.
- */
+/** The jobs, as a real table: the columns that matter, filters on them, search, pagination. */
 import { useEffect, useRef, useState } from "react";
 
 import { api, type Feed, type FeedJob, type Salary } from "../api";
@@ -18,8 +8,7 @@ const PAGE = 25;
 type Sort = "score" | "posted" | "fetched" | "title" | "company";
 type AppliedFilter = "any" | "applied" | "not";
 
-// The last answer, kept across mounts. Navigating away and back renders it instantly while the
-// fresh one loads — the split-second "Loading…" flash was the page throwing away what it knew.
+// The last answer, kept across mounts.
 let cached: Feed | null = null;
 
 /** Forgotten on sign-out, or the next account flashes this one's jobs. */
@@ -68,8 +57,7 @@ export function FeedPage() {
   const [direction, setDirection] = useState<"asc" | "desc">("desc");
   const [offset, setOffset] = useState(0);
 
-  // Typing shouldn't fire a request per keystroke, and a late response for an old query must not
-  // overwrite the answer to the current one — the sequence number guards that.
+  // Typing shouldn't fire a request per keystroke.
   const requestSeq = useRef(0);
   useEffect(() => {
     const seq = ++requestSeq.current;
@@ -213,9 +201,7 @@ export function FeedPage() {
   );
 }
 
-/** "30 Jul 14:05" — when the radar found it. A real timestamp rather than a relative age
- *  (owner, 2026-07-30): "when we fetched it" is a fact worth reading off the row, and the posted
- *  age still shows beside it when the source reported one. */
+/** "30 Jul 14:05" — when the radar found it. */
 function fetched(iso: string | null): string {
   if (!iso) return "—";
   const date = new Date(iso);

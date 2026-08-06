@@ -1,14 +1,4 @@
-"""Process data, from the dashboard's side: state, the gate, and the confirmation.
-
-The processing call itself is covered by `test_profile_capture.py` with a fake client. What is left
-here is what the endpoints promise and nothing else does:
-
-- the state derives from counters rather than a status column, so it cannot go stale;
-- the warning names a real number, because a generic "are you sure?" is one nobody reads;
-- a double-click buys one Opus call, not two;
-- confirming forces `confirmed` server-side — posting the draft back untouched must not confirm on
-  the user's behalf, which is the whole point of the step.
-"""
+"""Process data, from the dashboard's side: state, the gate, and the confirmation."""
 from __future__ import annotations
 
 import os
@@ -51,9 +41,7 @@ def api():
     trans = conn.begin()
     session = Session(bind=conn, join_transaction_mode="create_savepoint")
 
-    # Consent granted: sending document text to Anthropic needs it, and `test_gdpr.py` owns the
-    # test that it is actually required. Without it every test here would 403 on a rule it is not
-    # about.
+    # Consent granted: sending document text to Anthropic needs it.
     user = User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active",
                 processing_consent_at=datetime.now(UTC),
                 processing_consent_version=DISCLOSURE_VERSION)
@@ -85,15 +73,11 @@ def test_an_account_with_documents_and_no_profile_is_told_to_process(api):
 
 
 def test_uploading_a_document_after_processing_reopens_the_action(api):
-    """The reason `documents_changed_at` is a timestamp rather than a flag: a flag has to be cleared
-    by whoever remembers, and the first thing to go stale would be the one saying what is stale."""
+    """The reason `documents_changed_at` is a timestamp rather than a flag."""
     from datetime import UTC, datetime, timedelta
 
     http, session, user = api
-    # An explicit past instant rather than `func.now()`. Postgres's `now()` is *transaction* start
-    # time, so the upload below — which happens in this same test transaction — would be stamped
-    # identically and the comparison could never be true. Production has no such problem: the
-    # processing worker and an upload request are always separate transactions.
+    # An explicit past instant rather than `func.now()`.
     user.processed_at = datetime.now(UTC) - timedelta(hours=1)
     user.profile = dict(DRAFT)
     session.flush()
@@ -117,8 +101,7 @@ def test_a_pending_draft_takes_priority_over_processing_again(api):
 
 
 def test_the_warning_names_what_it_will_cost(api):
-    """A generic "are you sure?" is one nobody reads; a number they recognise is one they think
-    about."""
+    """A generic "are you sure?" is one nobody reads; a number they recognise is one they think about."""
     from libs.db.models import CorpusJob, UserLabel
 
     http, session, user = api
@@ -137,8 +120,7 @@ def test_the_warning_names_what_it_will_cost(api):
 
 
 def test_pressing_the_button_twice_buys_one_call(api):
-    """The collapse is the queue's partial unique index, not an application check — a double-click
-    races with itself and an application check cannot promise anything about that."""
+    """The collapse is the queue's partial unique index, not an application check."""
     from sqlalchemy import func, select
 
     from libs.db.models import QueueJob
@@ -154,8 +136,7 @@ def test_pressing_the_button_twice_buys_one_call(api):
 
 
 def test_processing_without_a_claude_credential_says_so(api):
-    """It runs on the user's own key. Queueing it anyway would fail in a worker, hours later,
-    somewhere the user cannot see."""
+    """It runs on the user's own key."""
     from libs.db.models import UserSecret
 
     http, session, user = api
@@ -168,8 +149,7 @@ def test_processing_without_a_claude_credential_says_so(api):
 
 
 def test_confirming_forces_the_flag_server_side(api):
-    """Posting the draft back untouched must not confirm on the user's behalf — that is the whole
-    point of the step."""
+    """Posting the draft back untouched must not confirm on the user's behalf."""
     http, session, user = api
     user.profile_draft = dict(DRAFT)
     session.flush()
@@ -184,8 +164,7 @@ def test_confirming_forces_the_flag_server_side(api):
 
 
 def test_an_edit_made_at_confirmation_is_what_gets_stored(api):
-    """The confirmation form is where a wrong `not_list` entry is removed, and that entry would
-    otherwise silently suppress jobs the user wanted for as long as the profile lasts."""
+    """The confirmation form is where a wrong `not_list` entry is removed."""
     http, session, user = api
     user.profile_draft = dict(DRAFT)
     session.flush()
@@ -223,13 +202,7 @@ def test_process_requires_signing_in(api):
 
 
 def test_a_profile_built_by_the_conversation_is_not_offered_the_old_capture_flow(api):
-    """**Two definitions of "profile ready" that disagreed.**
-
-    `may_train` reads the setup files; this read `processed_at`, a column belonging to the capture
-    flow the setup conversation replaced and which nothing sets any more. So an account that had
-    just finished setup was told to "process your documents to build your profile" -- which would
-    have run the superseded flow over a finished profile and replaced it.
-    """
+    """Two definitions of "profile ready" that disagreed."""
     from libs.profiles import setup_files
     from libs.profiles.repository import ProfileFiles
     from services.api.process_routes import state
@@ -246,10 +219,7 @@ def test_a_profile_built_by_the_conversation_is_not_offered_the_old_capture_flow
 
 
 def test_training_state_reports_what_is_running_and_why(api):
-    """**The work never lived in the browser**, and nothing said so. Pressing the button writes
-    queue rows that the worker pools drain, so closing the tab changes nothing about whether it
-    finishes -- but the page said "Starting…" once and then looked identical whether the run was
-    halfway through or had died an hour ago."""
+    """The work never lived in the browser, and nothing said so."""
     from libs.queue import enqueue
 
     http, session, user = api
@@ -265,10 +235,7 @@ def test_training_state_reports_what_is_running_and_why(api):
 
 
 def test_stopping_cancels_queued_work_and_keeps_the_labels(api):
-    """**Queued only.** A row a worker has claimed is mid-call on the user's own credential;
-    deleting it here would not stop that call, only lose the record of it. Labels already written
-    are kept -- they were paid for and are still true, and throwing them away would make stopping
-    expensive enough that nobody would risk it."""
+    """Queued only."""
     from libs.db.models import QueueJob
     from libs.queue import enqueue
 
@@ -290,13 +257,7 @@ def test_stopping_cancels_queued_work_and_keeps_the_labels(api):
 
 
 def test_a_run_between_batches_still_reads_as_running(api):
-    """**The gap that made the page look idle mid-run.**
-
-    Labelling goes in batches: a worker takes a job, writes a batch, finishes it, and the dispatcher
-    enqueues the next. Between those two moments this account has nothing queued, and reading only
-    `ready`/`claimed` flipped the page back to its start button while the run was plainly alive --
-    which is what a user saw after navigating away and returning.
-    """
+    """The gap that made the page look idle mid-run."""
     from datetime import UTC, datetime
 
     from libs.db.models import QueueJob
@@ -319,8 +280,7 @@ def test_a_run_between_batches_still_reads_as_running(api):
 
 
 def test_an_abandoned_run_stops_claiming_to_be_alive(api):
-    """The other half: a finish long enough ago is a run nobody resumed, and saying "working" for
-    ever is worse than saying nothing."""
+    """The other half: a finish long enough ago is a run nobody resumed."""
     from datetime import UTC, datetime, timedelta
 
     from libs.db.models import QueueJob
@@ -338,12 +298,7 @@ def test_an_abandoned_run_stops_claiming_to_be_alive(api):
 
 
 def test_stopping_actually_stops_a_loop_that_re_enqueues_itself(api):
-    """**Cancelling queued rows could never have stopped this on its own.**
-
-    The labeller re-enqueues itself while work remains, so a deleted row came straight back and the
-    run carried on spending the user's own credential while the page reported it stopped. The flag
-    is what a self-perpetuating loop can be ended by from outside it.
-    """
+    """Cancelling queued rows could never have stopped this on its own."""
     from libs.queue import enqueue
 
     http, session, user = api
@@ -367,8 +322,7 @@ def test_starting_again_clears_a_previous_stop(api):
     from libs.profiles.repository import ProfileFiles
 
     http, session, user = api
-    # `/setup/start` refuses an unfinished profile, which is the right refusal and not what this
-    # test is about, so the account is given the files it would have had.
+    # `/setup/start` refuses an unfinished profile.
     files = ProfileFiles(session, user.id)
     for name in setup_files():
         files.write(name, f"real content for {name}", kind="context")
@@ -383,14 +337,7 @@ def test_starting_again_clears_a_previous_stop(api):
 
 
 def test_a_trained_account_is_not_permanently_training(api):
-    """**What made a finished account show "Fitting your model" and a Stop button.**
-
-    Scoring runs continuously for every account with a model -- it is how new corpus rows reach an
-    existing feed -- and the score lane was counted as training work. Combined with `train` being a
-    phase an account with enough labels sits in for ever, a routine score finish was enough to make
-    the page claim a run was in progress. Nothing was leaking between accounts; the data was the
-    user's own and the reading of it was wrong.
-    """
+    """What made a finished account show "Fitting your model" and a Stop button."""
     from datetime import UTC, datetime
 
     from libs.db.models import QueueJob

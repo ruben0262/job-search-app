@@ -11,9 +11,7 @@ const COMMANDS = [
   { cmd: "/rate", desc: "teach the model directly" },
 ];
 
-// Fictional jobs (never real pipeline output), but laid out exactly like the
-// real bot's stream messages: score · title / company · source · applicants ·
-// age / location / listed salary vs your ask / link / two build buttons.
+// Fictional jobs (never real pipeline output), but laid out exactly like the real bot's stream messages.
 const STREAM_MESSAGES = [
   {
     title: "🟢 91 · Senior Backend Engineer",

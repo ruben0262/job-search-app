@@ -1,15 +1,4 @@
-"""The status page: is each part of this user's pipeline alive, in colours a person can read.
-
-**Derived from the data, not from asking the services.** Every service here writes something when
-it works — corpus rows, scores, queue completions, delivery timestamps — so "is it up" is a
-question the database already answers. Pinging containers would need every service to grow a
-health port, and would say "the process exists" rather than "your jobs are flowing", which is the
-question the user is actually asking.
-
-States: `ok` (working, recent evidence), `warn` (working but something needs attention), `down`
-(broken, act), `off` (not applicable yet — not an error, and not green either). Each carries a
-sentence, because a red dot with no words is a support request.
-"""
+"""The status page: is each part of this user's pipeline alive, in colours a person can read."""
 from __future__ import annotations
 
 import logging
@@ -28,14 +17,11 @@ from services.api.deps import current_user, get_db
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["status"])
 
-# How stale the corpus may be before the harvester is presumed stuck. Cycles run every 15 minutes;
-# an hour of silence is three missed cycles, which is a fact worth a yellow, and four hours is red.
+# How stale the corpus may be before the harvester is presumed stuck.
 HARVEST_WARN = timedelta(hours=1)
 HARVEST_DOWN = timedelta(hours=4)
 
-# How long matches may sit undelivered before it stops being quiet and starts being broken. Wider
-# than the harvest thresholds on purpose: delivery is bounded by the user's own notify interval and
-# daily cap, so a few hours of silence with a backlog is plausible and six is not.
+# How long matches may sit undelivered before it stops being quiet and starts being broken.
 DELIVERY_WARN_HOURS = 3
 DELIVERY_DOWN_HOURS = 6
 
@@ -127,44 +113,20 @@ def _scorer(db: Session, user: User, now: datetime) -> dict:
 
 
 def _delivery(db: Session, user: User, now: datetime) -> dict:
-    """Is anything actually arriving — the question every other check assumes and none of them ask.
-
-    **Added because the page was all green through a six-hour delivery outage** (2026-07-31).
-    Collection was running, scoring was running, the bot and channel were connected, and the
-    notifier was completing its jobs successfully while sending nothing: it selected fifty
-    candidates a run and dropped all fifty as too old or closed. Every component reported healthy
-    and the product was not working, which is the exact failure a status page exists to prevent.
-
-    So this compares two facts the database already holds: whether matches are waiting, and when
-    something was last sent. Either alone is misleading — no deliveries is normal for an account
-    with nothing to deliver, and a backlog is normal for one that was just topped up — but *matches
-    waiting and nothing sent* is the shape of a stall, and it is reported as one.
-    """
+    """Is anything actually arriving — the question every other check assumes and none of them ask."""
     if user.telegram_status != "connected":
         return _entry("delivery", "Delivery", "off",
                       "Connect Telegram and matches will start arriving.")
 
-    # **A pause is a decision, not a fault.** Without this the checks below see matches piling up
-    # with nothing sent and correctly conclude "stalled" — reporting a red light for the switch the
-    # user themselves turned off, on the one page that exists to say what is genuinely wrong.
-    # `dispatch_due_notifications` filters on the same flag, so this and the pipeline agree.
-    #
-    # Onboarding is checked too because `active` starts **false**: on an unfinished account the flag
-    # means "not started yet", not "switched off", and telling somebody mid-signup that they paused
-    # something would be a confident lie about a thing they never did.
+    # A pause is a decision, not a fault.
     if not user.active and user.onboarding_completed_at is not None:
         return _entry("delivery", "Delivery", "off",
                       "Paused by you — nothing is being sent. Turn messages back on in Settings.")
 
-    # **Today's allowance, spent, is not a fault.** The notifier defers once an account has had its
-    # daily cap and logs exactly that; without knowing it, the checks below see matches piling up
-    # with nothing sent and report a stall. Observed on 2026-08-01: 802 waiting, "last delivery 4
-    # hours ago", and the real answer was simply that the day's jobs had already arrived.
+    # Today's allowance, spent, is not a fault.
     sent_today = _sent_today(db, user)
     cap = daily_cap(user)
-    # **Only when a cap exists.** Unlimited has no "allowance spent" state, and reporting one said
-    # "today's 20 jobs have been sent, more arrive tomorrow" to an account that had had 908 and was
-    # still going.
+    # Only when a cap exists.
     if cap is not None and sent_today >= cap:
         return _entry("delivery", "Delivery", "ok",
                       f"Today's {cap} jobs have been sent — that is this account's daily limit. "
@@ -222,32 +184,14 @@ def _docgen(db: Session, user_id: _uuid.UUID) -> dict:
 
 
 def daily_cap(user: User) -> int | None:
-    """This account's delivery cap, or `None` for unlimited. **The number the notifier enforces.**
-
-    **There were three answers to this question and all three were wrong somewhere.** The user
-    config carried `max_notifications_per_day` (default 20), this module mirrored a constant of
-    100, and the notifier read neither — it reads `libs.limits`, where the catalogue default is
-    `None`, unlimited. So the dashboard told an account "at most 20 messages a day" and the status
-    page said "today's 100 jobs have been sent", on a day it had delivered 908 (ROADMAP 6af).
-
-    `libs.limits` is in `libs` precisely so both services can read it without importing each other,
-    which is what the mirrored constant was working around. There is nothing left to mirror.
-
-    `None` is returned rather than substituted, because a cap of "unlimited" is not a number and
-    every place that has quietly turned it into one has understated what the platform does.
-    """
+    """This account's delivery cap, or `None` for unlimited."""
     cap = limits.resolve(user, "notifications_per_day")
-    # None travels out as None. Callers branch on it; nobody gets handed a number standing in for
-    # "no limit", which is the substitution that produced every wrong figure above.
+    # None travels out as None.
     return cap
 
 
 def _sent_today(db: Session, user: User) -> int:
-    """Deliveries since this user's local midnight, counted the way the notifier counts them.
-
-    In `users.timezone` rather than UTC: "resets at midnight your time" has to keep meaning the same
-    thing in November, and the accounts are spread across zones.
-    """
+    """Deliveries since this user's local midnight, counted the way the notifier counts them."""
     local_midnight = func.date_trunc("day", func.timezone(user.timezone or "UTC", func.now()))
     return db.scalar(
         select(func.count()).select_from(UserJobState)

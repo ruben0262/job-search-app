@@ -1,13 +1,4 @@
-"""The corpus repository's behaviour — the storage half of the `store.py` port.
-
-T2 (`test_dedup_parity.py`) pins the dedup *key functions* against the reference. This file pins
-what the repository does with them: the order the layers are applied, that a null key never matches,
-that re-discovering a job does not make it look new, and that a vector can never outlive the text it
-was computed from.
-
-Needs a live Postgres; skips without `DATABASE_URL`, like the schema tests. Every test runs inside a
-transaction that is rolled back.
-"""
+"""The corpus repository's behaviour — the storage half of the `store.py` port."""
 from __future__ import annotations
 
 import os
@@ -61,12 +52,7 @@ def test_adding_the_same_url_twice_inserts_once(repo):
 
 
 def test_rediscovering_a_job_never_makes_it_look_new(repo):
-    """`first_seen_at` drives recency ordering and the retention sweep.
-
-    A source that re-lists an old posting every cycle would otherwise keep it permanently fresh and
-    permanently un-trimmable — the exact reason the reference uses INSERT OR IGNORE rather than an
-    upsert.
-    """
+    """`first_seen_at` drives recency ordering and the retention sweep."""
     r, s = repo
     url = _u()
     job_id = r.add(url=url, source="greenhouse", title="Backend Engineer", company="Acme")
@@ -134,12 +120,7 @@ def test_the_same_role_in_another_city_is_not_a_duplicate(repo):
 
 
 def test_an_unusable_key_never_matches_another_unusable_key(repo):
-    """Fail open. `None` means "no opinion", never a value to join on.
-
-    If null keys matched each other, every posting with an unparseable company would collapse into
-    one row and the rest would be silently discarded — the worst possible dedup bug, because the
-    feed simply gets quieter and nothing errors.
-    """
+    """Fail open."""
     r, s = repo
     r.add(url="https://example.test/" + uuid.uuid4().hex, source="board", title="Engineer",
           company="")            # no company -> content_key is None
@@ -157,11 +138,7 @@ def test_a_genuinely_new_job_is_not_a_duplicate(repo):
 
 
 # ── the apply-URL layer: what canonicalisation actually exists for ────────────────────────────
-# The same job arrives as linkedin.com/jobs/view/… from the LinkedIn scrape and as
-# boards.greenhouse.io/… from the direct ATS poll. Nothing about those URLs is comparable, and the
-# content key only helps when title AND company both normalise identically — which aggregators
-# routinely break by decorating titles or abbreviating company names. Resolving LinkedIn's Apply
-# button to its external target is what makes them comparable.
+# The same job arrives from the LinkedIn scrape and from the ATS poll under different URLs.
 
 def test_a_linkedin_listing_resolving_to_a_known_ats_url_is_a_duplicate(repo):
     """LinkedIn arrives second; the Greenhouse row is already in the corpus."""
@@ -181,11 +158,7 @@ def test_a_linkedin_listing_resolving_to_a_known_ats_url_is_a_duplicate(repo):
 
 
 def test_an_ats_row_arriving_after_the_linkedin_one_is_a_duplicate(repo):
-    """The other direction: the ATS poll arrives second, beaten by a LinkedIn listing.
-
-    Checking only one direction would leave half the collisions undetected, which is worse than
-    checking neither — it looks like it works.
-    """
+    """The other direction: the ATS poll arrives second, beaten by a LinkedIn listing."""
     r, s = repo
     token = uuid.uuid4().hex
     ats_url = _u(token)
@@ -235,11 +208,7 @@ def test_an_unresolvable_apply_url_does_not_match_anything(repo):
 # ── description and embedding ────────────────────────────────────────────────────────────────
 
 def test_changing_the_description_invalidates_the_vector(repo):
-    """A vector must never outlive the text it was computed from.
-
-    `refresh.py` re-fetches live postings and their text does change. A stale vector raises nothing
-    — it just scores confidently against content that no longer exists.
-    """
+    """A vector must never outlive the text it was computed from."""
     r, s = repo
     job_id = r.add(url=_u(), source="greenhouse", title="Backend Engineer", company="Acme")
     s.flush()
@@ -278,11 +247,7 @@ def test_rewriting_identical_text_is_not_a_change(repo):
 
 
 def test_a_vector_computed_from_superseded_text_is_refused(repo):
-    """The real race: bulk embedding takes minutes while refresh.py runs concurrently.
-
-    The `(model, dim, version)` assert downstream cannot catch this — the vector space is correct,
-    the *content* is wrong. So the write is refused here and the job simply gets picked up again.
-    """
+    """The real race: bulk embedding takes minutes while refresh.py runs concurrently."""
     r, s = repo
     job_id = r.add(url=_u(), source="greenhouse", title="Backend Engineer", company="Acme")
     s.flush()
@@ -337,8 +302,7 @@ def test_trimming_drops_text_but_keeps_the_dedup_key_forever(repo):
 
 
 def test_a_job_a_user_acted_on_is_never_trimmed(repo):
-    """Losing the text under a label leaves the label meaningless; under an applied-record it
-    destroys the thing the user most wants kept."""
+    """Losing the text under a label leaves the label meaningless."""
     r, s = repo
     job_id = r.add(url=_u(), source="greenhouse", title="Backend Engineer", company="Acme")
     s.flush()
@@ -356,12 +320,7 @@ def test_a_job_a_user_acted_on_is_never_trimmed(repo):
 
 
 def test_a_long_real_world_content_key_is_storable(repo):
-    """**Regression from the first real harvest cycle.**
-
-    `content_key` is a readable composite — "company|title|location" — not a hash, so its length is
-    a function of a job title somebody else wrote. This exact German posting blew a `String(64)`
-    bound on the first live run. German compound nouns are not an edge case; they are Tuesday.
-    """
+    """Regression from the first real harvest cycle."""
     r, s = repo
     job_id = r.add(
         url="https://www.arbeitnow.com/jobs/companies/osnatruck-nutzfahrzeugservice-gmbh/"
@@ -386,20 +345,7 @@ def test_a_very_long_title_does_not_break_ingest(repo):
 
 
 def test_every_corpus_timestamp_comes_from_one_clock_and_it_is_the_real_one(repo):
-    """**The defect that made an embed appear to finish before its description arrived.**
-
-    Postgres' `now()` is the *transaction* start, so every row a cycle touched carried a timestamp
-    taken before the cycle did any work. Measured on the live box, `embedded_at -
-    description_fetched_at` came out **negative** for most rows, and the latency query discarded
-    them as clock changes — which is why "described → embedded" reported nine minutes off the few
-    rows that straddled two transactions rather than the real figure off all of them.
-
-    `description_fetched_at` made it worse by reading Python's clock while its neighbour read
-    Postgres', so one row carried two machines' idea of the time and the span between them measured
-    their disagreement.
-
-    The queue had the same defect in `finished_at`. Three times is a rule.
-    """
+    """The defect that made an embed appear to finish before its description arrived."""
     corpus, s = repo
     job_id = corpus.add(url=_u(), source="test", title="Engineer",
                         fetched_at=datetime.now(UTC) - timedelta(seconds=1))
@@ -421,17 +367,7 @@ def test_every_corpus_timestamp_comes_from_one_clock_and_it_is_the_real_one(repo
 
 
 def test_a_posting_is_never_recorded_as_published_after_we_found_it(repo):
-    """**LinkedIn reports age relatively and we read it late.**
-
-    "1 hour ago" is anchored to whenever the describe pass happened, which is minutes or hours after
-    ingest — so the absolute time computed from it drifts forward, and every re-read pushes it
-    further. Measured live, `first_seen_at - posted_at` was negative for nearly every LinkedIn row,
-    by as much as 162 minutes.
-
-    That is not cosmetic: the freshness filter, the feed's recency ordering and the
-    `posted → fetched` latency row all read this column, and a negative span is discarded as a clock
-    change rather than reported.
-    """
+    """LinkedIn reports age relatively and we read it late."""
     corpus, s = repo
     job_id = corpus.add(url=_u(), source="linkedin", title="Engineer")
     s.flush()
@@ -453,14 +389,7 @@ def test_a_posting_is_never_recorded_as_published_after_we_found_it(repo):
 
 
 def test_a_description_arriving_classifies_the_working_arrangement(repo):
-    """**The filter that was barely running.** `workfilter.classify` has always read the
-    description — it just never saw one. At ingest a row has a title, a location and whatever
-    snippet the source sent, and LinkedIn sends none, so `workplace` was set on 3% of LinkedIn rows
-    on the source that is 43% of the corpus.
-
-    The description arriving is the event that makes the classification possible, so that is where
-    it happens.
-    """
+    """The filter that was barely running."""
     repo, session = repo
     job_id = repo.add(url=f"https://example.com/{uuid.uuid4()}", source="linkedin",
                       title="Backend Engineer", company="Acme", location="Berlin")
@@ -474,9 +403,7 @@ def test_a_description_arriving_classifies_the_working_arrangement(repo):
 
 
 def test_the_page_s_own_tag_is_never_overwritten_by_the_guess(repo):
-    """LinkedIn's workplace pill and schema.org's `jobLocationType` are the real tag on the page.
-    A heuristic over the advert's prose must not replace one — that is the difference between
-    reading a posting and second-guessing it."""
+    """LinkedIn's workplace pill and schema.org's `jobLocationType` are the real tag on the page."""
     repo, session = repo
     job_id = repo.add(url=f"https://example.com/{uuid.uuid4()}", source="linkedin",
                       title="Backend Engineer", company="Acme", location="Berlin")
@@ -490,8 +417,7 @@ def test_the_page_s_own_tag_is_never_overwritten_by_the_guess(repo):
 
 
 def test_an_unreadable_description_leaves_the_arrangement_unknown(repo):
-    """Unknown means keep, here as everywhere else. Guessing "onsite" from silence would quietly
-    drop every remote job whose advert never uses the word."""
+    """Unknown means keep, here as everywhere else."""
     repo, session = repo
     job_id = repo.add(url=f"https://example.com/{uuid.uuid4()}", source="test",
                       title="Backend Engineer", company="Acme", location="Berlin")
@@ -504,12 +430,7 @@ def test_an_unreadable_description_leaves_the_arrangement_unknown(repo):
 
 
 def test_a_new_row_carries_the_country_it_was_read_from(repo):
-    """**The column exists so the filter is an indexed equality, not a regex per user per job.**
-
-    `libs/corpus/geo.py` had no production consumer at all before this — the module, its EU
-    vocabulary and its forty tests were imported by tests and nothing else, so the country filter
-    the owner asked for had never run and American jobs kept arriving (ROADMAP 6ak).
-    """
+    """The column exists so the filter is an indexed equality, not a regex per user per job."""
     repo, session = repo
     job_id = repo.add(url=f"https://example.com/{uuid.uuid4()}", source="test",
                       title="Backend Engineer", company="Acme", location="Berlin, Germany")
@@ -519,8 +440,7 @@ def test_a_new_row_carries_the_country_it_was_read_from(repo):
 
 
 def test_a_posting_that_names_no_place_stores_no_country(repo):
-    """NULL is the value that passes every filter, and 16% of the corpus has it. Storing a guess
-    here would hide those jobs from everyone who set a country."""
+    """NULL is the value that passes every filter, and 16% of the corpus has it."""
     repo, session = repo
     job_id = repo.add(url=f"https://example.com/{uuid.uuid4()}", source="test",
                       title="Backend Engineer", company="Acme", location="Remote")
@@ -530,8 +450,7 @@ def test_a_posting_that_names_no_place_stores_no_country(repo):
 
 
 def test_the_country_column_is_read_from_the_same_place_the_filter_will_be(repo):
-    """One definition. The column and `wanted_countries` have to agree about what "DE" means, or
-    the filter is a second implementation of the vocabulary — the defect in 6ah."""
+    """One definition."""
     from libs.corpus.geo import EU_COUNTRIES, allows, wanted_countries
 
     repo, session = repo

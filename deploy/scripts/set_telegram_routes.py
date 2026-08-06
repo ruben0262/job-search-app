@@ -1,19 +1,4 @@
-"""Point a user's per-category Telegram channels at real chat ids.
-
-    python deploy/scripts/set_telegram_routes.py --email you@example.com \
-        --hu -1004411717560 --linkedin -1004329193730 --other -1004314660920
-    python deploy/scripts/set_telegram_routes.py --email you@example.com --clear
-
-Splitting the feed is what keeps each stream skimmable — Hungarian jobs, LinkedIn, everything else
-(`services/notifier/routing.py`). Every route is optional and anything unrouted goes to the personal
-chat, so a partial table is a valid one.
-
-**Not a secret**, unlike everything else in `deploy/scripts`: a channel id is not a credential, and
-it is passed as an argument so this can be scripted and read back.
-
-The bot must be an administrator of each channel or Telegram refuses the post — checked here, so a
-misconfigured channel fails now rather than as a delivery that silently never arrives.
-"""
+"""Point a user's per-category Telegram channels at real chat ids."""
 from __future__ import annotations
 
 import argparse
@@ -33,11 +18,7 @@ from services.notifier.routing import ROUTES
 
 
 def _reachable(token: str, chat_id: str) -> tuple[bool, str]:
-    """Ask Telegram what it thinks of this chat. `getChat` needs no permission to post.
-
-    Checked because the failure it prevents is invisible: a channel the bot is not an admin of
-    accepts the configuration and then rejects every delivery, and the user sees an empty feed.
-    """
+    """Ask Telegram what it thinks of this chat."""
     try:
         response = httpx.get(f"https://api.telegram.org/bot{token}/getChat",
                              params={"chat_id": chat_id}, timeout=15)

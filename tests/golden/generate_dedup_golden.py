@@ -1,20 +1,4 @@
-"""Regenerate the dedup golden file by executing the REFERENCE implementation.
-
-    python tests/golden/generate_dedup_golden.py [--reference d:/Projects/job-search]
-
-This is the provenance of `dedup_cases.json`, and the reason T2 means anything: the expected values
-are not what someone believed the rules were, they are what
-`job-search/pipeline/lib/store.py` actually returns today. Reading the rules and writing the
-expectations by hand would encode the reading, and a subtle misreading would then be "confirmed" by
-a test that agrees with it.
-
-**Run this only to add cases or to deliberately re-baseline.** Regenerating it to make a failing
-test pass would defeat the whole point — if the port changes an output, that is the finding, not a
-stale golden.
-
-The reference is a separate repository and is not a dependency of this one. It is not present in
-CI, which is why the golden file is committed rather than generated during the test run.
-"""
+"""Regenerate the dedup golden file by executing the REFERENCE implementation."""
 from __future__ import annotations
 
 import argparse
@@ -22,8 +6,7 @@ import json
 import sys
 from pathlib import Path
 
-# Cases chosen to pin the semantics that are load-bearing and easy to break silently, not to
-# maximise coverage. Each group targets a rule that a reimplementation would plausibly get wrong.
+# Cases chosen to pin the semantics that are load-bearing and easy to break silently.
 CANONICAL_URL_CASES = [
     # host folding: the two Greenhouse hosts are the same board
     "https://job-boards.greenhouse.io/acme/jobs/123",

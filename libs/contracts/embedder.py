@@ -1,22 +1,4 @@
-"""The embedder contract: client, vector serialisation, and the compatibility assert.
-
-Port of `scorer/embedder_client.py`, which `CODE_STRUCTURE.md` §3 notes was already contract-shaped.
-It lives in `libs/contracts` because both the harvester (embedding new corpus rows in bulk) and the
-scorer (embedding on the serving path) speak it, and a second copy would be a second opinion about
-the wire format.
-
-**The compatibility assert is the whole point of this module.** A classifier is bound to the exact
-`(model, dim)` it was trained on. If the shared embedder is serving a different vector space, the
-scores are not degraded — they are meaningless, and nothing raises. So callers assert first and
-refuse to serve on a mismatch (`PLATFORM_ARCHITECTURE.md` §5). The embedder's `/health` reports `ok`
-only after it has probed its live backend, so this assert is checking a verified fact rather than
-the embedder's own configuration file.
-
-**Vectors are stored as raw float32 bytes**, not JSON and not pgvector. The corpus reads a vector
-whole and multiplies it by a user's classifier; nothing does similarity *search*, so a blob is
-sufficient and avoids an extension dependency (`PLATFORM_ARCHITECTURE.md` §4). float32 rather than
-float64 halves the storage for precision no classifier here can use.
-"""
+"""The embedder contract: client, vector serialisation, and the compatibility assert."""
 from __future__ import annotations
 
 import struct
@@ -35,12 +17,7 @@ class IncompatibleEmbedder(EmbedderError):
 
 @dataclass(frozen=True)
 class EmbedderVersion:
-    """What a vector was produced by. Stored per corpus row alongside the vector itself.
-
-    Recorded rather than assumed because the embedder can be upgraded independently of the
-    classifiers that consume it — and a vector from the old space next to one from the new space is
-    indistinguishable by inspection.
-    """
+    """What a vector was produced by."""
 
     model: str
     dim: int
@@ -52,9 +29,7 @@ def pack_vector(values: list[float]) -> bytes:
     return struct.pack(f"<{len(values)}f", *values)
 
 
-# How long a caller waits for the embedder before giving up. **Named, because the harvester's batch
-# size is derived from it** — the two were independent numbers and the batch was sized so that a
-# full one could not finish inside the timeout (ROADMAP 6ba).
+# How long a caller waits for the embedder before giving up.
 DEFAULT_EMBED_TIMEOUT = 120.0
 
 
@@ -66,13 +41,7 @@ def unpack_vector(blob: bytes) -> list[float]:
 
 
 class EmbedderClient:
-    """Talks to the shared embedder gateway. Two lanes, one contract.
-
-    The lanes are not a nicety: the gateway runs separate worker pools for them, because priority
-    alone cannot protect the fast lane — a score request still waits for an in-flight bulk call to
-    return. That was measured (0.08 s idle → 8–15 s with a shared pool) and is why `/embed` and
-    `/embed/bulk` are different endpoints rather than a flag.
-    """
+    """Talks to the shared embedder gateway."""
 
     def __init__(self, base_url: str = "http://embedder-gateway:8080",
                  token: str | None = None, timeout: float = DEFAULT_EMBED_TIMEOUT,
@@ -98,12 +67,7 @@ class EmbedderClient:
             version=str(health.get("version")))
 
     def assert_compatible(self, expected: EmbedderVersion) -> None:
-        """Refuse to proceed on a vector-space mismatch. Call once at startup and cache the result.
-
-        `ok` is false until the gateway has confirmed its configuration against the live backend,
-        and stays false permanently on a mismatch — so this checks something that was verified, not
-        something that was declared.
-        """
+        """Refuse to proceed on a vector-space mismatch."""
         actual = self.version()
         if actual.model != expected.model or actual.dim != expected.dim:
             raise IncompatibleEmbedder(
@@ -125,15 +89,10 @@ class EmbedderClient:
         try:
             response = self._client.post(path, json={"texts": texts})
         except httpx.HTTPError as exc:
-            # **A transport failure is an embedder failure, and must arrive as one.** This used to
-            # propagate raw, so a caller written to handle `EmbedderError` — every caller — was
-            # still killed by a read timeout leaking out of httpx. That is exactly what ended a
-            # corpus rebuild on its first batch: the gateway was working, two clients were queued
-            # on it, and one call went past the deadline.
+            # A transport failure is an embedder failure, and must arrive as one.
             raise EmbedderError(f"{path} failed: {type(exc).__name__}: {exc}") from exc
         if response.status_code >= 400:
             # 503 is the gateway shedding load or refusing to serve an unverified vector space.
-            # Either way the answer is to stop, not to substitute something plausible.
             raise EmbedderError(f"{path} returned HTTP {response.status_code}: {response.text[:300]}")
         vectors = response.json().get("vectors")
         if not isinstance(vectors, list) or len(vectors) != len(texts):

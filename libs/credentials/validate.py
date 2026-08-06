@@ -1,14 +1,4 @@
-"""One cheap call per credential kind, proving it works.
-
-`TENANT_SAFETY.md` §2 requires this: *make a real minimal API call. A bad key must fail at the form,
-not silently at 3 a.m.* Each validator answers the same question — would this credential let us do
-the one thing we need it for? — and nothing else. No validator performs a real unit of work, so a
-failed onboarding never leaves a half-done side effect behind.
-
-Deliberately **not** part of `libs.secrets`. Storage must not depend on a third party being
-reachable: a user with a working key should still be able to save it during an outage, and whether
-to accept an unvalidated credential is the caller's decision rather than an accident of layering.
-"""
+"""One cheap call per credential kind, proving it works."""
 from __future__ import annotations
 
 import logging
@@ -29,16 +19,11 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class ValidationResult:
-    """Whether the credential works, and what to tell the user if it does not.
-
-    `detail` is written for the person at the form, not for a log: "this account has no credit" is
-    actionable, "402" is not.
-    """
+    """Whether the credential works, and what to tell the user if it does not."""
 
     ok: bool
     detail: str = ""
-    # Anything the check happened to learn that the platform needs — the Telegram chat id, for
-    # instance, which the user should never have to go and find.
+    # Anything the check learned that the platform needs — the Telegram chat id, for instance.
     extra: dict[str, str] | None = None
 
 
@@ -54,17 +39,13 @@ def validate_credential(kind: str, value: str, *,
     if kind not in validators:
         return ValidationResult(False, f"{kind!r} is not a credential this platform stores")
 
-    # `trust_env=False` for the same reason the harvester's client factory sets it: an ambient
-    # HTTP_PROXY would silently route the check — and on the proxy validator, route it through a
-    # different proxy entirely, so a broken credential would appear to work.
+    # `trust_env=False`: an ambient HTTP_PROXY would silently route the check somewhere else.
     owned = client is None
     http = client or httpx.Client(timeout=TIMEOUT, trust_env=False)
     try:
         return validators[kind](value, http)
     except httpx.HTTPError as exc:
-        # Redacted: an HTTP client's error message quotes the request it was making, so a
-        # credential can ride out in the *user-facing* detail — which lands in a response body,
-        # where the logging filter never sees it.
+        # Redacted: an HTTP client's error quotes the request, so a credential can ride out in the detail.
         return ValidationResult(
             False, redact(f"could not reach the service to check this: {exc!s}")[:200])
     finally:
@@ -80,8 +61,7 @@ def _claude_result(response: httpx.Response) -> ValidationResult:
         return ValidationResult(False, "Anthropic rejected this credential — check it was copied "
                                        "in full and has not been revoked")
     if response.status_code == 429:
-        # Rate limited is not invalid. Treating it as invalid would tell a user with a perfectly
-        # good key to go and replace it.
+        # Rate limited is not invalid.
         return ValidationResult(True, "rate limited while checking; the credential itself is valid")
     if response.status_code == 402:
         return ValidationResult(False, "this account has no credit — top it up and try again")
@@ -96,11 +76,7 @@ def _validate_claude_api(value: str, http: httpx.Client) -> ValidationResult:
 
 
 def _validate_claude_oauth(value: str, http: httpx.Client) -> ValidationResult:
-    """The same call on the other auth channel.
-
-    OAuth tokens are short-lived, so this proves the current one is live and nothing more — the
-    refresh material is stored alongside it and is what keeps it live.
-    """
+    """The same call on the other auth channel."""
     return _claude_result(http.get(
         ANTHROPIC_URL,
         headers={"Authorization": f"Bearer {value}",
@@ -126,11 +102,7 @@ def _validate_telegram(value: str, http: httpx.Client) -> ValidationResult:
 
 
 def _validate_proxy(value: str, http: httpx.Client) -> ValidationResult:
-    """Prove the proxy both accepts us and forwards traffic.
-
-    A credential that authenticates but reaches nothing is worse than one that fails outright: the
-    LinkedIn loop would run, spend the user's own bandwidth allowance, and return nothing.
-    """
+    """Prove the proxy both accepts us and forwards traffic."""
     try:
         with httpx.Client(proxy=value, timeout=TIMEOUT, trust_env=False) as through:
             response = through.get("https://api.ipify.org", follow_redirects=False)
@@ -149,14 +121,7 @@ def _validate_proxy(value: str, http: httpx.Client) -> ValidationResult:
 
 def telegram_channel_check(token: str, channel_id: str, *,
                            client: httpx.Client | None = None) -> ValidationResult:
-    """Prove the bot can post to this channel — by posting to it.
-
-    A real `sendMessage`, not `getChat`: a bot must be an **administrator** of a channel to post,
-    and the send is the only check that proves the one thing delivery needs. The message doubles as
-    the user's confirmation on their own phone that the right channel is wired. Telegram's error
-    strings for the failure modes ("chat not found", "not enough rights") are surfaced because each
-    has a different one-minute fix.
-    """
+    """Prove the bot can post to this channel — by posting to it."""
     owned = client is None
     http = client or httpx.Client(timeout=TIMEOUT, trust_env=False)
     try:
@@ -186,17 +151,7 @@ def telegram_channel_check(token: str, channel_id: str, *,
 
 def telegram_chat_check(token: str, chat_id: str, *,
                         client: httpx.Client | None = None) -> ValidationResult:
-    """Prove the bot can message this private chat — by messaging it.
-
-    **The counterpart to `telegram_chat_id`, for when reading it fails.** Auto-capture depends on
-    the update still being queued at Telegram and on nothing else having consumed it, neither of
-    which the platform controls, and when it comes back empty the user is left pressing Start again
-    with no way to proceed. A chat id they fetched themselves from @getidsbot always works.
-
-    A send rather than `getChat`, for the same reason the channel check sends: a bot can look up a
-    chat it is not allowed to write to, and writing is the only thing delivery needs. The message
-    is also the user's confirmation on their own phone.
-    """
+    """Prove the bot can message this private chat — by messaging it."""
     owned = client is None
     http = client or httpx.Client(timeout=TIMEOUT, trust_env=False)
     try:
@@ -226,12 +181,7 @@ def telegram_chat_check(token: str, chat_id: str, *,
 
 
 def telegram_chat_id(token: str, *, client: httpx.Client | None = None) -> str | None:
-    """The chat id of whoever last messaged this bot, or `None` if nobody has yet.
-
-    **The user never has to find this themselves** (`TENANT_SAFETY.md` §2). They press Start in
-    their bot and the platform reads it — the step that otherwise confuses people more than the rest
-    of the setup put together.
-    """
+    """The chat id of whoever last messaged this bot, or `None` if nobody has yet."""
     owned = client is None
     http = client or httpx.Client(timeout=TIMEOUT, trust_env=False)
     try:
@@ -246,8 +196,7 @@ def telegram_chat_id(token: str, *, client: httpx.Client | None = None) -> str |
                 return str(chat["id"])
         return None
     except httpx.HTTPError as exc:
-        # Without this the user is told to press Start and try again, when in fact Telegram was
-        # unreachable and pressing Start will not help.
+        # Otherwise the user is told to press Start when in fact Telegram was unreachable.
         logger.warning("could not reach Telegram to read the chat id: %s", exc)
         return None
     finally:

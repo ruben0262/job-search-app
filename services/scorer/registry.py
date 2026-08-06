@@ -1,17 +1,4 @@
-"""Per-user model cache with hot-swap on retrain.
-
-The single-tenant instance reloads a model by recreating the container. That does not scale to N
-users on one process — and it is the reason `users.model_version` exists
-(`PLATFORM_ARCHITECTURE.md` §7): the registry compares the user's current version against what it
-holds and reloads only when they differ. A retrain becomes visible on the next score, with no
-restart and without disturbing anyone else's cached model.
-
-**Everything here fails closed.** A model is served only if its artifact agrees with the user's
-current `profile_generation` and with the platform's `FEATURE_SCHEMA_VERSION`. Both are silent
-corruptions otherwise: the estimator still predicts, the numbers still look like scores, and they
-were fit against different semantics than the ones being fed in. Same discipline the embedder
-applies to `(model, dim, version)`.
-"""
+"""Per-user model cache with hot-swap on retrain."""
 from __future__ import annotations
 
 import logging
@@ -31,18 +18,12 @@ from libs.scoring.features import FEATURE_SCHEMA_VERSION, FeatureSpec, spec_for
 
 logger = logging.getLogger(__name__)
 
-# Small on purpose. A classifier over 768-dim vectors is a few MB, so 32 users resident is tens of
-# megabytes — but the number is a knob rather than a guess, because a platform that grows past it
-# should evict rather than grow unboundedly.
+# Small on purpose.
 DEFAULT_CAPACITY = 32
 
 
 class ModelUnavailable(RuntimeError):
-    """No servable model for this user. Never an error the caller should paper over.
-
-    Carries `reason` so the caller can distinguish "not trained yet" (normal for a new account,
-    cold start covers it) from "artifact is stale" (a retrain is owed).
-    """
+    """No servable model for this user."""
 
     def __init__(self, reason: str, *, retrainable: bool = False):
         super().__init__(reason)
@@ -65,24 +46,13 @@ class LoadedModel:
     embedder_version: str
     cutoff: int
     keep_cutoff: int
-    # The pre-score filter measured from the labels this artifact was fitted on. `None` means this
-    # account has no centre — cold start, or a model published before the column existed — and the
-    # scorer must then score every row rather than none (ROADMAP 6an).
+    # The pre-score filter measured from the labels this artifact was fitted on.
     centroid: bytes | None = None
     centroid_threshold: float | None = None
 
 
 def resolve_artifact(path: str) -> str:
-    """Where the artifact actually is, now, on this host.
-
-    **The stored path is a record of where it was written, not where to find it.** `models.path`
-    holds an absolute path from whichever process trained the model — and that process was a script
-    on the host, while the reader is a container with the artifacts mounted somewhere else
-    entirely. The same mismatch breaks a restore onto a new machine.
-
-    So the *filename* is the identity and `MODEL_DIR` is the location. The stored path is used only
-    when the file is genuinely there, which keeps a hand-placed artifact working.
-    """
+    """Where the artifact actually is, now, on this host."""
     if os.path.exists(path):
         return path
     return os.path.join(os.environ.get("MODEL_DIR", "/var/lib/jobsearch/models"),
@@ -106,12 +76,7 @@ class ModelRegistry:
         self._cache: OrderedDict[_uuid.UUID, LoadedModel] = OrderedDict()
 
     def get(self, user_id: _uuid.UUID) -> LoadedModel:
-        """This user's current model, loading or reloading as needed. Raises `ModelUnavailable`.
-
-        The version check is a single indexed read per call — deliberately cheaper than the reload
-        it prevents, so it can run on every score rather than on a timer. A timer would mean a
-        window where a just-retrained model is not yet serving and nothing says so.
-        """
+        """This user's current model, loading or reloading as needed."""
         row = self._s.execute(
             select(User.model_version, User.profile_generation)
             .where(User.id == user_id)).first()
@@ -122,8 +87,7 @@ class ModelRegistry:
         cached = self._cache.get(user_id)
         if cached is not None and cached.model_version == model_version:
             if cached.profile_generation != profile_generation:
-                # The profile changed under a model that was current a moment ago. The artifact is
-                # not corrupt, it is answering an older question.
+                # The profile changed under a model that was current a moment ago.
                 self._cache.pop(user_id, None)
                 raise ModelUnavailable(
                     f"model was trained against profile generation {cached.profile_generation}, "
@@ -158,9 +122,7 @@ class ModelRegistry:
             select(UserModel)
             .where(UserModel.user_id == user_id, UserModel.version == model_version))
         if artifact_row is None:
-            # `users.model_version` moved but the row is missing: an interrupted trainer, or a
-            # pruned artifact. Refusing is right — serving the previous version would silently
-            # answer with a model the user's own dashboard says is superseded.
+            # `users.model_version` moved but the row is missing: an interrupted trainer or a pruned artifact.
             raise ModelUnavailable(
                 f"user is on model_version {model_version} but no artifact row exists",
                 retrainable=True)
@@ -171,8 +133,7 @@ class ModelRegistry:
                 f"{artifact_row.profile_generation}, user is now on {profile_generation}",
                 retrainable=True)
         if artifact_row.feature_schema_version != FEATURE_SCHEMA_VERSION:
-            # The columns still line up by count, so nothing would crash — the weights would just
-            # be attached to features that no longer mean what they meant.
+            # The columns still line up by count, so weights would attach to features that changed meaning.
             raise ModelUnavailable(
                 f"artifact uses feature schema {artifact_row.feature_schema_version}, "
                 f"this build is {FEATURE_SCHEMA_VERSION}", retrainable=True)
@@ -196,7 +157,6 @@ class ModelRegistry:
             embedder_version=artifact_row.embedder_version,
             cutoff=cutoff,
             keep_cutoff=int(blob.get("keep_cutoff", max(cutoff - 10, 1))),
-            # From the row rather than the artifact: the centroid is a property of the labels, and
-            # keeping it in the database means an existing artifact does not have to be rewritten.
+            # From the row rather than the artifact: the centroid is a property of the labels.
             centroid=artifact_row.centroid,
             centroid_threshold=artifact_row.centroid_threshold)

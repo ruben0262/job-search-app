@@ -1,12 +1,4 @@
-/**
- * Markdown-lite, for chat messages. The assistant writes prose with bold, bullets, headings and
- * the occasional inline code — this renders that and nothing more.
- *
- * Hand-rolled rather than a library: the repo's two-runtime-dependency rule, and the full grammar
- * is not wanted — tables and images in a chat bubble are a rendering surface nobody asked for.
- * Everything is built as React nodes, never injected as HTML, so a message containing `<script>`
- * is text like any other.
- */
+/** Markdown-lite, for chat messages. */
 import type { ReactNode } from "react";
 
 /** Inline spans: **bold**, *italic*, `code`. One pass, longest marker first. */

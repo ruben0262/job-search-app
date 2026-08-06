@@ -1,28 +1,4 @@
-"""The setup agents, and the loop that runs them.
-
-`libs/agents/*.md` are the reference instance's slash commands, copied byte-identical from
-`mahoraga-jobs/.claude/commands/`. They are **not** cleaned and never will be: they are the
-machinery that fills a profile, not part of one, so there is no identity in them to remove. Their
-nine files are identical between mahoraga-jobs and andras-job-search, which is how we know nobody
-improved them in the field.
-
-## What the platform has to supply
-
-The commands were written for a terminal with a checkout: they say "read `documents/`", "write
-`CLAUDE.md`", "check `05-cv-templates.md` for placeholders". None of that exists here — the
-documents are rows a user uploaded and the files are rows the agent writes.
-
-So the environment note below tells the agent where it actually is, and the four tools give it the
-same reach `/setup` actually uses (Read, Write, Glob, Edit — no web access, no bash). Nothing else
-about the command is touched.
-
-## Why a manual loop
-
-`libs/llm` is a deliberately narrow adapter so the tests can drive it with a fake rather than the
-network. The loop here is the same shape the SDK's tool runner implements, kept explicit for two
-reasons: every tool call is a write to somebody's profile and belongs in an audit line, and the
-runner is a beta surface this platform does not otherwise depend on.
-"""
+"""The setup agents, and the loop that runs them."""
 from __future__ import annotations
 
 from functools import lru_cache
@@ -30,33 +6,23 @@ from pathlib import Path
 
 _HERE = Path(__file__).parent
 
-# Opus 5 for setup, and this is the one place the platform pays for a frontier model. It runs once
-# per user, and every document the account ever generates is built from what this conversation
-# produces — a thin profile costs far more than the call (`REBUILD_PLAN.md`).
+# Opus 5 for setup, and this is the one place the platform pays for a frontier model.
 SETUP_MODEL = "claude-opus-5"
 
-# Generous: the agent writes whole files, and a truncated `context.md` is a profile with the end
-# missing rather than an error.
+# Generous: the agent writes whole files.
 MAX_TOKENS = 32_000
 
-# How many tool calls one turn may make before the loop gives up. `/setup` Path A reads a document
-# set and writes seven files, so the ceiling has to clear that with room; it exists to stop a
-# malfunctioning turn spending a frontier model's budget in a circle, not to bound normal work.
+# How many tool calls one turn may make before the loop gives up.
 MAX_TOOL_ITERATIONS = 40
 
 
 @lru_cache(maxsize=16)
 def command(name: str) -> str:
-    """One agent command, byte-identical to the reference instance's.
-
-    Newlines normalised on read for the reason `libs.prompts.load` gives: a checkout on Windows must
-    not produce different bytes from one on Linux.
-    """
+    """One agent command, byte-identical to the reference instance's."""
     return (_HERE / f"{name}.md").read_text(encoding="utf-8").replace("\r\n", "\n")
 
 
-# Appended to every command. It says what changed about the environment and nothing about the
-# person — the command still owns every question it asks and every rule it applies.
+# Appended to every command.
 HANDOFF = """\
 **When something needs a command you cannot run here, tell them to open a new chat for it.** One \
 conversation runs one command and cannot hand off to another inside itself. The instruction has \
@@ -66,9 +32,7 @@ conversation is scoped to a single command will type the slash command into this
 nothing happen. Name the command, and say new chat, every time.
 """
 
-# The director runs all four steps itself, so the instruction above would strand a user who is
-# already in the only chat they need. Swapped rather than dropped: it still has to be told what
-# to do instead, or it falls back on the phrasing the ported bodies use.
+# The director runs all four steps itself, so the handoff above would strand the user.
 DIRECTOR_HANDOFF = """\
 **There is no other chat, and nothing to hand off.** Every step is yours, and their instructions \
 are included below. Never tell the user to open a new chat, never tell them to run a command, and \
@@ -146,18 +110,7 @@ DIRECTOR_STEPS: tuple[str, ...] = ("setup-context", "setup", "setup-role-angles"
 
 
 def system_prompt(name: str) -> str:
-    """A command plus the environment note — what the model is given as its system prompt.
-
-    **The director additionally gets the four steps' instructions inlined.** Its own body says to
-    follow each step's instructions exactly, and it had no way to: one conversation runs one prompt,
-    and there is no tool that fetches another. So it did what an agent does when told to follow
-    instructions it cannot see -- worked from the gist, which is precisely what the rest of that
-    prompt exists to prevent.
-
-    Composed here rather than by rewriting the director to contain them, because the four bodies are
-    ported from the reference instance and must stay byte-identical to it. Assembling them at read
-    time means a fix to any step reaches the director on the next turn with nothing to keep in sync.
-    """
+    """A command plus the environment note — what the model is given as its system prompt."""
     environment = ENVIRONMENT.format(handoff=HANDOFF)
     body = command(name)
     if name == "setup-director":
@@ -170,20 +123,7 @@ def system_prompt(name: str) -> str:
     return body + environment
 
 
-# Which command produces which setup file. **Code owns the definition of done, not the prompt.**
-#
-# Two failures this exists to prevent, both found on 2026-07-31:
-#
-# 1. **A user could only ever reach `setup`.** The chat sent no command name, so it always defaulted
-#    to one, and `setup` writes five of the eight required files. `context.md`, `08-role-angles.md`
-#    and `label.md` belong to commands nothing could start — so a new account could not finish
-#    setup, and therefore could never train.
-# 2. **An agent asked to judge its own completeness will either stop early or never stop.** A gate
-#    the code checks against the database is a fact; a gate the prompt checks against its own
-#    recollection is an opinion, and the ported director's gates read paths (`pipeline/config.yaml`,
-#    `scorer/models/scorer.joblib`) that do not exist on this platform at all.
-#
-# Keyed by file so a missing file names the command that fixes it, which is what the user is shown.
+# Which command produces which setup file.
 FILE_OWNERS: dict[str, str] = {
     "01-candidate-profile.md": "setup",
     "02-behavioral-profile.md": "setup",
@@ -195,22 +135,14 @@ FILE_OWNERS: dict[str, str] = {
     "label.md": "setup-scorer",
 }
 
-# Files no command produces. Empty, and it must stay that way: a required file with no owner is an
-# account that cannot finish setup, and the last time this was non-empty it was `context.md` — a
-# gap that made `setup-role-angles` impossible to satisfy and training unreachable for every new
-# user. Kept as a seam so the progress endpoint can report such a file honestly rather than
-# attributing it to a command that would not fix it.
+# Files no command produces.
 UNOWNED_FILES: dict[str, str] = {}
 
-# The commands a user may start from the chat, in the order they should run. `setup-context` first because
-# every other command reads what it writes — `setup-role-angles` says so outright.
-# `setup-director` first: it runs all four in one conversation, which is what somebody setting up
-# for the first time wants. The individual steps stay startable for anyone redoing just one.
+# The commands a user may start from the chat, in the order they should run.
 STARTABLE: tuple[str, ...] = ("setup-director", "setup-context", "setup", "setup-role-angles",
                               "setup-scorer")
 
-# What a chat started by a command is called. A tab reading "/setup-role-angles" names the machinery
-# rather than the conversation, which is the one thing this page tries never to do.
+# What a chat started by a command is called.
 COMMAND_TITLES: dict[str, str] = {
     "setup-context": "Your background",
     "setup": "Your profile",
@@ -221,8 +153,7 @@ COMMAND_TITLES: dict[str, str] = {
 }
 
 
-# The tools, in the shape the API takes them. This is `/setup`'s own tool list — Read, Write, Glob,
-# Edit — mapped onto rows: documents are read-only inputs, profile files are read-write outputs.
+# The tools, in the shape the API takes them.
 TOOLS: list[dict] = [
     {
         "name": "list_documents",

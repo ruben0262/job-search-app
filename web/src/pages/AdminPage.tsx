@@ -1,19 +1,4 @@
-/**
- * The operator panel — what needs a person, and who the accounts are.
- *
- * **Read-only, deliberately, for now.** `OPERATIONS_PLAN.md` §5 designs a console that *acts*
- * (suspend, requeue, resend, with an audit trail), and at two accounts `deploy/scripts/` covers
- * that ground from a shell. What was actually missing was the *read* half: the numbers existed at
- * `/admin/health` and nothing rendered them, so checking on the platform meant an SSH session.
- *
- * **Alerts first, numbers second.** A page of numbers is something an operator scans; an alert
- * list is something they act on, and §1's whole argument is that a failure nobody is told about is
- * a failure nobody fixes. So the conditions that need a person are at the top, in the order the
- * server ranked them, each with the action it named.
- *
- * Visible only when `/dashboard` says `is_admin`. That is a rendering hint — the API refuses
- * `/admin/*` on its own, from `ADMIN_EMAILS`, and this page could not read anything without it.
- */
+/** The operator panel — what needs a person, and who the accounts are. */
 import { Fragment, useEffect, useRef, useState } from "react";
 
 import { api } from "../api";
@@ -65,9 +50,7 @@ type AdminUser = {
   is_admin: boolean;
 };
 
-/** One latency stage. `verdict` and the thresholds come from `libs.ops.latency`, so the page
- *  renders a judgement rather than re-deriving one that could disagree with the API. Optional
- *  because an older response carries the numbers without them. */
+/** One latency stage. */
 type Span = {
   p50: number | null;
   p90: number | null;
@@ -78,9 +61,7 @@ type Span = {
   red_after_min?: number;
 };
 
-/** One zone of the pipeline, as the table renders it collapsed. `judged` is separate from the
- *  verdict on purpose: a stage can be measured and deliberately uncoloured, and that is not the
- *  same thing as having too little data to say. */
+/** One zone of the pipeline, as the table renders it collapsed. */
 type StageRow = {
   key: string;
   label: string;
@@ -101,8 +82,7 @@ type StageRow = {
 
 type SeriesPoint = { at: string; samples: number; p50: number | null; p90: number | null };
 
-/** What one expanded row shows. Fetched on expansion rather than with the table — each piece costs
- *  a query, and only one row is ever open. */
+/** What one expanded row shows. */
 type StageDetail = {
   key: string;
   label: string;
@@ -111,8 +91,7 @@ type StageDetail = {
   caveat: string | null;
   window_hours: number;
   lane_name: string | null;
-  // Seconds, from the queue's own timestamps. Absent when no job in that lane finished in the
-  // window, and absent entirely for the stages that run on a timer rather than the queue.
+  // Seconds, from the queue's own timestamps.
   lane: {
     lane: string;
     samples: number;
@@ -129,9 +108,7 @@ type StageDetail = {
   red_after_min: number | null;
 };
 
-/** What the pre-score filter removed, per account. **Not a duration** — the filter costs
- *  microseconds a row, so timing it would report noise, while what it removed is the number that
- *  says whether it is earning its place or emptying somebody's feed. */
+/** What the pre-score filter removed, per account. */
 type FilterEffect = {
   window_hours: number;
   users: {
@@ -152,19 +129,16 @@ type FilterEffect = {
 
 type LatencyReport = { window_hours: number; stages: StageRow[]; filter: FilterEffect };
 
-/** One stage as it stands right now. `entered` and `oldest_min` are `null` where the number is
- *  genuinely unavailable — the page shows a dash, never a zero, because zero is a claim. */
+/** One stage as it stands right now. */
 type PipelineStage = {
   key: string;
   label: string;
   what: string;
   entered: number | null;
-  // **`null`, not 0, where the stage has no queue at all.** Gathering and storing are one INSERT,
-  // so nothing is ever between them, and a confident zero there is the same lie as anywhere else.
+  // `null`, not 0, where the stage has no queue at all.
   waiting: number | null;
   oldest_min: number | null;
-  // Matched, never sent, now too old to send — work the platform did and threw away. Only delivery
-  // produces this, because it is the only stage with a deliberate rate cap in front of it.
+  // Matched, never sent, now too old to send — work the platform did and threw away.
   expired: number | null;
   verdict: "ok" | "warn" | "down";
 };
@@ -173,11 +147,9 @@ type PipelineLane = {
   lane: string;
   // Waiting for a worker.
   ready: number;
-  // Claimed and executing — the number that moves second to second, and the one that makes a
-  // fifteen-minute tick watchable rather than inferred from a count that jumps.
+  // Claimed and executing — the number that moves second to second.
   running: number;
-  // **Abandoned.** Work the platform gave up on, which no stage count can show: from the outside a
-  // dead job and a job nobody enqueued look like the same empty queue.
+  // Abandoned.
   dead: number;
   done: number;
 };
@@ -215,8 +187,7 @@ type Source = {
   wanted: number;
 };
 
-/** The ATS ceiling and the number it is a ceiling on. The token list grows from harvested
- *  apply-URLs, so the limit means nothing without the total beside it. */
+/** The ATS ceiling and the number it is a ceiling on. */
 type AtsInfo = { companies_per_cycle: number; companies_held: number };
 
 
@@ -282,11 +253,7 @@ export function AdminPage() {
   const [tab, setTab] = useState<Tab>("health");
   const [failed, setFailed] = useState(false);
 
-  // One source, one number. Written as a whole map because that is what the setting is — reading
-  // it back from the response keeps the panel honest about what was actually stored.
-  // Same shape as the freshness control beside it: write the whole map, read back what was
-  // stored. One mechanism for both, because two would drift.
-  // One writer for the plain scalar settings. Two would drift, and these behave identically.
+  // One source, one number.
   const savePlatform = useAction(async (key: string, value: number) => {
     const body = await api.put<{ settings: Settings }>(`/admin/settings/${key}`, { value });
     setSettings(body.settings);
@@ -334,8 +301,7 @@ export function AdminPage() {
     setSources((rows) => rows?.map((row) => (row.name === name ? { ...row, hours } : row)) ?? rows);
   });
 
-  // The alert key is `dead_letter:<lane>`, so the lane comes from the alert being dismissed rather
-  // than from a second piece of state that could disagree with which banner was clicked.
+  // The alert key is `dead_letter:<lane>`.
   const discardDead = useAction(async (lane: string) => {
     await api.del(`/admin/queue/dead?lane=${encodeURIComponent(lane)}`);
     const fresh = await api.get<Health>("/admin/health");
@@ -362,9 +328,7 @@ export function AdminPage() {
     setSettings(body.settings);
   });
 
-  // **The account opens as its own page, at its own address.** It used to unfold inside this
-  // list, which meant no link to send anybody, no back button, and the thing you opened rendering
-  // underneath the table you opened it from.
+  // The account opens as its own page, at its own address.
   const openUser = useAction(async (id: string) => {
     window.location.hash = `/admin/users/${id}`;
   });
@@ -403,11 +367,7 @@ export function AdminPage() {
         </span>
       </div>
 
-      {/* **Tabs, because this page had six stacked sections and no shape.** An operator arrives
-          with one question at a time: is anything broken, what is the platform set to, how fast is
-          it, who are the accounts. Stacking them meant scrolling past four answers to reach the
-          fifth, and it had already produced a real defect: the "Queue" heading sat immediately
-          above the settings card rather than above its own table. */}
+      {/* Tabs, because this page had six stacked sections and no shape. */}
       <nav className="tabs">
         {TABS.map(([key, label]) => (
           <button
@@ -426,8 +386,7 @@ export function AdminPage() {
 
       {tab === "health" ? (
         <>
-      {/* What needs a person. Empty is the good state and says so, rather than rendering nothing
-          and leaving the reader unsure whether it loaded. */}
+      {/* What needs a person. */}
       {health.alerts.length === 0 ? (
         <p className="muted">Nothing needs a person right now.</p>
       ) : (
@@ -435,11 +394,7 @@ export function AdminPage() {
           {health.alerts.map((alert) => (
             <div key={alert.key} className={`banner ${alert.severity === "page" ? "error" : "warning"}`}
                  style={{ marginBottom: "0.6rem" }}>
-              {/* **Only the dead-letter alert is dismissable, and it is dismissed by clearing the
-                  rows it counts — not by hiding the banner.** A general "hide this alert" control
-                  would let a real outage be silenced with one click and stay silenced; here the
-                  alert goes because its cause is gone, which is the only honest way for an alert
-                  to disappear. Every other condition clears when the condition does. */}
+              {/* Only the dead-letter alert is dismissable. */}
               {alert.key.startsWith("dead_letter") ? (
                 <button className="alert-dismiss" disabled={discardDead.busy}
                         title="Discard these dead-lettered jobs. The failure is written to the log first."
@@ -483,8 +438,7 @@ export function AdminPage() {
               <td>{lane.lane}</td>
               <td className="num">{lane.ready}</td>
               <td className="num">{lane.claimed}</td>
-              {/* Dead letters are the only number here worth a colour: everything else is a
-                  reading, and a dead job is work that has stopped and will not restart. */}
+              {/* Dead letters are the only number here worth a colour: everything else is a reading. */}
               <td className="num" style={lane.dead ? { color: "var(--danger)" } : undefined}>
                 {lane.dead}
               </td>
@@ -564,9 +518,7 @@ export function AdminPage() {
                     <option key={hours} value={hours}>{hours}h</option>
                   ))}
                 </select>
-                {/* Only the sources that take a query get a ceiling. A feed source is fetched once
-                    whatever this said, so offering the control would be offering a lever attached
-                    to nothing. */}
+                {/* Only the sources that take a query get a ceiling. */}
                 {source.wanted > 0 ? (
                   <>
                     <select
@@ -582,8 +534,7 @@ export function AdminPage() {
                     </select>
                     <Results source={source} save={saveResults} />
                     <Pages source={source} save={savePages} />
-                    {/* Amber when the ceiling is below demand: that source is running behind and
-                        the number beside it is why. */}
+                    {/* Amber when the ceiling is below demand. */}
                     <span className={source.wanted > source.queries_per_cycle
                       ? "num behind" : "num muted"}>
                       {source.wanted}
@@ -591,11 +542,7 @@ export function AdminPage() {
                   </>
                 ) : (
                   <>
-                    {/* **A feed source issues exactly one request a cycle**, so the honest value is
-                        1 rather than the word "feed" — which said "this control does not apply"
-                        without saying what happens instead. Disabled because there is nothing to
-                        choose: these boards have no search parameter, so a second request would
-                        fetch the same page again. */}
+                    {/* A feed source issues exactly one request a cycle. */}
                     <select value={1} disabled aria-label={`${source.name} queries per cycle`}
                             title="This board serves a feed and takes no search term, so it is
                                    fetched once a cycle.">
@@ -610,9 +557,7 @@ export function AdminPage() {
             ))}
           </div>
 
-          {/* **The ATS ceiling, with the number it is a ceiling on.** The token list grows on its
-              own from harvested apply-URLs, so 400 says nothing until you know whether we hold 500
-              or 12,000 — and that count was a query nobody ran. */}
+          {/* The ATS ceiling, with the number it is a ceiling on. */}
           {ats ? (
             <>
               <p className="label" style={{ marginTop: "1.5rem" }}>Company boards per cycle</p>
@@ -707,8 +652,7 @@ export function AdminPage() {
         </thead>
         <tbody>
           {users.map((user) => (
-            // **The whole row opens the account.** It used to be the email that was clickable,
-            // which is a target the width of the text and invisible until you find it.
+            // The whole row opens the account.
             <tr key={user.id} className="row-link" onClick={() => void openUser.run(user.id)}>
               <td>{user.email}</td>
               <td className="job-sub">
@@ -718,8 +662,7 @@ export function AdminPage() {
               <td className="job-sub">{user.telegram}</td>
               <td className="num job-sub">{user.model_version ? `v${user.model_version}` : "—"}</td>
               <td className="job-sub">{user.onboarded ? "yes" : "no"}</td>
-              {/* Both controls stop the click reaching the row, or granting access would also
-                  navigate, and a delete that opens a page underneath its own dialog is worse. */}
+              {/* Both controls stop the click reaching the row, or granting access would also navigate. */}
               <td onClick={(event) => event.stopPropagation()}>
                 <label className="switch" title="Operator access">
                   <input
@@ -748,9 +691,7 @@ export function AdminPage() {
       </table>
       </> : null}
 
-      {/* **The address has to be typed, and the server checks it too.** This destroys a person's
-          profile, labels, documents and model with no undo, so a dialog somebody can dismiss by
-          pressing return is not a confirmation. */}
+      {/* The address has to be typed, and the server checks it too. */}
       {doomed ? (
         <div className="modal-backdrop" onClick={() => setDoomed(null)}>
           <div className="modal" onClick={(event) => event.stopPropagation()}>
@@ -799,14 +740,7 @@ function Stat({ value, label }: { value: string; label: string }) {
 }
 
 
-/**
- * What the shared corpus actually holds, and the terms filling it.
- *
- * **No scores.** A score belongs to an account; this is the table every account draws from. The
- * question this answers is "is there anything in here for the next person who signs up", and until
- * now the only way to ask it was SQL — so nobody did, and the second account on the platform
- * stalled at ten labels because the corpus had nothing in their field.
- */
+/** What the shared corpus actually holds, and the terms filling it. */
 function CorpusTab() {
   const [page, setPage] = useState<CorpusPage | null>(null);
   const [keywords, setKeywords] = useState<Keywords | null>(null);
@@ -814,8 +748,7 @@ function CorpusTab() {
   const [source, setSource] = useState("");
   const [term, setTerm] = useState("");
   const [failed, setFailed] = useState<string | null>(null);
-  // Searching the term lists is a different thing from searching the corpus: these are short
-  // strings and the whole list is already in memory, so it filters as you type.
+  // Searching the term lists is a different thing from searching the corpus.
   const [termQuery, setTermQuery] = useState("");
   const [operatorPage, setOperatorPage] = useState(0);
   const [userPage, setUserPage] = useState(0);
@@ -829,8 +762,7 @@ function CorpusTab() {
   useEffect(() => {
     void load().catch(() => setFailed("Could not read the corpus."));
     void loadKeywords().catch(() => undefined);
-    // Deliberately once: searching is an explicit action, not something that fires per keystroke
-    // against a table this size.
+    // Deliberately once: searching is an explicit action.
   }, []);
 
   const addTerm = useAction(async () => {
@@ -844,9 +776,7 @@ function CorpusTab() {
     await loadKeywords();
   });
 
-  // **Filtered and paged in the browser.** Both lists are small enough to hold — a few hundred
-  // terms — and the point of the search box is to answer "is this already in here" before adding a
-  // duplicate, which wants an answer as you type rather than after a round trip.
+  // Filtered and paged in the browser.
   const needle = termQuery.trim().toLowerCase();
   const operatorTerms = (keywords?.operator ?? []).filter(
     (row) => !needle || row.keyword.includes(needle));
@@ -906,8 +836,7 @@ function CorpusTab() {
                   <th>Where</th>
                   <th>Source</th>
                   <th>Seen</th>
-                  {/* An unembedded row is invisible to every user, and a corpus full of them looks
-                      healthy from a row count alone. */}
+                  {/* An unembedded row is invisible to every user. */}
                   <th>Usable</th>
                 </tr>
               </thead>
@@ -1022,9 +951,7 @@ function CorpusTab() {
         onPage={setOperatorPage}
       />
 
-      {/* **Shown, never removable.** Somebody's feed is built from these. An operator seeing them is
-          support; an operator able to delete one is an outage that looks like a setting, so there is
-          no control here and no route behind it. */}
+      {/* Shown, never removable. */}
       <h2 style={{ marginTop: "2rem" }}>What users are searching for</h2>
       <p className="hint">
         Theirs, not yours. Listed so you can see what the harvest is spending its budget on.
@@ -1048,44 +975,13 @@ function CorpusTab() {
 }
 
 
-/**
- * Where the time goes, one row per zone the posting crosses.
- *
- * **The end-to-end number is the one worth publishing and the one least useful for fixing
- * anything.** "A posting took 36 minutes" does not say which of six handoffs ate them, and a stuck
- * describe worker, an embedder behind a flood, a score lane with no free worker and a delivery
- * cadence are four unrelated problems wearing the same number.
- *
- * So a posting's journey is the table: it arrives as a link, leaves as a card, and each row is one
- * boundary where work is picked up, done, and handed on. Collapsed, a row says *which* zone is the
- * problem. Expanded, it says *why that zone* — and the things that answer that are different in
- * kind from percentiles, which is exactly why they sit behind a disclosure rather than in six more
- * columns nobody reads (ROADMAP 6p).
- */
+/** Where the time goes, one row per zone the posting crosses. */
 
-/** **Where the jobs are, right now**, streamed rather than asked for.
- *
- *  The latency page says how long each handoff took for postings that already made it through; this
- *  says how many are sitting at each stage at this moment, and whether anything is turning the
- *  handle.
- *
- *  Every outage this platform has had was a stage quietly stopping while the numbers around it
- *  looked fine — six hours of ingestion behind an invisible filter, LinkedIn dead for five hours
- *  behind a timer that could not fire, and 229 rows stuck awaiting an embed while both health alerts
- *  pointed at delivery. The number existed every time; reading it meant knowing the query.
- *
- *  **Polling was right first and is not right now.** A five-second poll proved the numbers before
- *  anything was built on them, which is how three of them turned out to be lies worth fixing. But
- *  the platform works in bursts — nothing for fifteen minutes, then a lane fills and drains inside
- *  thirty seconds — and that is exactly the interval where "moving" and "stuck" look identical
- *  unless you can watch it. `EventSource`, because this is one-way text that reconnects by itself
- *  and needs no library on either side. */
+/** Where the jobs are, right now, streamed rather than asked for. */
 function PipelineTab() {
   const [report, setReport] = useState<PipelineReport | null>(null);
   const [connected, setConnected] = useState(false);
-  // The previous frame, so a count that moved can say so. **This is what makes the page a live view
-  // rather than a fast-refreshing snapshot**: the question is not "how many are waiting" but "is
-  // the number going down", and a still image cannot answer it.
+  // The previous frame, so a count that moved can say so.
   const previous = useRef<Record<string, number | null>>({});
 
   useEffect(() => {
@@ -1101,8 +997,7 @@ function PipelineTab() {
       });
       setConnected(true);
     };
-    // `EventSource` reconnects by itself, including when the server closes the stream at its own
-    // five-minute cap. All this does is stop claiming the numbers are live while it is down.
+    // `EventSource` reconnects by itself.
     source.onerror = () => setConnected(false);
     return () => source.close();
   }, []);
@@ -1131,8 +1026,7 @@ function PipelineTab() {
       <div className="pipeline">
         {report.stages.map((stage) => {
           const was = previous.current[stage.key];
-          // Only a change worth seeing. A counter that flashes on every frame is one nobody can
-          // read, and the platform is idle for most of every fifteen minutes.
+          // Only a change worth seeing.
           const moved =
             was !== undefined && was !== null && stage.waiting !== null ? stage.waiting - was : 0;
           return (
@@ -1142,8 +1036,7 @@ function PipelineTab() {
                 <span className="small muted">{stage.what}</span>
               </div>
               <div className="pipeline-bar-wrap">
-                {/* Width is relative to the busiest stage, so the shape shows where work piles up
-                    rather than implying an absolute scale nobody set. */}
+                {/* Width is relative to the busiest stage. */}
                 <div className="pipeline-bar"
                      style={{ width: `${Math.round(((stage.waiting ?? 0) / busiest) * 100)}%` }} />
               </div>
@@ -1163,9 +1056,7 @@ function PipelineTab() {
                   {stage.oldest_min === null ? "—" : `oldest ${minutes(stage.oldest_min)}`}
                 </span>
               </div>
-              {/* **The one thing on this page that is lost work rather than queued work.** A
-                  delivery queue is the per-cycle cap doing its job; a posting that expired in it
-                  was matched, ranked, and never shown to anybody. */}
+              {/* The one thing on this page that is lost work rather than queued work. */}
               {stage.expired ? (
                 <p className="pipeline-expired">
                   {stage.expired.toLocaleString()} matched and expired unsent in the last{" "}
@@ -1179,10 +1070,7 @@ function PipelineTab() {
         })}
       </div>
 
-      {/* **The stages say where postings are; this says whether anything is turning the handle.**
-          They fail independently — a stage can be empty because the work is done or because the
-          worker feeding it died — and this is the only place a dead-lettered job is visible at all,
-          which is work abandoned rather than work queued. */}
+      {/* The stages say where postings are; this says whether anything is turning the handle. */}
       <h3 style={{ marginTop: "1.6rem" }}>The queue, right now</h3>
       {lanes.length === 0 ? (
         <p className="hint">Every lane is idle. Between ticks that is the normal state.</p>
@@ -1205,11 +1093,9 @@ function PipelineTab() {
 function LatencyTab() {
   const [report, setReport] = useState<LatencyReport | null>(null);
   const [hours, setHours] = useState(24);
-  // One row open at a time. Two open drill-downs is a second table, and the reason to open one is
-  // to look at it rather than to compare it with another.
+  // One row open at a time.
   const [open, setOpen] = useState<string | null>(null);
-  // Kept per stage after the first fetch, so collapsing and reopening a row is instant and does not
-  // re-run three queries to show what is already on the page.
+  // Kept per stage after the first fetch.
   const [details, setDetails] = useState<Record<string, StageDetail>>({});
   const [failed, setFailed] = useState<string | null>(null);
 
@@ -1273,8 +1159,7 @@ function LatencyTab() {
                 <th className="num">Median</th>
                 <th className="num">p90</th>
                 <th className="num">p99</th>
-                {/* A stage with a healthy p90 and a forty-minute tail has something worth looking
-                    at that no percentile would ever show. */}
+                {/* A stage with a healthy p90 and a forty-minute tail has something worth looking at. */}
                 <th className="num">Worst</th>
                 <th className="num">Volume</th>
                 <th>Verdict</th>
@@ -1323,9 +1208,7 @@ function LatencyTab() {
 
       {report ? <FilterEffectTable effect={report.filter} /> : null}
 
-      {/* **"Not enough data" is a real answer, not a failure.** Below the sample floor a percentile
-          is arithmetic rather than evidence, and colouring it invites somebody to chase a number
-          that three rows produced. */}
+      {/* "Not enough data" is a real answer, not a failure. */}
       <p className="hint" style={{ marginTop: "0.9rem" }}>
         Every row is judged on its p90, not its median — half the jobs arriving promptly is not the
         claim this product makes, and a median hides exactly the tail somebody loses a role in. A
@@ -1335,16 +1218,7 @@ function LatencyTab() {
   );
 }
 
-/** How much of each account's candidate pool the filter removed.
- *
- *  **Per account rather than as a platform total, and that is the whole point.** One user whose
- *  filter rejects everything is invisible in a total — and a feed that goes silent because a filter
- *  is too tight looks exactly like a feed with nothing new, which is the failure this platform has
- *  now shipped twice.
- *
- *  Judged at one end only. Everything removed is a feed that has been turned off, whatever the
- *  tuning intended. Nothing removed is not a fault: an account in cold start has no centroid yet,
- *  and the filter fails open on purpose so a new user sees everything. */
+/** How much of each account's candidate pool the filter removed. */
 function FilterEffectTable({ effect }: { effect: FilterEffect }) {
   if (!effect.users.length) return null;
 
@@ -1395,11 +1269,7 @@ function FilterEffectTable({ effect }: { effect: FilterEffect }) {
   );
 }
 
-/** The zone, expanded: waiting versus running, what is queued behind it, and the last day's shape.
- *
- *  These are not more percentiles. Waiting and running fail for different reasons and are fixed in
- *  different places; a backlog predicts the next hour where a percentile only describes the last
- *  one; and a snapshot cannot show a spike, which is the hour worth chasing. */
+/** The zone, expanded: waiting versus running, what is queued behind it, and the last day's shape. */
 function StageDrill({ stage, detail }: { stage: StageRow; detail: StageDetail | undefined }) {
   if (!detail) return <p className="facts">Reading this stage…</p>;
 
@@ -1409,8 +1279,7 @@ function StageDrill({ stage, detail }: { stage: StageRow; detail: StageDetail | 
       {stage.caveat ? <p className="hint drill-caveat">{stage.caveat}</p> : null}
 
       <div className="stat-row">
-        {/* **Waiting and running are two different failures.** Too few workers is not the same
-            problem as work that got slower, and one "how long did it take" hides which. */}
+        {/* Waiting and running are two different failures. */}
         {detail.lane ? (
           <>
             <Tile
@@ -1471,8 +1340,7 @@ function StageDrill({ stage, detail }: { stage: StageRow; detail: StageDetail | 
   );
 }
 
-/** One number with the sentence that says what to do about it. A tile whose meaning lives in a
- *  runbook is a tile an operator has to already understand to use. */
+/** One number with the sentence that says what to do about it. */
 function Tile({ label, value, sub, note }: {
   label: string;
   value: string;
@@ -1489,17 +1357,7 @@ function Tile({ label, value, sub, note }: {
   );
 }
 
-/**
- * The stage's p90 per hour, against its own thresholds.
- *
- * **A snapshot cannot show a spike**, and the spike is the hour worth chasing: a p90 of 36 minutes
- * averaged over a day hides the hour it was four times that.
- *
- * Deliberately one series in one ink colour, with the thresholds as labelled dashed rules. A bar
- * that has crossed the line is read by *position against a labelled line* rather than by turning a
- * colour — which is the same rule the verdict pills follow, and the only version that survives
- * being printed or read by somebody who cannot separate the two hues.
- */
+/** The stage's p90 per hour, against its own thresholds. */
 function StageSeries({ series, amber, red }: {
   series: SeriesPoint[];
   amber: number | null;
@@ -1558,8 +1416,7 @@ function StageSeries({ series, amber, red }: {
         const barHeight = padTop + plotHeight - top;
         return (
           <path key={point.at} d={bar(x, top, barWidth, barHeight, 4)} fill="var(--dim)">
-            {/* The hover layer an SVG chart owes the reader. `title` rather than a floating div:
-                one element, no positioning maths, and it survives keyboard focus. */}
+            {/* The hover layer an SVG chart owes the reader. */}
             <title>
               {hourLabel(point.at)} · p90 {minutes(point.p90)} · median {minutes(point.p50)} ·{" "}
               {point.samples.toLocaleString()} jobs
@@ -1568,8 +1425,7 @@ function StageSeries({ series, amber, red }: {
         );
       })}
 
-      {/* One direct label, on the worst hour. A number on every bar is eighteen numbers nobody
-          reads; the peak is the only one anybody came here for. */}
+      {/* One direct label, on the worst hour. */}
       {tallest.p90 ? (
         <text
           x={Math.min(series.indexOf(tallest) * (barWidth + gap) + barWidth / 2, plotWidth - 24)}
@@ -1591,8 +1447,7 @@ function StageSeries({ series, amber, red }: {
   );
 }
 
-/** A bar with its top corners rounded and its base square on the axis. `rx` on a rect would round
- *  the end sitting on the baseline too, which reads as the bar floating. */
+/** A bar with its top corners rounded and its base square on the axis. */
 function bar(x: number, y: number, width: number, height: number, radius: number): string {
   const r = Math.min(radius, width / 2, Math.max(height, 0));
   const base = y + Math.max(height, 0);
@@ -1601,16 +1456,14 @@ function bar(x: number, y: number, width: number, height: number, radius: number
        + `L${x + width},${base} Z`;
 }
 
-/** The disclosure arrow. A character rather than an inline SVG: the SVG rendered as a grey block in
- *  the row and flickered on every re-render as a 24-unit viewBox was re-rasterised to 12 pixels. */
+/** The disclosure arrow. */
 function Caret({ open }: { open: boolean }) {
   return (
     <span className={open ? "caret-icon open" : "caret-icon"} aria-hidden="true">›</span>
   );
 }
 
-/** Minutes, in the unit a person would say them in. "94m" is a number to convert; "1h 34m" is a
- *  number to react to, and this table exists to be reacted to. */
+/** Minutes, in the unit a person would say them in. */
 function minutes(value: number | null | undefined): string {
   if (value === null || value === undefined) return "—";
   if (value < 1) return "<1m";
@@ -1620,8 +1473,7 @@ function minutes(value: number | null | undefined): string {
   return rest ? `${whole}h ${rest}m` : `${whole}h`;
 }
 
-/** Lane timings arrive in seconds — the work inside a lane is sub-minute when it is healthy, and
- *  rounding it to minutes would report every well-behaved lane as zero. */
+/** Lane timings arrive in seconds — the work inside a lane is sub-minute when it is healthy. */
 function seconds(value: number | null | undefined): string {
   if (value === null || value === undefined) return "—";
   if (value < 1) return "<1s";
@@ -1633,9 +1485,7 @@ function hourLabel(at: string): string {
   return new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-/** Colour is never the only signal, so every pill carries its word — and an unjudged stage says
- *  that it was not judged rather than borrowing "not enough data", which would make a deliberate
- *  decision look like missing data. */
+/** Colour is never the only signal, so every pill carries its word. */
 function verdictWord(stage: StageRow): string {
   if (!stage.judged) return "reported, not judged";
   if (stage.verdict === "ok") return "healthy";
@@ -1644,9 +1494,7 @@ function verdictWord(stage: StageRow): string {
   return "not enough data";
 }
 
-/** The result ceiling for one source, or nothing where the source has no such control — Working
- *  Nomads returns its whole list and TheMuse counts pages, so a number there would be a lever
- *  attached to nothing. */
+/** The result ceiling for one source, or nothing where the source has no such control. */
 function Results({ source, save }: {
   source: Source;
   save: { busy: boolean; run: (name: string, value: number) => Promise<unknown> };
@@ -1668,8 +1516,7 @@ function Results({ source, save }: {
   );
 }
 
-/** How deep a paginated source walks in one cycle. A dash where the source fetches one response —
- *  the same rule as `Results`: no control where there is nothing to control. */
+/** How deep a paginated source walks in one cycle. */
 function Pages({ source, save }: {
   source: Source;
   save: { busy: boolean; run: (name: string, value: number) => Promise<unknown> };
@@ -1691,12 +1538,10 @@ function Pages({ source, save }: {
   );
 }
 
-/** How many terms a page shows. Two columns of ten: the three-column grid put twenty-odd terms on
- *  screen with no order anybody could see, which reads as a wall rather than a list. */
+/** How many terms a page shows. */
 const TERMS_PER_PAGE = 20;
 
-/** Previous/next for a list held in the browser. Renders nothing when everything already fits —
- *  a pager under a list of six is furniture. */
+/** Previous/next for a list held in the browser. */
 function Pager({
   page,
   total,

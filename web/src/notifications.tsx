@@ -1,12 +1,4 @@
-/**
- * The bell. Polls once a minute — every producer on this platform runs on a timer measured in
- * minutes, so a poll is indistinguishable from a push and carries no connection machinery
- * (the FlowSolutions original speaks websockets; that is the part deliberately not ported).
- *
- * Reading is explicit, not a side effect of opening the panel: "I glanced at the list" and "I have
- * dealt with this" are different claims, and an error that marks itself read on sight is an error
- * nobody remembers to fix.
- */
+/** The bell. */
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api } from "./api";
@@ -44,8 +36,7 @@ export function NotificationBell() {
     api
       .get<Feed>("/notifications")
       .then((body) => {
-        // Guarded because a dev proxy that misses this path answers with something that is not
-        // the feed — and the bell must degrade to silence, never take the page down with it.
+        // Guarded because a dev proxy that misses this path answers with something that is not the feed.
         if (body && Array.isArray(body.notifications)) setFeed(body);
       })
       .catch(() => undefined);
@@ -77,8 +68,7 @@ export function NotificationBell() {
     load();
   };
 
-  // Dismissing one must not also open it: the × sits inside the row, and without stopping
-  // propagation every delete would navigate to whatever the notification pointed at.
+  // Dismissing one must not also open it: the × sits inside the row.
   const dismiss = async (event: React.MouseEvent, id: number) => {
     event.stopPropagation();
     await api.post("/notifications/delete", { ids: [id] }).catch(() => undefined);
@@ -112,9 +102,7 @@ export function NotificationBell() {
             <span className="kicker" style={{ margin: 0 }}>
               Notifications
             </span>
-            {/* Icons rather than words: two actions side by side as "Mark all read" and "Delete
-                all" pushed the panel header wider than the panel. Both keep an aria-label and a
-                title, so the meaning is available to a screen reader and on hover. */}
+            {/* Icons rather than words: two actions side by side as "Mark all read" and "Delete all". */}
             <div className="bell-actions">
               {feed.unread > 0 ? (
                 <button
@@ -146,8 +134,7 @@ export function NotificationBell() {
             </p>
           ) : (
             feed.notifications.map((item) => (
-              // A row rather than one button: the dismiss control has to live inside the item, and
-              // a button nested in a button is invalid HTML that browsers resolve unpredictably.
+              // A row rather than one button: the dismiss control has to live inside the item.
               <div key={item.id} className={`bell-row${item.read ? "" : " unread"} ${item.level}`}>
                 <button type="button" className="bell-item" onClick={() => void openOne(item)}>
                   <span className="bell-title">{item.title}</span>

@@ -1,15 +1,4 @@
-"""Parity gate (PLAN §14.1): does the shared embedder produce the SAME vector as the old
-in-process fastembed path? This decides whether existing classifiers keep working as-is.
-
-Two ways forward if parity FAILS (TEI's pooling/normalisation differs from fastembed's):
-  1. Configure TEI to match fastembed, OR
-  2. Adopt TEI as the single source of truth and RETRAIN every classifier on TEI vectors
-     (the clean cut — training and serving are then self-consistent, parity-with-fastembed
-     becomes irrelevant). Since standardising the shared model already forces a retrain for the
-     off-model tenant (PLAN §10), option 2 is usually the pragmatic path.
-
-Needs a running stack (EMBEDDER_URL) AND fastembed installed with the SAME model. Skips otherwise.
-"""
+"""Parity gate (PLAN §14.1): does the shared embedder produce the same vector as in-process fastembed?"""
 from __future__ import annotations
 
 import os

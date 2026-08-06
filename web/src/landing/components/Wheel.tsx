@@ -5,8 +5,7 @@ import WheelSVG from "./WheelSVG";
 
 const N = SECTIONS.length;
 const STEP = 360 / N;
-// Node anchors live on the spoke ring: SVG r=170 in a 400 viewBox,
-// scaled to the CSS wheel size of 380px → 170/400 * 380.
+// Node anchors live on the spoke ring: SVG r=170 in a 400 viewBox.
 const NODE_RADIUS = (170 / 400) * 380;
 // Degrees of pointer travel below which a pointerdown still counts as a click.
 const DRAG_THRESHOLD = 3;
@@ -16,18 +15,11 @@ interface WheelProps {
   onSelect: (index: number) => void;
 }
 
-/**
- * The wheel navigation. Spoke i carries section i; the wheel turns so the
- * active spoke always points left, into the page. Rotation takes the
- * shortest path (cumulative angle, so 5 → 0 clicks forward, not unwinds).
- * The wheel can also be grabbed and spun: on release it snaps to the
- * nearest spoke and navigates to that section.
- */
+/** The wheel navigation. */
 export default function Wheel({ active, onSelect }: WheelProps) {
   const cumulative = useRef(180 - active * STEP);
   const prev = useRef(active);
-  // While a drag-initiated smooth scroll is in flight, the wheel is already
-  // snapped; ignore the intermediate active-section updates until it lands.
+  // While a drag-initiated smooth scroll is in flight, the wheel is already snapped.
   const scrollTarget = useRef<number | null>(null);
   const rotation = useSpring(cumulative.current, {
     stiffness: 55,
@@ -61,8 +53,7 @@ export default function Wheel({ active, onSelect }: WheelProps) {
 
   const onPointerDown = (e: React.PointerEvent) => {
     drag.current = { active: true, last: pointerAngle(e), moved: 0 };
-    // No pointer capture yet: capturing here would redirect the eventual
-    // click away from the spoke buttons and break plain dot-clicks.
+    // No pointer capture yet: capturing here would redirect the eventual click away from the spoke buttons.
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
@@ -74,8 +65,7 @@ export default function Wheel({ active, onSelect }: WheelProps) {
     if (delta < -180) delta += 360;
     d.last = a;
     d.moved += Math.abs(delta);
-    // Only once it is clearly a drag, capture the pointer so the spin
-    // keeps tracking even when the cursor leaves the wheel.
+    // Only once it is clearly a drag, capture the pointer so the spin keeps tracking even when the cursor.
     if (d.moved > DRAG_THRESHOLD && !rotorRef.current?.hasPointerCapture(e.pointerId)) {
       rotorRef.current?.setPointerCapture(e.pointerId);
     }

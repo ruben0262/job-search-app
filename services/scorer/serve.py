@@ -1,15 +1,4 @@
-"""Scoring a batch of corpus rows for one user.
-
-The structural difference from the single-tenant instance: **nothing is embedded here.** The
-corpus row already carries its vector, computed once for everyone during harvest, so scoring N
-users over the same posting is N cheap predictions rather than N embeddings
-(`PLATFORM_ARCHITECTURE.md` §4). That is the whole economic argument for the shared corpus, and it
-only holds if this path never falls back to embedding on its own.
-
-Which makes the version check load-bearing: a row embedded by a different model, or at a different
-dimension, cannot be fed to an estimator fit against the first. It is refused rather than scored,
-the same fail-closed rule the embedder applies.
-"""
+"""Scoring a batch of corpus rows for one user."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -18,9 +7,7 @@ from libs.contracts.embedder import unpack_vector
 from libs.scoring.features import job_features
 from services.scorer.registry import LoadedModel
 
-# A description shorter than this is a stub — a redirect page, a "sign in to view", a truncated
-# feed item. Scored anyway, but flagged, because the score means much less than it looks like it
-# does and the caller may want to fetch the full text first.
+# A description shorter than this is a stub — a redirect page, a "sign in to view", a truncated feed item.
 MIN_DESCRIPTION = 100
 
 
@@ -37,11 +24,7 @@ class EmbeddingMismatch(RuntimeError):
 
 
 def score_rows(model: LoadedModel, rows: list[dict]) -> list[Scored]:
-    """Score corpus rows. Each row needs `id`, `title`, `description`, `embedding`, `embedding_dim`.
-
-    Rows without an embedding are skipped rather than scored — they are not yet ready, which is a
-    normal state between harvest and the embed pass, not an error.
-    """
+    """Score corpus rows."""
     import numpy as np  # noqa: PLC0415 - the scorer image has numpy; libs importers need not
 
     ready = [r for r in rows if r.get("embedding")]
@@ -50,8 +33,7 @@ def score_rows(model: LoadedModel, rows: list[dict]) -> list[Scored]:
 
     vectors = []
     for row in ready:
-        # Version before dimension: two models can share a dimension and produce vectors that mean
-        # entirely different things, so a matching width proves nothing on its own.
+        # Version before dimension: two models can share a width and mean entirely different things.
         version = row.get("embedding_version")
         if version is not None and version != model.embedder_version:
             raise EmbeddingMismatch(

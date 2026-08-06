@@ -1,16 +1,4 @@
-"""The `score` lane: the step that had been missing entirely.
-
-Nothing turned a harvested row into a score until this existed, and the failure was invisible —
-once the already-scored backlog is delivered, a feed with nothing to send looks exactly like a feed
-with nothing new. So the tests are about the properties that keep it running unattended:
-
-- an account with no model yet does **not** dead-letter, because that is the normal state of every
-  new signup and the harvest cycle enqueues for everybody;
-- a row already scored by the current model is not scored again, and a retrain makes everything
-  stale at once;
-- the continuation actually continues, rather than stopping after one batch and looking like
-  success.
-"""
+"""The `score` lane: the step that had been missing entirely."""
 from __future__ import annotations
 
 import os
@@ -59,9 +47,7 @@ def db():
 
 
 def test_an_account_with_no_model_is_not_a_failure(db):
-    """**The property that keeps the lane quiet.** The harvest cycle enqueues for every active
-    account, and a new signup has no artifact until its first train. Dead-lettering those would
-    fill the queue with red for the one state every account passes through."""
+    """The property that keeps the lane quiet."""
     from services.scorer.score_lane import ModelUnavailable, score_batch
 
     session, user, _ = db
@@ -70,8 +56,7 @@ def test_an_account_with_no_model_is_not_a_failure(db):
 
 
 def test_the_worker_swallows_a_missing_model_rather_than_dead_lettering(db):
-    """The handler turns that exception into a no-op job, which is what stops a new account's queue
-    from filling with failures before it has ever trained."""
+    """The handler turns that exception into a no-op job."""
     from libs.db.models import QueueJob
     from services.scorer.__main__ import handle
 
@@ -84,8 +69,7 @@ def test_the_worker_swallows_a_missing_model_rather_than_dead_lettering(db):
 
 
 def test_unscored_count_ignores_rows_with_no_embedding(db):
-    """A row without an embedding cannot be scored, so counting it would make `remaining` never
-    reach zero and the continuation chain never stop."""
+    """A row without an embedding cannot be scored."""
     from libs.db.models import CorpusJob
     from services.scorer.score_lane import unscored_count
 
@@ -114,8 +98,7 @@ def test_a_row_scored_by_the_current_model_is_not_scored_again(db):
 
 
 def test_a_retrain_makes_every_score_stale_at_once(db):
-    """Correct rather than wasteful: after a retrain the scores mean something different, so every
-    row genuinely needs recomputing."""
+    """Correct rather than wasteful: after a retrain the scores mean something different."""
     from libs.db.models import UserJobState
     from services.scorer.score_lane import unscored_count
 
@@ -133,8 +116,7 @@ def test_a_retrain_makes_every_score_stale_at_once(db):
 
 
 def test_the_harvest_cycle_asks_every_active_account_to_catch_up(db):
-    """A corpus row is shared, so a job harvested for one user is one the others have not scored
-    either — enqueuing only for users whose config matched would leave the rest behind."""
+    """A corpus row is shared, so a job harvested for one user is one the others have not scored either."""
     from sqlalchemy import func, select
 
     from libs.db.models import QueueJob, User
@@ -163,17 +145,7 @@ def test_the_harvest_cycle_asks_every_active_account_to_catch_up(db):
 
 
 def test_an_account_without_the_old_profile_json_can_still_be_scored():
-    """**Sixth instance of one assumption, and the one that broke scoring outright.**
-
-    The keyword features are derived from `user.profile`, the JSON the capture flow wrote. An
-    account built by the setup conversation has prose files and no JSON at all, so validating it
-    into a `ProfileSchema` raised — dead-lettering the training run five times and then every
-    scoring job for that account, each as a pydantic error buried in a queue row.
-
-    An empty spec means the embedding carries the whole signal, which is a real model rather than a
-    broken one, and strictly better than refusing to score a profile that is perfectly complete in
-    the form the platform now uses.
-    """
+    """Sixth instance of one assumption, and the one that broke scoring outright."""
     from libs.scoring.features import spec_for
 
     empty = spec_for(None)
@@ -216,12 +188,7 @@ def _pointing(*components: float) -> bytes:
 
 
 def test_a_row_far_from_the_users_centre_is_never_scored(db, monkeypatch):
-    """**The saving is the model call, so the filter has to happen before it.**
-
-    Measured on live data: 72% of one account's pool sits below its own threshold and none of its
-    280 matches do. This asserts the mechanism actually runs — a filter that is computed and then
-    ignored is the defect this project ships most often.
-    """
+    """The saving is the model call, so the filter has to happen before it."""
     from sqlalchemy import select
 
     from libs.db.models import UserJobState
@@ -250,8 +217,7 @@ def test_a_row_far_from_the_users_centre_is_never_scored(db, monkeypatch):
 
 
 def test_a_filtered_row_is_not_reconsidered_next_cycle(db, monkeypatch):
-    """The saving is spent back if the same rows are re-examined every run. `scored_model_version`
-    is what stops that, and it only moves again when the model — and with it the centroid — does."""
+    """The saving is spent back if the same rows are re-examined every run."""
     from services.scorer import score_lane
 
     session, user, jobs = db
@@ -272,9 +238,7 @@ def test_a_filtered_row_is_not_reconsidered_next_cycle(db, monkeypatch):
 
 
 def test_a_model_with_no_centroid_scores_everything(db, monkeypatch):
-    """**The fail-open, and it is the one that would empty a feed if inverted.** An account in cold
-    start, or a model published before the column existed, has no centre — and every row must reach
-    the model rather than none of them."""
+    """The fail-open, and it is the one that would empty a feed if inverted."""
     from services.scorer import score_lane
 
     session, user, jobs = db
@@ -301,9 +265,7 @@ def _configure(session, user, **config):
 
 
 def test_a_job_outside_the_users_countries_is_never_scored(db, monkeypatch):
-    """**The country filter, finally running.** `libs.corpus.geo` was written, tested forty times
-    over and imported by nothing for two days, which is why American jobs kept arriving after two
-    rounds of work on it (ROADMAP 6ak)."""
+    """The country filter, finally running."""
     from services.scorer import score_lane
 
     session, user, jobs = db
@@ -322,9 +284,7 @@ def test_a_job_outside_the_users_countries_is_never_scored(db, monkeypatch):
 
 
 def test_a_posting_with_no_readable_country_is_kept(db, monkeypatch):
-    """**Unknown passes, and this is the half that matters.** 16% of corpus rows carry no readable
-    country, and they are disproportionately the remote-first postings — the most portable jobs on
-    the board would be the first thing a naive filter deleted."""
+    """Unknown passes, and this is the half that matters."""
     from services.scorer import score_lane
 
     session, user, jobs = db
@@ -343,12 +303,7 @@ def test_a_posting_with_no_readable_country_is_kept(db, monkeypatch):
 
 
 def test_a_stale_posting_is_not_scored(db, monkeypatch):
-    """**The user's own freshness window, applied before the model rather than after.**
-
-    The operator's per-source setting decides how far back a *source is asked*; this is how old a
-    posting may be and still be worth an account's model. Scoring a month-old job and then dropping
-    it at delivery as `too_old` is the whole cost paid for nothing.
-    """
+    """The user's own freshness window, applied before the model rather than after."""
     from datetime import UTC, datetime, timedelta
 
     from services.scorer import score_lane
@@ -392,12 +347,7 @@ def test_a_term_the_user_excluded_is_never_scored(db, monkeypatch):
 
 
 def test_the_freshest_jobs_are_scored_first(db, monkeypatch):
-    """**There was no ordering at all.**
-
-    The lane took 500 rows in whatever order Postgres returned them, so a posting found a minute ago
-    queued behind a 28,000-row backlog. The product's whole claim is that a job arrives while it is
-    still worth applying to.
-    """
+    """There was no ordering at all."""
     from datetime import UTC, datetime, timedelta
 
     from services.scorer import score_lane
@@ -446,9 +396,7 @@ def test_a_closed_posting_is_never_scored(db, monkeypatch):
 
 
 def test_an_account_with_no_config_is_not_filtered_into_silence(db, monkeypatch):
-    """**The fail-open across every filter at once.** A user who has answered nothing has excluded
-    nothing: no countries, no terms, and the default window. Getting this wrong empties a feed, and
-    an empty feed is indistinguishable from a quiet week."""
+    """The fail-open across every filter at once."""
     from services.scorer import score_lane
 
     session, user, jobs = db

@@ -1,9 +1,4 @@
-"""Session and token storage for `libs.auth`.
-
-Both tables hold **hashes only**. A database dump must not let anyone resume a session or verify an
-address — the same property `libs/secrets` gives credentials, applied to the things that grant
-access to them.
-"""
+"""Session and token storage for `libs.auth`."""
 from __future__ import annotations
 
 import uuid
@@ -33,26 +28,22 @@ class UserSession(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
 
-    # SHA-256 hex of the refresh token. Unique so a replay is a lookup rather than a scan, and so
-    # two sessions can never collide on one token.
+    # SHA-256 hex of the refresh token.
     refresh_hash: Mapped[str] = mapped_column(String(64), unique=True)
 
     expires_at: Mapped[timestamptz]
-    # Set when this token was exchanged for its successor. A second presentation of a rotated token
-    # is a replay, and `libs.auth.sessions` revokes the whole family on it.
+    # Set when this token was exchanged for its successor.
     rotated_at: Mapped[timestamptz | None]
     revoked_at: Mapped[timestamptz | None]
 
-    # Diagnostic only — shown on a "your sessions" page, never used for authorisation. Trusting a
-    # user-agent or an IP for access decisions is how a header becomes a credential.
+    # Diagnostic only — shown on a "your sessions" page, never used for authorisation.
     user_agent: Mapped[str | None] = mapped_column(Text)
     ip: Mapped[str | None] = mapped_column(String(64))
 
     created_at: Mapped[timestamptz] = mapped_column(server_default=func.now())
 
     __table_args__ = (
-        # The "log me out everywhere" and "list my sessions" reads. Partial on live rows only:
-        # rotated and revoked sessions accumulate forever and are never selected.
+        # The "log me out everywhere" and "list my sessions" reads.
         Index("ix_user_sessions_live", "user_id",
               postgresql_where=text("revoked_at IS NULL AND rotated_at IS NULL")),
     )
@@ -83,13 +74,7 @@ MAIL_PURPOSES = ("verify_email", "reset_password", "notice")
 
 
 class MailSend(Base):
-    """One outbound message, counted against the platform's daily allowance.
-
-    **Deliberately carries no recipient address.** A cap needs a count, not a mailing list, and the
-    per-address protection lives in the signup rate limiter. Keeping this table free of addresses
-    means it never becomes one more place a user's email lives, and it never has to be included in
-    an account deletion.
-    """
+    """One outbound message, counted against the platform's daily allowance."""
 
     __tablename__ = "mail_sends"
 

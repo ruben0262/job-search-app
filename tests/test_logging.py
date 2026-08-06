@@ -1,13 +1,4 @@
-"""Logging: the properties that make a failure visible rather than silent.
-
-Four assertions carry this file, and each maps to something that has already gone wrong or would go
-unnoticed if it did:
-
-- a secret must never reach the log **file** (the console is transient; the file is kept);
-- a record from a child logger must be captured, because that is how every module logs;
-- configuring twice must not double every line, because entry points, scripts and tests all call it;
-- an unwritable log directory must warn and continue, not take a harvest down.
-"""
+"""Logging: the properties that make a failure visible rather than silent."""
 from __future__ import annotations
 
 import logging
@@ -25,11 +16,7 @@ TOKEN = "sk-ant-api03-" + "Zx9" * 20
 
 @pytest.fixture(autouse=True)
 def _clean_root():
-    """Each test starts from a bare root logger and leaves it that way.
-
-    Without this the module's own idempotence would make every test after the first a no-op, and
-    they would pass by not running.
-    """
+    """Each test starts from a bare root logger and leaves it that way."""
     root = logging.getLogger()
     saved, level = list(root.handlers), root.level
     root.handlers.clear()
@@ -53,8 +40,7 @@ def test_a_secret_never_reaches_the_log_file(tmp_path):
 
 
 def test_a_child_loggers_record_is_written(tmp_path):
-    """Every module logs through `logging.getLogger(__name__)`. A configuration that only captured
-    records logged on the root would capture nothing the platform actually writes."""
+    """Every module logs through `logging.getLogger(__name__)`."""
     path = configure("api", log_dir=tmp_path, console=False)
     logging.getLogger("services.api.auth_routes").info("signup accepted")
 
@@ -80,8 +66,7 @@ def test_configuring_twice_does_not_duplicate_every_line(tmp_path):
 
 
 def test_an_unwritable_log_directory_warns_and_keeps_going(tmp_path):
-    """A read-only volume must not stop a harvest — but it must also not leave someone wondering
-    why `logs/` is empty."""
+    """A read-only volume must not stop a harvest."""
     blocker = tmp_path / "not-a-directory"
     blocker.write_text("", encoding="utf-8")
 
@@ -99,8 +84,7 @@ def test_audit_writes_one_greppable_line(tmp_path):
 
 
 def test_the_format_carries_level_service_and_module():
-    """Asserted on the constant rather than on output, so a change to it is a deliberate edit here
-    rather than a surprise in an incident."""
+    """Asserted on the constant rather than on output."""
     for field in ("%(levelname)", "%(service)s", "%(name)s", "%(asctime)s", "%(message)s"):
         assert field in LOG_FORMAT
 
@@ -110,14 +94,7 @@ def path_lines(path, needle: str) -> int:
 
 
 def test_a_library_narrating_every_request_does_not_drown_our_own_lines(tmp_path):
-    """**One line in ten was ours.** On 2026-08-05 the notifier's log was almost entirely `httpx`
-    announcing `HTTP Request: GET … "200 OK"` for each posting a delivery re-dated, and the lines
-    that mattered — an account dropping every candidate, a Telegram gateway error — scrolled away
-    behind requests that had succeeded (CLAUDE.md §7).
-
-    A successful request is not information. A failing one still is, which is why these are raised
-    to WARNING rather than silenced.
-    """
+    """One line in ten was ours."""
     path = configure("notifier", log_dir=tmp_path, console=False)
 
     logging.getLogger("httpx").info('HTTP Request: GET https://example.com "HTTP/1.1 200 OK"')
@@ -130,8 +107,7 @@ def test_a_library_narrating_every_request_does_not_drown_our_own_lines(tmp_path
 
 
 def test_debug_keeps_the_request_trace(tmp_path):
-    """`LOG_LEVEL=DEBUG` means somebody is looking at a specific problem and the per-request trace
-    is the thing they came for. Quietening it then would remove the only tool that helps."""
+    """`LOG_LEVEL=DEBUG` means somebody is looking at a specific problem and the per-request trace is the."""
     path = configure("harvester", level="DEBUG", log_dir=tmp_path, console=False)
 
     logging.getLogger("httpx").info('HTTP Request: GET https://example.com "HTTP/1.1 200 OK"')

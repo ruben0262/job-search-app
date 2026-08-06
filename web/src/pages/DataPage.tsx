@@ -1,14 +1,4 @@
-/**
- * Your details — everything onboarding collected, in one place, editable.
- *
- * **These are the onboarding forms themselves, not copies.** Each section renders the same
- * component the wizard showed, which loads what is stored and saves the same way — so a correction
- * here behaves exactly like getting it right the first time, and a field added to onboarding
- * appears here without anyone remembering to mirror it.
- *
- * The sections are closed by default: seven open forms on one page is a wall, and somebody comes
- * here to fix one thing.
- */
+/** Your details — everything onboarding collected, in one place, editable. */
 import { useState, type ReactNode } from "react";
 
 import { ConfigStep } from "./onboarding/ConfigStep";

@@ -1,15 +1,4 @@
-"""The CV builder: what reaches the model, what comes back, and what is never delivered.
-
-Chrome and Claude are both faked here, and that is the point of how `services/docgen` is split —
-`build.py` takes strings and returns strings, `pdf.py` is the only thing that shells out, and
-`run.py` sequences them. So the rules that matter can be tested without a browser, without a
-credential, and without spending anybody's money:
-
-- the model is grounded on the user's own facts block, and never sees the platform's CSS;
-- the layout comes back from the template regardless of what was returned;
-- a document with hidden content is not delivered at all;
-- the PDF is deleted whether the build succeeded or failed.
-"""
+"""The CV builder: what reaches the model, what comes back, and what is never delivered."""
 from __future__ import annotations
 
 import pathlib
@@ -24,13 +13,7 @@ from services.docgen import build, pdf, run
 
 
 def base_document() -> str:
-    """The document handed to the tailoring call.
-
-    In production this is the user's own `base_cv.html` out of `user_profile_files`; these tests
-    only need *a* base document with the hand-tuned layout in it, so they use the layout on disk.
-    It used to call a renderer in `services.docgen.build` that built one from a `ProfileSchema` —
-    deleted on 2026-07-31, because nothing in the platform renders a CV from a schema any more.
-    """
+    """The document handed to the tailoring call."""
     return load(BASE_CV_TEMPLATE)
 
 
@@ -46,8 +29,7 @@ PROFILE = ProfileSchema.model_validate({
     "confirmed": True,
 })
 
-# The invisible character these tests are about, named and escaped — a literal one in a source line
-# is precisely what nobody can review, which is the point of the check it exercises.
+# The invisible character these tests are about, named and escaped.
 ZERO_WIDTH = "\u200b"
 
 TAILORED = """<!DOCTYPE html>
@@ -64,12 +46,7 @@ TAILORED = """<!DOCTYPE html>
 
 
 class FakeJob:
-    """The corpus row a build reads, without a database.
-
-    Carries the posting metadata the card and the job context both read — a build that only sees a
-    title and a description writes a document that matches keywords rather than one written toward
-    an angle (`REBUILD_PLAN.md`).
-    """
+    """The corpus row a build reads, without a database."""
 
     def __init__(self, description="We need a backend engineer. Python, Postgres, on-call."):
         self.id = 7
@@ -103,8 +80,7 @@ class FakeClient:
 # ── what reaches the model ────────────────────────────────────────────────────────────────────
 
 def test_the_call_is_grounded_on_the_user_s_own_facts():
-    """The reference instance measured what happens without grounding: the model invented an
-    employer and fabricated metrics. In a hosted product that lands on a real application."""
+    """The reference instance measured what happens without grounding."""
     client = FakeClient()
     build.tailor(client, PROFILE, base_document(),
                  build.job_context(FakeJob()), facts_md="# Facts about Alice Example")
@@ -113,8 +89,7 @@ def test_the_call_is_grounded_on_the_user_s_own_facts():
 
 
 def test_a_profile_with_no_facts_block_still_gets_a_grounding_instruction():
-    """Nobody should reach this — a confirmed profile always renders one — but an empty system
-    prompt would be the one call where the model is free to invent."""
+    """Nobody should reach this — a confirmed profile always renders one."""
     client = FakeClient()
     build.tailor(client, PROFILE, base_document(), build.job_context(FakeJob()))
 
@@ -132,8 +107,7 @@ def test_the_prompt_carries_the_candidate_the_posting_and_the_base_document():
 
 
 def test_the_model_never_sees_the_stylesheet():
-    """It is told CSS is managed externally. Sending it anyway costs ~700 tokens each way and
-    invites an edit that is then silently discarded."""
+    """It is told CSS is managed externally."""
     client = FakeClient()
     build.tailor(client, PROFILE, base_document(), build.job_context(FakeJob()))
 
@@ -148,8 +122,7 @@ def test_a_long_posting_is_capped_not_dropped():
 
 
 def test_a_posting_with_no_description_still_produces_a_context():
-    """A build refuses earlier when the description is missing, but this must not raise on the way
-    to that refusal."""
+    """A build refuses earlier when the description is missing."""
     assert "no description" in build.job_context(FakeJob(description=None))
 
 
@@ -182,8 +155,7 @@ def test_a_reply_with_no_document_is_a_build_failure():
 
 
 def test_em_dashes_are_stripped_from_prose_and_kept_in_entry_titles():
-    """The prompt bans them in bullets and allows them in a title header. The model ignores that
-    intermittently because em-dashes are its habit, so it is enforced rather than asked."""
+    """The prompt bans them in bullets and allows them in a title header."""
     html = build.sanitise(TAILORED)
 
     assert "Shipped the billing service, 40ms p99" in html
@@ -217,15 +189,12 @@ def test_the_stylesheet_is_not_scanned_as_hidden_content():
 
 @pytest.mark.parametrize(("pages", "wanted"), [(1, False), (2, False), (3, True), (None, False)])
 def test_only_a_cv_over_two_pages_asks_for_a_revision(pages, wanted):
-    """One page is the goal, two is the ceiling. An unknown page count must not spend a second call
-    — 'we could not count them' is not evidence that there are too many."""
+    """One page is the goal, two is the ceiling."""
     assert (build.page_feedback(pages) is not None) is wanted
 
 
 def test_the_revision_says_cut_never_shrink():
-    """A model told a document is too long will otherwise reduce the font, which produces a CV that
-    fits and cannot be read — and the CSS is restored from the template anyway, so the attempt is
-    silently undone and the length unchanged."""
+    """A model told a document is too long will otherwise reduce the font."""
     feedback = build.page_feedback(3)
 
     assert "Cut" in feedback
@@ -247,17 +216,7 @@ def test_a_missing_pdf_is_a_compile_failure_not_a_silent_empty_file(tmp_path, mo
                     and shutil.which(pdf.chrome_binary()) is None,
                     reason="no Chrome on this machine (set CHROME_BIN to run it)")
 def test_a_real_chrome_turns_the_rendered_cv_into_a_readable_pdf(tmp_path):
-    """The one test that exercises the actual browser. Skipped where there is none, and the docgen
-    image is built with one — so this is the gate that says the layout survives a real render
-    rather than that the strings were assembled correctly.
-
-    **It renders a finished document, not the bare template.** It used to render whatever
-    `base_document()` produced, which was a CV filled from a schema; when that renderer was deleted
-    on 2026-07-31 the helper started returning the *unfilled* layout — markers, no prose — and the
-    PDF came back with 34 extractable characters. It failed only in CI, because a machine without
-    Chrome skips this and never sees it. A document with real text in it is the point: extracting
-    nothing from an empty page proves nothing about whether a real CV reads.
-    """
+    """The one test that exercises the actual browser."""
     source = tmp_path / "cv.html"
     source.write_text(build.tailor(FakeClient(), PROFILE, base_document(),
                                    build.job_context(FakeJob())), encoding="utf-8")
@@ -265,10 +224,7 @@ def test_a_real_chrome_turns_the_rendered_cv_into_a_readable_pdf(tmp_path):
     report = pdf.inspect_pdf(pdf.compile_pdf(source, tmp_path / "cv.pdf"))
 
     assert report.pages == 1
-    # Extractable text is the whole question: a PDF Chrome rasterised without fonts, or built from
-    # an empty layout, comes back near zero. **Not `ats_ok`** — that asks whether a *complete* CV is
-    # readable, with education and contact details, and this fixture is a deliberately minimal
-    # document. Asserting it here would test the fixture rather than the browser.
+    # Extractable text is the whole question: a PDF Chrome rasterised without fonts.
     assert report.chars > 100, f"no extractable text: {report.issues}"
 
 
@@ -347,8 +303,7 @@ def _session(monkeypatch, *, profile=PROFILE, chat_id="4242", description="Backe
     monkeypatch.setattr(run, "CorpusRepository",
                         lambda _s: type("R", (), {"pin": lambda _self, job_id: pinned.append(job_id)})())
 
-    # The profile is files now (`libs/profiles`), not a schema render. Stubbed here so these tests
-    # stay about docgen: what reaches the model, what comes back, and what is never delivered.
+    # The profile is files now (`libs/profiles`), not a schema render.
     class Files:
         def __init__(self, *_args):
             pass
@@ -367,8 +322,7 @@ def _session(monkeypatch, *, profile=PROFILE, chat_id="4242", description="Backe
 
 
 def test_a_build_delivers_the_pdf_to_the_personal_chat(monkeypatch, fake_chrome, tmp_path):
-    """**Never a feed channel.** Those have other members in them, and this is the most personal
-    artifact the platform produces."""
+    """Never a feed channel."""
     session, user, _job, _state, _pinned = _session(monkeypatch)
     send = Recorder()
 
@@ -385,8 +339,7 @@ def test_a_build_delivers_the_pdf_to_the_personal_chat(monkeypatch, fake_chrome,
 
 def test_the_build_records_that_the_user_applied_and_pins_the_posting(monkeypatch, fake_chrome,
                                                                      tmp_path):
-    """An ephemeral document needs a durable record, and retention must not remove the description
-    out from under it."""
+    """An ephemeral document needs a durable record."""
     session, user, _job, state, pinned = _session(monkeypatch)
 
     run.run_build(session, user.id, 7, client=FakeClient(), send_document=Recorder(),
@@ -420,8 +373,7 @@ def test_a_cv_that_already_fits_is_not_revised(monkeypatch, fake_chrome, tmp_pat
 
 
 def test_a_cv_with_hidden_content_is_never_delivered(monkeypatch, fake_chrome, tmp_path):
-    """Fail closed. Invisible keyword stuffing looks perfect and gets the person filtered out by
-    the system it was aimed at, and they would never learn why."""
+    """Fail closed."""
     session, user, _job, state, _pinned = _session(monkeypatch)
     # Zero-width characters inside a *tag name* survive the sanitiser's attribute-level cleanup.
     sneaky = TAILORED.replace('<p class="profile">',
@@ -439,8 +391,7 @@ def test_a_cv_with_hidden_content_is_never_delivered(monkeypatch, fake_chrome, t
 
 def test_an_account_with_no_completed_profile_refuses_before_spending_a_call(monkeypatch,
                                                                             fake_chrome, tmp_path):
-    """Setup was never finished. Terminal, and refused before the credential is touched — a call
-    spent on an account that cannot receive a document is money for nothing."""
+    """Setup was never finished."""
     session, user, _job, _state, _pinned = _session(monkeypatch, profile_files=None)
     client = FakeClient()
 
@@ -452,8 +403,7 @@ def test_an_account_with_no_completed_profile_refuses_before_spending_a_call(mon
 
 
 def test_an_account_with_no_base_cv_refuses(monkeypatch, fake_chrome, tmp_path):
-    """The base CV is the document the tailoring prompt edits. Without one there is nothing to
-    tailor, and the model would invent a CV from the grounding alone."""
+    """The base CV is the document the tailoring prompt edits."""
     session, user, _job, _state, _pinned = _session(
         monkeypatch, profile_files={"grounding": "# Facts", "base_cv.html": ""})
 
@@ -480,8 +430,7 @@ def test_a_posting_with_no_description_is_refused(monkeypatch, fake_chrome, tmp_
 
 
 def test_the_documents_do_not_outlive_the_build(monkeypatch, fake_chrome, tmp_path):
-    """D9, and the reason this service needs no volume: a scratch directory for the length of one
-    upload, removed on every path."""
+    """D9, and the reason this service needs no volume: a scratch directory for the length of one upload."""
     session, user, _job, _state, _pinned = _session(monkeypatch)
     scratch = tmp_path / "build"
     scratch.mkdir()
@@ -511,9 +460,7 @@ def test_the_documents_do_not_survive_a_failure_either(monkeypatch, fake_chrome,
 # ── what the model is told about the posting ──────────────────────────────────────────────────
 
 def test_the_context_carries_the_scoring_time_assessment():
-    """**Trimming this made the CVs worse.** A model given only a description matches keywords
-    against it; one told what we already concluded about the role has an angle to write toward.
-    The labeller stores that read in `user_labels.rationale` and nothing used it until now."""
+    """Trimming this made the CVs worse."""
     context = build.job_context(FakeJob(), score=86,
                                 fit_notes="Python API role, matches her backend work.")
 
@@ -522,9 +469,7 @@ def test_the_context_carries_the_scoring_time_assessment():
 
 
 def test_the_context_carries_the_money_and_the_competition():
-    """Both salary lines answer different questions — what the role pays, and what she should be
-    asking for. And an opening written for a job with 200 applicants is not the one written for a
-    job with six."""
+    """Both salary lines answer different questions — what the role pays."""
     job = FakeJob(description="Salary 60,000 - 80,000 EUR per annum. Python.")
     context = build.job_context(job, score=86)
 
@@ -544,28 +489,16 @@ def test_a_posting_with_no_salary_says_nothing_rather_than_guessing():
 
 
 def test_the_token_ceiling_leaves_room_for_the_document_after_thinking():
-    """**A ceiling the thinking budget eats is a failed build with no explanation.**
-
-    Observed 2026-07-30: `stop_reason=max_tokens` with zero text blocks — the reasoning finished
-    and the document had not started. The budget is spent inside the ceiling, and a CV is itself
-    around 6,000 tokens of HTML, so the margin has to be real rather than nominal.
-    """
+    """A ceiling the thinking budget eats is a failed build with no explanation."""
     from services.docgen.build import MAX_TOKENS, THINKING_TOKENS
 
-    # A CV document, generously. If the ceiling is not several times this after thinking is paid
-    # for, a long CV truncates and the user gets nothing.
+    # A CV document, generously.
     document_tokens = 8_000
     assert document_tokens * 2 <= MAX_TOKENS - THINKING_TOKENS
 
 
 def test_chrome_is_told_to_suppress_its_header_under_both_flag_names():
-    """**An unrecognised Chrome flag is not an error**, so the only symptom of using the old name
-    is a date, a title, a `file:///` path and a page number printed onto somebody's CV.
-
-    `--print-to-pdf-no-header` was renamed to `--no-pdf-header-footer`; the image ships Chromium
-    150, which ignores the first. It stayed hidden while `@page` had zero margins and there was no
-    margin box to draw into — two defects cancelling out, until page two needed a real margin.
-    """
+    """An unrecognised Chrome flag is not an error, so the only symptom of using the old name is a date."""
     from services.docgen.pdf import CHROME_FLAGS
 
     assert "--no-pdf-header-footer" in CHROME_FLAGS
@@ -573,16 +506,7 @@ def test_chrome_is_told_to_suppress_its_header_under_both_flag_names():
 
 
 def test_a_cover_letter_is_not_judged_by_the_cvs_checklist(tmp_path):
-    """**An always-wrong signal is worse than no signal.**
-
-    A cover letter has no education section, no experience list and no contact block of its own, so
-    running the CV checklist over one flagged every cover letter ever generated — observed in
-    production on 2026-08-01, `ats_ok=False` on a document that was completely fine. A reader who
-    sees a warning on every build stops reading warnings.
-
-    What both documents genuinely share is that the text has to come out of the PDF at all, and it
-    must not be column-scrambled. Those checks stay.
-    """
+    """An always-wrong signal is worse than no signal."""
     letter = ("Dear hiring team,\n\nI am writing about the Fullstack Engineer role. "
               "I have spent four years building payment systems in Python and Go, and the "
               "problem you describe is one I have solved before at some length.\n\n"

@@ -1,9 +1,4 @@
-"""The admin endpoints, and who is refused them.
-
-The access rule is the whole of what is worth testing here: an operator view that leaks is worse
-than no operator view, because it hands a stranger every account's state at once. So the tests are
-about who *cannot* read it — including the case that looks like a bug and is not, the 404.
-"""
+"""The admin endpoints, and who is refused them."""
 from __future__ import annotations
 
 import os
@@ -71,8 +66,7 @@ def test_an_operator_sees_the_platform_and_its_alerts(api):
 
 
 def test_an_ordinary_user_gets_a_404_not_a_403(api):
-    """A 403 confirms the endpoint exists and that somebody is worth phishing for access to it.
-    There is no legitimate client that finds these routes by probing."""
+    """A 403 confirms the endpoint exists and that somebody is worth phishing for access to it."""
     http, _, _, ordinary, sign_in = api
     sign_in(http, ordinary)
 
@@ -81,8 +75,7 @@ def test_an_ordinary_user_gets_a_404_not_a_403(api):
 
 
 def test_admin_is_an_environment_variable_not_a_column(api):
-    """Granting admin is a deploy, which is the friction it should have. A boolean column would be
-    one UPDATE away from privilege escalation, audited in the database it grants access to."""
+    """Granting admin is a deploy, which is the friction it should have."""
     http, session, operator, _, sign_in = api
     sign_in(http, operator)
     assert http.get("/admin/health").status_code == 200
@@ -93,8 +86,7 @@ def test_admin_is_an_environment_variable_not_a_column(api):
 
 
 def test_no_admin_configured_means_nobody_is_an_admin(api):
-    """An empty variable must not mean "everybody" — that is the misconfiguration that opens the
-    console on the first deploy where somebody forgot to set it."""
+    """An empty variable must not mean "everybody"."""
     http, _, operator, _, sign_in = api
     sign_in(http, operator)
 
@@ -109,8 +101,7 @@ def test_signed_out_is_refused(api):
 
 
 def test_the_user_list_carries_no_credential_material(api):
-    """Not even `last_4`. An operator does not need it to answer any question they have, and a
-    support view that shows a fragment of a key leaks one over somebody's shoulder."""
+    """Not even `last_4`."""
     from libs.db.models import UserSecret
 
     http, session, operator, ordinary, sign_in = api
@@ -136,8 +127,7 @@ def test_the_user_list_shows_what_an_operator_actually_needs(api):
 # ── operator access, granted from the panel ───────────────────────────────────────────────────
 
 def test_the_flag_grants_access_without_a_deploy(api):
-    """`ADMIN_EMAILS` is the bootstrap and needs a container restart to change, which makes "give
-    this person access" a deploy. The row is how it is granted at the speed the question is asked."""
+    """`ADMIN_EMAILS` is the bootstrap and needs a container restart to change."""
     http, session, operator, ordinary, sign_in = api
     sign_in(http, ordinary)
     assert http.get("/admin/users").status_code == 404, "not an operator yet"
@@ -151,9 +141,7 @@ def test_the_flag_grants_access_without_a_deploy(api):
 
 
 def test_an_operator_cannot_change_their_own_access(api):
-    """**The one click that could lock somebody out of their own platform.** `ADMIN_EMAILS` is the
-    only route back in, so an operator not named in it who revoked their own row would need a
-    redeploy to undo it."""
+    """The one click that could lock somebody out of their own platform."""
     http, _session, operator, _ordinary, sign_in = api
     sign_in(http, operator)
 
@@ -175,9 +163,7 @@ def test_the_env_var_still_wins_over_a_revoked_flag(api):
 # ── deletion, which has no undo ───────────────────────────────────────────────────────────────
 
 def test_deleting_requires_the_address_typed_correctly(api):
-    """**Checked on the server, not only in the browser.** A confirmation enforced in the UI alone
-    is one a mis-aimed script skips entirely, and this destroys a person's profile, labels,
-    documents and model with no undo."""
+    """Checked on the server, not only in the browser."""
     from libs.db.models import User
 
     http, session, operator, ordinary, sign_in = api
@@ -237,8 +223,7 @@ def test_an_ordinary_user_cannot_delete_anybody(api):
 
 
 def test_the_source_list_names_every_board_with_its_window(api):
-    """A source nobody has tuned still appears, with the default it is actually running at —
-    otherwise the panel omits exactly the boards most likely to need attention."""
+    """A source nobody has tuned still appears, with the default it is actually running at."""
     http, _session, operator, _ordinary, sign_in = api
     sign_in(http, operator)
 
@@ -255,12 +240,7 @@ def test_the_source_list_names_every_board_with_its_window(api):
 # ── per-user ceilings ─────────────────────────────────────────────────────────────────────────
 
 def test_a_limit_is_absent_default_or_unlimited_and_they_are_three_things(api):
-    """**Absent, `null` and a number mean different things.**
-
-    Absent follows the platform default as that default changes; `null` is an operator choosing no
-    ceiling; a number is that number. Storing a huge value for unlimited would collapse the first
-    two and make a misconfiguration indistinguishable from an intention.
-    """
+    """Absent, `null` and a number mean different things."""
     from libs import limits
 
     _http, session, _operator, ordinary, _sign_in = api
@@ -277,8 +257,7 @@ def test_a_limit_is_absent_default_or_unlimited_and_they_are_three_things(api):
 
 
 def test_the_send_gap_cannot_be_removed(api):
-    """It is Telegram's rule, not ours: 20 messages a minute to a channel, 429 above it. An
-    operator who could set it to unlimited could get a user's bot restricted."""
+    """It is Telegram's rule, not ours: 20 messages a minute to a channel, 429 above it."""
     import pytest as _pytest
 
     from libs import limits
@@ -311,8 +290,7 @@ def test_an_operator_sets_limits_through_the_panel_and_they_persist(api):
 
 
 def test_an_operator_can_set_their_own_limits(api):
-    """Unlike operator access and deletion, there is no self-guard here: raising your own ceiling
-    is not a way to lock yourself out, and an operator is exactly who should be able to."""
+    """Unlike operator access and deletion, there is no self-guard here."""
     http, _session, operator, _ordinary, sign_in = api
     sign_in(http, operator)
 
@@ -322,8 +300,7 @@ def test_an_operator_can_set_their_own_limits(api):
 
 
 def test_an_ordinary_user_cannot_change_any_limit(api):
-    """They are the operator's, entirely. A user who could raise their own delivery ceiling could
-    get their own bot rate-limited by Telegram."""
+    """They are the operator's, entirely."""
     http, _session, _operator, ordinary, sign_in = api
     sign_in(http, ordinary)
 
@@ -333,13 +310,8 @@ def test_an_ordinary_user_cannot_change_any_limit(api):
 
 
 def test_granting_admin_also_shows_the_menu_item(api, monkeypatch):
-    """**The toggle has to move both halves.** `require_admin` reads the column, so granting from
-    the panel opened the API immediately -- but the dashboard computed its `is_admin` hint from
-    `ADMIN_EMAILS` alone and kept hiding the nav entry. Access with no way to reach it reads, to the
-    person granted it, as a toggle that does nothing.
-    """
-    # `ordinary` is nobody's bootstrap operator, which is the point: everything below has to come
-    # from the flag alone.
+    """The toggle has to move both halves."""
+    # `ordinary` is nobody's bootstrap operator, which is the point.
     monkeypatch.setenv("ADMIN_EMAILS", "")
     http, session, _operator, user, sign_in = api
     sign_in(http, user)
@@ -347,8 +319,7 @@ def test_granting_admin_also_shows_the_menu_item(api, monkeypatch):
     user.is_admin = False
     session.flush()
     assert http.get("/dashboard").json()["is_admin"] is False
-    # 404 rather than 403, matching the rest of the panel: a non-admin is not told the endpoint
-    # exists at all.
+    # 404 rather than 403, matching the rest of the panel: a non-admin is not told the endpoint exists at all.
     assert http.get("/admin/users").status_code == 404
 
     user.is_admin = True
@@ -359,12 +330,7 @@ def test_granting_admin_also_shows_the_menu_item(api, monkeypatch):
 
 
 def test_the_corpus_browser_reports_what_is_actually_in_there(api):
-    """**The only way to see the corpus was SQL, so nobody looked.**
-
-    That matters more than it sounds: a new account's training data is whatever this shared table
-    already holds for their field, and the second account here found 240 usable rows out of 14,359
-    because the corpus had accumulated for weeks against one search and hours against theirs.
-    """
+    """The only way to see the corpus was SQL, so nobody looked."""
     from datetime import UTC, datetime
 
     from libs.db.models import CorpusJob
@@ -417,9 +383,7 @@ def test_operator_keywords_are_added_listed_and_removed(api):
 
 
 def test_a_users_own_search_terms_are_shown_but_never_deletable(api):
-    """**Their feed is built from these.** An operator seeing them is support; an operator able to
-    remove them is an outage that looks like a setting. There is no route that can reach them: the
-    delete takes a row id from `operator_keywords`, which a user's terms are not in."""
+    """Their feed is built from these."""
     from libs.db.models import UserConfig
 
     http, session, operator, ordinary, sign_in = api
@@ -450,12 +414,7 @@ def _dead_job(session, user, lane="notify", error="RuntimeError: Bad Gateway"):
 
 
 def test_discarding_dead_letters_clears_the_alert_they_caused(api):
-    """**An alert that cannot be cleared is one an operator learns to ignore.**
-
-    Two dead-lettered notify jobs sat on the health page after their cause — a Telegram outage —
-    had been read, understood and fixed in code. Nothing could retire them, so the panel kept
-    paging about a problem that no longer existed, which costs the next alert its meaning.
-    """
+    """An alert that cannot be cleared is one an operator learns to ignore."""
     from libs.ops import evaluate, platform_health
 
     http, session, operator, ordinary, sign_in = api
@@ -475,8 +434,7 @@ def test_discarding_dead_letters_clears_the_alert_they_caused(api):
 
 
 def test_discarding_one_lane_leaves_the_others_alone(api):
-    """A lane is named so that clearing a known Telegram outage does not also erase an unread
-    failure in `train`, which nobody has looked at yet."""
+    """A lane is named so that clearing a known Telegram outage does not also erase an unread failure in."""
     http, session, operator, ordinary, sign_in = api
     sign_in(http, operator)
     _dead_job(session, ordinary, lane="notify")
@@ -498,9 +456,7 @@ def _lane_health(session):
 
 
 def test_the_failure_is_written_to_the_log_before_the_row_goes(api, caplog):
-    """**The row goes, the evidence does not.** Discarding without recording would trade a noisy
-    panel for a missing record, which is the worse of the two — there is no debugger on the box and
-    the log is the only place an incident survives."""
+    """The row goes, the evidence does not."""
     import logging
 
     http, session, operator, ordinary, sign_in = api
@@ -526,17 +482,7 @@ def test_an_ordinary_user_cannot_discard_anything(api):
 
 
 def test_the_live_pipeline_pushes_a_usable_frame(api):
-    """**A stream that connects and never sends is indistinguishable from a healthy quiet platform**
-    — and that is the failure worth a test here, not a 500.
-
-    So this asserts the *presence* of a frame with the stages in it (CLAUDE.md §2), and that it is
-    terminated: a server-sent event without its blank line sits in the browser's buffer forever and
-    the page shows the previous numbers while appearing connected.
-
-    Driven through the response's own iterator rather than an HTTP client, because the endpoint is
-    an endless generator: a test client would hold the connection until the server's own cap expired
-    and the suite would sit there for five minutes.
-    """
+    """A stream that connects and never sends is indistinguishable from a healthy quiet platform."""
     import asyncio
     import json
 
@@ -548,16 +494,14 @@ def test_the_live_pipeline_pushes_a_usable_frame(api):
 
     async def one_frame():
         async def receive():
-            # Never resolves. `is_disconnected` cancels its own read immediately, so this only has
-            # to exist — but a stream that is still connected is the case worth exercising.
+            # Never resolves.
             await asyncio.Event().wait()
 
         request = Request({"type": "http", "method": "GET", "path": "/admin/pipeline/stream",
                            "headers": [], "query_string": b""}, receive)
         response = await pipeline_stream(request, db=session, admin=operator, hours=1)
         assert response.media_type == "text/event-stream"
-        # Proxies buffer an event stream into uselessness without this, and the symptom is a page
-        # that updates in bursts of a minute rather than a stream that fails.
+        # Proxies buffer an event stream into uselessness without this.
         assert response.headers["x-accel-buffering"] == "no"
         async for chunk in response.body_iterator:
             return chunk
@@ -573,12 +517,9 @@ def test_the_live_pipeline_pushes_a_usable_frame(api):
 
 
 def test_the_live_pipeline_is_not_public(api):
-    """The same guard every admin route has. A stream is easy to add outside the router, and this
-    one carries every account's queue depth."""
+    """The same guard every admin route has."""
     http, _, _, ordinary, sign_in = api
     sign_in(http, ordinary)
 
-    # Authorisation is decided before the first frame, so this returns a plain 403 and never opens
-    # a stream the client would then have to wait out.
-    # 404 rather than 403, like every other admin route: a 403 confirms the endpoint exists.
+    # Authorisation is decided before the first frame.
     assert http.get("/admin/pipeline/stream").status_code == 404

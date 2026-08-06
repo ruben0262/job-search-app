@@ -1,20 +1,4 @@
-"""The `docgen` lane worker.
-
-    python -m services.docgen
-
-One queue job is one CV: two Claude calls at most, two Chrome compiles, one Telegram upload, and a
-scratch directory that does not outlive the job. ~90–130 s, which is why this lane has its own
-claim timeout and its own container.
-
-**The credential is decrypted here and nowhere else in this service.** `SecretStore.use` holds it
-for the duration of the build and `redacting` covers the traceback an SDK raises on a bad key —
-the same discipline the labeller follows, for the same reason: an API key in a log file is a key
-that has to be rotated.
-
-**A build that cannot succeed dead-letters immediately.** No confirmed profile, no description on
-the posting, no Telegram chat, hidden content in the output: none of those change on a retry, and
-retrying spends the user's money five times to arrive at the same refusal.
-"""
+"""The `docgen` lane worker."""
 from __future__ import annotations
 
 import logging
@@ -35,18 +19,13 @@ from services.docgen.run import NotBuildable, run_build
 
 logger = logging.getLogger(__name__)
 
-# Longer than the notifier's 20s: this is a multi-megabyte upload rather than a text message, and a
-# timeout here means a built CV that the user never receives.
+# Longer than the notifier's 20s: this is a multi-megabyte upload rather than a text message.
 UPLOAD_TIMEOUT_SEC = 120.0
 
 
 def send_document(token: str, chat_id: str, content: bytes, filename: str,
                   caption: str = "") -> None:
-    """Upload one PDF to one chat. Raises with Telegram's own description.
-
-    `sendDocument` rather than `sendMessage` with a link: there is no link. The document exists for
-    the length of this call and is deleted afterwards (D9), so the upload is the delivery.
-    """
+    """Upload one PDF to one chat."""
     response = httpx.post(
         f"https://api.telegram.org/bot{token}/sendDocument",
         data={"chat_id": chat_id, "caption": caption[:1024]},
@@ -62,8 +41,7 @@ def handle(session, job: QueueJob) -> None:
     job_id = payload.get("job_id")
     if not isinstance(job_id, int):
         raise Terminal(f"docgen job {job.id} carries no corpus job id")
-    # `cv` unless the tap said otherwise. Defaulted rather than required so a job enqueued before
-    # the cover button existed still builds the document it was queued for.
+    # `cv` unless the tap said otherwise.
     kind = payload.get("kind") or "cv"
 
     store = SecretStore(session)
@@ -89,15 +67,7 @@ def handle(session, job: QueueJob) -> None:
 
 @contextmanager
 def _http_for(store: SecretStore, user_id):
-    """An HTTP client for the pre-build freshness check, on this user's own proxy if they have one.
-
-    Their proxy, or nothing — never the shared IP. The check only matters for LinkedIn, which
-    blocks datacenter addresses, so an unproxied client simply learns nothing and the build goes
-    ahead. That is the correct outcome: a missing credential must not stop a user getting their CV.
-
-    The credential lives inside `store.use` for the duration of the call and the client is closed
-    with it, so the proxy URL never outlives the request it authorised.
-    """
+    """An HTTP client for the pre-build freshness check, on this user's own proxy if they have one."""
     with store.use(user_id, "proxy") as secret:
         if secret is None:
             with httpx.Client(timeout=25, follow_redirects=True) as client:
@@ -111,28 +81,17 @@ def _http_for(store: SecretStore, user_id):
 
 def _build(session, job: QueueJob, client, bot_token: str, *, job_id: int, kind: str,
            http=None):
-    """The failure taxonomy, in one place.
-
-    `CompileFailed` is deliberately *not* terminal: Chrome runs out of memory on a busy box and
-    succeeds on the next attempt, which is the whole reason this service has a memory limit and a
-    retry budget rather than one or the other.
-    """
+    """The failure taxonomy, in one place."""
     try:
         return run_build(session, job.user_id, job_id, client=client,
                          send_document=send_document, token=bot_token, kind=kind, http=http)
     except NotBuildable as exc:
-        # **Not a failure, and it must not be recorded as one.** The account cannot build documents
-        # yet — no finished profile, no base CV — which is a state only the user can change. It was
-        # `raise Terminal(...)`, so it dead-lettered onto the operator's health page and the user,
-        # who had just been told "it will arrive shortly", heard nothing (ROADMAP 6aw).
-        #
-        # The tap is refused at the button now; this is the race where setup changed in between.
+        # Not a failure, and it must not be recorded as one.
         notifylib.notify(session, job.user_id, notifylib.DOCUMENT_NOT_READY, str(exc))
         logger.info("docgen: %s cannot build yet — %s", job.user_id, exc)
         return None
     except LlmError as exc:
-        # Their credential, and the operator should see a run of these — a key that stopped working
-        # looks identical to a key that was never right, and both need somebody to notice.
+        # Their credential, and the operator should see a run of these.
         notifylib.notify(session, job.user_id, notifylib.DOCUMENT_NOT_READY,
                          "Your Claude credential could not build this document.")
         raise Terminal(str(exc)) from exc

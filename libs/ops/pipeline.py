@@ -1,40 +1,4 @@
-"""Where the jobs are right now — the shape of the pipeline rather than its speed.
-
-**The question the latency page cannot answer.** That one says how long each handoff took for
-postings that already made it through; this says how many are sitting at each stage *at this
-moment*, and whether anything is piling up.
-
-Every outage this platform has had was a stage quietly stopping while everything around it looked
-fine: six hours of ingestion lost to a filter nobody could see running, LinkedIn dead for five hours
-behind a timer that could not fire, a notify lane nothing fed, and — the day this was written — 229
-rows stuck awaiting an embed because a batch that could never finish inside its timeout kept the
-backlog that made it too big. In every case the number existed and reading it meant knowing which
-query to run.
-
-## Every number is a count of rows, not a derived estimate
-
-That is the whole discipline of this module. `waiting` is `SELECT count(*) WHERE <the condition the
-next stage actually reads>`, so it cannot say a stage is healthy while work sits in it. Where a
-number is genuinely unavailable it is `None` and the page shows a dash — never a zero, because zero
-is a claim and a dash is an admission.
-
-## Verdicts are about backlog age, not size
-
-A thousand rows moving through in a minute is fine and forty stuck for a day is not, so the colour
-comes from **how long the oldest waiting row has waited**, against the tick that is supposed to
-clear it. A stage with nothing waiting is green whatever its throughput.
-
-**Delivery is the exception, and still is after the cap was removed.** A queue there is a run that
-has not got to the end of its list yet — sending is paced at `send_gap_seconds`, which is Telegram's
-rule rather than ours, so a momentary backlog is arithmetic and not a fault. What is genuinely wrong
-is a posting the model matched, that nobody was ever shown, that is now too old to send: work the
-platform did and threw away. That is what colours this row, and nothing else does.
-
-Before 2026-08-06 that number was structural — `items_per_run` defaulted to 10, which is 960 a day
-against a match rate above it, so the tail expired by design. With the ceiling gone and a run
-re-arming itself the moment it runs out of claim, a non-zero count here now means something is
-actually stuck.
-"""
+"""Where the jobs are right now — the shape of the pipeline rather than its speed."""
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
@@ -48,10 +12,7 @@ from libs.scoring.thresholds import cutoff_for
 from libs.settings import PLATFORM_TICK_MIN
 from libs.tenant.filters import UserFilters, candidate_conditions
 
-# How long a row may sit at a stage before the colour changes, as multiples of the tick that is
-# meant to clear it. **Derived from the tick rather than chosen**: the harvest runs every
-# `PLATFORM_TICK_MIN`, so anything still waiting after two of them was not picked up by a pass that
-# should have taken it, and after eight the stage is not keeping up at all.
+# How long a row may sit at a stage before the colour changes, as multiples of its tick.
 AMBER_TICKS = 2
 RED_TICKS = 8
 
@@ -63,34 +24,18 @@ class Stage:
     key: str
     label: str
     what: str
-    # How many rows entered this stage in the window. `None` where the stage keeps no timestamp of
-    # its own — a dash on the page, never a zero.
+    # How many rows entered this stage in the window.
     entered: int | None
-    # How many are sitting in it, waiting for the next step to take them. **`None`, not 0, where the
-    # stage has no queue at all**: gathering and storing are one statement, so there is no moment at
-    # which a posting is between them, and a confident zero there is the same lie as a confident
-    # zero anywhere else on this page.
+    # How many are sitting in it, waiting for the next step to take them.
     waiting: int | None
     # How long the oldest of those has waited, in minutes.
     oldest_min: float | None
-    # **Matched, never sent, and now too old to send** — work the platform did and threw away. Only
-    # delivery can produce this, because it is the only stage with a deliberate rate cap in front of
-    # it. `None` everywhere else, and that is a different statement from zero.
+    # Matched, never sent, and now too old to send — work the platform did and threw away.
     expired: int | None = None
 
     @property
     def verdict(self) -> str:
-        """green, amber or red.
-
-        **Age, not size**, for every stage that drains as fast as it can — a thousand rows moving
-        through is healthy and forty stuck for a day is not.
-
-        Delivery is judged differently: sending is paced at Telegram's own rate, so a queue there
-        is a run partway through its list rather than a stage that has stopped, and an age-based
-        colour would fire on healthy behaviour. What is not healthy is a posting the model matched,
-        that nobody was ever shown, that is now too old to send. That is work lost, which is the
-        same bar `ERROR` is held to (CLAUDE.md §8), so it is the only thing that colours this row.
-        """
+        """green, amber or red."""
         if self.expired is not None:
             return "down" if self.expired else "ok"
         if not self.waiting or self.oldest_min is None:
@@ -121,29 +66,14 @@ def _entered(session: Session, column, since) -> int:
 
 
 def pipeline(session: Session, *, hours: int = 24) -> dict:
-    """Every stage, with what is in it. One page's worth of truth.
-
-    Bounded by the number of stages rather than by the corpus: every count below is an indexed
-    predicate, and the two per-user ones are a loop over accounts, which is the point of an
-    invite-only launch.
-    """
+    """Every stage, with what is in it."""
     since = datetime.now(UTC) - timedelta(hours=hours)
 
-    # **Not trimmed.** A trimmed row has had its description and vector dropped deliberately after
-    # 90 days; counting it as "awaiting describe" forever would make the retention sweep look like
-    # a backlog.
+    # Not trimmed.
     live = CorpusJob.trimmed_at.is_(None)
 
     stages = [
-        # **One row, because it is one statement.** Gathering and storing were drawn as two stages
-        # and they are not: `fetched_at` and `first_seen_at` are set by the same `INSERT`, so no
-        # posting is ever between them and the two counts can only ever be equal — except across
-        # 2026-08-04, before which `fetched_at` did not exist, where the page showed *fewer
-        # gathered than stored*. An impossible ordering, presented without comment, produced
-        # entirely by a row that was measuring its neighbour (CLAUDE.md §6: can I not add it).
-        #
-        # Dedup is what would make them genuinely different, and it leaves no row behind to count —
-        # a rejected duplicate is visible in the harvest log and nowhere else.
+        # One row, because it is one statement.
         Stage("gather", "Gathered & stored",
               "A source answered with a link, and it survived dedup against four keys. One "
               "statement, so nothing is ever queued between the two.",
@@ -177,23 +107,11 @@ def pipeline(session: Session, *, hours: int = 24) -> dict:
 
 
 def lanes(session: Session, since: datetime) -> list[dict]:
-    """What the queue is doing right now, per lane.
-
-    **The stages say where postings are; this says whether anything is turning the handle.** They
-    fail independently: a stage can be empty because the work is done or because the worker feeding
-    it died, and only the lane tells them apart. It is also the one place a *failure* is visible —
-    a dead-lettered job is work abandoned, and the stage counts alone would show it as a queue that
-    simply never drains.
-
-    `running` is the number that moves second to second, which is what makes the fifteen-minute tick
-    watchable rather than inferred from a count that jumps.
-    """
+    """What the queue is doing right now, per lane."""
     rows = session.execute(
         select(QueueJob.lane,
                func.count().filter(QueueJob.state == "ready").label("ready"),
-               # **`claimed`, not `running`.** The queue has no state called `running`, so this counted
-               # zero forever — a live view whose one moving number could never move. Shipped
-               # and caught the same afternoon, by reading it against the table.
+               # `claimed`, not `running`.
                func.count().filter(QueueJob.state == "claimed").label("running"),
                func.count().filter(QueueJob.state == "dead").label("dead"),
                func.count().filter((QueueJob.state == "done")
@@ -204,13 +122,7 @@ def lanes(session: Session, since: datetime) -> list[dict]:
 
 
 def _per_user_stages(session: Session, since) -> list[Stage]:
-    """Scoring and delivery, summed across accounts.
-
-    **Both are per user and the totals are sums, not counts of distinct postings.** One corpus row
-    waiting to be scored for three accounts is three units of work, and presenting it as one would
-    understate the queue by exactly the number of users — which is the number that matters as this
-    grows.
-    """
+    """Scoring and delivery, summed across accounts."""
     scored_entered = session.scalar(
         select(func.count()).select_from(UserJobState)
         .where(UserJobState.scored_at.is_not(None), UserJobState.scored_at >= since)) or 0
@@ -226,11 +138,7 @@ def _per_user_stages(session: Session, since) -> list[Stage]:
         conditions = candidate_conditions(filters)
         cutoff = cutoff_for(session, user.id)
 
-        # **The count and the age must ask the same question.** They did not: the count carried the
-        # account's filters and the age did not, so the page reported 142 waiting and an oldest of
-        # 138 hours — a number belonging to a row the count had excluded. Two answers to one
-        # question, which is the defect this project has shipped more than any other (CLAUDE.md §5).
-        # They now share a condition list for exactly that reason.
+        # The count and the age must ask the same question.
         unscored = (CorpusJob.embedding.is_not(None),
                     UserJobState.scored_model_version.is_(None)
                     | (UserJobState.scored_model_version != user.model_version),
@@ -239,16 +147,14 @@ def _per_user_stages(session: Session, since) -> list[Stage]:
                    .outerjoin(UserJobState, (UserJobState.job_id == CorpusJob.id)
                               & (UserJobState.user_id == user.id)))
         to_score += session.scalar(scoring.where(*unscored)) or 0
-        # **Was never computed at all**, so this stage could not turn amber or red whatever was
-        # queued behind it — the one colour that cannot fire is the one nobody notices is missing.
+        # Was never computed, so this stage could not turn amber or red whatever was queued behind it.
         oldest_to_score = _oldest(oldest_to_score, session.scalar(
             select(func.min(CorpusJob.first_seen_at))
             .outerjoin(UserJobState, (UserJobState.job_id == CorpusJob.id)
                        & (UserJobState.user_id == user.id))
             .where(*unscored)))
 
-        # **What delivery would actually consider**, which is the same pool `pending_feed` draws
-        # from — score above this account's own tuned cutoff, never sent, and a candidate row.
+        # What delivery would consider: above this account's cutoff, never sent, and a candidate row.
         waiting = (UserJobState.user_id == user.id,
                    UserJobState.notified_at.is_(None),
                    UserJobState.score.is_not(None),
@@ -261,15 +167,7 @@ def _per_user_stages(session: Session, since) -> list[Stage]:
             .join(CorpusJob, CorpusJob.id == UserJobState.job_id)
             .where(*waiting, *conditions)))
 
-        # **The same pool, minus the freshness condition, and that is the whole measurement.** A
-        # posting this account matched, that was never sent, and that is now too old to send. The
-        # platform embedded it, scored it and ranked it, and nobody was ever shown it.
-        #
-        # A queue in front of delivery says nothing on its own — sending is paced at Telegram's
-        # rate and a run works through its list. This says the queue never drained *at all* before
-        # its contents went stale, which is the condition that was structural until the per-run cap
-        # was removed: measured live on 2026-08-06 at 576 postings in 48 hours for one account,
-        # against a ceiling of 960 a day.
+        # The same pool, minus the freshness condition, and that is the whole measurement.
         expired += session.scalar(
             pending.where(*waiting, CorpusJob.closed_at.is_(None),
                           func.coalesce(CorpusJob.posted_at, CorpusJob.first_seen_at)
@@ -289,12 +187,7 @@ def _per_user_stages(session: Session, since) -> list[Stage]:
 
 
 def _oldest(current: datetime | None, candidate: datetime | None) -> datetime | None:
-    """The earlier of two timestamps, ignoring absent ones.
-
-    Kept as timestamps and converted to an age once at the end. Converting per account and then
-    taking a maximum works, but only while every account is measured in the same instant — and the
-    loop is exactly the place where that stops being true as accounts are added.
-    """
+    """The earlier of two timestamps, ignoring absent ones."""
     if candidate is None:
         return current
     if candidate.tzinfo is None:

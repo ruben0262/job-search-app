@@ -1,17 +1,4 @@
-"""T5, T6, T7 — the queue's three release-blocking properties.
-
-Every test here is one the plan calls out as a failure that is silent in production:
-
-- **T7 claim-once.** Two workers, one job. A double claim is a duplicate notification or a duplicate
-  retrain, and nothing reports it.
-- **T6 fairness.** One user with a backlog must not occupy the trainer.
-- **T5 restart safety.** A worker killed mid-job must cost one retry, never a lost job — and a
-  user's feed must not stall forever because one delivery failed.
-
-Concurrency is exercised with two real connections, not by asserting on the SQL string. `SKIP
-LOCKED` either works against Postgres or it does not, and the version that reads correctly while
-double-claiming is exactly the one worth catching.
-"""
+"""T5, T6, T7 — the queue's three release-blocking properties."""
 from __future__ import annotations
 
 import os
@@ -64,11 +51,7 @@ def _user(s, **kw) -> User:
 # ── T7: claim-once, and lanes do not leak into each other ─────────────────────────────────────
 
 def test_two_concurrent_workers_never_claim_the_same_job():
-    """The property `SKIP LOCKED` exists for. Two real connections, because a single-session test
-    would pass against a broken query — the row is not contended.
-
-    A double claim is a duplicate notification or a duplicate retrain. Nothing reports it.
-    """
+    """The property `SKIP LOCKED` exists for."""
     if not os.environ.get("DATABASE_URL"):
         pytest.skip("needs Postgres")
     engine = create_engine(os.environ["DATABASE_URL"])
@@ -95,8 +78,7 @@ def test_two_concurrent_workers_never_claim_the_same_job():
 
 
 def test_claiming_one_lane_never_returns_another_lanes_job(ctx):
-    """Lane isolation. Separate worker pools are the whole design — a `notify` worker picking up a
-    training job would block the feed behind a CPU-bound fit (`SCHEDULER_PLAN.md` §1)."""
+    """Lane isolation."""
     user = _user(ctx)
     enqueue(ctx, "train", user.id, dedup_key="retrain")
     ctx.flush()
@@ -107,8 +89,7 @@ def test_claiming_one_lane_never_returns_another_lanes_job(ctx):
 
 
 def test_a_second_identical_job_collapses_into_the_pending_one(ctx):
-    """The debounce, enforced by the database rather than by application logic that can race. Five
-    labels arriving at once must produce exactly one retrain."""
+    """The debounce, enforced by the database rather than by application logic that can race."""
     user = _user(ctx)
     first = enqueue(ctx, "train", user.id, dedup_key="retrain")
     ctx.flush()
@@ -119,8 +100,7 @@ def test_a_second_identical_job_collapses_into_the_pending_one(ctx):
 
 
 def test_a_new_job_can_be_enqueued_once_the_previous_one_finished(ctx):
-    """The collapse index is partial on the live states. If it covered `done` too, a user could
-    never be retrained twice."""
+    """The collapse index is partial on the live states."""
     user = _user(ctx)
     enqueue(ctx, "train", user.id, dedup_key="retrain")
     ctx.flush()
@@ -142,8 +122,7 @@ def test_jobs_without_a_dedup_key_are_not_collapsed(ctx):
 # ── T5: restart safety ────────────────────────────────────────────────────────────────────────
 
 def test_an_expired_claim_returns_to_ready(ctx):
-    """A worker killed mid-job costs one retry, never a lost job. Without the sweeper the row stays
-    `claimed` forever and that user's lane is silently stuck."""
+    """A worker killed mid-job costs one retry, never a lost job."""
     user = _user(ctx)
     enqueue(ctx, "notify", user.id)
     ctx.flush()
@@ -161,8 +140,7 @@ def test_an_expired_claim_returns_to_ready(ctx):
 
 
 def test_attempts_increment_on_claim_so_a_dying_worker_cannot_retry_forever(ctx):
-    """A counter that only moved on a *reported* failure would never advance for a worker that is
-    killed before it can report."""
+    """A counter that only moved on a *reported* failure would never advance for a worker that is killed."""
     user = _user(ctx)
     enqueue(ctx, "notify", user.id)
     ctx.flush()
@@ -177,8 +155,7 @@ def test_a_repeatedly_failing_job_dead_letters_rather_than_retrying_forever(ctx)
     states = []
     for _ in range(5):
         job = claim(ctx, "notify", "w")
-        # `retry_in_min=0` so the retry is immediately claimable — the backoff is not what this test
-        # is about, and waiting for it would mean sleeping.
+        # `retry_in_min=0` so the retry is immediately claimable.
         states.append(fail(ctx, job, "upstream 500", retry_in_min=0))
         ctx.flush()
 
@@ -187,8 +164,7 @@ def test_a_repeatedly_failing_job_dead_letters_rather_than_retrying_forever(ctx)
 
 
 def test_a_terminal_condition_dead_letters_immediately(ctx):
-    """A revoked Telegram token will never succeed. Spending five attempts on it wastes the retries
-    and then goes quiet anyway — the worst of both (`SCHEDULER_PLAN.md` §6, G6)."""
+    """A revoked Telegram token will never succeed."""
     user = _user(ctx)
     enqueue(ctx, "notify", user.id)
     ctx.flush()
@@ -203,8 +179,7 @@ def test_a_terminal_condition_dead_letters_immediately(ctx):
 # ── T6: fairness ──────────────────────────────────────────────────────────────────────────────
 
 def test_one_user_with_a_backlog_cannot_occupy_the_trainer(ctx):
-    """Round-robin by last completion. Under FIFO, a user who enqueued first is served first
-    forever, and a second user's model simply never retrains."""
+    """Round-robin by last completion."""
     hog, other = _user(ctx), _user(ctx)
 
     # The hog has been served recently; the other user never has.
@@ -223,8 +198,7 @@ def test_one_user_with_a_backlog_cannot_occupy_the_trainer(ctx):
 
 
 def test_fifo_lanes_stay_fifo(ctx):
-    """`notify` and `docgen` are naturally spread, so the fairness subquery would only add latency.
-    Ordering there must remain oldest-first."""
+    """`notify` and `docgen` are naturally spread, so the fairness subquery would only add latency."""
     user = _user(ctx)
     first = enqueue(ctx, "docgen", user.id, payload={"job_id": 1})
     ctx.flush()
@@ -237,8 +211,7 @@ def test_fifo_lanes_stay_fifo(ctx):
 
 
 def test_a_delayed_job_is_not_claimable_yet(ctx):
-    """The debounce window. A retrain enqueued with a 10-minute delay must not be picked up
-    immediately, or the burst it exists to collapse is retrained once per label anyway."""
+    """The debounce window."""
     user = _user(ctx)
     enqueue(ctx, "train", user.id, dedup_key="retrain", delay_min=10)
     ctx.flush()
@@ -248,9 +221,7 @@ def test_a_delayed_job_is_not_claimable_yet(ctx):
 # ── the notify dispatcher ─────────────────────────────────────────────────────────────────────
 
 def test_the_feed_re_arms_at_enqueue_not_at_completion(ctx):
-    """The single most likely silent failure on the platform: a user's feed stops forever because
-    one delivery errored. `next_run_at` advances when the job is *created*, so a failed or slow
-    delivery cannot stall the next one (`SCHEDULER_PLAN.md` §4)."""
+    """The single most likely silent failure on the platform."""
     user = _user(ctx, active=True, status="active", telegram_status="connected",
                  )
     ctx.execute(text("UPDATE users SET next_run_at = now() - interval '1 minute' WHERE id = :i"),
@@ -286,18 +257,7 @@ def test_a_dormant_user_is_not_enqueued(ctx):
 
 
 def test_an_account_that_has_never_been_dispatched_is_due_now(ctx):
-    """**A missing schedule means due, not never.**
-
-    Nothing on this platform arms `next_run_at` — the dispatcher only ever advances one that is
-    already set — so requiring it to be non-NULL made a new account permanently silent rather than
-    late. That is not hypothetical: the second account on the platform connected its bot, scored
-    15,094 postings, and sat on 73 undelivered matches with no queue entry ever created, because it
-    had no first slot and nothing existed to give it one.
-
-    Fail-open is the only safe direction here. A missing schedule that produces a delivery is a
-    delivery somebody can see; a missing schedule that produces nothing is an account nobody hears
-    from and no worker is failing over.
-    """
+    """A missing schedule means due, not never."""
     user = _user(ctx, active=True, status="active", telegram_status="connected")
     assert user.next_run_at is None
 
@@ -305,15 +265,13 @@ def test_an_account_that_has_never_been_dispatched_is_due_now(ctx):
     ctx.flush()
     ctx.refresh(user)
 
-    # And having been dispatched once, it is on the cadence like everybody else rather than firing
-    # again on the next pass.
+    # Dispatched once, it is back on the cadence rather than firing again immediately.
     assert user.next_run_at is not None
     assert dispatch_due_notifications(ctx) == 0
 
 
 def test_an_unscheduled_account_still_obeys_every_other_gate(ctx):
-    """Reading NULL as "due" must not become "due regardless of anything else" -- a dormant account
-    or a revoked bot is exactly as ineligible unscheduled as it is scheduled."""
+    """Reading NULL as "due" must not become "due regardless of anything else"."""
     _user(ctx, active=True, status="dormant", telegram_status="connected")
     _user(ctx, active=True, status="active", telegram_status="broken")
     _user(ctx, active=False, status="active", telegram_status="connected")
@@ -322,9 +280,7 @@ def test_an_unscheduled_account_still_obeys_every_other_gate(ctx):
 
 
 def test_every_lane_has_a_claim_timeout():
-    """**A lane missing from the map crashes its worker on the first sweep**, not on the first job —
-    so the container restarts forever and the lane never drains. `setup` was added without one and
-    did exactly that (2026-07-30). The two lists must agree by construction, not by memory."""
+    """A lane missing from the map crashes its worker on the first sweep, not on the first job."""
     from libs.db.models.queue import CLAIM_TIMEOUT_MIN, LANES
 
     assert set(LANES) == set(CLAIM_TIMEOUT_MIN), (
@@ -332,14 +288,7 @@ def test_every_lane_has_a_claim_timeout():
 
 
 def test_a_finished_job_records_when_it_actually_finished(ctx):
-    """**`now()` is transaction start time in Postgres**, and a worker claims and finishes inside
-    one transaction -- so `finished_at` and `claimed_at` came back identical to the microsecond and
-    every lane reported a run time of exactly zero.
-
-    That is not a cosmetic error in a dashboard: run time is how you tell a busy worker from slow
-    work, and those are fixed in completely different places. A column that always says zero is
-    worse than no column, because somebody will read it.
-    """
+    """`now()` is transaction start time in Postgres."""
     import time
     import uuid
 
@@ -350,8 +299,7 @@ def test_a_finished_job_records_when_it_actually_finished(ctx):
     ctx.add(owner)
     ctx.flush()
 
-    # The fixture rolls back rather than commits, so this flushes: `clock_timestamp()` advances
-    # within a transaction, which is the whole property under test.
+    # The fixture rolls back rather than commits, so this flushes.
     enqueue(ctx, "score", owner.id, payload={})
     ctx.flush()
 

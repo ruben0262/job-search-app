@@ -1,10 +1,4 @@
-"""Settings the operator owns.
-
-Key-value rather than a column per setting: adding a source's freshness window should not be a
-migration, and the set of things an operator tunes will keep growing. The keys are validated in
-`libs.settings` against a known list, so the looseness of JSONB does not become a typo that reads
-as "unset".
-"""
+"""Settings the operator owns."""
 from __future__ import annotations
 
 from sqlalchemy import String

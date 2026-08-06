@@ -1,9 +1,4 @@
-"""Reading and writing one user's profile files.
-
-Separate from the resolver in `__init__` for the same reason `libs/tenant/repository.py` is separate
-from the renderers: the assembly rules are pure functions that a test can drive without a database,
-and everything that touches a session lives here where `user_id` is required on every call.
-"""
+"""Reading and writing one user's profile files."""
 from __future__ import annotations
 
 import logging
@@ -46,11 +41,7 @@ class ProfileFiles:
             .where(UserProfileFile.user_id == self._user, UserProfileFile.name == name))
 
     def listing(self) -> list[dict]:
-        """What the setup agent and the file panel both need: names, kinds, filled state.
-
-        Deliberately without `content` — the agent reads a file when it needs one, and shipping
-        every byte of eight files into a tool result is how a chat session runs out of context.
-        """
+        """What the setup agent and the file panel both need: names, kinds, filled state."""
         rows = self._s.execute(
             select(UserProfileFile.name, UserProfileFile.kind, UserProfileFile.filled,
                    UserProfileFile.updated_at)
@@ -59,16 +50,7 @@ class ProfileFiles:
         return [{"name": n, "kind": k, "filled": f, "updated_at": u} for n, k, f, u in rows]
 
     def write(self, name: str, content: str, *, kind: str | None = None) -> bool:
-        """Store a file. Returns whether this edit is **scoring-relevant**.
-
-        The return value is the whole retraining policy in one boolean: a `True` means the user's
-        labels now answer a slightly different question, and the caller advances the counter that
-        eventually asks them whether to retrain. It never invalidates anything here — that is a
-        decision with a real cost, and it belongs to the user (`REBUILD_PLAN.md`).
-
-        **Does not commit** — the caller owns the transaction, so a file written by the setup agent
-        and the message that announced it land together.
-        """
+        """Store a file."""
         existing_kind = self._s.scalar(
             select(UserProfileFile.kind)
             .where(UserProfileFile.user_id == self._user, UserProfileFile.name == name))
@@ -86,15 +68,8 @@ class ProfileFiles:
         return name in SCORING_RELEVANT_FILES
 
     def seed(self) -> int:
-        """Give a new account the scaffolds. Existing rows are left alone.
-
-        `DO NOTHING` rather than an upsert on purpose: re-seeding must never overwrite a profile
-        somebody has already filled in, and a seed call is exactly the sort of thing that gets run
-        twice during a migration.
-        """
-        # Counted with RETURNING rather than `rowcount`: for `ON CONFLICT DO NOTHING` the driver
-        # reports -1 here, so a first seed of eight files announced "-8 scaffolds". A count nobody
-        # can trust is worse than no count, and this one is printed to an operator.
+        """Give a new account the scaffolds."""
+        # Counted with RETURNING: for `ON CONFLICT DO NOTHING` the driver reports -1 for `rowcount`.
         written = 0
         for name, kind, content in seed_files():
             inserted = self._s.scalar(
@@ -119,23 +94,11 @@ class ProfileFiles:
         return True
 
     def missing_setup(self) -> list[str]:
-        """Setup files still absent or unfilled. Empty means the setup agent finished its job.
-
-        Stricter than `is_ready`, deliberately: generating a document needs `context.md`, while
-        *training* commits an artifact that scores everything the user will ever be shown, and that
-        should not be built from a half-written profile.
-        """
+        """Setup files still absent or unfilled."""
         return missing_setup(self.all())
 
     def repair_filled_flags(self) -> list[str]:
-        """Recompute `filled` from content. Returns the names whose flag was wrong.
-
-        **`filled` is derived data in a column, which means it can drift from the thing it
-        describes.** It did: on 2026-07-31 an account held four files of real, marker-free content —
-        13k to 32k characters each — every one flagged unfilled, which silently denied that account
-        document generation. Recomputing is cheap and the content is the authority, so a drifted
-        flag is a repairable inconsistency rather than a support ticket.
-        """
+        """Recompute `filled` from content."""
         repaired = []
         for row in self._s.scalars(
                 select(UserProfileFile).where(UserProfileFile.user_id == self._user)):

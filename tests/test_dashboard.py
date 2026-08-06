@@ -1,16 +1,4 @@
-"""The dashboard and the feed.
-
-Two properties carry the weight here, and both are about not lying to the user:
-
-- **the feed says which stage ranked it.** Before a model exists it is keyword matching, and
-  presenting that as "your model" would make the product look broken once the real model arrives
-  and the ordering changes completely;
-- **a stale model is named, not greyed out.** "Your profile changed after this model was trained"
-  is a sentence somebody can act on.
-
-The rest is aggregation, and aggregation is worth one test that the numbers come from where they
-claim to.
-"""
+"""The dashboard and the feed."""
 from __future__ import annotations
 
 import os
@@ -114,8 +102,7 @@ def test_an_account_without_a_model_is_told_why_in_words(api):
 
 
 def test_a_model_from_before_the_last_profile_change_is_stale(api):
-    """The one-directional coupling made visible: a profile edit invalidates the artifact, and the
-    user needs to know that is why their feed stopped improving."""
+    """The one-directional coupling made visible: a profile edit invalidates the artifact."""
     http, session, user, _ = api
     _model(session, user, generation=1)
     assert http.get("/dashboard").json()["model"]["servable"] is True
@@ -129,11 +116,7 @@ def test_a_model_from_before_the_last_profile_change_is_stale(api):
 
 
 def test_a_broken_telegram_token_is_an_error_banner_not_a_trip_back_to_signup(api):
-    """It stops delivery while everything else keeps working, so from the user's side it looks like
-    "no jobs matched" rather than a broken connection.
-
-    And it must **not** send a finished account back to the onboarding wizard: that would hide the
-    dashboard which is the only place explaining what broke."""
+    """It stops delivery while everything else keeps working."""
     http, session, user, _ = api
     user.telegram_status = "broken"
     session.flush()
@@ -145,17 +128,13 @@ def test_a_broken_telegram_token_is_an_error_banner_not_a_trip_back_to_signup(ap
 # ── the feed ──────────────────────────────────────────────────────────────────────────────────
 
 def test_the_feed_says_when_it_is_only_keyword_matching(api):
-    """Presenting stage 0 as "your model" would make the product look broken when the real model
-    arrives and the ordering changes completely."""
+    """Presenting stage 0 as "your model" would make the product look broken when the real model arrives."""
     http, _, _, _ = api
     body = http.get("/feed").json()
 
     assert body["stage"] == "rules"
     assert body["approximate"] is True
-    # **A set, not a sequence.** Both titles carry the keyword and nothing else separates them now
-    # that location has left the rules score (2026-08-04), so they genuinely tie — and asserting one
-    # arbitrary tie-break order would be testing how the query happens to sort rather than what the
-    # feed is for.
+    # A set, not a sequence.
     assert {job["title"] for job in body["jobs"]} == {"Backend Engineer",
                                                       "Senior Backend Engineer"}
 
@@ -177,17 +156,14 @@ def test_a_servable_model_takes_over_the_ranking(api):
     session.add(UserJobState(user_id=user.id, job_id=jobs[0].id, score=10.0))
     session.flush()
 
-    # `min_score=0` because the point here is the *ordering*, and the 10.0 job is deliberately
-    # below the delivery cutoff the table now defaults to.
+    # `min_score=0` because the point here is the *ordering*.
     body = http.get("/feed?min_score=0").json()
     assert body["stage"] == "personal"
     assert [job["title"] for job in body["jobs"]] == ["Senior Backend Engineer", "Backend Engineer"]
 
 
 def test_the_table_defaults_to_the_score_that_reaches_telegram(api):
-    """**The corpus is shared and the harvest is broad**, so most of what is scored for any given
-    user is not for them. A page showing everything is a page of other people's jobs with a number
-    beside it — and the same threshold decides what reaches the channel, so the two agree."""
+    """The corpus is shared and the harvest is broad."""
     from libs.db.models import UserJobState
     from libs.scoring.thresholds import DEFAULT_CUTOFF
 
@@ -219,8 +195,7 @@ def test_a_dismissed_job_stays_out_of_both_feeds(api):
 
 
 def test_the_feed_does_not_carry_the_full_description(api):
-    """Up to 2,500 characters a job, and the list does not show it — 25 of them would be most of the
-    response for none of the value."""
+    """Up to 2,500 characters a job, and the list does not show it."""
     http, _, _, _ = api
     assert "description" not in http.get("/feed").json()["jobs"][0]
 
@@ -309,13 +284,7 @@ def test_the_dashboard_requires_signing_in(api):
 
 
 def test_two_jobs_that_score_the_same_are_ordered_newest_first(api):
-    """**Freshness is the tie-break.** The rules score is title plus description and nothing else
-    since location left it, so jobs matching on the same terms score identically — and an arbitrary
-    order is a feed that reshuffles itself for no reason a user can see.
-
-    An undated row loses the tie rather than winning it: not knowing when something was posted is
-    not evidence that it is new.
-    """
+    """Freshness is the tie-break."""
     from datetime import UTC, datetime, timedelta
 
     from libs.db.models import CorpusJob

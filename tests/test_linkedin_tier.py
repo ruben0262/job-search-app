@@ -1,13 +1,4 @@
-"""The per-user LinkedIn pass: who runs, whose credential, and when they run next.
-
-**This tier had no runner for four days and nothing said so.** The adapter, the lease, the
-governor and both scheduling columns all existed; the loop between them did not, so every LinkedIn
-row in the corpus shared one `first_seen_at` and "my feed is quiet" looked like a scoring problem.
-
-What is worth testing here is the orchestration, not the scraping: who is due, whose proxy is used,
-what happens when a lease is refused, and whether the next run is always scheduled. `gather` is
-injected, so none of it needs jobspy or a network.
-"""
+"""The per-user LinkedIn pass: who runs, whose credential, and when they run next."""
 from __future__ import annotations
 
 import os
@@ -36,8 +27,7 @@ CONFIG = {"sections": [{"keywords": ["python developer", "backend engineer"],
 
 @pytest.fixture(autouse=True)
 def _kek():
-    """A key, because `SecretStore` refuses to run without one — correctly, since the alternative
-    is a platform that silently degrades to storing credentials it cannot protect."""
+    """A key, because `SecretStore` refuses to run without one — correctly."""
     from libs.secrets import generate_key
     os.environ.setdefault("SECRETS_KEK", f"k1:{generate_key()}")
 
@@ -69,8 +59,7 @@ def _user(session, **kwargs) -> User:
 # ── who is due ────────────────────────────────────────────────────────────────────────────────
 
 def test_a_user_who_has_never_run_is_due(db):
-    """`NULL` means never, and never is exactly who should go next. Treating an unset column as
-    "not yet" would leave every new account permanently unscheduled."""
+    """`NULL` means never, and never is exactly who should go next."""
     user = _user(db, linkedin_next_run_at=None)
     assert user.id in [u.id for u in linkedin.due_users(db, now=NOW, limit=10)]
 
@@ -89,8 +78,7 @@ def test_an_inactive_user_is_never_due(db):
 
 
 def test_the_pass_is_bounded_by_the_concurrency_ceiling(db):
-    """The governor's ceiling exists so a hundred accounts do not hit LinkedIn at once from a
-    hundred residential IPs, which is what gets a proxy range blocked."""
+    """The governor's ceiling exists so a hundred accounts do not hit LinkedIn at once from a hundred."""
     for _ in range(6):
         _user(db, linkedin_next_run_at=None)
     assert len(linkedin.due_users(db, now=NOW, limit=4)) == 4
@@ -99,8 +87,7 @@ def test_the_pass_is_bounded_by_the_concurrency_ceiling(db):
 # ── whose queries ─────────────────────────────────────────────────────────────────────────────
 
 def test_the_queries_are_this_users_own(db):
-    """The shared cycle folds everyone's terms because the corpus is shared. Here one person pays,
-    so sending the folded set would spend their bandwidth on other users' jobs."""
+    """The shared cycle folds everyone's terms because the corpus is shared."""
     mine = _user(db)
     other = _user(db)
     db.execute(UserConfig.__table__.update()
@@ -125,8 +112,7 @@ def test_a_user_with_no_config_contributes_no_queries(db):
 # ── what happens when it runs ─────────────────────────────────────────────────────────────────
 
 def test_a_user_with_no_proxy_is_skipped_and_still_rescheduled(db):
-    """**Always rescheduled.** Leaving the column unset would re-attempt them on every tick, and
-    the tick is every fifteen minutes."""
+    """Always rescheduled."""
     user = _user(db, linkedin_next_run_at=None)
 
     report = linkedin.run_for_due_users(db, now=NOW, gather=lambda *a, **k: [])
@@ -138,8 +124,7 @@ def test_a_user_with_no_proxy_is_skipped_and_still_rescheduled(db):
 
 
 def test_the_next_run_respects_the_interval_floor(db):
-    """A user on a fifteen-minute digest does not get LinkedIn read ninety-six times a day: the
-    governor floors this tier at an hour because it is their bandwidth, not the platform's."""
+    """A user on a fifteen-minute digest does not get LinkedIn read ninety-six times a day."""
     from services.harvester.governor import LINKEDIN_MIN_INTERVAL_MIN
 
     user = _user(db, linkedin_next_run_at=None, linkedin_interval_min=15)
@@ -152,8 +137,7 @@ def test_the_next_run_respects_the_interval_floor(db):
 
 
 def test_one_users_failure_does_not_stop_the_pass(db):
-    """One account's LinkedIn breaking is not the tier breaking — the same contract every shared
-    source adapter has."""
+    """One account's LinkedIn breaking is not the tier breaking."""
     _user(db, linkedin_next_run_at=None)
     _user(db, linkedin_next_run_at=None)
 
@@ -165,8 +149,7 @@ def test_one_users_failure_does_not_stop_the_pass(db):
 
 
 def test_the_tier_can_be_killed_globally(db, monkeypatch):
-    """The alternative during an incident is editing every user's config one at a time while
-    LinkedIn is actively blocking."""
+    """The alternative during an incident is editing every user's config one at a time while LinkedIn is."""
     monkeypatch.setenv("HARVEST_LINKEDIN_DISABLED", "1")
     _user(db, linkedin_next_run_at=None)
 
@@ -175,15 +158,7 @@ def test_the_tier_can_be_killed_globally(db, monkeypatch):
 
 
 def test_every_keyword_a_user_has_is_searched(db):
-    """**The location axis was costing this account twenty of its twenty-three searches.**
-
-    23 keywords crossed with 4 locations is 92 queries against a ceiling of 12, so LinkedIn was
-    asked for the alphabetically first three terms in four places each and never saw the rest — on
-    the source that produced 337 of the founder's 348 jobs at or above the delivery cutoff.
-
-    One query per keyword now, no location, matching the shared cycle: a posting's country is on the
-    posting, so it is a filter against the corpus rather than a question multiplied into a query set.
-    """
+    """The location axis was costing this account twenty of its twenty-three searches."""
     user = _user(db)
     wanted = [f"term {i}" for i in range(20)]
     db.execute(UserConfig.__table__.update()
@@ -196,17 +171,13 @@ def test_every_keyword_a_user_has_is_searched(db):
     db.flush()
 
     queries = linkedin.queries_for(db, user)
-    # Every term is searched, in every place the user asked for. The ceiling is sized to cover the
-    # cross product rather than to truncate it — a cap below it drops whole locations, because
-    # queries are taken in key order.
+    # Every term is searched, in every place the user asked for.
     assert {q["search_term"] for q in queries} == set(wanted), "every term reaches the board"
     assert len(queries) == len(wanted) * 4, "each term in each of the four places"
 
 
 def test_a_board_gets_the_phrase_the_user_typed(db):
-    """`keyword_norm` sorts tokens and strips accents so two users asking the same thing fold into
-    one query. Typing that into a search box asks for `engineer stress` and truncates every accented
-    term, which is the defect the shared cycle had first."""
+    """`keyword_norm` sorts tokens and strips accents so two users asking the same thing fold into one."""
     user = _user(db)
     db.execute(UserConfig.__table__.update()
                .where(UserConfig.user_id == user.id)
@@ -220,16 +191,7 @@ def test_a_board_gets_the_phrase_the_user_typed(db):
 
 
 def test_a_users_locations_reach_the_board_as_place_names(db):
-    """**Per user, on their own proxy, and LinkedIn can genuinely filter by place.**
-
-    The shared cycle drops the location axis because one query there serves everyone and most boards
-    cannot apply a place anyway. Neither holds here: a filter the board applies costs nothing, and
-    one applied afterwards is bandwidth already spent. Dropping it for a few hours put 384 of 1,165
-    rows in the United States for an account that never asked for it.
-
-    The board wants a name, not a slug — `europe` resolves to nothing, and LinkedIn answered one
-    query with `Invalid country string` before the mapping existed.
-    """
+    """Per user, on their own proxy, and LinkedIn can genuinely filter by place."""
     user = _user(db)
     db.execute(UserConfig.__table__.update()
                .where(UserConfig.user_id == user.id)
@@ -249,8 +211,7 @@ def test_a_users_locations_reach_the_board_as_place_names(db):
 
 
 def test_the_linkedin_ceiling_covers_the_cross_product(db):
-    """A ceiling below keyword × location does not trim evenly — queries are taken in key order, so
-    the last locations simply never run and a user silently loses whole places."""
+    """A ceiling below keyword × location does not trim evenly — queries are taken in key order."""
     from libs.settings import DEFAULT_SOURCE_QUERIES_PER_CYCLE
 
     # The founder's shape: 23 terms across 3 places.
@@ -258,15 +219,7 @@ def test_the_linkedin_ceiling_covers_the_cross_product(db):
 
 
 def test_choosing_the_eu_and_a_country_searches_both_without_repeating_one(db):
-    """**The owner's rule, end to end.** Pick Europe and every member state is allowed through; add
-    individual countries and they are allowed too; and a country already inside Europe must not
-    become a second query for the same ground.
-
-    Two halves and they are different mechanisms. The board is asked for each *place* the user
-    named, which is what stops a Poland search returning Texas — and `libs.corpus.geo` decides
-    which *countries* those choices admit, which is what the corpus filter will read before scoring.
-    Both have to agree or a user is shown jobs the board was never asked for.
-    """
+    """The owner's rule, end to end."""
     from libs.corpus.geo import EU_COUNTRIES, allows, read_country, wanted_countries
 
     user = _user(db)
@@ -294,8 +247,7 @@ def test_choosing_the_eu_and_a_country_searches_both_without_repeating_one(db):
 
 
 def test_a_country_inside_europe_does_not_widen_or_narrow_the_set(db):
-    """Adding Ireland to a Europe search changes nothing — it is already a member. The union is a
-    union, so a redundant choice is free rather than a second query or a narrower result."""
+    """Adding Ireland to a Europe search changes nothing — it is already a member."""
     from libs.corpus.geo import wanted_countries
 
     assert wanted_countries(["europe"]) == wanted_countries(["europe", "ireland"])
@@ -308,7 +260,5 @@ def test_a_country_inside_europe_does_not_widen_or_narrow_the_set(db):
                                              "platform": "all", "remote_policy": "any",
                                              "posted_within_hours": 6}]}))
     db.flush()
-    # The board is still asked for both, because LinkedIn's "European Union" geo and its "Ireland"
-    # geo do not return the same rows — the country search surfaces roles the region one does not.
-    # That is a fetch the user asked for, not a duplicate.
+    # Both are still asked for: LinkedIn's "European Union" geo and its "Ireland" geo differ.
     assert len(linkedin.queries_for(db, user)) == 2

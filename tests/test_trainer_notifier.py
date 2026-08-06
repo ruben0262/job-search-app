@@ -1,15 +1,4 @@
-"""Trainer and notifier: the invariants that are silent when broken.
-
-Deliberately not a test per function. What is worth pinning here is narrow:
-
-- the training set is scoped by `profile_generation`, and never mixes embedder versions
-- the artifact row and the `model_version` bump are one transaction
-- a delivery is never repeated, and a revoked bot is terminal rather than retried
-- the token is decrypted for the call and scrubbed from anything logged in that window
-
-The estimator and the Telegram transport are both injected. Whether scikit-learn fits a ridge
-regression, and whether `httpx` posts correctly, are not this suite's business.
-"""
+"""Trainer and notifier: the invariants that are silent when broken."""
 from __future__ import annotations
 
 import hashlib
@@ -64,8 +53,7 @@ def _user(s, *, generation: int = 1, setup: bool = True, **kw) -> User:
     s.add(user)
     s.flush()
     if setup:
-        # Training refuses on an unfinished profile, so the default account here is one that has
-        # finished setup. `setup=False` gets the other case, which its own test exercises.
+        # Training refuses on an unfinished profile.
         _complete_setup(s, user)
     return user
 
@@ -87,8 +75,7 @@ def _job(s, *, embedded: bool = True, version: str = VERSION) -> CorpusJob:
                     title="Backend Engineer", company="Acme",
                     description="Go, gRPC, Postgres. " * 20)
     if embedded:
-        # `text_sha256` and `embedding_dim` are not optional: the corpus has a CHECK constraint
-        # requiring a vector to carry the provenance that proves which text it was built from.
+        # `text_sha256` and `embedding_dim` are not optional.
         job.embedding = struct.pack(f"<{DIM}f", *([0.1] * DIM))
         job.text_sha256 = hashlib.sha256((job.description or "").encode()).hexdigest()
         job.embedding_model = "BAAI/bge-base-en-v1.5"
@@ -111,8 +98,7 @@ def _labelled(s, user, n: int, *, generation: int = 1, version: str = VERSION) -
 
 
 class StubEstimator:
-    """Module level, not nested in `_fit`: the artifact is pickled, and a class defined inside a
-    function has no importable path for pickle to record."""
+    """Module level, not nested in `_fit`: the artifact is pickled."""
 
     def predict(self, matrix):
         return [70.0] * matrix.shape[0]
@@ -125,8 +111,7 @@ def _fit(data):
 # ── the training set ──────────────────────────────────────────────────────────────────────────
 
 def test_only_labels_at_the_current_generation_are_trained_on(ctx):
-    """A label written under an older rubric answers a different question. Mixing generations
-    trains on two contradictory definitions of "good match" (`PROFILE_CAPTURE_PLAN.md` §6.4)."""
+    """A label written under an older rubric answers a different question."""
     user = _user(ctx, generation=2)
     _labelled(ctx, user, 30, generation=2)
     _labelled(ctx, user, 30, generation=1)
@@ -136,8 +121,7 @@ def test_only_labels_at_the_current_generation_are_trained_on(ctx):
 
 
 def test_a_mixture_of_embedder_versions_is_refused(ctx):
-    """Two vector spaces in one matrix produce a model that is wrong in a way no metric reveals —
-    the holdout is drawn from the same mixture."""
+    """Two vector spaces in one matrix produce a model that is wrong in a way no metric reveals."""
     user = _user(ctx)
     _labelled(ctx, user, 20)
     _labelled(ctx, user, 20, version="BAAI/bge-small-en-v1.5|dim=384|norm=1")
@@ -147,8 +131,7 @@ def test_a_mixture_of_embedder_versions_is_refused(ctx):
 
 
 def test_unembedded_rows_are_dropped_not_zero_filled(ctx):
-    """A zero vector is a confident statement that the posting means nothing, and the model would
-    learn it."""
+    """A zero vector is a confident statement that the posting means nothing, and the model would learn it."""
     user = _user(ctx)
     _labelled(ctx, user, 30)
     for _ in range(5):
@@ -169,8 +152,7 @@ def test_too_few_labels_is_not_an_error(ctx):
 # ── publishing ────────────────────────────────────────────────────────────────────────────────
 
 def test_the_artifact_row_and_the_version_bump_are_one_transaction(ctx, tmp_path):
-    """The scorer decides what to serve from `users.model_version`. If that moved without its
-    artifact row, every score for the user fails until somebody notices."""
+    """The scorer decides what to serve from `users.model_version`."""
     user = _user(ctx)
     _labelled(ctx, user, 30)
 
@@ -185,8 +167,7 @@ def test_the_artifact_row_and_the_version_bump_are_one_transaction(ctx, tmp_path
 
 
 def test_the_artifact_records_what_it_was_trained_against(ctx, tmp_path):
-    """Everything the scorer fails closed on: generation, feature schema, and the embedder identity.
-    An artifact that did not record them could not be checked."""
+    """Everything the scorer fails closed on: generation, feature schema, and the embedder identity."""
     user = _user(ctx, generation=3)
     _labelled(ctx, user, 30, generation=3)
 
@@ -202,8 +183,7 @@ def test_the_artifact_records_what_it_was_trained_against(ctx, tmp_path):
 
 
 def test_a_retrain_supersedes_the_previous_artifact(ctx, tmp_path):
-    """Exactly one active artifact per user is a partial unique index, so the previous flag has to
-    be cleared in the same write rather than trusted to be cleared later."""
+    """Exactly one active artifact per user is a partial unique index."""
     user = _user(ctx)
     _labelled(ctx, user, 30)
 
@@ -219,8 +199,7 @@ def test_a_retrain_supersedes_the_previous_artifact(ctx, tmp_path):
 
 
 def test_a_trivial_change_does_not_earn_a_retrain(ctx, tmp_path):
-    """The queue collapses a burst into one job; this is the other half. A job that fires anyway
-    when one label arrived spends a training slot on nothing."""
+    """The queue collapses a burst into one job; this is the other half."""
     user = _user(ctx)
     _labelled(ctx, user, 30)
     train_user(ctx, user.id, artifact_dir=tmp_path, fit=_fit)
@@ -232,13 +211,7 @@ def test_a_trivial_change_does_not_earn_a_retrain(ctx, tmp_path):
 
 
 def test_training_is_refused_while_setup_is_unfinished(ctx, tmp_path):
-    """**A model must not be built from a half-written profile.**
-
-    The failure is silent, which is why it needs a gate rather than care: the labels look like
-    labels, the metrics look reasonable, and the feed is quietly wrong for as long as the artifact
-    lives. Found in production on 2026-07-31 — an account with four unfilled profile files and five
-    missing ones had 945 labels and an active model.
-    """
+    """A model must not be built from a half-written profile."""
     from libs.profiles.repository import ProfileFiles
 
     user = _user(ctx, setup=False)
@@ -257,15 +230,7 @@ def test_training_is_refused_while_setup_is_unfinished(ctx, tmp_path):
 
 
 def test_a_flag_that_drifted_from_its_content_is_repairable(ctx, tmp_path):
-    """`filled` is derived data living in a column, so it can disagree with what it describes.
-
-    It did, in production on 2026-07-31: an account held four files of real, marker-free content —
-    13k to 32k characters each — every one flagged unfilled. **What that breaks is the setup
-    agent's own view of its work.** `grounding()` and `missing_setup()` read the content and are
-    immune, but `listing()` reports the column, so the agent is told a finished file is "still the
-    empty scaffold" and may set about writing it again. The content is the authority, so the flag
-    is repairable rather than a support ticket.
-    """
+    """`filled` is derived data living in a column, so it can disagree with what it describes."""
     from libs.profiles.repository import ProfileFiles
 
     user = _user(ctx)
@@ -285,14 +250,7 @@ def test_a_flag_that_drifted_from_its_content_is_repairable(ctx, tmp_path):
 
 
 def test_a_re_embedded_corpus_earns_a_retrain_with_no_new_labels(ctx, tmp_path):
-    """**The label count is not the only thing that can go stale — the coordinates can too.**
-
-    Re-embedding moves every vector, and a model fitted in the old space cannot read the new one:
-    its weights are indexed to axes that no longer mean the same thing. None of that arrives as a
-    new label. On 2026-07-31 exactly this refused a retrain after a full corpus re-embed, as "not
-    enough new labels", while the active artifact was already unusable and the scorer was failing
-    closed on the mismatch.
-    """
+    """The label count is not the only thing that can go stale — the coordinates can too."""
     user = _user(ctx)
     _labelled(ctx, user, 30)
     train_user(ctx, user.id, artifact_dir=tmp_path, fit=_fit)
@@ -326,8 +284,7 @@ def _connected(s) -> User:
 
 
 def test_a_delivered_job_is_never_delivered_again(ctx):
-    """The queue is at-least-once, so the dedup is what makes a retry safe. Without it every
-    retried job re-sends the same digest."""
+    """The queue is at-least-once, so the dedup is what makes a retry safe."""
     user = _connected(ctx)
     store = _store(ctx)
     store.put(user.id, "telegram_bot", BOT_TOKEN)
@@ -353,8 +310,7 @@ def test_only_scores_above_the_cutoff_are_sent(ctx):
 
 
 def test_a_revoked_bot_is_terminal_and_flags_the_account(ctx):
-    """Telegram answers 403 and it will never succeed. Retrying wastes the attempts and then goes
-    quiet anyway — the user's feed stops with no signal to anyone (G6)."""
+    """Telegram answers 403 and it will never succeed."""
     user = _connected(ctx)
     store = _store(ctx)
     store.put(user.id, "telegram_bot", BOT_TOKEN)
@@ -386,8 +342,7 @@ def test_a_transient_failure_is_not_terminal(ctx):
 
 
 def test_the_daily_cap_defers_rather_than_dropping(ctx):
-    """Over cap, items keep `notified_at IS NULL` and go out in the next window. Dropping them
-    would lose a match the user never learns existed (`TENANT_SAFETY.md` §3)."""
+    """Over cap, items keep `notified_at IS NULL` and go out in the next window."""
     user = _connected(ctx)
     store = _store(ctx)
     store.put(user.id, "telegram_bot", BOT_TOKEN)
@@ -409,8 +364,7 @@ def test_the_daily_cap_defers_rather_than_dropping(ctx):
 
 
 def test_the_token_reaches_the_transport_and_nothing_else(ctx):
-    """Decrypted for the call and scrubbed from anything logged in that window — including the
-    traceback an HTTP client raises, which is exactly where a failed request puts a token."""
+    """Decrypted for the call and scrubbed from anything logged in that window."""
     user = _connected(ctx)
     store = _store(ctx)
     store.put(user.id, "telegram_bot", BOT_TOKEN)
@@ -440,11 +394,7 @@ def test_the_token_reaches_the_transport_and_nothing_else(ctx):
 
 
 def test_a_delivered_job_is_never_shown_as_borderline():
-    """**The dot and the decision to send were two different numbers.** The card called anything
-    under 80 a 🟡 while delivery sent everything at 60 and above, so a 68 — a job the platform
-    decided was worth interrupting somebody for — arrived wearing the colour that means "do not get
-    excited". The reference calls a job high at `min_score_for_cv`, the same score it will build a
-    CV at."""
+    """The dot and the decision to send were two different numbers."""
     from services.notifier.card import FeedItem
     from services.notifier.deliver import DEFAULT_CUTOFF, render_job
 
@@ -465,11 +415,7 @@ def test_a_job_below_the_cutoff_still_reads_as_borderline():
 
 
 def test_the_operators_ceiling_is_what_is_enforced(ctx):
-    """**The cap moved owner on 2026-08-01.** It was `max_notifications_per_day` in the user's own
-    config, which is the wrong hands: somebody who can raise their own delivery ceiling can get
-    their own Telegram bot rate-limited. It is an operator-set limit now (`libs.limits`), and
-    `null` means unlimited because sending is paced rather than capped.
-    """
+    """The cap moved owner on 2026-08-01."""
     from libs import limits
 
     user = _connected(ctx)
@@ -488,8 +434,7 @@ def test_the_operators_ceiling_is_what_is_enforced(ctx):
 
 
 def test_unlimited_delivery_sends_everything_waiting(ctx):
-    """`null` is a real setting, not an absent one. It is safe because the send loop paces itself
-    to Telegram's 20-per-minute channel limit rather than relying on a daily cap to stay under it."""
+    """`null` is a real setting, not an absent one."""
     from libs import limits
 
     user = _connected(ctx)
@@ -509,12 +454,7 @@ def test_unlimited_delivery_sends_everything_waiting(ctx):
 
 
 def test_stale_high_scorers_do_not_crowd_fresh_jobs_out_of_the_pool(ctx):
-    """**Fifty candidates, fifty dropped, zero sent — with twenty-five fresh matches waiting.**
-
-    The pool is ordered by score, so a backlog of stale high-scoring rows filled every candidate
-    slot and was then dropped for age. Filtering age only *after* selection means the fresh jobs
-    one page further down are never looked at.
-    """
+    """Fifty candidates, fifty dropped, zero sent — with twenty-five fresh matches waiting."""
     from datetime import UTC, datetime, timedelta
 
     from libs.db.models import CorpusJob, UserConfig, UserJobState
@@ -540,8 +480,7 @@ def test_stale_high_scorers_do_not_crowd_fresh_jobs_out_of_the_pool(ctx):
     ctx.add(UserJobState(user_id=user.id, job_id=fresh.id, score=65.0))
     ctx.flush()
 
-    # The window is read from the account's own stored config now, because there is only one
-    # filter and it is the account's — nothing is passed in beside it.
+    # The window is read from the account's own stored config now.
     ctx.add(UserConfig(user_id=user.id, config={"sections": [{"posted_within_hours": 6}]}))
     ctx.flush()
     items, _dropped = pending_feed(ctx, user.id, cutoff=60.0, limit=5)
@@ -553,14 +492,7 @@ def test_stale_high_scorers_do_not_crowd_fresh_jobs_out_of_the_pool(ctx):
 
 
 def test_declining_to_retrain_completes_the_job_rather_than_dead_lettering(ctx, monkeypatch):
-    """**"1 job(s) dead-lettered in the train lane" was the trainer working correctly.**
-
-    `handle` raised `Terminal` when `should_retrain` said no, and `Terminal` dead-letters — so an
-    account that added a label after its model was already current produced a red banner on the
-    operator's health page about nothing at all. A dead letter should mean work was lost.
-
-    The job asked a question, got "no", and is complete.
-    """
+    """"1 job(s) dead-lettered in the train lane" was the trainer working correctly."""
     from libs.db.models import QueueJob
     from libs.queue.worker import Terminal
     from services.trainer import __main__ as trainer
@@ -579,9 +511,7 @@ def test_declining_to_retrain_completes_the_job_rather_than_dead_lettering(ctx, 
 
 
 def test_declining_says_so_in_the_log(ctx, monkeypatch, caplog):
-    """There is no debugger on the box, so the answer to "why did nothing retrain" has to be a
-    line somebody can grep. Removing the dead letter without leaving one would trade a false alarm
-    for silence (CLAUDE.md §7)."""
+    """There is no debugger on the box, so the answer to "why did nothing retrain" has to be a line."""
     import logging
 
     from libs.db.models import QueueJob
@@ -603,19 +533,10 @@ def test_declining_says_so_in_the_log(ctx, monkeypatch, caplog):
 
 
 def test_a_send_that_fails_partway_does_not_resend_what_already_went(ctx, monkeypatch):
-    """**The duplicates-then-silence failure, in one test.**
-
-    `notified_at` was marked for every item only after the whole digest had gone. So a run that
-    failed on message four rolled back the marks for one, two and three — which Telegram had
-    already delivered — and the retry sent them again. Measured live as bursts of hundreds followed
-    by hours of nothing.
-
-    A sent message cannot be un-sent, so its record must not depend on the rest of the run.
-    """
+    """The duplicates-then-silence failure, in one test."""
     from services.notifier import deliver as deliver_module
 
-    # The pacing gap is Telegram's rule and is tested elsewhere; here it would only make the suite
-    # slow, so the wait is a no-op and the clock below is what the test is about.
+    # The pacing gap is Telegram's rule and is tested elsewhere; here it would only make the suite slow.
     monkeypatch.setattr(deliver_module, "sleep", lambda _seconds: None)
 
     user = _connected(ctx)
@@ -647,14 +568,7 @@ def test_a_send_that_fails_partway_does_not_resend_what_already_went(ctx, monkey
 
 
 def test_a_run_stops_before_its_claim_expires(ctx, monkeypatch):
-    """**15 of 319 notify jobs overran their two-minute claim, the worst at 638 seconds.**
-
-    Sending is paced, so a large digest simply cannot finish inside the claim: at a three-second
-    gap, 200 items is 600 seconds. An overrun is swept back to `ready` while the worker is still
-    sending, a second worker starts the same digest from the top, and the account gets the flood.
-
-    So the loop is bounded by the clock rather than by a count that cannot know the gap.
-    """
+    """15 of 319 notify jobs overran their two-minute claim, the worst at 638 seconds."""
     from services.notifier import deliver as deliver_module
 
     user = _connected(ctx)
@@ -686,8 +600,7 @@ def test_a_run_stops_before_its_claim_expires(ctx, monkeypatch):
 
 
 def test_the_send_budget_fits_inside_the_notify_claim():
-    """Derived rather than chosen, so the claim timeout cannot be raised without this following.
-    Two constants kept equal by hand is the defect this project ships most often (CLAUDE.md §5)."""
+    """Derived rather than chosen, so the claim timeout cannot be raised without this following."""
     from libs.db.models.queue import CLAIM_TIMEOUT_MIN
     from services.notifier.deliver import SEND_BUDGET_SECONDS
     from services.notifier.freshness import REFRESH_BUDGET_SECONDS
@@ -699,20 +612,7 @@ def test_the_send_budget_fits_inside_the_notify_claim():
 
 
 def test_an_undated_row_held_past_the_window_is_not_reconsidered_every_cycle(ctx):
-    """**Work repeated forever, and a drop tally that lied about why.**
-
-    Undated rows were admitted to the candidate pool unconditionally, on the reasoning that
-    `date_candidates` would resolve them. That needs the account's own proxy, and an account without
-    one can never date anything — so rows first seen days earlier were selected and dropped as
-    `too_old` on every cycle, indefinitely. The live log showed the identical counts tick after
-    tick: `{'applicant_glut': 4, 'workplace': 1, 'too_old': 11}` at 10:49 and again at 11:04
-    (ROADMAP 6ay).
-
-    They were always going to be dropped — `too_old` uses `first_seen_at` as its fallback and got
-    the right answer. What was wrong is that SQL asked a *weaker* question than Python, so the rows
-    were fetched, ranked and re-judged every fifteen minutes to reach a conclusion that could not
-    change, and the operator's drop tally reported a filter that was really just history.
-    """
+    """Work repeated forever, and a drop tally that lied about why."""
     from datetime import UTC, datetime, timedelta
 
     user = _connected(ctx)
@@ -733,18 +633,10 @@ def test_an_undated_row_held_past_the_window_is_not_reconsidered_every_cycle(ctx
 
 
 # ── nothing stands between a scored match and Telegram ──────────────────────────────────────────
-#
-# The owner's instruction, and the measurement behind it: `items_per_run` defaulted to 10, which is
-# 960 a day against 96 cycles. Measured on the live box 2026-08-06 — 931 delivered, and **576 matched
-# postings that expired unsent**. The cap was the platform's largest single loss of work, and every
-# posting it withheld had already passed the filter and the model.
 
 
 def test_nothing_caps_a_delivery_run_by_default(ctx):
-    """**The default is Unlimited, and it has to be the default rather than a setting somebody
-    remembers.** Filtering and scoring already decided what is worth sending; a further ceiling
-    only delays a posting the platform has judged, and the product's whole claim is being early to
-    it."""
+    """The default is Unlimited, and it has to be the default rather than a setting somebody remembers."""
     from libs.limits import limit_default
 
     assert limit_default("items_per_run") is None
@@ -765,16 +657,7 @@ def test_a_run_sends_every_match_it_has_time_for(ctx):
 
 
 def test_a_run_that_could_not_finish_makes_the_account_due_again_now(ctx):
-    """**The other half, and the one that actually cost the 576.**
-
-    A run stops at its claim so a second worker cannot start the same digest — that stays, it is the
-    fix for the flood-then-silence incident. What was wrong is what happened next: the remainder
-    waited a full cadence, so a backlog drained at one run's worth every fifteen minutes while its
-    tail aged past the freshness window and was never sent at all.
-
-    Now the account is due immediately, and the dispatcher already running inside the worker picks
-    it straight back up — no second mechanism, no new clock.
-    """
+    """The other half, and the one that actually cost the 576."""
     from datetime import UTC, datetime, timedelta
 
     from libs import limits

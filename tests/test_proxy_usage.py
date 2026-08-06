@@ -1,10 +1,4 @@
-"""Proxy leasing, metering, daily reset, and quarantine.
-
-The counter these tests protect is the one a user is billed against. Three ways it can be wrong, all
-silent, all covered here: crediting bytes outside the transaction that spent them, resetting on the
-wrong day for users outside the server's timezone, and quarantining on cumulative rather than
-consecutive failures.
-"""
+"""Proxy leasing, metering, daily reset, and quarantine."""
 from __future__ import annotations
 
 import os
@@ -70,8 +64,7 @@ def test_a_healthy_credential_with_budget_yields_a_lease(ctx):
 
 
 def test_no_credential_is_not_an_error(ctx):
-    """The ordinary case. A user without a proxy simply does not get the LinkedIn tier, and still
-    receives the two thirds of sources that cost nothing."""
+    """The ordinary case."""
     repo, s = ctx
     user = _user(s)
     assert repo.acquire_lease(user.id, secret_resolver=RESOLVER) is None
@@ -94,8 +87,7 @@ def test_a_spent_budget_yields_no_lease(ctx):
 
 
 def test_an_unresolvable_secret_counts_as_a_failure(ctx):
-    """A credential row whose secret cannot be decrypted is broken, not merely idle — otherwise it
-    is retried silently forever and the user is never told why LinkedIn stopped."""
+    """A credential row whose secret cannot be decrypted is broken, not merely idle."""
     repo, s = ctx
     user = _user(s)
     cred = _credential(s, user)
@@ -109,9 +101,7 @@ def test_an_unresolvable_secret_counts_as_a_failure(ctx):
 # ── admission ─────────────────────────────────────────────────────────────────────────────────
 
 def test_admission_raises_at_the_cap(ctx):
-    """**The operator's limit is the authority, not the column.** `proxy_mb_per_day` is rendered in
-    the admin panel and was read by nothing: both readers used `proxy_credentials.daily_cap_mb`,
-    which the panel does not write, so the control governed nothing."""
+    """The operator's limit is the authority, not the column."""
     repo, s = ctx
     user = _user(s)
     user.limits = {"proxy_mb_per_day": 100}
@@ -124,8 +114,7 @@ def test_admission_raises_at_the_cap(ctx):
 
 
 def test_the_operators_cap_beats_the_column(ctx):
-    """Two values for one ceiling is how they disagree. The limit wins, and a lease is refused on
-    the operator's number rather than on whatever provisioning wrote."""
+    """Two values for one ceiling is how they disagree."""
     repo, s = ctx
     user = _user(s)
     user.limits = {"proxy_mb_per_day": 10}
@@ -161,13 +150,11 @@ def test_negative_usage_cannot_refund_the_counter(ctx):
 # ── daily reset, in the user's timezone ───────────────────────────────────────────────────────
 
 def test_the_counter_resets_on_the_users_local_day_not_utc(ctx):
-    """Users are spread across timezones. A shared UTC reset gives some a short day and others a
-    long one, every day (G7)."""
+    """Users are spread across timezones."""
     repo, s = ctx
     user = _user(s, tz="Pacific/Auckland")
     cred = _credential(s, user, mb_used_today=150)
-    # Auckland is UTC+12. 2026-07-25 12:00 UTC is 2026-07-26 00:00 local, so the last reset was on
-    # the local 26th...
+    # Auckland is UTC+12.
     cred.usage_reset_at = datetime(2026, 7, 25, 12, 0, tzinfo=UTC)
     s.flush()
 
@@ -179,11 +166,7 @@ def test_the_counter_resets_on_the_users_local_day_not_utc(ctx):
 
 
 def test_a_utc_day_boundary_alone_does_not_reset_a_user_east_of_it(ctx):
-    """The inverse, and the reason this is not just `date() != date()` on UTC.
-
-    2026-07-26 12:00 UTC is already 2026-07-27 in Auckland, so a "new UTC day" at 00:30 on the 27th
-    is the *same* local day and must not hand the user a fresh cap.
-    """
+    """The inverse, and the reason this is not just `date() != date()` on UTC."""
     repo, s = ctx
     user = _user(s, tz="Pacific/Auckland")
     cred = _credential(s, user, mb_used_today=150)
@@ -197,11 +180,7 @@ def test_a_utc_day_boundary_alone_does_not_reset_a_user_east_of_it(ctx):
 
 
 def test_a_first_lease_initialises_the_window_without_wiping_usage(ctx):
-    """A null `usage_reset_at` is initialisation, not a day boundary.
-
-    Treating it as "the day has turned" would discard real usage the first time a credential is
-    leased — a user who had already spent bandwidth would silently get their cap back.
-    """
+    """A null `usage_reset_at` is initialisation, not a day boundary."""
     repo, s = ctx
     user = _user(s)
     cred = _credential(s, user, daily_cap_mb=200, mb_used_today=50)
@@ -228,8 +207,7 @@ def test_the_counter_does_not_reset_twice_in_one_local_day(ctx):
 
 
 def test_an_invalid_timezone_does_not_take_the_harvest_down(ctx):
-    """A bad tz string makes one user's reset happen at the wrong hour — a nuisance. Raising would
-    stop the loop for everyone — an outage."""
+    """A bad tz string makes one user's reset happen at the wrong hour — a nuisance."""
     repo, s = ctx
     user = _user(s, tz="Mars/Olympus_Mons")
     _credential(s, user, mb_used_today=5)
@@ -239,10 +217,7 @@ def test_an_invalid_timezone_does_not_take_the_harvest_down(ctx):
 # ── health ────────────────────────────────────────────────────────────────────────────────────
 
 def test_quarantine_needs_consecutive_failures(ctx):
-    """Cumulative counting would eventually quarantine every healthy user.
-
-    An occasional 407 on a working credential is normal; a run of them is a broken one.
-    """
+    """Cumulative counting would eventually quarantine every healthy user."""
     repo, s = ctx
     user = _user(s)
     cred = _credential(s, user)
@@ -307,10 +282,7 @@ def test_one_users_usage_never_touches_anothers(ctx):
 # ── the row that has to exist beside the secret ───────────────────────────────────────────────
 
 def test_saving_a_proxy_url_also_creates_the_credential_row(ctx):
-    """**The gap that made the whole tier dead.** `user_secrets` holds the URL, but every proxied
-    fetch acquires a lease from `proxy_credentials` — which carries the cap and the health status.
-    Saving one without the other stored a working credential that nothing could use, and the
-    LinkedIn tier skipped the account forever without an error anywhere."""
+    """The gap that made the whole tier dead."""
     from libs.db.models import ProxyCredential
     from services.api.credential_routes import _ensure_proxy_credential
 
@@ -325,8 +297,7 @@ def test_saving_a_proxy_url_also_creates_the_credential_row(ctx):
 
 
 def test_re_saving_a_proxy_url_does_not_un_quarantine_the_account(ctx):
-    """A rotation is not a reset. Returning a quarantined credential to `healthy` would put the
-    user straight back into whatever quarantined it."""
+    """A rotation is not a reset."""
     from libs.db.models import ProxyCredential
     from services.api.credential_routes import _ensure_proxy_credential
 

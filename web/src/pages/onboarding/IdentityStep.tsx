@@ -1,10 +1,4 @@
-/**
- * Page 1. The name is not the account email — it is what a recruiter reads at the top of a
- * generated CV, so it is asked for rather than derived from `r.lekli@…`.
- *
- * The platform of a link is inferred server-side from its host, so this form does not ask. Making
- * somebody classify their own GitHub URL is a question with one possible answer.
- */
+/** Page 1. */
 import { useEffect, useState } from "react";
 
 import { api } from "../../api";
@@ -53,8 +47,7 @@ export function IdentityStep({ onDone }: { onDone: () => void }) {
       </Field>
 
       <div className="field">
-        {/* The add button sits above the first row, on the right, where it reads as "more of these"
-            rather than as an action on the row beneath it. */}
+        {/* The add button sits above the first row, on the right. */}
         <div className="repeat-head">
           <span className="label" style={{ marginBottom: 0 }}>
             Links
@@ -82,8 +75,7 @@ export function IdentityStep({ onDone }: { onDone: () => void }) {
                 setLinks(next);
               }}
             />
-            {/* Every row can be removed, including the last, which leaves one empty row rather
-                than none, so there is always somewhere to type. */}
+            {/* Every row can be removed, including the last. */}
             <button
               type="button"
               className="icon-btn"

@@ -1,18 +1,4 @@
-"""The worker loop. One per lane, one process each.
-
-The loop itself is uninteresting on purpose — claim, run, commit — but two details are not:
-
-1. **The handler's effect and the job's completion commit together.** That is what makes
-   at-least-once delivery survivable: the `seen` row, or the `model_version` bump, either lands with
-   "job done" or neither lands (`SCHEDULER_PLAN.md` §3-§4). A handler that commits its own
-   transaction breaks this, so handlers are given the session and must not commit.
-2. **A failed handler rolls back its effect but must still record the failure.** The failure is
-   written in a fresh transaction, because the one the handler poisoned cannot be used for anything.
-   The subtlety: the rollback also undoes the *claim*, since the claim ran in that same transaction.
-   Left alone, `attempts` returns to its pre-claim value and a permanently failing job retries
-   forever — the exact thing dead-lettering exists to stop. So the claim's increment is captured
-   before the handler runs and re-applied when the failure is recorded.
-"""
+"""The worker loop."""
 from __future__ import annotations
 
 import contextlib
@@ -29,12 +15,10 @@ from libs.queue.queue import claim, complete, fail, sweep_expired, terminate
 
 logger = logging.getLogger(__name__)
 
-# How long to wait when a lane is empty. Short enough that a queued job is not visibly delayed, long
-# enough that an idle platform is not hammering Postgres with claim attempts.
+# How long to wait when a lane is empty.
 IDLE_SLEEP_SEC = 5.0
 
-# Expired claims are swept from inside the loop rather than by a separate cron: one fewer thing to
-# deploy, and a lane with no worker running has nothing to recover anyway.
+# Expired claims are swept from inside the loop rather than by a separate cron.
 SWEEP_EVERY_SEC = 60.0
 
 
@@ -55,11 +39,7 @@ class WorkerStats:
 def run_once(session: Session, lane: str, worker: str,
              handler: Callable[[Session, QueueJob], None],
              stats: WorkerStats) -> bool:
-    """Claim and run at most one job. Returns whether there was work.
-
-    The caller owns the session; this commits it — once per job, covering both the handler's effect
-    and the completion.
-    """
+    """Claim and run at most one job."""
     job = claim(session, lane, worker)
     if job is None:
         session.commit()
@@ -67,8 +47,7 @@ def run_once(session: Session, lane: str, worker: str,
 
     stats.claimed += 1
     job_id = job.id
-    # Captured now, because `session.rollback()` below undoes the claim along with the handler's
-    # work, and the retry budget must not be rolled back with it.
+    # Captured now: `session.rollback()` below undoes the claim, and the retry budget must survive.
     attempts = job.attempts
     try:
         handler(session, job)
@@ -77,8 +56,7 @@ def run_once(session: Session, lane: str, worker: str,
         stats.completed += 1
     except Terminal as exc:
         session.rollback()
-        # Bound to a local first: Python unbinds the `except` name at the end of the block, so a
-        # closure over it is a latent NameError the moment this is refactored.
+        # Bound to a local first: Python unbinds the `except` name at the end of the block.
         reason = str(exc)
         _record(session, job_id, attempts, lambda s, j: terminate(s, j, reason))
         stats.dead += 1
@@ -101,21 +79,7 @@ def run_worker(session_factory: Callable[[], Session], lane: str, worker: str,
                stop: Callable[[], bool] | None = None,
                periodic: Callable[[Session], None] | None = None,
                periodic_every: float = SWEEP_EVERY_SEC) -> WorkerStats:
-    """Drain `lane` until told to stop. `max_jobs` bounds it, which is what the tests use.
-
-    A fresh session per iteration rather than one held open for the process's life: a long-lived
-    session accumulates an identity map of every job it has ever seen, and a connection held idle
-    across a Postgres restart fails on the next claim rather than reconnecting.
-
-    `periodic` is work this worker owns that is not a queue job — the notify dispatcher deciding who
-    is due, for instance. **It runs here rather than on its own systemd timer** because a timer is a
-    second clock, a second one-shot container and a second thing that can be installed wrong: the
-    dispatcher's absence once meant nothing ever entered the `notify` lane while the stack looked
-    entirely healthy. A worker that is already looping can simply do it (ROADMAP 6ar).
-
-    Failures in `periodic` are logged and swallowed. It is a side errand, and taking the worker
-    down with it would stop the lane it was helping.
-    """
+    """Drain `lane` until told to stop."""
     stats = WorkerStats()
     should_stop = stop or _sigterm_flag()
     last_sweep = 0.0
@@ -150,12 +114,7 @@ def run_worker(session_factory: Callable[[], Session], lane: str, worker: str,
 
 def _record(session: Session, job_id: int, attempts: int,
             write: Callable[[Session, QueueJob], object]) -> object:
-    """Write a failure in a clean transaction — the handler's is unusable after a rollback.
-
-    `attempts` is re-applied because the rollback reverted the claim that incremented it. Without
-    this the counter never advances past its pre-claim value, `fail()` never reaches
-    `MAX_ATTEMPTS`, and a job that fails every time is retried forever.
-    """
+    """Write a failure in a clean transaction — the handler's is unusable after a rollback."""
     job = session.get(QueueJob, job_id, populate_existing=True)
     if job is None:
         return None
@@ -166,11 +125,7 @@ def _record(session: Session, job_id: int, attempts: int,
 
 
 def _sigterm_flag() -> Callable[[], bool]:
-    """Stop at the next job boundary on SIGTERM, rather than mid-handler.
-
-    A worker killed mid-job is recoverable — the sweeper returns the claim — but it costs the user a
-    retry and, on the `train` lane, a wasted fit. Draining first is free.
-    """
+    """Stop at the next job boundary on SIGTERM, rather than mid-handler."""
     stopping = False
 
     def _handle(_signum, _frame):

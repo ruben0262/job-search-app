@@ -1,34 +1,4 @@
-"""Turn what a user actually did into training labels.
-
-    python deploy/scripts/backfill_feedback_labels.py            # report, change nothing
-    python deploy/scripts/backfill_feedback_labels.py --apply
-    python deploy/scripts/backfill_feedback_labels.py --apply --user <uuid>
-
-**An application is ground truth; an LLM score is an estimate.** The platform has been training on
-3,498 Haiku guesses while 98 real applications sat in `user_job_state.applied_at` and never became
-training data — the single largest quality signal available, unused. Of the 98, only 7 had ever been
-labelled at all, and the LLM had *rejected* 4 of those: jobs the person cared enough about to apply
-to, scored below the keep threshold. That disagreement is exactly the thing feedback labels exist to
-correct.
-
-## Why this is a script and not a migration
-
-It is a judgement, not a schema change. The argument against backfilling is that these applications
-predate the current profile generation, so they answer a slightly older question — and the answer
-(the owner's, 2026-07-31) is that applying to a job is the strongest statement of intent a user ever
-makes, and editing a rubric does not make it untrue. Someone should be able to disagree, run it for
-one account, and look at the result. A migration would decide for everybody, once, silently.
-
-## What it writes
-
-The same rows `libs.feedback.actions.record()` writes when a user taps Applied in Telegram — same
-source, same label, same weight — so a backfilled label and a live one are indistinguishable to the
-trainer, which is the point. Stamped at the account's *current* profile version and generation so
-they are usable immediately rather than filtered out as stale by `build_training_set`.
-
-Upserted, deliberately: where an LLM label already exists for the same job it is replaced, because
-what the user did outranks what the model guessed.
-"""
+"""Turn what a user actually did into training labels."""
 from __future__ import annotations
 
 import argparse

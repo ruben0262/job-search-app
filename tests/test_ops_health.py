@@ -1,15 +1,4 @@
-"""Platform health, and the alerts derived from it.
-
-Two failure modes are worth guarding, and they pull in opposite directions:
-
-- **an alert that does not fire** — the silent failure the whole module exists to catch;
-- **an alert that fires when nothing is wrong** — which trains its reader to ignore the next one,
-  and the next one is the outage.
-
-The silent-feed condition is where both meet, so it gets the most tests: it must fire for an
-account with matches waiting and nothing delivered, and stay quiet for an account whose config
-simply matched nothing this week.
-"""
+"""Platform health, and the alerts derived from it."""
 from __future__ import annotations
 
 import os
@@ -78,14 +67,12 @@ def test_matches_waiting_and_nothing_delivered_pages():
 
 
 def test_a_narrow_config_with_nothing_to_send_is_silent():
-    """**The qualifier that makes the alert usable.** Without "while jobs matched" this fires for
-    every user whose search is specific, who is not broken."""
+    """The qualifier that makes the alert usable."""
     assert evaluate(health(users=[user(pending_matches=0, hours_since_delivery=None)])) == []
 
 
 def test_a_brand_new_account_with_matches_pages_rather_than_waiting_a_day():
-    """`hours_since_delivery` is None because nothing has ever been sent. An account that has
-    matches and has never received anything is the same failure on its first day."""
+    """`hours_since_delivery` is None because nothing has ever been sent."""
     alerts = evaluate(health(users=[user(pending_matches=5, hours_since_delivery=None)]))
     assert keys(alerts) == {"silent_feed"}
 
@@ -98,16 +85,14 @@ def test_a_recent_delivery_with_matches_pending_is_normal():
 # ── the queue ─────────────────────────────────────────────────────────────────────────────────
 
 def test_one_dead_lettered_job_pages():
-    """The queue retries five times before giving up, so one dead job means five failures nobody
-    saw."""
+    """The queue retries five times before giving up, so one dead job means five failures nobody saw."""
     alerts = evaluate(health(lanes=[lane("train", dead=1)]))
     assert keys(alerts) == {"dead_letter:train"}
     assert alerts[0].pages
 
 
 def test_a_stall_is_measured_against_the_lane_not_a_fixed_number():
-    """A `notify` job waiting an hour is broken; a `label` job waiting an hour is a queue doing its
-    job."""
+    """A `notify` job waiting an hour is broken; a `label` job waiting an hour is a queue doing its job."""
     stalled = evaluate(health(lanes=[lane("notify", ready=1, oldest=25, expected=5)]))
     fine = evaluate(health(lanes=[lane("label", ready=1, oldest=25, expected=60)]))
 
@@ -118,8 +103,7 @@ def test_a_stall_is_measured_against_the_lane_not_a_fixed_number():
 # ── capacity ──────────────────────────────────────────────────────────────────────────────────
 
 def test_a_nearly_full_database_pages():
-    """Everything is in one database by design, so this is the whole platform rather than a
-    component."""
+    """Everything is in one database by design, so this is the whole platform rather than a component."""
     alerts = evaluate(health(postgres_bytes=(55 * 1024**3)))
     assert keys(alerts) == {"postgres_disk"}
     assert alerts[0].pages
@@ -171,8 +155,7 @@ def test_the_summary_is_readable_when_nothing_is_wrong():
 
 @pytestmark_db
 def test_health_reads_a_live_database_without_scanning_it():
-    """The queries have to work against the real schema, and a health check that costs more than
-    the thing it watches is one somebody turns off."""
+    """The queries have to work against the real schema."""
     from sqlalchemy import create_engine
     from sqlalchemy.orm import Session
 
@@ -196,8 +179,7 @@ def test_health_reads_a_live_database_without_scanning_it():
 
         state = platform_health(session)
 
-        # Every lane, including the empty ones: a lane missing because it had no rows is
-        # indistinguishable from a lane whose worker died.
+        # Every lane, including the empty ones.
         from libs.db.models.queue import LANES
 
         assert {row.lane for row in state.lanes} == set(LANES)
@@ -214,9 +196,7 @@ def test_health_reads_a_live_database_without_scanning_it():
 # ── the embedder probe (G10) ──────────────────────────────────────────────────────────────────
 
 def test_an_unreachable_embedder_is_a_page_not_a_shrug(monkeypatch):
-    """**The second single point of failure, and the only one nothing else reports.** The alerts in
-    `libs/ops` are computed from the database and cannot see a dead embedder; without one, nothing
-    gets a vector, nothing is scored, and from inside the application that reads as a quiet day."""
+    """The second single point of failure, and the only one nothing else reports."""
     import httpx
 
     from deploy.scripts.check_health import embedder_down
@@ -251,13 +231,7 @@ def test_no_embedder_url_is_skipped_rather_than_failed(monkeypatch):
 
 
 def test_a_stopped_feed_is_an_incident_within_the_hour_not_the_day():
-    """**The alarm that did not ring.** Delivery stopped for two and a half hours on 2026-08-04 —
-    a notify job overrunning its claim, being reclaimed, never committing — and the status page was
-    green the whole time, because the threshold was a full day.
-
-    A day is not a threshold for a product whose claim is fifteen minutes. Derived from the cadence
-    so it moves if the cadence does, rather than being a number somebody has to remember to change.
-    """
+    """The alarm that did not ring."""
     from libs.ops.alerts import SILENT_FEED_HOURS
     from libs.settings import DELIVERY_INTERVAL_MIN
 
@@ -272,11 +246,7 @@ def test_a_stopped_feed_is_an_incident_within_the_hour_not_the_day():
 
 
 def test_the_window_is_the_widest_a_user_asked_for_and_24h_if_they_never_said():
-    """Matches `services.notifier.eligibility`, which is the only reason this number is useful.
-
-    The alert counts what the notifier would send. If the two read the user's window differently,
-    the alert is measuring a pool nobody delivers from — which is the bug this section exists for.
-    """
+    """Matches `services.notifier.eligibility`, which is the only reason this number is useful."""
     from libs.ops.health import DEFAULT_MAX_AGE_HOURS, deliverable_window
 
     assert deliverable_window(None) == DEFAULT_MAX_AGE_HOURS
@@ -289,13 +259,7 @@ def test_the_window_is_the_widest_a_user_asked_for_and_24h_if_they_never_said():
 
 @pytestmark_db
 def test_a_posting_too_old_to_send_is_not_a_job_waiting():
-    """**The page nobody could clear.** On 2026-08-05 an account showed "71 matching job(s) waiting
-    and last delivery was 5h ago" while the notifier was working perfectly: all 71 were older than
-    the 24 hours that account had asked for, so `pending_feed` excluded every one of them in SQL.
-
-    The count said the feed was stuck. The feed was fine — there was simply nothing fresh to send,
-    which is not an alertable condition and would have stayed red forever.
-    """
+    """The page nobody could clear."""
     from sqlalchemy import create_engine
     from sqlalchemy.orm import Session
 
@@ -330,9 +294,7 @@ def test_a_posting_too_old_to_send_is_not_a_job_waiting():
             session.add(UserJobState(user_id=account.id, job_id=row.id, score=99.0))
         session.flush()
 
-        # The fresh one and the undated one. Undated counts because the notifier lets it through
-        # too — LinkedIn reports no posted time and dating it is a later step, not a reason to
-        # drop it.
+        # The fresh one and the undated one.
         assert pending_matches(session, account) == 2
     finally:
         session.close()
@@ -342,11 +304,7 @@ def test_a_posting_too_old_to_send_is_not_a_job_waiting():
 
 @pytestmark_db
 def test_the_count_uses_the_users_own_cutoff_not_a_constant():
-    """60 is the label threshold used while *training*, not the score anybody delivers at.
-
-    The two live accounts deliver at 29 and 42, tuned by their own training runs. Counting at 60
-    both missed jobs that were genuinely waiting and counted a pool neither account uses.
-    """
+    """60 is the label threshold used while *training*, not the score anybody delivers at."""
     from sqlalchemy import create_engine
     from sqlalchemy.orm import Session
 
@@ -370,8 +328,7 @@ def test_the_count_uses_the_users_own_cutoff_not_a_constant():
                         posted_at=datetime.now(UTC) - timedelta(hours=1))
         session.add(row)
         session.flush()
-        # Over this account's tuned cutoff of 29, under the old hardcoded 60. The notifier sends
-        # it; the alert used to be blind to it.
+        # Over this account's tuned cutoff of 29, under the old hardcoded 60.
         session.add(UserJobState(user_id=account.id, job_id=row.id, score=35.0))
         session.flush()
 
@@ -386,14 +343,7 @@ def test_the_count_uses_the_users_own_cutoff_not_a_constant():
 
 
 def test_an_account_with_no_proxy_is_not_an_alert():
-    """**LinkedIn is opt-in, so having no proxy is a configuration rather than a fault.**
-
-    This warned, on the reasoning that a missing credential silently costs an account 43% of the
-    corpus. True, and still not the operator's problem to be paged about: an account that never
-    wanted LinkedIn is not broken, and an alert that fires for a deliberate choice trains its reader
-    to ignore the next one. The status is still reported on the account page, where somebody
-    deciding whether to add one can see it.
-    """
+    """LinkedIn is opt-in, so having no proxy is a configuration rather than a fault."""
     assert "proxy_missing" not in keys(evaluate(health(users=[user(proxy_status="no_secret")])))
     assert "proxy_missing" not in keys(evaluate(health(users=[user(proxy_status=None)])))
 

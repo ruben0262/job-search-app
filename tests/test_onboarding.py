@@ -1,17 +1,4 @@
-"""Onboarding: the completion gate, and the two pages this service owns.
-
-What is worth asserting here is narrow. The pages themselves are thin wrappers over machinery that
-already has its own tests — the config schema, document extraction, the credential store — and
-re-testing those through HTTP would grow the suite without covering anything new.
-
-What is *not* covered elsewhere, and is covered here:
-
-- completion is **derived**, so revoking a credential reopens its page rather than leaving an
-  account "complete" and unable to run;
-- `/complete` refuses a half-finished account and names what is missing;
-- finishing onboarding does not set `users.active`, because no model exists yet;
-- the config preview distinguishes "your keyword matches nothing" from "the corpus is empty".
-"""
+"""Onboarding: the completion gate, and the two pages this service owns."""
 from __future__ import annotations
 
 import os
@@ -30,8 +17,7 @@ pytestmark_db = pytest.mark.skipif(
 # ── the identity contract (no database) ───────────────────────────────────────────────────────
 
 def test_a_pasted_url_without_a_scheme_is_repaired_rather_than_refused():
-    """People paste `github.com/name` constantly. Refusing it is correct and makes the form feel
-    broken."""
+    """People paste `github.com/name` constantly."""
     identity = IdentitySchema(full_name="Alice Example", links=[{"url": "github.com/alice"}])
     assert identity.links[0].url == "https://github.com/alice"
 
@@ -100,12 +86,7 @@ CONFIG = {"sections": [{"platform": "all", "keywords": ["backend engineer"],
 
 
 def _finish_every_page(http, session, user):
-    """Satisfy all seven pages by writing what each one writes, not by calling every endpoint.
-
-    Telegram, Claude and the proxy are set directly: those pages go through `/credentials`, which
-    validates against the live provider, and this test is about the gate rather than about
-    credential validation.
-    """
+    """Satisfy all seven pages by writing what each one writes, not by calling every endpoint."""
     from libs.db.models import UserDocument, UserSecret
 
     http.put("/onboarding/identity", json={"full_name": "Alice Example"})
@@ -116,8 +97,7 @@ def _finish_every_page(http, session, user):
     for kind in ("claude_api", "telegram_bot", "proxy"):
         session.add(UserSecret(user_id=user.id, kind=kind, ciphertext=b"x", nonce=b"n"))
     user.telegram_status = "connected"
-    # A connected bot is not a finished Telegram setup: the job stream needs a channel to land in,
-    # and the private chat is for commands and documents. See the test below.
+    # A connected bot is not a finished Telegram setup: the job stream needs a channel to land in.
     user.telegram_routes = {"jobs": "-1001234567890"}
     session.flush()
 
@@ -156,8 +136,7 @@ def test_finishing_is_refused_until_every_page_is_done_and_says_which(api):
 
 @pytestmark_db
 def test_finishing_does_not_start_the_notifier(api):
-    """`active` means the scheduler may dispatch. With no trained model every dispatch would fail
-    identically, for a reason no user could see."""
+    """`active` means the scheduler may dispatch."""
     http, session, user = api
     _finish_every_page(http, session, user)
 
@@ -169,8 +148,7 @@ def test_finishing_does_not_start_the_notifier(api):
 
 @pytestmark_db
 def test_revoking_a_credential_reopens_its_page(api):
-    """The reason completion is derived rather than stored. A flag would leave the account marked
-    finished while its feed could no longer be delivered."""
+    """The reason completion is derived rather than stored."""
     from libs.db.models import UserSecret
 
     http, session, user = api
@@ -189,14 +167,7 @@ def test_revoking_a_credential_reopens_its_page(api):
 
 @pytestmark_db
 def test_a_connected_bot_without_a_channel_does_not_finish_telegram(api):
-    """**Delivery is the product, so the channel is a requirement rather than a nicety.**
-
-    A bot token plus a chat id proves the platform *can* message this person; it does not give the
-    job stream anywhere to land. The private chat carries commands and finished documents, and a
-    feed nobody scrolls is not a feed. Without this, an account could complete onboarding with a
-    working pipeline and no destination — which surfaces later as "it stopped sending me jobs",
-    the least diagnosable shape a problem can take.
-    """
+    """Delivery is the product, so the channel is a requirement rather than a nicety."""
     http, session, user = api
     _finish_every_page(http, session, user)
 
@@ -215,8 +186,7 @@ def test_a_connected_bot_without_a_channel_does_not_finish_telegram(api):
 
 @pytestmark_db
 def test_the_history_page_replaces_rather_than_accumulates(api):
-    """It is one document the user edits. Appending would feed the same history to the processing
-    step several times over."""
+    """It is one document the user edits."""
     from sqlalchemy import func, select
 
     from libs.db.models import UserDocument
@@ -233,8 +203,7 @@ def test_the_history_page_replaces_rather_than_accumulates(api):
 
 @pytestmark_db
 def test_a_config_whose_keywords_match_nothing_says_so_before_it_is_saved(api):
-    """The failure this preview exists to catch: a misspelled keyword, which otherwise surfaces as
-    an empty feed a day later with no explanation."""
+    """The failure this preview exists to catch: a misspelled keyword."""
     from libs.db.models import CorpusJob
 
     http, session, _ = api

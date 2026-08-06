@@ -1,27 +1,4 @@
-"""Fill in the descriptions the listing APIs did not give us.
-
-**The step the platform was missing.** Harvest stored whatever `snippet` a source returned and
-scored on it. For the Tier-2 API sources that is the whole posting and nothing is owed; for
-LinkedIn and most boards it is a teaser, and the model was being asked to judge a job from its
-advertisement. This pass takes the rows that came out thin and fetches the posting itself.
-
-## Two passes, because two different people pay
-
-- **The shared pass** runs in the harvest cycle on the unproxied client. Boards and ATS pages
-  answer a datacenter IP happily, so this is free and benefits everyone at once.
-- **The proxied pass** runs per user with their own `ProxyLease`. LinkedIn's guest endpoint blocks
-  datacenter IPs, so those rows cannot be filled any other way — and the bandwidth is metered to
-  whoever caused it, which is what stops one account's backlog being paid for by another's cap.
-
-Both write to the same shared rows. That is the point: LinkedIn descriptions fetched on one user's
-proxy make the corpus better for every user, and the second account to want that job pays nothing.
-
-## Fail-soft, and loud about it
-
-A fetch that fails leaves the row exactly as it was, so the next pass picks it up again. What is
-*not* allowed is failing silently: the outcome tally comes back on the report, because a run that
-fell back to snippets for every job looks identical from the outside to one that worked.
-"""
+"""Fill in the descriptions the listing APIs did not give us."""
 from __future__ import annotations
 
 import logging
@@ -40,9 +17,7 @@ from services.harvester.proxy_usage import ProxyUsageRepository
 
 logger = logging.getLogger(__name__)
 
-# How many rows one pass will fetch. Bounded because each LinkedIn fetch costs a proxied request
-# and up to six retries — an unbounded pass on a cold-start corpus would spend a user's monthly
-# bandwidth in one cycle.
+# How many rows one pass will fetch.
 SHARED_LIMIT = 200
 PROXIED_LIMIT = 60
 
@@ -56,11 +31,9 @@ class DescribeReport:
     still_thin: int = 0
     metadata_written: int = 0
     outcomes: dict[str, int] = field(default_factory=dict)
-    # Set when the pass stopped because the proxy itself refused — out of traffic, bad credentials,
-    # unreachable. A run that ends this way is not a run that found nothing.
+    # Set when the pass stopped because the proxy refused: out of traffic, bad credentials, down.
     proxy_error: str | None = None
-    # Postings that answered "no longer accepting applications". Not a failure — finding them is
-    # the job, and each one is a card the user does not have to read.
+    # Postings that answered "no longer accepting applications".
     closed: int = 0
 
     @property
@@ -71,22 +44,7 @@ class DescribeReport:
 def describe_pending(corpus: CorpusRepository, client, *, linkedin: bool | None = None,
                      limit: int = SHARED_LIMIT,
                      budget_seconds: float | None = None) -> DescribeReport:
-    """Fetch and store descriptions for corpus rows that are still thin.
-
-    `client` is whatever the caller is authorised to spend — the shared client for the free tier,
-    a `TenantClient` holding a lease for LinkedIn. This function does not build one, so no path
-    through it can fetch on an IP nobody is accounting for.
-
-    A row that comes back thin anyway is left thin rather than marked done. It will be retried on
-    the next pass, which is correct for the common cause: LinkedIn returning 429 to a burst.
-
-    `budget_seconds` bounds the pass in wall-clock time. **A count cannot bound it**, because the
-    cost of one row is a proxied fetch with retries and that varies by an order of magnitude: the
-    LinkedIn pass is a systemd one-shot on a fifteen-minute timer, and a run that outlives the tick
-    stops the next one starting. Observed 2026-08-05 — a pass still going after twenty minutes with
-    `linkedin.timer` showing no next run, and five hours with no LinkedIn rows ingested at all
-    (ROADMAP 6am). Whatever is not described stays thin and is first in line next pass.
-    """
+    """Fetch and store descriptions for corpus rows that are still thin."""
     report = DescribeReport()
     jobs = corpus.awaiting_description(limit=limit, linkedin=linkedin)
     deadline = None if budget_seconds is None else monotonic() + budget_seconds
@@ -101,16 +59,13 @@ def describe_pending(corpus: CorpusRepository, client, *, linkedin: bool | None 
             posting = fetch_job(job.url, client=client, snippet=job.description or "",
                                 title=job.title or "", stats=report.outcomes)
         except ProxyUnusable as exc:
-            # The credential is the problem, not this job. Continuing would spend six retries per
-            # row on a proxy that has already said no.
+            # The credential is the problem, not this job.
             report.attempted -= 1
             report.proxy_error = str(exc)
             logger.warning("describe: stopping, the proxy refused: %s", exc)
             break
 
-        # The page answers several questions at once, and the metadata is worth keeping even when
-        # the description came back thin — an applicant count and a workplace tag are what the card
-        # and the filter read, and they arrive on responses that carried no usable JD.
+        # Metadata is worth keeping even when the description came back thin: the card and filter read it.
         before = (job.applicants, job.easy_apply, job.reposted, job.workplace)
         corpus.set_posting_metadata(
             job.id, applicants=posting["applicants"],
@@ -121,8 +76,7 @@ def describe_pending(corpus: CorpusRepository, client, *, linkedin: bool | None 
             report.metadata_written += 1
 
         if posting["application_url"] and not job.application_url:
-            # Both the link the user needs at apply time and the strongest cross-source dedup key
-            # there is — a board posting whose apply target is already tracked is the same job.
+            # Both the link the user needs at apply time and the strongest cross-source dedup key there is.
             corpus.set_application_url(job.id, posting["application_url"])
 
         text = posting.description
@@ -140,14 +94,7 @@ def describe_pending(corpus: CorpusRepository, client, *, linkedin: bool | None 
 
 
 def refresh_metadata(corpus: CorpusRepository, client, *, limit: int) -> DescribeReport:
-    """Read the posting signals for LinkedIn rows that already have a description.
-
-    Uses `fetch_meta`, which reads the guest fragment and no description — the text is already
-    stored and re-parsing it would be paying twice for something nobody asked to change.
-
-    Same `None`-never-overwrites rule as everywhere else: a page that did not show an applicant
-    caption must not erase a count an earlier fetch read.
-    """
+    """Read the posting signals for LinkedIn rows that already have a description."""
     report = DescribeReport()
     for job in corpus.awaiting_metadata(limit=limit):
         report.attempted += 1
@@ -160,8 +107,7 @@ def refresh_metadata(corpus: CorpusRepository, client, *, limit: int) -> Describ
             break
 
         if meta["accepting"] is False:
-            # The posting itself says so. Worth more than every other signal on the page: a closed
-            # listing in a feed costs the user attention and sometimes a build before they find out.
+            # The posting itself says so.
             corpus.mark_closed(job.id)
             report.closed += 1
 
@@ -183,30 +129,14 @@ def refresh_metadata(corpus: CorpusRepository, client, *, limit: int) -> Describ
 
 
 def describe_linkedin_for_all(session, *, limit_per_user: int = PROXIED_LIMIT) -> dict[str, int]:
-    """The proxied half of the pass, run for every user who brought a proxy credential.
-
-    **LinkedIn rows are the ones that need this most and can least be got for free.** Its guest
-    endpoint refuses datacenter addresses, so the shared cycle cannot touch them: on this platform
-    that left every LinkedIn posting in the corpus with no description beyond its title, and no
-    applicant count, posted time or workplace tag at all — three of the five things ranking reads.
-
-    Each user's own lease pays for their own requests, and the rows they fill are shared. That is
-    not a loophole in the tenancy rule but the point of a shared corpus: the second account to be
-    shown a job pays nothing for it, and nobody's bandwidth is spent on anybody else's behalf
-    without them having caused a fetch.
-
-    A user with no credential is skipped silently. That is the ordinary case, not an error — they
-    still get the two thirds of sources that cost nothing.
-    """
+    """The proxied half of the pass, run for every user who brought a proxy credential."""
     corpus = CorpusRepository(session)
     usage = ProxyUsageRepository(session)
     store = SecretStore(session)
     totals: dict[str, int] = {"users": 0, "attempted": 0, "described": 0}
 
     for user_id in list(session.scalars(select(User.id).where(User.active))):
-        # The plaintext lives inside `store.use` and nowhere else — the whole fetch happens within
-        # the block, and the client is closed with it, so the proxy URL never outlives the requests
-        # it authorised (`TENANT_SAFETY.md` §2).
+        # The plaintext lives inside `store.use` and nowhere else, so it outlives no request.
         with store.use(user_id, "proxy") as secret:
             if secret is None:
                 continue
@@ -223,9 +153,7 @@ def describe_linkedin_for_all(session, *, limit_per_user: int = PROXIED_LIMIT) -
                 with make_client(lease) as client:
                     report = describe_pending(corpus, client, linkedin=True,
                                               limit=limit_per_user)
-                    # Descriptions first, then whatever budget is left on metadata. The ordering is
-                    # the priority: a row with no description cannot be scored at all, while a row
-                    # missing its applicant count is merely ranked badly.
+                    # Descriptions first, then whatever budget is left on metadata.
                     remaining = max(limit_per_user - report.attempted, 0)
                     meta = (refresh_metadata(corpus, client, limit=remaining)
                             if remaining and not report.proxy_error else DescribeReport())
@@ -233,9 +161,7 @@ def describe_linkedin_for_all(session, *, limit_per_user: int = PROXIED_LIMIT) -
                 report.proxy_error = report.proxy_error or meta.proxy_error
                 totals["metadata"] = totals.get("metadata", 0) + meta.metadata_written
                 if report.proxy_error:
-                    # Recorded against the credential, not swallowed. Three of these quarantine it,
-                    # which is what stops an exhausted account being retried every hour forever —
-                    # and what makes "why is my LinkedIn feed empty" answerable.
+                    # Recorded against the credential, not swallowed.
                     usage.record_failure(user_id, report.proxy_error[:200])
                     totals["proxy_failures"] = totals.get("proxy_failures", 0) + 1
 

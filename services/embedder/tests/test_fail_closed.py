@@ -1,10 +1,4 @@
-"""Blast-radius gate (PLAN §14.6): when the embedder is unavailable, a caller must FAIL CLOSED —
-raise "cannot score" — never return a garbage or zero vector that the classifier would happily
-score against.
-
-Runs WITHOUT a stack: it points the reference client at a dead port on purpose. That is the whole
-point — the down case is the case being tested.
-"""
+"""Blast-radius gate (PLAN §14.6): an unavailable embedder must raise, never return a garbage vector."""
 from __future__ import annotations
 
 import socket

@@ -1,25 +1,4 @@
-/**
- * The seven pages, one question at a time.
- *
- * **Which page you are on is the server's answer, not this component's.** `next_page` is derived
- * from the rows each page writes, so deleting a credential later correctly reopens that page — and
- * there is no local step counter to disagree with it. It also means this file cannot let anybody
- * skip: a page is finished when its rows exist, and no button here can fake that.
- *
- * **No cards.** A form that is already one question per page does not need a box drawn around it to
- * say where it starts; the whitespace does that, and a container competes with the question for
- * attention. Title, at most one line of context, the field, and the way forward.
- *
- * **The way forward is always on the page, and pressing it is the user's job.** It used to be that
- * saving a field moved you on by itself, and nothing else could: a page you had already finished
- * had no control at all, so revisiting one from the rail was a dead end, and a page that saves more
- * than once -- Telegram takes a token, then reads the chat id -- could vanish part-way through.
- *
- * So Continue is always present and disabled until the page is satisfied, which does mean a control
- * you can see before you can use it. That is the lesser problem: a greyed button with "finish this
- * step to continue" beside it explains itself, where an absent one leaves somebody hunting for the
- * thing that is not there.
- */
+/** The seven pages, one question at a time. */
 import { useState } from "react";
 
 import { api, type OnboardingState } from "../api";
@@ -57,8 +36,7 @@ export function Onboarding({
   state: OnboardingState;
   onChanged: () => void;
 }) {
-  // The server's answer, overridden only so somebody can go *back* to something they finished. It
-  // never lets anybody move forward past an unfinished page.
+  // The server's answer, overridden only so somebody can go *back* to something they finished.
   const [viewing, setViewing] = useState<string | null>(null);
   const current = viewing ?? state.next_page ?? "done";
   const index = state.pages.findIndex((page) => page.key === current);
@@ -69,14 +47,7 @@ export function Onboarding({
     onChanged();
   });
 
-  /**
-   * Something on this page saved. **Refresh what is complete, and stay where we are.**
-   *
-   * It used to clear `viewing`, which handed the choice back to `next_page` and threw the user onto
-   * the following step the instant a field validated. Mid-sentence, sometimes: the Telegram page
-   * saves a token and then wants to read the chat id, and the page had already gone. Moving on is
-   * now something a person does, not something that happens to them.
-   */
+  /** Something on this page saved. */
   const done = (): void => {
     setViewing(current);
     onChanged();
@@ -87,8 +58,7 @@ export function Onboarding({
   const next = index >= 0 ? state.pages[index + 1] : undefined;
   const ready = index >= 0 && state.pages[index]?.complete === true;
 
-  // Clearing `viewing` hands control back to `next_page`, which is what shows the finishing screen
-  // once the last page is done.
+  // Clearing `viewing` hands control back to `next_page`.
   const advance = (): void => setViewing(next?.key ?? null);
 
   return (
@@ -100,9 +70,7 @@ export function Onboarding({
           <span className="brand">Mahoraga</span>
         </nav>
 
-        {/* Numbered circles, joined by a rule. A finished one is filled and carries a check; the
-            current one is ringed; a future one is a dim number. Finished ones are clickable —
-            going back to correct something is exactly what saving per page buys. */}
+        {/* Numbered circles, joined by a rule. */}
         <ol className="dots" aria-label={index >= 0 ? `Step ${index + 1} of ${state.pages.length}` : "Finished"}>
           {state.pages.map((page, position) => (
             <li key={page.key} className="dot-wrap">
@@ -137,10 +105,7 @@ export function Onboarding({
               {copy.lede ? <p className="lede">{copy.lede}</p> : null}
               <Step which={current} onDone={done} />
 
-              {/* **Always here, enabled once the page is satisfied.** Previously the only way
-                  forward was for a save to fire the jump itself, so a page that was already
-                  complete -- revisited from the rail, or finished a moment ago -- was a dead end
-                  with nothing to press. */}
+              {/* Always here, enabled once the page is satisfied. */}
               <div className="wizard-nav">
                 <button
                   type="button"

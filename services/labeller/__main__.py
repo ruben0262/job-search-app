@@ -1,22 +1,4 @@
-"""The `label` lane worker.
-
-    python -m services.labeller
-
-One queue job is one batch of 50 jobs, one Haiku call, on the user's own credential. The worker
-re-enqueues itself while work remains, which turns a four-thousand-job relabel into eighty small
-jobs rather than one hour-long one — and that is what lets the queue's round-robin serve a second
-user's first batch before this user's second.
-
-**One job kind, and the worker decides what it means.** Carrying existing labels across a rubric
-change and buying a first set for a new account are the same lane, the same call, and the same
-money; which one an account needs is a fact about its rows, not something a caller should have to
-know (`services/labeller/coldstart.py`). When the labels are in, it queues the train itself — an
-account sitting on 300 fresh labels and no model because nobody pressed a third button is not a
-state to leave somebody in.
-
-**The credential is decrypted here and nowhere else.** `SecretStore.use` holds it for the duration
-of the call and the redaction filter covers the traceback an SDK raises on a bad key.
-"""
+"""The `label` lane worker."""
 from __future__ import annotations
 
 import logging
@@ -57,24 +39,12 @@ def handle(session, job: QueueJob) -> None:
 
 
 def _queue_follow_up(session, job: QueueJob, did: str, remaining: int) -> None:
-    """Another batch if there is more to do, otherwise a train.
-
-    Both are enqueued inside the handler's transaction, so the follow-up and this batch's labels
-    land together — or neither does, and the queue replays the batch.
-    """
+    """Another batch if there is more to do, otherwise a train."""
     if remaining and did != "train":
-        # **Release the dedup slot before claiming it again.** `enqueue` collapses against any job
-        # in `ready` *or* `claimed` with the same key, and this job is `claimed`, holding exactly
-        # the key its continuation needs. Left alone the continuation is silently dropped and the
-        # run stops after one batch — which looks identical to success.
-        #
-        # Clearing it keeps the collapse doing its real job: a user pressing the button again
-        # mid-run folds into the pending continuation rather than starting a second run on their
-        # own money.
+        # Release the dedup slot before claiming it again.
         job.dedup_key = None
         session.flush()
-        # **Checked before re-arming, which is the only place it can be checked.** This loop is
-        # what keeps labelling alive, so a stop that does not reach here does not stop anything.
+        # Checked before re-arming, which is the only place it can be checked.
         user = session.get(User, job.user_id)
         if user is not None and user.labelling_paused:
             logger.info("cold_start: paused by the user, not re-arming for %s", job.user_id)

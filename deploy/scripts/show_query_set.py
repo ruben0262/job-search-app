@@ -1,10 +1,4 @@
-"""What the shared harvest is actually doing, across every active account. Read-only.
-
-The D6 comparison needs a way to see the thing that makes the shared design worth having: two
-users' configs folding into one query set, with the overlap paid for once. This prints that.
-
-    python deploy/scripts/show_query_set.py
-"""
+"""What the shared harvest is actually doing, across every active account."""
 from __future__ import annotations
 
 import sys
@@ -30,9 +24,7 @@ def main() -> int:
         configs = TenantRepository(session).active_configs()
         print(f"active accounts: {len(configs)}")
         for user_id, raw in configs.items():
-            # Through `migrate_config`, so this reads a stored v1 row and a sectioned v2 one the
-            # same way the harvester does — a report that only understands one shape is a report
-            # that will be wrong exactly when it matters.
+            # Through `migrate_config`, so this reads a stored v1 row and a sectioned v2 one the same way.
             config = migrate_config(dict(raw))
             for section in config["sections"]:
                 print(f"  {user_id}  [{section.get('platform', 'all')}] "

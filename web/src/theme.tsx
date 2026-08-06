@@ -1,14 +1,4 @@
-/**
- * Dark by default, light by choice.
- *
- * **Dark is the brand** — the landing page at mahoraga.rubenlekli.com is dark-only, and the app
- * opening in white would read as a different product (decided 2026-07-30). The toggle offers light
- * for anyone who wants it, and the choice sticks in `localStorage`.
- *
- * The attribute is written to `<html>` **before first paint** by a snippet in `index.html`, not
- * here: a React effect runs after the first frame, so a light-choosing viewer would see one dark
- * flash on every load. This module only keeps the toggle in sync afterwards.
- */
+/** Dark by default, light by choice. */
 import { useEffect, useState } from "react";
 
 const KEY = "theme";
@@ -32,8 +22,7 @@ export function ThemeToggle({ floating = false }: { floating?: boolean }) {
     <button
       type="button"
       className={floating ? "theme-toggle floating" : "theme-toggle"}
-      // Both labels exist because the icon alone is ambiguous to a screen reader, and "dark mode"
-      // does not say whether it is on or about to be.
+      // Both labels exist because the icon alone is ambiguous to a screen reader.
       aria-label={`Switch to ${next} mode`}
       title={`Switch to ${next} mode`}
       onClick={() => setChoice(next)}
@@ -43,8 +32,7 @@ export function ThemeToggle({ floating = false }: { floating?: boolean }) {
   );
 }
 
-/* Inline SVG rather than an emoji: an emoji renders as a colour image on most platforms, which is
-   the one thing this palette does not have. */
+/* Inline SVG rather than an emoji: an emoji renders as a colour image on most platforms. */
 
 function Moon() {
   return (

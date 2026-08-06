@@ -1,24 +1,4 @@
-"""Pause and resume the parts of the pipeline that spend money or send messages.
-
-    python deploy/scripts/pipeline_switch.py status
-    python deploy/scripts/pipeline_switch.py pause  score notify
-    python deploy/scripts/pipeline_switch.py resume score notify
-
-**Built for the re-embed, useful for every incident after it.** Changing what text a job is embedded
-from invalidates every stored vector, and the scorer fails closed on a version mismatch — correctly,
-because a vector built from different text is not a vector the model can read. So between the
-re-embed and the retrain there is a window where scoring *should* refuse, and without a switch that
-window is a queue full of dead-lettered jobs and an operator wondering what broke.
-
-Pausing marks a lane so the dispatcher stops enqueuing it. It does not kill work already claimed:
-a worker mid-job finishes and commits, which is what keeps "paused" from meaning "lost".
-
-## Why a table rather than an environment variable
-
-An env var means a container restart, which means the pause and the resume are deploys. A row is
-readable from anywhere, survives a restart, records who paused it and when, and can be flipped
-without touching the stack — which matters at the moment you most want to flip it.
-"""
+"""Pause and resume the parts of the pipeline that spend money or send messages."""
 from __future__ import annotations
 
 import argparse
@@ -31,19 +11,12 @@ from sqlalchemy import text
 
 from libs.db.session import session_scope
 
-# The lanes worth pausing. `docgen` and `label` spend the user's money; `notify` messages real
-# people; `score` is the one the re-embed needs. Harvest is deliberately absent — collecting jobs
-# into a shared corpus is safe at any time and stopping it only loses postings.
+# The lanes worth pausing.
 LANES = ("score", "notify", "label", "docgen", "train")
 
 
 def _ensure_table(session) -> None:
-    """The switch table, created on first use.
-
-    Not a migration, and deliberately: this is operational state rather than schema the application
-    depends on, and an operator reaching for it during an incident should not first have to run
-    alembic on a box where something is already wrong.
-    """
+    """The switch table, created on first use."""
     session.execute(text("""
         CREATE TABLE IF NOT EXISTS lane_pauses (
             lane        TEXT PRIMARY KEY,

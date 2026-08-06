@@ -1,13 +1,4 @@
-"""Which of the numbers need a person, and which are just numbers.
-
-**Alert on conditions that need a human, not on every error** (`OPERATIONS_PLAN.md` §4). Everything
-else is a dashboard reading. That distinction is the whole design: an alert that fires for a
-condition nobody acts on trains its reader to ignore the next one, and the next one is the outage.
-
-The qualifier that earns its keep is on the silent-feed alert: **no delivery in 24 hours *while
-jobs matched***. Without "while jobs matched" it fires constantly for anyone with a narrow config,
-who is not broken — they simply have nothing this week.
-"""
+"""Which of the numbers need a person, and which are just numbers."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -15,26 +6,11 @@ from dataclasses import dataclass
 from libs.ops.health import PlatformHealth
 from libs.settings import DELIVERY_INTERVAL_MIN
 
-# Disk headroom before a full disk stops being hypothetical. Postgres is the single point of
-# failure by design (`PLATFORM_ARCHITECTURE.md` §10.3), so this one is a page rather than a warning.
+# Disk headroom before a full disk stops being hypothetical.
 POSTGRES_DISK_BUDGET_BYTES = 60 * 1024**3
 POSTGRES_DISK_ALERT_FRACTION = 0.80
 
 # No delivery in this long, *with matches waiting*, is the silent-feed failure.
-#
-# **Was 24, cut to four cycles on 2026-08-04, because a day is not a threshold for a product that
-# promises fifteen minutes.** Delivery stopped for two and a half hours that afternoon — a notify
-# job overrunning its claim, being reclaimed, and never committing — and the status page stayed
-# entirely green throughout. The owner noticed before the platform did, which is the failure this
-# whole alert exists to prevent.
-#
-# Derived from the cadence rather than written as a number, so changing how often the feed is sent
-# moves the alarm with it. Four missed cycles is late enough that one slow run is not an incident
-# and early enough to matter on the day.
-#
-# The qualifier is what keeps it honest: this only fires when matches are **waiting**. A user with
-# nothing to send is not a broken feed, and without that half the alarm would ring for every quiet
-# account every hour.
 SILENT_FEED_HOURS = DELIVERY_INTERVAL_MIN * 4 / 60
 
 # Corpus growth past this multiple of projection means the retention trim is not running.
@@ -43,8 +19,7 @@ CORPUS_GROWTH_ALERT_FACTOR = 1.5
 
 @dataclass(frozen=True)
 class Alert:
-    # `page` needs somebody now; `warn` needs somebody today. Nothing else exists on purpose — a
-    # third level becomes the one everybody filters out.
+    # `page` needs somebody now; `warn` needs somebody today.
     severity: str
     key: str
     text: str
@@ -71,8 +46,6 @@ def _queue_alerts(health: PlatformHealth) -> list[Alert]:
     for lane in health.lanes:
         if lane.dead:
             # A dead letter is always a bug or a broken user credential, and both need looking at.
-            # It is deliberately a page even at one: the queue retries five times before giving up,
-            # so one dead job means five failures nobody saw.
             alerts.append(Alert(
                 "page", f"dead_letter:{lane.lane}",
                 f"{lane.dead} job(s) dead-lettered in the {lane.lane} lane",
@@ -110,9 +83,7 @@ def _capacity_alerts(health: PlatformHealth) -> list[Alert]:
 def _user_alerts(health: PlatformHealth) -> list[Alert]:
     alerts = []
     for user in health.users:
-        # **The qualifier is the alert.** Without "and matches are waiting" this fires for every
-        # user with a narrow config, who is not broken — and an alert that cries wolf is worse than
-        # no alert at all.
+        # The qualifier is the alert.
         silent = (user.pending_matches > 0
                   and (user.hours_since_delivery is None
                        or user.hours_since_delivery > SILENT_FEED_HOURS))
@@ -122,11 +93,7 @@ def _user_alerts(health: PlatformHealth) -> list[Alert]:
             alerts.append(Alert(
                 "page", "silent_feed",
                 f"{user.pending_matches} matching job(s) waiting and last delivery was {waited}",
-                # **Where the answer actually is, in the order it is usually in.** The old advice
-                # said "check the notifier and this account's Telegram status", and the first time
-                # this fired for real the notifier was working perfectly: every candidate was being
-                # dropped by the account's own filters, which the notifier logs by reason on each
-                # run and nothing else records (ROADMAP 6ad).
+                # Where the answer actually is, in the order it is usually in.
                 "Read the notifier's `dropped {...}` line for this account first — it says which "
                 "filter is emptying the feed. If nothing was dropped, check the notify lane and "
                 "this account's Telegram status.", user.email))
@@ -147,11 +114,7 @@ def _user_alerts(health: PlatformHealth) -> list[Alert]:
 
 
 def render(alerts: list[Alert]) -> str:
-    """Plain text for an email or a terminal. One line per alert, most severe first.
-
-    Deliberately not HTML: this is read at three in the morning on a phone, and the only thing that
-    matters is which line is at the top.
-    """
+    """Plain text for an email or a terminal."""
     if not alerts:
         return "No alerts. Everything the platform can check is within bounds."
 

@@ -1,20 +1,4 @@
-"""Store one credential for an account, from the box, without the API running.
-
-    python deploy/scripts/set_credential.py --email you@example.com --kind telegram_bot
-    python deploy/scripts/set_credential.py --email you@example.com --kind claude_api --no-validate
-
-The API's `/credentials` endpoint is the real path and this is deliberately not a replacement for
-it: it exists because the `api` container is not deployed yet, and an operator setting up the first
-two accounts should not have to wait for it.
-
-**The value is read from a prompt, never from an argument.** A credential on a command line ends up
-in shell history, in `ps` output for every user on the box, and in any shell tracing that happens to
-be on. `--stdin` is offered for scripted use, which keeps it out of all three.
-
-Validated against the provider by default, exactly as the endpoint does — a key that fails here
-fails now rather than at 3 a.m. mid-backfill. For `telegram_bot` the chat id is captured
-automatically, so nobody has to go and find it.
-"""
+"""Store one credential for an account, from the box, without the API running."""
 from __future__ import annotations
 
 import argparse
@@ -78,15 +62,11 @@ def main(argv: list[str] | None = None) -> int:
         SecretStore(session).put(user.id, args.kind, value, validated=validated)
 
         if args.kind == "proxy":
-            # The credential row, not just the secret. `user_secrets` holds the URL; the lease
-            # every proxied fetch acquires is granted from `proxy_credentials`, which carries the
-            # cap and the health status. Storing one without the other is what left a working
-            # proxy on the account that nothing could ever use.
+            # The credential row, not just the secret.
             _ensure_proxy_credential(session, user.id)
             credential = session.get(ProxyCredential, user.id)
             if credential.status != "healthy":
                 # A rotation is usually somebody replacing the credential that got quarantined.
-                # Clearing the failures here is the deliberate act of saying "this one is new".
                 credential.status = "healthy"
                 credential.fail_streak = 0
                 credential.last_error = None
@@ -94,9 +74,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"proxy credential ready: {credential.daily_cap_mb} MB/day cap")
 
         if args.kind == "telegram_bot":
-            # The step that confuses people more than the rest of setup put together, so it is read
-            # for them rather than asked for — unless it was given, which is the right answer for a
-            # bot that already posts to several chats.
+            # The step that confuses people more than the rest of setup put together.
             chat_id = args.chat_id or telegram_chat_id(value)
             if chat_id:
                 user.telegram_chat_id = chat_id

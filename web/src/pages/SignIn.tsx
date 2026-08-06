@@ -1,12 +1,4 @@
-/**
- * Sign in and sign up, on one screen — the first thing behind the landing page's CTAs, so it opens
- * with the landing's vocabulary: wordmark, kicker, one big title, and no box drawn around a form
- * that is already the only thing on the page (the onboarding rule).
- *
- * **Signup never says whether an address is already registered.** The server answers identically
- * either way, and this form has to match — a message here saying "that email is taken" would hand
- * back the account-existence oracle the API deliberately does not have.
- */
+/** Sign in and sign up, on one screen — the first thing behind the landing page's CTAs. */
 import { useState } from "react";
 
 import { api } from "../api";
@@ -32,9 +24,7 @@ export function SignIn({
       return;
     }
     await api.post("/auth/login", { email, password });
-    // **Land on the overview, not on `#/signin`.** The router falls through to the dashboard once
-    // signed in, but the hash stayed on the auth route — so the page was right and the navigation
-    // highlighted nothing, because no nav item matches `/signin`.
+    // Land on the overview, not on `#/signin`.
     window.location.hash = "/";
     onSignedIn();
   });

@@ -1,13 +1,4 @@
-"""Set an account's password and mark its email verified. Prompts; never takes it as an argument.
-
-    python deploy/scripts/set_password.py --email you@example.com
-
-An argument would land in shell history and in the process list, which is exactly how a password
-stops being one. Reads it twice from a no-echo prompt instead.
-
-For the two migrated accounts, which have no signup flow to go through yet. Ordinary accounts get
-their password at signup and verify by email (Phase 3).
-"""
+"""Set an account's password and mark its email verified."""
 from __future__ import annotations
 
 import argparse
@@ -49,11 +40,9 @@ def main(argv: list[str] | None = None) -> int:
         user.status = "active"
         user.active = True
         if user.email_verified_at is None:
-            # These accounts were migrated by the operator, not self-registered; there is no address
-            # to prove control of that the operator does not already control.
+            # These accounts were migrated by the operator, not self-registered.
             user.email_verified_at = datetime.now(UTC)
-        # A password change ends every existing session. Nothing has one yet, but the rule should
-        # not depend on that being true.
+        # A password change ends every existing session.
         revoke_all(session, user.id)
         print(f"password set for {args.email}")
     return 0

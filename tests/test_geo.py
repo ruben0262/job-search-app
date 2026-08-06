@@ -1,10 +1,4 @@
-"""The country filter, which is the only cheap pre-filter this project has that reads a fact.
-
-**Tested hard because the failure is invisible.** A filter that is too tight costs somebody a job
-they would have taken, and nothing in the product reports a posting that was never scored — no
-error, no count, no alert. That is the same shape as the incident that zeroed eleven sources for
-six hours, and the reason this file is longer than the module it tests.
-"""
+"""The country filter, which is the only cheap pre-filter this project has that reads a fact."""
 from __future__ import annotations
 
 import pytest
@@ -14,17 +8,7 @@ from libs.corpus.geo import EU_COUNTRIES, allows, read_country, wanted_countries
 # ── the trick: what a region selection actually admits ───────────────────────────────────────────
 
 def test_europe_means_the_union_and_the_uk_is_not_in_it():
-    """**The case the owner raised, and the reason this module exists.**
-
-    A user searching Europe who receives London jobs is being shown work they cannot take, and no
-    ranking signal repairs a hard eligibility fact. Nothing enforced this before: the rules score
-    awarded full marks to any posting once a region was selected, on the stated grounds that no
-    posting spells the region's name in its location field.
-
-    **One slug, and it carries the union.** There were two — `european_union` and `europe` — a
-    distinction nobody reading a checkbox would draw correctly, and getting it wrong silently
-    changes which jobs somebody sees.
-    """
+    """The case the owner raised, and the reason this module exists."""
     assert "GB" not in EU_COUNTRIES
     eu = wanted_countries(["europe"])
     assert eu is not None
@@ -34,8 +18,7 @@ def test_europe_means_the_union_and_the_uk_is_not_in_it():
 
 
 def test_a_non_eu_european_country_has_to_be_named():
-    """Switzerland and Norway are in Europe and not in the union. Under one slug that means naming
-    them, which is the honest cost of not having two words nobody can tell apart."""
+    """Switzerland and Norway are in Europe and not in the union."""
     assert wanted_countries(["europe"]) is not None
     assert "CH" not in wanted_countries(["europe"])
     with_swiss = wanted_countries(["europe", "switzerland"])
@@ -51,16 +34,14 @@ def test_choosing_a_country_admits_that_country_and_no_other():
 
 
 def test_naming_a_city_admits_the_country_around_it():
-    """Somebody who asked for Budapest has plainly not ruled out Hungary — and a posting in Hungary
-    rarely writes the city we happened to put in a picker."""
+    """Somebody who asked for Budapest has plainly not ruled out Hungary."""
     hungary = wanted_countries(["budapest"])
     assert hungary == frozenset({"HU"})
     assert allows("HU", hungary), "a Hungarian job must reach a user who asked for Budapest"
 
 
 def test_selections_add_up_rather_than_narrowing_each_other():
-    """Picking more places can only ever mean *more* jobs. A user adding the UK to an EU search has
-    widened it, and an intersection here would empty their feed."""
+    """Picking more places can only ever mean *more* jobs."""
     both = wanted_countries(["europe", "united_kingdom"])
     assert both is not None
     assert "GB" in both
@@ -68,13 +49,7 @@ def test_selections_add_up_rather_than_narrowing_each_other():
 
 
 def test_remoteness_is_not_a_place_and_has_no_entry_here():
-    """**Where and how are two questions.** The vocabulary carried `remote_eu`, `remote_uk`,
-    `remote_us` and `remote_worldwide`, which made them one question with answers that could
-    contradict each other — and duplicated a `remote_policy` field the config already had.
-
-    Working arrangement is `libs.corpus.workfilter`'s job. This module answers only which country,
-    so a remote slug is an unrecognised one and contributes nothing.
-    """
+    """Where and how are two questions."""
     assert wanted_countries(["remote_eu"]) is None
     assert wanted_countries(["remote_worldwide"]) is None
     # And it cannot silently widen a real selection either.
@@ -89,8 +64,7 @@ def test_no_selection_at_all_is_not_a_filter():
 
 
 def test_an_unknown_slug_does_not_quietly_widen_the_filter():
-    """A vocabulary entry added without a country belongs in this module. Failing open on it would
-    let a typo disable somebody's country filter with no symptom."""
+    """A vocabulary entry added without a country belongs in this module."""
     assert wanted_countries(["atlantis"]) is None, "nothing recognised means nothing to filter on"
     narrowed = wanted_countries(["budapest", "atlantis"])
     assert narrowed == frozenset({"HU"}), "the recognised half still applies"
@@ -128,22 +102,19 @@ def test_a_bare_city_still_identifies_its_country(location, expected):
     "", None, "Remote", "Anywhere", "EMEA", "Multiple locations", "3 locations", "Hybrid",
 ])
 def test_a_posting_that_names_no_country_reads_as_unknown(location):
-    """Which is a **pass**, not a rejection — see the eligibility test below. Remote roles name no
-    country on purpose, and they are the most portable jobs on the board."""
+    """Which is a pass, not a rejection — see the eligibility test below."""
     assert read_country(location) is None
 
 
 def test_a_country_word_inside_another_word_is_not_a_country():
-    """`us` fires inside "customer" and "Austria" contains "austri"; without word boundaries this
-    filter is a random number generator. This is the test that keeps it a filter."""
+    """`us` fires inside "customer" and "Austria" contains "austri"."""
     assert read_country("Customer Success, Remote") is None
     assert read_country("Vienna, Austria") == "AT"
     assert read_country("Bustling office") is None
 
 
 def test_the_location_outranks_the_title():
-    """A title mentioning a country is a real signal, but a location string is what a board *means*
-    by where the job is. Preferring the title would let "US-style benefits" relocate a Berlin job."""
+    """A title mentioning a country is a real signal."""
     assert read_country("Berlin, Germany", title="Backend Engineer (US hours)") == "DE"
     # With no location at all the title is better than nothing.
     assert read_country("", title="Backend Engineer, Germany") == "DE"
@@ -160,9 +131,7 @@ def test_a_uk_job_never_reaches_a_user_who_asked_for_the_eu():
 
 
 def test_a_job_with_no_readable_country_is_kept():
-    """**Absence of evidence is not evidence of absence**, which is the rule `workfilter` and
-    `_location_points` already follow. Rejecting these would discard exactly the remote roles that
-    suit somebody searching across a region."""
+    """Absence of evidence is not evidence of absence."""
     assert allows(None, wanted_countries(["europe"]))
     assert allows(None, wanted_countries(["budapest"]))
 
@@ -173,8 +142,7 @@ def test_a_user_who_filtered_nothing_gets_everything():
 
 
 def test_end_to_end_the_case_that_was_described():
-    """A user searching the EU. A UK posting is dropped; a German one is kept; one that names
-    nowhere is kept."""
+    """A user searching the EU."""
     wanted = wanted_countries(["europe"])
     postings = [
         ("London, United Kingdom", False),
@@ -190,10 +158,7 @@ def test_end_to_end_the_case_that_was_described():
 # ── the vocabulary and the filter have to agree ──────────────────────────────────────────────────
 
 def test_every_location_a_user_can_pick_resolves_to_countries():
-    """**A slug the picker offers and the filter cannot read is a country filter that silently does
-    not apply.** That is exactly what happened between the two halves of this change: `geo` moved to
-    one `europe` slug while `Location` still offered `european_union`, so both live accounts had a
-    location the filter returned `None` for — no filtering at all, and no symptom."""
+    """A slug the picker offers and the filter cannot read is a country filter that silently does not."""
     from libs.contracts.config import Location
 
     unresolved = [value.value for value in Location
@@ -210,9 +175,7 @@ def test_remoteness_is_not_in_the_place_vocabulary():
 
 
 def test_a_stored_config_from_the_old_vocabulary_still_reads():
-    """**Migrated on read, not by rewriting rows.** Both live accounts had `european_union`, and a
-    deploy must not change somebody's stored search — but every reader has to see the new shape
-    immediately, or the filter keeps not applying."""
+    """Migrated on read, not by rewriting rows."""
     from libs.contracts.config import migrate_config
 
     old = {"sections": [{"keywords": ["python"], "platform": "all",
@@ -228,8 +191,7 @@ def test_a_stored_config_from_the_old_vocabulary_still_reads():
 
 
 def test_the_v1_flat_config_still_migrates_and_its_locations_move_too():
-    """Two migrations in one read: v1's flat shape becomes a section, and that section's locations
-    are translated. Missing the second is how a v1 row would arrive with slugs nothing reads."""
+    """Two migrations in one read: v1's flat shape becomes a section."""
     from libs.contracts.config import migrate_config
 
     migrated = migrate_config({"keywords": ["python"], "locations": ["european_union"]})
@@ -237,16 +199,7 @@ def test_the_v1_flat_config_still_migrates_and_its_locations_move_too():
 
 
 def test_the_picker_offers_exactly_what_the_schema_allows():
-    """**The frontend and the schema are two lists of the same thing, and they drifted.**
-
-    `ConfigStep.tsx` groups places for the form; `Location` is what the server accepts. When the
-    vocabulary changed, the picker went on offering `european_union` and three `remote_*` slugs the
-    server had stopped accepting — a user picking one would have been refused on save, and one
-    already stored silently disabled their country filter.
-
-    Reading the component here rather than adding a JavaScript test runner: the two files are the
-    boundary, and the assertion is about them agreeing rather than about React.
-    """
+    """The frontend and the schema are two lists of the same thing, and they drifted."""
     import re
     from pathlib import Path
 
@@ -279,8 +232,7 @@ def test_a_trailing_iso_code_places_a_city_we_do_not_know():
 
 
 def test_a_trailing_us_state_code_is_the_united_states():
-    """LinkedIn's house style for American postings, and the largest single block of unresolved
-    rows before it was read."""
+    """LinkedIn's house style for American postings."""
     assert read_country("Springfield, MO") == "US"
     assert read_country("Overland Park, KS") == "US"
     assert read_country("Cedar Rapids, IA") == "US"
@@ -288,26 +240,17 @@ def test_a_trailing_us_state_code_is_the_united_states():
 
 
 def test_a_code_that_means_two_things_is_refused_rather_than_guessed():
-    """**`Stuttgart, DE` is Germany and `Wilmington, DE` is Delaware.**
-
-    Twelve such collisions occur in the live corpus. A guess that resolves the wrong way hides a
-    European job behind a US label, and rule 2 of this module is that a wrong country is the one
-    error that costs somebody a role. Unknown is free; wrong is not.
-    """
+    """`Stuttgart, DE` is Germany and `Wilmington, DE` is Delaware."""
     from libs.corpus.geo import _AMBIGUOUS_CODES
 
-    # Derived from the two tables rather than typed, so adding a country cannot silently start
-    # resolving a US state to it.
+    # Derived from the two tables rather than typed.
     assert {"DE", "IN", "CA", "CO", "MD"} <= _AMBIGUOUS_CODES
 
     # A city we do not know, beside a code that could be either: no answer.
     assert read_country("Nowheresville, DE") is None
     assert read_country("Nowheresville, IN") is None
 
-    # **The cost of that refusal, stated rather than hidden.** `Reutlingen, DE` is a real German
-    # posting we decline to place because Reutlingen is not in the table and `DE` is also Delaware.
-    # It passes the filter unfiltered, which is the right failure — the alternative is labelling
-    # Wilmington jobs as German.
+    # The cost of that refusal, stated rather than hidden.
     assert read_country("Reutlingen, DE") is None
 
     # A code that belongs to only one of the two resolves normally, in both directions.
@@ -316,8 +259,7 @@ def test_a_code_that_means_two_things_is_refused_rather_than_guessed():
 
 
 def test_a_known_city_settles_an_ambiguous_code():
-    """Which is what makes refusing the ambiguous ones affordable: the collisions that actually
-    occur are all cities the table knows, so the code beside them is never consulted."""
+    """Which is what makes refusing the ambiguous ones affordable."""
     assert read_country("Stuttgart, DE") == "DE"
     assert read_country("Bengaluru, IN") == "IN"
     assert read_country("Atlanta, GA") == "US"
@@ -326,25 +268,19 @@ def test_a_known_city_settles_an_ambiguous_code():
 
 
 def test_the_longest_place_name_wins_not_the_earliest():
-    """"US Remote - Berlin" is a Berlin job. Taking the first match in the string rather than the
-    longest name would read it as American — and this is the rule the old scan encoded by sorting
-    the table, so the single-pass rewrite has to keep it."""
+    """"US Remote - Berlin" is a Berlin job."""
     assert read_country("US Remote - Berlin") == "DE"
     assert read_country("Remote, Netherlands") == "NL"
 
 
 def test_a_posting_that_names_no_place_stays_unknown():
-    """Rule 2. Remote-first boards say "Worldwide" and mean it, and an unreadable country is a pass
-    rather than a rejection — dropping these would throw away the most portable jobs there are."""
+    """Rule 2."""
     for nothing in ("", "   ", "Remote", "Remote job", "Worldwide", "Anywhere", "Homeoffice"):
         assert read_country(nothing) is None, nothing
 
 
 def test_reading_a_country_is_fast_enough_for_ingest():
-    """**Every posting entering the corpus pays this**, so it is a throughput number rather than a
-    nicety. The name-at-a-time scan cost 64 microseconds against a table of 400 names; one pass
-    costs about five, and this fails long before a future edit makes it a problem again.
-    """
+    """Every posting entering the corpus pays this, so it is a throughput number rather than a nicety."""
     import time
 
     samples = ["Toulouse, FR", "Berlin, Germany", "San Francisco, CA", "", "Remote",

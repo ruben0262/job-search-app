@@ -1,33 +1,11 @@
-"""The facts block — grounding for every generation call.
-
-The single-tenant instance has `CLAUDE.md`, ~434 lines that Claude Code auto-loads on every call.
-**A hosted service has no CLI loading a file**, so the equivalent has to be built deliberately and
-injected explicitly (`PROFILE_CAPTURE_PLAN.md` §6.2). This is that.
-
-It is not optional and not an optimisation to defer. The 2026-07-15 A/B measured what happens
-without it: stripped of profile context, the model invented an employer and fabricated metrics. In
-a hosted product that lands on a real application under a real person's name.
-
-**Distinct from the rubric, and the distinction matters.** The rubric answers *is this job a fit*
-and is read by the labeller and the scorer. The facts block answers *what is true about this
-person* and is read by anything that writes on their behalf — CV, cover letter, outreach. They are
-rendered from the same confirmed profile, so they cannot disagree, but they carry different content:
-the rubric needs gates and priorities, the facts block needs evidence and phrasing.
-
-Rendered deterministically for the same reason: a generation that silently changes its grounding
-between two runs is unattributable.
-"""
+"""The facts block — grounding for every generation call."""
 from __future__ import annotations
 
 from libs.contracts.profile import ProfileSchema
 
 
 def render_facts(profile: ProfileSchema) -> str:
-    """Everything a generation call may state as fact about this person.
-
-    Ordered as a document rather than a data dump, because it is read by a model as context: who
-    they are, what they have done, what they can claim, and what must never appear.
-    """
+    """Everything a generation call may state as fact about this person."""
     sections = [
         f"# Facts about {profile.identity.name}",
         "",
@@ -103,12 +81,7 @@ def _projects(profile: ProfileSchema) -> str:
 
 
 def _certifications(profile: ProfileSchema) -> str:
-    """What they hold, so a generation can name one — and so it names no others.
-
-    A certification is the most checkable claim on a CV and the most damaging to invent: an employer
-    can verify it with the issuer in a minute. Listing them here is what makes "never invent a
-    certification" enforceable rather than a hope.
-    """
+    """What they hold, so a generation can name one — and so it names no others."""
     if not profile.certifications:
         return ""
     lines = ["## Certifications", ""]
@@ -136,8 +109,7 @@ def _rules(profile: ProfileSchema) -> str:
     """The three derived rules §6.2 names: CV header location, languages, exclusions."""
     lines = ["## Rules for anything written on their behalf", ""]
 
-    # The CV header location rule. A header that says "Budapest" on an application to a UK role
-    # reads as "will need relocation"; one that names the eligibility does not.
+    # The CV header location rule.
     eligibility = profile.identity.work_eligibility
     if eligibility:
         lines.append(f"- **CV header location**: state eligibility, not just a city — "

@@ -1,19 +1,4 @@
-"""Build your profile — the setup conversation, and the files it writes.
-
-This replaces "process your documents". That step spent one Opus call on a schema and produced a
-profile with no career in it; this is a conversation with the reference instance's own setup
-agents, which ask the questions somebody would ask and write the files the rest of the platform
-reads (`REBUILD_PLAN.md`).
-
-**The user never sees the file machinery.** They answer questions about themselves. That the
-answers become eight markdown files is this module's business, not theirs — so the endpoints are
-named for the conversation, and the file panel is there for anyone who wants to look rather than
-because they have to.
-
-**Nothing here starts work that costs money.** Finishing setup does not begin labelling: the reply
-says what the next step is and the user presses it. The one exception in the old flow — confirming
-a profile silently queueing a relabel — is exactly the surprise this avoids.
-"""
+"""Build your profile — the setup conversation, and the files it writes."""
 from __future__ import annotations
 
 import logging
@@ -49,11 +34,9 @@ router = APIRouter(prefix="/setup", tags=["setup"])
 
 class Turn(BaseModel):
     message: str = Field(min_length=1, max_length=8_000)
-    # Which command is driving. **Absent means "whatever this conversation is already running"**,
-    # resolved below; only a message that opens with a slash command names one.
+    # Which command is driving.
     agent: str | None = None
-    # Which chat this belongs to. Optional so an older client keeps working: absent means the most
-    # recent conversation, which is what a single-threaded client always meant.
+    # Which chat this belongs to.
     conversation_id: _uuid.UUID | None = None
 
 
@@ -68,8 +51,7 @@ def _stored_claude_kinds(db: Session, user_id: _uuid.UUID) -> set[str]:
 
 
 def _conversations(db: Session, user_id: _uuid.UUID) -> list[SetupConversation]:
-    """This account's chats, newest activity first. A brand-new chat has no activity yet, so
-    `created_at` breaks the tie rather than leaving it to the database's mood."""
+    """This account's chats, newest activity first."""
     return list(db.scalars(
         select(SetupConversation)
         .where(SetupConversation.user_id == user_id)
@@ -81,8 +63,7 @@ def _owned(db: Session, user_id: _uuid.UUID, conversation_id: _uuid.UUID) -> Set
     """One chat, or 404. Ownership is checked here so no caller can forget to."""
     row = db.get(SetupConversation, conversation_id)
     if row is None or row.user_id != user_id:
-        # 404 rather than 403: whether somebody else's conversation exists is not this caller's
-        # business to learn.
+        # 404 rather than 403: whether somebody else's conversation exists is not this caller's business.
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="no such conversation")
     return row
 
@@ -91,17 +72,9 @@ def _owned(db: Session, user_id: _uuid.UUID, conversation_id: _uuid.UUID) -> Set
 def conversation(db: Session = Depends(get_db),
                  user_id: _uuid.UUID = Depends(current_user),
                  conversation_id: _uuid.UUID | None = None) -> dict:
-    """One chat's transcript, the list of chats, the files, and whether documents can be built.
-
-    **The chat list and the open chat come back together** because they are always rendered
-    together, and two calls would let the switcher disagree with the transcript beneath it.
-
-    With no `conversation_id` this opens the most recent chat, creating the first one if the
-    account has none — so a new user lands in a conversation without pressing anything.
-    """
+    """One chat's transcript, the list of chats, the files, and whether documents can be built."""
     files = ProfileFiles(db, user_id)
-    # Seeding here rather than at signup so an account created before this existed picks up the
-    # scaffolds the first time it opens the page — one fewer migration to write and to remember.
+    # Seeded here so an account created before this existed picks up the scaffolds on first open.
     files.seed()
 
     existing = _conversations(db, user_id)
@@ -130,9 +103,7 @@ def conversation(db: Session = Depends(get_db),
                                                if row.last_message_at else None)}
                           for row in existing],
         "max_conversations": MAX_CONVERSATIONS,
-        # `status` is what tells the page whether to keep polling: a `pending` or `streaming` row
-        # is a turn still running somewhere, and it renders as the thinking state.
-        # `id` so the page can name the running turn when the user presses stop.
+        # `status` tells the page whether to keep polling: `pending` or `streaming` is a turn still running.
         "messages": [{"id": row.id, "role": row.role, "content": row.content, "agent": row.agent,
                       "status": row.status, "error": row.error,
                       "files_written": _written(row.tool_calls),
@@ -149,25 +120,7 @@ def conversation(db: Session = Depends(get_db),
 
 
 def _refuse_misdirected_command(message: str, agent: str) -> None:
-    """Stop a slash command being delivered to an agent as ordinary text.
-
-    **A conversation runs one command, and a typed command was just words.** It reached the model as
-    a user message, which then did the reasonable thing with an instruction it could not carry out:
-    improvised. In a live run `/setup-boards` was typed into a `/setup` chat and the agent invented
-    a destination for it, announcing that it would write the search configuration into two profile
-    files instead -- files nothing reads as search configuration. Nothing was refused, nothing
-    errored, and the user was told a plausible sentence about work that could not happen.
-
-    So the command never gets that far. Three cases, all answered here rather than by the model:
-
-    - the conversation's own command, which is how a chat is kicked off, passes;
-    - another command this platform can run, which needs its own chat;
-    - a command this platform does not have, which is said plainly rather than improvised around.
-
-    Ported prompts mention commands that only ever existed on the single-tenant instance --
-    `/setup-boards`, `/setup-companies`, `/apply` -- so a user reading one will type them, and they
-    have to land somewhere honest.
-    """
+    """Stop a slash command being delivered to an agent as ordinary text."""
     text = message.strip()
     if not text.startswith("/"):
         return
@@ -188,13 +141,7 @@ def _refuse_misdirected_command(message: str, agent: str) -> None:
 @router.post("/conversations", status_code=status.HTTP_201_CREATED)
 def new_conversation(db: Session = Depends(get_db),
                      user_id: _uuid.UUID = Depends(current_user)) -> dict:
-    """Start a fresh chat, with an empty transcript and the same profile underneath.
-
-    **The cap is enforced here and is not a setting** (owner, 2026-07-30). Every turn replays its
-    whole conversation on the user's own credential, so unbounded chats is unbounded spend on
-    re-reading them. Hitting the cap is answered with what to do about it rather than a bare
-    refusal, because deleting one is the intended move.
-    """
+    """Start a fresh chat, with an empty transcript and the same profile underneath."""
     existing = _conversations(db, user_id)
     # The admin panel's `conversations` limit. `None` is Unlimited, not "use the constant".
     ceiling = limits.resolve(db.get(User, user_id), "conversations")
@@ -213,12 +160,7 @@ def new_conversation(db: Session = Depends(get_db),
 @router.delete("/conversations/{conversation_id}")
 def delete_conversation(conversation_id: _uuid.UUID, db: Session = Depends(get_db),
                         user_id: _uuid.UUID = Depends(current_user)) -> dict:
-    """Delete a chat and everything said in it. **The profile is untouched.**
-
-    That asymmetry is the point and is worth stating: the files are what the conversation was for,
-    and throwing away the talking must not throw away the work. Deleting the last chat is allowed —
-    the next visit opens a fresh one, which is the same place a new account starts.
-    """
+    """Delete a chat and everything said in it."""
     row = _owned(db, user_id, conversation_id)
     db.delete(row)
     audit(logger, "setup.conversation_deleted", user=user_id, conversation=conversation_id)
@@ -228,15 +170,7 @@ def delete_conversation(conversation_id: _uuid.UUID, db: Session = Depends(get_d
 
 def _resolve_agent(db: Session, user_id: _uuid.UUID, conversation_id: _uuid.UUID,
                    named: str | None) -> str:
-    """Which command handles this turn.
-
-    A named one wins: that is a user opening a chat with a slash command. Otherwise the conversation
-    keeps whatever it has been running, because a conversation is one command from end to end --
-    that is the assumption the whole design rests on, and it was the one thing not being enforced.
-
-    `setup` remains the fallback for a chat that has never had an agent, which is what a client
-    sending a bare message has always meant.
-    """
+    """Which command handles this turn."""
     if named is not None:
         return named
     existing = db.scalar(
@@ -251,8 +185,7 @@ def _resolve_agent(db: Session, user_id: _uuid.UUID, conversation_id: _uuid.UUID
 
 
 class ConversationTitle(BaseModel):
-    # Trimmed rather than rejected when long: a name is a label, and truncating one is kinder than
-    # refusing a save somebody has already typed.
+    # Trimmed rather than rejected: truncating a name is kinder than refusing a save.
     title: str = Field(min_length=1, max_length=80)
 
 
@@ -260,16 +193,7 @@ class ConversationTitle(BaseModel):
 def rename_conversation(conversation_id: _uuid.UUID, body: ConversationTitle,
                         db: Session = Depends(get_db),
                         user_id: _uuid.UUID = Depends(current_user)) -> dict:
-    """Rename a chat.
-
-    Titles were generated and only generated: the first thing the user said, or the step's name when
-    they pressed Start. That is a good default and a poor permanent label -- three chats called
-    "Your profile" tell nobody which was which, and the switcher is how somebody finds the one they
-    want. Renaming is the cheapest possible fix and there was no way to do it.
-
-    Auto-naming is unaffected: it only ever fills a chat still holding the default, so a renamed one
-    keeps its name however many messages follow.
-    """
+    """Rename a chat."""
     row = _owned(db, user_id, conversation_id)
     row.title = " ".join(body.title.split())[:80]
     audit(logger, "setup.conversation_renamed", user=user_id, conversation=conversation_id)
@@ -278,17 +202,7 @@ def rename_conversation(conversation_id: _uuid.UUID, body: ConversationTitle,
 @router.post("/message", status_code=status.HTTP_202_ACCEPTED)
 def send(body: Turn, db: Session = Depends(get_db),
          user_id: _uuid.UUID = Depends(current_user)) -> dict:
-    """Accept one turn and queue it. Answers immediately; the reply arrives in the transcript.
-
-    **This used to run the turn inside the request, and that was the bug.** A turn takes minutes on
-    a frontier model, so switching tabs, opening another chat, refreshing or signing out aborted
-    it — the user's message was committed, the reply never came, and nothing said why. Now the
-    pending assistant row is created here and `services/setupagent` fills it in, so a turn survives
-    everything the browser can do to it.
-
-    **On the user's own credential**, like every other call this platform makes. Their profile,
-    their spend, no platform cost.
-    """
+    """Accept one turn and queue it."""
     if body.agent is not None and body.agent not in SETUP_AGENTS:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=f"no such step: {body.agent}")
 
@@ -306,27 +220,17 @@ def send(body: Turn, db: Session = Depends(get_db),
             db.add(current)
             db.flush()
 
-    # **Which command is driving, once the conversation has one.**
-    #
-    # Only a message that opens with a slash command names an agent; every ordinary reply omits it,
-    # and the field used to default to `setup`. So a chat started as the director ran the director
-    # for exactly one turn, and every answer the user typed after that was handled by `/setup` --
-    # a prompt that knows nothing about the four-step map and is told, correctly for itself, to send
-    # the user to a new chat for anything it cannot do. That is why the director kept handing off:
-    # after the first turn it was not the director any more.
+    # Which command is driving, once the conversation has one.
     agent = _resolve_agent(db, user_id, current.id, body.agent)
     _refuse_misdirected_command(body.message, agent)
 
-    # Refused here rather than in the worker: "connect your Claude account" is an answer the user
-    # can act on at the moment they pressed send, not a failed turn they find in the transcript.
+    # Refused here rather than in the worker: the user can act on it the moment they pressed send.
     if not _stored_claude_kinds(db, user_id):
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
             detail="Connect your Claude account first — setup runs on your own credential.")
 
-    # **Both rows before the queue sees anything.** The page renders the question and a thinking
-    # reply the instant this returns, and the worker has a row to stream into rather than one to
-    # invent.
+    # Both rows before the queue sees anything.
     db.add(SetupMessage(user_id=user_id, conversation_id=current.id,
                         role="user", content=body.message, agent=agent))
     touch_conversation(db, user_id, current.id, body.message)
@@ -335,9 +239,7 @@ def send(body: Turn, db: Session = Depends(get_db),
     db.add(reply)
     db.flush()
 
-    # No dedup key: two questions in a row are two turns, and collapsing them would silently drop
-    # the second. The per-conversation guard is the pending row itself — the client will not send
-    # again while one is open.
+    # No dedup key: two questions in a row are two turns, and collapsing them would silently drop the second.
     enqueue(db, "setup", user_id, payload={"message_id": reply.id, "message": body.message,
                                            "agent": agent})
     audit(logger, "setup.turn_queued", user=user_id, agent=agent, conversation=current.id)
@@ -347,19 +249,7 @@ def send(body: Turn, db: Session = Depends(get_db),
 @router.post("/message/{message_id}/stop")
 def stop_turn(message_id: int, db: Session = Depends(get_db),
               user_id: _uuid.UUID = Depends(current_user)) -> dict:
-    """Ask the running turn to stop.
-
-    **A request, not a kill.** The turn is on a worker that is usually mid-call to Anthropic, and
-    that call cannot be interrupted without abandoning a response already paid for. So this flips
-    the row to `cancelling` and the worker notices between tool steps, where everything so far is
-    committed and the next call has not been made. The user sees "stopping…" until it does, which
-    is honest — claiming it had stopped while it was still writing files would be a lie the file
-    panel would immediately contradict.
-
-    Idempotent, and safe on a turn that has already finished: a stop arriving one second after the
-    reply landed is the normal race, not an error, and answering it with a 409 would put a red
-    banner on a screen where nothing went wrong.
-    """
+    """Ask the running turn to stop."""
     row = db.get(SetupMessage, message_id)
     if row is None or row.user_id != user_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="no such message")
@@ -375,25 +265,14 @@ def stop_turn(message_id: int, db: Session = Depends(get_db),
 @router.get("/progress")
 def setup_progress(db: Session = Depends(get_db),
                    user_id: _uuid.UUID = Depends(current_user)) -> dict:
-    """Is setup finished, what is left, and which command produces each missing piece.
-
-    **The success criterion lives here rather than in a prompt.** An agent asked to decide whether
-    it has finished will either stop early or polish forever, and the ported director's gates read
-    a filesystem this platform does not have. This answers from the database: a file exists and is
-    filled, or it does not.
-
-    It is also what unblocks training. `train_user` refuses while anything here is outstanding, so
-    "setup complete" and "may train" are the same sentence rather than two rules that can disagree.
-    """
+    """Is setup finished, what is left, and which command produces each missing piece."""
     files = ProfileFiles(db, user_id)
-    # Repair first: `filled` is derived data in a column and has drifted in production, and a user
-    # being told to redo finished work is worse than the cost of recomputing it on a page load.
+    # Repair first: `filled` is derived data in a column and has drifted in production.
     files.repair_filled_flags()
 
     missing = files.missing_setup()
     outstanding: dict[str, list[str]] = {}
-    # Files nothing can currently produce are reported as such rather than attributed to a command
-    # that would not fix them — being told to run the wrong thing is worse than being told the truth.
+    # Files nothing can produce are reported as such rather than attributed to a command.
     blocked = {name: UNOWNED_FILES[name] for name in missing if name in UNOWNED_FILES}
     for name in missing:
         if name in UNOWNED_FILES:
@@ -404,18 +283,7 @@ def setup_progress(db: Session = Depends(get_db),
         "complete": not missing,
         "missing": missing,
         "required": list(setup_files()),
-        # **What the Start button runs, and it is the director whenever anything is missing.**
-        #
-        # This used to pick the first command that owned an outstanding file, which could never be
-        # the director: it owns none of them, because it writes nothing itself. So the one button a
-        # new user presses started a single step, and finishing that step handed them a button for
-        # the next one — four chats to do what one now does, which is the thing the director exists
-        # to avoid.
-        #
-        # It is right for a partly-finished profile too. The director reads the file state before it
-        # says anything and starts at the first outstanding step, so pressing Start after stopping
-        # halfway resumes rather than repeats. `outstanding_by_command` below still says which step
-        # owns what, for anyone who wants to run one on its own.
+        # What the Start button runs, and it is the director whenever anything is missing.
         "next_command": "setup-director" if missing else None,
         "outstanding_by_command": outstanding,
         "blocked": blocked,
@@ -425,12 +293,7 @@ def setup_progress(db: Session = Depends(get_db),
 
 
 def _require_files_visible(db: Session, user_id: _uuid.UUID) -> None:
-    """Refuse unless this account has been opened by an operator.
-
-    **On the endpoint, not only on the page.** A flag that greyed the tiles while this still
-    returned the contents would be a curtain: the URL is guessable, the response is JSON, and
-    anyone who had the page open before it was closed would keep reading.
-    """
+    """Refuse unless this account has been opened by an operator."""
     user = db.get(User, user_id)
     if user is None or not user.profile_files_visible:
         raise HTTPException(
@@ -451,12 +314,7 @@ def read_file(name: str, db: Session = Depends(get_db),
 @router.put("/files/{name}")
 def write_file(name: str, body: FileEdit, db: Session = Depends(get_db),
                user_id: _uuid.UUID = Depends(current_user)) -> dict:
-    """Edit a file by hand.
-
-    Editing is allowed but the agent is the better route, especially for a prompt: it knows where a
-    new role belongs and what the surrounding structure expects. This exists because somebody who
-    spots a wrong date should be able to fix it in ten seconds.
-    """
+    """Edit a file by hand."""
     # Editing implies reading: the form is filled with the current contents before it is saved.
     _require_files_visible(db, user_id)
     if name not in WRITEABLE:
@@ -474,11 +332,7 @@ def write_file(name: str, body: FileEdit, db: Session = Depends(get_db),
 @router.post("/start")
 def start_search(db: Session = Depends(get_db),
                  user_id: _uuid.UUID = Depends(current_user)) -> dict:
-    """Begin the first labelling run — the step after setup, pressed rather than assumed.
-
-    The old flow queued this the moment a profile was confirmed. It is the most expensive thing the
-    platform does on somebody's behalf, and it should not begin because a form was submitted.
-    """
+    """Begin the first labelling run — the step after setup, pressed rather than assumed."""
     files = ProfileFiles(db, user_id)
     if not files.is_ready():
         raise HTTPException(status.HTTP_400_BAD_REQUEST,

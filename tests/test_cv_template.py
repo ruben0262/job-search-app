@@ -1,17 +1,4 @@
-"""The CV layout on disk, which becomes a PDF attached to a real application.
-
-**What this no longer covers, deliberately:** there used to be a renderer (`libs/templates/cv.py`)
-that filled this layout from a `ProfileSchema`, and most of this file tested it. It was deleted on
-2026-07-31 — the base CV is a per-user file the setup agent writes (`base_cv.html` in
-`user_profile_files`), with the person's real experience in it, and nothing in the platform rendered
-a CV from a schema any more. The renderer's tests went with it.
-
-What survives is what still has a caller: the layout itself. It is hand-tuned and load-bearing —
-A4 page rules, font paths, the `@page` margin rule that stops Chrome drawing a header over the
-content — and `services/docgen/build.py` hands it to the tailoring prompt as the BASE TEMPLATE.
-The failures worth testing are the ones that still look correct: somebody else's employment history
-left in the layout, or a margin that silently applies to page one only.
-"""
+"""The CV layout on disk, which becomes a PDF attached to a real application."""
 from __future__ import annotations
 
 import pathlib
@@ -21,11 +8,7 @@ from libs.templates import BASE_CV_TEMPLATE, load
 
 
 def test_the_template_carries_no_employment_history():
-    """The identity check in `test_prompt_templates.py` covers the name and the contact details.
-
-    This covers the rest of a person: an employer, a thesis, or a certification left in the layout
-    would be a claim on every user's CV that no profile field put there.
-    """
+    """The identity check in `test_prompt_templates.py` covers the name and the contact details."""
     template = load(BASE_CV_TEMPLATE)
 
     for leak in ("Syntagma", "FlowSolutions", "Sheffield", "Bloomberg", "ByBit",
@@ -34,12 +17,7 @@ def test_the_template_carries_no_employment_history():
 
 
 def test_the_template_keeps_only_the_sections_no_profile_fills():
-    """References is the one section with no field behind it, and it is a fixed sentence.
-
-    Everything else is a marker. Certifications was briefly dropped for want of a schema field, and
-    that was the wrong direction: dropping the section silently removes a credential the candidate
-    actually holds, so `ProfileSchema` grew `certifications` instead (schema version 2).
-    """
+    """References is the one section with no field behind it, and it is a fixed sentence."""
     template = load(BASE_CV_TEMPLATE)
 
     assert "Available upon request" in template
@@ -47,8 +25,7 @@ def test_the_template_keeps_only_the_sections_no_profile_fills():
 
 
 def test_the_layout_is_the_hand_tuned_one():
-    """The whole point of filling a template rather than generating HTML: the A4 rules and the
-    structural classes the tailoring prompt is told to preserve are in the file, not in code."""
+    """The whole point of filling a template rather than generating HTML."""
     template = load(BASE_CV_TEMPLATE)
 
     assert "@page" in template and "size: A4" in template
@@ -57,8 +34,7 @@ def test_the_layout_is_the_hand_tuned_one():
 
 
 def test_the_template_on_disk_is_the_one_the_package_serves():
-    """`tests/test_prompt_templates.py` reads it by path and docgen reads it by package. Two paths
-    to the same bytes is fine; two different files would be a test that guards nothing."""
+    """`tests/test_prompt_templates.py` reads it by path and docgen reads it by package."""
     on_disk = pathlib.Path("libs/templates/base_cv.html").read_text(encoding="utf-8")
 
     assert load(BASE_CV_TEMPLATE) == on_disk.replace("\r\n", "\n")
@@ -67,10 +43,7 @@ def test_the_template_on_disk_is_the_one_the_package_serves():
 # ── page geometry ─────────────────────────────────────────────────────────────────────────────
 
 def test_page_margins_are_on_the_page_rule_not_the_body():
-    """**Body padding is applied once to the whole flowed document.** It puts a gap above page 1
-    and nothing above page 2, so a two-page CV starts hard against the paper edge on the second —
-    which is what a recruiter sees when they scroll past the fold. `@page` margins repeat.
-    """
+    """Body padding is applied once to the whole flowed document."""
     for path in ("libs/templates/base_cv.html", "libs/scaffolds/base_cv.html"):
         css = pathlib.Path(path).read_text(encoding="utf-8")
         page_rule = re.search(r"@page\s*\{[^}]*\}", css, re.S)

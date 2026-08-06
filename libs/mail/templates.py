@@ -1,16 +1,10 @@
-"""Message bodies. Plain text on purpose.
-
-Plain text renders everywhere, never lands in a spam filter for having a tracking pixel, and cannot
-hide the destination of a link behind anchor text — which matters when the whole message is asking
-someone to click a link that grants access to their account.
-"""
+"""Message bodies."""
 from __future__ import annotations
 
 VERIFY_SUBJECT = "Confirm your email"
 RESET_SUBJECT = "Reset your password"
 
-# Both templates show the URL in full rather than hiding it behind a label. A user who has been
-# taught to check where a link goes must be able to.
+# Both templates show the URL in full rather than hiding it behind a label.
 _VERIFY = """\
 Hi,
 

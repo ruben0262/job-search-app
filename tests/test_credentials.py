@@ -1,9 +1,4 @@
-"""Credential validation and the routes that store it.
-
-The validators are driven against a stub transport, not the network: what is worth testing is how
-each provider's answers are *read* — rate-limited is not invalid, no-credit is not a bad key — and
-whether a credential can escape into a response or a log.
-"""
+"""Credential validation and the routes that store it."""
 from __future__ import annotations
 
 import io
@@ -33,8 +28,7 @@ def _client(handler) -> httpx.Client:
 # ── how each provider's answers are read ──────────────────────────────────────────────────────
 
 def test_a_valid_api_key_is_accepted_and_sent_on_the_right_header():
-    """An API key goes on `x-api-key`. Sending it as a Bearer token is the most common way a
-    working credential looks broken."""
+    """An API key goes on `x-api-key`."""
     seen = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -104,8 +98,7 @@ def test_an_unknown_credential_kind_is_refused():
 # ── the chat id the user never has to find ────────────────────────────────────────────────────
 
 def test_the_chat_id_is_read_from_the_most_recent_message():
-    """`TENANT_SAFETY.md` §2 — this is the step that confuses people more than the rest of the setup
-    put together, so the platform reads it rather than asking."""
+    """`TENANT_SAFETY.md` §2 — this is the step that confuses people more than the rest of the setup put."""
     updates = {"ok": True, "result": [
         {"message": {"chat": {"id": 111}}},
         {"message": {"chat": {"id": 222}}},
@@ -124,8 +117,7 @@ def test_no_messages_yet_is_not_an_error():
 # ── the credential never escapes ──────────────────────────────────────────────────────────────
 
 def test_a_failed_validation_does_not_put_the_credential_in_the_log():
-    """The traceback an HTTP client raises on a failed call is the single place a credential most
-    often escapes — it quotes the request it was making."""
+    """The traceback an HTTP client raises on a failed call is the single place a credential most often."""
     stream = io.StringIO()
     handler = logging.StreamHandler(stream)
     install_on_handler(handler)
@@ -213,8 +205,7 @@ def test_a_bad_credential_is_refused_at_the_form(api, monkeypatch):
 
 @pytestmark_db
 def test_an_unreachable_provider_can_be_overridden(api, monkeypatch):
-    """A provider outage must not stop a user finishing onboarding. Stored unvalidated, and the
-    account page says so."""
+    """A provider outage must not stop a user finishing onboarding."""
     from libs.credentials import ValidationResult
 
     http, session, _, _ = api
@@ -250,8 +241,7 @@ def test_the_list_never_returns_a_credential_value(api, monkeypatch):
 
 @pytestmark_db
 def test_either_claude_credential_satisfies_the_requirement(api, monkeypatch):
-    """`claude_api` and `claude_oauth` are two adapters behind one requirement (D2). The front end
-    must not have to re-derive that rule and get it subtly wrong."""
+    """`claude_api` and `claude_oauth` are two adapters behind one requirement (D2)."""
     from libs.credentials import ValidationResult
 
     http, session, _, _ = api
@@ -266,8 +256,7 @@ def test_either_claude_credential_satisfies_the_requirement(api, monkeypatch):
 
 @pytestmark_db
 def test_removing_the_telegram_token_disconnects_delivery(api, monkeypatch):
-    """Leaving the account `connected` with no token would queue notify jobs that can only fail, and
-    each would look like a delivery problem rather than a missing credential."""
+    """Leaving the account `connected` with no token would queue notify jobs that can only fail."""
     from libs.credentials import ValidationResult
 
     http, session, user, _ = api
@@ -297,8 +286,7 @@ def test_signing_in_is_required(api):
 
 @pytestmark_db
 def test_the_channel_is_proven_by_posting_not_trusted(api, monkeypatch):
-    """The one check that matches what delivery needs: a bot must be an admin to post to a
-    channel, so the test send is the proof — and its failure strings are the user's fix."""
+    """The one check that matches what delivery needs: a bot must be an admin to post to a channel."""
     from libs.credentials import ValidationResult
 
     http, session, user, _ = api
@@ -343,8 +331,7 @@ def test_a_channel_id_that_is_not_one_is_refused_by_shape(api):
 
 @pytestmark_db
 def test_reveal_needs_the_password_and_returns_the_value_once(api, monkeypatch):
-    """The one exception to write-only, gated the way deletion is: a stolen session cookie is not
-    enough, the attempt is audited either way, and nothing else ever returns a value."""
+    """The one exception to write-only, gated the way deletion is: a stolen session cookie is not enough."""
     from libs.auth.passwords import hash_password
     from libs.credentials import ValidationResult
 
@@ -369,13 +356,7 @@ def test_reveal_needs_the_password_and_returns_the_value_once(api, monkeypatch):
 
 @pytestmark_db
 def test_an_oauth_token_that_does_not_work_is_never_stored(api, monkeypatch):
-    """**Unlike a pasted credential, this one is refused rather than kept unvalidated.**
-
-    A rendering fault once dropped a character from the minted token, and because the route stored
-    it anyway the account ended up holding a credential that could not make a single request while
-    the page said it was connected. There is no typo to preserve here: the platform produced this
-    value itself, so a token that does not authenticate is a bug on our side, not a user's guess.
-    """
+    """Unlike a pasted credential, this one is refused rather than kept unvalidated."""
     from libs.credentials import ValidationResult
     from libs.tenant.repository import TenantRepository
 
@@ -421,13 +402,7 @@ def test_a_failed_reconnect_leaves_the_working_token_alone(api, monkeypatch):
 
 @pytestmark_db
 def test_the_chat_id_can_be_set_by_hand_when_reading_it_fails(api, monkeypatch):
-    """**The way through when auto-capture cannot work.**
-
-    `telegram/connect` reads whoever last messaged the bot, which needs the update to still be
-    queued at Telegram and nothing else to have consumed it. When it comes back empty there was
-    previously nothing else to try: the page could not complete, and onboarding stopped at a step
-    whose only instruction was to press Start again -- which had already been done.
-    """
+    """The way through when auto-capture cannot work."""
     from libs.credentials import ValidationResult
 
     http, session, user, _ = api
@@ -449,8 +424,7 @@ def test_the_chat_id_can_be_set_by_hand_when_reading_it_fails(api, monkeypatch):
 
 @pytestmark_db
 def test_a_chat_id_the_bot_cannot_reach_is_refused(api, monkeypatch):
-    """Proven by sending, like the channel. A bot can look up a chat it may not write to, and
-    writing is the only thing delivery needs."""
+    """Proven by sending, like the channel."""
     from libs.credentials import ValidationResult
 
     http, session, user, _ = api
@@ -470,8 +444,7 @@ def test_a_chat_id_the_bot_cannot_reach_is_refused(api, monkeypatch):
 
 @pytestmark_db
 def test_a_channel_id_pasted_into_the_chat_field_is_caught_by_shape(api):
-    """The two numbers sit on the same page and the mistake is easy. A channel id is negative and
-    starts -100; a personal chat id never is."""
+    """The two numbers sit on the same page and the mistake is easy."""
     http, _session, _user, _ = api
     assert http.put("/credentials/telegram/chat",
                     json={"chat_id": "-1004454061394"}).status_code == 422
@@ -482,12 +455,7 @@ def test_a_channel_id_pasted_into_the_chat_field_is_caught_by_shape(api):
 
 @pytestmark_db
 def test_connecting_a_bot_registers_its_webhook_and_stores_the_secret(api, monkeypatch):
-    """**The button that did nothing, for every account but one.**
-
-    `telegram_webhook_secret` was declared on the model, created by a migration and read by the
-    webhook route — and written by nothing. Taps arrived, matched no user, 404'd in silence, and
-    "Build my CV" looked broken because it was. This is the producer that was missing.
-    """
+    """The button that did nothing, for every account but one."""
     import httpx as _httpx
 
     from services.api import credential_routes
@@ -514,8 +482,7 @@ def test_connecting_a_bot_registers_its_webhook_and_stores_the_secret(api, monke
     session.refresh(user)
     secret = user.telegram_webhook_secret
     assert secret, "the row must carry the secret, or no tap can be matched to this account"
-    # Telegram is told the same secret twice: once as the path it posts to, once as the header it
-    # sends. The route checks both.
+    # Telegram is told the same secret twice: once as the path it posts to, once as the header it sends.
     assert called["json"]["url"].endswith(f"/telegram/webhook/{secret}")
     assert called["json"]["secret_token"] == secret
     assert "callback_query" in called["json"]["allowed_updates"]
@@ -523,8 +490,7 @@ def test_connecting_a_bot_registers_its_webhook_and_stores_the_secret(api, monke
 
 @pytestmark_db
 def test_reconnecting_repairs_an_account_that_has_no_secret_yet(api, monkeypatch):
-    """Every account created before this existed has a live bot and a null secret. Pressing Connect
-    again has to be the repair, or each one needs a hand-written database row."""
+    """Every account created before this existed has a live bot and a null secret."""
     import httpx as _httpx
 
     from services.api import credential_routes
@@ -549,8 +515,7 @@ def test_reconnecting_repairs_an_account_that_has_no_secret_yet(api, monkeypatch
 
 @pytestmark_db
 def test_a_telegram_outage_does_not_block_connecting(api, monkeypatch):
-    """Registering is best-effort: the secret is stored either way and pressing Connect again
-    retries. A bad minute at Telegram must not strand somebody mid-onboarding."""
+    """Registering is best-effort: the secret is stored either way and pressing Connect again retries."""
     import httpx as _httpx
 
     from services.api import credential_routes
@@ -576,8 +541,7 @@ def test_a_telegram_outage_does_not_block_connecting(api, monkeypatch):
 
 @pytestmark_db
 def test_a_tap_that_matches_no_account_is_logged_rather_than_dropped(api, caplog):
-    """The 404 was silent, which is how a dead feature stayed dead. A tap arriving for a webhook
-    with no owner is the one symptom the platform gets, so it has to be written down."""
+    """The 404 was silent, which is how a dead feature stayed dead."""
     import logging as _logging
 
     http, _session, _user, _store = api

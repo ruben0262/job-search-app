@@ -1,23 +1,4 @@
-"""One-shot harvest entrypoint. An external timer runs this; it does one cycle and exits.
-
-    python -m services.harvester                 # one shared cycle
-    python -m services.harvester --dry-run       # plan the queries, fetch nothing
-
-**Exit codes are the interface**, because that is what a timer reports on:
-
-    0  a cycle ran
-    0  another cycle held the lock and this tick skipped  (not a failure - it is the design)
-    1  the cycle raised
-    2  configuration is missing or wrong
-
-A skipped tick is deliberately not an error. With a 15-minute timer and an occasionally slow cycle,
-treating overlap as failure would page somebody about the system working correctly.
-
-Scheduling is external — systemd timer, cron, or the Phase 2 queue. `deploy/README.md` has the unit.
-When `libs/queue` lands, `run_cycle` becomes the body of a queue worker and this file stays as the
-manual-run path, which is worth keeping: "run one now and show me" is the first thing anybody wants
-during an incident.
-"""
+"""One-shot harvest entrypoint."""
 from __future__ import annotations
 
 import argparse
@@ -51,41 +32,23 @@ from services.harvester.source_config import build_source_configs
 
 logger = logging.getLogger("harvester")
 
-# Consecutive failed batches before `--embed-only` stops. High enough to ride out a burst of lock
-# contention with the shared cycle, low enough that a genuinely broken embedder — or a database that
-# is refusing every write — does not spin for hours producing nothing.
+# Consecutive failed batches before `--embed-only` stops.
 MAX_EMBED_BATCH_FAILURES = 5
 
-# **Smaller than the harvest batch, on purpose.** 200 texts is around 100 seconds of GPU-less
-# encoding on its own, and the scheduled cycle embeds too — two clients on a single-threaded gateway
-# put one call past any sane timeout. 64 keeps each call short enough to finish under contention,
-# and with per-batch commits a smaller batch also means a shorter lock window and less lost on a
-# retry. The cost is more round trips, which is nothing next to the encoding itself.
+# Smaller than the harvest batch, on purpose.
 EMBED_ONLY_BATCH = 64
 
-# A bulk embed is not a web request. 120 seconds is the client default and it is sized for
-# request latency, not for encoding thousands of documents — it is what killed a rebuild on its
-# first batch while the gateway was still working on it.
+# A bulk embed is not a web request.
 EMBED_ONLY_TIMEOUT = 900.0
 
 
 def _configure_logging(verbose: bool) -> None:
-    """One rotating file plus the console (`libs.obs`).
-
-    A one-shot run under a systemd timer leaves nothing behind unless it is written down: the
-    process exits, the container is removed, and the only evidence a cycle happened at all is the
-    log file.
-    """
+    """One rotating file plus the console (`libs.obs`)."""
     configure("harvester", level="DEBUG" if verbose else "INFO")
 
 
 def _expected_embedder() -> EmbedderVersion | None:
-    """The vector space the platform's trained artifacts assume, if it has been pinned.
-
-    Unset is correct only before any classifier exists. Once one does, a mismatch must be a refusal
-    rather than a silently different vector space, so this is read from the environment and passed
-    into the cycle — see `libs/contracts/embedder.py`.
-    """
+    """The vector space the platform's trained artifacts assume, if it has been pinned."""
     model = os.environ.get("EMBEDDER_MODEL")
     dim = os.environ.get("EMBEDDER_DIM")
     if not model or not dim:
@@ -94,13 +57,7 @@ def _expected_embedder() -> EmbedderVersion | None:
 
 
 def _embed_only() -> int:
-    """Rebuild vectors until there are none left, and do nothing else.
-
-    **No gather, no describe, and no advisory lock.** A full cycle spends most of a minute on HTTP
-    before it reaches the embed step and holds the cycle lock throughout, so draining a re-embed
-    backlog by running cycles is both slow and self-blocking — eight of them in a row rebuilt
-    nothing at all, because each was locked out by the one before.
-    """
+    """Rebuild vectors until there are none left, and do nothing else."""
     embedder_url = os.environ.get("EMBEDDER_URL")
     if not embedder_url:
         logger.error("EMBEDDER_URL is not set — nothing can be embedded")
@@ -111,33 +68,14 @@ def _embed_only() -> int:
     consecutive_failures = 0
     try:
         while True:
-            # **One batch per transaction, deliberately.** `embed_all_pending` drains up to fifty
-            # batches inside a single session, which for a full rebuild is an hour-long transaction
-            # that commits nothing until the end: a stop, a crash or an OOM at minute fifty-nine
-            # throws away fifty-nine minutes of paid embedding, and until it lands there is no way
-            # to tell a working run from a wedged one. Committing per batch makes the run
-            # interruptible and its progress readable from the database — which is what an operator
-            # asked to start and stop it actually needs.
+            # One batch per transaction, deliberately.
             try:
                 with session_scope() as session:
                     result = embed_pending(CorpusRepository(session), embedder,
                                            expected=_expected_embedder(),
                                            batch_size=EMBED_ONLY_BATCH)
             except (OperationalError, EmbedderError) as exc:
-                # **Both of these are expected here, and neither may end the run.**
-                #
-                # A deadlock, because the shared harvest cycle writes the same table — ingesting
-                # rows, refreshing descriptions, trimming cold ones — and Postgres resolves a lock
-                # cycle by killing one side. On 2026-07-31 that victim was a sixty-minute re-embed,
-                # which rolled back every vector it had paid for.
-                #
-                # A gateway timeout, because the cycle embeds too, and two clients queued on a
-                # single-threaded encoder make a call that would have succeeded alone take longer
-                # than any fixed deadline. That killed the next attempt on its first batch.
-                #
-                # In both cases the rows stay pending and are picked up again, so the cost is one
-                # batch. Retrying rather than aborting is what lets a rebuild run alongside a live
-                # pipeline instead of requiring the pipeline to be stopped.
+                # Both of these are expected here, and neither may end the run.
                 consecutive_failures += 1
                 logger.warning("embed-only: batch failed (%s), retrying — %d in a row",
                                type(exc).__name__, consecutive_failures)
@@ -179,9 +117,7 @@ def main(argv: list[str] | None = None) -> int:
         return _embed_only()
 
     if args.linkedin:
-        # **Per user, on their own schedule and their own credential.** Separate from the shared
-        # cycle because the cadence, the bandwidth and the ban risk all belong to one account
-        # rather than to the platform (`services/harvester/linkedin.py`).
+        # Per user, on their own schedule and their own credential.
         install()
         with session_scope() as session:
             report = run_linkedin(session, limit=linkedin_concurrent_users(session))
@@ -191,9 +127,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.describe_linkedin:
-        # **A separate pass on a slower timer, not part of the cycle.** It spends users' own
-        # bandwidth rather than the platform's, so it is bounded per user and runs hourly — where
-        # the shared cycle runs every fifteen minutes because it costs nothing.
+        # A separate pass on a slower timer, not part of the cycle.
         install()
         with session_scope() as session:
             totals = describe_linkedin_for_all(session)
@@ -202,8 +136,7 @@ def main(argv: list[str] | None = None) -> int:
 
     embedder_url = os.environ.get("EMBEDDER_URL")
     if not embedder_url and not args.dry_run:
-        # Fail closed rather than harvesting rows nothing can embed. They would sit unembedded and
-        # unscoreable, and the cycle would report success.
+        # Fail closed rather than harvesting rows nothing can embed.
         logger.error("EMBEDDER_URL is not set — refusing to harvest rows that cannot be embedded")
         return 2
 
@@ -213,13 +146,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         with session_scope() as session:
-            # Source pre-filters are derived from the union of ACTIVE users' configs, never from
-            # one person's keywords - the corpus is shared, so filtering it to one user would
-            # silently deny everyone else the jobs they asked for.
-            # **The operator's per-source freshness, read here because this is where a session
-            # exists.** `build_source_configs` is pure and the setting lives in the database, which
-            # is why the two were never connected: the admin panel wrote a value and the harvest
-            # went on computing its own window (ROADMAP 6l.2).
+            # Source pre-filters come from the union of active users' configs, never from one person's.
             source_configs = build_source_configs(
                 TenantRepository(session).active_configs(),
                 freshness={name: freshness_hours(session, name) for name in HARVEST_SOURCES},
@@ -228,8 +155,7 @@ def main(argv: list[str] | None = None) -> int:
                 pages={name: pages_per_cycle(session, name) for name in HARVEST_SOURCES
                        if pages_per_cycle(session, name)},
                 ats_companies=ats_companies_per_cycle(session))
-            # The operator's per-source query ceilings, read where the session is. `--max-queries`
-            # flattens them to one number for a manual run and is not how the timer runs.
+            # The operator's per-source query ceilings, read where the session is.
             limits = (dict.fromkeys(HARVEST_SOURCES, args.max_queries)
                       if args.max_queries is not None
                       else {name: queries_per_cycle(session, name) for name in HARVEST_SOURCES})
@@ -262,24 +188,14 @@ def main(argv: list[str] | None = None) -> int:
     for key, error in report.source_failures.items():
         logger.warning("source %s failed: %s", key, error)
 
-    # **The LinkedIn tier runs on the same tick, not its own timer.**
-    #
-    # It is still a separate pass — per user, on that user's own proxy and their own cadence, which
-    # `run_linkedin` decides from `linkedin_next_run_at`. What it no longer has is a second clock.
-    # `linkedin.timer` was a second unit to install, a second timeout to get wrong, and it was got
-    # wrong: `TimeoutStartSec=30min` against a fifteen-minute timer meant a stuck pass cancelled the
-    # tick after it rather than delaying it, and LinkedIn ingest stopped for five hours (6ap, 6ar).
-    #
-    # After the shared cycle rather than before it: the shared sources cost the platform nothing and
-    # should not wait behind somebody's residential proxy.
+    # The LinkedIn tier runs on the same tick, not its own timer.
     if not args.dry_run:
         _run_linkedin_pass()
     return 0
 
 
 def _run_linkedin_pass() -> None:
-    """The per-user LinkedIn tier. Failures are logged, never raised — the shared harvest above has
-    already succeeded by this point and must not be reported as failed because a proxy was down."""
+    """The per-user LinkedIn tier."""
     try:
         with session_scope() as session:
             report = run_linkedin(session, limit=linkedin_concurrent_users(session))

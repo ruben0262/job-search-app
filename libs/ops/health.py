@@ -1,19 +1,4 @@
-"""What the platform looks like right now, as numbers.
-
-**Every failure here is silent** (`OPERATIONS_PLAN.md` §1), and that is the whole reason this
-module exists. A harvester that stops finding jobs, a queue that stalls, a retention trim that
-quietly stopped running — none of them raise, none of them page anybody, and each one is discovered
-weeks later by a user asking why their feed went quiet. Numbers make them visible; `libs.ops.alerts`
-decides which ones need a person.
-
-**Read-only, and cheap enough to serve in a request.** Every query here is a count or a max over an
-indexed column. Nothing scans the corpus, because a health check that costs more than the thing it
-watches is a health check somebody turns off.
-
-In `libs` rather than in a service because two callers need identical answers: the admin endpoint,
-and the timer that decides whether to wake somebody up. Two implementations would disagree exactly
-when it mattered.
-"""
+"""What the platform looks like right now, as numbers."""
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
@@ -40,15 +25,11 @@ from libs.tenant.filters import (
     candidate_conditions,
 )
 
-# What a lane's oldest waiting job is *expected* to be, in minutes. Exceeded by 4x is a stall
-# (`OPERATIONS_PLAN.md` §4). These are the lane's normal latency, not its timeout: `notify` runs on
-# a 60-second dispatcher, `label` and `train` are queued bursts that legitimately wait.
+# What a lane's oldest waiting job is *expected* to be, in minutes.
 EXPECTED_WAIT_MIN = {"notify": 5, "train": 30, "docgen": 10, "label": 60, "process": 15,
                      "score": 10}
 
-# The steady-state corpus projection from `PLATFORM_ARCHITECTURE.md` §4, in rows. Growth past 1.5x
-# means the 90-day retention trim is not running — a slow, silent failure that shows up as a full
-# disk months later, which is precisely the class this file exists to catch.
+# The steady-state corpus projection from `PLATFORM_ARCHITECTURE.md` §4, in rows.
 CORPUS_PROJECTION_ROWS = 400_000
 
 
@@ -63,8 +44,7 @@ class LaneHealth:
 
     @property
     def stalled(self) -> bool:
-        """Four times the lane's normal wait. Not a fixed number: a `notify` job waiting an hour is
-        broken, a `label` job waiting an hour is a queue doing its job."""
+        """Four times the lane's normal wait."""
         return (self.oldest_ready_min or 0) > self.expected_wait_min * 4
 
 
@@ -74,8 +54,7 @@ class UserHealth:
     email: str
     telegram_status: str
     model_version: int
-    # Jobs above the notify cutoff that have been sitting undelivered. The qualifier that makes
-    # "no delivery in 24 h" a real alert rather than one that fires for every narrow config.
+    # Jobs above the notify cutoff that have been sitting undelivered.
     pending_matches: int
     hours_since_delivery: float | None
     proxy_status: str | None
@@ -99,11 +78,7 @@ class PlatformHealth:
 
 
 def lane_health(session: Session) -> list[LaneHealth]:
-    """Depth, dead letters, and the oldest thing waiting, per lane.
-
-    Every lane is reported even when empty. A lane missing from the output because it had no rows
-    is indistinguishable from a lane whose worker died, and the second one matters.
-    """
+    """Depth, dead letters, and the oldest thing waiting, per lane."""
     rows = session.execute(
         select(QueueJob.lane, QueueJob.state, func.count(),
                func.min(QueueJob.run_after).filter(QueueJob.state == "ready"))
@@ -132,27 +107,14 @@ def lane_health(session: Session) -> list[LaneHealth]:
 
 
 def deliverable_window(config: dict | None) -> int:
-    """How old a posting may be and still be worth sending to this account, in hours.
-
-    The same reading `services.notifier.eligibility` uses — the **widest** window across their
-    sections, because a job cannot be attributed back to the section that found it. Duplicated here
-    rather than imported because `libs` may not import `services`; kept to one small function so the
-    duplication is visible and testable rather than spread across a query.
-    """
+    """How old a posting may be and still be worth sending to this account, in hours."""
     windows = [int(section.get("posted_within_hours") or 0)
                for section in (migrate_config(config or {})).get("sections") or []]
     return max([window for window in windows if window > 0], default=DEFAULT_MAX_AGE_HOURS)
 
 
 def _proxy_status(session: Session, user_id, proxy) -> str | None:
-    """What the panel should say about this account's proxy.
-
-    `None` when there is no credential row at all — that account simply has no LinkedIn tier and is
-    not broken. `"no_secret"` when the row exists and the secret behind it does not, which is the
-    state that looked healthy and was not: the row is a promise nothing fulfilled.
-
-    Reads the secret's *existence*, never its value — no decryption, one indexed lookup.
-    """
+    """What the panel should say about this account's proxy."""
     if proxy is None:
         return None
     stored = session.scalar(
@@ -162,29 +124,7 @@ def _proxy_status(session: Session, user_id, proxy) -> str | None:
 
 
 def pending_matches(session: Session, user: User) -> int:
-    """How many jobs this account is actually waiting on — the same pool the notifier would draw.
-
-    **This number decides whether somebody gets paged, so it has to mean what the alert says it
-    means.** It used to be `score >= 60` and nothing else, which was wrong three ways at once, and
-    the result was a page nobody could ever clear: an account showed "71 matching job(s) waiting"
-    where all 71 were older than the window that account had asked for, so the notifier was
-    correctly sending none of them and the alert was permanently red (ROADMAP 6ad).
-
-    Wrong three ways:
-
-    1. **60 is not the cutoff anybody delivers at.** `cutoff_for` reads the operating point the
-       user's own training run tuned — 29 and 42 for the two live accounts. A constant here counts
-       a pool neither of them uses.
-    2. **A closed posting is not waiting.** There is nothing to apply for, and `pending_feed`
-       excludes it in SQL.
-    3. **A posting past the user's freshness window is not waiting either.** It will never be sent,
-       so counting it turns "the feed is stuck" into "the corpus contains old jobs", which is not
-       an alertable condition and is always true.
-
-    Still an upper bound: eligibility (language, applicant glut, workplace) and the dating pass run
-    over descriptions, not in SQL. That direction is deliberate — an alert that over-counts slightly
-    is a false alarm somebody investigates, while one that under-counts is silence.
-    """
+    """How many jobs this account is actually waiting on — the same pool the notifier would draw."""
     cutoff = cutoff_for(session, user.id)
     filters = UserFilters.from_config(
         session.scalar(select(UserConfig.config).where(UserConfig.user_id == user.id)))
@@ -199,12 +139,7 @@ def pending_matches(session: Session, user: User) -> int:
 
 
 def user_health(session: Session) -> list[UserHealth]:
-    """Per-account state, for the alerts that name a user.
-
-    Bounded by the number of accounts, which is the point of an invite-only launch — this becomes a
-    single aggregate query well before it becomes slow, and pretending otherwise now would be
-    optimising a list of five rows.
-    """
+    """Per-account state, for the alerts that name a user."""
     out = []
     for user in session.scalars(select(User).where(User.status == "active").order_by(User.email)):
         pending = pending_matches(session, user)
@@ -223,10 +158,7 @@ def user_health(session: Session) -> list[UserHealth]:
             hours_since_delivery=(
                 round((datetime.now(UTC) - last_delivery).total_seconds() / 3600, 1)
                 if last_delivery else None),
-            # **A row is not a credential.** `_ensure_proxy_credential` creates this row when a
-            # user first saves anything, so it exists — and says `healthy` — for an account that has
-            # never stored a proxy secret at all. One live account read `healthy` while its LinkedIn
-            # tier had never run once, on the source that is 43% of the corpus (ROADMAP 6ao).
+            # A row is not a credential.
             proxy_status=_proxy_status(session, user.id, proxy),
         ))
     return out
@@ -248,12 +180,10 @@ def platform_health(session: Session, *, include_users: bool = True) -> Platform
         corpus_rows=corpus_rows,
         corpus_embedded=embedded,
         corpus_projection_rows=CORPUS_PROJECTION_ROWS,
-        # `pg_database_size` rather than a sum over tables: indexes, bloat and WAL are what actually
-        # fill a disk, and a table-sum reads reassuringly small right up until the disk is full.
+        # `pg_database_size` rather than a table sum: indexes, bloat and WAL are what fill a disk.
         postgres_bytes=int(session.scalar(
             select(cast(func.pg_database_size(func.current_database()), Float))) or 0),
-        # A view, not a function. Counted because connection exhaustion is a failure that presents
-        # as unrelated things breaking — the test suite found exactly that on its own first run.
+        # A view, not a function.
         connections=int(session.scalar(text("SELECT count(*) FROM pg_stat_activity")) or 0),
         users=user_health(session) if include_users else [],
     )

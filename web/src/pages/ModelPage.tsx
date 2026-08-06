@@ -1,15 +1,4 @@
-/**
- * Your model — where the scorer is trained, first time and every time after.
- *
- * **Split out of the profile chat on purpose** (owner, 2026-07-30): the chat edits what the
- * platform knows about you; this page is about the model that ranks jobs with it. The two were on
- * one screen and even the owner could not say where training happened — which meant nobody else
- * ever would.
- *
- * The page states the loop plainly — label, train, rank — because "why is my feed still keyword
- * matching" has a three-step answer, and a user who can see which step they are on does not write
- * a support message.
- */
+/** Your model — where the scorer is trained, first time and every time after. */
 import { useCallback, useEffect, useState } from "react";
 
 import { api, type Dashboard } from "../api";
@@ -46,14 +35,7 @@ export function ModelPage({
 
   const [training, setTraining] = useState<Training | null>(null);
 
-  /**
-   * Poll while anything is running.
-   *
-   * **The work never lived in the browser.** Pressing the button writes rows to Postgres and the
-   * worker pools drain them, so closing the tab or switching pages changes nothing about whether it
-   * finishes. What was missing was any way to see that: the page said "Starting…" once and then
-   * looked identical whether the run was halfway through or had failed an hour ago.
-   */
+  /** Poll while anything is running. */
   const readTraining = useCallback(async () => {
     const body = await api.get<Training>("/process/training").catch(() => null);
     if (body) setTraining(body);
@@ -63,17 +45,11 @@ export function ModelPage({
     void readTraining();
   }, [readTraining]);
 
-  // **Poll while there is work left, not only while a row happens to be queued.** Keying on
-  // `running` alone meant that once the page had seen an idle moment between batches it stopped
-  // asking and never noticed the run continuing -- and a page opened fresh mid-run never started
-  // polling at all, because its first answer arrived during one of those gaps.
-  // A stopped run has work left in it by definition, so the phase alone would keep the page
-  // polling for ever. Paused ends it.
+  // Poll while there is work left, not only while a row happens to be queued.
   const unfinished =
     training?.paused !== true &&
     (training?.running === true ||
-      // `train` is a readiness state an account with labels sits in for ever, so polling on it
-      // meant a trained account polled this endpoint every three seconds indefinitely.
+      // `train` is a readiness state an account with labels sits in for ever.
       ["cold_start", "relabel"].includes(training?.phase ?? ""));
 
   useEffect(() => {
@@ -84,9 +60,7 @@ export function ModelPage({
 
   const stop = useAction(async () => {
     await api.post("/process/training/stop");
-    // **Reflected before the next poll.** The server has set the flag by the time this returns, so
-    // waiting three seconds to show it left the user pressing Stop and watching "Working…" — which
-    // reads as the button having done nothing, and is what made them press it again.
+    // Reflected before the next poll.
     setTraining((current) => (current ? { ...current, running: false, paused: true } : current));
     await readTraining();
   });
@@ -101,8 +75,7 @@ export function ModelPage({
   if (dashboard.stage === "onboarding") return null;
   const { model, feed } = dashboard;
 
-  // The columns come from the newest run: it measured the most, and an older row simply leaves the
-  // cells it has no answer for empty rather than the table losing a column for everyone.
+  // The columns come from the newest run: it measured the most.
   const columns = model.history?.[0]?.metrics ?? [];
 
   const headline = model.servable
@@ -144,13 +117,9 @@ export function ModelPage({
         <p className="facts">{model.stale_reason}</p>
       ) : null}
 
-      {/* The one action. Labelling is the expensive step (it runs on your Claude key), so it is a
-          button rather than a side effect, and retraining afterwards is free and automatic. */}
+      {/* The one action. */}
       <div style={{ marginTop: "1.5rem" }}>
-        {/* **Gated on setup, not on the old capture flow's state.** This used to read `next.action`,
-            which belongs to the superseded document-processing step and knows nothing about the
-            profile files, so an account with all eight written was told to go and build a profile
-            it had already finished. `may_train` is the same check the trainer itself refuses on. */}
+        {/* Gated on setup, not on the old capture flow's state. */}
         {!dashboard.may_train ? (
           <p className="facts">
             Scoring needs a finished profile first.{" "}
@@ -165,9 +134,7 @@ export function ModelPage({
             ) : null}
 
             {training?.running ? (
-              /* **Running, and saying so.** The three dots are the same signal the setup chat
-                 uses, because it means the same thing there: something is happening that this
-                 page did not have to be open for. */
+              /* Running, and saying so. */
               <div className="working" style={{ marginBottom: "0.9rem" }}>
                 <span className="typing" aria-hidden="true">
                   <i />
@@ -199,8 +166,7 @@ export function ModelPage({
                 className="secondary"
                 disabled={stop.busy}
                 onClick={() => {
-                  /* Asked, because stopping is not free: the labels already bought are kept, but
-                     the run has to be started again from where it reached. */
+                  /* Asked, because stopping is not free: the labels already bought are kept. */
                   if (
                     window.confirm(
                       "Stop training? Nothing new will be picked up. A batch already running will "
@@ -237,9 +203,7 @@ export function ModelPage({
         )}
       </div>
 
-      {/* **Every version, not just the live one.** "Is this getting better" is a question about the
-          sequence, and it is the question somebody paying for their own training has. All of this
-          was already measured and stored at fit time; until now the only way to read it was SQL. */}
+      {/* Every version, not just the live one. */}
       {model.history?.[0] ? (
         <div style={{ marginTop: "3rem" }}>
           <h2>Version history</h2>
@@ -275,9 +239,7 @@ export function ModelPage({
                     <td>{entry.n_labels?.toLocaleString() ?? "—"}</td>
                     {columns.map((column) => {
                       const cell = entry.metrics.find((metric) => metric.key === column.key);
-                      // Absent rather than zero: the earliest runs recorded nothing but a label
-                      // count, and a 0.0 would read as a model that scored nothing rather than one
-                      // nobody measured.
+                      // Absent rather than zero: the earliest runs recorded nothing but a label count.
                       return <td key={column.key}>{cell ? String(cell.value) : "—"}</td>;
                     })}
                   </tr>

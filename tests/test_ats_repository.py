@@ -1,15 +1,4 @@
-"""ATS harvester state: tokens, and the ETag cache that makes polling near-free.
-
-The ETag tests matter more than they look. That cache is why an ATS cycle costs ~40 s cold and
-almost nothing warm — a board answering `304` costs one request and no parsing. Break it and every
-board is re-downloaded every cycle: slower, and a much larger footprint against sources already
-polled on sufferance.
-
-The concurrency test is the point of the port. The reference guards a whole-map JSON rewrite with a
-file spinlock whose `_acquire_lock()` returns False on timeout and lets the caller proceed anyway,
-so a contended write silently drops another writer's keys. Row-level upserts cannot do that, and
-this file proves it rather than asserting it.
-"""
+"""ATS harvester state: tokens, and the ETag cache that makes polling near-free."""
 from __future__ import annotations
 
 import os
@@ -101,11 +90,7 @@ def test_etags_round_trip_in_the_shape_the_poll_loop_expects(ats):
 
 
 def test_a_304_keeps_the_validator(ats):
-    """A 304 means "unchanged, your validator is still good".
-
-    Clearing it there would make the next poll unconditional and throw away the entire saving the
-    cache exists for.
-    """
+    """A 304 means "unchanged, your validator is still good"."""
     r, s = ats
     name = _ats_name()
     r.add_tokens([(name, "acme")])
@@ -118,10 +103,7 @@ def test_a_304_keeps_the_validator(ats):
 
 
 def test_a_live_board_with_no_etag_does_not_clear_an_existing_one(ats):
-    """Some ATS (Ashby, Recruitee, Workable v1) do not send ETags at all.
-
-    A source that never sends one must not be treated as a source that revoked one.
-    """
+    """Some ATS (Ashby, Recruitee, Workable v1) do not send ETags at all."""
     r, s = ats
     name = _ats_name()
     r.set_etag(name, "acme", 'W/"abc123"')
@@ -133,11 +115,7 @@ def test_a_live_board_with_no_etag_does_not_clear_an_existing_one(ats):
 
 
 def test_a_dead_board_forgets_its_validator(ats):
-    """So a board that comes back is fetched in full.
-
-    Otherwise it could answer 304 against a validator from before it disappeared, and the harvester
-    would skip content it has never actually parsed.
-    """
+    """So a board that comes back is fetched in full."""
     r, s = ats
     name = _ats_name()
     r.add_tokens([(name, "acme")])
@@ -151,12 +129,7 @@ def test_a_dead_board_forgets_its_validator(ats):
 
 
 def test_concurrent_writers_cannot_clobber_each_other(ats):
-    """The whole reason this store became a table.
-
-    The reference rewrites the entire map for an ATS under a best-effort file lock, so two gathers
-    finishing together can discard each other's keys wholesale. Row-level upserts touch different
-    rows and cannot interfere — proven here by interleaving writes rather than trusting the claim.
-    """
+    """The whole reason this store became a table."""
     r, s = ats
     name = _ats_name()
     for i in range(50):

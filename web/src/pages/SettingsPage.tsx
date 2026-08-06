@@ -1,10 +1,4 @@
-/**
- * Everything onboarding collected, plus the two things only this page can do: withdraw consent, and
- * delete the account.
- *
- * **Deletion asks for the password, not a checkbox.** It is irreversible and it unwinds an account
- * somebody spent real money building, so a stolen session cookie must not be enough.
- */
+/** Everything onboarding collected, plus the two things only this page can do: withdraw consent. */
 import { useEffect, useState } from "react";
 
 import { api, type Account } from "../api";
@@ -116,11 +110,7 @@ export function SettingsPage({ onSignedOut }: { onSignedOut: () => void }) {
         </button>
       </Card>
 
-      {/* **A modal, not an inline panel.** The password field used to unfold inside the card, a few
-          millimetres below the button that revealed it, so a second stray click landed on a form
-          that had appeared under the cursor. A backdrop puts the choice in front of the page and
-          nothing destructive sits where the previous click was. Clicking the backdrop or Escape
-          cancels; only the password submits. */}
+      {/* A modal, not an inline panel. */}
       {confirming ? (
         <div className="modal-backdrop" onClick={() => setConfirming(false)}>
           <div className="modal" onClick={(event) => event.stopPropagation()}>
@@ -168,9 +158,7 @@ export function SettingsPage({ onSignedOut }: { onSignedOut: () => void }) {
   );
 }
 
-/** The delivery knobs, side by side because people confuse them and the fix is words:
- *  the switch is whether messages arrive at all, the interval is when we check, the freshness is
- *  what is still worth sending when we do. */
+/** The delivery knobs, side by side because people confuse them and the fix is words. */
 function DeliveryCard({
   interval,
   active,
@@ -208,10 +196,7 @@ function DeliveryCard({
       </div>
       <Error>{toggle.error}</Error>
 
-      {/* **The cadence and the freshness window are the platform's** (2026-08-01), so they are
-          not here any more, a user choosing "every four hours" was choosing to hear about a
-          two-hour-old job, which is the opposite of what this product is. What remains is the one
-          real choice: whether messages are sent at all. */}
+      {/* The cadence and the freshness window are the platform's (2026-08-01). */}
       <p className="facts">
         Jobs are sent as soon as they are found, every {interval} minutes, when there is something
         new that matches you. How recent a posting has to be is set per job board by the platform.
@@ -220,9 +205,7 @@ function DeliveryCard({
   );
 }
 
-/** Change the password. Success signs you out everywhere — including here — because if the
- *  password is being changed for the reason passwords usually are, a session the thief already
- *  holds must die with it. The server enforces that; this just says it out loud beforehand. */
+/** Change the password. */
 function PasswordCard({ onChanged }: { onChanged: () => void }) {
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");

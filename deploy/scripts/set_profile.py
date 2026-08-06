@@ -1,15 +1,4 @@
-"""Apply a **confirmed** profile to an account, which renders its rubric.
-
-    python deploy/scripts/set_profile.py --email you@example.com --file /tmp/profile.json --dry-run
-
-The file is the output of the confirmation step (`PROFILE_CAPTURE_PLAN.md` §5) — a human has read it
-and agreed to it. That is not ceremony: every `not_list` entry becomes a hard gate, and a wrong one
-silently suppresses jobs the user would have wanted. A profile whose `confirmed` flag is unset is
-refused here for the same reason `save_profile` refuses it.
-
-Takes a path rather than carrying profiles in the repository: a profile is one person's education,
-employers, and constraints, and it belongs in the database, not in git.
-"""
+"""Apply a confirmed profile to an account, which renders its rubric."""
 from __future__ import annotations
 
 import argparse

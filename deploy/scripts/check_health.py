@@ -1,15 +1,4 @@
-"""Evaluate the platform's health and email the operator when something needs them.
-
-    python deploy/scripts/check_health.py                # print, exit 0/1/2
-    python deploy/scripts/check_health.py --email-on page
-
-Run on a timer (`deploy/health.timer`). **Exit code is the interface**: 0 nothing, 1 warnings, 2 a
-page — so a systemd `OnFailure=` or a cron mail catches it even if the mail below never sends.
-
-**Only sends when something is wrong.** A daily "all clear" is an email people filter, and the
-filter catches the one that mattered. Silence is the good state, and the timer's own failure is
-what `systemctl list-timers` is for.
-"""
+"""Evaluate the platform's health and email the operator when something needs them."""
 from __future__ import annotations
 
 import argparse
@@ -28,31 +17,15 @@ from libs.ops import evaluate, platform_health, render
 logger = logging.getLogger("health")
 
 
-# Every timer the platform depends on. Checked here rather than assumed, because a timer that was
-# never installed is invisible from inside the application: the lane it feeds simply has no work,
-# which reads identically to a quiet day. `notify-dispatch` was missing for weeks in exactly that
-# way — the notifier container up, no errors, and nobody hearing from us.
-#
-# `linkedin-describe` was removed on 2026-08-03. The describe pass moved inside the per-user
-# LinkedIn run — dedup, then fetch the JD for what is left, on the same lease in the same pass
-# (ROADMAP 6l.1) — so the hourly timer had nothing to do, was disabled on the box, and this list
-# went on telling an operator to re-enable it. **A required-timer list that names a timer the design
-# deliberately deleted is worse than not checking**: it trains the reader to ignore the one alarm
-# here that has caught a real outage.
+# Every timer the platform depends on.
 REQUIRED_TIMERS = ("harvester", "linkedin", "notify-dispatch", "health", "backup")
 
-# How long the embedder gets to answer before it counts as down. Generous: the encoder is
-# single-threaded and a harvest cycle embedding at the same time will queue this behind it, and a
-# slow answer is a working service.
+# How long the embedder gets to answer before it counts as down.
 EMBEDDER_TIMEOUT_SEC = 20.0
 
 
 def missing_timers() -> list[str]:
-    """Which required timers are not enabled. Empty when systemd cannot be asked at all.
-
-    Silent rather than noisy off-box: this script is also run by hand on a laptop, and "systemctl
-    not found" is not a platform alert.
-    """
+    """Which required timers are not enabled."""
     import shutil
     import subprocess
 
@@ -68,16 +41,7 @@ def missing_timers() -> list[str]:
 
 
 def embedder_down() -> str | None:
-    """Why the embedder is unreachable, or `None` if it answers.
-
-    **The second single point of failure** (`OPERATIONS_PLAN.md` §8, G10) and the only one nothing
-    else reports: without it a harvest cycle embeds nothing and every new job stays unscored, which
-    from inside the application is indistinguishable from a quiet day. The alerts in `libs/ops` are
-    computed from the database and cannot see it, so it is probed here — the same reason the timer
-    check lives in this file rather than in the evaluator.
-
-    Skipped, not failed, when no URL is configured: this script is also run by hand on a laptop.
-    """
+    """Why the embedder is unreachable, or `None` if it answers."""
     url = os.environ.get("EMBEDDER_URL")
     if not url:
         return None
@@ -115,9 +79,7 @@ def main(argv: list[str] | None = None) -> int:
     embedder = embedder_down()
     summary = render(alerts)
     if embedder:
-        # Same reasoning as the timer block: this is the finding that explains the others. An
-        # unreachable embedder is why nothing is being embedded and therefore why nothing is being
-        # scored, and reading it the other way round wastes an hour.
+        # Same reasoning as the timer block: this is the finding that explains the others.
         summary = (
             f"EMBEDDER UNREACHABLE: {embedder}\n"
             "  Without it no new job gets a vector, so nothing is scored and the feed goes quiet\n"
@@ -125,9 +87,7 @@ def main(argv: list[str] | None = None) -> int:
             "  Check: docker compose -f deploy/compose.embedder.yml ps\n\n"
             + summary)
     if absent:
-        # Prepended rather than appended: it is the finding that explains the others. A missing
-        # `notify-dispatch` is why the notify lane is empty, and reading that the other way round
-        # wastes an hour.
+        # Prepended rather than appended: it is the finding that explains the others.
         summary = ("TIMERS NOT ENABLED: " + ", ".join(absent)
                    + "\n  Fix with: sudo deploy/install-units.sh\n\n" + summary)
     print(f"{state.corpus_rows:,} corpus rows, {state.users_active} active users, "
@@ -140,12 +100,10 @@ def main(argv: list[str] | None = None) -> int:
 
     paging = [alert for alert in alerts if alert.pages]
     if embedder:
-        # Pages. It is not degraded-but-recovering: every job harvested while it is down stays
-        # unscored, and the backlog only grows until somebody acts.
+        # Pages.
         paging.append(f"embedder unreachable: {embedder}")
     if absent:
-        # A missing timer pages. It is not a degraded state that recovers on its own — the work it
-        # schedules is simply never happening, and it will keep not happening until somebody acts.
+        # A missing timer pages.
         paging.append(f"timers not enabled: {', '.join(absent)}")
     audit(logger, "health.checked", alerts=len(alerts), paging=len(paging),
           corpus=state.corpus_rows, timers_missing=len(absent),

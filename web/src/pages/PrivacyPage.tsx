@@ -1,10 +1,4 @@
-/**
- * The privacy page. Public, because signup links it before anybody has an account.
- *
- * Rendered from `GET /legal/privacy` rather than written here as prose. The API serves it from
- * `libs/legal`, which is the same source the consent screen uses — so a processor added to the
- * platform cannot be missing from the page a user read before agreeing.
- */
+/** The privacy page. */
 import { useEffect, useState } from "react";
 
 import { api, type Consent } from "../api";

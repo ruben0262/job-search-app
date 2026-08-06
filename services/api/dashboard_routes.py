@@ -1,16 +1,4 @@
-"""The dashboard, and the feed behind it.
-
-**State-driven, not a wall of buttons** (`ONBOARDING_AND_PROCESSING.md` §4). One endpoint reads the
-counters and says what the account needs *now*; it does not offer four actions and hope they are
-pressed in the right order. That matters because the order is not guessable — processing invalidates
-labels, relabelling costs real money, and training is free — and a user who presses them in the
-wrong order pays for the mistake.
-
-**The feed is stage-aware.** Before the first model exists it is ranked by the config alone
-(`libs.scoring.rules`, stage 0), and it says so. A feed that silently drops from "your model" to
-"keyword matching" and back is one nobody can reason about, so the stage is part of the response
-rather than an implementation detail.
-"""
+"""The dashboard, and the feed behind it."""
 from __future__ import annotations
 
 import logging
@@ -38,24 +26,16 @@ from services.api.status_routes import daily_cap
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["dashboard"])
 
-# Where a posting with no date sorts against one that has one. Older than any real posting, so an
-# undated row loses a tie rather than winning it — absence of a date is not evidence of freshness.
+# Where a posting with no date sorts against one that has one.
 _UNDATED = datetime.min.replace(tzinfo=UTC)
 
 
 def _is_admin(user: User) -> bool:
-    """The same rule `require_admin` enforces, in one place.
-
-    It was written inline, and only in the branch for a finished account, so the two paths disagreed
-    with each other and one of them disagreed with the gate. Both bugs were the same bug: a rule
-    with more than one copy.
-    """
+    """The same rule `require_admin` enforces, in one place."""
     return bool(user.is_admin) or user.email.lower() in admin_emails()
 
 
-# How many corpus rows the stage-0 feed ranks in Python. Bounded because this runs in a request and
-# the corpus keeps growing; a new account's feed does not get better for scanning ten thousand rows,
-# and the personal model takes over within the hour anyway.
+# How many corpus rows the stage-0 feed ranks in Python.
 STAGE0_SCAN = 2_000
 FEED_PAGE = 25
 
@@ -63,32 +43,17 @@ FEED_PAGE = 25
 @router.get("/dashboard")
 def dashboard(db: Session = Depends(get_db),
               user_id: _uuid.UUID = Depends(current_user)) -> dict:
-    """Everything the front page shows, in one call.
-
-    One call rather than five, because the panels are not independent: "you have 3,310 labels" and
-    "your model is stale" contradict each other if they are read a few seconds apart while a worker
-    is running.
-    """
+    """Everything the front page shows, in one call."""
     from services.api.process_routes import state as process_state  # noqa: PLC0415 - one caller
 
     user = db.get(User, user_id)
     onboarding = onboarding_state(db, user_id)
     if user.onboarding_completed_at is None:
-        # Nothing below is meaningful yet, and showing empty panels reads as a broken product
-        # rather than an unfinished signup.
-        #
-        # **The operator hint is the exception, and it belongs here too.** An admin part-way through
-        # their own signup is still an admin, and this branch omitting the key hid the panel from
-        # them until they finished. That is precisely when an operator most wants it: a fresh
-        # account being set up is the thing they are usually watching.
+        # Nothing below is meaningful yet, and empty panels read as a broken product.
         return {"stage": "onboarding", "onboarding": onboarding.as_dict(),
                 "is_admin": _is_admin(user)}
 
-    # Past this point the account **has** finished onboarding, and the branch above deliberately
-    # tests the stored timestamp rather than live completeness. They differ: revoking a credential
-    # later makes a page incomplete again, and sending a working account back to the signup wizard
-    # for a broken bot token would hide the dashboard that explains what broke. Regressions surface
-    # as banners instead — visible, actionable, and not a wall.
+    # Past this point onboarding is finished; the branch above tests the stored timestamp.
 
     model = db.scalar(
         select(UserModel).where(UserModel.user_id == user_id)
@@ -110,39 +75,23 @@ def dashboard(db: Session = Depends(get_db),
         "model": {
             "version": user.model_version,
             "servable": servable,
-            # Named rather than implied. "Your model was trained before your last profile change"
-            # is a sentence a user can act on; a greyed-out button is not.
+            # Named rather than implied.
             "stale_reason": None if servable else _stale_reason(user, model),
             "trained_at": model.created_at.isoformat() if model and model.created_at else None,
-            # Every version, not just the live one: "is this getting better" is a question about
-            # the sequence, and it is the question a user paying for their own training has.
+            # Every version, not just the live one: "is this getting better" is about the sequence.
             "history": model_history(db, user_id),
         },
-        # **Whether a model can be trained, by the same predicate the trainer refuses on.** The
-        # Model page used to gate on `next.action`, which belongs to the superseded capture flow and
-        # knows nothing about the setup files — so an account with all eight written was told to go
-        # and build a profile it had already finished.
+        # Whether a model can be trained, by the same predicate the trainer refuses on.
         "may_train": not ProfileFiles(db, user_id).missing_setup(),
         "feed": {"scored": scored, "labels": labels, "applied": applied},
         "documents": db.scalar(select(func.count()).select_from(UserDocument)
                                .where(UserDocument.user_id == user_id)) or 0,
         "telegram": user.telegram_status,
-        # The cadence is the platform's, not this user's — reported so the page can say how
-        # often the feed arrives without implying it is theirs to change.
-        # `per_day_cap` is null for unlimited, which is the catalogue's default and what both
-        # live accounts run at. It used to be read from the user's config instead of from the limit
-        # the notifier enforces, so the page said 20 on a day that delivered 908.
+        # The cadence is the platform's, so the page must not imply it is theirs to change.
         "notifications": {"per_day_cap": daily_cap(user),
                           "interval_min": int(settings.get(db, "delivery_interval_min"))},
         "banners": _banners(user, servable, onboarding),
-        # **Whether to show the operator panel at all.** A rendering hint, not the access control:
-        # `require_admin` decides that, and this must agree with it or the panel is unreachable for
-        # somebody who is allowed in.
-        #
-        # It read `ADMIN_EMAILS` alone, which is half the rule. Granting admin from the panel sets
-        # `is_admin`, and the API duly started accepting that user's `/admin/*` calls -- while their
-        # dashboard carried on hiding the menu item that leads there. The toggle appeared to do
-        # nothing, because the only visible half of it did nothing.
+        # Whether to show the operator panel at all.
         "is_admin": _is_admin(user),
     }
 
@@ -155,12 +104,7 @@ def _stale_reason(user: User, model: UserModel | None) -> str:
 
 
 def _banners(user: User, servable: bool, onboarding) -> list[dict]:
-    """The health warnings of `OPERATIONS_PLAN.md` §4b — failures the user can fix, said plainly.
-
-    Each one is a thing that silently stops the product working. A broken Telegram token means the
-    feed still runs and nothing is ever delivered, which looks like "no jobs matched" from where the
-    user is sitting.
-    """
+    """The health warnings of `OPERATIONS_PLAN.md` §4b — failures the user can fix, said plainly."""
     banners = []
     if user.telegram_status == "broken":
         banners.append({"level": "error", "key": "telegram_broken",
@@ -172,9 +116,7 @@ def _banners(user: User, servable: bool, onboarding) -> list[dict]:
         banners.append({"level": "info", "key": "paused",
                         "text": "Your feed is paused. Turn it on to start receiving jobs."})
 
-    # Anything that was satisfied at signup and is not any more. Telegram has its own banner above
-    # because its failure mode is specific; the rest are reported generically rather than not at
-    # all, since a missing Claude credential or a deleted config stops the product just as dead.
+    # Anything that was satisfied at signup and is not any more.
     regressed = [page for page in onboarding.pages
                  if not page.complete and page.key != "telegram"]
     for page in regressed:
@@ -195,23 +137,7 @@ def feed(*, db: Session = Depends(get_db), user_id: _uuid.UUID = Depends(current
          min_score: float | None = Query(None, ge=0, le=100),
          sort: str = Query("score", pattern="^(score|posted|fetched|title|company)$"),
          direction: str = Query("desc", pattern="^(asc|desc)$")) -> dict:
-    """The ranked jobs — a page of them, with the filters the table offers.
-
-    The stage is in the response because a feed that silently changes how it ranks is one nobody can
-    reason about — and a new account's first feed *is* the keyword one, which is worth saying rather
-    than passing off as the model's work.
-
-    **The age filter keeps undated rows.** Same rule as delivery: a missing `posted_at` is unknown,
-    not old, and a preference filter fails open. `total` and `sources` are for the table's pager and
-    source dropdown — computed under the same filters as the page, or the counts would lie.
-
-    **`min_score` defaults to the delivery cutoff, not to zero.** The corpus is shared and the
-    harvest is broad, so most of what is scored for any given user is not for them: a page showing
-    everything is a page of other people's jobs with a number beside them. The default is the same
-    threshold that decides what reaches Telegram, so the table and the channel agree about what
-    counts as a match. Passing `min_score=0` explicitly widens it, which is a thing a user may
-    genuinely want and should have to ask for.
-    """
+    """The ranked jobs — a page of them, with the filters the table offers."""
     user = db.get(User, user_id)
     model = db.scalar(
         select(UserModel).where(UserModel.user_id == user_id,
@@ -267,14 +193,7 @@ def feed(*, db: Session = Depends(get_db), user_id: _uuid.UUID = Depends(current
 def _rules_feed(db: Session, user_id: _uuid.UUID, *, limit: int, offset: int,
                 q: str | None, source: str | None, remote: bool | None, applied: bool | None,
                 max_age_days: int | None, sort: str, direction: str) -> tuple[list[dict], int]:
-    """Stage 0. Scored in Python over the most recent slice, not in SQL.
-
-    In Python because the rule is a word-boundary match tolerant of the space/hyphen split, and
-    expressing that as SQL would either be wrong (`LIKE '%full-stack%'` misses "Full Stack") or a
-    regular expression per keyword per row, which is not faster for being in the database. The
-    filters follow the scoring for the same reason: one list, filtered once, is simpler than the
-    same conditions split across SQL and Python.
-    """
+    """Stage 0."""
     config = TenantRepository(db).get_config(user_id)
     if not config:
         return [], 0
@@ -311,11 +230,7 @@ def _rules_feed(db: Session, user_id: _uuid.UUID, *, limit: int, offset: int,
             scored.append((result.score, row))
 
     if sort == "score":
-        # **Freshness breaks a tie.** The rules score is title plus description and nothing else
-        # since location left it, so jobs matching on the same terms score identically — and an
-        # arbitrary tie-break is a feed that reorders itself for no reason a user can see. The newer
-        # posting wins, which is the one thing this product is for. Undated rows sort last rather
-        # than first: "we do not know when this was posted" is not evidence that it is new.
+        # Freshness breaks a tie.
         scored.sort(
             key=lambda item: (item[0], item[1].posted_at or _UNDATED),
             reverse=direction == "desc")
@@ -336,10 +251,7 @@ def _rules_feed(db: Session, user_id: _uuid.UUID, *, limit: int, offset: int,
 
 
 def _item(job: CorpusJob, score: float | None, applied_at=None) -> dict:
-    """One feed row. **No description** — it is up to 2,500 characters per job and the list does not
-    show it; fetching 25 of them would be most of the response for none of the value. The salary is
-    the one thing the description holds that the table wants, so it is extracted here (regex, free)
-    rather than shipped raw."""
+    """One feed row."""
     return {
         "id": job.id,
         "title": job.title,
