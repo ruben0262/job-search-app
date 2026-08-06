@@ -30,6 +30,7 @@ from libs.corpus import langfilter, workfilter
 from libs.corpus.ranking import applicant_glut, priority_key
 from libs.limits import limit_default
 from libs.ops.health import DEFAULT_MAX_AGE_HOURS
+from libs.tenant.filters import UserFilters
 
 logger = logging.getLogger(__name__)
 
@@ -160,14 +161,16 @@ def _unusable(item, rules: Eligibility, *, first_seen, now) -> str | None:
 
 def _preferences(item, rules: Eligibility) -> tuple[bool, str | None]:
     """What this particular user does and does not want to see. Every check fails open."""
-    if rules.exclude_keywords:
-        # Title and company only, never the description. A posting that merely *mentions* a term
-        # in a benefits paragraph is not the job the user was excluding, and matching the body
-        # turned "no recruitment agencies" into a filter that removed most of a feed.
-        haystack = f"{item.title or ''} {item.company or ''}".lower()
-        for term in rules.exclude_keywords:
-            if term in haystack:
-                return False, "excluded_keyword"
+    # Title and company only, never the description. A posting that merely *mentions* a term in a
+    # benefits paragraph is not the job the user was excluding, and matching the body turned "no
+    # recruitment agencies" into a filter that removed most of a feed.
+    #
+    # **Whole words, via the same matcher the pre-score filter uses.** This was `term in haystack`,
+    # a plain substring test, and one live account excludes `"sr"` — which matched *Israel* Tech
+    # and Di*sr*aeli Ltd and removed them silently. Two copies of one rule, and both were wrong the
+    # same way, which is why it is now one implementation in `libs` (ROADMAP 6av).
+    if UserFilters(exclude=rules.exclude_keywords).excluded(item.title, item.company):
+        return False, "excluded_keyword"
 
     if applicant_glut(source=item.source, applicants=item.applicants,
                       cap=rules.applicant_cap):

@@ -26,7 +26,7 @@ from sqlalchemy import func, select, true
 from sqlalchemy.orm import Session
 
 from libs.db.models import CorpusJob, User, UserConfig, UserJobState
-from libs.obs import audit
+from libs.obs import Timings, audit, report_timings, timed
 from libs.scoring import centroid
 from libs.tenant.filters import UserFilters
 from libs.tenant.repository import TenantRepository
@@ -78,25 +78,13 @@ def _in_countries(countries):
     return CorpusJob.country.is_(None) | CorpusJob.country.in_(countries)
 
 
-def score_batch(session: Session, user_id: _uuid.UUID, *, limit: int = MAX_PER_RUN) -> tuple[int, int]:
-    """Score up to `limit` rows. Returns (scored, remaining).
+def _candidates(session, user, user_id, filters, limit):
+    """The rows worth considering for this account, newest first.
 
-    **Does not commit** — the worker owns the transaction, so the scores and the "job done" record
-    land together or neither does.
-
-    A `ModelUnavailable` is left to the caller: it is the difference between "this account has no
-    model yet", which is normal for a new signup and must not dead-letter, and a genuine version
-    mismatch, which must not be scored through.
+    Every condition here is an indexed comparison that Postgres answers without the row ever
+    reaching Python — which is what makes a 30,000-row corpus affordable per account.
     """
-    user = session.get(User, user_id)
-    if user is None:
-        return 0, 0
-
-    model = ModelRegistry(session).get(user_id)
-    filters = UserFilters.from_config(
-        session.scalar(select(UserConfig.config).where(UserConfig.user_id == user_id)))
-
-    rows = session.execute(
+    return session.execute(
         select(CorpusJob.id, CorpusJob.title, CorpusJob.company, CorpusJob.description,
                CorpusJob.embedding, CorpusJob.embedding_dim, CorpusJob.embedding_version)
         .outerjoin(UserJobState,
@@ -126,8 +114,39 @@ def score_batch(session: Session, user_id: _uuid.UUID, *, limit: int = MAX_PER_R
         .order_by(CorpusJob.first_seen_at.desc())
         .limit(limit)).mappings().all()
 
+
+def score_batch(session: Session, user_id: _uuid.UUID, *, limit: int = MAX_PER_RUN) -> tuple[int, int]:
+    """Score up to `limit` rows. Returns (scored, remaining).
+
+    **Does not commit** — the worker owns the transaction, so the scores and the "job done" record
+    land together or neither does.
+
+    A `ModelUnavailable` is left to the caller: it is the difference between "this account has no
+    model yet", which is normal for a new signup and must not dead-letter, and a genuine version
+    mismatch, which must not be scored through.
+    """
+    user = session.get(User, user_id)
+    if user is None:
+        return 0, 0
+
+    # **The split between filtering and scoring, which the lane timings alone cannot show.**
+    #
+    # `lane_timings` already reports how long a `score` job ran; what it cannot say is whether that
+    # was the filter or the model. The whole argument for filtering is that it is orders of
+    # magnitude cheaper than what it protects, and a claim like that has to be measurable or it is
+    # just a claim (CLAUDE.md §4). One line per batch, with the counts beside the milliseconds.
+    timings = Timings()
+
+    model = ModelRegistry(session).get(user_id)
+    filters = UserFilters.from_config(
+        session.scalar(select(UserConfig.config).where(UserConfig.user_id == user_id)))
+
+    with timed("select", timings):
+        rows = _candidates(session, user, user_id, filters, limit)
+
     if not rows:
         return 0, 0
+
 
     tenant = TenantRepository(session)
 
@@ -147,21 +166,23 @@ def score_batch(session: Session, user_id: _uuid.UUID, *, limit: int = MAX_PER_R
     # problem somebody can fix and "dropped 400" is not.
     excluded: dict[str, int] = {}
     kept = []
-    for row in rows:
-        term = filters.excluded(row["title"], row["company"])
-        if term is None:
-            kept.append(row)
-        else:
-            excluded[term] = excluded.get(term, 0) + 1
-            skip(row["id"])
+    with timed("exclude", timings):
+        for row in rows:
+            term = filters.excluded(row["title"], row["company"])
+            if term is None:
+                kept.append(row)
+            else:
+                excluded[term] = excluded.get(term, 0) + 1
+                skip(row["id"])
 
     # **The centroid**, on whatever survived. It needs the embedding, so it cannot run in SQL.
     #
     # `keep` returns all-True when there is no centroid, which is the fail-open: an account in cold
     # start, or a model fitted before the column existed, has every row scored (ROADMAP 6an).
-    verdicts = centroid.keep([row["embedding"] for row in kept],
-                             centroid.unpack(model.centroid) if model.centroid else [],
-                             model.centroid_threshold or 0.0)
+    with timed("centroid", timings):
+        verdicts = centroid.keep([row["embedding"] for row in kept],
+                                 centroid.unpack(model.centroid) if model.centroid else [],
+                                 model.centroid_threshold or 0.0)
     worth_scoring = [row for row, ok in zip(kept, verdicts, strict=True) if ok]
     for row, ok in zip(kept, verdicts, strict=True):
         if not ok:
@@ -177,11 +198,18 @@ def score_batch(session: Session, user_id: _uuid.UUID, *, limit: int = MAX_PER_R
         return 0, remaining
 
     bands = {"high": 0, "needs-review": 0, "skip": 0}
-    for result in score_rows(model, [dict(row) for row in worth_scoring]):
-        tenant.record_score(user_id, result.job_id, score=result.score,
-                            model_version=user.model_version)
-        bands[result.decision] = bands.get(result.decision, 0) + 1
+    with timed("score", timings):
+        for result in score_rows(model, [dict(row) for row in worth_scoring]):
+            tenant.record_score(user_id, result.job_id, score=result.score,
+                                model_version=user.model_version)
+            bands[result.decision] = bands.get(result.decision, 0) + 1
     session.flush()
+
+    # **The number the whole design rests on**, in one line: how long filtering took against how
+    # long the model took, with what each stage removed.
+    report_timings(timings, event="score.timing", log=logger, user=str(user_id),
+                   candidates=len(rows), excluded=sum(excluded.values()),
+                   off_centre=off_centre, scored=len(worth_scoring))
 
     remaining = unscored_count(session, user_id)
     if excluded:

@@ -30,6 +30,7 @@ costs somebody a role and is invisible; a wrong inclusion costs one model call.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
@@ -49,6 +50,14 @@ class UserFilters:
     # Lower-cased terms the user typed in order *not* to see them, matched against title and
     # company. "senior", "unpaid", a company they will not work for.
     exclude: tuple[str, ...] = field(default_factory=tuple)
+
+    def __post_init__(self) -> None:
+        # Compiled once per batch rather than per row: one pass over the title and company against
+        # every term at once, which is what keeps this affordable inside the scoring loop.
+        pattern = "|".join(re.escape(term) for term in self.exclude if term)
+        object.__setattr__(
+            self, "_matcher",
+            re.compile(rf"(?<!\w)({pattern})(?!\w)", re.I) if pattern else None)
 
     @classmethod
     def from_config(cls, config: dict | None) -> UserFilters:
@@ -98,8 +107,17 @@ class UserFilters:
         Returns *which* term rather than a boolean so the caller can log what a filter is doing —
         "dropped 400 for 'senior'" is a config problem somebody can fix in a minute, and "dropped
         400" is not.
+
+        **Whole words, not substrings, and this was a live defect.** A plain `term in haystack` is
+        what both this and the delivery filter did, and one live account excludes `"sr"` — which
+        matched *Israel* Tech and Di*sr*aeli Ltd and silently removed them from that feed. A user
+        typing a short exclusion means the word, and nothing else can be assumed from two letters
+        (ROADMAP 6av).
+
+        Multi-word terms work unchanged: `\bquick hire staffing\b` is one alternative like any
+        other, and `re.escape` keeps `jack & jill` literal.
         """
-        if not self.exclude:
+        if self._matcher is None:
             return None
-        haystack = f"{title or ''} {company or ''}".lower()
-        return next((term for term in self.exclude if term in haystack), None)
+        found = self._matcher.search(f"{title or ''} {company or ''}")
+        return found.group(0).lower() if found else None
