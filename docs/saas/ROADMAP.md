@@ -1372,17 +1372,35 @@ module constants by their own module. Acting on it would have deleted the workin
 constant is defined in two modules, with `KNOWN_COLLISIONS` naming the legitimate ones — a per-call
 token ceiling is not a duplicate of another per-call token ceiling.
 
-**Still listed, not done.** Seven real duplicates are recorded in `KNOWN_COLLISIONS` with `TODO`:
-`_UA` (one user agent in four adapters), `CLAUDE_KINDS`, `CLAUDE_OAUTH_BETA`, `TOKEN_PURPOSES`,
-`WRITEABLE`, `HU_SOURCES`, and the workplace regexes in `workfilter`/`features`. Each is a small
-consolidation with its own blast radius, and doing them in one sweep would make a single revert
-impossible.
+**Round 4 — everything else, and most of it was already clean.**
 
-**And one to decide.** `libs/scoring/cveval.py` is 543 lines whose only consumer is
-`deploy/scripts/ab_prompts.py`, importing one function. The judge half is entirely unwired — four of
-its constants were among the ten deleted. It is evaluation tooling sitting in the package that holds
-production scoring, where it reads as live code. Move it to `deploy/scripts/` or delete it; the
-owner decides.
+- **`__all__` exports** nothing imports: none.
+- **Dataclass fields never read**: two, both on `UserHealth` — `labels_stale` and `proxy_mb_today`.
+  Computed on every health probe and discarded, and `labels_stale` cost a `COUNT` query per account
+  to do it. Both removed with the query behind them.
+- **API routes nothing calls**: the scan reported five and **all five were false positives** — the
+  paths are built with template literals in TypeScript, which a literal match cannot see. Verified
+  each by hand; every route is live.
+- **Unused arguments**: mostly framework idiom (`admin: User = Depends(require_admin)` is used for
+  auth, not read). One real: `score_job(location=…)` and `_score_section(location=…)`, accepted and
+  ignored since location left the score. Removed, and the test that proved location did not matter
+  by passing four of them now asserts the parameter does not exist — which the signature enforces
+  and a test cannot.
+- **Commented-out code**: one hit, a false positive on prose containing `company|title|location`.
+
+**The seven duplicates are done**, not listed: `CLAUDE_KINDS`, `CLAUDE_OAUTH_BETA`,
+`TOKEN_PURPOSES`, `WRITEABLE`, `HU_SOURCES` now have one home each and are imported.
+`_UA` and the workplace regexes turned out **not** to be duplicates — the user-agent strings differ
+per adapter deliberately, and `workfilter`'s regexes match weak title signals where `features`
+matches description-strength phrases. Both are recorded as intentional collisions with the reason.
+
+**`libs/scoring/cveval.py` deleted** (543 lines), with `deploy/scripts/ab_prompts.py` and
+`calibrate_judge.py`, on the owner's instruction. Its only consumer was the A/B script; the judge
+half was never wired.
+
+**And `install-units.sh` only ever added.** The retired timers kept firing after a `sudo` run
+because the removal was written as a comment rather than as code. It now prunes a `RETIRED` list
+before installing — an installer that cannot remove is how a box drifts from the tree.
 
 ### 6aq — every column has a producer, and four of them did not (added 2026-08-05)
 

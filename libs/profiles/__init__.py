@@ -73,6 +73,11 @@ SEED_FILES: tuple[tuple[str, str], ...] = (
     ("base_cv.html", "template"),
 )
 
+# The files the setup agent and the setup UI may write. **Derived from `SEED_FILES`, in one place**:
+# it was computed identically in `libs.agents.tools` and `services.api.setup_routes`, so adding a
+# seed file would have silently made it writeable by one and not the other (ROADMAP 6at).
+WRITEABLE: frozenset[str] = frozenset(name for name, _kind in SEED_FILES)
+
 # The files a CV or cover-letter call is grounded on. `label.md` is deliberately absent: the
 # labeller runs it standalone to keep labelling cheap, and it repeats the profile facts for exactly
 # that reason (`libs/scaffolds/label.md`). `base_cv.html` is absent because it is not context — it

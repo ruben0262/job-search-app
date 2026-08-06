@@ -19,9 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from libs.db.models import User, UserConfig, UserDocument, UserSecret
-
-# Either Claude credential satisfies page 5 (decision D2).
-CLAUDE_KINDS = ("claude_api", "claude_oauth")
+from libs.llm.client import CLAUDE_KINDS
 
 
 @dataclass(frozen=True)

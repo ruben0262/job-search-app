@@ -17,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from libs.db.models import UserDocument
-from libs.profiles import SEED_FILES
+from libs.profiles import WRITEABLE
 from libs.profiles.repository import ProfileFiles
 
 logger = logging.getLogger(__name__)
@@ -26,9 +26,6 @@ logger = logging.getLogger(__name__)
 # 300-page PDF from filling the window in one tool result.
 MAX_DOCUMENT_CHARS = 60_000
 
-# The names a file may be written to. A model that invents `08-references.md` would create a file
-# nothing reads, and the user would never know the section it wrote went nowhere.
-WRITEABLE = {name for name, _kind in SEED_FILES}
 
 
 class SetupTools:

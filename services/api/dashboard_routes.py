@@ -306,7 +306,7 @@ def _rules_feed(db: Session, user_id: _uuid.UUID, *, limit: int, offset: int,
         if cutoff and row.posted_at is not None and row.posted_at < cutoff:
             continue
         result = score_job(config, title=row.title, description=row.description,
-                           location=row.location, is_remote=row.is_remote)
+                           is_remote=row.is_remote)
         if not result.excluded:
             scored.append((result.score, row))
 

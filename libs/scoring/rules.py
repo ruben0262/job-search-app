@@ -80,7 +80,7 @@ def _compile(term: str) -> re.Pattern:
 
 
 def score_job(config: dict, *, title: str, description: str | None = None,
-              location: str | None = None, is_remote: bool | None = None) -> RuleScore:
+              is_remote: bool | None = None) -> RuleScore:
     """Score one posting against one config. 0-100, or excluded.
 
     Reads every section: a job matching *any* section is in, because sections exist to express
@@ -93,7 +93,7 @@ def score_job(config: dict, *, title: str, description: str | None = None,
     best: RuleScore | None = None
     for section in config.get("sections") or []:
         result = _score_section(section, title=title, body=body, haystack=haystack,
-                                location=location, is_remote=is_remote)
+                                is_remote=is_remote)
         if result.excluded:
             # An exclusion in one section does not exclude the job outright — another section may
             # want it. Only remembered if nothing better turns up.
@@ -105,7 +105,7 @@ def score_job(config: dict, *, title: str, description: str | None = None,
 
 
 def _score_section(section: dict, *, title: str, body: str, haystack: str,
-                   location: str | None, is_remote: bool | None) -> RuleScore:
+                   is_remote: bool | None) -> RuleScore:
     for term in section.get("exclude_keywords") or []:
         if _compile(term).search(haystack):
             # A hard no. The user typed this term specifically to not see it, so a high keyword

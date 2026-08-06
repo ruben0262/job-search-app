@@ -15,13 +15,13 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from libs.db.models import AuthToken
+from libs.db.models.auth import TOKEN_PURPOSES
 
 # Long enough to be unguessable, short enough that the window for an intercepted email is small.
 # FlowSolutions uses 24h for verification; a reset is more dangerous, so it gets less.
 VERIFICATION_TTL = timedelta(hours=24)
 RESET_TTL = timedelta(hours=1)
 
-TOKEN_PURPOSES = ("verify_email", "reset_password")
 
 
 def hash_token(token: str) -> str:

@@ -16,12 +16,8 @@ from dataclasses import dataclass
 
 import httpx
 
+from libs.llm.client import CLAUDE_OAUTH_BETA
 from libs.secrets import redact
-
-# An OAuth token authenticates on `Authorization: Bearer` and needs this beta header; an API key
-# goes on `x-api-key` and does not. Sending one on the other's channel is the most common way a
-# perfectly good credential looks broken.
-CLAUDE_OAUTH_BETA = "oauth-2025-04-20"
 
 ANTHROPIC_URL = "https://api.anthropic.com/v1/models"
 TELEGRAM_URL = "https://api.telegram.org/bot{token}/{method}"

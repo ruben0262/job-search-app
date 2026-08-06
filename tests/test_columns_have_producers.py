@@ -153,40 +153,31 @@ def test_the_check_would_have_caught_the_webhook_secret(bodies):
 # **Each entry is a claim that the collision is intentional**, and the value differing between them
 # is the evidence — a per-call token ceiling for a CV is not the one for a setup chat.
 KNOWN_COLLISIONS = {
-    "MAX_TOKENS": "per-call model ceilings: agents 32k, capture 16k, docgen 32k",
+    # Per-call model ceilings. A CV generation and a setup chat are different calls with different
+    # budgets; the values differing is the evidence that this is not one number written twice.
+    "MAX_TOKENS": "per-call: agents 32k, capture 16k, docgen 32k",
     "THINKING_TOKENS": "per-call, same reason as MAX_TOKENS",
+    # Per-adapter HTTP timeouts, tuned to what each board tolerates.
+    "TIMEOUT": "per-adapter",
+    "_TIMEOUT": "per-adapter",
+    "DEFAULT_TIMEOUT": "per-adapter",
+    "_UA": "per-adapter: a browser string where a board expects one, a plain one for JSON APIs",
+    # Per-lane sizing.
+    "MAX_PER_RUN": "per-lane ceilings: labeller, shadow lane, score lane",
+    "BATCH_SIZE": "per-lane",
+    "MAX_RETRIES": "per-client",
     "MIN_DESCRIPTION": "corpus re-fetch threshold (200) vs the scorer's usable-text floor (100)",
-    "TIMEOUT": "per-adapter HTTP timeouts, tuned to each board",
-    "_TIMEOUT": "per-adapter HTTP timeouts, tuned to each board",
-    "DEFAULT_TIMEOUT": "per-adapter HTTP timeouts, tuned to each board",
-    "BATCH_SIZE": "per-lane batch sizes",
-    "MAX_RETRIES": "per-client retry budgets",
-    "MAX_PER_RUN": "per-lane batch ceilings: labeller, shadow lane, score lane",
+    # **Different regexes under one name.** `workfilter` matches the weak signals a title or
+    # location carries; `features` matches only the strong phrases that survive in a long
+    # description. Same name, deliberately different patterns.
+    "_ONSITE_RE": "title/location signals vs description-strength phrases",
+    "_REMOTE_RE": "title/location signals vs description-strength phrases",
+    # Idioms and fixtures, per-module by definition.
+    "_HERE": "the `Path(__file__).parent` idiom",
+    "_FORMATS": "date formats, per parser",
     "SYSTEM_PROMPT": "each agent's own prompt",
-    "_HERE": "the `Path(__file__).parent` idiom; per-module by definition",
     "URL": "per-test-file fixtures in the embedder suite",
     "_JD": "per-test-file fixtures in the embedder suite",
-    "_FORMATS": "date formats, per parser",
-
-    # **These four are real duplicates and are listed rather than fixed**, because each is a small
-    # consolidation with its own blast radius and doing them in one sweep would make a single
-    # revert impossible. Recorded so they are chosen rather than forgotten (ROADMAP 6at):
-    #
-    #   _UA               one user-agent string copied into four adapters
-    #   CLAUDE_KINDS      the claude credential kinds, in three modules
-    #   CLAUDE_OAUTH_BETA the beta header, in two
-    #   TOKEN_PURPOSES    auth token purposes, in two
-    #   WRITEABLE         the writeable-file list, in two
-    #   HU_SOURCES        the Hungarian source list, in two
-    #   _ONSITE_RE/_REMOTE_RE  workplace regexes in workfilter and features
-    "_UA": "TODO: one user agent, copied into four adapters",
-    "CLAUDE_KINDS": "TODO: the claude credential kinds, in three modules",
-    "CLAUDE_OAUTH_BETA": "TODO: the beta header, in two",
-    "TOKEN_PURPOSES": "TODO: auth token purposes, in two",
-    "WRITEABLE": "TODO: the writeable-file list, in two",
-    "HU_SOURCES": "TODO: the Hungarian source list, in two",
-    "_ONSITE_RE": "TODO: workplace regexes duplicated in workfilter and features",
-    "_REMOTE_RE": "TODO: workplace regexes duplicated in workfilter and features",
 }
 
 

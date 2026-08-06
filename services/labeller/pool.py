@@ -94,7 +94,7 @@ def select_pool(session: Session, user_id: _uuid.UUID, config: dict, *,
     #
     # So the user's own terms narrow the query first, and the budget is spent on rows that could
     # plausibly be theirs. A share of the newest rows regardless of terms is kept alongside: the
-    # rules score reads location and remoteness too, and a pool drawn only from title matches would
+    # rules score reads remoteness too, and a pool drawn only from title matches would
     # never surface a job whose title uses a word the user did not think of.
     terms = _config_terms(config)
     rows: list[CorpusJob] = []
@@ -127,7 +127,7 @@ def select_pool(session: Session, user_id: _uuid.UUID, config: dict, *,
         if row.id in already:
             continue
         result = score_job(config, title=row.title, description=row.description,
-                           location=row.location, is_remote=row.is_remote)
+                           is_remote=row.is_remote)
         if not result.excluded:
             scored.append((result.score, row.id, row.source or ""))
 

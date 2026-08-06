@@ -42,15 +42,29 @@ UNIT_DIR=/etc/systemd/system
 #                     fifteen-minute timer meant a stuck pass cancelled the following tick.
 #   linkedin-describe — describing moved inside the LinkedIn pass on 2026-08-03 (ROADMAP 6l.1).
 #
-#     sudo systemctl disable --now notify-dispatch.timer linkedin.timer linkedin-describe.timer
-#     sudo rm -f /etc/systemd/system/{notify-dispatch,linkedin,linkedin-describe}.{service,timer}
-#     sudo systemctl daemon-reload
 TIMERS=(harvester health backup)
+
+# **Units this script has installed in the past and must now remove.** Written down rather than left
+# as an instruction in a comment: this script was run after the timers were removed from the repo
+# and both kept firing, because an installer that only ever adds is exactly how a box drifts from
+# the tree. Removing a name from `TIMERS` is not enough — it has to be named here to be pruned.
+RETIRED=(notify-dispatch linkedin linkedin-describe)
 
 if [[ $EUID -ne 0 ]]; then
   echo "needs root: sudo $0" >&2
   exit 1
 fi
+
+# Prune first, so a unit being replaced by a different mechanism cannot fire once more between the
+# two steps.
+for unit in "${RETIRED[@]}"; do
+  if [[ -f "$UNIT_DIR/$unit.timer" || -f "$UNIT_DIR/$unit.service" ]]; then
+    echo "retiring $unit"
+    systemctl disable --now "$unit.timer" 2>/dev/null || true
+    systemctl disable --now "$unit.service" 2>/dev/null || true
+    rm -f "$UNIT_DIR/$unit.timer" "$UNIT_DIR/$unit.service"
+  fi
+done
 
 for unit in "${TIMERS[@]}"; do
   install -m 0644 "$REPO/deploy/$unit.service" "$UNIT_DIR/$unit.service"

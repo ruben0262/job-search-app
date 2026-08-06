@@ -33,9 +33,9 @@ def lane(name="notify", *, ready=0, claimed=0, dead=0, oldest=None, expected=5) 
 
 def user(**kwargs) -> UserHealth:
     base = {"user_id": str(uuid.uuid4()), "email": "a@example.com",
-            "telegram_status": "connected", "model_version": 1, "labels_stale": 0,
+            "telegram_status": "connected", "model_version": 1,
             "pending_matches": 0, "hours_since_delivery": 1.0, "proxy_status": "healthy",
-            "proxy_mb_today": 0.0}
+}
     return UserHealth(**{**base, **kwargs})
 
 

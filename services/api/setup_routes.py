@@ -37,7 +37,7 @@ from libs.db.models import (
 )
 from libs.llm import CLAUDE_KINDS
 from libs.obs import audit
-from libs.profiles import SEED_FILES, setup_files
+from libs.profiles import WRITEABLE, setup_files
 from libs.profiles.repository import ProfileFiles
 from libs.queue import enqueue
 from services.api.deps import current_user, get_db
@@ -45,7 +45,6 @@ from services.api.deps import current_user, get_db
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/setup", tags=["setup"])
 
-WRITEABLE = {name for name, _kind in SEED_FILES}
 
 
 class Turn(BaseModel):

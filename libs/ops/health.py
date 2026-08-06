@@ -74,13 +74,11 @@ class UserHealth:
     email: str
     telegram_status: str
     model_version: int
-    labels_stale: int
     # Jobs above the notify cutoff that have been sitting undelivered. The qualifier that makes
     # "no delivery in 24 h" a real alert rather than one that fires for every narrow config.
     pending_matches: int
     hours_since_delivery: float | None
     proxy_status: str | None
-    proxy_mb_today: float
 
 
 @dataclass
@@ -214,10 +212,6 @@ def user_health(session: Session) -> list[UserHealth]:
         last_delivery = session.scalar(
             select(func.max(UserJobState.notified_at))
             .where(UserJobState.user_id == user.id))
-        stale = session.scalar(
-            select(func.count()).select_from(UserJobState)
-            .where(UserJobState.user_id == user.id,
-                   UserJobState.scored_model_version < user.model_version)) or 0
         proxy = session.scalar(
             select(ProxyCredential).where(ProxyCredential.user_id == user.id))
 
@@ -226,7 +220,6 @@ def user_health(session: Session) -> list[UserHealth]:
             email=user.email,
             telegram_status=user.telegram_status,
             model_version=user.model_version,
-            labels_stale=stale,
             pending_matches=pending,
             hours_since_delivery=(
                 round((datetime.now(UTC) - last_delivery).total_seconds() / 3600, 1)
@@ -236,7 +229,6 @@ def user_health(session: Session) -> list[UserHealth]:
             # never stored a proxy secret at all. One live account read `healthy` while its LinkedIn
             # tier had never run once, on the source that is 43% of the corpus (ROADMAP 6ao).
             proxy_status=_proxy_status(session, user.id, proxy),
-            proxy_mb_today=float(proxy.mb_used_today) if proxy else 0.0,
         ))
     return out
 

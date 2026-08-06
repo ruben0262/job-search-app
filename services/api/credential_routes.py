@@ -35,6 +35,7 @@ from libs.credentials import (
 )
 from libs.db.models import ProxyCredential, User
 from libs.db.models.user import SECRET_KINDS, TELEGRAM_ROUTE_KEYS
+from libs.llm.client import CLAUDE_KINDS
 from libs.obs import audit
 from libs.secrets import SecretStore, redacting
 from services.api.deps import current_user, get_db, get_store, rate_limit
@@ -42,8 +43,6 @@ from services.api.deps import current_user, get_db, get_store, rate_limit
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/credentials", tags=["credentials"])
 
-# Either satisfies the Claude requirement. Onboarding cannot complete without one of them.
-CLAUDE_KINDS = ("claude_api", "claude_oauth")
 
 # Registering a webhook is one small call on a path a user is waiting on, so it fails fast rather
 # than holding the request. A failure is recoverable — pressing Connect again repairs it.

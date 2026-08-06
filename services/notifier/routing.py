@@ -20,9 +20,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-# Sources that only carry Hungarian listings, so their location string does not have to say so.
-# Carried verbatim from `pipeline/lib/salary.py`.
-HU_SOURCES = frozenset({"profession", "dreamjobs", "nofluffjobs_hu", "jooble"})
+from libs.corpus.salary import HU_SOURCES
 
 # Substring match on a lowercased location, accented and unaccented. A posting writes its location
 # however it likes, and "Győr" and "Gyor" are the same place to everybody except a string compare.

@@ -76,14 +76,23 @@ def test_where_a_job_is_does_not_change_what_it_scores():
     match, it is not a match. So country became a hard filter applied before scoring
     (`libs.corpus.geo`) and working arrangement its own filter, and what remains here is what the
     job *is*.
-    """
-    berlin = score_job(CONFIG, title="Backend Engineer", location="Berlin, Germany")
-    sydney = score_job(CONFIG, title="Backend Engineer", location="Sydney, Australia")
-    nowhere = score_job(CONFIG, title="Backend Engineer", location=None)
-    remote = score_job(CONFIG, title="Backend Engineer", is_remote=True, location="Anywhere")
 
-    assert berlin.score == sydney.score == nowhere.score == remote.score
-    assert berlin.score == TITLE_WEIGHT, "the title is the whole of it when nothing else matches"
+    **The parameter is now gone, which is the stronger form of the same claim.** This test used to
+    pass four different locations and assert the scores matched — a property the signature can
+    simply not express any more. `location` survived as an accepted-and-ignored argument for two
+    days after location left the score, which is how a reader concludes it still counts
+    (ROADMAP 6at).
+    """
+    import inspect
+
+    assert "location" not in inspect.signature(score_job).parameters, (
+        "location does not affect the score, so it must not be accepted as though it might")
+
+    plain = score_job(CONFIG, title="Backend Engineer")
+    remote = score_job(CONFIG, title="Backend Engineer", is_remote=True)
+
+    assert plain.score == remote.score
+    assert plain.score == TITLE_WEIGHT, "the title is the whole of it when nothing else matches"
 
 
 def test_a_job_matching_any_section_is_included():
