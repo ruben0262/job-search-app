@@ -194,9 +194,15 @@ QUERY_SHAPES: dict[str, QueryShape] = {
     "jooble": QueryShape("keywords", location_key="location"),
 }
 
-# The recency window when no user has asked for one. Matches the config schema's default rather
-# than the adapters' internal 24h, which was fetching a much narrower slice than intended.
-DEFAULT_MAX_AGE_HOURS = 72
+# **How far back to ask a source**, when no user has asked for a window and the operator has set
+# none. Matches the config schema's default rather than the adapters' internal 24h, which was
+# fetching a much narrower slice than intended.
+#
+# Renamed from `DEFAULT_HARVEST_WINDOW_HOURS` on 2026-08-06. That name was also held by
+# `libs.ops.health` and `services.notifier.eligibility` at a *different* value — 24 — because they
+# answer a different question: how old a posting may be and still be *sent* to somebody. Two
+# meanings under one name is how a reader concludes two of the three are wrong (ROADMAP 6at).
+DEFAULT_HARVEST_WINDOW_HOURS = 72
 
 # Sources gated on a credential. Enabled only when their key is present, because a source that
 #401s every cycle is noise in the log and a failure count that means nothing.
@@ -320,7 +326,7 @@ def build_source_configs(
     #
     # **Read from the sections, which is where the field lives.** It was read from the top level of
     # the config, where nothing has ever put it, so every generator yielded 0 and every harvest ran
-    # at `DEFAULT_MAX_AGE_HOURS` no matter what anybody asked for. A user who set six hours got
+    # at `DEFAULT_HARVEST_WINDOW_HOURS` no matter what anybody asked for. A user who set six hours got
     # seventy-two, silently, and the only visible symptom was a feed full of old postings.
     # Both shapes. `SearchSection.posted_within_hours` is where the schema puts it and where every
     # stored config actually has it; the flat form is what older callers and fixtures pass. Reading
@@ -332,7 +338,7 @@ def build_source_configs(
         windows += [int(section.get("posted_within_hours") or 0)
                     for section in config.get("sections") or []]
     max_age = max((window for window in windows if window > 0),
-                  default=0) or DEFAULT_MAX_AGE_HOURS
+                  default=0) or DEFAULT_HARVEST_WINDOW_HOURS
 
     out: dict[str, dict] = {}
     for source in active:

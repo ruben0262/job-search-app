@@ -48,12 +48,9 @@ from libs.db.models import (
     UserSecret,
 )
 from libs.db.models.user import DORMANT_AFTER_DAYS
+from libs.feedback.actions import FEEDBACK_WEIGHT
 from libs.scoring.facts import render_facts
 from libs.scoring.rubric import profile_version, render_rubric, rubric_relevant_digest
-
-# The reference's SCORER_FEEDBACK_WEIGHT default. A user's explicit decision is worth more than the
-# LLM's guess at their taste, and this is the number that says how much more.
-FEEDBACK_WEIGHT = 5.0
 
 # The reference maps its two explicit verdicts onto scores at these points, so a feedback row sits
 # unambiguously above/below the keep threshold when blended with LLM labels.

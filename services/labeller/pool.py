@@ -27,13 +27,11 @@ from sqlalchemy.orm import Session
 
 from libs.contracts.config import migrate_config
 from libs.db.models import CorpusJob, UserLabel
+from libs.labels import POOL_SIZE
 from libs.scoring.rules import POOL_BANDS
 
 logger = logging.getLogger(__name__)
 
-# The target pool. ~$0.54 of Haiku at the measured $0.0018/job, or ~$0.27 through the Batch API.
-# Cold start is a latency and UX problem, not a cost problem (`COLD_START_PLAN.md` §4).
-POOL_SIZE = 300
 
 # Below this, the config is too narrow to train on and the honest answer is to say so rather than
 # to train a model on 40 examples and let the user discover it is useless.

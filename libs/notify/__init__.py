@@ -40,14 +40,10 @@ class Event:
 # The catalogue. Adding one here is the whole registration.
 TELEGRAM_BROKEN = Event("telegram.broken", "error", "Telegram delivery stopped", "#/data")
 MODEL_TRAINED = Event("model.trained", "info", "Your model was retrained")
-MODEL_FAILED = Event("model.failed", "error", "Training your model failed", "#/model")
 PROCESSING_DONE = Event("processing.done", "info", "Your profile is ready to review", "#/process")
 PROCESSING_FAILED = Event("processing.failed", "error", "Processing your documents failed",
                           "#/process")
 PASSWORD_CHANGED = Event("account.password_changed", "warning", "Your password was changed")
-DELIVERY_PAUSED = Event("delivery.paused", "warning", "Your feed is paused", "#/settings")
-
-
 def notify(session: Session, user_id: _uuid.UUID, event: Event, body: str = "") -> None:
     """Record one. Never raises — a notification about a failure must not become a second failure
     inside the same transaction as the recovery it is describing."""

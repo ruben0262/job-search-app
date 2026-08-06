@@ -68,12 +68,6 @@ logger = logging.getLogger(__name__)
 # bigint, and this is simply "the shared harvest cycle".
 HARVEST_LOCK_KEY = 0x6A6F_6273_0001
 
-# The platform's shared cadence. Universal, not per-user, and that is not a simplification: there is
-# no such thing as harvesting "for" one user when the corpus is shared. What users choose is how
-# often they are *told* (`users.notify_interval_min`), which is a different loop entirely.
-HARVEST_INTERVAL_MIN = 15
-
-
 @dataclass
 class CycleReport:
     """What one cycle did. Returned rather than only logged, so a caller can assert on it."""

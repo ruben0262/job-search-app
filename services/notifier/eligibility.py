@@ -29,6 +29,7 @@ from libs.contracts.config import migrate_config
 from libs.corpus import langfilter, workfilter
 from libs.corpus.ranking import applicant_glut, priority_key
 from libs.limits import limit_default
+from libs.ops.health import DEFAULT_MAX_AGE_HOURS
 
 logger = logging.getLogger(__name__)
 
@@ -45,8 +46,6 @@ CANDIDATE_MULTIPLIER = 5
 # (ROADMAP 6ag). `applicant_glut` treats 0 as off, which is what unlimited resolves to.
 DEFAULT_APPLICANT_CAP = limit_default("applicant_cap")
 
-# The window a user gets if they never said. Matches `SearchSection.posted_within_hours`.
-DEFAULT_MAX_AGE_HOURS = 24
 
 
 @dataclass(frozen=True)

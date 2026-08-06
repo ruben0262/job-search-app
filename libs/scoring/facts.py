@@ -21,10 +21,6 @@ from __future__ import annotations
 
 from libs.contracts.profile import ProfileSchema
 
-# The database is the source of truth; a worker materialises this to scratch when a session needs a
-# file (`PROFILE_CAPTURE_PLAN.md` §6.2). Nothing regenerates it per call.
-FACTS_FILENAME = "facts.md"
-
 
 def render_facts(profile: ProfileSchema) -> str:
     """Everything a generation call may state as fact about this person.

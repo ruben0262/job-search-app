@@ -1328,6 +1328,62 @@ Extracted at ingest as 6w describes, then available as cheap pre-score filters. 
 6. **Seniority** — junior / mid / senior / lead. The most frequently mis-stated field in any
    posting, so the last one to trust and the one most likely to need a confidence floor.
 
+### 6at — the dead-code sweep, and what the method got wrong first (done 2026-08-06)
+
+**Trimming, on the owner's instruction, with the scans that produced it.**
+
+**Round 1 — functions and classes.** Walked the AST and counted references across `libs`,
+`services`, `tests`, `deploy` and `web/src`. Eight defined and referenced nowhere at all:
+`posted_caption`, `fetch_apply_url`, `seen_url`, `mark_notified`, `facts_version`,
+`remember_capture_agent`, `_now_plus_column`, `_gather_rss`. All deleted; a re-run found **zero**
+cascade.
+
+`users.capture_agent_id` went with them, and how it was found matters: **its only writer was inside
+one of those dead functions**, so the column-producer check found an assignment and passed. The
+assignment was unreachable. Deleting dead code is what surfaces dead columns, and that ordering is a
+real limitation of the crude check.
+
+**Round 2 — constants.** Ten defined and used nowhere, including `DEFAULT_KEEP` — whose own comment
+read *"the number should not be invented separately in two services"* — and
+`HARVEST_INTERVAL_MIN = 15`, a **third** copy of the platform tick.
+
+Then the same name in more than one module, which is the defect this project ships most often. Five
+were genuine duplicates with a `libs` home already and now import it: `FEEDBACK_WEIGHT`,
+`POOL_SIZE`, `DESC_CHARS`, `DEFAULT_QUERIES_PER_CYCLE`, `DEFAULT_MAX_AGE_HOURS`.
+
+**One was worse than a duplicate.** `DEFAULT_MAX_AGE_HOURS` was 24 in `libs.ops.health` and
+`services.notifier.eligibility` — how old a posting may be and still be *sent* — and **72** in
+`services.harvester.source_config`, which is how far back to *ask a source*. Two meanings, one name,
+three definitions. The harvester's is renamed `DEFAULT_HARVEST_WINDOW_HOURS`.
+
+**Round 3 — modules.** `libs/corpus/timefilter.py` and `libs/corpus/filters/timefilter.py` held the
+same four functions, differing only in `timezone.utc` versus `UTC`. Both were live: three modules
+imported one, three the other, and `parse_date` was defined twice. The flat copy is deleted and its
+importers point at `libs.corpus.filters`, which is the documented home.
+
+**What the method got wrong, recorded because the wrong number is the actionable-looking one.** The
+first scan asked "which public names are referenced only in their own file" and returned **299**.
+Almost all noise: FastAPI routes are referenced by their decorator, pydantic models by annotation,
+module constants by their own module. Acting on it would have deleted the working API. Narrowing to
+*"referenced nowhere, definition excluded"* gave eight, all real. An earlier module scan reported
+`libs/scaffolds` unused when it is loaded as data files rather than imported.
+
+**Guards, so this does not regrow**: `test_columns_have_producers.py` now also fails when one
+constant is defined in two modules, with `KNOWN_COLLISIONS` naming the legitimate ones — a per-call
+token ceiling is not a duplicate of another per-call token ceiling.
+
+**Still listed, not done.** Seven real duplicates are recorded in `KNOWN_COLLISIONS` with `TODO`:
+`_UA` (one user agent in four adapters), `CLAUDE_KINDS`, `CLAUDE_OAUTH_BETA`, `TOKEN_PURPOSES`,
+`WRITEABLE`, `HU_SOURCES`, and the workplace regexes in `workfilter`/`features`. Each is a small
+consolidation with its own blast radius, and doing them in one sweep would make a single revert
+impossible.
+
+**And one to decide.** `libs/scoring/cveval.py` is 543 lines whose only consumer is
+`deploy/scripts/ab_prompts.py`, importing one function. The judge half is entirely unwired — four of
+its constants were among the ten deleted. It is evaluation tooling sitting in the package that holds
+production scoring, where it reads as live code. Move it to `deploy/scripts/` or delete it; the
+owner decides.
+
 ### 6aq — every column has a producer, and four of them did not (added 2026-08-05)
 
 **A crude test, and it found four real things on its first run.** A nullable column nothing writes

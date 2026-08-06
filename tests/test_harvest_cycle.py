@@ -667,11 +667,14 @@ def test_the_recency_window_is_the_widest_any_user_asked_for(ctx):
     The adapters default to 24h internally, which was fetching a far narrower slice than the config
     schema's own default of 72.
     """
-    from services.harvester.source_config import DEFAULT_MAX_AGE_HOURS, build_source_configs
+    from services.harvester.source_config import (
+        DEFAULT_HARVEST_WINDOW_HOURS,
+        build_source_configs,
+    )
 
     s = ctx
     # No operator freshness passed, so the fallback ladder ends at the module default.
-    assert build_source_configs({}, env={})["lever"]["max_age_hours"] == DEFAULT_MAX_AGE_HOURS
+    assert build_source_configs({}, env={})["lever"]["max_age_hours"] == DEFAULT_HARVEST_WINDOW_HOURS
 
     a = _active_user(s)
     b = _active_user(s)

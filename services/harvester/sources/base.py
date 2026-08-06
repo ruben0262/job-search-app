@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from libs.corpus.timefilter import parse_date
+from libs.corpus.filters import parse_date
 from libs.corpus.workfilter import classify
 
 

@@ -18,12 +18,6 @@ _HERE = Path(__file__).parent
 
 LABEL_TEMPLATE = "label_template.md"
 
-# The LLM judge from the reference instance, ported 2026-07-29. It lives here rather than in
-# `libs/scaffolds/` because it names nobody — measured, not assumed: the reference's own copy has
-# zero occurrences of its owner's name. It grades a CV against the posting, and that job is the
-# same whoever the CV belongs to.
-EVAL_CV_TEMPLATE = "eval_cv.md"
-
 # `tailor_cv.md` and `tailor_cover.md` moved to `libs/scaffolds/` on 2026-07-29: they are per-user
 # files now (`libs/profiles`), seeded from the scaffold and thereafter the user's own. Reading them
 # from here would have served the shipped default to somebody who had edited theirs.

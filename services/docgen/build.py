@@ -157,7 +157,7 @@ def _salary_lines(job, description: str, bands: dict | None) -> list[str]:
 
 def _age(posted_at) -> str:
     """`3d`, `<1h`, or empty. Freshness changes how much effort a posting is worth."""
-    from libs.corpus.timefilter import age_label  # noqa: PLC0415 - one caller
+    from libs.corpus.filters import age_label  # noqa: PLC0415 - one caller
 
     if posted_at is None:
         return ""

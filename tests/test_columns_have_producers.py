@@ -145,3 +145,80 @@ def test_the_check_would_have_caught_the_webhook_secret(bodies):
     # And the negative: a column name that exists nowhere must not appear written.
     assert not re.search(r"(\.nonexistent_column_xyz\s*=[^=]|\bnonexistent_column_xyz\s*=[^=])",
                          bodies)
+
+
+# ── one name, one definition (ROADMAP 6at) ────────────────────────────────────────────────────
+
+# Names that legitimately appear in more than one module because they mean different things there.
+# **Each entry is a claim that the collision is intentional**, and the value differing between them
+# is the evidence — a per-call token ceiling for a CV is not the one for a setup chat.
+KNOWN_COLLISIONS = {
+    "MAX_TOKENS": "per-call model ceilings: agents 32k, capture 16k, docgen 32k",
+    "THINKING_TOKENS": "per-call, same reason as MAX_TOKENS",
+    "MIN_DESCRIPTION": "corpus re-fetch threshold (200) vs the scorer's usable-text floor (100)",
+    "TIMEOUT": "per-adapter HTTP timeouts, tuned to each board",
+    "_TIMEOUT": "per-adapter HTTP timeouts, tuned to each board",
+    "DEFAULT_TIMEOUT": "per-adapter HTTP timeouts, tuned to each board",
+    "BATCH_SIZE": "per-lane batch sizes",
+    "MAX_RETRIES": "per-client retry budgets",
+    "MAX_PER_RUN": "per-lane batch ceilings: labeller, shadow lane, score lane",
+    "SYSTEM_PROMPT": "each agent's own prompt",
+    "_HERE": "the `Path(__file__).parent` idiom; per-module by definition",
+    "URL": "per-test-file fixtures in the embedder suite",
+    "_JD": "per-test-file fixtures in the embedder suite",
+    "_FORMATS": "date formats, per parser",
+
+    # **These four are real duplicates and are listed rather than fixed**, because each is a small
+    # consolidation with its own blast radius and doing them in one sweep would make a single
+    # revert impossible. Recorded so they are chosen rather than forgotten (ROADMAP 6at):
+    #
+    #   _UA               one user-agent string copied into four adapters
+    #   CLAUDE_KINDS      the claude credential kinds, in three modules
+    #   CLAUDE_OAUTH_BETA the beta header, in two
+    #   TOKEN_PURPOSES    auth token purposes, in two
+    #   WRITEABLE         the writeable-file list, in two
+    #   HU_SOURCES        the Hungarian source list, in two
+    #   _ONSITE_RE/_REMOTE_RE  workplace regexes in workfilter and features
+    "_UA": "TODO: one user agent, copied into four adapters",
+    "CLAUDE_KINDS": "TODO: the claude credential kinds, in three modules",
+    "CLAUDE_OAUTH_BETA": "TODO: the beta header, in two",
+    "TOKEN_PURPOSES": "TODO: auth token purposes, in two",
+    "WRITEABLE": "TODO: the writeable-file list, in two",
+    "HU_SOURCES": "TODO: the Hungarian source list, in two",
+    "_ONSITE_RE": "TODO: workplace regexes duplicated in workfilter and features",
+    "_REMOTE_RE": "TODO: workplace regexes duplicated in workfilter and features",
+}
+
+
+def test_a_constant_is_defined_in_one_place():
+    """**The defect this project has shipped most often, caught by name.**
+
+    Six of one week's sixteen defects were one value defined twice: a daily cap in four places, a
+    retrain gate in two, a tick in three. The failure is invisible — both copies are plausible, one
+    is enforced, and nothing errors. Where two modules need the same number, it goes in `libs` and
+    both import it (CLAUDE.md §5).
+
+    A genuine collision — the same word meaning different things — goes in `KNOWN_COLLISIONS` with
+    what each one means, which forces the question to be answered rather than assumed.
+    """
+    import ast
+    from collections import defaultdict
+
+    homes: dict[str, list[str]] = defaultdict(list)
+    for path in source_files():
+        if "migrations" in str(path):
+            continue
+        for node in ast.parse(path.read_text(encoding="utf-8")).body:
+            if (isinstance(node, ast.Assign) and len(node.targets) == 1
+                    and isinstance(node.targets[0], ast.Name)
+                    and node.targets[0].id.isupper()):
+                homes[node.targets[0].id].append(str(path))
+
+    duplicated = {name: where for name, where in homes.items()
+                  if len(where) > 1 and name not in KNOWN_COLLISIONS}
+
+    assert not duplicated, (
+        "these constants are defined in more than one module:\n  "
+        + "\n  ".join(f"{name}: {', '.join(where)}" for name, where in sorted(duplicated.items()))
+        + "\n\nPut the value in `libs` and import it from both, or add it to KNOWN_COLLISIONS "
+          "saying what each one means.")

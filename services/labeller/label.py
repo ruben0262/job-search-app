@@ -27,6 +27,7 @@ from sqlalchemy.orm import Session
 from libs.db.models import CorpusJob, User, UserLabel
 from libs.llm import LlmClient, LlmError
 from libs.obs import audit
+from libs.scoring.rules import DESC_CHARS
 
 logger = logging.getLogger(__name__)
 
@@ -38,10 +39,6 @@ LABEL_MODEL = "claude-haiku-4-5"
 # response and the output truncates, which loses the tail of the batch silently.
 BATCH_SIZE = 50
 
-# Requirements and stack sit in the first ~2,500 characters; the tail is benefits and EEO
-# boilerplate. Carried from the reference instance, where it was arrived at by reading the postings
-# rather than by guessing — and it is a straight multiplier on the cost of every label.
-DESC_CHARS = 2_500
 
 # **One queue job is one batch**, deliberately equal to `BATCH_SIZE`.
 #

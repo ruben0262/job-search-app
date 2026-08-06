@@ -28,14 +28,7 @@ from uuid import UUID
 
 from libs.contracts.config import MAX_KEYWORDS_PER_USER, migrate_config
 from libs.harvest.keywords import normalise_keyword
-
-# How many queries one source may be asked in a cycle when the operator has not said. The budget is
-# per source (`select_within_budget`) because rate limits are: the one global number this replaced
-# made unrelated boards queue behind each other.
-#
-# Unbounded is not an option — 50 users × 5 terms is a ban and a cycle that takes an hour — but the
-# ceiling belongs to the board it protects, and the operator moves it from the admin panel.
-DEFAULT_QUERIES_PER_CYCLE = 40
+from libs.settings import DEFAULT_QUERIES_PER_CYCLE
 
 # Imported, not redefined. The same cap bounds the config form, and a second copy here is how the
 # two drift: raise one and the other silently accepts terms it will never serve.

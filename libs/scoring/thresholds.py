@@ -16,12 +16,6 @@ from __future__ import annotations
 
 DEFAULT_CUTOFF = 60.0
 
-# Below this a job is not worth keeping in a per-user feed at all. The reference's
-# `min_score_to_keep`; retained here because the scorer's `_decide` needs a floor for
-# "needs-review" and the number should not be invented separately in two services.
-DEFAULT_KEEP = 45.0
-
-
 def cutoff_for(session, user_id) -> float:
     """The score at which this user's jobs are worth sending.
 

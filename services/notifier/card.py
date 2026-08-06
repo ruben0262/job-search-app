@@ -33,7 +33,7 @@ import html
 from dataclasses import dataclass
 
 from libs.corpus import salary as salarylib
-from libs.corpus.timefilter import age_label
+from libs.corpus.filters import age_label
 from libs.corpus.workfilter import classify
 
 # The reference's own thresholds for the applicant dot: how contested a posting is, in four steps.
