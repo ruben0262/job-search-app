@@ -559,6 +559,83 @@ def _stage_backlog(session: Session, stage: Stage) -> dict | None:
             "oldest_min": round(float(row.oldest_min), 1) if row.oldest_min is not None else None}
 
 
+# ── what the pre-score filter removed ────────────────────────────────────────────────────────────
+#
+# **The stage-3 row the roadmap asked for, and it is deliberately not a duration.** The plan called
+# for "how long the pre-score filter takes per user and — more useful than the duration — how many
+# rows it removed", and the second half is the whole point: the filter costs about four microseconds
+# a row, so timing it would report noise, while what it *removed* is the number that says whether it
+# is earning its place or quietly emptying somebody's feed.
+#
+# **Per account, not per platform.** One user whose filter rejects everything is invisible in a
+# total — and a feed that goes silent because a filter is too tight looks exactly like a feed with
+# nothing new, which is the failure this platform has now shipped twice.
+#
+# No new column: `skip()` already writes `score = NULL` with `scored_at` set, and nothing else on the
+# platform produces that combination, so the count is a `FILTER` clause over rows that exist.
+_FILTER_SQL = """
+    SELECT s.user_id,
+           u.email,
+           count(*) AS considered,
+           count(*) FILTER (WHERE s.score IS NULL) AS removed
+      FROM user_job_state s
+      JOIN users u ON u.id = s.user_id
+     -- **`scored_at`, not `created_at`.** The row exists from the moment anything touches the
+     -- posting — a label, an applied record — and those carry a null score too. Dating the window
+     -- by when the row appeared would count rows no filter ever saw as rows the filter rejected.
+     -- A null `scored_at` fails this comparison, so "was it judged at all" needs no second clause.
+     WHERE s.scored_at >= now() - make_interval(hours => :hours)
+     GROUP BY s.user_id, u.email
+     ORDER BY count(*) DESC
+"""
+
+# What the measurement cannot see, said on the page rather than left for somebody to assume.
+FILTER_CAVEAT = ("Removed counts both reasons together — an excluded word and an off-centre vector "
+                 "both store a null score, and the database cannot tell them apart. The split is in "
+                 "the `score.timing` log line, one per batch, with the count per term.")
+
+
+def filter_effect(session: Session, *, hours: int = WINDOW_HOURS) -> dict:
+    """How much of each account's candidate pool the pre-score filter removed.
+
+    **Judged at one end only.** An account where *everything* was removed has a filter that has
+    turned its feed off, whatever the tuning intended, and that is worth a colour. There is no
+    defensible amber in the middle: a tight filter and a broad one are both correct depending on how
+    much the user has taught the model, and a threshold picked to look reasonable is the kind of
+    number an operator learns to ignore (CLAUDE.md §4).
+
+    A **zero** removal rate is likewise not a fault: an account in cold start has no centroid, and
+    `centroid.keep` fails open on purpose so a new user sees everything.
+    """
+    rows = session.execute(text(_FILTER_SQL), {"hours": hours}).all()
+
+    users = []
+    for row in rows:
+        considered, removed = int(row.considered), int(row.removed)
+        users.append({
+            "user_id": str(row.user_id),
+            "email": row.email,
+            "considered": considered,
+            "removed": removed,
+            "scored": considered - removed,
+            "removed_pct": round(removed * 100.0 / considered, 1) if considered else None,
+            "verdict": "unknown" if considered < MIN_SAMPLES
+                       else "down" if removed == considered else "ok",
+        })
+
+    considered = sum(entry["considered"] for entry in users)
+    removed = sum(entry["removed"] for entry in users)
+    return {
+        "window_hours": hours,
+        "users": users,
+        "considered": considered,
+        "removed": removed,
+        "removed_pct": round(removed * 100.0 / considered, 1) if considered else None,
+        "caveat": FILTER_CAVEAT,
+        "verdict": _worst([entry["verdict"] for entry in users]),
+    }
+
+
 def stage_detail(session: Session, key: str, *, hours: int = WINDOW_HOURS) -> dict:
     """Everything an expanded row shows: why this zone, not just how slow.
 

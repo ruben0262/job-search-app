@@ -129,7 +129,28 @@ type StageDetail = {
   red_after_min: number | null;
 };
 
-type LatencyReport = { window_hours: number; stages: StageRow[] };
+/** What the pre-score filter removed, per account. **Not a duration** — the filter costs
+ *  microseconds a row, so timing it would report noise, while what it removed is the number that
+ *  says whether it is earning its place or emptying somebody's feed. */
+type FilterEffect = {
+  window_hours: number;
+  users: {
+    user_id: string;
+    email: string;
+    considered: number;
+    removed: number;
+    scored: number;
+    removed_pct: number | null;
+    verdict: string;
+  }[];
+  considered: number;
+  removed: number;
+  removed_pct: number | null;
+  caveat: string;
+  verdict: string;
+};
+
+type LatencyReport = { window_hours: number; stages: StageRow[]; filter: FilterEffect };
 
 /** One stage as it stands right now. `entered` and `oldest_min` are `null` where the number is
  *  genuinely unavailable — the page shows a dash, never a zero, because zero is a claim. */
@@ -1216,6 +1237,8 @@ function LatencyTab() {
         </div>
       ) : null}
 
+      {report ? <FilterEffectTable effect={report.filter} /> : null}
+
       {/* **"Not enough data" is a real answer, not a failure.** Below the sample floor a percentile
           is arithmetic rather than evidence, and colouring it invites somebody to chase a number
           that three rows produced. */}
@@ -1224,6 +1247,66 @@ function LatencyTab() {
         claim this product makes, and a median hides exactly the tail somebody loses a role in. A
         row with too few completed examples says so rather than showing a colour.
       </p>
+    </>
+  );
+}
+
+/** How much of each account's candidate pool the filter removed.
+ *
+ *  **Per account rather than as a platform total, and that is the whole point.** One user whose
+ *  filter rejects everything is invisible in a total — and a feed that goes silent because a filter
+ *  is too tight looks exactly like a feed with nothing new, which is the failure this platform has
+ *  now shipped twice.
+ *
+ *  Judged at one end only. Everything removed is a feed that has been turned off, whatever the
+ *  tuning intended. Nothing removed is not a fault: an account in cold start has no centroid yet,
+ *  and the filter fails open on purpose so a new user sees everything. */
+function FilterEffectTable({ effect }: { effect: FilterEffect }) {
+  if (!effect.users.length) return null;
+
+  return (
+    <>
+      <h3 style={{ marginTop: "1.6rem" }}>What the filter removed</h3>
+      <p className="hint" style={{ maxWidth: "62ch" }}>
+        Before any model runs, each account's candidates are cut by country, freshness, their own
+        excluded words and the centroid. This is how much that removed in the last{" "}
+        {effect.window_hours} hours — {effect.removed.toLocaleString()} of{" "}
+        {effect.considered.toLocaleString()} across the platform.
+      </p>
+      <div className="table-scroll">
+        <table className="history">
+          <thead>
+            <tr>
+              <th>Account</th>
+              <th className="num">Considered</th>
+              <th className="num">Removed</th>
+              <th className="num">Scored</th>
+              <th className="num">Removed %</th>
+              <th>Verdict</th>
+            </tr>
+          </thead>
+          <tbody>
+            {effect.users.map((row) => (
+              <tr key={row.user_id}>
+                <td>{row.email}</td>
+                <td className="num">{row.considered.toLocaleString()}</td>
+                <td className="num">{row.removed.toLocaleString()}</td>
+                <td className="num">{row.scored.toLocaleString()}</td>
+                <td className="num">
+                  {row.removed_pct === null ? "—" : `${row.removed_pct}%`}
+                </td>
+                <td>
+                  <span className={`verdict ${row.verdict}`}>
+                    {row.verdict === "down" ? "nothing survives"
+                      : row.verdict === "unknown" ? "too few" : "ok"}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="hint">{effect.caveat}</p>
     </>
   );
 }

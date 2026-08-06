@@ -336,3 +336,84 @@ def test_a_backfill_never_reports_itself_as_pipeline_latency(ctx):
     rows = {row["key"]: row for row in stage_breakdown(ctx, hours=24)}
     assert rows["found_to_delivered"]["samples"] == 0
     assert rows["embedded_to_scored"]["samples"] == 0
+
+
+# ── what the filter removed ─────────────────────────────────────────────────────────────────────
+#
+# The roadmap's stage-3 row. **Not a duration**: the filter costs microseconds a row, so timing it
+# would report noise, while what it removed is what says whether it is earning its place. These
+# tests are about the number being per account and being derivable from rows that already exist.
+
+
+def _judged(ctx, *, scored: int, skipped: int):
+    """One account with a known split of scored and filtered-out rows."""
+    from libs.ops.latency import filter_effect
+
+    user = User(email=f"{uuid.uuid4()}@example.test", password_hash="x")
+    ctx.add(user)
+    ctx.flush()
+    now = datetime.now(UTC)
+    for index in range(scored + skipped):
+        job, _ = _posting(ctx, minutes_ago=30, described_after=1, embedded_after=2)
+        ctx.add(UserJobState(user_id=user.id, job_id=job.id,
+                             # `skip()` stores a null score with `scored_at` set — the row was
+                             # considered and rejected, which is exactly what is being counted.
+                             score=None if index < skipped else 70.0,
+                             scored_model_version=1, scored_at=now))
+    ctx.flush()
+    return user, {entry["user_id"]: entry
+                  for entry in filter_effect(ctx, hours=24)["users"]}[str(user.id)]
+
+
+@pytestmark_db
+def test_a_filtered_row_is_counted_as_removed_not_as_missing(ctx):
+    """**The before/after count the filter shipped without** (CLAUDE.md §4).
+
+    A row the filter rejected leaves no trace anywhere else: it is not in the feed, not in the
+    health count, and not in any log a week later. Without this it is only ever visible as an
+    absence, which is the same shape as a quiet week.
+    """
+    _user, entry = _judged(ctx, scored=7, skipped=3)
+
+    assert entry["considered"] == 10
+    assert entry["removed"] == 3
+    assert entry["scored"] == 7
+    assert entry["removed_pct"] == 30.0
+
+
+@pytestmark_db
+def test_one_account_whose_filter_removes_everything_is_visible_on_its_own(ctx):
+    """**A total would hide it, and the total is what an operator reads first.**
+
+    A feed that goes silent because a filter is too tight looks exactly like a feed with nothing
+    new — which is the failure this platform has now shipped twice. So the row is per account, and
+    an account with nothing surviving is red even while the platform's own rate looks ordinary.
+    """
+    from libs.ops.latency import MIN_SAMPLES, filter_effect
+
+    _healthy, healthy = _judged(ctx, scored=MIN_SAMPLES, skipped=0)
+    _silent, silent = _judged(ctx, scored=0, skipped=MIN_SAMPLES)
+
+    assert silent["verdict"] == "down"
+    assert silent["removed_pct"] == 100.0
+    assert healthy["verdict"] == "ok", "removing nothing is cold start, not a fault"
+    # And the platform summary carries the worst of them rather than the average, which here would
+    # be a perfectly comfortable 50%.
+    assert filter_effect(ctx, hours=24)["verdict"] == "down"
+
+
+@pytestmark_db
+def test_a_row_nobody_has_scored_is_not_counted_as_filtered_out(ctx):
+    """`user_job_state` gains a row the first time anything touches a posting — a label, an applied
+    record. Those have a null score too, and counting them would report a filter that never ran."""
+    from libs.ops.latency import filter_effect
+
+    user = User(email=f"{uuid.uuid4()}@example.test", password_hash="x")
+    ctx.add(user)
+    ctx.flush()
+    job, _ = _posting(ctx, minutes_ago=30, described_after=1, embedded_after=2)
+    ctx.add(UserJobState(user_id=user.id, job_id=job.id, applied_at=datetime.now(UTC)))
+    ctx.flush()
+
+    assert not [entry for entry in filter_effect(ctx, hours=24)["users"]
+                if entry["user_id"] == str(user.id)]

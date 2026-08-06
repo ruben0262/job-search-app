@@ -1089,17 +1089,30 @@ added without a consumer.
 are worth doing. 6p measures six handoffs today; stages 2 and 3 add two more, and both are places
 work can quietly pile up:
 
-- **Stage 2 — "found → structured".** How long between a posting arriving and its country, field and
-  the rest being extracted. A row nobody has extracted yet is a row no filter can act on, so a
-  backlog here stalls everything behind it while every existing row still looks healthy.
-- **Stage 3 — "structured → filtered".** How long the pre-score filter takes per user and — more
-  useful than the duration — **how many rows it removed**. That is the number that says whether the
-  filter is earning its place or quietly costing somebody jobs, and it is the same before/after
-  count 6o.1 demands, reported continuously rather than once at ship time.
+- **Stage 2 — "found → structured".** ❌ **Not built, and the reason is the interesting part.** The
+  plan assumed extraction would be a pass of its own, with a queue behind it that could back up.
+  It is not: `read_country` runs inside the same `INSERT` that sets `first_seen_at`
+  (`libs/corpus/repository.py`), so the span is zero by construction and there is no backlog column
+  to count. **A latency row for it would be a permanent green measuring nothing** — which is worse
+  than no row, because a reader would take it as evidence the stage is healthy. If structuring ever
+  moves off the insert path it needs this row on the same day; while it is inline, it does not.
+- **Stage 3 — "structured → filtered".** ✅ **done 2026-08-06.** Built as `filter_effect` in
+  `libs/ops/latency.py`, and deliberately **not as a duration**: the filter costs about four
+  microseconds a row, so timing it would report scheduler noise, while what it *removed* is the
+  before/after count 6o.1 demands. Per account rather than per platform — one user whose filter
+  rejects everything is invisible in a total, and a feed silenced by a tight filter looks exactly
+  like a feed with nothing new.
 
-Neither can be built before the stage it measures, which is why they are recorded here rather than
-in 6p. The drill-down takes a new row by adding one entry to `STAGES`; forgetting to add it is how a
-stage ends up invisible.
+  Judged at one end only. **Everything removed** is a feed that has been turned off whatever the
+  tuning intended, so it is red; **nothing removed** is cold start, where `centroid.keep` fails open
+  on purpose, so it is not. There is no defensible amber between them, and a threshold picked to
+  look reasonable is a colour an operator learns to ignore.
+
+  No new column: `skip()` already writes a null score with `scored_at` set, and nothing else on the
+  platform produces that combination.
+
+The drill-down takes a new row by adding one entry to `STAGES`; forgetting to add it is how a stage
+ends up invisible.
 
 **Stage 1 closed 2026-08-04**, with what it cost written down because the pattern is the point:
 

@@ -14,6 +14,42 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-08-06
+
+**Where the jobs are, and what the filter removed** — the two numbers nobody was reporting.
+
+The pipeline radar (`libs/ops/pipeline.py`, `GET /admin/pipeline`, an Admin tab) is one row per
+stage with how many are waiting in it and how long the oldest has waited. Every outage this platform
+has had was a stage quietly stopping while everything around it looked fine — six hours of ingestion
+behind an invisible filter, LinkedIn dead for five hours behind a timer that could not fire, 229 rows
+stuck awaiting an embed while both health alerts pointed at delivery. **The number existed every
+time; reading it meant knowing which query to run.**
+
+Every count is `SELECT count(*)` against the condition the *next* stage actually reads, so a stage
+cannot report empty while work sits in it. Where a number is genuinely unavailable it is null and the
+page shows a dash — zero is a claim, a dash is an admission. Verdicts are about backlog *age*, not
+size, and derived from the tick meant to clear the stage: a thousand rows moving is healthy and forty
+stuck for a day is not, and colouring by size would turn a busy platform permanently red.
+
+**The embedder could not have succeeded.** Measured against the live backend: 16 texts in 17.1s, 32
+in 26.8s, 64 in 52.1s, 128 in 107.8s — flat at ~840 ms a text. `EMBED_BATCH_SIZE` was 200, needing
+~168 seconds against a 120-second client timeout, and the backlog is what produces a full batch, so
+the timeout preserved the condition that caused it. Now derived from the timeout with the measured
+rate named beside it, and pinned by a test in `test_schedules.py`.
+
+**What the pre-score filter removed** (`filter_effect`, on the latency page) is the roadmap's stage-3
+row, and deliberately not a duration: the filter costs microseconds a row, so timing it would report
+noise. Per account, because one user whose filter rejects everything is invisible in a platform
+total — and a feed silenced by a tight filter looks exactly like a feed with nothing new, which is a
+failure this project has now shipped twice. Judged at one end only: everything removed is red,
+nothing removed is cold start and is not.
+
+**Stage 2's planned latency row was not built, and the roadmap now says why.** Country extraction
+turned out to run inside the same `INSERT` that sets `first_seen_at`, so the span is zero by
+construction. A row for it would be a permanent green measuring nothing, which is worse than no row.
+
+---
+
 ## 2026-08-05 (later)
 
 **The CV and cover-letter buttons did nothing, and the cause was general** (ROADMAP 6af). Reported

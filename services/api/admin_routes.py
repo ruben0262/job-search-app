@@ -38,6 +38,7 @@ from libs.limits import all_for, describe, set_limit
 from libs.obs import audit
 from libs.ops import evaluate, platform_health, render
 from libs.ops.latency import (
+    filter_effect,
     lane_timings,
     latency_series,
     pipeline_latency,
@@ -621,6 +622,10 @@ def latency(db: Session = Depends(get_db), admin: User = Depends(require_admin),
         # everything below it predates the breakdown and is kept because the health summary and the
         # end-to-end chart still read it.
         "stages": stage_breakdown(db, hours=window),
+        # **What the pre-score filter removed, per account.** Not a duration — the filter costs
+        # microseconds a row, so timing it would report noise. What it *removed* is the number that
+        # says whether it is earning its place or emptying a feed (ROADMAP stage 3).
+        "filter": filter_effect(db, hours=window),
         "spans": pipeline_latency(db, hours=window),
         "lanes": lane_timings(db, hours=window),
         "series": latency_series(db, hours=window),
