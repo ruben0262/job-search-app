@@ -523,3 +523,62 @@ def test_an_ordinary_user_cannot_discard_anything(api):
     session.flush()
 
     assert http.request("DELETE", "/admin/queue/dead").status_code == 404
+
+
+def test_the_live_pipeline_pushes_a_usable_frame(api):
+    """**A stream that connects and never sends is indistinguishable from a healthy quiet platform**
+    — and that is the failure worth a test here, not a 500.
+
+    So this asserts the *presence* of a frame with the stages in it (CLAUDE.md §2), and that it is
+    terminated: a server-sent event without its blank line sits in the browser's buffer forever and
+    the page shows the previous numbers while appearing connected.
+
+    Driven through the response's own iterator rather than an HTTP client, because the endpoint is
+    an endless generator: a test client would hold the connection until the server's own cap expired
+    and the suite would sit there for five minutes.
+    """
+    import asyncio
+    import json
+
+    from fastapi import Request
+
+    from services.api.admin_routes import pipeline_stream
+
+    _http, session, operator, _, _sign_in = api
+
+    async def one_frame():
+        async def receive():
+            # Never resolves. `is_disconnected` cancels its own read immediately, so this only has
+            # to exist — but a stream that is still connected is the case worth exercising.
+            await asyncio.Event().wait()
+
+        request = Request({"type": "http", "method": "GET", "path": "/admin/pipeline/stream",
+                           "headers": [], "query_string": b""}, receive)
+        response = await pipeline_stream(request, db=session, admin=operator, hours=1)
+        assert response.media_type == "text/event-stream"
+        # Proxies buffer an event stream into uselessness without this, and the symptom is a page
+        # that updates in bursts of a minute rather than a stream that fails.
+        assert response.headers["x-accel-buffering"] == "no"
+        async for chunk in response.body_iterator:
+            return chunk
+
+    frame = asyncio.run(one_frame())
+
+    assert frame.startswith("data: ")
+    assert frame.endswith("\n\n"), "an unterminated event sits in the browser's buffer forever"
+    payload = json.loads(frame[len("data: "):])
+    assert [stage["key"] for stage in payload["stages"]] == [
+        "gather", "describe", "embed", "score", "deliver"]
+    assert "lanes" in payload
+
+
+def test_the_live_pipeline_is_not_public(api):
+    """The same guard every admin route has. A stream is easy to add outside the router, and this
+    one carries every account's queue depth."""
+    http, _, _, ordinary, sign_in = api
+    sign_in(http, ordinary)
+
+    # Authorisation is decided before the first frame, so this returns a plain 403 and never opens
+    # a stream the client would then have to wait out.
+    # 404 rather than 403, like every other admin route: a 403 confirms the endpoint exists.
+    assert http.get("/admin/pipeline/stream").status_code == 404

@@ -2832,3 +2832,84 @@ td.num {
 @media (max-width: 720px) {
   .pipeline-row { grid-template-columns: 1fr; }
 }
+
+/* ── the live pipeline ────────────────────────────────────────────────────────────────────────
+   Movement is the point. A number that changed says so for a moment and then stops, because a
+   counter that flashes on every frame is one nobody can read — and the platform is idle for most of
+   every fifteen minutes, so the flashes that do happen are the ones worth looking at. */
+.pulse {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-left: 0.6rem;
+  border-radius: 50%;
+  vertical-align: middle;
+  background: var(--faint);
+}
+
+.pulse.on {
+  background: var(--ok, #6ea87f);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+/* Reconnecting, not dead: EventSource retries by itself. Steady rather than animated, so it reads
+   as "not live right now" instead of as a second kind of activity. */
+.pulse.off { background: var(--danger); }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.pipeline-waiting.fell { animation: fell 1.2s ease-out; }
+.pipeline-waiting.rose { animation: rose 1.2s ease-out; }
+
+@keyframes fell {
+  0% { color: var(--ok, #6ea87f); transform: translateY(-2px); }
+  100% { color: inherit; transform: none; }
+}
+
+@keyframes rose {
+  0% { color: var(--danger); transform: translateY(2px); }
+  100% { color: inherit; transform: none; }
+}
+
+.delta {
+  margin-left: 0.35rem;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}
+
+/* Lost work, not queued work — so it is a sentence rather than another number in the row. */
+.pipeline-expired {
+  grid-column: 1 / -1;
+  margin: 0.55rem 0 0;
+  padding-top: 0.55rem;
+  border-top: 1px solid var(--hairline);
+  font-size: 0.85rem;
+  color: var(--danger);
+}
+
+.lanes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.lane-chip {
+  display: flex;
+  align-items: baseline;
+  gap: 0.55rem;
+  padding: 0.45rem 0.75rem;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  font-size: 0.85rem;
+}
+
+.lane-chip.down { border-color: var(--danger); }
+.lane-running { color: var(--ok, #6ea87f); }
+.lane-ready { color: var(--muted); }
+.lane-dead { color: var(--danger); }

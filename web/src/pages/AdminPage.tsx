@@ -14,7 +14,7 @@
  * Visible only when `/dashboard` says `is_admin`. That is a rendering hint — the API refuses
  * `/admin/*` on its own, from `ADMIN_EMAILS`, and this page could not read anything without it.
  */
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 
 import { api } from "../api";
 import { Error, useAction } from "../ui";
@@ -159,14 +159,34 @@ type PipelineStage = {
   label: string;
   what: string;
   entered: number | null;
-  waiting: number;
+  // **`null`, not 0, where the stage has no queue at all.** Gathering and storing are one INSERT,
+  // so nothing is ever between them, and a confident zero there is the same lie as anywhere else.
+  waiting: number | null;
   oldest_min: number | null;
+  // Matched, never sent, now too old to send — work the platform did and threw away. Only delivery
+  // produces this, because it is the only stage with a deliberate rate cap in front of it.
+  expired: number | null;
   verdict: "ok" | "warn" | "down";
+};
+
+type PipelineLane = {
+  lane: string;
+  // Waiting for a worker.
+  ready: number;
+  // Claimed and executing — the number that moves second to second, and the one that makes a
+  // fifteen-minute tick watchable rather than inferred from a count that jumps.
+  running: number;
+  // **Abandoned.** Work the platform gave up on, which no stage count can show: from the outside a
+  // dead job and a job nobody enqueued look like the same empty queue.
+  dead: number;
+  done: number;
 };
 
 type PipelineReport = {
   window_hours: number;
   stages: PipelineStage[];
+  lanes: PipelineLane[];
+  at: string;
   amber_after_min: number;
   red_after_min: number;
 };
@@ -1043,77 +1063,141 @@ function CorpusTab() {
  * columns nobody reads (ROADMAP 6p).
  */
 
-/** **Where the jobs are, right now.** The latency page says how long each handoff took for postings
- *  that already made it through; this says how many are sitting at each stage at this moment.
+/** **Where the jobs are, right now**, streamed rather than asked for.
+ *
+ *  The latency page says how long each handoff took for postings that already made it through; this
+ *  says how many are sitting at each stage at this moment, and whether anything is turning the
+ *  handle.
  *
  *  Every outage this platform has had was a stage quietly stopping while the numbers around it
  *  looked fine — six hours of ingestion behind an invisible filter, LinkedIn dead for five hours
- *  behind a timer that could not fire, and 229 rows stuck awaiting an embed while both health
- *  alerts pointed at delivery. The number existed every time; reading it meant knowing the query.
+ *  behind a timer that could not fire, and 229 rows stuck awaiting an embed while both health alerts
+ *  pointed at delivery. The number existed every time; reading it meant knowing the query.
  *
- *  Polls rather than streams, deliberately: these counts move on a fifteen-minute tick, so a few
- *  seconds of staleness is invisible and a websocket would be a second delivery mechanism to keep
- *  alive for no gain the reader could see. */
+ *  **Polling was right first and is not right now.** A five-second poll proved the numbers before
+ *  anything was built on them, which is how three of them turned out to be lies worth fixing. But
+ *  the platform works in bursts — nothing for fifteen minutes, then a lane fills and drains inside
+ *  thirty seconds — and that is exactly the interval where "moving" and "stuck" look identical
+ *  unless you can watch it. `EventSource`, because this is one-way text that reconnects by itself
+ *  and needs no library on either side. */
 function PipelineTab() {
   const [report, setReport] = useState<PipelineReport | null>(null);
-  const [failed, setFailed] = useState(false);
+  const [connected, setConnected] = useState(false);
+  // The previous frame, so a count that moved can say so. **This is what makes the page a live view
+  // rather than a fast-refreshing snapshot**: the question is not "how many are waiting" but "is
+  // the number going down", and a still image cannot answer it.
+  const previous = useRef<Record<string, number | null>>({});
 
   useEffect(() => {
-    let live = true;
-    const load = () =>
-      api.get<PipelineReport>("/admin/pipeline")
-        .then((data) => { if (live) { setReport(data); setFailed(false); } })
-        .catch(() => { if (live) setFailed(true); });
-    void load();
-    // Five seconds is well inside the tick, so the page is never meaningfully behind, and the query
-    // is a handful of indexed counts rather than anything that scans.
-    const timer = setInterval(() => void load(), 5000);
-    return () => { live = false; clearInterval(timer); };
+    const source = new EventSource("/admin/pipeline/stream");
+    source.onmessage = (event) => {
+      const data = JSON.parse(event.data) as PipelineReport & { error?: string };
+      if (data.error) return; // one bad frame; the next is a second away
+      setReport((was) => {
+        if (was) {
+          previous.current = Object.fromEntries(was.stages.map((s) => [s.key, s.waiting]));
+        }
+        return data;
+      });
+      setConnected(true);
+    };
+    // `EventSource` reconnects by itself, including when the server closes the stream at its own
+    // five-minute cap. All this does is stop claiming the numbers are live while it is down.
+    source.onerror = () => setConnected(false);
+    return () => source.close();
   }, []);
 
-  if (failed && !report) return <p className="muted">Could not read the pipeline.</p>;
-  if (!report) return <p className="muted">Reading the pipeline…</p>;
+  if (!report) return <p className="muted">Opening the live pipeline…</p>;
 
-  const busiest = Math.max(1, ...report.stages.map((s) => s.waiting));
+  const busiest = Math.max(1, ...report.stages.map((s) => s.waiting ?? 0));
+  const lanes = report.lanes.filter((lane) => lane.ready || lane.running || lane.dead);
 
   return (
     <>
-      <h2>Where the jobs are</h2>
-      <p className="hint" style={{ maxWidth: "60ch" }}>
-        One row per stage, in the order a posting moves through them. <strong>Waiting</strong> is how
-        many are sitting in that stage now; <strong>entered</strong> is how many arrived in the last{" "}
-        {report.window_hours} hours. A stage turns amber after {report.amber_after_min} minutes of
-        the oldest row waiting and red after {report.red_after_min} — the tick that should have
-        cleared it runs every {report.amber_after_min / 2} minutes.
+      <h2>
+        Where the jobs are
+        <span className={`pulse ${connected ? "on" : "off"}`}
+              title={connected ? "live" : "reconnecting"} />
+      </h2>
+      <p className="hint" style={{ maxWidth: "62ch" }}>
+        One row per stage, in the order a posting moves through them, updating every second.{" "}
+        <strong>Waiting</strong> is how many are sitting in that stage now; <strong>entered</strong>{" "}
+        is how many arrived in the last {report.window_hours} hours. A stage turns amber after{" "}
+        {report.amber_after_min} minutes of the oldest row waiting and red after{" "}
+        {report.red_after_min} — the tick that should have cleared it runs every{" "}
+        {report.amber_after_min / 2} minutes.
       </p>
 
       <div className="pipeline">
-        {report.stages.map((stage) => (
-          <div key={stage.key} className={`pipeline-row ${stage.verdict}`}>
-            <div className="pipeline-head">
-              <strong>{stage.label}</strong>
-              <span className="small muted">{stage.what}</span>
+        {report.stages.map((stage) => {
+          const was = previous.current[stage.key];
+          // Only a change worth seeing. A counter that flashes on every frame is one nobody can
+          // read, and the platform is idle for most of every fifteen minutes.
+          const moved =
+            was !== undefined && was !== null && stage.waiting !== null ? stage.waiting - was : 0;
+          return (
+            <div key={stage.key} className={`pipeline-row ${stage.verdict}`}>
+              <div className="pipeline-head">
+                <strong>{stage.label}</strong>
+                <span className="small muted">{stage.what}</span>
+              </div>
+              <div className="pipeline-bar-wrap">
+                {/* Width is relative to the busiest stage, so the shape shows where work piles up
+                    rather than implying an absolute scale nobody set. */}
+                <div className="pipeline-bar"
+                     style={{ width: `${Math.round(((stage.waiting ?? 0) / busiest) * 100)}%` }} />
+              </div>
+              <div className="pipeline-numbers">
+                <span className={`pipeline-waiting${moved ? (moved < 0 ? " fell" : " rose") : ""}`}>
+                  {stage.waiting === null ? "—" : stage.waiting.toLocaleString()}
+                </span>
+                <span className="small muted">
+                  waiting
+                  {moved ? <em className="delta">{moved > 0 ? `+${moved}` : moved}</em> : null}
+                </span>
+                <span className="pipeline-entered">
+                  {stage.entered === null ? "—" : stage.entered.toLocaleString()}
+                </span>
+                <span className="small muted">in {report.window_hours}h</span>
+                <span className="small muted">
+                  {stage.oldest_min === null ? "—" : `oldest ${minutes(stage.oldest_min)}`}
+                </span>
+              </div>
+              {/* **The one thing on this page that is lost work rather than queued work.** A
+                  delivery queue is the per-cycle cap doing its job; a posting that expired in it
+                  was matched, ranked, and never shown to anybody. */}
+              {stage.expired ? (
+                <p className="pipeline-expired">
+                  {stage.expired.toLocaleString()} matched and expired unsent in the last{" "}
+                  {report.window_hours}h — this account matches faster than its per-cycle cap
+                  delivers, so the tail ages out. Raise <code>items_per_run</code> or tighten the
+                  filter.
+                </p>
+              ) : null}
             </div>
-            <div className="pipeline-bar-wrap">
-              {/* Width is relative to the busiest stage, so the shape shows where work piles up
-                  rather than implying an absolute scale nobody set. */}
-              <div className="pipeline-bar"
-                   style={{ width: `${Math.round((stage.waiting / busiest) * 100)}%` }} />
-            </div>
-            <div className="pipeline-numbers">
-              <span className="pipeline-waiting">{stage.waiting.toLocaleString()}</span>
-              <span className="small muted">waiting</span>
-              <span className="pipeline-entered">
-                {stage.entered === null ? "—" : stage.entered.toLocaleString()}
-              </span>
-              <span className="small muted">in {report.window_hours}h</span>
-              <span className="small muted">
-                {stage.oldest_min === null ? "—" : `oldest ${minutes(stage.oldest_min)}`}
-              </span>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
+
+      {/* **The stages say where postings are; this says whether anything is turning the handle.**
+          They fail independently — a stage can be empty because the work is done or because the
+          worker feeding it died — and this is the only place a dead-lettered job is visible at all,
+          which is work abandoned rather than work queued. */}
+      <h3 style={{ marginTop: "1.6rem" }}>The queue, right now</h3>
+      {lanes.length === 0 ? (
+        <p className="hint">Every lane is idle. Between ticks that is the normal state.</p>
+      ) : (
+        <div className="lanes">
+          {lanes.map((lane) => (
+            <div key={lane.lane} className={`lane-chip${lane.dead ? " down" : ""}`}>
+              <strong>{lane.lane}</strong>
+              {lane.running ? <span className="lane-running">{lane.running} running</span> : null}
+              {lane.ready ? <span className="lane-ready">{lane.ready} queued</span> : null}
+              {lane.dead ? <span className="lane-dead">{lane.dead} dead</span> : null}
+            </div>
+          ))}
+        </div>
+      )}
     </>
   );
 }

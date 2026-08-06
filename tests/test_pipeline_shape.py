@@ -60,7 +60,10 @@ def test_every_stage_of_the_pipeline_is_present(db):
     from libs.ops.pipeline import pipeline
 
     keys = [s["key"] for s in pipeline(db)["stages"]]
-    assert keys == ["gather", "store", "describe", "embed", "score", "deliver"]
+    # **No separate "store".** It and "gather" are set by the same `INSERT`, so nothing is ever
+    # queued between them and two rows could only ever show one number twice — or, across the day
+    # `fetched_at` was added, fewer gathered than stored, which is impossible.
+    assert keys == ["gather", "describe", "embed", "score", "deliver"]
     for entry in pipeline(db)["stages"]:
         assert entry["label"] and entry["what"], "every stage says what it is, on the page itself"
 
@@ -165,3 +168,116 @@ def test_scoring_counts_work_not_postings(db):
     db.flush()
 
     assert stage(pipeline(db), "score")["waiting"] >= 2
+
+
+# ── the three ways the first version lied ───────────────────────────────────────────────────────
+#
+# Found by reading the page against the database rather than by a test failing, which is the point:
+# every one of them is a number that looked entirely plausible.
+
+
+def _account(db, **config):
+    from libs.db.models import User, UserConfig
+
+    user = User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active",
+                active=True, model_version=1)
+    db.add(user)
+    db.flush()
+    if config:
+        db.add(UserConfig(user_id=user.id, config=config))
+        db.flush()
+    return user
+
+
+def _scored(db, user, job, *, score, notified=False, scored_ago_min=5):
+    from libs.db.models import UserJobState
+
+    db.add(UserJobState(
+        user_id=user.id, job_id=job.id, score=score, scored_model_version=user.model_version,
+        scored_at=datetime.now(UTC) - timedelta(minutes=scored_ago_min),
+        notified_at=datetime.now(UTC) if notified else None))
+    db.flush()
+
+
+def test_the_age_of_a_queue_describes_a_row_that_is_in_it(db):
+    """**The count carried the account's filters and the age did not.**
+
+    Live, that read as 142 waiting with an oldest of 138 hours — an age belonging to a posting the
+    count had excluded for being stale. Both numbers were individually correct and together they
+    described nothing, which is the exact shape of every defect this project has shipped.
+    """
+    from libs.ops.pipeline import pipeline
+
+    user = _account(db)
+    stale = _job(db, description="x " * 200, embedding=b"\x00" * 8, embedding_dim=2,
+                 embedding_version="v1", text_sha256=uuid.uuid4().hex * 2,
+                 posted_at=datetime.now(UTC) - timedelta(days=6))
+    _scored(db, user, stale, score=99.0, scored_ago_min=60 * 138)
+
+    entry = stage(pipeline(db), "deliver")
+    assert entry["waiting"] == 0, "a six-day-old posting is not a delivery candidate"
+    assert entry["oldest_min"] is None, (
+        "so it cannot be the age of the delivery queue either — the count and the age have to ask "
+        "the same question")
+
+
+def test_the_scoring_queue_can_actually_turn_red(db):
+    """**The one colour that cannot fire is the one nobody notices is missing.**
+
+    `oldest_min` for scoring was initialised to `None` and never assigned, so whatever piled up
+    behind the score lane, the row stayed green. A stage that cannot report a fault is worse than an
+    absent stage, because the page implies it is being watched.
+    """
+    from libs.ops.pipeline import pipeline
+
+    _account(db)
+    old = _job(db, description="x " * 200, embedding=b"\x00" * 8, embedding_dim=2,
+               embedding_version="v1", text_sha256=uuid.uuid4().hex * 2,
+               posted_at=datetime.now(UTC) - timedelta(hours=3))
+    old.first_seen_at = datetime.now(UTC) - timedelta(hours=3)
+    db.flush()
+
+    entry = stage(pipeline(db), "score")
+    assert entry["waiting"] == 1
+    assert entry["oldest_min"] is not None and entry["oldest_min"] > 150
+    assert entry["verdict"] == "down"
+
+
+def test_a_delivery_queue_is_the_cap_working_but_an_expired_match_is_not(db):
+    """**Delivery is rate-capped on purpose**, so colouring its queue by age would be red every day
+    of the platform's life and teach its reader to ignore the row.
+
+    What is genuinely wrong is a posting the model matched, that nobody was ever shown, that is now
+    too old to send. Measured live at 576 in 48 hours for one account, and invisible until now.
+    """
+    from libs.ops.pipeline import pipeline
+
+    user = _account(db)
+    fresh = _job(db, description="x " * 200, embedding=b"\x00" * 8, embedding_dim=2,
+                 embedding_version="v1", text_sha256=uuid.uuid4().hex * 2,
+                 posted_at=datetime.now(UTC) - timedelta(minutes=10))
+    _scored(db, user, fresh, score=99.0)
+
+    queued = stage(pipeline(db), "deliver")
+    assert queued["waiting"] == 1
+    assert queued["expired"] == 0
+    assert queued["verdict"] == "ok", "a queue behind a deliberate cap is not a fault"
+
+    missed = _job(db, description="x " * 200, embedding=b"\x00" * 8, embedding_dim=2,
+                  embedding_version="v1", text_sha256=uuid.uuid4().hex * 2,
+                  posted_at=datetime.now(UTC) - timedelta(days=2))
+    _scored(db, user, missed, score=99.0, scored_ago_min=30)
+
+    entry = stage(pipeline(db), "deliver")
+    assert entry["expired"] == 1, "matched, never sent, now too old to send"
+    assert entry["verdict"] == "down"
+
+
+def test_a_stage_with_no_queue_says_so_rather_than_claiming_zero(db):
+    """Gathering and storing are one `INSERT`, so nothing is ever between them. **Zero is a claim
+    and a dash is an admission**, and this page's whole value is the difference."""
+    from libs.ops.pipeline import pipeline
+
+    entry = stage(pipeline(db), "gather")
+    assert entry["waiting"] is None
+    assert entry["verdict"] == "ok"

@@ -13,12 +13,15 @@ escalation, and the audit trail for that update would live in the same database 
 """
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 import os
 import uuid as _uuid
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
@@ -599,6 +602,68 @@ def pipeline_shape(db: Session = Depends(get_db), admin: User = Depends(require_
     fine, and the number that would have shown it existed the whole time (ROADMAP 6ax).
     """
     return pipeline(db, hours=max(1, min(hours, 168)))
+
+
+# How often the live view recomputes. **One second, because the thing worth watching lasts about
+# thirty.** The platform moves on a fifteen-minute tick and then does everything at once: the lane
+# fills, the workers claim, the counts fall. At a five-second poll that burst is three frames and
+# looks like a jump; at one second it is legible, and the whole point of the page is seeing whether
+# work is moving or stuck.
+STREAM_INTERVAL_SECONDS = 1.0
+
+# **A stream is an authorisation held open.** `require_admin` runs once, when the connection opens,
+# so a session revoked afterwards would keep receiving data for as long as the socket lived. Capping
+# the connection forces the browser to reconnect and be re-checked; `EventSource` reconnects by
+# itself, so nothing is lost and the page does not blink.
+STREAM_MAX_SECONDS = 300
+
+
+@router.get("/pipeline/stream")
+async def pipeline_stream(request: Request, db: Session = Depends(get_db),
+                          admin: User = Depends(require_admin), *, hours: int = 24) -> Response:
+    """The same numbers as `/pipeline`, pushed once a second.
+
+    **Polling was right first and is not right now.** It proved the numbers before anything was
+    built on them, which is why three of them turned out to be lies worth fixing. But the platform
+    works in bursts: nothing happens for fifteen minutes and then a lane fills and drains inside
+    thirty seconds, and that is exactly the interval where "moving" and "stuck" look identical
+    unless you can watch it.
+
+    Server-sent events rather than a websocket: this is one-way, it is text, it reconnects by itself
+    and it needs no library on either side. A websocket would be a second protocol to keep alive for
+    a feature that never sends anything upstream.
+    """
+    window = max(1, min(hours, 168))
+    audit(logger, "admin.pipeline_stream", user=admin.id, hours=window)
+
+    async def frames():
+        started = asyncio.get_event_loop().time()
+        while True:
+            # **The client going away is the normal ending.** Without this check the loop keeps
+            # querying for a browser that closed the tab, once a second, until the worker restarts.
+            if await request.is_disconnected():
+                return
+            if asyncio.get_event_loop().time() - started > STREAM_MAX_SECONDS:
+                # Ends the response; the browser reopens and is authorised again.
+                return
+            try:
+                # The session is per-request and this loop reuses it, so each frame has to start
+                # clean or Postgres answers every one of them from the first frame's snapshot — a
+                # live view that silently freezes while still ticking.
+                db.rollback()
+                payload = json.dumps(pipeline(db, hours=window))
+            except Exception as exc:  # noqa: BLE001 - one bad frame must not kill the stream
+                logger.warning("pipeline stream: frame failed, retrying next tick: %s", exc)
+                payload = json.dumps({"error": str(exc)})
+            # A blank line terminates one server-sent event. Without it the browser holds the frame
+            # in its buffer waiting for more, and the page stays on the previous numbers.
+            yield f"data: {payload}\n\n"
+            await asyncio.sleep(STREAM_INTERVAL_SECONDS)
+
+    return StreamingResponse(
+        frames(), media_type="text/event-stream",
+        # Cloudflare and any proxy in between will happily buffer an event stream into uselessness.
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"})
 
 
 @router.get("/latency")

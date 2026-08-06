@@ -14,6 +14,50 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-08-06 (later)
+
+**The radar's first day found three of its own numbers lying**, which is roughly the point of
+building it — read against the database rather than trusted, per CLAUDE.md §4.
+
+- **The delivery queue's age described a posting the count had excluded.** The count carried the
+  account's filters and the age did not, so the page read *142 waiting, oldest 138 hours*: two
+  individually correct numbers that together described nothing. They now share a condition list.
+- **The scoring queue's age was never computed at all** — initialised to `None` and never assigned,
+  so whatever piled up behind the score lane the row stayed green. The one colour that cannot fire
+  is the one nobody notices is missing.
+- **"Gathered" and "Stored" were one `INSERT` drawn as two stages.** `fetched_at` and
+  `first_seen_at` are set by the same statement, so nothing is ever queued between them and the two
+  counts could only ever be equal — except across 2026-08-04, before which `fetched_at` did not
+  exist, where the page showed *fewer gathered than stored*. Now one row (CLAUDE.md §6).
+- **A stage with no queue said `0` rather than a dash**, breaking the page's own rule that zero is a
+  claim and a dash is an admission.
+
+**Delivery is now judged on lost work rather than on queue age**, and the measurement changed the
+answer. `items_per_run` caps sending at ten a cycle *on purpose*, so a queue behind it is the design
+working and an age-based colour would be red every day of the platform's life. What is genuinely
+wrong is a posting the model matched, that nobody was ever shown, that is now too old to send —
+**measured live at 576 in 48 hours for one account**, against 931 delivered. The cap is below that
+account's own match rate, so the tail ages out; the page now says so and names the setting.
+
+**The pipeline streams.** `GET /admin/pipeline/stream`, server-sent events at one second, and the
+page shows which counts moved. Polling was right first — it proved the numbers before anything was
+built on them, which is how the three above were found — but the platform works in bursts, and
+fifteen minutes of quiet followed by a thirty-second drain is exactly the interval where "moving"
+and "stuck" look identical unless you can watch it. SSE rather than a websocket: one-way text that
+reconnects by itself and needs no library on either side. The queue's own lanes are beside it, which
+is the only place a dead-lettered job is visible at all — from the outside, work abandoned and work
+never enqueued look like the same empty queue.
+
+**The contract gate failed for a reason that had nothing to do with the contract.** `dump_openapi.py`
+let Python pick the line ending, so a dump run on Windows committed CRLF and CI regenerated the
+identical document with LF — a 4,642-line diff in which no line had changed. Same defect as
+`alembic>=1.13` (ROADMAP 6al): **a gate whose result depends on which machine ran it is not a
+prediction of CI, it is a coincidence.** The writer now pins `newline="
+"` and a test fails the
+build if a CRLF contract is ever committed again.
+
+---
+
 ## 2026-08-06
 
 **Where the jobs are, and what the filter removed** — the two numbers nobody was reporting.

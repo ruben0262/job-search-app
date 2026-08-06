@@ -308,6 +308,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/pipeline/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Pipeline Stream
+         * @description The same numbers as `/pipeline`, pushed once a second.
+         *
+         *     **Polling was right first and is not right now.** It proved the numbers before anything was
+         *     built on them, which is why three of them turned out to be lies worth fixing. But the platform
+         *     works in bursts: nothing happens for fifteen minutes and then a lane fills and drains inside
+         *     thirty seconds, and that is exactly the interval where "moving" and "stuck" look identical
+         *     unless you can watch it.
+         *
+         *     Server-sent events rather than a websocket: this is one-way, it is text, it reconnects by itself
+         *     and it needs no library on either side. A websocket would be a second protocol to keep alive for
+         *     a feature that never sends anything upstream.
+         */
+        get: operations["pipeline_stream_admin_pipeline_stream_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/queue/dead": {
         parameters: {
             query?: never;
@@ -2826,6 +2856,37 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pipeline_stream_admin_pipeline_stream_get: {
+        parameters: {
+            query?: {
+                hours?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

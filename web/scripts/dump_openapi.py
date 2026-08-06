@@ -32,7 +32,15 @@ def main() -> int:
     target = pathlib.Path(__file__).resolve().parents[1] / "openapi.json"
     # `sort_keys` and a trailing newline so the committed file is stable: an unstable dump produces
     # a diff on every run and nobody reads a diff that is always noisy.
-    target.write_text(json.dumps(app.openapi(), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    #
+    # **`newline="\n"` explicitly, and this is not cosmetic.** Without it Python translates every
+    # line ending to the platform's, so the same command produces a different file on Windows than
+    # in CI — and CI regenerates this file and fails if it differs. That failed the contract gate on
+    # 2026-08-06 with a 4,642-line diff in which no line had changed. **A gate whose result depends
+    # on which machine ran it is not a gate** (CLAUDE.md §7): the same defect as `alembic>=1.13`
+    # letting CI resolve a version the laptop did not.
+    target.write_text(json.dumps(app.openapi(), indent=2, sort_keys=True) + "\n",
+                      encoding="utf-8", newline="\n")
     print(f"wrote {target} ({len(app.openapi()['paths'])} paths)")
     return 0
 
