@@ -1,7 +1,6 @@
 """The bell: producing, collapsing, listing, marking read."""
 from __future__ import annotations
 
-import dataclasses
 import os
 import uuid
 
@@ -122,59 +121,20 @@ def test_notify_never_raises(api):
     notify.notify(session, user.id, notify.TELEGRAM_BROKEN, "should be swallowed")
 
 
-def test_the_pre_send_refresh_cannot_overrun_the_lanes_claim_timeout():
-    """The failure this prevents stops delivery entirely and reports success."""
+def test_delivery_fetches_nothing_and_so_owns_its_whole_claim():
+    """The pre-send liveness refresh moved to the harvester on 2026-08-07 (ROADMAP 6bb)."""
+    from pathlib import Path
+
     from libs.db.models.queue import CLAIM_TIMEOUT_MIN
-    from services.notifier.freshness import REFRESH_BUDGET_SECONDS
+    from services.notifier.deliver import SEND_BUDGET_SECONDS
 
-    claim_seconds = CLAIM_TIMEOUT_MIN["notify"] * 60
-    assert claim_seconds / 2 > REFRESH_BUDGET_SECONDS, (
-        f"a {REFRESH_BUDGET_SECONDS}s refresh budget against a {claim_seconds}s claim leaves too "
-        "little for the send that follows it")
+    body = Path("services/notifier/deliver.py").read_text(encoding="utf-8")
+    assert "httpx" not in body, "delivery opens no client: sending is the only network it does"
 
-
-def test_a_slow_refresh_stops_at_the_budget_and_passes_the_rest_through(monkeypatch):
-    """Fail open: whatever is not refreshed in time is sent unchanged."""
-    import time as _time
-
-    from services.notifier import freshness
-
-    clock = {"t": 0.0}
-    monkeypatch.setattr(freshness.time, "monotonic", lambda: clock["t"])
-
-    def slow_fetch(url, *, client, stats=None, with_easy_apply=True):
-        clock["t"] += freshness.REFRESH_BUDGET_SECONDS  # one fetch eats the whole budget
-        return {"applicants": 5, "reposted": None, "easy_apply": None, "workplace": None,
-                "posted_at": None, "accepting": True, "applicants_caption": None,
-                "application_url": None}
-
-    monkeypatch.setattr(freshness, "fetch_meta", slow_fetch)
-    monkeypatch.setattr(freshness, "linkedin_id", lambda url: "123")
-    monkeypatch.setattr(freshness, "CorpusRepository", lambda session: _NullCorpus())
-
-    items = [_Item(f"https://linkedin.com/jobs/view/{n}") for n in range(5)]
-    out = freshness.date_candidates(object(), items, client=None)
-
-    assert len(out) == len(items), "nothing is dropped when the budget runs out"
-    assert {item.url for item in out} == {item.url for item in items}
-    assert _time is not None
-
-
-class _NullCorpus:
-    def set_posting_metadata(self, *a, **k): ...
-    def mark_closed(self, *a, **k): ...
-
-
-@dataclasses.dataclass
-class _Item:
-    """The fields `date_candidates` reads. A dataclass because it calls `replace` on these."""
-
-    url: str
-    job_id: int = 1
-    posted_at: object = None
-    applicants: object = None
-    reposted: object = None
-    easy_apply: object = None
+    claim = CLAIM_TIMEOUT_MIN["notify"] * 60
+    assert claim > SEND_BUDGET_SECONDS, (
+        f"the send ({SEND_BUDGET_SECONDS}s) must finish inside the {claim}s claim, or the job is "
+        "swept back to ready while its worker is still sending and a second worker starts again")
 
 
 def test_unlimited_still_fits_inside_one_claim():

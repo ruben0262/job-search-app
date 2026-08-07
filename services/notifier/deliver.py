@@ -5,36 +5,31 @@ import logging
 import statistics
 import uuid as _uuid
 from collections.abc import Callable
-from contextlib import contextmanager
 from datetime import UTC, datetime
 from time import monotonic, sleep
 
-import httpx
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 import libs.notify as notifylib
 from libs import limits
-from libs.db.models import CorpusJob, QueueJob, User, UserConfig, UserJobState
+from libs.db.models import CorpusJob, QueueJob, User, UserJobState
 from libs.db.models.queue import CLAIM_TIMEOUT_MIN
 from libs.obs import audit
 from libs.queue import enqueue
 from libs.scoring.thresholds import DEFAULT_CUTOFF, cutoff_for
-from libs.secrets import SecretsError, SecretStore, redacting
-from libs.tenant.filters import UserFilters, candidate_conditions
+from libs.secrets import SecretStore
 from services.notifier.buttons import keyboard
 from services.notifier.card import FeedItem
 from services.notifier.card import render as render_card
-from services.notifier.eligibility import CANDIDATE_MULTIPLIER
-from services.notifier.eligibility import select as select_feed
-from services.notifier.freshness import REFRESH_BUDGET_SECONDS, date_candidates
+from services.notifier.eligibility import CANDIDATE_MULTIPLIER, rank
 from services.notifier.routing import group_by_chat
 
 logger = logging.getLogger(__name__)
 
-# What "unlimited jobs per run" means to a query that needs a number.
-SEND_BUDGET_SECONDS = (
-    CLAIM_TIMEOUT_MIN["notify"] * 60 - REFRESH_BUDGET_SECONDS) * 0.6
+# The whole claim is the send budget now that delivery fetches nothing: no page is read, no proxy is
+# opened, and the only work between claiming and sending is one indexed query.
+SEND_BUDGET_SECONDS = CLAIM_TIMEOUT_MIN["notify"] * 60 * 0.6
 
 
 def unlimited_items(gap_seconds: float) -> int:
@@ -52,14 +47,14 @@ class BotRevoked(RuntimeError):
     """The user's bot is gone. Terminal — flag the account, do not retry."""
 
 
-def pending_feed(session: Session, user_id: _uuid.UUID, *, cutoff: float, limit: int,
-                 store: SecretStore | None = None) -> tuple[list[FeedItem], dict[str, int]]:
-    """This user's next digest: eligible, ranked by opportunity, capped at `limit`."""
-    # The account's own filters, read once — the same object the score lane already applied.
-    config = session.scalar(select(UserConfig.config).where(UserConfig.user_id == user_id))
-    filters = UserFilters.from_config(config)
+def pending_feed(session: Session, user_id: _uuid.UUID, *, cutoff: float,
+                 limit: int) -> list[FeedItem]:
+    """This user's next digest: everything scored above their cutoff, best first, capped at `limit`.
 
-    # The age filter belongs in the query, not only after it.
+    No filter runs here. Whether a posting is worth this account's attention was decided once, in
+    `libs.tenant.filters` before scoring, and asking again at send time is how one question came to
+    have two answers — a health page counting jobs a filter it could not see was dropping.
+    """
     rows = session.execute(
         select(UserJobState.job_id, CorpusJob.url, CorpusJob.title, CorpusJob.company,
                UserJobState.score, CorpusJob.source, CorpusJob.location, CorpusJob.is_remote,
@@ -72,41 +67,14 @@ def pending_feed(session: Session, user_id: _uuid.UUID, *, cutoff: float, limit:
         .where(UserJobState.user_id == user_id,
                UserJobState.notified_at.is_(None),
                UserJobState.score.is_not(None),
-               UserJobState.score >= cutoff,
-               # The same conditions the health count and the score lane use.
-               *candidate_conditions(filters))
+               UserJobState.score >= cutoff)
         # Known-fresh first, then undated, and only then by score.
         .order_by(CorpusJob.posted_at.is_(None), UserJobState.score.desc())
         .limit(limit * CANDIDATE_MULTIPLIER)).all()
 
     items = [FeedItem(*row[:-1]) for row in rows]
     first_seen = {row[0]: row[-1] for row in rows}
-
-    # Date the front of the queue before filtering it.
-    if store is not None:
-        with _fetching_as(store, user_id) as client:
-            if client is not None:
-                items = date_candidates(session, items, client)
-
-    return select_feed(items, limit=limit, first_seen=first_seen)
-
-
-@contextmanager
-def _fetching_as(store: SecretStore, user_id: _uuid.UUID):
-    """An HTTP client on this user's own proxy, or `None` if they have none."""
-    try:
-        with store.use(user_id, "proxy") as secret:
-            if secret is None:
-                yield None
-                return
-            proxy = secret.reveal()
-            with redacting(proxy), httpx.Client(timeout=25, follow_redirects=True,
-                                                proxy=proxy) as client:
-                yield client
-        return
-    except SecretsError:
-        logger.warning("notify: no proxy available for %s, sending undated", user_id)
-    yield None
+    return rank(items, first_seen=first_seen)[:limit]
 
 
 def notifications_today(session: Session, user_id: _uuid.UUID) -> int:
@@ -137,10 +105,7 @@ def deliver(session: Session, user_id: _uuid.UUID, *,
     if limit == 0:
         return 0
 
-    items, dropped = pending_feed(session, user_id, store=store, cutoff=cutoff, limit=limit)
-    if dropped:
-        # Counted by reason: "dropped 38 for language" is a config problem somebody can fix.
-        logger.info("notify: %s dropped %s before ranking", user_id, dropped)
+    items = pending_feed(session, user_id, cutoff=cutoff, limit=limit)
     if not items:
         return 0
 

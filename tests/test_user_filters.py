@@ -12,6 +12,14 @@ def config(**section) -> dict:
     return {"sections": [{"platform": "all", "keywords": ["engineer"], **section}]}
 
 
+# The operator's `job_max_age_hours`, passed by every caller. Not a default this module owns.
+WINDOW = 24
+
+
+def built(config_: dict | None, *, max_age_hours: int = WINDOW, **kwargs) -> UserFilters:
+    return UserFilters.from_config(config_, max_age_hours=max_age_hours, **kwargs)
+
+
 # ── excluded terms ────────────────────────────────────────────────────────────────────────────
 
 
@@ -55,7 +63,7 @@ def test_only_the_title_and_company_are_searched():
 
 def test_locations_are_read_from_sections_not_the_top_level():
     """Where the first version of this looked, and found nothing for every real config."""
-    filters = UserFilters.from_config(config(locations=["europe", "united_kingdom"]))
+    filters = built(config(locations=["europe", "united_kingdom"]))
 
     assert filters.countries is not None
     assert "GB" in filters.countries and "DE" in filters.countries
@@ -64,13 +72,13 @@ def test_locations_are_read_from_sections_not_the_top_level():
 
 def test_naming_no_location_filters_no_country():
     """`None`, never an empty set — a user who named nowhere has not excluded everywhere."""
-    assert UserFilters.from_config(config()).countries is None
-    assert UserFilters.from_config(None).countries is None
+    assert built(config()).countries is None
+    assert built(None).countries is None
 
 
 def test_the_widest_selection_across_sections_wins():
     """A posting cannot be attributed back to the section that found it."""
-    filters = UserFilters.from_config(
+    filters = built(
         {"sections": [{"platform": "linkedin", "keywords": ["a"], "locations": ["united_kingdom"]},
                       {"platform": "all", "keywords": ["b"], "locations": ["europe"]}]})
 
@@ -80,20 +88,19 @@ def test_the_widest_selection_across_sections_wins():
 # ── freshness ─────────────────────────────────────────────────────────────────────────────────
 
 
-def test_the_window_is_the_widest_the_user_asked_for():
-    filters = UserFilters.from_config(
-        {"sections": [{"platform": "linkedin", "keywords": ["a"], "posted_within_hours": 6},
-                      {"platform": "all", "keywords": ["b"], "posted_within_hours": 72}]})
-
-    assert filters.max_age_hours == 72
+def test_the_window_is_the_operators_and_arrives_from_the_caller():
+    """`posted_within_hours` left the stored config on 2026-08-01; the window is platform-wide now."""
+    assert built(config(), max_age_hours=6).max_age_hours == 6
+    assert built(None, max_age_hours=72).max_age_hours == 72
 
 
-def test_an_unanswered_window_falls_back_rather_than_to_zero():
-    """Zero would filter everything, which is the failure this whole file is shaped around."""
-    from libs.ops.health import DEFAULT_MAX_AGE_HOURS
+def test_the_filter_never_invents_a_window_of_its_own():
+    """A default here is a number no operator can reach, and this one decides what is sendable."""
+    from libs.settings import DEFAULTS
 
-    assert UserFilters.from_config(config()).max_age_hours == DEFAULT_MAX_AGE_HOURS
-    assert UserFilters.from_config(None).max_age_hours == DEFAULT_MAX_AGE_HOURS
+    assert "job_max_age_hours" in DEFAULTS, "the window an operator sets, and the only one"
+    with pytest.raises(TypeError):
+        UserFilters.from_config(config())
 
 
 def test_fresh_since_is_the_window_behind_now():
@@ -105,8 +112,7 @@ def test_fresh_since_is_the_window_behind_now():
 
 def test_a_v1_config_is_migrated_before_it_is_read():
     """A v1 config keeps these at the top level."""
-    filters = UserFilters.from_config(
-        {"keywords": ["engineer"], "posted_within_hours": 72, "exclude_keywords": ["senior"]})
+    filters = built({"keywords": ["engineer"], "exclude_keywords": ["senior"]}, max_age_hours=72)
 
     assert filters.max_age_hours == 72
     assert filters.excluded("Senior Engineer", None) == "senior"
@@ -115,12 +121,16 @@ def test_a_v1_config_is_migrated_before_it_is_read():
 # ── one definition of "candidate", for three callers (ROADMAP 6az) ────────────────────────────
 
 
-def test_the_three_callers_all_use_the_shared_conditions():
-    """Three copies of one question, and fixing one made the others wrong."""
+def test_every_caller_that_still_asks_uses_the_shared_conditions():
+    """Delivery stopped asking on 2026-08-07: it sends what scoring admitted, and judges nothing."""
     from pathlib import Path
 
+    assert "candidate_conditions" not in Path(
+        "services/notifier/deliver.py").read_text(encoding="utf-8"), (
+        "delivery must not filter — the pre-score filter is the one place that decides")
+
     for name in ("libs/ops/health.py",
-                 "services/notifier/deliver.py",
+                 "libs/ops/pipeline.py",
                  "services/scorer/score_lane.py"):
         body = Path(name).read_text(encoding="utf-8")
         assert "candidate_conditions" in body, (
@@ -134,7 +144,7 @@ def test_the_conditions_are_the_ones_the_callers_need():
     """The shape, so a caller can splat them into a `where`."""
     from libs.tenant.filters import candidate_conditions
 
-    conditions = candidate_conditions(UserFilters.from_config(config(locations=["europe"])))
+    conditions = candidate_conditions(built(config(locations=["europe"])))
 
     assert len(conditions) == 3, "closed, fresh, in-country"
     rendered = " ".join(str(c) for c in conditions)
@@ -147,7 +157,7 @@ def test_naming_no_country_still_produces_a_usable_condition():
     """`true()` rather than a missing element."""
     from libs.tenant.filters import candidate_conditions
 
-    conditions = candidate_conditions(UserFilters.from_config(config()))
+    conditions = candidate_conditions(built(config()))
     assert len(conditions) == 3
 
 
@@ -203,7 +213,7 @@ def test_a_posting_older_than_the_account_asked_for_never_reaches_the_model(db):
     fresh = _row(db, posted_at=now - timedelta(hours=2))
     stale = _row(db, posted_at=now - timedelta(hours=30))
 
-    kept = _survivors(db, UserFilters.from_config(config(posted_within_hours=6)))
+    kept = _survivors(db, built(config(), max_age_hours=6))
     assert fresh.id in kept
     assert stale.id not in kept
 
@@ -218,6 +228,6 @@ def test_an_undated_posting_is_aged_from_when_we_found_it(db):
     old.first_seen_at = now - timedelta(hours=40)
     db.flush()
 
-    kept = _survivors(db, UserFilters.from_config(config(posted_within_hours=6)))
+    kept = _survivors(db, built(config(), max_age_hours=6))
     assert recent.id in kept, "found a moment ago, so there is nothing to drop it on"
     assert old.id not in kept, "found forty hours ago and still undated, so it is not fresh"

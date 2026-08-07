@@ -7,11 +7,10 @@ import uuid as _uuid
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from libs import limits
-from libs.db.models import CorpusJob, User, UserConfig, UserJobState
+from libs.db.models import CorpusJob, User, UserJobState
 from libs.obs import Timings, audit, report_timings, timed
 from libs.scoring import centroid
-from libs.tenant.filters import UserFilters, candidate_conditions
+from libs.tenant.filters import candidate_conditions, filters_for
 from libs.tenant.repository import TenantRepository
 from services.scorer.registry import ModelRegistry, ModelUnavailable
 from services.scorer.serve import score_rows
@@ -70,11 +69,8 @@ def score_batch(session: Session, user_id: _uuid.UUID, *, limit: int = MAX_PER_R
     timings = Timings()
 
     model = ModelRegistry(session).get(user_id)
-    cap = limits.resolve(user, "applicant_cap")
-    filters = UserFilters.from_config(
-        session.scalar(select(UserConfig.config).where(UserConfig.user_id == user_id)),
-        # The operator's ceiling for this account, resolved here because the filter has no user in hand.
-        applicant_cap=None if cap is None else int(cap))
+    # The operator's ceiling and window for this account, resolved in one place (`libs.tenant.filters`).
+    filters = filters_for(session, user)
 
     with timed("select", timings):
         rows = _candidates(session, user, user_id, filters, limit)

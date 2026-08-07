@@ -5,7 +5,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import true
+from sqlalchemy import select, true
 
 from libs.contracts.config import migrate_config
 from libs.corpus import langfilter, workfilter
@@ -13,9 +13,6 @@ from libs.corpus.geo import wanted_countries
 from libs.corpus.ranking import applicant_glut
 from libs.db.models import CorpusJob
 from libs.limits import limit_default
-
-# The window an account gets if it never said, matching `SearchSection.posted_within_hours`.
-DEFAULT_MAX_AGE_HOURS = 24
 
 # The catalogue's ceiling, for a caller with no user to resolve against — a test, or a direct construction.
 CATALOGUE_APPLICANT_CAP = limit_default("applicant_cap")
@@ -27,7 +24,9 @@ class UserFilters:
 
     # `None` means no country selection and admits everywhere; an empty set must not look the same.
     countries: frozenset[str] | None = None
-    max_age_hours: int = DEFAULT_MAX_AGE_HOURS
+    # The operator's `job_max_age_hours`, passed in. Never defaulted here: a window nobody set is a
+    # window nobody can change, and this one decides how long a scored job stays sendable.
+    max_age_hours: int = 0
     # Lower-cased terms the user typed in order *not* to see them, matched against title and company.
     exclude: tuple[str, ...] = field(default_factory=tuple)
     # Everything below used to live in `services.notifier.eligibility` and run at send time.
@@ -43,21 +42,18 @@ class UserFilters:
             re.compile(rf"(?<!\w)({pattern})(?!\w)", re.I) if pattern else None)
 
     @classmethod
-    def from_config(cls, config: dict | None, *,
+    def from_config(cls, config: dict | None, *, max_age_hours: int,
                     applicant_cap: int | None = CATALOGUE_APPLICANT_CAP) -> UserFilters:
         """Build from a stored `user_config.config`."""
         config = migrate_config(config or {}) if config else {}
         sections = config.get("sections") or []
-
-        # The widest window across their sections, not the narrowest.
-        windows = [int(section.get("posted_within_hours") or 0) for section in sections]
 
         # Locations live inside sections, and `migrate_config` moves a v1 top-level list into one.
         places = [place for section in sections for place in section.get("locations") or []]
 
         return cls(
             countries=wanted_countries(places),
-            max_age_hours=max([w for w in windows if w > 0], default=DEFAULT_MAX_AGE_HOURS),
+            max_age_hours=int(max_age_hours),
             exclude=tuple(
                 term.strip().lower()
                 for section in sections
@@ -105,6 +101,22 @@ class UserFilters:
             return "language"
 
         return None
+
+
+def filters_for(session, user) -> UserFilters:
+    """This account's pre-score conditions, with the operator's numbers already resolved.
+
+    One construction site for the three lanes that ask the same question, so the ceiling an operator
+    sets and the window they set arrive together rather than one of them being forgotten.
+    """
+    from libs import limits, settings  # noqa: PLC0415 - avoids a cycle at import time
+    from libs.db.models import UserConfig  # noqa: PLC0415
+
+    cap = limits.resolve(user, "applicant_cap")
+    return UserFilters.from_config(
+        session.scalar(select(UserConfig.config).where(UserConfig.user_id == user.id)),
+        max_age_hours=int(settings.get(session, "job_max_age_hours")),
+        applicant_cap=None if cap is None else int(cap))
 
 
 def candidate_conditions(filters: UserFilters, *, now: datetime | None = None) -> list:

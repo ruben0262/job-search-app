@@ -93,13 +93,12 @@ def test_a_notify_run_fits_inside_the_notify_claim():
     """The other half of the same rule, on the queue rather than on systemd."""
     from libs.db.models.queue import CLAIM_TIMEOUT_MIN
     from services.notifier.deliver import SEND_BUDGET_SECONDS
-    from services.notifier.freshness import REFRESH_BUDGET_SECONDS
 
     claim = CLAIM_TIMEOUT_MIN["notify"] * 60
-    assert claim > REFRESH_BUDGET_SECONDS + SEND_BUDGET_SECONDS, (
-        f"the refresh ({REFRESH_BUDGET_SECONDS}s) and the send ({SEND_BUDGET_SECONDS}s) together "
-        f"must finish inside the {claim}s claim, or the job is swept back to ready while its "
-        "worker is still sending and a second worker starts the same digest from the top")
+    assert claim > SEND_BUDGET_SECONDS, (
+        f"the send ({SEND_BUDGET_SECONDS}s) must finish inside the {claim}s claim, or the job is "
+        "swept back to ready while its worker is still sending and a second worker starts the "
+        "same digest from the top")
 
 
 def test_every_timer_has_a_service_and_every_service_a_timer():

@@ -100,9 +100,16 @@ DEFAULT_SOURCE_PAGES_PER_CYCLE: dict[str, int] = {
 # How many users' LinkedIn passes run in one tick.
 DEFAULT_LINKEDIN_CONCURRENT_USERS = 4
 
+# How old a posting may be and still be worth scoring and sending. A different question from the
+# freshness windows above, which say how far back to *ask* a source: this one is how long a posting
+# already in the corpus stays a candidate, and it is the only age check between the corpus and a
+# user's feed.
+DEFAULT_JOB_MAX_AGE_HOURS = 24
+
 
 DEFAULTS: dict[str, object] = {
     "delivery_interval_min": DELIVERY_INTERVAL_MIN,
+    "job_max_age_hours": DEFAULT_JOB_MAX_AGE_HOURS,
     "source_freshness_hours": DEFAULT_SOURCE_FRESHNESS_HOURS,
     "default_freshness_hours": DEFAULT_FRESHNESS_HOURS,
     "source_queries_per_cycle": DEFAULT_SOURCE_QUERIES_PER_CYCLE,

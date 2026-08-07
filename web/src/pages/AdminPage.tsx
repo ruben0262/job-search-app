@@ -165,6 +165,7 @@ type PipelineReport = {
 
 type Settings = {
   delivery_interval_min: number;
+  job_max_age_hours: number;
   source_freshness_hours: Record<string, number>;
   default_freshness_hours: number;
   source_queries_per_cycle: Record<string, number>;
@@ -328,6 +329,12 @@ export function AdminPage() {
     setSettings(body.settings);
   });
 
+  const saveMaxAge = useAction(async (hours: number) => {
+    const body = await api.put<{ settings: Settings }>(
+      "/admin/settings/job_max_age_hours", { value: hours });
+    setSettings(body.settings);
+  });
+
   // The account opens as its own page, at its own address.
   const openUser = useAction(async (id: string) => {
     window.location.hash = `/admin/users/${id}`;
@@ -484,6 +491,29 @@ export function AdminPage() {
             ))}
           </select>
           <Error>{saveCadence.error}</Error>
+
+          <label className="label" htmlFor="maxage" style={{ marginTop: "1.5rem" }}>
+            Job shelf life
+          </label>
+          <span className="hint">
+            How old a posting may be and still be scored and sent. The only age check between the
+            corpus and a feed — shorter means fresher cards and a thinner feed, longer means a
+            posting keeps its chance to be sent while the queue drains.
+          </span>
+          <select
+            id="maxage"
+            value={settings.job_max_age_hours}
+            disabled={saveMaxAge.busy}
+            onChange={(event) => void saveMaxAge.run(Number(event.target.value))}
+            style={{ maxWidth: "18rem" }}
+          >
+            {[6, 12, 24, 36, 48, 72, 96, 168].map((hours) => (
+              <option key={hours} value={hours}>
+                {hours < 48 ? `${hours} hours` : `${hours / 24} days`}
+              </option>
+            ))}
+          </select>
+          <Error>{saveMaxAge.error}</Error>
 
           <p className="label" style={{ marginTop: "1.5rem" }}>Per source</p>
           <span className="hint">

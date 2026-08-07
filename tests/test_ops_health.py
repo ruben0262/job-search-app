@@ -245,18 +245,6 @@ def test_a_stopped_feed_is_an_incident_within_the_hour_not_the_day():
 # ── what "waiting" means (ROADMAP 6ad) ────────────────────────────────────────────────────────
 
 
-def test_the_window_is_the_widest_a_user_asked_for_and_24h_if_they_never_said():
-    """Matches `services.notifier.eligibility`, which is the only reason this number is useful."""
-    from libs.ops.health import DEFAULT_MAX_AGE_HOURS, deliverable_window
-
-    assert deliverable_window(None) == DEFAULT_MAX_AGE_HOURS
-    assert deliverable_window({"sections": []}) == DEFAULT_MAX_AGE_HOURS
-    assert deliverable_window({"sections": [{"posted_within_hours": 6}]}) == 6
-    # Widest, not narrowest: a job cannot be attributed back to the section that found it.
-    assert deliverable_window(
-        {"sections": [{"posted_within_hours": 6}, {"posted_within_hours": 72}]}) == 72
-
-
 @pytestmark_db
 def test_a_posting_too_old_to_send_is_not_a_job_waiting():
     """The page nobody could clear."""

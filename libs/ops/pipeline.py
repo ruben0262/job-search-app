@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from libs.db.models import CorpusJob, QueueJob, User, UserJobState
 from libs.scoring.thresholds import cutoff_for
 from libs.settings import PLATFORM_TICK_MIN
-from libs.tenant.filters import UserFilters, candidate_conditions
+from libs.tenant.filters import candidate_conditions, filters_for
 
 # How long a row may sit at a stage before the colour changes, as multiples of its tick.
 AMBER_TICKS = 2
@@ -134,7 +134,7 @@ def _per_user_stages(session: Session, since) -> list[Stage]:
     oldest_to_score = oldest_to_deliver = None
 
     for user in session.scalars(select(User).where(User.active)):
-        filters = UserFilters.from_config(_config(session, user.id))
+        filters = filters_for(session, user)
         conditions = candidate_conditions(filters)
         cutoff = cutoff_for(session, user.id)
 
@@ -200,9 +200,3 @@ def _minutes_since(when: datetime | None) -> float | None:
     if when is None:
         return None
     return round((datetime.now(UTC) - when).total_seconds() / 60, 1)
-
-
-def _config(session: Session, user_id) -> dict | None:
-    from libs.db.models import UserConfig  # noqa: PLC0415 - avoids an import cycle at module load
-
-    return session.scalar(select(UserConfig.config).where(UserConfig.user_id == user_id))

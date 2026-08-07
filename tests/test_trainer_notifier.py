@@ -304,9 +304,8 @@ def test_only_scores_above_the_cutoff_are_sent(ctx):
     _scored(ctx, user, score=90.0)
     _scored(ctx, user, score=20.0)
     ctx.flush()
-    items, dropped = pending_feed(ctx, user.id, cutoff=60.0, limit=10)
+    items = pending_feed(ctx, user.id, cutoff=60.0, limit=10)
     assert len(items) == 1
-    assert dropped == {}          # the low score never reached the filters — the cutoff took it
 
 
 def test_a_revoked_bot_is_terminal_and_flags_the_account(ctx):
@@ -453,11 +452,11 @@ def test_unlimited_delivery_sends_everything_waiting(ctx):
                    send=lambda t, c, m, k=None: sent.append(m)) == 5
 
 
-def test_stale_high_scorers_do_not_crowd_fresh_jobs_out_of_the_pool(ctx):
-    """Fifty candidates, fifty dropped, zero sent — with twenty-five fresh matches waiting."""
+def test_a_stale_high_scorer_is_ranked_behind_a_fresh_one_rather_than_filtered(ctx):
+    """Delivery ranks; the age window is the pre-score filter's job and runs before scoring."""
     from datetime import UTC, datetime, timedelta
 
-    from libs.db.models import CorpusJob, UserConfig, UserJobState
+    from libs.db.models import CorpusJob, UserJobState
     from services.notifier.deliver import pending_feed
 
     user = _connected(ctx)
@@ -480,12 +479,10 @@ def test_stale_high_scorers_do_not_crowd_fresh_jobs_out_of_the_pool(ctx):
     ctx.add(UserJobState(user_id=user.id, job_id=fresh.id, score=65.0))
     ctx.flush()
 
-    # The window is read from the account's own stored config now.
-    ctx.add(UserConfig(user_id=user.id, config={"sections": [{"posted_within_hours": 6}]}))
-    ctx.flush()
-    items, _dropped = pending_feed(ctx, user.id, cutoff=60.0, limit=5)
+    items = pending_feed(ctx, user.id, cutoff=60.0, limit=5)
 
-    assert [item.title for item in items] == ["Fresh Backend Engineer"]
+    assert items[0].title == "Fresh Backend Engineer", (
+        "a month-old posting that scores 95 must not lead a digest over an hour-old one at 65")
 
 
 # ── declining to retrain is a decision, not a failure (ROADMAP 6ah) ───────────────────────────
@@ -603,33 +600,35 @@ def test_the_send_budget_fits_inside_the_notify_claim():
     """Derived rather than chosen, so the claim timeout cannot be raised without this following."""
     from libs.db.models.queue import CLAIM_TIMEOUT_MIN
     from services.notifier.deliver import SEND_BUDGET_SECONDS
-    from services.notifier.freshness import REFRESH_BUDGET_SECONDS
 
     claim = CLAIM_TIMEOUT_MIN["notify"] * 60
-    assert claim > SEND_BUDGET_SECONDS + REFRESH_BUDGET_SECONDS, (
-        "the refresh and the send together have to finish inside one claim, or the job is swept "
-        "back to ready while it is still working")
+    assert claim > SEND_BUDGET_SECONDS, (
+        "the send has to finish inside one claim, or the job is swept back to ready while it is "
+        "still working")
 
 
-def test_an_undated_row_held_past_the_window_is_not_reconsidered_every_cycle(ctx):
-    """Work repeated forever, and a drop tally that lied about why."""
+def test_an_undated_row_too_old_to_send_is_stopped_before_scoring_not_at_delivery(ctx):
+    """One filter, once. Delivery sends what scoring admitted, so scoring is where the age is read."""
     from datetime import UTC, datetime, timedelta
 
-    user = _connected(ctx)
-    store = _store(ctx)
-    store.put(user.id, "telegram_bot", BOT_TOKEN)
+    from libs.db.models import CorpusJob, UserJobState
+    from libs.tenant.filters import UserFilters, candidate_conditions
 
+    user = _connected(ctx)
     stale = _scored(ctx, user)
     stale.posted_at = None
     stale.first_seen_at = datetime.now(UTC) - timedelta(days=3)
     ctx.flush()
 
-    items, dropped = pending_feed(ctx, user.id, cutoff=0.0, limit=10)
+    # Delivery no longer judges: the row is above the cutoff, so it is in the pool.
+    assert stale.id in {item.job_id for item in pending_feed(ctx, user.id, cutoff=0.0, limit=10)}
 
-    assert stale.id not in {item.job_id for item in items}
-    assert "too_old" not in dropped, (
-        "the row must not reach the pool at all — reporting it as dropped means it was fetched, "
-        "ranked and judged again for an answer that cannot change")
+    # And the pre-score filter is what keeps it from ever getting there.
+    admitted = ctx.scalars(
+        select(CorpusJob.id).join(UserJobState, UserJobState.job_id == CorpusJob.id)
+        .where(UserJobState.user_id == user.id,
+               *candidate_conditions(UserFilters.from_config({}, max_age_hours=24)))).all()
+    assert stale.id not in admitted
 
 
 # ── nothing stands between a scored match and Telegram ──────────────────────────────────────────

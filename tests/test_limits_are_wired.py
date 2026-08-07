@@ -148,11 +148,12 @@ def test_the_applicant_ceiling_is_the_operators_and_unlimited_shows_everything()
     from libs.tenant.filters import UserFilters
 
     # The operator's number is honoured, not the config's.
-    assert UserFilters.from_config({}, applicant_cap=50).applicant_cap == 50
+    assert UserFilters.from_config({}, max_age_hours=24, applicant_cap=50).applicant_cap == 50
     # A config that carries the old field cannot override the operator.
-    assert UserFilters.from_config({"applicant_cap": 999}, applicant_cap=50).applicant_cap == 50
+    assert UserFilters.from_config({"applicant_cap": 999}, max_age_hours=24,
+                                   applicant_cap=50).applicant_cap == 50
     # Unlimited means show everything: `applicant_glut` reads 0 as "do not drop".
-    assert UserFilters.from_config({}, applicant_cap=None).applicant_cap == 0
+    assert UserFilters.from_config({}, max_age_hours=24, applicant_cap=None).applicant_cap == 0
 
 
 def test_unlimited_applicants_actually_lets_a_busy_posting_through():
@@ -160,8 +161,8 @@ def test_unlimited_applicants_actually_lets_a_busy_posting_through():
     from libs.corpus.ranking import applicant_glut
     from libs.tenant.filters import UserFilters
 
-    capped = UserFilters.from_config({}, applicant_cap=200)
-    unlimited = UserFilters.from_config({}, applicant_cap=None)
+    capped = UserFilters.from_config({}, max_age_hours=24, applicant_cap=200)
+    unlimited = UserFilters.from_config({}, max_age_hours=24, applicant_cap=None)
 
     assert applicant_glut(source="linkedin", applicants=200, cap=capped.applicant_cap) is True
     assert applicant_glut(source="linkedin", applicants=200, cap=unlimited.applicant_cap) is False

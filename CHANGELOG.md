@@ -14,6 +14,43 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-08-07 (later)
+
+**Delivery stopped judging, and the age window became the operator's** — the owner's rule, applied:
+the pre-score filter is the only place a posting is judged against an account, and everything after
+it executes.
+
+**`services/notifier/freshness.py` is gone**, and with it the pre-send liveness refresh. It fetched
+up to twelve LinkedIn pages on the user's proxy *inside the notify claim*, costing 13–24 s of every
+~80 s run and reserving 30 s of the claim whether it used them or not. The harvester already does
+this work: `CorpusRepository.awaiting_metadata` + `describe.refresh_metadata`, on the proxied pass,
+where a page fetch is the unit of work. So delivery now opens no HTTP client at all, and its send
+budget is the whole claim rather than what the refresh left: **54 s → 72 s, and 14 items per run →
+18** at the default four-second gap.
+
+**Delivery filters nothing.** `candidate_conditions` is out of the delivery query and
+`eligibility.is_eligible` is deleted. What a user may receive was decided once, before scoring; the
+notifier ranks what is above the cutoff and sends it. `eligibility.py` is now one function, `rank`.
+
+**The age window is a platform setting** — `job_max_age_hours`, default 24, with a control in the
+admin panel beside the delivery cadence. It was `DEFAULT_MAX_AGE_HOURS = 24` in
+`libs/tenant/filters.py`, reached through `section["posted_within_hours"]` — a key the 2026-08-01
+migration **stripped out of every stored config**. So the list was always empty, the fallback always
+fired, and every account's scoring and delivery window was a constant no user and no operator could
+change, sitting next to a freshness control in the panel that governs only what is fetched.
+`UserFilters.from_config` now requires the window from its caller and defaults nothing.
+
+**One construction site for the filter**: `libs.tenant.filters.filters_for(session, user)` resolves
+the operator's applicant cap and window together, for the three callers that ask (score lane, health
+page, pipeline panel). They each built their own before, and the window was the thing they were all
+getting wrong.
+
+**`libs.ops.health.deliverable_window` deleted** — no consumer, and it answered from
+`posted_within_hours`, which no longer exists in any stored config.
+
+Gates: `lint-imports` 2 kept; `ruff check .` clean; `alembic upgrade head` from empty; **1,355
+passed, 22 skipped**; `openapi.json` unchanged; `tsc --noEmit` and `npm run build` clean.
+
 ## 2026-08-07
 
 **The delivery continuation stopped waiting for the dispatcher, and four thresholds got one owner

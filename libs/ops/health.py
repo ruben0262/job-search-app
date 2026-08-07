@@ -7,23 +7,17 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import Float, cast, func, select, text
 from sqlalchemy.orm import Session
 
-from libs.contracts.config import migrate_config
 from libs.db.models import (
     CorpusJob,
     ProxyCredential,
     QueueJob,
     User,
-    UserConfig,
     UserJobState,
     UserSecret,
 )
 from libs.db.models.queue import LANES
 from libs.scoring.thresholds import cutoff_for
-from libs.tenant.filters import (
-    DEFAULT_MAX_AGE_HOURS,
-    UserFilters,
-    candidate_conditions,
-)
+from libs.tenant.filters import candidate_conditions, filters_for
 
 # What a lane's oldest waiting job is *expected* to be, in minutes.
 EXPECTED_WAIT_MIN = {"notify": 5, "train": 30, "docgen": 10, "label": 60, "process": 15,
@@ -106,13 +100,6 @@ def lane_health(session: Session) -> list[LaneHealth]:
     ]
 
 
-def deliverable_window(config: dict | None) -> int:
-    """How old a posting may be and still be worth sending to this account, in hours."""
-    windows = [int(section.get("posted_within_hours") or 0)
-               for section in (migrate_config(config or {})).get("sections") or []]
-    return max([window for window in windows if window > 0], default=DEFAULT_MAX_AGE_HOURS)
-
-
 def _proxy_status(session: Session, user_id, proxy) -> str | None:
     """What the panel should say about this account's proxy."""
     if proxy is None:
@@ -126,8 +113,7 @@ def _proxy_status(session: Session, user_id, proxy) -> str | None:
 def pending_matches(session: Session, user: User) -> int:
     """How many jobs this account is actually waiting on — the same pool the notifier would draw."""
     cutoff = cutoff_for(session, user.id)
-    filters = UserFilters.from_config(
-        session.scalar(select(UserConfig.config).where(UserConfig.user_id == user.id)))
+    filters = filters_for(session, user)
     return session.scalar(
         select(func.count()).select_from(UserJobState)
         .join(CorpusJob, CorpusJob.id == UserJobState.job_id)
