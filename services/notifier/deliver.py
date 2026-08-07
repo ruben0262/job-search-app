@@ -66,6 +66,8 @@ def pending_feed(session: Session, user_id: _uuid.UUID, *, cutoff: float,
         .join(CorpusJob, CorpusJob.id == UserJobState.job_id)
         .where(UserJobState.user_id == user_id,
                UserJobState.notified_at.is_(None),
+               # Given up on by the sweep, which is the only thing that looks at a pending row's age.
+               UserJobState.retired_at.is_(None),
                UserJobState.score.is_not(None),
                UserJobState.score >= cutoff)
         # Known-fresh first, then undated, and only then by score.

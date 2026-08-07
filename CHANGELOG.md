@@ -14,6 +14,33 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-08-07 (night)
+
+**Removing the age check from delivery released a 19-day-old backlog, and this is the guard that
+replaces it.** Delivery still filters nothing. The queue is *maintained* instead.
+
+What happened: the delivery query's freshness condition went on the owner's instruction — a posting
+is judged once, before scoring, and everything after executes. Correct, and it left one gap: nothing
+between scoring and sending looks at age, so a queue that stops draining keeps ageing. There was
+already an 832-row queue behind the old per-run cap, **every row more than three days old and the
+worst 37 days**, and on deploy it began going out. 92 messages at a mean age of **19.4 days** before
+the lane was paused.
+
+The two mechanisms the owner asked about were both correct, and the numbers say so: in the hour
+after the deploy the score lane admitted **542 rows, all under 24 hours**, and the harvester's 5,047
+rows over 24 hours had a single posting older than three days. Neither was implicated.
+
+So: `user_job_state.retired_at`, written by the notifier's sweep once a minute. A match that ages
+past `job_max_age_hours` while waiting is one the lane failed to send in time — sending it late is
+worse than not sending it — so it is written off, counted, and logged at WARNING with the account
+and the window. Delivery skips retired rows and is otherwise untouched.
+
+`retired_at` rather than `notified_at`, deliberately: a row we failed to send is not a row we
+delivered, and writing one as the other would corrupt every delivery count on the platform. The
+pipeline panel's `expired` now reads this column instead of re-deriving the condition — it counts
+what somebody actually gave up on, which is the honest version of the number the roadmap has been
+calling expired since it first counted 576 of them.
+
 ## 2026-08-07 (evening)
 
 **The language filter has never run, and now it can** — plus the two remaining bounds from the

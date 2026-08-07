@@ -123,17 +123,33 @@ def dispatch_due_notifications(session: Session) -> int:
     written by something other than the score lane (a relabel, an operator's `score_user.py`) and an
     account whose notify job died. It enqueues nothing when there is nothing waiting.
     """
-    from libs.scoring.thresholds import cutoff_for  # noqa: PLC0415 - avoids a cycle at import time
+    from libs import settings  # noqa: PLC0415 - avoids a cycle at import time
+    from libs.scoring.thresholds import cutoff_for  # noqa: PLC0415
+    from libs.tenant.repository import TenantRepository  # noqa: PLC0415
 
-    enqueued = 0
+    window = int(settings.get(session, "job_max_age_hours"))
+    tenant = TenantRepository(session)
+    enqueued = retired = 0
+
     for user_id in session.scalars(
             select(User.id).where(User.active.is_(True), User.status == "active",
                                   User.telegram_status == "connected")):
+        cutoff = cutoff_for(session, user_id)
+        # Before queueing anything: a match that aged past the window while waiting is one this lane
+        # failed to send in time, and sending it late is worse than not sending it.
+        gone = tenant.retire_stale_matches(user_id, cutoff=cutoff, max_age_hours=window)
+        if gone:
+            retired += gone
+            logger.warning(
+                "sweep: retired %d match(es) for %s that aged past %dh while waiting — the notify "
+                "lane did not keep up", gone, user_id, window)
+
         waiting = session.scalar(
             select(UserJobState.job_id)
             .where(UserJobState.user_id == user_id,
                    UserJobState.notified_at.is_(None),
-                   UserJobState.score >= cutoff_for(session, user_id))
+                   UserJobState.retired_at.is_(None),
+                   UserJobState.score >= cutoff)
             .limit(1))
         if waiting is not None and enqueue(session, "notify", user_id, dedup_key="due") is not None:
             enqueued += 1

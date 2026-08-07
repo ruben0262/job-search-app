@@ -154,9 +154,10 @@ def _per_user_stages(session: Session, since) -> list[Stage]:
                        & (UserJobState.user_id == user.id))
             .where(*unscored)))
 
-        # What delivery would consider: above this account's cutoff, never sent, and a candidate row.
+        # What delivery would consider: above this account's cutoff, never sent, not given up on.
         waiting = (UserJobState.user_id == user.id,
                    UserJobState.notified_at.is_(None),
+                   UserJobState.retired_at.is_(None),
                    UserJobState.score.is_not(None),
                    UserJobState.score >= cutoff)
         pending = (select(func.count()).select_from(UserJobState)
@@ -167,12 +168,13 @@ def _per_user_stages(session: Session, since) -> list[Stage]:
             .join(CorpusJob, CorpusJob.id == UserJobState.job_id)
             .where(*waiting, *conditions)))
 
-        # The same pool, minus the freshness condition, and that is the whole measurement.
+        # Matches this account was owed and did not get, as recorded by the sweep rather than
+        # re-derived here: work the platform did, paid for, and threw away.
         expired += session.scalar(
-            pending.where(*waiting, CorpusJob.closed_at.is_(None),
-                          func.coalesce(CorpusJob.posted_at, CorpusJob.first_seen_at)
-                          < filters.fresh_since(),
-                          UserJobState.scored_at >= since)) or 0
+            select(func.count()).select_from(UserJobState)
+            .where(UserJobState.user_id == user.id,
+                   UserJobState.retired_at.is_not(None),
+                   UserJobState.retired_at >= since)) or 0
 
     return [
         Stage("score", "Scored", "Filtered against each account, then ranked by their own model.",

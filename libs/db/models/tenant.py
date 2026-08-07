@@ -43,6 +43,9 @@ class UserJobState(Base):
     scored_model_version: Mapped[int | None] = mapped_column(Integer)
 
     notified_at: Mapped[timestamptz | None]
+    # Scored above the cutoff, never sent, and now too old to be worth sending. Written by the
+    # notifier's sweep — the one place that looks at a pending match's age (`libs.tenant.repository`).
+    retired_at: Mapped[timestamptz | None]
     # The durable "what I applied to" record.
     applied_at: Mapped[timestamptz | None]
     # server_default, not just a Python-side default.
@@ -55,6 +58,9 @@ class UserJobState(Base):
         # The feed query: this user's best unnotified scores.
         Index("ix_user_job_state_feed", "user_id", "score"),
         Index("ix_user_job_state_job", "job_id"),
+        # The sweep's predicate: what is still waiting to be sent, per account.
+        Index("ix_user_job_state_pending", "user_id",
+              postgresql_where=text("notified_at IS NULL AND retired_at IS NULL")),
     )
 
 

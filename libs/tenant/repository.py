@@ -85,6 +85,37 @@ class TenantRepository:
         row.scored_at = func.now()
         row.scored_model_version = model_version
 
+    def retire_stale_matches(self, user_id: _uuid.UUID, *, cutoff: float,
+                             max_age_hours: int) -> int:
+        """Give up on matches too old to be worth sending, and say how many.
+
+        Delivery does not filter — a posting is judged once, before scoring. This is the queue being
+        maintained rather than the send path being second-guessed: a match that has aged past the
+        operator's window while waiting is one the lane failed to send in time, and sending it late
+        is worse than not sending it. The count is the honest version of "expired".
+        """
+        from datetime import UTC, datetime, timedelta  # noqa: PLC0415 - one caller, one path
+
+        from libs.db.models import CorpusJob  # noqa: PLC0415 - avoids a cycle at import time
+
+        # The same clock the pre-score filter reads, so "too old to score" and "too old to send"
+        # cannot mean two different things.
+        too_old = datetime.now(UTC) - timedelta(hours=int(max_age_hours))
+        stale = (
+            select(UserJobState.job_id)
+            .join(CorpusJob, CorpusJob.id == UserJobState.job_id)
+            .where(UserJobState.user_id == user_id,
+                   UserJobState.notified_at.is_(None),
+                   UserJobState.retired_at.is_(None),
+                   UserJobState.score >= cutoff,
+                   func.coalesce(CorpusJob.posted_at, CorpusJob.first_seen_at) < too_old))
+
+        return self._s.execute(
+            update(UserJobState)
+            .where(UserJobState.user_id == user_id,
+                   UserJobState.job_id.in_(stale))
+            .values(retired_at=func.now())).rowcount or 0
+
     # ── applied log ──────────────────────────────────────────────────────────────────────────
 
     def record_applied(self, user_id: _uuid.UUID, job_id: int, *,

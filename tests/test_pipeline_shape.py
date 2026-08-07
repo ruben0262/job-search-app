@@ -229,9 +229,22 @@ def test_a_delivery_queue_is_the_cap_working_but_an_expired_match_is_not(db):
                   posted_at=datetime.now(UTC) - timedelta(days=2))
     _scored(db, user, missed, score=99.0, scored_ago_min=30)
 
+    # `expired` is what the sweep gave up on, not a condition re-derived here: a row counts once
+    # somebody has actually decided it will never be sent.
+    from libs.db.models import UserJobState
+    from libs.tenant.repository import TenantRepository
+
+    assert stage(pipeline(db), "deliver")["expired"] == 0, "nothing has given up on it yet"
+
+    assert TenantRepository(db).retire_stale_matches(
+        user.id, cutoff=60.0, max_age_hours=24) == 1
+    db.flush()
+
     entry = stage(pipeline(db), "deliver")
-    assert entry["expired"] == 1, "matched, never sent, now too old to send"
+    assert entry["expired"] == 1, "matched, never sent, and now written off"
     assert entry["verdict"] == "down"
+    assert db.get(UserJobState, (user.id, missed.id)).notified_at is None, (
+        "a row we failed to send in time is not a row we delivered")
 
 
 def test_a_stage_with_no_queue_says_so_rather_than_claiming_zero(db):
