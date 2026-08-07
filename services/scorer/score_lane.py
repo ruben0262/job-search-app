@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from libs.db.models import CorpusJob, User, UserJobState
 from libs.obs import Timings, audit, report_timings, timed
+from libs.queue import enqueue
 from libs.scoring import centroid
 from libs.tenant.filters import candidate_conditions, filters_for
 from libs.tenant.repository import TenantRepository
@@ -123,6 +124,12 @@ def score_batch(session: Session, user_id: _uuid.UUID, *, limit: int = MAX_PER_R
                                 model_version=user.model_version)
             bands[result.decision] = bands.get(result.decision, 0) + 1
     session.flush()
+
+    # A match is sent because it exists, not because a clock came round. There is no delivery
+    # cadence: this enqueue is the whole of it, and the notify job collapses if one is already
+    # pending, so a batch that produces forty matches still produces one run.
+    if bands["high"]:
+        enqueue(session, "notify", user_id, dedup_key="due")
 
     # The number the design rests on: filter time against model time, and what each stage removed.
     report_timings(timings, event="score.timing", log=logger, user=str(user_id),

@@ -655,34 +655,8 @@ def test_a_run_sends_every_match_it_has_time_for(ctx):
     assert delivered == 14, "a cap unrelated to the send budget withheld four of these"
 
 
-def test_a_run_that_could_not_finish_makes_the_account_due_again_now(ctx):
-    """The other half, and the one that actually cost the 576."""
-    from datetime import UTC, datetime, timedelta
-
-    from libs import limits
-
-    user = _connected(ctx)
-    # An explicit per-run ceiling is still honoured; it just no longer means "and then wait".
-    limits.set_limit(ctx, user.id, "items_per_run", 1)
-    store = _store(ctx)
-    store.put(user.id, "telegram_bot", BOT_TOKEN)
-    _scored(ctx, user)
-    _scored(ctx, user)
-    ctx.flush()
-
-    before = datetime.now(UTC)
-    assert deliver(ctx, user.id, store=store, send=lambda *a, **k: None) == 1
-    ctx.flush()
-    ctx.refresh(user)
-
-    assert user.next_run_at is not None
-    due = user.next_run_at if user.next_run_at.tzinfo else user.next_run_at.replace(tzinfo=UTC)
-    assert due <= before + timedelta(seconds=5), (
-        "the rest of the queue waits a whole cadence, which is how a backlog's tail expires unsent")
-
-
-def test_the_rest_of_the_feed_is_queued_now_rather_than_at_the_dispatchers_convenience(ctx):
-    """Being due is not being queued: the dispatcher only looks once a minute."""
+def test_the_rest_of_the_feed_is_queued_immediately_rather_than_on_a_clock(ctx):
+    """There is no cadence to wait for: a run that fills its limit queues its own continuation."""
     from libs import limits
     from libs.db.models import QueueJob
 

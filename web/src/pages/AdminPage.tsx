@@ -164,7 +164,6 @@ type PipelineReport = {
 };
 
 type Settings = {
-  delivery_interval_min: number;
   job_max_age_hours: number;
   source_freshness_hours: Record<string, number>;
   default_freshness_hours: number;
@@ -323,12 +322,6 @@ export function AdminPage() {
     setTyped("");
   });
 
-  const saveCadence = useAction(async (minutes: number) => {
-    const body = await api.put<{ settings: Settings }>(
-      "/admin/settings/delivery_interval_min", { value: minutes });
-    setSettings(body.settings);
-  });
-
   const saveMaxAge = useAction(async (hours: number) => {
     const body = await api.put<{ settings: Settings }>(
       "/admin/settings/job_max_age_hours", { value: hours });
@@ -466,31 +459,6 @@ export function AdminPage() {
         <div className="card" style={{ marginBottom: "1.5rem" }}>
           <h2 style={{ marginTop: 0 }}>Platform settings</h2>
 
-          <label className="label" htmlFor="cadence">Delivery cadence</label>
-          <span className="hint">
-            How often every user&apos;s feed is sent. The same for everyone, a longer cadence
-            spends the lead time this product exists to give.
-          </span>
-          <select
-            id="cadence"
-            value={settings.delivery_interval_min}
-            disabled={saveCadence.busy}
-            onChange={(event) => void saveCadence.run(Number(event.target.value))}
-            style={{ maxWidth: "18rem" }}
-          >
-            {[5, 10, 15, 20, 30, 45, 60, 90, 120, 180, 240, 360, 480, 720, 1440].map((minutes) => (
-              <option key={minutes} value={minutes}>
-                {minutes < 60
-                  ? `every ${minutes} minutes`
-                  : minutes === 60
-                    ? "every hour"
-                    : minutes % 60 === 0
-                      ? `every ${minutes / 60} hours`
-                      : `every ${Math.floor(minutes / 60)}h ${minutes % 60}m`}
-              </option>
-            ))}
-          </select>
-          <Error>{saveCadence.error}</Error>
 
           <label className="label" htmlFor="maxage" style={{ marginTop: "1.5rem" }}>
             Job shelf life

@@ -82,7 +82,6 @@ class User(Base):
 
     # Per-account ceilings, set by an operator (`libs.limits`).
     limits: Mapped[dict] = mapped_column(JSONB, default=dict, server_default=text("'{}'::jsonb"))
-    next_run_at: Mapped[timestamptz | None]
     # The per-user LinkedIn loop runs on its own interval, deliberately slower than the shared harvest.
     linkedin_interval_min: Mapped[int] = mapped_column(Integer, default=240)
     linkedin_next_run_at: Mapped[timestamptz | None]
@@ -136,8 +135,7 @@ class User(Base):
         # Bounds from TENANT_SAFETY.md §4.
         CheckConstraint("linkedin_interval_min BETWEEN 15 AND 1440",
                         name="linkedin_interval_bounds"),
-        # The dispatcher's predicate, indexed.
-        Index("ix_users_due", "next_run_at", postgresql_where=text("active")),
+        # The LinkedIn tier's own due-list, indexed.
         Index("ix_users_linkedin_due", "linkedin_next_run_at", postgresql_where=text("active")),
         # The webhook path is the identity of the account, so a shared one misattributes button taps.
         Index("uq_users_webhook_secret", "telegram_webhook_secret", unique=True,

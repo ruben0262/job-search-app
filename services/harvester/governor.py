@@ -5,13 +5,11 @@ import os
 import random
 from datetime import datetime, timedelta
 
-from libs.settings import DELIVERY_INTERVAL_MIN
-
 # Global ceiling on simultaneous per-user LinkedIn loops. Becomes the `linkedin` lane's worker count.
 LINKEDIN_MAX_CONCURRENT_USERS = 4
 
 # The floor under whatever an operator sets in the admin panel.
-LINKEDIN_MIN_INTERVAL_MIN = DELIVERY_INTERVAL_MIN
+LINKEDIN_MIN_INTERVAL_MIN = 15
 
 # ±10% of the interval.
 LINKEDIN_JITTER_FRACTION = 0.10

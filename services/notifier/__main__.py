@@ -28,7 +28,8 @@ MAX_RATE_LIMIT_WAIT_SEC = 60.0
 SERVER_ERROR_RETRIES = 3
 SERVER_ERROR_BACKOFF_SEC = 2.0
 
-# How often the worker asks "is anybody due".
+# How often the sweep asks "is anybody holding a match nobody queued". Not the delivery cadence —
+# there is none: the score lane enqueues a run the moment it records a match (`libs.queue.queue`).
 DISPATCH_EVERY_SEC = 60.0
 
 logger = logging.getLogger(__name__)
@@ -80,10 +81,10 @@ def send(token: str, chat_id: str, message: str, keyboard: dict | None = None) -
 
 
 def _dispatch(session) -> None:
-    """Enqueue a notify job for every account whose feed is due. One line per pass, with a count."""
+    """The sweep: anything scored and unsent that nothing has queued. Silent when it finds none."""
     enqueued = dispatch_due_notifications(session)
     if enqueued:
-        logger.info("dispatcher: enqueued %d notify job(s)", enqueued)
+        logger.info("sweep: enqueued %d notify job(s) nothing else had queued", enqueued)
 
 
 def handle(session, job: QueueJob) -> None:

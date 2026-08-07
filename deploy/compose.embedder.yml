@@ -41,13 +41,19 @@ services:
     # CPU is the real constraint, not RAM. bge-base is ~3x the compute of small per text, so this
     # is the knob that decides throughput and score latency under a training flood.
     #
-    # Raised 1.5 → 4 on 2026-07-27. The 1.5 ceiling was correct on the box that shared CPU with two
-    # single-tenant stacks; the platform box has 8 vCPU and measured gate 4 at 589s for a 2,000-text
-    # cold start with ~6.5 cores idle. 4 leaves half the box for Postgres, docgen (Chrome, spiky)
-    # and the rest of the services still to be built.
+    # Raised 1.5 → 4 on 2026-07-27, and re-measured on the live box on 2026-08-07 against the
+    # question "would more cores make the harvest cycle's embed step shorter". They would not:
     #
-    # ⚠ RE-MEASURE THIS once those services actually compete for the box. This number is tuned to a
-    # machine that is currently almost empty, which is exactly the condition that stops being true.
+    #   cpus=4, restarted   64 texts in 23.5-29.0s   367-453 ms/text   (410% CPU during the call)
+    #   cpus=6, restarted   64 texts in 24.5-25.0s   383-391 ms/text
+    #   two concurrent 64-text calls at cpus=4       526 ms/text, and the slower call waited 67s
+    #
+    # It already saturates its four cores; the next two buy nothing, and concurrency is 40% *worse*
+    # per text. The constraint is the model's compute and memory bandwidth, not the quota, so this
+    # number stays at 4 and the box keeps the other four cores for Postgres and Chrome.
+    #
+    # Capacity at this setting is ~2.7 texts/s, or ~1,700 rows inside the cycle's 11-minute budget,
+    # against ~60-100 new rows a cycle in steady state. Long embed passes are backlog, not load.
     cpus: 4
     # ports: ["8081:80"]                     # uncomment ONLY for local debugging of TEI directly
 

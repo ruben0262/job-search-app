@@ -135,15 +135,18 @@ def test_a_finished_job_stops_blocking_the_next_one(session):
     session.flush()   # must not raise
 
 
-def test_the_delivery_cadence_is_one_platform_setting(session):
-    """It was a bounded per-user column."""
+def test_delivery_has_no_cadence_left_to_set(session):
+    """It was a per-user column, then one platform setting, and now it is an event."""
+    import pytest
+
     from libs import settings
+    from libs.db.models import User
 
-    assert settings.get(session, "delivery_interval_min") == settings.DELIVERY_INTERVAL_MIN
-
-    settings.put(session, "delivery_interval_min", 30, by="operator@example.com")
-    session.flush()
-    assert settings.get(session, "delivery_interval_min") == 30
+    assert "delivery_interval_min" not in settings.DEFAULTS
+    with pytest.raises(KeyError):
+        settings.get(session, "delivery_interval_min")
+    assert not hasattr(User, "next_run_at"), (
+        "the column the dispatcher wrote and read; nothing else ever did")
 
 
 def test_only_one_model_artifact_can_be_active_per_user(session):

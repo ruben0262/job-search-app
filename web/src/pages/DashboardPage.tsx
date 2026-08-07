@@ -67,7 +67,7 @@ export function DashboardPage({ dashboard }: { dashboard: Dashboard; onChanged: 
           {notifications.per_day_cap === null
             ? "No daily limit on messages"
             : `At most ${notifications.per_day_cap} messages a day`}
-          , checked every {notifications.interval_min} minutes.
+          . Matches are sent as they are scored.
         </p>
 
         <StatusList />

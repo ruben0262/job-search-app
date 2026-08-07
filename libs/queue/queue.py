@@ -6,12 +6,11 @@ import uuid as _uuid
 from collections.abc import Sequence
 from datetime import timedelta
 
-from sqlalchemy import func, or_, select, text, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
-from libs import settings
-from libs.db.models import QueueJob, User
+from libs.db.models import QueueJob, User, UserJobState
 from libs.db.models.queue import CLAIM_TIMEOUT_MIN, LANES, MAX_ATTEMPTS
 
 logger = logging.getLogger(__name__)
@@ -116,28 +115,28 @@ def sweep_expired(session: Session, lane: str | None = None) -> int:
 
 
 def dispatch_due_notifications(session: Session) -> int:
-    """Enqueue a `notify` job for every user whose feed is due, and advance their next slot."""
-    due = select(User.id).where(
-        User.active.is_(True), User.status == "active",
-        User.telegram_status == "connected",
-        or_(User.next_run_at.is_(None), User.next_run_at <= func.now()))
+    """Enqueue a `notify` job for every account with a match waiting. The recovery sweep.
 
-    # `rowcount` is not dependable for INSERT ...
-    enqueued = len(session.execute(
-        pg_insert(QueueJob)
-        .from_select(["lane", "user_id", "dedup_key", "payload"],
-                     select(text("'notify'"), User.id, text("'due'"), text("'{}'::jsonb"))
-                     .where(User.id.in_(due)))
-        .on_conflict_do_nothing(index_elements=["lane", "user_id", "dedup_key"],
-                                index_where=text("state IN ('ready','claimed')"))
-        .returning(QueueJob.id)).scalars().all())
+    **There is no delivery cadence.** A scored match is sent as soon as it exists: the score lane
+    enqueues the notify job in the same transaction that records the score, and a run that fills its
+    limit queues its own continuation. This pass is the sweep behind those two — it catches a match
+    written by something other than the score lane (a relabel, an operator's `score_user.py`) and an
+    account whose notify job died. It enqueues nothing when there is nothing waiting.
+    """
+    from libs.scoring.thresholds import cutoff_for  # noqa: PLC0415 - avoids a cycle at import time
 
-    # One cadence, the same for everyone.
-    interval = int(settings.get(session, "delivery_interval_min"))
-    session.execute(
-        update(User)
-        .where(User.id.in_(due))
-        .values(next_run_at=func.now() + timedelta(minutes=interval)))
+    enqueued = 0
+    for user_id in session.scalars(
+            select(User.id).where(User.active.is_(True), User.status == "active",
+                                  User.telegram_status == "connected")):
+        waiting = session.scalar(
+            select(UserJobState.job_id)
+            .where(UserJobState.user_id == user_id,
+                   UserJobState.notified_at.is_(None),
+                   UserJobState.score >= cutoff_for(session, user_id))
+            .limit(1))
+        if waiting is not None and enqueue(session, "notify", user_id, dedup_key="due") is not None:
+            enqueued += 1
     return enqueued
 
 

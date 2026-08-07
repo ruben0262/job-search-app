@@ -34,14 +34,14 @@ def test_too_few_samples_is_unknown_rather_than_a_colour():
 
 
 def test_thresholds_follow_from_how_the_pipeline_actually_runs():
-    """Pinned to the cadence they were derived from rather than to literals."""
+    """Pinned to how the pipeline runs rather than to literals."""
     from libs.ops.latency import THRESHOLDS
-    from libs.settings import DELIVERY_INTERVAL_MIN
+    from libs.settings import PLATFORM_TICK_MIN
 
     amber, red = THRESHOLDS["scored_to_delivered"]
-    assert amber >= DELIVERY_INTERVAL_MIN, (
-        "a job scored just after a send waits most of a cycle by design, so amber must sit above "
-        "one full cadence or it fires on healthy behaviour")
+    assert amber >= PLATFORM_TICK_MIN, (
+        "delivery is event-driven now, so this span should be minutes — but a backlog draining at "
+        "the send pace is healthy, and amber must sit above that rather than fire on it")
     assert red > amber
     # End to end is the one a user recognises, so it is the most forgiving of the three.
     assert THRESHOLDS["found_to_delivered"][0] >= THRESHOLDS["found_to_scored"][0]

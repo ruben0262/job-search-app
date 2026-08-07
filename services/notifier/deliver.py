@@ -8,7 +8,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from time import monotonic, sleep
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 import libs.notify as notifylib
@@ -176,14 +176,7 @@ def _run_budget(session: Session, user: User) -> tuple[float, int]:
 
 
 def _deliver_again(session: Session, user_id: _uuid.UUID) -> None:
-    """Queue the rest of this account's feed now, rather than waiting for the dispatcher's tick.
-
-    The dispatcher runs once a minute, so leaving the continuation to it spent up to 60 seconds of
-    every ~140 idle with work waiting. `next_run_at` is still moved as the backstop for the case
-    where this enqueue collapses against a job somebody else already queued.
-    """
-    session.execute(update(User).where(User.id == user_id).values(next_run_at=func.now()))
-
+    """Queue the rest of this account's feed now. There is nothing to wait for."""
     # This run's own job still holds the `due` slot, and the dedup index refuses a second one while
     # it does. Released through the mapped row, so the worker's later `complete` cannot write it back.
     running = session.scalar(

@@ -7,9 +7,6 @@ from sqlalchemy.orm import Session
 
 from libs.db.models import PlatformSetting
 
-# How often every user's feed is sent.
-DELIVERY_INTERVAL_MIN = 15
-
 # How often the platform's one-shots run, and the only schedule number in the tree.
 PLATFORM_TICK_MIN = 15
 
@@ -113,7 +110,6 @@ DEFAULT_JOB_MAX_AGE_HOURS = 24
 
 
 DEFAULTS: dict[str, object] = {
-    "delivery_interval_min": DELIVERY_INTERVAL_MIN,
     "job_max_age_hours": DEFAULT_JOB_MAX_AGE_HOURS,
     "source_freshness_hours": DEFAULT_SOURCE_FRESHNESS_HOURS,
     "default_freshness_hours": DEFAULT_FRESHNESS_HOURS,

@@ -15,7 +15,6 @@ from libs.obs import audit
 from libs.secrets import SecretStore, redacting
 from libs.secrets.keyring import SecretsError
 from libs.settings import (
-    DELIVERY_INTERVAL_MIN,
     PLATFORM_TICK_MIN,
     freshness_hours,
     queries_per_cycle,
@@ -25,6 +24,7 @@ from services.harvester.describe import describe_pending
 from services.harvester.fetch import make_client
 from services.harvester.governor import (
     LINKEDIN_MAX_CONCURRENT_USERS,
+    LINKEDIN_MIN_INTERVAL_MIN,
     linkedin_enabled,
     next_linkedin_run,
     resolve_linkedin_interval,
@@ -107,7 +107,7 @@ def run_for_due_users(session, *, now: datetime | None = None,
         # Scheduled first, deliberately: every path below wants the same next run, success or not.
         chosen = limits.resolve(user, "linkedin_interval_min")
         if chosen is None:
-            chosen = user.linkedin_interval_min or DELIVERY_INTERVAL_MIN
+            chosen = user.linkedin_interval_min or LINKEDIN_MIN_INTERVAL_MIN
         interval = chosen
         user.linkedin_next_run_at = next_linkedin_run(now, resolve_linkedin_interval(interval))
 

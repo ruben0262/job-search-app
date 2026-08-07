@@ -220,53 +220,58 @@ def test_a_delayed_job_is_not_claimable_yet(ctx):
 
 # ── the notify dispatcher ─────────────────────────────────────────────────────────────────────
 
-def test_the_feed_re_arms_at_enqueue_not_at_completion(ctx):
-    """The single most likely silent failure on the platform."""
-    user = _user(ctx, active=True, status="active", telegram_status="connected",
-                 )
-    ctx.execute(text("UPDATE users SET next_run_at = now() - interval '1 minute' WHERE id = :i"),
-                {"i": user.id})
-    ctx.expire(user)
+def _waiting_match(ctx, user):
+    """A scored, unsent match — the only thing that makes an account worth a notify job now."""
+    import uuid as _u
+
+    from libs.db.models import CorpusJob, UserJobState
+
+    job = CorpusJob(url=f"https://example.test/{_u.uuid4().hex}", source="greenhouse",
+                    title="Backend Engineer", description="x" * 400)
+    ctx.add(job)
+    ctx.flush()
+    ctx.add(UserJobState(user_id=user.id, job_id=job.id, score=90.0))
+    ctx.flush()
+    return job
+
+
+def test_an_account_with_a_match_waiting_is_queued(ctx):
+    """The sweep behind the score lane: a match nothing queued still goes out."""
+    user = _user(ctx, active=True, status="active", telegram_status="connected")
+    _waiting_match(ctx, user)
+
+    assert dispatch_due_notifications(ctx) == 1
+
+
+def test_an_account_with_nothing_waiting_is_not_queued(ctx):
+    """There is no cadence to fire on, so an empty queue means an idle lane."""
+    _user(ctx, active=True, status="active", telegram_status="connected")
+
+    assert dispatch_due_notifications(ctx) == 0, (
+        "a notify run with nothing to send is a claim, a query and a log line for no reason")
+
+
+def test_the_sweep_does_not_queue_a_second_run_while_one_is_pending(ctx):
+    """The dedup key is what stops forty matches becoming forty runs."""
+    user = _user(ctx, active=True, status="active", telegram_status="connected")
+    _waiting_match(ctx, user)
 
     assert dispatch_due_notifications(ctx) == 1
     ctx.flush()
-    ctx.refresh(user)
-
-    job = claim(ctx, "notify", "w")
-    fail(ctx, job, "telegram timeout")     # the delivery failed …
-    ctx.flush()
-
-    assert user.next_run_at is not None
-    assert dispatch_due_notifications(ctx) == 0, "…but the slot already moved, so nothing re-fires"
+    assert dispatch_due_notifications(ctx) == 0
 
 
 def test_a_user_whose_bot_is_broken_is_not_enqueued(ctx):
     """Retrying a revoked token cannot succeed. The fix is a reconnect email, not a queue entry."""
     user = _user(ctx, active=True, status="active", telegram_status="broken")
-    ctx.execute(text("UPDATE users SET next_run_at = now() - interval '1 minute' WHERE id = :i"),
-                {"i": user.id})
+    _waiting_match(ctx, user)
     assert dispatch_due_notifications(ctx) == 0
 
 
 def test_a_dormant_user_is_not_enqueued(ctx):
     """G11: an abandoned account must stop costing anything, including delivery attempts."""
     user = _user(ctx, active=True, status="dormant", telegram_status="connected")
-    ctx.execute(text("UPDATE users SET next_run_at = now() - interval '1 minute' WHERE id = :i"),
-                {"i": user.id})
-    assert dispatch_due_notifications(ctx) == 0
-
-
-def test_an_account_that_has_never_been_dispatched_is_due_now(ctx):
-    """A missing schedule means due, not never."""
-    user = _user(ctx, active=True, status="active", telegram_status="connected")
-    assert user.next_run_at is None
-
-    assert dispatch_due_notifications(ctx) == 1
-    ctx.flush()
-    ctx.refresh(user)
-
-    # Dispatched once, it is back on the cadence rather than firing again immediately.
-    assert user.next_run_at is not None
+    _waiting_match(ctx, user)
     assert dispatch_due_notifications(ctx) == 0
 
 

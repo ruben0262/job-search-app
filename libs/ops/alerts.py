@@ -4,14 +4,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from libs.ops.health import PlatformHealth
-from libs.settings import DELIVERY_INTERVAL_MIN
 
 # Disk headroom before a full disk stops being hypothetical.
 POSTGRES_DISK_BUDGET_BYTES = 60 * 1024**3
 POSTGRES_DISK_ALERT_FRACTION = 0.80
 
-# No delivery in this long, *with matches waiting*, is the silent-feed failure.
-SILENT_FEED_HOURS = DELIVERY_INTERVAL_MIN * 4 / 60
+# No delivery in this long, *with matches waiting*, is the silent-feed failure. Delivery is
+# event-driven, so any gap this size means the notify lane is not running rather than not due.
+SILENT_FEED_HOURS = 1
 
 # Corpus growth past this multiple of projection means the retention trim is not running.
 CORPUS_GROWTH_ALERT_FACTOR = 1.5

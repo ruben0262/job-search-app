@@ -9,7 +9,6 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from libs import settings
 from libs.contracts.config import migrate_config
 from libs.corpus import salary
 from libs.db.models import CorpusJob, User, UserDocument, UserJobState, UserLabel, UserModel
@@ -87,9 +86,8 @@ def dashboard(db: Session = Depends(get_db),
         "documents": db.scalar(select(func.count()).select_from(UserDocument)
                                .where(UserDocument.user_id == user_id)) or 0,
         "telegram": user.telegram_status,
-        # The cadence is the platform's, so the page must not imply it is theirs to change.
-        "notifications": {"per_day_cap": daily_cap(user),
-                          "interval_min": int(settings.get(db, "delivery_interval_min"))},
+        # No cadence to report: a match is sent when it is scored.
+        "notifications": {"per_day_cap": daily_cap(user)},
         "banners": _banners(user, servable, onboarding),
         # Whether to show the operator panel at all.
         "is_admin": _is_admin(user),
