@@ -298,3 +298,28 @@ def test_an_unlimited_label_budget_still_has_a_finish_line(db):
     user.limits = {**(user.limits or {}), "label_pool": None}
     session.flush()
     assert target_for(user) == pool_target()
+
+
+@pytestmark_db
+def test_a_posting_the_account_could_never_receive_is_not_labelled(db):
+    """Every label is bought on the user's own Claude credential, so an unreachable job is spend."""
+    from libs.db.models import CorpusJob, UserConfig
+    from services.labeller.pool import select_pool
+
+    session, user = db
+    config = {"sections": [{"platform": "all", "keywords": ["engineer"]}], "languages": ["en"]}
+    session.add(UserConfig(user_id=user.id, config=config))
+
+    german = CorpusJob(url=f"https://example.test/de-{uuid.uuid4().hex}", source="greenhouse",
+                       title="Maschinenbau Engineer", company="Acme",
+                       description="Wir suchen einen Ingenieur. " * 20, language="de")
+    english = CorpusJob(url=f"https://example.test/en-{uuid.uuid4().hex}", source="greenhouse",
+                        title="Mechanical Engineer", company="Acme",
+                        description="We are hiring a mechanical engineer. " * 20, language="en")
+    session.add_all([german, english])
+    session.flush()
+
+    picked = select_pool(session, user.id, config, size=50)
+
+    assert english.id in picked
+    assert german.id not in picked, "a posting the pre-score filter would drop must not be labelled"

@@ -42,6 +42,8 @@ class CorpusJob(Base):
     # The location string, read once, as a fact.
     country: Mapped[str | None] = mapped_column(String(2))
     is_remote: Mapped[bool | None] = mapped_column(Boolean)
+    # The description, read once: a property of the posting rather than of whoever is reading it.
+    language: Mapped[str | None] = mapped_column(String(8))
 
     # Nullable: a row exists from discovery, the description arrives later, and trimming clears it.
     description: Mapped[str | None] = mapped_column(Text)
@@ -93,6 +95,7 @@ class CorpusJob(Base):
         Index("ix_corpus_source_first_seen", "source", "first_seen_at"),
         # Partial, because NULL is never selected on.
         Index("ix_corpus_country", "country", postgresql_where=text("country IS NOT NULL")),
+        Index("ix_corpus_language", "language", postgresql_where=text("language IS NOT NULL")),
         # What the score lane reads, in the order it reads it.
         Index("ix_corpus_scorable", text("first_seen_at DESC"),
               postgresql_where=text("closed_at IS NULL AND embedding IS NOT NULL")),

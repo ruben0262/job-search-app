@@ -21,11 +21,12 @@ def detect_language(text: str) -> str | None:
         return None
 
 
-def is_allowed(text: str, allowed: set[str] | None, *, source: str | None = None) -> bool:
-    """True to keep the job."""
+def is_allowed(language: str | None, allowed: set[str] | None, *,
+               source: str | None = None) -> bool:
+    """True to keep the job. `language` is the stored code, read once at describe time."""
     if source and source in EXEMPT_SOURCES:
         return True
     if not allowed:
         return True
-    language = detect_language(text)
+    # Unknown keeps: a wrong language hides a job somebody wanted, an unknown one costs nothing.
     return language is None or language in allowed

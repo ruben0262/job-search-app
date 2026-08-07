@@ -300,3 +300,34 @@ def test_draining_the_backlog_is_bounded(ctx):
 
     assert result.embedded == 4, "two batches of two, then it returns rather than draining"
     assert result.remaining >= 1
+
+
+def test_embedding_stops_on_the_cycle_clock_rather_than_after_fifty_batches():
+    """A step bounded by a row count can outlive the unit that runs it, and take the rest with it."""
+    from time import monotonic
+
+    from services.harvester.embedding import embed_all_pending
+
+    class _Endless:
+        """A corpus with more rows than any cycle could drain."""
+
+        def awaiting_embedding(self, limit=500):
+            return [object()] * limit
+
+    calls = {"n": 0}
+
+    def _never_finishes(corpus, client, *, expected=None, batch_size=60):
+        calls["n"] += 1
+        raise AssertionError("the deadline had already passed; no batch should have been started")
+
+    import services.harvester.embedding as module
+
+    original = module.embed_pending
+    module.embed_pending = _never_finishes
+    try:
+        result = embed_all_pending(_Endless(), object(), deadline=monotonic() - 1)
+    finally:
+        module.embed_pending = original
+
+    assert calls["n"] == 0
+    assert result.embedded == 0

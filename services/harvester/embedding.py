@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from time import monotonic
 
 from libs.contracts.embedder import DEFAULT_EMBED_TIMEOUT, EmbedderClient, EmbedderVersion, pack_vector
 from libs.corpus.embedtext import build_text, embedding_version
@@ -78,10 +79,20 @@ def embed_all_pending(
     expected: EmbedderVersion | None = None,
     batch_size: int = EMBED_BATCH_SIZE,
     max_batches: int = 50,
+    deadline: float | None = None,
 ) -> EmbedResult:
-    """Drain the backlog, bounded."""
+    """Drain the backlog until the batch ceiling or the clock, whichever comes first.
+
+    `deadline` is a `time.monotonic()` value. Without one this step is bounded by a row count —
+    fifty batches of sixty at ~0.9s a row is forty-five minutes, against a unit that is killed at
+    fourteen, and the stages after it never run.
+    """
     total_embedded = total_skipped = 0
-    for _ in range(max_batches):
+    for batches in range(max_batches):
+        if deadline is not None and monotonic() >= deadline:
+            logger.info("embed: stopping at %d batch(es), the cycle is out of time — the rest are "
+                        "first in line next run", batches)
+            break
         result = embed_pending(corpus, client, expected=expected, batch_size=batch_size)
         total_embedded += result.embedded
         total_skipped += result.skipped_stale

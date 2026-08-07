@@ -100,6 +100,11 @@ DEFAULT_SOURCE_PAGES_PER_CYCLE: dict[str, int] = {
 # How many users' LinkedIn passes run in one tick.
 DEFAULT_LINKEDIN_CONCURRENT_USERS = 4
 
+# How long one harvest cycle may spend before it must stop and let the next tick have the box.
+# Below `harvester.service`'s TimeoutStartSec, which is what kills a cycle that ignores this — and
+# a killed cycle skips the stages after the one that overran, silently (`test_schedules.py`).
+HARVEST_CYCLE_BUDGET_SECONDS = 11 * 60
+
 # How old a posting may be and still be worth scoring and sending. A different question from the
 # freshness windows above, which say how far back to *ask* a source: this one is how long a posting
 # already in the corpus stays a candidate, and it is the only age check between the corpus and a

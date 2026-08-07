@@ -7,6 +7,7 @@ from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from time import monotonic
 
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
@@ -17,6 +18,7 @@ from libs.corpus.repository import CorpusRepository
 from libs.db.models import User
 from libs.obs import Timings, audit, report_timings, timed
 from libs.queue import enqueue
+from libs.settings import HARVEST_CYCLE_BUDGET_SECONDS
 from libs.tenant.repository import TenantRepository
 from services.harvester.describe import SHARED_LIMIT as DESCRIBE_PER_CYCLE_DEFAULT
 from services.harvester.describe import describe_pending
@@ -52,6 +54,8 @@ class CycleReport:
     embedded: int = 0
     # Set when the embedder refused or timed out.
     embed_error: str | None = None
+    # Rows whose language was read from text that was already stored.
+    languages_read: int = 0
     # Per source, so "the cycle found 200 links" cannot hide "and four of six sources found none".
     links_by_source: dict[str, int] = field(default_factory=dict)
     source_failures: dict[str, str] = field(default_factory=dict)
@@ -125,6 +129,8 @@ def run_cycle(
     describe: bool = True,
 ) -> tuple[CycleReport, list[QueryKey]]:
     """Run one shared harvest cycle."""
+    # The cycle's own clock, so a slow stage stops rather than taking the stages behind it with it.
+    deadline = monotonic() + HARVEST_CYCLE_BUDGET_SECONDS
     report = CycleReport()
     corpus = CorpusRepository(session)
     tenant = TenantRepository(session)
@@ -176,11 +182,16 @@ def run_cycle(
             report.described = described.described
             report.describe_outcomes = described.outcomes
 
+        # 5c. Read the language off whatever text now exists. No network, and once per posting.
+        with timed("language", report.timings):
+            report.languages_read = corpus.fill_missing_languages()
+
         # 6. Embed the new rows. Once, for everyone.
         if embedder is not None:
             try:
                 with timed("embed", report.timings):
-                    result = embed_all_pending(corpus, embedder, expected=expected_embedder)
+                    result = embed_all_pending(corpus, embedder, expected=expected_embedder,
+                                               deadline=deadline)
                 report.embedded = result.embedded
             except EmbedderError as exc:
                 report.embed_error = str(exc)

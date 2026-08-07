@@ -40,6 +40,8 @@ class Item:
     easy_apply: bool | None = None
     reposted: bool | None = None
     workplace: str | None = None
+    # Detected once at describe time and stored on the row, like `country` and `workplace`.
+    language: str | None = "en"
 
 
 def filters(*, applicant_cap: int | None = 200, max_age_hours: int = 24,
@@ -142,22 +144,31 @@ def test_an_unknown_workplace_ranks_with_hybrid_not_last():
 # ── the filters, and what they refuse to drop ─────────────────────────────────────────────────
 
 def test_a_job_in_a_language_the_user_does_not_write_is_dropped():
-    german = Item(description=(
-        "Wir suchen einen erfahrenen Softwareentwickler für unser Team in Berlin. "
-        "Sie entwickeln und betreiben unsere Dienste und arbeiten eng mit dem Produktteam "
-        "zusammen. Gute Deutschkenntnisse sind erforderlich."))
-    assert drops(german) == "language"
+    assert drops(Item(language="de")) == "language"
 
 
-def test_a_description_too_short_to_detect_is_kept():
-    """Fails open. A three-word snippet is not evidence of anything."""
-    assert drops(Item(description="Engineer wanted")) is None
+def test_the_filter_reads_the_stored_code_and_never_runs_a_detector():
+    """Detection is a property of the posting: once at describe time, not per reader per pass."""
+    import inspect
+
+    from libs.tenant import filters as module
+
+    body = inspect.getsource(module.UserFilters.unwanted)
+    assert "detect_language" not in body, (
+        "the same posting was detected again for every account and again on every retrain")
+    # A German description with the stored code saying English is judged by the column.
+    german_text = Item(language="en", description="Wir suchen einen Softwareentwickler. " * 5)
+    assert drops(german_text) is None
+
+
+def test_a_posting_whose_language_could_not_be_read_is_kept():
+    """Fails open. Unknown is not evidence of anything."""
+    assert drops(Item(language=None)) is None
 
 
 def test_an_account_that_never_stated_a_language_keeps_everything():
     """Otherwise a user who skipped one onboarding question would have their entire feed silently emptied."""
-    german = Item(description="Wir suchen einen erfahrenen Softwareentwickler für unser Team. " * 3)
-    assert drops(german, UserFilters.from_config({}, max_age_hours=24)) is None
+    assert drops(Item(language="de"), UserFilters.from_config({}, max_age_hours=24)) is None
 
 
 def test_an_explicit_onsite_posting_outside_the_allowed_countries_is_dropped():

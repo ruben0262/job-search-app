@@ -14,6 +14,46 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-08-07 (evening)
+
+**The language filter has never run, and now it can** — plus the two remaining bounds from the
+pipeline audit.
+
+**`corpus.language`, read once at describe time.** Detection used to run inside
+`UserFilters.unwanted`, on the description, **once per candidate per account per scoring pass** — the
+same posting re-detected for every user and again on every retrain. It is a property of the posting,
+so it is stored beside `country` and `workplace`, indexed, and backfilled in the migration. The
+filter compares a two-letter code instead of running `langdetect` over a 20,000-character
+description. `fill_missing_languages` runs once a cycle for rows described before the column
+existed — no network, bounded, and it disappears when the backlog does.
+
+**And nothing could set the languages.** `user_config.languages` was in the schema and in the
+onboarding *type*, with **no control anywhere in the app** — so the set was empty for every account,
+`is_allowed` returned True on an empty set, and a Hungarian mechanical engineer received German
+postings he could not apply to. There is now a picker on the config step, built from the schema's own
+`Language` enum, so a new code cannot exist on one side only.
+
+**Labels are no longer bought for postings the account could never read.** `select_pool` applies
+`UserFilters.unwanted_for_training` — the *content* half of the pre-score filter: language, and the
+terms the user asked never to see. Not the circumstantial half: how many have applied, whether it is
+on site, or how old it is say nothing about whether a posting is a good training example, and
+filtering on them would thin the set for no gain. Every label is bought on the user's own Claude
+credential, so a posting they can never receive is spend.
+
+**The embed step stops on a clock.** It was bounded by `max_batches=50 × 60 rows` — a row count, so
+at ~0.9 s a row it can legitimately run forty-five minutes against a unit systemd kills at fourteen.
+And a killed cycle does not just lose embeddings: `describe`, the language pass and
+`_enqueue_scoring` all sit *after* it and never run, silently. `HARVEST_CYCLE_BUDGET_SECONDS` (11
+min) is now derived once in `libs.settings`, passed into `embed_all_pending` as a deadline, and
+`test_settings_are_wired.py` fails the build if it ever exceeds the unit's `TimeoutStartSec`.
+
+**`tests/test_settings_are_wired.py`** is new, and is the guard that would have caught the window
+defect: every key in `settings.DEFAULTS` must be read by something, and must have a control in the
+operator panel. Both checks pass today only because `job_max_age_hours` got both.
+
+Gates: `lint-imports` 2 kept; `ruff check .` clean; `alembic upgrade head` from empty; **1,361
+passed, 22 skipped**; contract regenerated; `tsc --noEmit` and `npm run build` clean.
+
 ## 2026-08-07 (later)
 
 **Delivery stopped judging, and the age window became the operator's** — the owner's rule, applied:

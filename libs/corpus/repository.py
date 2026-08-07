@@ -10,7 +10,7 @@ from sqlalchemy import func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
-from libs.corpus import workfilter
+from libs.corpus import langfilter, workfilter
 from libs.corpus.geo import read_country
 from libs.corpus.keys import canonical_url, content_key
 from libs.db.models import CorpusJob
@@ -180,7 +180,25 @@ class CorpusRepository:
         if job.workplace is None:
             job.workplace = workfilter.classify(
                 job.title, job.location or "", description, job.is_remote)
+        # Read once here rather than per reader per pass: the language is a fact about the posting.
+        job.language = langfilter.detect_language(description)
         return True
+
+    def fill_missing_languages(self, *, limit: int = 500) -> int:
+        """Detect the language of rows described before the column existed. No network, bounded."""
+        rows = list(self._s.scalars(
+            select(CorpusJob)
+            .where(CorpusJob.description.is_not(None), CorpusJob.language.is_(None),
+                   CorpusJob.trimmed_at.is_(None))
+            .order_by(CorpusJob.first_seen_at.desc())
+            .limit(limit)))
+        filled = 0
+        for job in rows:
+            code = langfilter.detect_language(job.description or "")
+            if code is not None:
+                job.language = code
+                filled += 1
+        return filled
 
     def awaiting_description(self, *, limit: int = 200, linkedin: bool | None = None,
                              min_chars: int = MIN_DESCRIPTION) -> list[CorpusJob]:

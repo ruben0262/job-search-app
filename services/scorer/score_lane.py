@@ -46,7 +46,7 @@ def _candidates(session, user, user_id, filters, limit):
                CorpusJob.embedding, CorpusJob.embedding_dim, CorpusJob.embedding_version,
                # What the delivery filter used to need at send time.
                CorpusJob.source, CorpusJob.applicants, CorpusJob.location,
-               CorpusJob.is_remote, CorpusJob.workplace)
+               CorpusJob.is_remote, CorpusJob.workplace, CorpusJob.language)
         .outerjoin(UserJobState,
                    (UserJobState.job_id == CorpusJob.id)
                    & (UserJobState.user_id == user_id))

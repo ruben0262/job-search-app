@@ -11,6 +11,7 @@ from libs.contracts.config import migrate_config
 from libs.db.models import CorpusJob, UserLabel
 from libs.labels import pool_target
 from libs.scoring.rules import POOL_BANDS
+from libs.tenant.filters import UserFilters
 
 logger = logging.getLogger(__name__)
 
@@ -79,14 +80,29 @@ def select_pool(session: Session, user_id: _uuid.UUID, config: dict, *,
             rows.append(row)
 
     config = migrate_config(config)
+    # The content half of the pre-score filter, so a label is never bought in a language this
+    # account cannot read or for a term they asked never to see (`unwanted_for_training`).
+    rules = UserFilters.from_config(config, max_age_hours=LOOKBACK_DAYS * 24)
+
     scored: list[tuple[int, int, str]] = []
+    unwanted: dict[str, int] = {}
     for row in rows:
         if row.id in already:
+            continue
+        reason = rules.unwanted_for_training({
+            "title": row.title, "company": row.company,
+            "source": row.source, "language": row.language})
+        if reason is not None:
+            unwanted[reason] = unwanted.get(reason, 0) + 1
             continue
         result = score_job(config, title=row.title, description=row.description,
                            is_remote=row.is_remote)
         if not result.excluded:
             scored.append((result.score, row.id, row.source or ""))
+
+    if unwanted:
+        # Their own credential pays for every label, so a posting they could never receive is spend.
+        logger.info("user %s: %s excluded from the label pool", user_id, unwanted)
 
     if not scored:
         logger.warning("user %s: no corpus job matches their config at all", user_id)

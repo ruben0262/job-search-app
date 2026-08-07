@@ -75,6 +75,12 @@ const WORKPLACE: { value: string; label: string; hint: string }[] = [
   { value: "any", label: "Anything", hint: "Including full-time on site" },
 ];
 
+/** Plain names for the language codes the schema offers. */
+const LANGUAGE_NAMES: Record<string, string> = {
+  en: "English", de: "German", fr: "French", es: "Spanish", nl: "Dutch", hu: "Hungarian",
+  pl: "Polish", pt: "Portuguese", it: "Italian", sv: "Swedish", da: "Danish",
+};
+
 const title = (value: string) =>
   PLACE_NAMES[value] ?? value.replaceAll("_", " ").replace(/^./, (c) => c.toUpperCase());
 
@@ -100,6 +106,7 @@ export function ConfigStep({ onDone }: { onDone: () => void }) {
   }, []);
 
   const known = (schema?.$defs?.Location?.enum ?? []) as string[];
+  const languages = (schema?.$defs?.Language?.enum ?? []) as string[];
   const grouped = PLACE_GROUPS.map((group) => ({
     ...group,
     values: group.values.filter((value) => known.includes(value)),
@@ -132,6 +139,14 @@ export function ConfigStep({ onDone }: { onDone: () => void }) {
 
   // The schema's bound, enforced where the choices are made.
   const atLimit = section.locations.length >= MAX_LOCATIONS;
+
+  const toggleLanguage = (code: string) =>
+    setConfig((current) => ({
+      ...current,
+      languages: current.languages.includes(code)
+        ? current.languages.filter((each) => each !== code)
+        : [...current.languages, code],
+    }));
 
   const toggleLocation = (value: string) => {
     const chosen = section.locations.includes(value);
@@ -223,6 +238,26 @@ export function ConfigStep({ onDone }: { onDone: () => void }) {
             {atLimit ? ". Untick one to choose somewhere else." : ""}
           </p>
         )}
+      </div>
+
+      <div className="field">
+        <span className="label">Which languages can you work in?</span>
+        <span className="hint">
+          A posting written in a language you have not picked is not shown to you, and the
+          documents we write for you follow the same list. Pick nothing and we show you everything.
+        </span>
+        <div className="picker-grid" style={{ marginTop: "0.5rem" }}>
+          {languages.map((code) => (
+            <label key={code} className="pick">
+              <input
+                type="checkbox"
+                checked={config.languages.includes(code)}
+                onChange={() => toggleLanguage(code)}
+              />
+              <span>{LANGUAGE_NAMES[code] ?? code.toUpperCase()}</span>
+            </label>
+          ))}
+        </div>
       </div>
 
       <div className="field">

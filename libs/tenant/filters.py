@@ -78,6 +78,22 @@ class UserFilters:
         return found.group(0).lower() if found else None
 
 
+    def unwanted_for_training(self, row) -> str | None:
+        """Why this posting is not worth buying a label for, or `None`.
+
+        A narrower question than `unwanted`. A label is an example of what this person wants, so the
+        checks that describe the *posting's* content apply — the language they cannot read, the words
+        they never want to see. The ones that describe its *circumstances* do not: how many people
+        have applied, whether it is on site this week, and how old it is say nothing about whether
+        it is a good example, and filtering on them would thin the training set for no gain.
+        """
+        if self.excluded(row.get("title"), row.get("company")):
+            return "excluded_keyword"
+        if not langfilter.is_allowed(row.get("language"), set(self.languages),
+                                     source=row.get("source")):
+            return "language"
+        return None
+
     def unwanted(self, row) -> str | None:
         """Why this account can never receive this posting, or `None`."""
         # Title and company only, never the description.
@@ -95,8 +111,8 @@ class UserFilters:
         if not workfilter.is_allowed(mode, row.get("location") or "", list(self.onsite_locations)):
             return "workplace"
 
-        # Language last: it is the only check that runs a detector, and the cheap checks ran first.
-        if not langfilter.is_allowed(row.get("description") or "", set(self.languages),
+        # The stored code, detected once at describe time rather than per reader per pass.
+        if not langfilter.is_allowed(row.get("language"), set(self.languages),
                                      source=row.get("source")):
             return "language"
 
