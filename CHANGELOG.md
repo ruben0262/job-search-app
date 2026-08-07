@@ -14,6 +14,48 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-08-07
+
+**The delivery continuation stopped waiting for the dispatcher, and four thresholds got one owner
+each** — the first batch out of the pipeline audit.
+
+**A run that fills its limit now queues the rest itself.** `_deliver_again` set `users.next_run_at`
+and nothing else, so the continuation depended on the dispatcher's periodic pass — which runs once a
+minute. A run is ~80 seconds of work; up to 60 more were spent idle with a queue waiting, on every
+continuation. It now releases its own `due` slot on the mapped row (the same move
+`services/scorer/__main__.py` already makes) and enqueues directly, keeping `next_run_at` as the
+backstop for the case where the enqueue collapses against somebody else's job. Measured effect on
+the drain rate: 14 items per ~140 s becomes 14 per ~80 s.
+
+**`libs.labels.POOL_SIZE` is gone.** It was 300 beside the `label_pool` catalogue entry's 300 — the
+cold-start target an operator sets in the admin panel, restated as a constant nothing would update.
+`pool_target()` reads the catalogue, `target_for(user)` resolves the account's own ceiling, and the
+processing page now reports that ceiling rather than the platform default.
+
+**Two thresholds that both read as "enough labels to train" were named for what they each decide.**
+`services.labeller.coldstart.MIN_LABELS_TO_TRAIN` → `LABELS_BEFORE_FIRST_FIT`, **and raised from 100
+to 200**: it is the point where a cold start has bought enough to be worth its first fit.
+`services.trainer.train.MIN_LABELS` → `MIN_LABELS_TO_FIT`, still 25: the floor below which a fit is
+refused outright. They are different questions, they cannot import each other, and reading either
+name told you nothing about which one you were looking at.
+
+`ready_to_train` also clamps to the account's own `label_pool`. An operator lowering that below 200
+would otherwise leave the account permanently one label short of a model it is not allowed to buy
+its way to — no error, no page saying so.
+
+**Two dead constants deleted.** `services.notifier.eligibility.DEFAULT_APPLICANT_CAP` had no reader
+(the applicant cap moved to the pre-score filter; the test that looks like a user imports the `libs`
+one under that alias). `services.notifier.deliver.MAX_ITEMS_PER_DIGEST` was a "10 per digest" rule
+that has not been in force since `items_per_run` went unlimited — `deliver` always passes a computed
+limit — so `pending_feed` now requires one.
+
+Three new tests, each failing against the code that made it necessary: the continuation is *queued*
+rather than merely due; an account allowed fewer labels than the constant can still train; and the
+label-pool default is read from the catalogue rather than restated.
+
+Gates: `lint-imports` 2 kept; `ruff check .` clean; `alembic upgrade head` from empty; **1,358
+passed, 22 skipped**; contract regenerated with no change to `openapi.json`; `npm run build` clean.
+
 ## 2026-08-06 (late night)
 
 **One line per comment, across the whole tree** — the owner's instruction. Every module, class and

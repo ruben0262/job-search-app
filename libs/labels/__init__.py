@@ -8,8 +8,12 @@ from sqlalchemy.orm import Session
 
 from libs.db.models import User, UserLabel
 
-# How many labels a cold start aims for before the first fit, when an operator has not said otherwise.
-POOL_SIZE = 300
+
+def pool_target() -> int:
+    """The catalogue's label pool, for a caller with no account to resolve against."""
+    from libs.limits import limit_default  # noqa: PLC0415 - avoids a cycle at import time
+
+    return int(limit_default("label_pool"))
 
 
 def target_for(user: User) -> int:
@@ -17,14 +21,14 @@ def target_for(user: User) -> int:
     from libs.limits import resolve  # noqa: PLC0415 - avoids a cycle at import time
 
     ceiling = resolve(user, "label_pool")
-    return POOL_SIZE if ceiling is None else max(int(ceiling), 1)
+    return pool_target() if ceiling is None else max(int(ceiling), 1)
 
 
 def labelling_state(session: Session, user_id: _uuid.UUID) -> dict:
     """What this account needs next from the `label` lane, and how far along it is."""
     user = session.get(User, user_id)
     if user is None or not user.rubric_md:
-        return {"action": "confirm_profile", "labels": 0, "target": POOL_SIZE, "stale": 0}
+        return {"action": "confirm_profile", "labels": 0, "target": pool_target(), "stale": 0}
 
     labels = session.scalar(
         select(func.count()).select_from(UserLabel)
@@ -45,4 +49,4 @@ def labelling_state(session: Session, user_id: _uuid.UUID) -> dict:
         action = "train"
     return {"action": action, "labels": labels, "target": target, "stale": stale}
 
-__all__ = ["POOL_SIZE", "labelling_state", "target_for"]
+__all__ = ["labelling_state", "pool_target", "target_for"]

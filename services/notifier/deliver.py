@@ -15,9 +15,10 @@ from sqlalchemy.orm import Session
 
 import libs.notify as notifylib
 from libs import limits
-from libs.db.models import CorpusJob, User, UserConfig, UserJobState
+from libs.db.models import CorpusJob, QueueJob, User, UserConfig, UserJobState
 from libs.db.models.queue import CLAIM_TIMEOUT_MIN
 from libs.obs import audit
+from libs.queue import enqueue
 from libs.scoring.thresholds import DEFAULT_CUTOFF, cutoff_for
 from libs.secrets import SecretsError, SecretStore, redacting
 from libs.tenant.filters import UserFilters, candidate_conditions
@@ -30,9 +31,6 @@ from services.notifier.freshness import REFRESH_BUDGET_SECONDS, date_candidates
 from services.notifier.routing import group_by_chat
 
 logger = logging.getLogger(__name__)
-
-# Telegram allows ~30 messages/second to different chats but throttles a single chat much harder.
-MAX_ITEMS_PER_DIGEST = 10
 
 # What "unlimited jobs per run" means to a query that needs a number.
 SEND_BUDGET_SECONDS = (
@@ -54,8 +52,7 @@ class BotRevoked(RuntimeError):
     """The user's bot is gone. Terminal — flag the account, do not retry."""
 
 
-def pending_feed(session: Session, user_id: _uuid.UUID, *, cutoff: float,
-                 limit: int = MAX_ITEMS_PER_DIGEST,
+def pending_feed(session: Session, user_id: _uuid.UUID, *, cutoff: float, limit: int,
                  store: SecretStore | None = None) -> tuple[list[FeedItem], dict[str, int]]:
     """This user's next digest: eligible, ranked by opportunity, capped at `limit`."""
     # The account's own filters, read once — the same object the score lane already applied.
@@ -214,8 +211,23 @@ def _run_budget(session: Session, user: User) -> tuple[float, int]:
 
 
 def _deliver_again(session: Session, user_id: _uuid.UUID) -> None:
-    """Make this account due again now, so the drain continues on the next dispatcher pass."""
+    """Queue the rest of this account's feed now, rather than waiting for the dispatcher's tick.
+
+    The dispatcher runs once a minute, so leaving the continuation to it spent up to 60 seconds of
+    every ~140 idle with work waiting. `next_run_at` is still moved as the backstop for the case
+    where this enqueue collapses against a job somebody else already queued.
+    """
     session.execute(update(User).where(User.id == user_id).values(next_run_at=func.now()))
+
+    # This run's own job still holds the `due` slot, and the dedup index refuses a second one while
+    # it does. Released through the mapped row, so the worker's later `complete` cannot write it back.
+    running = session.scalar(
+        select(QueueJob).where(QueueJob.lane == "notify", QueueJob.user_id == user_id,
+                               QueueJob.state == "claimed", QueueJob.dedup_key == "due"))
+    if running is not None:
+        running.dedup_key = None
+    session.flush()
+    enqueue(session, "notify", user_id, dedup_key="due")
 
 
 def _operating_point(session: Session, user_id: _uuid.UUID, requested: float) -> float:

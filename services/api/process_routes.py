@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from libs.contracts.profile import ProfileSchema
 from libs.contracts.profile import json_schema as profile_schema
 from libs.db.models import QueueJob, User, UserDocument, UserLabel
-from libs.labels import POOL_SIZE, labelling_state
+from libs.labels import labelling_state
 from libs.obs import audit
 from libs.onboarding import CLAUDE_KINDS
 from libs.profiles.repository import ProfileFiles
@@ -199,7 +199,8 @@ def training_state(db: Session = Depends(get_db),
         "paused": user_paused,
         "phase": labelling["action"],
         "labels": labelling["labels"],
-        "target": POOL_SIZE,
+        # This account's own ceiling, not the catalogue default.
+        "target": labelling["target"],
         "stale_labels": labelling["stale"],
         "lanes": lanes,
         "model_version": user.model_version if user else None,

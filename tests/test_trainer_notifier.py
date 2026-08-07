@@ -304,7 +304,7 @@ def test_only_scores_above_the_cutoff_are_sent(ctx):
     _scored(ctx, user, score=90.0)
     _scored(ctx, user, score=20.0)
     ctx.flush()
-    items, dropped = pending_feed(ctx, user.id, cutoff=60.0)
+    items, dropped = pending_feed(ctx, user.id, cutoff=60.0, limit=10)
     assert len(items) == 1
     assert dropped == {}          # the low score never reached the filters — the cutoff took it
 
@@ -624,7 +624,7 @@ def test_an_undated_row_held_past_the_window_is_not_reconsidered_every_cycle(ctx
     stale.first_seen_at = datetime.now(UTC) - timedelta(days=3)
     ctx.flush()
 
-    items, dropped = pending_feed(ctx, user.id, cutoff=0.0)
+    items, dropped = pending_feed(ctx, user.id, cutoff=0.0, limit=10)
 
     assert stale.id not in {item.job_id for item in items}
     assert "too_old" not in dropped, (
@@ -680,3 +680,26 @@ def test_a_run_that_could_not_finish_makes_the_account_due_again_now(ctx):
     due = user.next_run_at if user.next_run_at.tzinfo else user.next_run_at.replace(tzinfo=UTC)
     assert due <= before + timedelta(seconds=5), (
         "the rest of the queue waits a whole cadence, which is how a backlog's tail expires unsent")
+
+
+def test_the_rest_of_the_feed_is_queued_now_rather_than_at_the_dispatchers_convenience(ctx):
+    """Being due is not being queued: the dispatcher only looks once a minute."""
+    from libs import limits
+    from libs.db.models import QueueJob
+
+    user = _connected(ctx)
+    limits.set_limit(ctx, user.id, "items_per_run", 1)
+    store = _store(ctx)
+    store.put(user.id, "telegram_bot", BOT_TOKEN)
+    _scored(ctx, user)
+    _scored(ctx, user)
+    ctx.flush()
+
+    assert deliver(ctx, user.id, store=store, send=lambda *a, **k: None) == 1
+    ctx.flush()
+
+    waiting = ctx.scalars(
+        select(QueueJob).where(QueueJob.lane == "notify", QueueJob.user_id == user.id,
+                               QueueJob.state == "ready")).all()
+    assert len(waiting) == 1, (
+        "up to 60 seconds of every continuation was spent idle waiting for the dispatcher tick")

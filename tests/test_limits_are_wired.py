@@ -175,6 +175,14 @@ def test_the_applicant_cap_default_is_not_written_twice():
     assert BY_KEY["applicant_cap"].default == DEFAULT_APPLICANT_CAP
 
 
+def test_the_label_pool_default_is_read_from_the_catalogue_and_not_restated():
+    """The cold-start target an operator sets in the panel is the one every caller falls back to."""
+    from libs.labels import pool_target
+    from libs.limits import BY_KEY
+
+    assert pool_target() == BY_KEY["label_pool"].default
+
+
 def test_every_limit_in_the_catalogue_has_a_control_an_operator_can_reach():
     """A limit with no choices renders an empty dropdown, and nothing errors."""
     import re

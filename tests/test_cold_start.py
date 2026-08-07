@@ -202,18 +202,18 @@ def test_an_account_without_a_rubric_is_sent_back_to_confirm(db):
 def test_a_partial_cold_start_still_trains(db):
     """A user with 280 labels and no model because the last 20 calls failed is the worst outcome."""
     from libs.db.models import CorpusJob, UserLabel
-    from services.labeller.coldstart import MIN_LABELS_TO_TRAIN, ready_to_train
+    from services.labeller.coldstart import LABELS_BEFORE_FIRST_FIT, ready_to_train
 
     session, user = db
     assert ready_to_train(session, user.id) is False
 
-    jobs = list(session.scalars(select(CorpusJob).limit(MIN_LABELS_TO_TRAIN)))
+    jobs = list(session.scalars(select(CorpusJob).limit(LABELS_BEFORE_FIRST_FIT)))
     for job in jobs:
         session.add(UserLabel(user_id=user.id, job_id=job.id, label=70, profile_generation=1))
     session.flush()
 
     # 60 corpus rows in the fixture, so this asserts the threshold is *checked*, not that it passes.
-    assert ready_to_train(session, user.id) is (len(jobs) >= MIN_LABELS_TO_TRAIN)
+    assert ready_to_train(session, user.id) is (len(jobs) >= LABELS_BEFORE_FIRST_FIT)
 
 
 @pytest.mark.skipif("DATABASE_URL" not in __import__("os").environ, reason="needs live Postgres")
@@ -252,15 +252,36 @@ def test_a_user_is_not_crowded_out_of_a_shared_corpus(db):
 
 
 @pytest.mark.skipif("DATABASE_URL" not in __import__("os").environ, reason="needs live Postgres")
+def test_an_account_allowed_fewer_labels_than_the_constant_can_still_train(db):
+    """An operator lowering `label_pool` must not leave the account permanently one label short."""
+    from libs.db.models import CorpusJob, UserLabel
+    from services.labeller.coldstart import LABELS_BEFORE_FIRST_FIT, ready_to_train
+
+    session, user = db
+    ceiling = 5
+    assert ceiling < LABELS_BEFORE_FIRST_FIT
+    user.limits = {**(user.limits or {}), "label_pool": ceiling}
+    session.flush()
+
+    jobs = list(session.scalars(select(CorpusJob).limit(ceiling)))
+    assert len(jobs) == ceiling
+    for job in jobs:
+        session.add(UserLabel(user_id=user.id, job_id=job.id, label=70, profile_generation=1))
+    session.flush()
+
+    assert ready_to_train(session, user.id) is True, (
+        "the account has bought everything it is allowed to buy and still cannot train")
+
+
 def test_the_label_budget_is_the_operators_to_set(db):
     """The catalogue entry existed and nothing read it."""
-    from libs.labels import POOL_SIZE, labelling_state, target_for
+    from libs.labels import labelling_state, pool_target, target_for
 
     session, user = db
     user.rubric_md = "score jobs like this"
     session.flush()
-    assert target_for(user) == POOL_SIZE
-    assert labelling_state(session, user.id)["target"] == POOL_SIZE
+    assert target_for(user) == pool_target()
+    assert labelling_state(session, user.id)["target"] == pool_target()
 
     user.limits = {**(user.limits or {}), "label_pool": 1000}
     session.flush()
@@ -271,9 +292,9 @@ def test_the_label_budget_is_the_operators_to_set(db):
 @pytest.mark.skipif("DATABASE_URL" not in __import__("os").environ, reason="needs live Postgres")
 def test_an_unlimited_label_budget_still_has_a_finish_line(db):
     """Unlimited resolves to the default rather than to no target."""
-    from libs.labels import POOL_SIZE, target_for
+    from libs.labels import pool_target, target_for
 
     session, user = db
     user.limits = {**(user.limits or {}), "label_pool": None}
     session.flush()
-    assert target_for(user) == POOL_SIZE
+    assert target_for(user) == pool_target()

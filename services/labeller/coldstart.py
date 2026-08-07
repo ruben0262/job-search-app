@@ -13,12 +13,13 @@ from libs.llm import LlmClient, LlmError
 from libs.obs import audit
 from libs.tenant.repository import TenantRepository
 from services.labeller.label import BATCH_SIZE, score_batch, stale_job_ids, write_labels
-from services.labeller.pool import MIN_VIABLE_POOL, POOL_SIZE, select_pool
+from services.labeller.pool import MIN_VIABLE_POOL, select_pool
 
 logger = logging.getLogger(__name__)
 
-# Enough labels to fit something worth serving.
-MIN_LABELS_TO_TRAIN = 100
+# When a cold start has bought enough labels to be worth its first fit. Not the trainer's floor:
+# `services.trainer.train.MIN_LABELS_TO_FIT` is the point below which a fit is refused outright.
+LABELS_BEFORE_FIRST_FIT = 200
 
 
 def cold_start_batch(session: Session, user_id: _uuid.UUID, client: LlmClient, *,
@@ -63,10 +64,13 @@ def ready_to_train(session: Session, user_id: _uuid.UUID) -> bool:
         select(func.count()).select_from(UserLabel)
         .where(UserLabel.user_id == user_id,
                UserLabel.profile_generation == user.profile_generation)) or 0
-    if labels < MIN_LABELS_TO_TRAIN:
+    # Never above what this account is allowed to buy: an operator who lowers `label_pool` below
+    # the constant would otherwise leave the account permanently one label short of training.
+    needed = min(LABELS_BEFORE_FIRST_FIT, target_for(user))
+    if labels < needed:
         logger.info("user %s has %d labels, below the %d needed to train",
-                    user_id, labels, MIN_LABELS_TO_TRAIN)
-    return labels >= MIN_LABELS_TO_TRAIN
+                    user_id, labels, needed)
+    return labels >= needed
 
 
 def next_batch(session: Session, user_id: _uuid.UUID, client: LlmClient) -> tuple[str, int, int]:
@@ -93,5 +97,5 @@ def next_batch(session: Session, user_id: _uuid.UUID, client: LlmClient) -> tupl
 
 
 # Re-exported so the worker imports one name rather than reaching past this module into two others.
-__all__ = ["MIN_LABELS_TO_TRAIN", "MIN_VIABLE_POOL", "POOL_SIZE", "cold_start_batch",
+__all__ = ["LABELS_BEFORE_FIRST_FIT", "MIN_VIABLE_POOL", "cold_start_batch",
            "labelling_state", "next_batch", "ready_to_train", "stale_job_ids"]

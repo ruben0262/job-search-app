@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from libs.contracts.config import migrate_config
 from libs.db.models import CorpusJob, UserLabel
-from libs.labels import POOL_SIZE
+from libs.labels import pool_target
 from libs.scoring.rules import POOL_BANDS
 
 logger = logging.getLogger(__name__)
@@ -41,8 +41,9 @@ def _config_terms(config: dict) -> list[str]:
 
 
 def select_pool(session: Session, user_id: _uuid.UUID, config: dict, *,
-                size: int = POOL_SIZE) -> list[int]:
+                size: int | None = None) -> list[int]:
     """Corpus ids to label for this account, banded high/mid/low."""
+    size = pool_target() if size is None else size
     from datetime import UTC, datetime, timedelta  # noqa: PLC0415 - one caller, one path
 
     from libs.scoring.rules import score_job  # noqa: PLC0415 - avoids a cycle at import time

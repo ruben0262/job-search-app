@@ -4,16 +4,11 @@ from __future__ import annotations
 import logging
 
 from libs.corpus.ranking import priority_key
-from libs.limits import limit_default
 
 logger = logging.getLogger(__name__)
 
 # How many scored rows to consider per digest slot.
 CANDIDATE_MULTIPLIER = 5
-
-# LinkedIn's display cap; the operator's per-user limit is live, this only the fallback.
-DEFAULT_APPLICANT_CAP = limit_default("applicant_cap")
-
 
 
 def is_eligible(item) -> tuple[bool, str | None]:

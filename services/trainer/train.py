@@ -23,8 +23,10 @@ from libs.scoring.thresholds import DEFAULT_CUTOFF
 
 logger = logging.getLogger(__name__)
 
-# A model refit on one extra label is not worth the CPU (`SCHEDULER_PLAN.md` §7).
-MIN_LABELS = 25
+# The floor below which a fit is refused outright, and a different question from the labeller's
+# `LABELS_BEFORE_FIRST_FIT`: that one says when a cold start has bought enough to be worth training,
+# this one says when there is too little data to fit anything at all (`SCHEDULER_PLAN.md` §7).
+MIN_LABELS_TO_FIT = 25
 MIN_NEW_LABELS = 5
 
 # `DEFAULT_CUTOFF` is imported from `libs.scoring.thresholds`, never restated here.
@@ -66,9 +68,9 @@ def build_training_set(session: Session, user_id: _uuid.UUID) -> TrainingSet:
                UserLabel.profile_generation == user.profile_generation,
                CorpusJob.embedding.is_not(None))).all()
 
-    if len(rows) < MIN_LABELS:
+    if len(rows) < MIN_LABELS_TO_FIT:
         raise NotEnoughData(
-            f"{len(rows)} usable labels at generation {user.profile_generation}, need {MIN_LABELS}")
+            f"{len(rows)} usable labels at generation {user.profile_generation}, need {MIN_LABELS_TO_FIT}")
 
     # One embedder per training set, always.
     versions = {r.embedding_version for r in rows}
@@ -294,7 +296,7 @@ def should_retrain(session: Session, user_id: _uuid.UUID, *,
     labelled = session.scalar(
         select(func.count()).select_from(UserLabel).where(UserLabel.user_id == user_id)) or 0
     if active is None:
-        return labelled >= MIN_LABELS
+        return labelled >= MIN_LABELS_TO_FIT
 
     # What the training rows are in now, read from the corpus: the vectors are the ground truth.
     current = session.scalar(
