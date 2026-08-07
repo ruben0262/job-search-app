@@ -10,7 +10,6 @@ from sqlalchemy.orm import Session
 
 from libs.db.models import SCORING_RELEVANT_FILES, UserProfileFile
 from libs.profiles import (
-    ProfileIncomplete,
     grounding,
     is_filled,
     missing_setup,
@@ -86,12 +85,22 @@ class ProfileFiles:
         return grounding(self.all())
 
     def is_ready(self) -> bool:
-        """Whether this account can generate documents at all."""
-        try:
-            self.grounding()
-        except ProfileIncomplete:
-            return False
-        return True
+        """Whether this account can generate documents at all.
+
+        Reads the one file the answer depends on. `grounding` refuses exactly when `context.md` is
+        absent or unfilled, so this asks that question directly rather than loading the account's
+        whole profile — ~180,000 characters out of Postgres, inside the webhook a person is waiting
+        on after tapping Build, to compute one boolean.
+
+        Deliberately not the `filled` column: it is derived, it has drifted in production before
+        (`services/api/setup_routes.py` repairs it on page load), and a stale flag here would refuse
+        a build for somebody whose profile is complete.
+        """
+        context = self._s.scalar(
+            select(UserProfileFile.content)
+            .where(UserProfileFile.user_id == self._user,
+                   UserProfileFile.name == "context.md"))
+        return context is not None and is_filled(context)
 
     def missing_setup(self) -> list[str]:
         """Setup files still absent or unfilled."""

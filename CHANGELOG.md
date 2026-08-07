@@ -14,6 +14,54 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-08-07 (late)
+
+**A CV is rendered once, a dead posting stops costing anything, and the Build button answers
+faster.** No prompt, model or threshold was touched.
+
+**One Chrome launch per document.** Measured on the live box: a Chrome launch is **17.5 s cold and
+~6 s warm**, and a build did **two or three** of them — a probe render to count pages, and then a
+final render of *the same bytes*. Now every check that can be answered from the markup is answered
+first, the document is rendered once, and the file that gets delivered is the one that was measured.
+A CV that fits is one launch; only a CV that came back too long is two. **~6 s off every build.**
+
+**The revision rate is now counted.** `docgen.built` carries `revised`, and `BuildResult.revised`
+with it. Each revision is a second frontier call and a second render, so how often it fires is the
+number that says whether the fix belongs in the prompt — which is the owner's call, not this
+commit's.
+
+**A posting that has closed stops costing us.** The describe fetch was always going to happen, so it
+now reads whether the posting is still live off the same response — `404`/`410`, or the page saying
+so — and marks the row closed. Deliberately not `403` or `429`: a board refusing us is not a posting
+ending, and treating it as one would hide live jobs. This works for every source now; before today
+only the LinkedIn metadata pass detected it.
+
+And a closed row is no longer re-fetched or re-embedded: `awaiting_description` and
+`awaiting_embedding` both had no `closed_at` condition, so a posting we knew was dead still cost a
+proxy fetch (the user's own metered bandwidth) and ~0.37 s of the shared embedder. `docgen`'s
+pre-build refresh reads the column before it spends a fetch, too.
+
+**The Build button answers faster.** Two things sat between the tap and "Building your CV":
+`ProfileFiles.is_ready()` loaded **every profile file — ~180,000 characters** — to compute one
+boolean, inside the webhook Telegram was waiting on; and the docgen worker then idled up to **5
+seconds** before claiming the job. `is_ready` now reads the one file the answer depends on
+(`context.md`, which is exactly what `grounding` refuses on) and the interactive lanes — `docgen`
+and `setup` — poll at 1 s via `INTERACTIVE_IDLE_SLEEP_SEC`. **~5 s off the tap.**
+
+Deliberately *not* the `filled` column, though it would have been faster still: it is derived, it
+has drifted in production before (`setup_routes` repairs it on page load), and a stale flag would
+refuse a build for somebody whose profile is finished.
+
+**CLAUDE.md §3a: prompts are sacred.** Written down at the owner's instruction — no prompt change
+without explicit confirmation, covering `libs/prompts/`, `libs/agents/*.md`, `libs/scaffolds/` and
+every per-user file (`base_cv.html`, `tailor_cv.md`, `tailor_cover.md`, `label.md`, …). Those are
+tuned per person for the quality of their CV, and the label template's hash is every user's
+`profile_version`.
+
+Gates: `lint-imports` 2 kept; `ruff check .` clean; `alembic upgrade head` from empty; **1,371
+passed, 22 skipped**; contract unchanged; `npm run build` clean. The render-count, closed-posting
+and check-ordering tests were each verified to fail against the code that made them necessary.
+
 ## 2026-08-07 (night)
 
 **Removing the age check from delivery released a 19-day-old backlog, and this is the guard that

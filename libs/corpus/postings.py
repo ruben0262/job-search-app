@@ -345,7 +345,7 @@ def fetch_job(url: str, *, client: httpx.Client, snippet: str = "", title: str =
     snippet = (snippet or "").strip()
     job_id = linkedin_id(url)
     out = Posting(description="", applicants=None, reposted=None, workplace=None,
-                  posted_at=None, application_url=None, easy_apply=None)
+                  posted_at=None, application_url=None, easy_apply=None, accepting=None)
 
     if not job_id:
         return _fetch_board(url, client=client, snippet=snippet, title=title, out=out, tally=tally)
@@ -364,8 +364,17 @@ def _fetch_board(url: str, *, client: httpx.Client, snippet: str, title: str,
     try:
         if url:
             response = client.get(url)
+            # Gone, said by the server. 404 and 410 only: a 403 or a 429 is the board refusing us,
+            # not the posting ending, and treating those as closed would hide live jobs.
+            if response.status_code in (404, 410):
+                out["accepting"] = False
+                tally(f"generic_http_{response.status_code}")
+                tally("closed")
+                out["description"] = (snippet or title)[:MAX_DESC]
+                return out
             if response.status_code == 200:
                 # Free while the page is open: the ATS link, and the JSON-LD workplace type.
+                out["accepting"] = parse_accepting(response.text)
                 out["application_url"] = extract_ats_url(response.text)
                 out["workplace"] = parse_workplace(response.text)
                 body = jsonld_description(response.text)
@@ -397,6 +406,7 @@ def _fetch_linkedin(job_id: str, *, client: httpx.Client, snippet: str, title: s
             continue
         if response.status_code == 200:
             # The guest page's values beat the scrape's on every field it carries.
+            out["accepting"] = parse_accepting(response.text)
             out["applicants"] = parse_applicants(response.text) or out["applicants"]
             # The caption, because "first 25" is fewer than 25 and "over 200" is a ceiling.
             out["applicants_caption"] = applicants_caption(response.text)
@@ -414,6 +424,9 @@ def _fetch_linkedin(job_id: str, *, client: httpx.Client, snippet: str, title: s
             break
         if response.status_code in TERMINAL_STATUSES:
             # The posting is gone. A fresh IP cannot bring it back, and this was six requests.
+            # 400 is in that set because the guest endpoint answers it for a retired id, so it says
+            # the same thing 404 does — the row will never describe, embed or score again.
+            out["accepting"] = False
             tally(f"li_http_{response.status_code}")
             break
         tally(f"li_http_{response.status_code}")

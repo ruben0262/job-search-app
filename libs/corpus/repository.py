@@ -206,6 +206,9 @@ class CorpusRepository:
         query = (
             select(CorpusJob)
             .where(CorpusJob.trimmed_at.is_(None),
+                   # A closed posting is not worth a fetch: on the proxied tier that fetch is the
+                   # user's own metered bandwidth, and nothing downstream will ever read the text.
+                   CorpusJob.closed_at.is_(None),
                    or_(CorpusJob.description.is_(None),
                        func.length(CorpusJob.description) < min_chars))
             .order_by(CorpusJob.first_seen_at.desc())
@@ -263,7 +266,10 @@ class CorpusRepository:
         """Jobs with text but no vector. Backed by the partial index on the same predicate."""
         return list(self._s.scalars(
             select(CorpusJob)
-            .where(CorpusJob.embedding.is_(None), CorpusJob.description.is_not(None))
+            .where(CorpusJob.embedding.is_(None), CorpusJob.description.is_not(None),
+                   # Same reason, in CPU rather than bandwidth: the pre-score filter refuses a
+                   # closed row, so embedding one is ~0.37s of the shared embedder spent on nothing.
+                   CorpusJob.closed_at.is_(None), CorpusJob.trimmed_at.is_(None))
             .order_by(CorpusJob.id)
             .limit(limit)))
 

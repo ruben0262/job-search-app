@@ -518,3 +518,63 @@ def test_a_cover_letter_is_not_judged_by_the_cvs_checklist(tmp_path):
     assert any("education" in issue for issue in as_cv.issues), (
         "the CV checklist should still look for sections")
     assert as_cover.ats_ok, as_cover.issues
+
+
+# ── one render per document (2026-08-07) ──────────────────────────────────────────────────────
+
+def test_a_cv_that_fits_is_rendered_once(monkeypatch, fake_chrome, tmp_path):
+    """Chrome is ~6s a launch on the box, and the old final compile re-rendered the probe's bytes."""
+    session, user, _job, _state, _pinned = _session(monkeypatch)
+
+    result = run.run_build(session, user.id, 7, client=FakeClient(),
+                           send_document=Recorder(), token="t", workdir=tmp_path)
+
+    assert fake_chrome["calls"] == 1, "the delivered PDF is the one that was measured"
+    assert result.calls == 1
+    assert result.revised is False
+
+
+def test_a_cv_that_came_back_too_long_is_rendered_twice_and_says_so(monkeypatch, fake_chrome,
+                                                                    tmp_path):
+    """The revision loop is unchanged — but each one costs a second call and a second render."""
+    session, user, _job, _state, _pinned = _session(monkeypatch)
+    fake_chrome["pages"] = 4
+
+    result = run.run_build(session, user.id, 7, client=FakeClient(),
+                           send_document=Recorder(), token="t", workdir=tmp_path)
+
+    assert fake_chrome["calls"] == 2, "one render per attempt, and no separate probe"
+    assert result.calls == 2
+    assert result.revised is True, "the rate of this is what says whether the prompt needs work"
+
+
+def test_the_delivered_file_is_never_named_after_the_retry(monkeypatch, fake_chrome, tmp_path):
+    """Telegram shows the filename to the user."""
+    session, user, _job, _state, _pinned = _session(monkeypatch)
+    fake_chrome["pages"] = 4
+    send = Recorder()
+
+    run.run_build(session, user.id, 7, client=FakeClient(), send_document=send, token="t",
+                  workdir=tmp_path)
+
+    filename = send.sent[0][3]
+    assert not filename.startswith("retry-"), filename
+    assert filename == "Alice_Example_CV.pdf"
+
+
+def test_a_document_that_fails_its_checks_never_reaches_chrome(monkeypatch, fake_chrome,
+                                                               tmp_path):
+    """A check answerable from the markup must not cost a browser launch.
+
+    `sanitise` strips hidden content on the way out of the model and `scan_hidden` verifies the
+    strip worked, so the two agreeing is the normal case — this forces the disagreement to assert
+    the ordering: the scan runs first, and a document that fails it is refused before any render.
+    """
+    session, user, _job, _state, _pinned = _session(monkeypatch)
+    monkeypatch.setattr(run.build, "scan_hidden", lambda _html: ["display:none in the header"])
+
+    with pytest.raises(run.NotBuildable, match="hidden content"):
+        run.run_build(session, user.id, 7, client=FakeClient(), send_document=Recorder(),
+                      token="t", workdir=tmp_path)
+
+    assert fake_chrome["calls"] == 0

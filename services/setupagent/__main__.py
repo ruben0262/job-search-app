@@ -9,7 +9,7 @@ from libs.db.models import QueueJob, SetupMessage
 from libs.db.session import session_scope
 from libs.llm import CLAUDE_KINDS, client_for
 from libs.obs import audit, configure
-from libs.queue.worker import Terminal, run_worker
+from libs.queue.worker import INTERACTIVE_IDLE_SLEEP_SEC, Terminal, run_worker
 from libs.secrets import SecretStore, install, redacting
 
 logger = logging.getLogger(__name__)
@@ -75,7 +75,8 @@ def _fail(session, reply_row: SetupMessage, detail: str) -> None:
 def main() -> int:
     configure("setupagent")
     install()
-    run_worker(session_scope, "setup", os.environ.get("WORKER_NAME", "setupagent-1"), handle)
+    run_worker(session_scope, "setup", os.environ.get("WORKER_NAME", "setupagent-1"), handle,
+               idle_sleep=INTERACTIVE_IDLE_SLEEP_SEC)
     return 0
 
 

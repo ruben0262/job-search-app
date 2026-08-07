@@ -39,6 +39,35 @@ Not "later", and not a test of how the code is arranged.
 - Removing something is a decision that belongs in the commit message with its evidence, so it can
   be reversed by a person who was not there.
 
+## 3a. Prompts are sacred. Never edit one without being asked
+
+**No prompt changes without explicit confirmation from the owner, ever — not as part of a
+refactor, not to save tokens, not to fix a bug the prompt appears to cause.** Propose the change,
+state what it would buy, and wait. This is stricter than every other rule in this file: the answer
+to "may I just reword this line" is always to ask.
+
+What counts as a prompt:
+
+- `libs/prompts/` — the generation prompts and `label_template.md`. The template's *hash* is every
+  user's `profile_version`, so a wording change silently invalidates every label and every model on
+  the platform at once.
+- `libs/agents/*.md` — the setup commands. Byte-identical to the reference instance by design.
+- `libs/scaffolds/` — what a new account is seeded with.
+- **Every per-user file**: `base_cv.html`, `tailor_cv.md`, `tailor_cover.md`, `label.md`,
+  `08-role-angles.md`, `context.md` and the rest of `user_profile_files`. These are not templates
+  with a shared owner — each one is *that person's*, tuned for the quality of their CV and cover
+  letter, and editing one is editing their work.
+
+Two consequences worth stating, because they are what makes this rule expensive to break:
+
+- A prompt edit is not local. It changes what the model writes for a real person applying for a
+  real job, and the damage shows up as a worse CV rather than as an error.
+- Where a change is genuinely wanted, it is change-controlled: approved explicitly, measured with an
+  A/B, and recorded in `CHANGELOG.md` — the rule the reference instance already applied to
+  `libs/prompts` (`CODE_STRUCTURE.md` §7.4), extended here to every file above.
+
+If a prompt looks like the cause of a defect, say so and propose the wording. Do not apply it.
+
 ## 4. Measure before changing, and after
 
 The roadmap's own rule, generalised: no optimisation, filter or removal ships without the number it

@@ -65,6 +65,13 @@ def describe_pending(corpus: CorpusRepository, client, *, linkedin: bool | None 
             logger.warning("describe: stopping, the proxy refused: %s", exc)
             break
 
+        if posting.get("accepting") is False:
+            # The one fetch we were always going to make is also the one that can tell us the
+            # posting is dead — so this costs nothing and stops every later stage paying for it.
+            corpus.mark_closed(job.id)
+            report.closed += 1
+            continue
+
         # Metadata is worth keeping even when the description came back thin: the card and filter read it.
         before = (job.applicants, job.easy_apply, job.reposted, job.workplace)
         corpus.set_posting_metadata(

@@ -430,3 +430,50 @@ def test_no_budget_means_the_pass_runs_to_completion(repo):
 
     report = describe_pending(corpus, Fast(), linkedin=True, limit=3)
     assert report.attempted == 3
+
+
+# ── a dead posting stops costing us anything (2026-08-07) ─────────────────────────────────────
+
+GONE_BOARD = "<html><body>This job is no longer accepting applications.</body></html>"
+
+
+def _board(repo: CorpusRepository, **kwargs) -> int:
+    return repo.add(url=f"https://boards.greenhouse.io/acme/jobs/{uuid.uuid4().int % 10**9}",
+                    source="greenhouse", title="Backend Engineer", company="Acme", **kwargs)
+
+
+def test_a_board_posting_that_says_it_is_closed_is_marked_closed(repo):
+    """The describe fetch was always going to happen — reading the answer off it is free."""
+    corpus, session = repo
+    job_id = _board(corpus)
+    session.flush()
+
+    report = describe_pending(corpus, FakeClient(GONE_BOARD), limit=10)
+    session.flush()
+
+    assert session.get(CorpusJob, job_id).closed_at is not None
+    assert report.closed == 1
+
+
+def test_a_board_refusing_us_is_not_a_posting_ending(repo):
+    """404 and 410 mean gone; a 429 is the board rate-limiting us and must not close the row."""
+    corpus, session = repo
+    job_id = _board(corpus)
+    session.flush()
+
+    describe_pending(corpus, FakeClient("", status_code=429), limit=10)
+    session.flush()
+
+    assert session.get(CorpusJob, job_id).closed_at is None
+
+
+def test_a_closed_posting_is_never_fetched_or_embedded_again(repo):
+    """On the proxied tier the fetch is the user's own bandwidth; the embed is shared CPU."""
+    corpus, session = repo
+    job_id = _board(corpus)
+    corpus.set_description(job_id, "x " * 300)
+    corpus.mark_closed(job_id)
+    session.flush()
+
+    assert job_id not in [row.id for row in corpus.awaiting_description(limit=100)]
+    assert job_id not in [row.id for row in corpus.awaiting_embedding(limit=100)]

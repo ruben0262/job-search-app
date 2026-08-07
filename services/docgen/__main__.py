@@ -12,7 +12,7 @@ from libs.db.models import QueueJob
 from libs.db.session import session_scope
 from libs.llm import CLAUDE_KINDS, LlmError, client_for
 from libs.obs import configure
-from libs.queue.worker import Terminal, run_worker
+from libs.queue.worker import INTERACTIVE_IDLE_SLEEP_SEC, Terminal, run_worker
 from libs.secrets import SecretStore, install, redacting
 from services.docgen.pdf import CompileFailed
 from services.docgen.run import NotBuildable, run_build
@@ -103,7 +103,8 @@ def _build(session, job: QueueJob, client, bot_token: str, *, job_id: int, kind:
 def main() -> int:
     configure("docgen")
     install()
-    run_worker(session_scope, "docgen", os.environ.get("WORKER_NAME", "docgen-1"), handle)
+    run_worker(session_scope, "docgen", os.environ.get("WORKER_NAME", "docgen-1"), handle,
+               idle_sleep=INTERACTIVE_IDLE_SLEEP_SEC)
     return 0
 
 

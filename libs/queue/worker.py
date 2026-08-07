@@ -18,6 +18,11 @@ logger = logging.getLogger(__name__)
 # How long to wait when a lane is empty.
 IDLE_SLEEP_SEC = 5.0
 
+# The same, for the lanes a person is watching. A tap on Build my CV, or a message in a setup chat,
+# waits this long before the job is even claimed — five seconds of it is the largest single delay
+# between the tap and anything happening, and it is spent doing nothing.
+INTERACTIVE_IDLE_SLEEP_SEC = 1.0
+
 # Expired claims are swept from inside the loop rather than by a separate cron.
 SWEEP_EVERY_SEC = 60.0
 

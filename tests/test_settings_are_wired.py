@@ -70,3 +70,15 @@ def test_the_cycle_budget_fits_inside_the_unit_that_kills_it():
         f"the cycle budget ({HARVEST_CYCLE_BUDGET_SECONDS}s) has to leave room inside the unit's "
         f"{seconds}s timeout, or systemd stops the cycle mid-stage rather than the cycle stopping "
         "itself and reporting what is left")
+
+
+def test_the_lanes_a_person_is_waiting_on_poll_faster_than_the_rest():
+    """Five seconds between a tap on Build and the job being claimed is five seconds of nothing."""
+    from libs.queue.worker import IDLE_SLEEP_SEC, INTERACTIVE_IDLE_SLEEP_SEC
+
+    assert INTERACTIVE_IDLE_SLEEP_SEC < IDLE_SLEEP_SEC
+
+    for name in ("services/docgen/__main__.py", "services/setupagent/__main__.py"):
+        body = (ROOT / name).read_text(encoding="utf-8")
+        assert "INTERACTIVE_IDLE_SLEEP_SEC" in body, (
+            f"{name} runs a lane somebody is watching, so it must not wait the background poll")

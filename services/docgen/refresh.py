@@ -14,7 +14,16 @@ class PostingClosed(RuntimeError):
 
 
 def refresh_before_build(session, job, client) -> dict:
-    """Re-read the posting's live metadata, store it, and raise if it has closed."""
+    """Re-read the posting's live metadata, store it, and raise if it has closed.
+
+    A row already marked closed is answered from the column: the fetch costs the user's own metered
+    proxy bandwidth, and it cannot tell us anything the corpus does not already know.
+    """
+    if job.closed_at is not None:
+        logger.info("docgen: %s was already closed, refusing without a fetch", job.url)
+        raise PostingClosed(
+            "this posting is no longer accepting applications — nothing was built or charged")
+
     meta = fetch_meta(job.url, client=client)
 
     corpus = CorpusRepository(session)
