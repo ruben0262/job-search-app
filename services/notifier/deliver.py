@@ -19,6 +19,7 @@ from libs.obs import audit
 from libs.queue import enqueue
 from libs.scoring.thresholds import DEFAULT_CUTOFF, cutoff_for
 from libs.secrets import SecretStore
+from libs.tenant.filters import pending_match_conditions
 from services.notifier.buttons import keyboard
 from services.notifier.card import FeedItem
 from services.notifier.card import render as render_card
@@ -64,12 +65,10 @@ def pending_feed(session: Session, user_id: _uuid.UUID, *, cutoff: float,
                CorpusJob.easy_apply, CorpusJob.reposted, CorpusJob.workplace,
                CorpusJob.first_seen_at)
         .join(CorpusJob, CorpusJob.id == UserJobState.job_id)
-        .where(UserJobState.user_id == user_id,
-               UserJobState.notified_at.is_(None),
-               # Given up on by the sweep, which is the only thing that looks at a pending row's age.
-               UserJobState.retired_at.is_(None),
-               UserJobState.score.is_not(None),
-               UserJobState.score >= cutoff)
+        # Shared with the status page, so "waiting" means the same thing in both. It did not:
+        # the page omitted `retired_at` and reported 99 matches waiting when all 99 had been
+        # given up on, which read as a stalled lane and was an idle correct one.
+        .where(UserJobState.user_id == user_id, *pending_match_conditions(cutoff))
         # Known-fresh first, then undated, and only then by score.
         .order_by(CorpusJob.posted_at.is_(None), UserJobState.score.desc())
         .limit(limit * CANDIDATE_MULTIPLIER)).all()

@@ -75,6 +75,11 @@ class CorpusJob(Base):
     discovered_by: Mapped[uuid.UUID | None] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), index=True)
 
+    # Consecutive failed attempts to read this posting's text. Two and it is abandoned: never
+    # described, embedded or scored again. The describer had no memory before this, so a page that
+    # refused to answer was asked again every fifteen minutes for as long as it stayed in window.
+    describe_failures: Mapped[int] = mapped_column(SmallInteger, default=0, server_default="0")
+
     # What the feed card shows: how contested, how fresh, one-click or not, and where.
     applicants: Mapped[int | None] = mapped_column(Integer)
     # The number alone means the wrong thing.

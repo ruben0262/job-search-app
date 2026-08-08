@@ -128,13 +128,110 @@ def test_a_feed_with_no_query_stores_null_rather_than_an_empty_string():
     assert link.as_corpus_row()["discovered_via"] is None
 
 
-def test_the_linkedin_ingest_names_the_account_it_ran_for():
-    """The wiring itself: a pass that does not pass the owner through records nothing."""
-    import inspect
+def test_the_linkedin_ingest_names_the_account_it_ran_for(db):
+    """A pass that does not carry the owner through records nothing.
 
-    from services.harvester import linkedin
+    Asserted by running the ingest and reading the row, not by grepping the module for a call.
+    The first version of this test matched a literal line of source, which would have passed while
+    the value was wrong and failed on a rename that changed nothing.
+    """
+    from libs.corpus.repository import CorpusRepository
+    from libs.db.models import CorpusJob, User
+    from services.harvester.linkedin import _ingest
+    from services.harvester.sources.base import JobLink
 
-    source = inspect.getsource(linkedin)
+    user = User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active")
+    db.add(user)
+    db.flush()
 
-    assert "_ingest(corpus, links, user_id=user.id)" in source, (
-        "the LinkedIn pass must tell the ingest whose harvest it is")
+    url = f"https://www.linkedin.com/jobs/view/{uuid.uuid4()}"
+    new = _ingest(CorpusRepository(db),
+                  [JobLink(url=url, title="Mechanical Design Engineer", source="linkedin",
+                           found_via="graduate software engineer")],
+                  user_id=user.id)
+    db.flush()
+
+    assert new == 1
+    from sqlalchemy import select
+    row = db.scalar(select(CorpusJob).where(CorpusJob.url == url))
+    assert row.discovered_by == user.id, "whose proxy paid for it"
+    assert row.discovered_via == "graduate software engineer", "and what returned it"
+
+
+# ── abandoning a posting we cannot read ───────────────────────────────────────────────────────
+
+def test_a_posting_is_abandoned_after_two_failed_reads(db):
+    """Two, and it is never fetched, embedded or scored again.
+
+    Before this the describer had no memory: a page that returned no usable text came back every
+    fifteen minutes forever. Measured 2026-08-08, the same ~56 LinkedIn ids for a week, each
+    attempt on a user's own metered residential proxy.
+    """
+    from sqlalchemy import select
+
+    from libs.corpus.repository import (
+        DESCRIBE_MAX_FAILURES,
+        CorpusRepository,
+        awaiting_description_conditions,
+        awaiting_embedding_conditions,
+    )
+    from libs.db.models import CorpusJob
+
+    corpus = CorpusRepository(db)
+    job_id = corpus.add(url=f"https://www.linkedin.com/jobs/view/{uuid.uuid4()}",
+                        source="linkedin", title="Unreadable Posting")
+    db.execute(CorpusJob.__table__.update().where(CorpusJob.id == job_id)
+               .values(description="a snippet only"))
+    db.flush()
+
+    assert corpus.record_describe_failure(job_id) == 1
+    still_listed = db.scalars(
+        select(CorpusJob.id).where(*awaiting_description_conditions())).all()
+    assert job_id in still_listed, "one failure is a blip and deserves another IP"
+
+    assert corpus.record_describe_failure(job_id) == DESCRIBE_MAX_FAILURES
+    db.flush()
+
+    assert job_id not in db.scalars(
+        select(CorpusJob.id).where(*awaiting_description_conditions())).all()
+    assert job_id not in db.scalars(
+        select(CorpusJob.id).where(*awaiting_embedding_conditions())).all(), \
+        "its only description is its own title; a vector for that is worse than none"
+
+
+def test_a_successful_read_clears_the_count(db):
+    """Consecutive means consecutive. A page that answers has not failed twice in a row."""
+    from libs.corpus.repository import CorpusRepository
+    from libs.db.models import CorpusJob
+
+    corpus = CorpusRepository(db)
+    job_id = corpus.add(url=f"https://www.linkedin.com/jobs/view/{uuid.uuid4()}",
+                        source="linkedin", title="Intermittent Posting")
+    db.flush()
+
+    corpus.record_describe_failure(job_id)
+    corpus.clear_describe_failures(job_id)
+    db.flush()
+
+    assert db.get(CorpusJob, job_id).describe_failures == 0
+
+
+def test_an_abandoned_posting_is_never_scored_for_anybody(db):
+    """The pre-score filter refuses it too, or a user's model is fitted against a job title."""
+    from sqlalchemy import select
+
+    from libs.corpus.repository import DESCRIBE_MAX_FAILURES, CorpusRepository
+    from libs.db.models import CorpusJob
+    from libs.tenant.filters import UserFilters, candidate_conditions
+
+    corpus = CorpusRepository(db)
+    job_id = corpus.add(url=f"https://www.linkedin.com/jobs/view/{uuid.uuid4()}",
+                        source="linkedin", title="Unreadable Posting")
+    db.flush()
+    for _ in range(DESCRIBE_MAX_FAILURES):
+        corpus.record_describe_failure(job_id)
+    db.flush()
+
+    filters = UserFilters.from_config(None, max_age_hours=24)
+    assert job_id not in db.scalars(
+        select(CorpusJob.id).where(*candidate_conditions(filters))).all()

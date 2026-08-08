@@ -204,3 +204,81 @@ def test_spending_the_daily_allowance_is_not_a_stall(api):
     delivery = next(c for c in http.get("/status").json()["components"] if c["key"] == "delivery")
     assert delivery["state"] == "ok", delivery
     assert "Today's" in delivery["detail"]
+
+
+def test_a_retired_match_is_not_reported_as_waiting(api):
+    """The user is told what will happen, not what a query happened to count.
+
+    A match that aged past the window while waiting is retired: the notifier has deliberately
+    given up on it, because sending a two-day-old posting is worse than sending nothing. The
+    status page asked the same question without that clause, so it counted those rows as a
+    backlog. In production on 2026-08-08 an account saw "99 matches waiting" and an amber delivery
+    warning while **all 99 were retired** — the lane was idle and correct, and the page said it
+    was behind.
+
+    Asserted through what the page tells the user, so it holds whatever the query is rewritten to.
+    """
+    from datetime import timedelta
+
+    from libs.db.models import CorpusJob, UserJobState
+
+    http, session, user = api
+    user.active = True
+    user.onboarding_completed_at = datetime.now(UTC)
+    # Something was delivered a while back, so the page has a "last sent" to reason about.
+    sent_job = CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
+                         title="Backend Engineer", first_seen_at=datetime.now(UTC))
+    session.add(sent_job)
+    session.flush()
+    session.add(UserJobState(user_id=user.id, job_id=sent_job.id, score=95.0,
+                             scored_at=datetime.now(UTC),
+                             notified_at=datetime.now(UTC) - timedelta(hours=48)))
+
+    # And a high-scoring match the notifier has already given up on.
+    retired_job = CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
+                            title="Platform Engineer", first_seen_at=datetime.now(UTC))
+    session.add(retired_job)
+    session.flush()
+    session.add(UserJobState(user_id=user.id, job_id=retired_job.id, score=95.0,
+                             scored_at=datetime.now(UTC), notified_at=None,
+                             retired_at=datetime.now(UTC) - timedelta(hours=1)))
+    session.flush()
+
+    delivery = next(c for c in http.get("/status").json()["components"]
+                    if c["key"] == "delivery")
+
+    assert "1 match" not in delivery["detail"], delivery["detail"]
+    assert "waiting" not in delivery["detail"], (
+        f"a retired match is not waiting for anything: {delivery['detail']!r}")
+
+
+def test_a_genuinely_waiting_match_is_still_reported(api):
+    """The rule is about retired rows, not about hiding a real backlog."""
+    from datetime import timedelta
+
+    from libs.db.models import CorpusJob, UserJobState
+
+    http, session, user = api
+    user.active = True
+    user.onboarding_completed_at = datetime.now(UTC)
+    sent_job = CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
+                         title="Backend Engineer", first_seen_at=datetime.now(UTC))
+    session.add(sent_job)
+    session.flush()
+    session.add(UserJobState(user_id=user.id, job_id=sent_job.id, score=95.0,
+                             scored_at=datetime.now(UTC),
+                             notified_at=datetime.now(UTC) - timedelta(hours=48)))
+
+    waiting_job = CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
+                            title="Platform Engineer", first_seen_at=datetime.now(UTC))
+    session.add(waiting_job)
+    session.flush()
+    session.add(UserJobState(user_id=user.id, job_id=waiting_job.id, score=95.0,
+                             scored_at=datetime.now(UTC), notified_at=None, retired_at=None))
+    session.flush()
+
+    delivery = next(c for c in http.get("/status").json()["components"]
+                    if c["key"] == "delivery")
+
+    assert delivery["state"] != "ok", "two days with a real match waiting is a stall"
+    assert "waiting" in delivery["detail"]

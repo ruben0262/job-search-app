@@ -8,7 +8,7 @@ from time import monotonic
 from sqlalchemy import select
 
 from libs.corpus.postings import ProxyUnusable, fetch_job, fetch_meta
-from libs.corpus.repository import CorpusRepository
+from libs.corpus.repository import DESCRIBE_MAX_FAILURES, CorpusRepository
 from libs.db.models import User
 from libs.obs import audit
 from libs.secrets import SecretStore, redacting
@@ -35,6 +35,9 @@ class DescribeReport:
     proxy_error: str | None = None
     # Postings that answered "no longer accepting applications".
     closed: int = 0
+    # Postings given up on after DESCRIBE_MAX_FAILURES consecutive unreadable fetches. The number
+    # worth watching: it is proxy spend the platform will never make again.
+    abandoned: int = 0
 
     @property
     def hit_rate(self) -> float:
@@ -95,14 +98,24 @@ def describe_pending(corpus: CorpusRepository, client, *, linkedin: bool | None 
         text = posting.description
         if len(text) > len(job.description or ""):
             corpus.set_description(job.id, text)
+            corpus.clear_describe_failures(job.id)
             report.described += 1
         else:
+            # The page gave us nothing better than we already had. Counted on the row, because a
+            # describer with no memory asks the same dead posting again every pass — on the
+            # proxied tier, with the user's own metered bandwidth, forever.
+            failures = corpus.record_describe_failure(job.id)
             report.still_thin += 1
+            if failures >= DESCRIBE_MAX_FAILURES:
+                report.abandoned += 1
+                logger.warning("describe: giving up on %s after %d failed reads — it will not be "
+                               "described, embedded or scored again", job.url, failures)
 
     logger.info("describe: %d attempted, %d described, %d still thin — %s",
                 report.attempted, report.described, report.still_thin, report.outcomes)
     audit(logger, "harvest.describe", attempted=report.attempted, described=report.described,
-          still_thin=report.still_thin, linkedin=linkedin, outcomes=report.outcomes)
+          still_thin=report.still_thin, abandoned=report.abandoned, linkedin=linkedin,
+          outcomes=report.outcomes)
     return report
 
 

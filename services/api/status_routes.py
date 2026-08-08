@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from libs import limits
 from libs.db.models import CorpusJob, QueueJob, User, UserJobState, UserModel
 from libs.scoring.thresholds import cutoff_for
+from libs.tenant.filters import pending_match_conditions
 from services.api.deps import current_user, get_db
 
 logger = logging.getLogger(__name__)
@@ -137,8 +138,8 @@ def _delivery(db: Session, user: User, now: datetime) -> dict:
         select(func.count()).select_from(UserJobState)
         .join(CorpusJob, CorpusJob.id == UserJobState.job_id)
         .where(UserJobState.user_id == user.id,
-               UserJobState.notified_at.is_(None),
-               UserJobState.score >= cutoff,
+               # The notifier's own definition of "still owed", not a second copy of it.
+               *pending_match_conditions(cutoff),
                CorpusJob.closed_at.is_(None))) or 0
     last_sent = db.scalar(
         select(func.max(UserJobState.notified_at)).where(UserJobState.user_id == user.id))

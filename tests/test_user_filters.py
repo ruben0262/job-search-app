@@ -140,25 +140,34 @@ def test_every_caller_that_still_asks_uses_the_shared_conditions():
             f"{name} still has its own freshness comparison")
 
 
-def test_the_conditions_are_the_ones_the_callers_need():
-    """The shape, so a caller can splat them into a `where`."""
-    from libs.tenant.filters import candidate_conditions
+def test_a_closed_posting_is_never_a_candidate(db):
+    """What the conditions are *for*, rather than how many of them there are.
 
-    conditions = candidate_conditions(built(config(locations=["europe"])))
+    This used to assert `len(conditions) == 3`, which is a statement about the implementation and
+    broke twice in one day for two correct changes. The behaviour each condition exists to produce
+    is asserted directly instead, here and in the tests around it.
+    """
+    from datetime import UTC, datetime
 
-    assert len(conditions) == 4, "closed, fresh, in-country, proxied-source"
-    rendered = " ".join(str(c) for c in conditions)
-    assert "closed_at" in rendered
-    assert "posted_at" in rendered and "first_seen_at" in rendered
-    assert "country" in rendered
+    open_row = _row(db)
+    closed = _row(db, closed_at=datetime.now(UTC))
+
+    kept = _survivors(db, built(config()))
+    assert open_row.id in kept
+    assert closed.id not in kept
 
 
-def test_naming_no_country_still_produces_a_usable_condition():
-    """`true()` rather than a missing element."""
-    from libs.tenant.filters import candidate_conditions
+def test_a_posting_outside_the_wanted_countries_is_never_a_candidate(db):
+    """And naming no country admits everywhere, rather than admitting nothing."""
+    here = _row(db, country="DE")
+    elsewhere = _row(db, country="US")
 
-    conditions = candidate_conditions(built(config()))
-    assert len(conditions) == 4
+    wanted = _survivors(db, built(config(locations=["europe"])))
+    assert here.id in wanted
+    assert elsewhere.id not in wanted
+
+    # No country named at all: an opinion nobody expressed must not filter everything out.
+    assert {here.id, elsewhere.id} <= _survivors(db, built(config()))
 
 
 # ── the age window, against a real database ─────────────────────────────────────────────────────

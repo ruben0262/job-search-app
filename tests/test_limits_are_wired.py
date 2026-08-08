@@ -227,12 +227,19 @@ def test_a_limits_default_is_one_of_the_values_offered():
     assert not wrong, f"a default that is not offered: {wrong}"
 
 
-def test_the_panel_keeps_no_copy_of_the_choices():
-    """The frontend renders what the catalogue serves. A second list here is the defect this
-    whole test file exists for, and it is invisible from the backend."""
+def test_the_panel_names_no_limit_of_its_own():
+    """A panel that renders the catalogue needs to know none of its keys.
+
+    The defect this guards is a second source of truth, and the only readable symptom from Python
+    is a limit's *name* appearing in the frontend — whatever the variable around it is called. An
+    earlier version of this test looked for `const CHOICES` by name, which would have passed
+    happily after a rename and failed on one that changed nothing.
+    """
     panel = (ROOT / "web" / "src" / "pages" / "AdminUserPage.tsx").read_text(encoding="utf-8")
 
-    assert "const CHOICES" not in panel, (
-        "AdminUserPage.tsx has its own CHOICES map again. The values belong in `libs/limits` and "
-        "reach the panel through `/admin/limits`.")
-    assert "spec.choices" in panel, "the panel must render the catalogue's own choices"
+    hardcoded = [limit.key for limit in LIMITS if limit.key in panel]
+
+    assert not hardcoded, (
+        f"AdminUserPage.tsx names these limits directly: {hardcoded}. It should render whatever "
+        "`/admin/limits` serves and know none of them by name, or the two lists drift and the "
+        "panel silently offers the wrong options.")

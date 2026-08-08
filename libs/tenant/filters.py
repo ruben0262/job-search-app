@@ -11,6 +11,7 @@ from libs.contracts.config import migrate_config
 from libs.corpus import langfilter, workfilter
 from libs.corpus.geo import wanted_countries
 from libs.corpus.ranking import applicant_glut
+from libs.corpus.repository import DESCRIBE_MAX_FAILURES
 from libs.db.models import CorpusJob
 from libs.limits import limit_default
 from libs.settings import PROXIED_SOURCES
@@ -132,6 +133,27 @@ class UserFilters:
         return None
 
 
+def pending_match_conditions(cutoff: float) -> list:
+    """Matches this account is actually still owed: scored above their cutoff and not given up on.
+
+    One definition, because there were two. The notifier requires `retired_at IS NULL` — a match
+    that aged past the window while waiting is one it deliberately abandoned, and sending it late
+    is worse than not sending it. The status page asked the same question without that clause, so
+    it counted work nobody would ever do: on 2026-08-08 an account showed "99 matches waiting" and
+    a delivery warning, and **all 99 were retired**. The notifier was right and idle; the page was
+    wrong and amber.
+    """
+    from libs.db.models import UserJobState  # noqa: PLC0415 - avoids a cycle at import time
+
+    return [
+        UserJobState.notified_at.is_(None),
+        # The clause whose absence produced the phantom.
+        UserJobState.retired_at.is_(None),
+        UserJobState.score.is_not(None),
+        UserJobState.score >= cutoff,
+    ]
+
+
 def filters_for(session, user) -> UserFilters:
     """This account's pre-score conditions, with the operator's numbers already resolved.
 
@@ -176,4 +198,7 @@ def candidate_conditions(filters: UserFilters, *, now: datetime | None = None) -
         # proxy being served another account's LinkedIn postings.
         true() if filters.proxied_sources
         else CorpusJob.source.notin_(tuple(sorted(PROXIED_SOURCES))),
+        # A posting whose page refused to answer twice was abandoned, and its stored "description"
+        # is its own title. Scoring a user's model against a sentence is worse than not scoring.
+        CorpusJob.describe_failures < DESCRIBE_MAX_FAILURES,
     ]

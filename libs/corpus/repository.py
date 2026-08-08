@@ -22,6 +22,22 @@ CORPUS_HOT_DAYS = 90
 # Below this, stored text is a teaser rather than a description and the job is re-fetched from its own page.
 MIN_DESCRIPTION = 200
 
+# Consecutive failed reads before a posting is abandoned: never described, embedded or scored.
+#
+# Two, because the second attempt is already the evidence. The first failure can be a rate limit
+# or a blip and deserves another IP; a second says the page has nothing to give. Every attempt on
+# the LinkedIn tier is a user's own metered residential bandwidth, and before this rule the same
+# ids were retried every fifteen minutes for a week.
+#
+# A constant rather than a platform setting on purpose — the owner asked for one simple rule. If
+# an operator ever needs it different it belongs in `libs.limits` with the rest.
+DESCRIBE_MAX_FAILURES = 2
+
+
+def _readable() -> tuple:
+    """Rows we have not given up on reading. Shared by every stage downstream of describing."""
+    return (CorpusJob.describe_failures < DESCRIBE_MAX_FAILURES,)
+
 
 def awaiting_description_conditions(min_chars: int = MIN_DESCRIPTION,
                                     max_age_hours: int | None = None) -> tuple:
@@ -49,6 +65,7 @@ def awaiting_description_conditions(min_chars: int = MIN_DESCRIPTION,
 
     return (CorpusJob.trimmed_at.is_(None),
             CorpusJob.closed_at.is_(None),
+            *_readable(),
             *fresh,
             or_(CorpusJob.description.is_(None),
                 func.length(CorpusJob.description) < min_chars))
@@ -62,6 +79,10 @@ def awaiting_embedding_conditions() -> tuple:
     """
     return (CorpusJob.trimmed_at.is_(None),
             CorpusJob.closed_at.is_(None),
+            # An abandoned row's only "description" is its own title. Embedding that produces a
+            # vector for a sentence rather than for a job, and scoring against it is worse than
+            # not scoring at all.
+            *_readable(),
             CorpusJob.description.is_not(None),
             CorpusJob.embedding.is_(None))
 
@@ -285,6 +306,21 @@ class CorpusRepository:
                    CorpusJob.posted_at.is_(None))
             .order_by(CorpusJob.first_seen_at.desc())
             .limit(limit)))
+
+    def record_describe_failure(self, job_id: int) -> int:
+        """One more failed read. Returns the new count, so the caller can log the abandonment."""
+        return self._s.scalar(
+            update(CorpusJob)
+            .where(CorpusJob.id == job_id)
+            .values(describe_failures=CorpusJob.describe_failures + 1)
+            .returning(CorpusJob.describe_failures))
+
+    def clear_describe_failures(self, job_id: int) -> None:
+        """A read that worked. Consecutive means consecutive."""
+        self._s.execute(
+            update(CorpusJob)
+            .where(CorpusJob.id == job_id, CorpusJob.describe_failures > 0)
+            .values(describe_failures=0))
 
     def mark_closed(self, job_id: int) -> None:
         """Record that the posting is no longer accepting applications."""

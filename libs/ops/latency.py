@@ -260,17 +260,24 @@ STAGES: tuple[Stage, ...] = (
     Stage(
         key="fetched_to_stored",
         label="Fetched → stored",
-        zone="dedup and insert",
-        what="We had the posting in hand and it became a corpus row: four dedup lookups and an "
-             "insert. **This is the only part of finding a job that is ours**, and it used to be "
-             "invisible — added to the board's own lag it sat under a p90 of thirteen hours that no "
-             "amount of work here would have moved.",
+        zone="batch wait, then dedup and insert",
+        what="From the moment a source handed us this link to the moment it was a corpus row. "
+             "**Most of this is waiting for the rest of the batch, not work on this row.** A "
+             "cycle gathers every query concurrently and ingests only when all of them have "
+             "returned, so a link parsed in the first second of a 31-second gather waits the "
+             "whole 31 seconds before anything touches it. "
+             "Measured 2026-08-08: `gather 31,122ms` against `ingest 1,112ms` for 125 links — the "
+             "four dedup lookups and the insert are about **9ms per link**. A p50 of 84 seconds "
+             "here is the batch, and speeding up dedup would move almost none of it.",
         scope="corpus",
         start="c.fetched_at",
         end="c.first_seen_at",
         caveat="`fetched_at` was added on 2026-08-04 and older rows were deliberately not "
                "backfilled — nothing recorded when their request went out, so a filled-in value "
-               "would be a confident measurement of nothing.",
+               "would be a confident measurement of nothing. This stage is also **not** a "
+               "judgement on the dedup queries: it is dominated by batch latency, and it used to "
+               "be labelled as though it were not, which read as a three-minute problem where "
+               "there was none.",
     ),
     Stage(
         key="found_to_described",
