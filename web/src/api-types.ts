@@ -723,7 +723,11 @@ export interface paths {
          */
         put: operations["set_chat_credentials_telegram_chat_put"];
         post?: never;
-        delete?: never;
+        /**
+         * Unset Chat
+         * @description Forget the chat id. Unlike the channel there is no fallback, so delivery stops until one is set.
+         */
+        delete: operations["unset_chat_credentials_telegram_chat_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -3206,6 +3210,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unset_chat_credentials_telegram_chat_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };

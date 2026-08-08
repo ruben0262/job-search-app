@@ -558,6 +558,37 @@ button[disabled] {
   transform: none;
 }
 
+/* An icon button that only differs by its glyph is a guess. These two say which way they go before
+   they are pressed: red removes, green adds. */
+.icon-btn.remove {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+}
+
+.icon-btn.remove:hover:not([disabled]) {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
+.icon-btn.add {
+  color: var(--score);
+  border-color: color-mix(in srgb, var(--score) 40%, transparent);
+}
+
+.icon-btn.add:hover:not([disabled]) {
+  color: var(--score);
+  border-color: var(--score);
+  background: color-mix(in srgb, var(--score) 12%, transparent);
+}
+
+/* The tick after a copy. Green because it is a confirmation, not a third icon in the same row. */
+.icon-btn.copied,
+.icon-btn.copied:hover:not([disabled]) {
+  color: var(--score);
+  border-color: var(--score);
+}
+
 /* The add button sits above the first row, on the right, where it reads as "more of these". */
 .repeat-head {
   display: flex;
@@ -1199,7 +1230,8 @@ td.num {
   border-radius: var(--radius);
   background: var(--bg-raised);
   padding: 0.55rem 0.55rem 0.55rem 1rem;
-  margin-bottom: 1rem;
+  /* Sits under the field it belongs to, so it needs air above as well as below. */
+  margin: 0.85rem 0 1rem;
 }
 
 .stored-value {

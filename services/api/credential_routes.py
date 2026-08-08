@@ -179,6 +179,18 @@ def set_chat(body: ChatBody, db: Session = Depends(get_db),
             "detail": "A test message just landed in your chat with the bot."}
 
 
+@router.delete("/telegram/chat")
+def unset_chat(db: Session = Depends(get_db),
+               user_id: _uuid.UUID = Depends(current_user)) -> dict:
+    """Forget the chat id. Unlike the channel there is no fallback, so delivery stops until one is set."""
+    user = db.get(User, user_id)
+    user.telegram_chat_id = None
+    user.telegram_status = "unconfigured"
+    audit(logger, "credentials.chat_unset", user=user_id)
+    return {"status": "removed",
+            "detail": "Connect a chat again before commands and CVs can reach you."}
+
+
 class ChannelBody(BaseModel):
     # A channel id from @getidsbot (-100…), or a public @name. Nothing else is plausibly a channel.
     channel_id: str = Field(min_length=2, max_length=64, pattern=r"^(-100\d{4,}|@[A-Za-z0-9_]{4,})$")

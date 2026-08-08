@@ -14,6 +14,45 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-08-08
+
+**The credential blocks read field → what is attached → how to get it, and the buttons say which way
+they go.** Front end, plus the one route the delete button needed. Onboarding and Your details share
+these components, so both pages moved together.
+
+**The Save button was invisible until you typed.** `.advance` is `opacity: 0` until a form marks
+itself ready, and `CredentialForm` used it — so the bot token, the Claude key and the proxy URL each
+had a submit button that could not be seen from an empty field. There is nothing to fade in *to*
+here: the field is the whole form. Now an ordinary `secondary` button, present and disabled, matching
+**Connect my chat** beside it, and labelled **Connect my bot** for Telegram.
+
+**Order, per block:** the field, then what is already attached, then the how-to fold. It was the
+reverse, which put a fold of instructions in front of somebody who already had the value in their
+clipboard.
+
+**The chat and channel IDs are rows, not a sentence.** They were a green line of prose, copyable only
+by selecting the text. Both are now the same `.stored` row the secrets use. An id is not a secret, so
+copying one costs no password. Deleting one does cost something, so it is confirmed the way a
+credential is.
+
+- **New: `DELETE /credentials/telegram/chat`.** The channel already had one; the chat did not, so the
+  delete button had nothing to call. It clears the id *and* drops `telegram_status` back to
+  `unconfigured` — a row still claiming "connected" with no chat is the silent failure, so the test
+  asserts both together rather than the id alone. No fallback, unlike the channel: removing the chat
+  stops commands and CV delivery until another is connected, which is what the confirm text says.
+
+**Red removes, green adds, the tick is a yes.** The delete control was `−` in `--muted`, the same
+weight as the copy button beside it: two grey glyphs, one of them destructive. Removal is now a cross
+in `--danger`, adding a row a plus in `--score`, and the copy-confirmation tick turns `--score`.
+Every credential and the links list, not only Telegram.
+
+**Removed: "Read it for me".** The button that re-read the chat id from `getUpdates` after pressing
+Start. Saving a bot token already captures the chat id on the same path (`put_credential`) and the
+box beside it takes the id directly, so it was a third way to set one value. `POST
+/credentials/telegram/connect` is left in place and now has no caller.
+
+---
+
 ## 2026-08-07 (late)
 
 **A CV is rendered once, a dead posting stops costing anything, and the Build button answers

@@ -6,6 +6,22 @@ import { Error, Field, useAction } from "../../ui";
 
 type Link = { url: string; platform?: string };
 
+function PlusIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function CrossIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export function IdentityStep({ onDone }: { onDone: () => void }) {
   const [fullName, setFullName] = useState("");
   const [links, setLinks] = useState<Link[]>([{ url: "" }]);
@@ -54,12 +70,12 @@ export function IdentityStep({ onDone }: { onDone: () => void }) {
           </span>
           <button
             type="button"
-            className="icon-btn"
+            className="icon-btn add"
             aria-label="Add another link"
             title="Add another link"
             onClick={() => setLinks([...links, { url: "" }])}
           >
-            +
+            <PlusIcon />
           </button>
         </div>
         <span className="hint">LinkedIn, GitHub, a portfolio. Optional.</span>
@@ -78,7 +94,7 @@ export function IdentityStep({ onDone }: { onDone: () => void }) {
             {/* Every row can be removed, including the last. */}
             <button
               type="button"
-              className="icon-btn"
+              className="icon-btn remove"
               aria-label="Remove this link"
               title="Remove this link"
               onClick={() => {
@@ -86,7 +102,7 @@ export function IdentityStep({ onDone }: { onDone: () => void }) {
                 setLinks(next.length ? next : [{ url: "" }]);
               }}
             >
-              −
+              <CrossIcon />
             </button>
           </div>
         ))}

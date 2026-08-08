@@ -2967,6 +2967,28 @@
       }
     },
     "/credentials/telegram/chat": {
+      "delete": {
+        "description": "Forget the chat id. Unlike the channel there is no fallback, so delivery stops until one is set.",
+        "operationId": "unset_chat_credentials_telegram_chat_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Unset Chat Credentials Telegram Chat Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Unset Chat",
+        "tags": [
+          "credentials"
+        ]
+      },
       "put": {
         "description": "Set the chat id by hand, proven by messaging it.",
         "operationId": "set_chat_credentials_telegram_chat_put",

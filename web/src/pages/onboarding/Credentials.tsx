@@ -1,4 +1,10 @@
-/** Pages 4, 5 and 6 — the three credentials. */
+/** Pages 4, 5 and 6 — the three credentials.
+ *
+ * Every block here reads in the same order: the box you type into, then what is already attached,
+ * then the fold explaining how to get it. Someone arriving with the value in their clipboard never
+ * has to scroll past instructions they do not need, and someone stuck finds the instructions where
+ * the field ran out of answers.
+ */
 import { useCallback, useEffect, useState } from "react";
 
 import { ClaudeConnect } from "../../components/ClaudeConnect";
@@ -77,7 +83,7 @@ function Stored({
       <span className="row" style={{ gap: "0.4rem" }}>
         <button
           type="button"
-          className="icon-btn"
+          className={copied ? "icon-btn copied" : "icon-btn"}
           title={copied ? "Copied" : "Copy the stored value"}
           aria-label="Copy the stored value"
           onClick={() => setAsking(!asking)}
@@ -87,7 +93,7 @@ function Stored({
         {/* Asked, not assumed. */}
         <button
           type="button"
-          className="icon-btn"
+          className="icon-btn remove"
           title="Delete this credential"
           aria-label="Delete this credential"
           disabled={remove.busy}
@@ -95,7 +101,7 @@ function Stored({
             if (window.confirm(CONFIRM[kind] ?? CONFIRM.default)) void remove.run();
           }}
         >
-          −
+          <CrossIcon />
         </button>
       </span>
       {asking ? (
@@ -141,17 +147,86 @@ function CheckIcon() {
   );
 }
 
+/** Removal. A minus reads as "decrement"; a cross reads as "delete this". */
+function CrossIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/** A Telegram id that is already attached.
+ *
+ * The same row as `Stored`, but an id is not a secret: it is shown in full and copying one costs no
+ * password. Deleting it does cost something, so that half is confirmed exactly the same way.
+ */
+function StoredId({
+  value,
+  what,
+  confirm,
+  onRemove,
+}: {
+  value: string;
+  /** Named in the button labels, e.g. "chat ID". */
+  what: string;
+  confirm: string;
+  onRemove: () => Promise<void>;
+}) {
+  const [copied, setCopied] = useState(false);
+  const remove = useAction(onRemove);
+
+  const copy = async () => {
+    await navigator.clipboard.writeText(value);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 2500);
+  };
+
+  return (
+    <div className="stored">
+      <span className="stored-value">{value}</span>
+      <span className="row" style={{ gap: "0.4rem" }}>
+        <button
+          type="button"
+          className={copied ? "icon-btn copied" : "icon-btn"}
+          title={copied ? "Copied" : `Copy this ${what}`}
+          aria-label={`Copy this ${what}`}
+          onClick={() => void copy()}
+        >
+          {copied ? <CheckIcon /> : <CopyIcon />}
+        </button>
+        <button
+          type="button"
+          className="icon-btn remove"
+          title={`Remove this ${what}`}
+          aria-label={`Remove this ${what}`}
+          disabled={remove.busy}
+          onClick={() => {
+            if (window.confirm(confirm)) void remove.run();
+          }}
+        >
+          <CrossIcon />
+        </button>
+      </span>
+      <Error>{remove.error}</Error>
+    </div>
+  );
+}
+
 function CredentialForm({
   kind,
   label,
   hint,
   placeholder,
+  action = "Save",
   onDone,
 }: {
   kind: string;
   label: string;
   hint: string;
   placeholder?: string;
+  /** What the button says. Named after what it connects, not after what the form does. */
+  action?: string;
   onDone: () => void;
 }) {
   const [value, setValue] = useState("");
@@ -196,8 +271,10 @@ function CredentialForm({
       ) : null}
       {warning ? <p className="small muted">Saved, but we could not check it: {warning}</p> : null}
 
-      <button type="submit" className={value ? "advance ready" : "advance"} disabled={save.busy}>
-        {save.busy ? "Checking…" : "Save"}
+      {/* Present and disabled, never invisible: a button that fades in only once you have typed
+          leaves the field looking like it has no way to submit. */}
+      <button type="submit" className="secondary" disabled={save.busy || !value}>
+        {save.busy ? "Checking…" : action}
       </button>
     </form>
   );
@@ -211,7 +288,6 @@ type TelegramState = {
 };
 
 export function TelegramStep({ onDone }: { onDone: () => void }) {
-  const [status, setStatus] = useState<string | null>(null);
   const [channel, setChannel] = useState("");
   const [channelStatus, setChannelStatus] = useState<string | null>(null);
   const [chat, setChat] = useState("");
@@ -235,17 +311,12 @@ export function TelegramStep({ onDone }: { onDone: () => void }) {
     onDone();
   };
 
-  const connect = useAction(async () => {
-    const result = await api.post<{ status: string; detail?: string }>("/credentials/telegram/connect");
-    setStatus(result.status === "connected" ? null : (result.detail ?? "Still waiting."));
-    reload();
-  });
-
   const saveChat = useAction(async () => {
     const result = await api.put<{ detail: string }>("/credentials/telegram/chat", {
       chat_id: chat.trim(),
     });
     setChatStatus(result.detail);
+    setChat("");
     reload();
   });
 
@@ -254,11 +325,21 @@ export function TelegramStep({ onDone }: { onDone: () => void }) {
       channel_id: channel.trim(),
     });
     setChannelStatus(result.detail);
+    setChannel("");
     reload();
   });
 
   return (
     <>
+      <CredentialForm
+        kind="telegram_bot"
+        label="Bot token"
+        hint="From BotFather, it looks like 123456:AA…"
+        placeholder="123456:AA…"
+        action="Connect my bot"
+        onDone={reload}
+      />
+      <Stored kind="telegram_bot" onChanged={reload} version={saved} />
       <details className="howto">
         <summary>How to create your bot (2 minutes)</summary>
         <ol className="small muted">
@@ -266,19 +347,10 @@ export function TelegramStep({ onDone }: { onDone: () => void }) {
           <li>Press Start, then send the message <code>/newbot</code>.</li>
           <li>Give it any name, then any username ending in "bot".</li>
           <li>BotFather replies with a token that looks like <code>123456:AA…</code>, copy it and
-              paste it below.</li>
+              paste it above.</li>
           <li>Open your new bot's chat and press <strong>Start</strong>.</li>
         </ol>
       </details>
-
-      <Stored kind="telegram_bot" onChanged={reload} version={saved} />
-      <CredentialForm
-        kind="telegram_bot"
-        label="Bot token"
-        hint="From BotFather, it looks like 123456:AA…"
-        placeholder="123456:AA…"
-        onDone={reload}
-      />
 
       {/* A field, not a status readout. */}
       <div style={{ marginTop: "1.5rem" }}>
@@ -286,16 +358,6 @@ export function TelegramStep({ onDone }: { onDone: () => void }) {
           <strong>Required: your own chat with the bot.</strong> Commands and your finished CVs
           arrive here, separately from the job stream.
         </p>
-        <details className="howto">
-          <summary>How to find your chat ID (1 minute)</summary>
-          <ol className="small muted">
-            <li>Open your new bot in Telegram and press <strong>Start</strong>.</li>
-            <li>Search for <strong>@getidsbot</strong> and press Start there too.</li>
-            <li>It replies with your details. The number next to <strong>Id</strong> is yours,
-                a positive number like <code>123456789</code>.</li>
-            <li>Paste it below. We send a test message to prove the bot can reach you.</li>
-          </ol>
-        </details>
         <Field
           label="Your chat ID"
           hint="A positive number, yours rather than the channel's. The channel ID starts with -100 and goes in the box further down."
@@ -311,29 +373,39 @@ export function TelegramStep({ onDone }: { onDone: () => void }) {
         {chatStatus ? <p className="small" style={{ color: "var(--score)" }}>{chatStatus}</p> : null}
         <p>
           <button
+            type="button"
             className="secondary"
             disabled={saveChat.busy || !chat.trim()}
             onClick={() => void saveChat.run()}
           >
             {saveChat.busy ? "Checking…" : "Connect my chat"}
           </button>
-          {/* Kept as the shortcut for anyone who has just pressed Start. */}
-          <button
-            className="secondary"
-            style={{ marginLeft: "0.6rem" }}
-            disabled={connect.busy}
-            onClick={() => void connect.run()}
-          >
-            {connect.busy ? "Looking…" : "Read it for me"}
-          </button>
         </p>
-        <Error>{connect.error}</Error>
-        {status ? <p className="small muted">{status}</p> : null}
         {state?.chat_id ? (
-          <p className="small" style={{ color: "var(--score)" }}>
-            Connected to chat <code>{state.chat_id}</code>.
-          </p>
+          <StoredId
+            value={state.chat_id}
+            what="chat ID"
+            confirm={
+              "Remove your chat ID? Commands and your finished CVs have nowhere to arrive until "
+              + "you connect a chat again."
+            }
+            onRemove={async () => {
+              await api.del("/credentials/telegram/chat");
+              setChatStatus(null);
+              reload();
+            }}
+          />
         ) : null}
+        <details className="howto">
+          <summary>How to find your chat ID (1 minute)</summary>
+          <ol className="small muted">
+            <li>Open your new bot in Telegram and press <strong>Start</strong>.</li>
+            <li>Search for <strong>@getidsbot</strong> and press Start there too.</li>
+            <li>It replies with your details. The number next to <strong>Id</strong> is yours,
+                a positive number like <code>123456789</code>.</li>
+            <li>Paste it above. We send a test message to prove the bot can reach you.</li>
+          </ol>
+        </details>
       </div>
 
       <div style={{ marginTop: "2rem" }}>
@@ -342,19 +414,6 @@ export function TelegramStep({ onDone }: { onDone: () => void }) {
           scroll like a feed, and the bot chat stays for commands and your finished CVs. Without it
           there is nowhere for matches to go.
         </p>
-        <details className="howto">
-          <summary>How to find your channel ID (2 minutes)</summary>
-          <ol className="small muted">
-            <li>In Telegram, create a channel (New message → New channel). Private is fine.</li>
-            <li>Open the channel's settings → Administrators → Add admin → pick <strong>your
-                bot</strong>, and allow it to post messages.</li>
-            <li>Post any message in the channel, "hello" works.</li>
-            <li>Forward that message to <strong>@getidsbot</strong>. It replies with a "forwarded
-                from" ID starting with <code>-100</code>.</li>
-            <li>Paste that ID below. We send a test message to prove it works, you will see it in
-                the channel.</li>
-          </ol>
-        </details>
         <Field
           label="Channel ID"
           hint="Starts with -100. Every job goes to this one channel, if you already have separate channels set up, this replaces that split."
@@ -371,14 +430,44 @@ export function TelegramStep({ onDone }: { onDone: () => void }) {
             {channelStatus}
           </p>
         ) : null}
-        <button
-          type="button"
-          className="secondary"
-          disabled={saveChannel.busy || !channel.trim()}
-          onClick={() => void saveChannel.run()}
-        >
-          {saveChannel.busy ? "Testing…" : "Connect channel"}
-        </button>
+        <p>
+          <button
+            type="button"
+            className="secondary"
+            disabled={saveChannel.busy || !channel.trim()}
+            onClick={() => void saveChannel.run()}
+          >
+            {saveChannel.busy ? "Testing…" : "Connect channel"}
+          </button>
+        </p>
+        {state?.channel_id ? (
+          <StoredId
+            value={state.channel_id}
+            what="channel ID"
+            confirm={
+              "Remove your channel? Jobs go back to your bot chat, mixed in with commands and your "
+              + "finished CVs."
+            }
+            onRemove={async () => {
+              await api.del("/credentials/telegram/channel");
+              setChannelStatus(null);
+              reload();
+            }}
+          />
+        ) : null}
+        <details className="howto">
+          <summary>How to find your channel ID (2 minutes)</summary>
+          <ol className="small muted">
+            <li>In Telegram, create a channel (New message → New channel). Private is fine.</li>
+            <li>Open the channel's settings → Administrators → Add admin → pick <strong>your
+                bot</strong>, and allow it to post messages.</li>
+            <li>Post any message in the channel, "hello" works.</li>
+            <li>Forward that message to <strong>@getidsbot</strong>. It replies with a "forwarded
+                from" ID starting with <code>-100</code>.</li>
+            <li>Paste that ID above. We send a test message to prove it works, you will see it in
+                the channel.</li>
+          </ol>
+        </details>
       </div>
     </>
   );
@@ -404,7 +493,6 @@ export function ClaudeStep({ onDone }: { onDone: () => void }) {
           <option value="claude_oauth">A Claude subscription token</option>
         </select>
       </Field>
-      <Stored key={`stored-${kind}`} kind={kind} onChanged={refresh} version={saved} />
       {/* The subscription path is a button, not a paste field. */}
       {kind === "claude_oauth" ? (
         <>
@@ -426,6 +514,7 @@ export function ClaudeStep({ onDone }: { onDone: () => void }) {
         placeholder="sk-ant-…"
         onDone={refresh}
       />
+      <Stored key={`stored-${kind}`} kind={kind} onChanged={refresh} version={saved} />
     </>
   );
 }
@@ -442,7 +531,6 @@ export function ProxyStep({ onDone }: { onDone: () => void }) {
         LinkedIn is fetched through your own proxy and never a shared one, so one account's traffic
         can never be attributed to another's.
       </p>
-      <Stored kind="proxy" onChanged={refresh} version={saved} />
       <CredentialForm
         kind="proxy"
         label="Proxy URL"
@@ -450,6 +538,7 @@ export function ProxyStep({ onDone }: { onDone: () => void }) {
         placeholder="http://user:pass@host:port"
         onDone={refresh}
       />
+      <Stored kind="proxy" onChanged={refresh} version={saved} />
     </>
   );
 }

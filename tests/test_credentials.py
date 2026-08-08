@@ -443,6 +443,35 @@ def test_a_chat_id_the_bot_cannot_reach_is_refused(api, monkeypatch):
 
 
 @pytestmark_db
+def test_the_chat_id_can_be_removed_and_the_account_stops_claiming_it_is_connected(api, monkeypatch):
+    """The cross beside the stored chat id. A row left saying "connected" with no chat is the silent
+    kind of wrong: nothing errors, and the CVs simply never arrive."""
+    from libs.credentials import ValidationResult
+
+    http, session, user, _ = api
+    monkeypatch.setattr("services.api.credential_routes.validate_credential",
+                        lambda kind, value, **kw: ValidationResult(True))
+    monkeypatch.setattr("services.api.credential_routes.telegram_chat_id", lambda token, **kw: None)
+    http.put("/credentials/telegram_bot", json={"value": "123456:AAturtles"})
+    monkeypatch.setattr("services.api.credential_routes.telegram_chat_check",
+                        lambda token, chat_id, **kw: ValidationResult(True))
+    http.put("/credentials/telegram/chat", json={"chat_id": "123456789"})
+    session.flush()
+    assert user.telegram_chat_id == "123456789", "the premise: a chat id is attached"
+
+    assert http.delete("/credentials/telegram/chat").status_code == 200
+    session.flush()
+    session.refresh(user)
+    assert user.telegram_chat_id is None
+    assert user.telegram_status == "unconfigured"
+
+    # And the page that draws the row sees it gone, rather than only the database.
+    telegram = http.get("/credentials").json()["telegram"]
+    assert telegram["chat_id"] is None
+    assert telegram["destination"] is None
+
+
+@pytestmark_db
 def test_a_channel_id_pasted_into_the_chat_field_is_caught_by_shape(api):
     """The two numbers sit on the same page and the mistake is easy."""
     http, _session, _user, _ = api
