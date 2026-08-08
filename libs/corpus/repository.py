@@ -23,14 +23,33 @@ CORPUS_HOT_DAYS = 90
 MIN_DESCRIPTION = 200
 
 
-def awaiting_description_conditions(min_chars: int = MIN_DESCRIPTION) -> tuple:
+def awaiting_description_conditions(min_chars: int = MIN_DESCRIPTION,
+                                    max_age_hours: int | None = None) -> tuple:
     """Rows the describer will actually fetch text for.
 
     A closed posting is not worth a fetch: on the proxied tier that fetch is the user's own
     metered bandwidth, and nothing downstream will ever read the text.
+
+    Neither is a posting already too old to be delivered. The pre-score filter refuses anything
+    past `job_max_age_hours`, so fetching its description spends a user's proxy on a row no account
+    can ever be shown. Measured 2026-08-08: the describer was retrying **212** thin LinkedIn rows
+    every pass, **156 of them already past the age cutoff**, the oldest first seen 167 hours
+    earlier. Same LinkedIn ids, every fifteen minutes, for a week.
+
+    `max_age_hours` is passed in rather than read here, because it is the operator's setting and
+    this module is not where platform policy lives.
     """
+    fresh: tuple = ()
+    if max_age_hours:
+        cutoff = datetime.now(UTC) - timedelta(hours=int(max_age_hours))
+        # Dated rows against their posted time, undated ones against when we found them — the same
+        # rule `UserFilters.fresh_since` applies, so the two cannot disagree about what is stale.
+        fresh = (or_(CorpusJob.posted_at >= cutoff,
+                     CorpusJob.posted_at.is_(None) & (CorpusJob.first_seen_at >= cutoff)),)
+
     return (CorpusJob.trimmed_at.is_(None),
             CorpusJob.closed_at.is_(None),
+            *fresh,
             or_(CorpusJob.description.is_(None),
                 func.length(CorpusJob.description) < min_chars))
 
@@ -241,11 +260,12 @@ class CorpusRepository:
     # for 25 hours reading as a stuck pipeline, and nothing was stuck.
 
     def awaiting_description(self, *, limit: int = 200, linkedin: bool | None = None,
-                             min_chars: int = MIN_DESCRIPTION) -> list[CorpusJob]:
+                             min_chars: int = MIN_DESCRIPTION,
+                             max_age_hours: int | None = None) -> list[CorpusJob]:
         """Jobs whose stored text is too thin to score on."""
         query = (
             select(CorpusJob)
-            .where(*awaiting_description_conditions(min_chars))
+            .where(*awaiting_description_conditions(min_chars, max_age_hours))
             .order_by(CorpusJob.first_seen_at.desc())
             .limit(limit))
         if linkedin is True:

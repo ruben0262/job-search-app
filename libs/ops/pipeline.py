@@ -14,6 +14,7 @@ from libs.corpus.repository import (
 from libs.db.models import CorpusJob, QueueJob, User, UserJobState
 from libs.scoring.thresholds import cutoff_for
 from libs.settings import PLATFORM_TICK_MIN
+from libs.settings import get as settings_get
 from libs.tenant.filters import candidate_conditions, filters_for
 
 # How long a row may sit at a stage before the colour changes, as multiples of its tick.
@@ -74,6 +75,11 @@ def pipeline(session: Session, *, hours: int = 24) -> dict:
     since = datetime.now(UTC) - timedelta(hours=hours)
 
     # Not trimmed.
+    # The describer skips rows past the delivery window, so the page must too — counting them
+    # would rebuild exactly the phantom backlog the closed-row fix removed, one setting later.
+    describe_conditions = awaiting_description_conditions(
+        max_age_hours=int(settings_get(session, "job_max_age_hours")))
+
     stages = [
         # One row, because it is one statement.
         Stage("gather", "Gathered & stored",
@@ -86,9 +92,8 @@ def pipeline(session: Session, *, hours: int = 24) -> dict:
               entered=_entered(session, CorpusJob.description_fetched_at, since),
               waiting=session.scalar(
                   select(func.count()).select_from(CorpusJob)
-                  .where(*awaiting_description_conditions())) or 0,
-              oldest_min=_age_minutes(session, CorpusJob.first_seen_at,
-                                      *awaiting_description_conditions())),
+                  .where(*describe_conditions)) or 0,
+              oldest_min=_age_minutes(session, CorpusJob.first_seen_at, *describe_conditions)),
         Stage("embed", "Embedded", "One vector per posting, computed once and shared by every "
                                    "account.",
               entered=_entered(session, CorpusJob.embedded_at, since),

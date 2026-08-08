@@ -43,10 +43,16 @@ class DescribeReport:
 
 def describe_pending(corpus: CorpusRepository, client, *, linkedin: bool | None = None,
                      limit: int = SHARED_LIMIT,
-                     budget_seconds: float | None = None) -> DescribeReport:
-    """Fetch and store descriptions for corpus rows that are still thin."""
+                     budget_seconds: float | None = None,
+                     max_age_hours: int | None = None) -> DescribeReport:
+    """Fetch and store descriptions for corpus rows that are still thin.
+
+    `max_age_hours` is the operator's delivery window. A posting past it cannot reach anybody, so
+    fetching its text is bandwidth spent on a row the pre-score filter has already refused.
+    """
     report = DescribeReport()
-    jobs = corpus.awaiting_description(limit=limit, linkedin=linkedin)
+    jobs = corpus.awaiting_description(limit=limit, linkedin=linkedin,
+                                       max_age_hours=max_age_hours)
     deadline = None if budget_seconds is None else monotonic() + budget_seconds
 
     for job in jobs:

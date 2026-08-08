@@ -99,16 +99,40 @@ def test_the_verdict_is_about_age_not_size(db):
 
 
 def test_a_stage_holding_something_old_turns_red(db):
-    """The other half: one row nobody has picked up for a day is the signal."""
+    """The other half: one row nobody has picked up for hours is the signal.
+
+    Three hours rather than a day, because a day-old posting is past the delivery window and the
+    describer no longer fetches it — see the test below. Red now means "inside the window and
+    nobody has taken it", which is the condition an operator can actually act on.
+    """
     from libs.ops.pipeline import pipeline
 
     old = _job(db)
-    old.first_seen_at = datetime.now(UTC) - timedelta(days=1)
+    old.first_seen_at = datetime.now(UTC) - timedelta(hours=3)
     db.flush()
 
     entry = stage(pipeline(db), "describe")
     assert entry["verdict"] == "down"
     assert entry["oldest_min"] > 60
+
+
+def test_a_posting_too_old_to_deliver_is_not_reported_as_waiting(db):
+    """It is not waiting for anything. Nothing will ever fetch it and nobody could receive it.
+
+    Measured in production on 2026-08-08: the describer was retrying 212 thin LinkedIn rows every
+    fifteen minutes, 156 of them already past the delivery window, the oldest first seen 167 hours
+    earlier — the same ids, on a user's own metered proxy, for a week.
+    """
+    from libs.corpus.repository import CorpusRepository
+    from libs.ops.pipeline import pipeline
+
+    stale = _job(db, description=None)
+    stale.first_seen_at = datetime.now(UTC) - timedelta(days=3)
+    db.flush()
+
+    assert stage(pipeline(db), "describe")["waiting"] == 0
+    assert not [row for row in CorpusRepository(db).awaiting_description(max_age_hours=24)
+                if row.id == stale.id], "and the describer agrees"
 
 
 def test_an_empty_stage_is_green_and_says_nothing_about_age(db):

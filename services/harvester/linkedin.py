@@ -20,6 +20,7 @@ from libs.settings import (
     queries_per_cycle,
     results_per_query,
 )
+from libs.settings import get as settings_get
 from services.harvester.describe import describe_pending
 from services.harvester.fetch import make_client
 from services.harvester.governor import (
@@ -100,6 +101,10 @@ def run_for_due_users(session, *, now: datetime | None = None,
     # Read once per pass rather than per user: both are platform settings, not per-account ones.
     window = freshness_hours(session, "linkedin")
     depth = results_per_query(session, "linkedin") or RESULTS_WANTED
+    # **Not `window`.** `freshness_hours` is how far back to *search*; `job_max_age_hours` is how
+    # old a posting may be and still reach anybody. Describing is bounded by the second, because a
+    # row past it has already been refused by the pre-score filter and its text will never be read.
+    deliverable_for = int(settings_get(session, "job_max_age_hours"))
     store = SecretStore(session)
 
     for user in due_users(session, now=now, limit=limit):
@@ -118,7 +123,7 @@ def run_for_due_users(session, *, now: datetime | None = None,
         try:
             ran = _run_one(user, queries, corpus=corpus, usage=usage, store=store,
                            report=report, gather=gather, hours_old=window,
-                           results_wanted=depth)
+                           results_wanted=depth, deliverable_for=deliverable_for)
         except Exception as exc:                                    # noqa: BLE001
             # One user's LinkedIn failing is not the tier failing.
             report.failures[str(user.id)] = f"{type(exc).__name__}: {exc}"
@@ -136,7 +141,7 @@ def run_for_due_users(session, *, now: datetime | None = None,
 def _run_one(user: User, queries: list[dict], *, corpus: CorpusRepository,
              usage: ProxyUsageRepository, store: SecretStore,
              report: LinkedInReport, gather, hours_old: int,
-             results_wanted: int) -> bool:
+             results_wanted: int, deliverable_for: int | None = None) -> bool:
     """One user's fetch, inside their own credential's scope."""
     try:
         with store.use(user.id, "proxy") as secret:
@@ -180,7 +185,8 @@ def _run_one(user: User, queries: list[dict], *, corpus: CorpusRepository,
                     described = describe_pending(
                         corpus, client, linkedin=True,
                         limit=UNLIMITED_DESCRIBES if per_run is None else per_run,
-                        budget_seconds=DESCRIBE_BUDGET_SECONDS)
+                        budget_seconds=DESCRIBE_BUDGET_SECONDS,
+                        max_age_hours=deliverable_for)
 
     except SecretsError:
         # The store could not answer. Not this user's fault and not a reason to stop the pass.
