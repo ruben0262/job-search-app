@@ -25,6 +25,9 @@ class JobLink:
     easy_apply: bool | None = None
     application_url: str | None = None
     found_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
+    # The search term that returned this link. Not the posting's title: on LinkedIn the two
+    # are often unrelated, and that difference is the thing nobody could see.
+    found_via: str = ""
 
     def as_corpus_row(self) -> dict[str, Any]:
         """Keyword arguments for `CorpusRepository.add()`."""
@@ -42,4 +45,6 @@ class JobLink:
             "easy_apply": self.easy_apply,
             # Inferred from what the source gave us.
             "workplace": classify(self.title, self.location, self.snippet, self.is_remote),
+            # How it was found, carried through to the row rather than dropped here.
+            "discovered_via": self.found_via or None,
         }

@@ -173,7 +173,7 @@ def _run_one(user: User, queries: list[dict], *, corpus: CorpusRepository,
                 links = gather(cfg, logger, lease=lease)
 
                 # Dedup, then describe what is left — on this same lease, in this same pass.
-                new_jobs = _ingest(corpus, links)
+                new_jobs = _ingest(corpus, links, user_id=user.id)
                 with make_client(lease) as client:
                     # `None` is Unlimited.
                     per_run = limits.resolve(user, "describe_per_run")
@@ -195,8 +195,13 @@ def _run_one(user: User, queries: list[dict], *, corpus: CorpusRepository,
     return True
 
 
-def _ingest(corpus: CorpusRepository, links) -> int:
-    """Dedup and upsert, the same four layers the shared cycle applies."""
+def _ingest(corpus: CorpusRepository, links, *, user_id=None) -> int:
+    """Dedup and upsert, the same four layers the shared cycle applies.
+
+    `user_id` is recorded on every row this pass creates. LinkedIn is the per-user tier, so unlike
+    the shared cycle there is exactly one account that paid for the fetch, and saying which one
+    turns "why is this posting in the corpus" from an inference into a query.
+    """
     new = 0
     for link in links:
         if not link.url:
@@ -204,7 +209,7 @@ def _ingest(corpus: CorpusRepository, links) -> int:
         if corpus.find_duplicate(link.url, link.title, link.company, link.location,
                                  application_url=link.application_url) is not None:
             continue
-        job_id = corpus.add(**link.as_corpus_row())
+        job_id = corpus.add(**link.as_corpus_row(), discovered_by=user_id)
         if job_id is None:
             continue
         new += 1

@@ -1,6 +1,7 @@
 """The shared corpus repository — the storage half of the `store.py` port."""
 from __future__ import annotations
 
+import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -142,7 +143,9 @@ class CorpusRepository:
             is_remote: bool | None = None, posted_at: datetime | None = None,
             easy_apply: bool | None = None, applicants: int | None = None,
             reposted: bool | None = None, workplace: str | None = None,
-            fetched_at: datetime | None = None) -> int | None:
+            fetched_at: datetime | None = None,
+            discovered_via: str | None = None,
+            discovered_by: uuid.UUID | None = None) -> int | None:
         """Insert if absent."""
         stmt = (
             pg_insert(CorpusJob)
@@ -165,6 +168,11 @@ class CorpusRepository:
                 applicants=applicants,
                 reposted=reposted,
                 workplace=workplace,
+                # How the row got here. `discovered_by` is set only by the per-user tiers; the
+                # shared cycle folds one query across every account that wanted it, so there is no
+                # single owner and NULL is the honest answer rather than a guess.
+                discovered_via=discovered_via,
+                discovered_by=discovered_by,
             )
             .on_conflict_do_nothing(index_elements=[CorpusJob.url])
             .returning(CorpusJob.id)

@@ -115,7 +115,11 @@ def _run_one(site: str, kwargs: dict[str, Any], logger) -> list[JobLink]:
     except Exception as exc:
         logger.warning("%s scrape failed for %r: %s", site, label, exc)
         return []
-    return _rows_to_joblinks(df, site)
+    links = _rows_to_joblinks(df, site)
+    # Tagged here because this is the only place both the query and its results are in scope.
+    for link in links:
+        link.found_via = label
+    return links
 
 
 def gather_linkedin(cfg: dict[str, Any], logger, *, lease: ProxyLease) -> list[JobLink]:

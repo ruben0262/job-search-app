@@ -1,10 +1,13 @@
 """The shared job corpus — the one table that is not per-user, and must never become per-user."""
 from __future__ import annotations
 
+import uuid
+
 from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
+    ForeignKey,
     Index,
     Integer,
     SmallInteger,
@@ -13,6 +16,7 @@ from sqlalchemy import (
     func,
     text,
 )
+from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from libs.db.base import Base, timestamptz
@@ -59,6 +63,17 @@ class CorpusJob(Base):
     embedding_version: Mapped[str | None] = mapped_column(Text)
     # When the vector was written.
     embedded_at: Mapped[timestamptz | None]
+
+    # How this row got here, so the question does not have to be reconstructed from logs again.
+    #
+    # `discovered_via` is the search term that returned the link — not the posting's own title, and
+    # on LinkedIn frequently nothing like it, because its matching is looser than its query. That
+    # gap is what made "why is this in my corpus" unanswerable.
+    discovered_via: Mapped[str | None] = mapped_column(Text)
+    # The account whose harvest found it, for the per-user tiers. NULL for the shared cycle, where
+    # one query is folded across every account that asked for it and no single owner exists.
+    discovered_by: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), index=True)
 
     # What the feed card shows: how contested, how fresh, one-click or not, and where.
     applicants: Mapped[int | None] = mapped_column(Integer)
