@@ -22,3 +22,18 @@ accounts.local.txt
 
 # Vite build output. Cloudflare Pages builds it; the repo carries the source.
 web/dist/
+
+# The cover-letter bench: prompt variants, job fixtures, the judge, and one HTML letter per
+# (variant x posting). Experimental and deliberately local.
+#
+# Three separate reasons, any one of which is enough:
+#  - It is an experiment. Prompt variants under `variants/` are candidates that have not been
+#    approved, and a candidate prompt sitting in the repository next to the real one is exactly the
+#    "two copies, and the enforced one is not the visible one" failure CLAUDE.md #1 is about.
+#  - Its fixtures are a real person. `profile.json` and `base_cv.html` are one candidate's contact
+#    details and whole career; every generated letter repeats them.
+#  - Its output is regenerable and large. Megabytes per run, and a new run replaces it.
+#
+# `libs/scoring/coverchecks.py` is the durable half and IS tracked: it is the measurement, and the
+# numbers in any prompt discussion have to be reproducible from something in the repository.
+scripts/coverlab/
