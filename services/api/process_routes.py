@@ -53,9 +53,19 @@ def state(db: Session = Depends(get_db), user_id: _uuid.UUID = Depends(current_u
     elif documents_changed:
         action = "process"
         message = "You have added documents since your profile was built. Process them to update it."
-    elif setup_done and not user.profile:
-        # Built by the conversation: nothing to process, and what it needs next is labels.
-        action, message = "ready", "Your profile is ready. Scoring can be trained from here."
+    elif setup_done and not user.profile and documents:
+        # **The dead end this branch used to create.** It said "Your profile is ready" to anyone
+        # whose setup chat had written every file, and stopped there. That is true for scoring,
+        # which reads the files — an account in this state trains a model and receives jobs
+        # normally — and false for documents, which are built from the confirmed profile schema.
+        # So the platform told a user they were finished, and then refused every CV and cover
+        # letter they asked for, with nothing anywhere offering the step that would fix it.
+        #
+        # Processing is that step: it reads their documents, proposes a profile, and the
+        # confirmation form stores it.
+        action = "process"
+        message = ("Your search profile is ready and scoring is running. Process your documents "
+                   "to build the profile your CV and cover letters are written from.")
     elif not user.profile:
         action, message = "upload", "Upload your CV first — there is nothing to process yet."
     else:

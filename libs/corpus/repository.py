@@ -22,6 +22,30 @@ CORPUS_HOT_DAYS = 90
 MIN_DESCRIPTION = 200
 
 
+def awaiting_description_conditions(min_chars: int = MIN_DESCRIPTION) -> tuple:
+    """Rows the describer will actually fetch text for.
+
+    A closed posting is not worth a fetch: on the proxied tier that fetch is the user's own
+    metered bandwidth, and nothing downstream will ever read the text.
+    """
+    return (CorpusJob.trimmed_at.is_(None),
+            CorpusJob.closed_at.is_(None),
+            or_(CorpusJob.description.is_(None),
+                func.length(CorpusJob.description) < min_chars))
+
+
+def awaiting_embedding_conditions() -> tuple:
+    """Rows the embedder will actually compute a vector for.
+
+    Same reason as above in CPU rather than bandwidth: the pre-score filter refuses a closed row,
+    so embedding one is ~0.37s of the shared embedder spent on nothing.
+    """
+    return (CorpusJob.trimmed_at.is_(None),
+            CorpusJob.closed_at.is_(None),
+            CorpusJob.description.is_not(None),
+            CorpusJob.embedding.is_(None))
+
+
 @dataclass(frozen=True)
 class DuplicateMatch:
     """Why a candidate was considered already known — the layer that matched, and the row."""
@@ -200,17 +224,20 @@ class CorpusRepository:
                 filled += 1
         return filled
 
+    # ── what each stage is still waiting for ──────────────────────────────────────────────────
+    #
+    # Defined here, beside the workers that consume them, and imported by the operator dashboard
+    # rather than restated there. The dashboard used to ask only `trimmed_at IS NULL`, so a
+    # **closed** posting with text and no vector counted as waiting to be embedded forever: the
+    # embedder skips closed rows on purpose, so the backlog could never drain. Two rows sat there
+    # for 25 hours reading as a stuck pipeline, and nothing was stuck.
+
     def awaiting_description(self, *, limit: int = 200, linkedin: bool | None = None,
                              min_chars: int = MIN_DESCRIPTION) -> list[CorpusJob]:
         """Jobs whose stored text is too thin to score on."""
         query = (
             select(CorpusJob)
-            .where(CorpusJob.trimmed_at.is_(None),
-                   # A closed posting is not worth a fetch: on the proxied tier that fetch is the
-                   # user's own metered bandwidth, and nothing downstream will ever read the text.
-                   CorpusJob.closed_at.is_(None),
-                   or_(CorpusJob.description.is_(None),
-                       func.length(CorpusJob.description) < min_chars))
+            .where(*awaiting_description_conditions(min_chars))
             .order_by(CorpusJob.first_seen_at.desc())
             .limit(limit))
         if linkedin is True:
@@ -266,10 +293,7 @@ class CorpusRepository:
         """Jobs with text but no vector. Backed by the partial index on the same predicate."""
         return list(self._s.scalars(
             select(CorpusJob)
-            .where(CorpusJob.embedding.is_(None), CorpusJob.description.is_not(None),
-                   # Same reason, in CPU rather than bandwidth: the pre-score filter refuses a
-                   # closed row, so embedding one is ~0.37s of the shared embedder spent on nothing.
-                   CorpusJob.closed_at.is_(None), CorpusJob.trimmed_at.is_(None))
+            .where(*awaiting_embedding_conditions())
             .order_by(CorpusJob.id)
             .limit(limit)))
 

@@ -7,6 +7,10 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from libs.corpus.repository import (
+    awaiting_description_conditions,
+    awaiting_embedding_conditions,
+)
 from libs.db.models import CorpusJob, QueueJob, User, UserJobState
 from libs.scoring.thresholds import cutoff_for
 from libs.settings import PLATFORM_TICK_MIN
@@ -70,8 +74,6 @@ def pipeline(session: Session, *, hours: int = 24) -> dict:
     since = datetime.now(UTC) - timedelta(hours=hours)
 
     # Not trimmed.
-    live = CorpusJob.trimmed_at.is_(None)
-
     stages = [
         # One row, because it is one statement.
         Stage("gather", "Gathered & stored",
@@ -84,19 +86,17 @@ def pipeline(session: Session, *, hours: int = 24) -> dict:
               entered=_entered(session, CorpusJob.description_fetched_at, since),
               waiting=session.scalar(
                   select(func.count()).select_from(CorpusJob)
-                  .where(live, CorpusJob.description.is_(None))) or 0,
+                  .where(*awaiting_description_conditions())) or 0,
               oldest_min=_age_minutes(session, CorpusJob.first_seen_at,
-                                      live, CorpusJob.description.is_(None))),
+                                      *awaiting_description_conditions())),
         Stage("embed", "Embedded", "One vector per posting, computed once and shared by every "
                                    "account.",
               entered=_entered(session, CorpusJob.embedded_at, since),
               waiting=session.scalar(
                   select(func.count()).select_from(CorpusJob)
-                  .where(live, CorpusJob.description.is_not(None),
-                         CorpusJob.embedding.is_(None))) or 0,
+                  .where(*awaiting_embedding_conditions())) or 0,
               oldest_min=_age_minutes(session, CorpusJob.description_fetched_at,
-                                      live, CorpusJob.description.is_not(None),
-                                      CorpusJob.embedding.is_(None))),
+                                      *awaiting_embedding_conditions())),
     ]
     stages += _per_user_stages(session, since)
     return {"window_hours": hours, "stages": [stage.as_dict() for stage in stages],

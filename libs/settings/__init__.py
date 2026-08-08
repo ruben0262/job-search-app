@@ -55,6 +55,18 @@ HARVEST_SOURCES: tuple[str, ...] = (
 QUERY_TAKING_SOURCES: frozenset[str] = frozenset(
     {"himalayas", "hiringcafe", "nofluffjobs", "jooble"})
 
+# Sources fetched on an account's **own** residential proxy, which that account pays for.
+#
+# The harvester already refuses to run these for an account with no proxy credential
+# (`services/harvester/linkedin.py`), but the corpus is shared and scoring had no matching rule, so
+# every posting one account's proxy paid for was scored and delivered to accounts that could never
+# have fetched it. Measured 2026-08-08: two accounts, 24,902 LinkedIn rows scored each, and only
+# one of them owned a proxy.
+#
+# Named here rather than in either place that enforces it, so the harvest gate and the scoring gate
+# cannot disagree about which sources are proxied.
+PROXIED_SOURCES: frozenset[str] = frozenset({"linkedin"})
+
 # How many queries a source may be asked in one 15-minute cycle, before the operator says otherwise.
 DEFAULT_SOURCE_QUERIES_PER_CYCLE: dict[str, int] = {
     # Per user, and it was the tightest ceiling on the platform against the widest demand.

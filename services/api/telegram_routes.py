@@ -80,10 +80,15 @@ def _build(db, user, action: str, job_id: int) -> dict:
     if blocker is not None:
         return {"status": "not_ready", "answer": blocker}
 
-    # A build is the positive label (decided 2026-07-29).
-    result = record(db, user.id, job_id, "applied")
-    if result.changed:
-        enqueue(db, "train", user.id, dedup_key="retrain", delay_min=TRAIN_DEBOUNCE_MIN)
+    # A build is the positive label (decided 2026-07-29), and **only** the label. It is written
+    # here so a future fit can use it; it does not start one.
+    #
+    # A build costs the account Claude credits, so somebody choosing to spend them on a posting is
+    # the strongest signal the platform gets — and it is also the rarest, which is exactly why it
+    # is a poor trigger. Retraining on it fired a fit per build, on one new row, spending the
+    # user's own credential to relearn almost nothing. The 👍/👎 taps still trigger a fit: those
+    # are free, deliberate and arrive in bursts.
+    record(db, user.id, job_id, "applied")
 
     enqueue(db, "docgen", user.id, payload={"job_id": job_id, "kind": kind},
             dedup_key=f"{kind}:{job_id}")
@@ -187,10 +192,9 @@ def _build_from_link(db: Session, user: User, *, kind: str, link: str) -> dict:
     if blocker is not None:
         return {"status": "not_ready", "message": blocker}
 
-    # A build is the positive label, whether the job came from the feed or from a paste.
-    result = record(db, user.id, resolved.job_id, "applied", create_missing=True)
-    if result.changed:
-        enqueue(db, "train", user.id, dedup_key="retrain", delay_min=TRAIN_DEBOUNCE_MIN)
+    # A build is the positive label, whether the job came from the feed or from a paste — and
+    # again, only the label. See `_build` for why a build is a bad moment to fit a model.
+    record(db, user.id, resolved.job_id, "applied", create_missing=True)
 
     enqueue(db, "docgen", user.id, payload={"job_id": resolved.job_id, "kind": kind},
             dedup_key=f"{kind}:{resolved.job_id}")

@@ -556,3 +556,38 @@ def test_the_admission_check_and_the_worker_ask_the_same_question(api):
     from services.docgen import run
     with pytest.raises(run.NotBuildable):
         run._load(session, user.id, job.id)
+
+
+def test_building_records_the_label_but_does_not_start_a_fit(api):
+    """A build is a training point saved for later, never a reason to train now.
+
+    A build spends the account's own Claude credits, so choosing to spend them on a posting is the
+    strongest signal the platform gets — and the rarest. Fitting a model on each one meant one fit
+    per build, over a single new row, on the user's own credential. The label is what matters and
+    it is written; when a fit eventually runs it is there waiting.
+    """
+    from libs.db.models import QueueJob, UserLabel
+    from libs.feedback import APPLIED_LABEL
+
+    http, session, user, job = api
+    assert tap(http, job.id, action="bc").json()["status"] == "queued"
+    session.flush()
+
+    label = session.get(UserLabel, (user.id, job.id))
+    assert label is not None and label.label == APPLIED_LABEL, "the training point is kept"
+
+    lanes = [row.lane for row in session.query(QueueJob).filter_by(user_id=user.id).all()]
+    assert "docgen" in lanes, "the document is still built"
+    assert "train" not in lanes, "and nothing was fitted because of it"
+
+
+def test_an_explicit_thumbs_up_still_starts_a_fit(api):
+    """The taps are free and arrive in bursts, which is what makes them a good trigger."""
+    from libs.db.models import QueueJob
+
+    http, session, user, job = api
+    tap(http, job.id)
+    session.flush()
+
+    lanes = [row.lane for row in session.query(QueueJob).filter_by(user_id=user.id).all()]
+    assert "train" in lanes

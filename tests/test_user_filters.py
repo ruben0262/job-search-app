@@ -146,7 +146,7 @@ def test_the_conditions_are_the_ones_the_callers_need():
 
     conditions = candidate_conditions(built(config(locations=["europe"])))
 
-    assert len(conditions) == 3, "closed, fresh, in-country"
+    assert len(conditions) == 4, "closed, fresh, in-country, proxied-source"
     rendered = " ".join(str(c) for c in conditions)
     assert "closed_at" in rendered
     assert "posted_at" in rendered and "first_seen_at" in rendered
@@ -158,7 +158,7 @@ def test_naming_no_country_still_produces_a_usable_condition():
     from libs.tenant.filters import candidate_conditions
 
     conditions = candidate_conditions(built(config()))
-    assert len(conditions) == 3
+    assert len(conditions) == 4
 
 
 # ── the age window, against a real database ─────────────────────────────────────────────────────
@@ -189,8 +189,8 @@ def _row(db, **kwargs):
 
     from libs.db.models import CorpusJob
 
-    row = CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test", title="Engineer",
-                    **kwargs)
+    kwargs.setdefault("source", "test")
+    row = CorpusJob(url=f"https://example.com/{uuid.uuid4()}", title="Engineer", **kwargs)
     db.add(row)
     db.flush()
     return row
@@ -231,3 +231,46 @@ def test_an_undated_posting_is_aged_from_when_we_found_it(db):
     kept = _survivors(db, built(config(), max_age_hours=6))
     assert recent.id in kept, "found a moment ago, so there is nothing to drop it on"
     assert old.id not in kept, "found forty hours ago and still undated, so it is not fresh"
+
+
+# ── sources somebody else's proxy paid for ────────────────────────────────────────────────────
+
+def test_an_account_with_no_proxy_is_not_scored_on_proxied_postings(db):
+    """The leak this rule exists for.
+
+    LinkedIn is fetched per account on that account's own residential proxy, and the harvester
+    refuses to run it at all for an account with no proxy credential. The corpus is shared, so
+    without a matching rule here every posting one account paid to fetch was scored for everybody.
+    Measured in production on 2026-08-08: two accounts, 24,902 LinkedIn rows scored each, one
+    proxy between them.
+    """
+    linkedin = _row(db, source="linkedin")
+    open_board = _row(db, source="himalayas")
+
+    kept = _survivors(db, built(config(), proxied_sources=False))
+
+    assert open_board.id in kept
+    assert linkedin.id not in kept
+
+
+def test_an_account_with_a_proxy_still_sees_them(db):
+    """The rule is about who pays, not about disliking a source."""
+    linkedin = _row(db, source="linkedin")
+
+    assert linkedin.id in _survivors(db, built(config(), proxied_sources=True))
+
+
+def test_a_proxied_posting_already_scored_is_still_not_delivered():
+    """`candidate_conditions` keeps them out of new scoring passes; this keeps the rows that were
+    scored while the account still had a proxy from being sent after it stopped paying."""
+    filters = built(config(), proxied_sources=False)
+
+    assert filters.unwanted({"source": "linkedin", "title": "Engineer"}) == "proxied_source"
+    assert filters.unwanted({"source": "himalayas", "title": "Engineer"}) is None
+
+
+def test_which_sources_are_proxied_is_defined_once():
+    """The harvest gate and the scoring gate must not disagree about the list."""
+    from libs.settings import PROXIED_SOURCES
+
+    assert "linkedin" in PROXIED_SOURCES

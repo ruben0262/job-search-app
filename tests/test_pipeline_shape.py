@@ -268,3 +268,50 @@ def test_a_job_a_worker_is_running_is_counted_as_running(db):
 
     notify = next(lane for lane in pipeline(db)["lanes"] if lane["lane"] == "notify")
     assert notify["running"] == 1
+
+
+def test_a_closed_posting_is_not_counted_as_waiting_to_be_embedded(db):
+    """The page must not report work no worker will ever do.
+
+    The embedder skips closed rows on purpose — the pre-score filter refuses them, so a vector for
+    one is CPU spent on nothing. The dashboard asked only `trimmed_at IS NULL`, so two closed
+    greenhouse postings sat in the Embedded stage for 25 hours reading as a stuck pipeline while
+    the embedder was idle and correct.
+    """
+    from libs.corpus.repository import CorpusRepository
+    from libs.ops.pipeline import pipeline
+
+    _job(db, description="x" * 400, closed_at=datetime.now(UTC))
+    db.flush()
+
+    stages = {stage["key"]: stage for stage in pipeline(db, hours=24)["stages"]}
+    pending = CorpusRepository(db).awaiting_embedding(limit=500)
+
+    assert stages["embed"]["waiting"] == len(pending), (
+        "the page and the embedder must count the same rows")
+
+
+def test_an_open_posting_awaiting_a_vector_is_still_counted(db):
+    """The rule is about closed rows, not about hiding a real backlog."""
+    from libs.ops.pipeline import pipeline
+
+    before = {s["key"]: s for s in pipeline(db, hours=24)["stages"]}["embed"]["waiting"]
+    _job(db, description="x" * 400)
+    db.flush()
+    after = {s["key"]: s for s in pipeline(db, hours=24)["stages"]}["embed"]["waiting"]
+
+    assert after == before + 1
+
+
+def test_the_page_and_the_describer_count_the_same_rows(db):
+    """Same defect, same shape: a closed row is never fetched and must not read as waiting."""
+    from libs.corpus.repository import CorpusRepository
+    from libs.ops.pipeline import pipeline
+
+    _job(db, description=None, closed_at=datetime.now(UTC))
+    db.flush()
+
+    stages = {stage["key"]: stage for stage in pipeline(db, hours=24)["stages"]}
+    pending = CorpusRepository(db).awaiting_description(limit=1000)
+
+    assert stages["describe"]["waiting"] == len(pending)

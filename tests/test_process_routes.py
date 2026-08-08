@@ -201,8 +201,17 @@ def test_process_requires_signing_in(api):
     assert http.get("/process/state").status_code == 401
 
 
-def test_a_profile_built_by_the_conversation_is_not_offered_the_old_capture_flow(api):
-    """Two definitions of "profile ready" that disagreed."""
+def test_a_conversation_built_profile_is_still_sent_to_confirm_one_for_documents(api):
+    """The dead end, and why "ready" was the wrong word.
+
+    A setup chat that writes every file gives an account everything scoring needs — it trains a
+    model and receives jobs. It does not give it `users.profile`, which is what the CV and cover
+    prompts are filled from. This branch used to answer "Your profile is ready" and stop, so a
+    real account sat there fully set up, was refused every document it asked for, and had nothing
+    anywhere offering the step that would fix it.
+
+    Processing is that step, so that is what it is told to do.
+    """
     from libs.profiles import setup_files
     from libs.profiles.repository import ProfileFiles
     from services.api.process_routes import state
@@ -214,8 +223,24 @@ def test_a_profile_built_by_the_conversation_is_not_offered_the_old_capture_flow
     session.flush()
 
     answer = state(session, user.id)
-    assert answer["action"] != "process", answer["message"]
-    assert answer["action"] == "ready"
+    assert answer["action"] == "process", answer["message"]
+    assert "cover letters" in answer["message"], "it says which feature needs it"
+
+
+def test_an_account_that_has_confirmed_a_profile_is_finally_ready(api):
+    """And the state is reachable: confirming is what ends the loop."""
+    from libs.profiles import setup_files
+    from libs.profiles.repository import ProfileFiles
+    from services.api.process_routes import state
+
+    _http, session, user = api
+    files = ProfileFiles(session, user.id)
+    for name in setup_files():
+        files.write(name, f"real content for {name}", kind="context")
+    user.profile = {"identity": {"name": "Alice Example"}, "confirmed": True}
+    session.flush()
+
+    assert state(session, user.id)["action"] == "ready"
 
 
 def test_training_state_reports_what_is_running_and_why(api):

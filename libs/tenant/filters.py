@@ -13,6 +13,7 @@ from libs.corpus.geo import wanted_countries
 from libs.corpus.ranking import applicant_glut
 from libs.db.models import CorpusJob
 from libs.limits import limit_default
+from libs.settings import PROXIED_SOURCES
 
 # The catalogue's ceiling, for a caller with no user to resolve against — a test, or a direct construction.
 CATALOGUE_APPLICANT_CAP = limit_default("applicant_cap")
@@ -33,6 +34,10 @@ class UserFilters:
     applicant_cap: int = 0
     onsite_locations: tuple[str, ...] = field(default_factory=tuple)
     languages: frozenset[str] = field(default_factory=frozenset)
+    # Whether this account may see sources fetched on a residential proxy. False when it has no
+    # proxy credential of its own: the harvester will not fetch those for them, and the corpus is
+    # shared, so without this they receive another account's paid-for postings for free.
+    proxied_sources: bool = True
 
     def __post_init__(self) -> None:
         # Compiled once per batch: one pass over title and company against every term at once.
@@ -43,7 +48,8 @@ class UserFilters:
 
     @classmethod
     def from_config(cls, config: dict | None, *, max_age_hours: int,
-                    applicant_cap: int | None = CATALOGUE_APPLICANT_CAP) -> UserFilters:
+                    applicant_cap: int | None = CATALOGUE_APPLICANT_CAP,
+                    proxied_sources: bool = True) -> UserFilters:
         """Build from a stored `user_config.config`."""
         config = migrate_config(config or {}) if config else {}
         sections = config.get("sections") or []
@@ -64,6 +70,7 @@ class UserFilters:
             onsite_locations=tuple(workfilter.onsite_locations(config.get("onsite_locations"))),
             # An empty set means no opinion and admits every language.
             languages=frozenset(str(code).lower() for code in config.get("languages") or []),
+            proxied_sources=proxied_sources,
         )
 
     def fresh_since(self, *, now: datetime | None = None) -> datetime:
@@ -96,6 +103,12 @@ class UserFilters:
 
     def unwanted(self, row) -> str | None:
         """Why this account can never receive this posting, or `None`."""
+        # Checked here as well as in SQL: `candidate_conditions` keeps these rows out of a fresh
+        # scoring pass, and this keeps the ones already scored from being delivered. An account
+        # that had a proxy and stopped paying for it has thousands of rows already scored.
+        if not self.proxied_sources and (row.get("source") or "") in PROXIED_SOURCES:
+            return "proxied_source"
+
         # Title and company only, never the description.
         if self.excluded(row.get("title"), row.get("company")):
             return "excluded_keyword"
@@ -126,13 +139,24 @@ def filters_for(session, user) -> UserFilters:
     sets and the window they set arrive together rather than one of them being forgotten.
     """
     from libs import limits, settings  # noqa: PLC0415 - avoids a cycle at import time
-    from libs.db.models import UserConfig  # noqa: PLC0415
+    from libs.db.models import UserConfig, UserSecret  # noqa: PLC0415
 
+    # Presence, never the value: nothing here decrypts a credential, it only asks whether the
+    # account has one. Asked once per batch alongside the config it already reads.
+    has_proxy = session.scalar(
+        select(UserSecret.user_id)
+        .where(UserSecret.user_id == user.id, UserSecret.kind == "proxy")
+        .limit(1)) is not None
+
+    # Kept next to the `None` that honours Unlimited: `test_unlimited_is_honoured_wherever_it_is
+    # _offered` reads the few lines after a `resolve(...)` looking for it, and putting anything
+    # between the two hides the check from the guard as well as from a reader.
     cap = limits.resolve(user, "applicant_cap")
     return UserFilters.from_config(
         session.scalar(select(UserConfig.config).where(UserConfig.user_id == user.id)),
         max_age_hours=int(settings.get(session, "job_max_age_hours")),
-        applicant_cap=None if cap is None else int(cap))
+        applicant_cap=None if cap is None else int(cap),
+        proxied_sources=has_proxy)
 
 
 def candidate_conditions(filters: UserFilters, *, now: datetime | None = None) -> list:
@@ -147,4 +171,9 @@ def candidate_conditions(filters: UserFilters, *, now: datetime | None = None) -
         # Their countries, or a posting that names no readable place.
         true() if not filters.countries
         else CorpusJob.country.is_(None) | CorpusJob.country.in_(filters.countries),
+        # Sources this account's own proxy pays for. The harvester will not fetch them without a
+        # proxy credential, and the corpus is shared, so this is what stops an account with no
+        # proxy being served another account's LinkedIn postings.
+        true() if filters.proxied_sources
+        else CorpusJob.source.notin_(tuple(sorted(PROXIED_SOURCES))),
     ]
