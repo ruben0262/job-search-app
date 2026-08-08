@@ -101,6 +101,9 @@ def pipeline(session: Session, *, hours: int = 24) -> dict:
     stages += _per_user_stages(session, since)
     return {"window_hours": hours, "stages": [stage.as_dict() for stage in stages],
             "lanes": lanes(session, since),
+            # The same lanes, split by account: "docgen 2 dead" is only actionable once you know
+            # whose two, and which error.
+            "lane_accounts": lane_accounts(session, since),
             "at": datetime.now(UTC).isoformat(),
             "amber_after_min": AMBER_TICKS * PLATFORM_TICK_MIN,
             "red_after_min": RED_TICKS * PLATFORM_TICK_MIN}
@@ -119,6 +122,39 @@ def lanes(session: Session, since: datetime) -> list[dict]:
         .group_by(QueueJob.lane).order_by(QueueJob.lane)).all()
     return [{"lane": row.lane, "ready": row.ready, "running": row.running,
              "dead": row.dead, "done": row.done} for row in rows]
+
+
+def lane_accounts(session: Session, since: datetime) -> list[dict]:
+    """Which accounts each lane is working for, and how it is going for each of them.
+
+    `lanes` above answers "docgen has two dead jobs". It does not answer "whose", and whose is the
+    question an operator actually has: a lane is per-account work, and two dead docgen jobs are
+    either one account in a broken state or two accounts with unrelated problems. Finding out meant
+    opening a psql session against production, which is how the account that could not build a CV
+    went unnoticed for three days.
+    """
+    rows = session.execute(
+        select(QueueJob.lane, QueueJob.user_id, User.email,
+               func.count().filter(QueueJob.state == "ready").label("ready"),
+               func.count().filter(QueueJob.state == "claimed").label("running"),
+               func.count().filter(QueueJob.state == "dead").label("dead"),
+               func.count().filter((QueueJob.state == "done")
+                                   & (QueueJob.finished_at >= since)).label("done"),
+               # The newest failure on this lane for this account, whatever its state now: a job
+               # that failed four times and then succeeded is still worth seeing.
+               func.max(QueueJob.last_error).label("last_error"))
+        .join(User, User.id == QueueJob.user_id)
+        .group_by(QueueJob.lane, QueueJob.user_id, User.email)
+        .order_by(QueueJob.lane, User.email)).all()
+
+    return [{"lane": row.lane,
+             "user_id": str(row.user_id),
+             "email": row.email,
+             "ready": row.ready, "running": row.running,
+             "dead": row.dead, "done": row.done,
+             # Truncated: this is a panel, and a traceback belongs in the logs.
+             "last_error": (row.last_error or "")[:200] or None}
+            for row in rows]
 
 
 def _per_user_stages(session: Session, since) -> list[Stage]:

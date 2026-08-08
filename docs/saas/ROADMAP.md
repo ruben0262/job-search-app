@@ -1569,6 +1569,43 @@ promise, and nothing was checking that anything fulfilled it. Same shape as
 `telegram_webhook_secret` in 6af — a column with no producer — and found the same way, by following
 a user-visible symptom rather than by reading code.
 
+### 6ao — a support ticket the user can actually send (added 2026-08-08)
+
+**Not started. Owner's request, 2026-08-08.** There is no way for a user to tell us anything. When
+something breaks they have the Telegram bot, which answers with job cards, and a status page that
+reports symptoms rather than collecting reports. The account that could not build a CV for three
+days had no route to say so — the owner found it by looking.
+
+**Shape**: a Support entry in Settings opens a modal; submitting emails FlowSolutions. Adapted from
+`d:/Projects/filip_project/flowsolutions-ai/web/react/src/pages/app/support/ContactModal.tsx`,
+whose form is the right one: name, email, category, priority, subject, a description whose
+placeholder *tells the user what to include* (what they tried, what happened instead, exact error
+text, when, whether it affects one thing or many), optional attachments, and a response preference.
+
+**What changes for this project** is the context block. Theirs collects workflow ID and browser.
+Ours should collect what our failures actually need, and should prefill rather than ask:
+
+- The account email, from the session. Never typed.
+- Category, from what this platform can break: jobs not arriving, wrong jobs arriving, CV or cover
+  letter, Telegram, setup chat, billing, account.
+- The job URL, when the ticket is about one posting. It is the primary key of most complaints.
+- Which document, when the ticket is about a build: CV or cover letter.
+- **A diagnostic block attached automatically**, because a user cannot know what we would ask for
+  and will not paste it accurately: `profile` present, profile files complete, `model_version`,
+  telegram status and whether a chat and a channel are attached, proxy present, last docgen
+  outcome, and the last few queue rows for that account. Every one of those was something the
+  owner had to query by hand while debugging the account that could not build.
+
+**Why it is worth doing properly rather than a `mailto:`**: a support address with no context
+produces a second round trip for facts the platform already knows. The whole value is that the
+ticket arrives already answering "which account, in what state, doing what".
+
+**Open questions**: where the mail goes (`libs/mail` already sends, so this is a template and a
+route, not new infrastructure); whether tickets are stored or only emailed — storing them means a
+table, an admin view and a retention decision, and emailing only means the record lives in a
+mailbox; and whether an unauthenticated route is needed for people who cannot sign in, which is a
+different and more abusable surface.
+
 ### 6an — the pre-score filter, measured before it was written (added 2026-08-05)
 
 **The centroid chosen in 6z.1, built and measured against the live corpus.** The library is in

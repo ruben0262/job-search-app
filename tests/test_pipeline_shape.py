@@ -315,3 +315,34 @@ def test_the_page_and_the_describer_count_the_same_rows(db):
     pending = CorpusRepository(db).awaiting_description(limit=1000)
 
     assert stages["describe"]["waiting"] == len(pending)
+
+
+def test_the_queue_says_which_account_each_lane_is_working_for(db):
+    """"docgen 2 dead" is not actionable until you know whose two.
+
+    A lane is per-account work. The chips summed across accounts, so an operator seeing dead jobs
+    had to open psql against production to find the owner — which is how an account that could not
+    build a CV went unnoticed for three days.
+    """
+    import uuid as _uuid
+
+    from libs.db.models import QueueJob, User
+    from libs.ops.pipeline import pipeline
+
+    first = User(email=f"{_uuid.uuid4()}@example.com", password_hash="x", status="active")
+    second = User(email=f"{_uuid.uuid4()}@example.com", password_hash="x", status="active")
+    db.add_all([first, second])
+    db.flush()
+    db.add_all([
+        QueueJob(lane="docgen", user_id=first.id, state="dead",
+                 last_error="AttributeError: 'NoneType' object has no attribute 'calls'"),
+        QueueJob(lane="docgen", user_id=second.id, state="ready"),
+    ])
+    db.flush()
+
+    rows = {(row["lane"], row["email"]): row for row in pipeline(db, hours=24)["lane_accounts"]}
+
+    assert rows[("docgen", first.email)]["dead"] == 1
+    assert "AttributeError" in rows[("docgen", first.email)]["last_error"]
+    assert rows[("docgen", second.email)]["ready"] == 1
+    assert rows[("docgen", second.email)]["dead"] == 0, "the two accounts are not conflated"

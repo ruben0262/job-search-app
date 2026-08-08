@@ -154,10 +154,23 @@ type PipelineLane = {
   done: number;
 };
 
+/** One lane's work for one account. `lanes` says "docgen 2 dead"; this says whose, and why. */
+type LaneAccount = {
+  lane: string;
+  user_id: string;
+  email: string;
+  ready: number;
+  running: number;
+  dead: number;
+  done: number;
+  last_error: string | null;
+};
+
 type PipelineReport = {
   window_hours: number;
   stages: PipelineStage[];
   lanes: PipelineLane[];
+  lane_accounts: LaneAccount[];
   at: string;
   amber_after_min: number;
   red_after_min: number;
@@ -1004,6 +1017,11 @@ function PipelineTab() {
 
   const busiest = Math.max(1, ...report.stages.map((s) => s.waiting ?? 0));
   const lanes = report.lanes.filter((lane) => lane.ready || lane.running || lane.dead);
+  // Same filter, same reason: an account whose only rows are `done` is not something to look at.
+  // Dead first, because that is the row somebody has to act on.
+  const accounts = (report.lane_accounts ?? [])
+    .filter((row) => row.ready || row.running || row.dead)
+    .sort((a, b) => b.dead - a.dead || a.lane.localeCompare(b.lane));
 
   return (
     <>
@@ -1083,6 +1101,45 @@ function PipelineTab() {
             </div>
           ))}
         </div>
+      )}
+
+      {/* Whose work it is. A lane is per-account, so "2 dead" is either one account in a broken
+          state or two unrelated problems, and the chips above cannot tell you which. Finding out
+          used to mean a psql session against production. */}
+      <h3 style={{ marginTop: "1.6rem" }}>Who it is running for</h3>
+      {accounts.length === 0 ? (
+        <p className="hint">
+          No account has work in a lane right now. Nothing queued, nothing running, nothing dead.
+        </p>
+      ) : (
+        <table>
+          <thead>
+            <tr>
+              <th>Lane</th>
+              <th>Account</th>
+              <th>Running</th>
+              <th>Queued</th>
+              <th>Dead</th>
+              <th>Done ({report.window_hours}h)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {accounts.map((row) => (
+              <tr key={`${row.lane}:${row.user_id}`}>
+                <td><strong>{row.lane}</strong></td>
+                <td>
+                  <a href={`/admin/users/${row.user_id}`}>{row.email}</a>
+                  {/* The error is the whole reason to look, so it is not behind a click. */}
+                  {row.last_error ? <div className="hint">{row.last_error}</div> : null}
+                </td>
+                <td>{row.running || "—"}</td>
+                <td>{row.ready || "—"}</td>
+                <td>{row.dead ? <span className="lane-dead">{row.dead}</span> : "—"}</td>
+                <td>{row.done || "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
     </>
   );
