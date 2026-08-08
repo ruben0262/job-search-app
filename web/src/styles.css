@@ -552,6 +552,22 @@ button[disabled] {
   line-height: 1;
 }
 
+/* The glyph has to land on whole pixels or it reads as crooked, and it did.
+ *
+ * The button is 28px with a 1px border, so 26px of content. A 14px icon leaves exactly 6px each
+ * side; the 13px icons this replaced left 6.5px, and half a pixel is enough to make a cross look
+ * nudged left and a plus look nudged up — different amounts on each axis, because the browser
+ * rounds each independently.
+ *
+ * `display: block` matters as much. An `svg` is inline by default, so it sits on the text
+ * baseline and reserves descender space underneath, which pushes the icon visually high inside a
+ * box that is centred perfectly correctly. Both halves of this are needed. */
+.icon-btn svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+}
+
 .icon-btn:hover:not([disabled]) {
   color: var(--ink);
   border-color: var(--ink);

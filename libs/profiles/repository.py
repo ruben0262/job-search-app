@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
-from libs.db.models import SCORING_RELEVANT_FILES, UserProfileFile
+from libs.db.models import SCORING_RELEVANT_FILES, User, UserProfileFile
 from libs.profiles import (
     grounding,
     is_filled,
@@ -101,6 +101,30 @@ class ProfileFiles:
             .where(UserProfileFile.user_id == self._user,
                    UserProfileFile.name == "context.md"))
         return context is not None and is_filled(context)
+
+    def build_blocker(self) -> str | None:
+        """Why this account cannot build a CV or cover letter, or `None` if it can.
+
+        **One question, asked in one place.** It used to be asked twice with different answers:
+        the Telegram handler checked `is_ready()` (are the profile files filled?) and the docgen
+        worker checked `user.profile` (is there a confirmed profile schema?). An account that
+        finished the setup chat but never confirmed the onboarding form passed the first and
+        failed the second, so tapping Build answered "it will arrive here shortly" and nothing
+        ever arrived. That is not a rare state — it is every user between finishing setup and
+        confirming their details.
+
+        The refusal text is returned rather than a boolean because the caller shows it to the
+        person, and the reason is the useful half.
+        """
+        if not self.is_ready():
+            return ("Finish your setup chat first — a CV needs your profile to build from.")
+        user = self._s.get(User, self._user)
+        if user is None:
+            return f"no such user: {self._user}"
+        if not user.profile:
+            return ("Confirm your details first — your CV is built from the profile you "
+                    "confirm, and this account has not confirmed one yet.")
+        return None
 
     def missing_setup(self) -> list[str]:
         """Setup files still absent or unfilled."""

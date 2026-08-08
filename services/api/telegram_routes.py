@@ -73,11 +73,12 @@ def _build(db, user, action: str, job_id: int) -> dict:
         audit(logger, "telegram.build_over_quota", user=user.id, job=job_id, kind=kind)
         return {"status": "over_quota", "answer": str(exc)}
 
-    # Refused here rather than dead-lettered there.
-    if not ProfileFiles(db, user.id).is_ready():
-        return {"status": "not_ready",
-                "answer": "Finish your setup chat first — a CV needs your profile to build "
-                          "from."}
+    # Refused here rather than dead-lettered there — and refused for exactly the reasons the
+    # worker would refuse for, which is the whole point of asking `build_blocker` rather than
+    # `is_ready`. Checking a weaker condition here is how a build was promised and never sent.
+    blocker = ProfileFiles(db, user.id).build_blocker()
+    if blocker is not None:
+        return {"status": "not_ready", "answer": blocker}
 
     # A build is the positive label (decided 2026-07-29).
     result = record(db, user.id, job_id, "applied")
@@ -177,6 +178,14 @@ def _build_from_link(db: Session, user: User, *, kind: str, link: str) -> dict:
             resolved = ondemand.resolve(db, link, client)
     except NotAJobLink as exc:
         return {"status": "bad_link", "message": str(exc)}
+
+    # After the link is known to be a link, so somebody who typed nonsense is told that rather
+    # than told to confirm their details — but before anything is written. This path had no
+    # readiness check at all, so an account that cannot build still recorded an `applied` label
+    # and queued a retrain for a document that was never going to arrive.
+    blocker = ProfileFiles(db, user.id).build_blocker()
+    if blocker is not None:
+        return {"status": "not_ready", "message": blocker}
 
     # A build is the positive label, whether the job came from the feed or from a paste.
     result = record(db, user.id, resolved.job_id, "applied", create_missing=True)

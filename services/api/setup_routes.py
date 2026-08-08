@@ -13,7 +13,6 @@ from libs import limits
 from libs.agents import FILE_OWNERS, STARTABLE, UNOWNED_FILES
 from libs.agents.loop import touch_conversation
 from libs.db.models import (
-    MAX_CONVERSATIONS,
     SETUP_AGENTS,
     SetupConversation,
     SetupMessage,
@@ -102,7 +101,13 @@ def conversation(db: Session = Depends(get_db),
                            "last_message_at": (row.last_message_at.isoformat()
                                                if row.last_message_at else None)}
                           for row in existing],
-        "max_conversations": MAX_CONVERSATIONS,
+        # The account's own ceiling, not the module constant. `new_conversation` below enforces
+        # `limits.resolve(...)`, so reporting `MAX_CONVERSATIONS` here told the page 3 while the
+        # API would happily accept 10 — an operator raising the limit changed nothing the user
+        # could see, because the page hides the control at the number it was given. `None` is
+        # Unlimited and must stay `None`: a fallback to the constant is how "Unlimited" silently
+        # became 3.
+        "max_conversations": limits.resolve(db.get(User, user_id), "conversations"),
         # `status` tells the page whether to keep polling: `pending` or `streaming` is a turn still running.
         "messages": [{"id": row.id, "role": row.role, "content": row.content, "agent": row.agent,
                       "status": row.status, "error": row.error,

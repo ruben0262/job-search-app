@@ -185,22 +185,54 @@ def test_the_label_pool_default_is_read_from_the_catalogue_and_not_restated():
 
 
 def test_every_limit_in_the_catalogue_has_a_control_an_operator_can_reach():
-    """A limit with no choices renders an empty dropdown, and nothing errors."""
-    import re
-    from pathlib import Path
+    """A limit with no choices renders an empty dropdown, and nothing errors.
 
-    from libs.limits import LIMITS
+    This used to compare the catalogue against a `CHOICES` map in `AdminUserPage.tsx` — two lists
+    that had to agree, with a test to make them agree, which is the arrangement CLAUDE.md §5 names
+    as the defect rather than the fix. The values now live in the catalogue and reach the panel
+    through `/admin/limits`, so what needs asserting is that the endpoint actually carries them.
+    """
+    from libs.limits import LIMITS, describe
 
-    panel = Path("web/src/pages/AdminUserPage.tsx").read_text(encoding="utf-8")
-    block = re.search(r"const CHOICES:[^=]*=\s*\{(.*?)\n\};", panel, re.S)
-    assert block, "the CHOICES map has moved; this guard needs updating with it"
-    listed = set(re.findall(r"^\s*(\w+):\s*\[", block.group(1), re.M))
+    served = {row["key"]: row.get("choices") for row in describe()}
 
-    missing = [limit.key for limit in LIMITS if limit.key not in listed]
+    assert set(served) == {limit.key for limit in LIMITS}
+    empty = [key for key, choices in served.items() if not choices]
+    assert not empty, (
+        f"these limits reach the panel with nothing to pick: {empty}. The panel renders exactly "
+        "what this endpoint serves, so an empty list is a control that cannot be operated.")
+
+
+def test_every_limit_offers_values_an_operator_can_pick():
+    """A ceiling with no choices renders a dropdown that cannot be opened.
+
+    The options used to live in a `CHOICES` map inside `AdminUserPage.tsx`. Nothing connected the
+    two, so a limit added to the catalogue got a row in the panel, a label, a detail line, a
+    working PUT route — and an empty select. Wired end to end and unusable, with no error at any
+    layer to say so.
+    """
+    missing = [limit.key for limit in LIMITS if not limit.choices]
+
     assert not missing, (
-        f"these limits would render an empty dropdown: {missing}. Add their steps to CHOICES in "
-        "web/src/pages/AdminUserPage.tsx")
+        f"these limits offer nothing to pick: {missing}. Add `choices=` in `libs/limits`, which is "
+        "the only place the panel reads them from.")
 
-    # And nothing in the panel that the catalogue does not offer.
-    stray = listed - {limit.key for limit in LIMITS}
-    assert not stray, f"CHOICES offers limits that no longer exist: {sorted(stray)}"
+
+def test_a_limits_default_is_one_of_the_values_offered():
+    """Otherwise the panel opens showing a value the dropdown cannot represent, and the first save
+    silently changes a setting the operator was only looking at."""
+    wrong = [(limit.key, limit.default, limit.choices) for limit in LIMITS
+             if limit.default is not None and limit.default not in limit.choices]
+
+    assert not wrong, f"a default that is not offered: {wrong}"
+
+
+def test_the_panel_keeps_no_copy_of_the_choices():
+    """The frontend renders what the catalogue serves. A second list here is the defect this
+    whole test file exists for, and it is invisible from the backend."""
+    panel = (ROOT / "web" / "src" / "pages" / "AdminUserPage.tsx").read_text(encoding="utf-8")
+
+    assert "const CHOICES" not in panel, (
+        "AdminUserPage.tsx has its own CHOICES map again. The values belong in `libs/limits` and "
+        "reach the panel through `/admin/limits`.")
+    assert "spec.choices" in panel, "the panel must render the catalogue's own choices"

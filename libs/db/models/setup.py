@@ -21,9 +21,6 @@ from libs.db.base import Base, timestamptz
 SETUP_AGENTS = ("setup-director", "setup-context", "setup", "setup-prompts",
                 "setup-role-angles", "setup-scorer")
 
-# How many conversations one account may keep.
-MAX_CONVERSATIONS = 3
-
 # What a conversation is called before anybody has said anything in it.
 DEFAULT_TITLE = "Untitled chat"
 

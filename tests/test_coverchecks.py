@@ -103,8 +103,53 @@ NESTED = """<!DOCTYPE html>
 </body></html>"""
 
 
+# The second shape the model emits, and the second one to defeat a parser: no paragraph tags at
+# all, the whole letter as bare text inside one container, paragraphs separated by blank lines.
+# Both tag-based passes see a single block beginning "Dear ...", read the entire letter as
+# signature, and return nothing — which scores as a zero-word letter instead of an unreadable one.
+UNTAGGED = """<!DOCTYPE html>
+<html lang="en"><head><style>.profile { margin: 0; }</style></head>
+<body>
+<div class="cv-header">
+  <div class="cv-name">Ruben Lekli</div>
+  <div class="cv-contact"><span>lekliruben@gmail.com</span><span>+447729711592</span></div>
+</div>
+<div class="profile">
+Dear Hiring Manager,
+
+At my independent data pipeline project I built a Python backend handling 10k+ records in under
+1ms, deployed on production Linux infrastructure with full automation.
+
+I designed that pipeline from scratch, with REST ingestion, scraping behind rotating proxies, and
+deduplication in orjson, all containerised with Docker Compose.
+
+Kind regards,
+
+Ruben Lekli
+</div>
+</body></html>"""
+
+
 def codes(report: coverchecks.Report) -> set[str]:
     return {finding.code for finding in report.findings}
+
+
+def test_a_letter_with_no_paragraph_tags_is_still_read():
+    """Blank lines are paragraph marks when the model does not supply tags."""
+    blocks = coverchecks.paragraphs(UNTAGGED)
+
+    assert len(blocks) == 2, blocks
+    assert blocks[0].startswith("At my independent data pipeline project")
+    assert blocks[1].endswith("containerised with Docker Compose.")
+    assert not any("Kind regards" in block for block in blocks)
+    assert not any("lekliruben@gmail.com" in block for block in blocks)
+
+
+def test_an_unreadable_letter_never_scores_as_a_clean_short_one():
+    """A parser that returns nothing must not look like a letter with nothing wrong."""
+    report = coverchecks.check(UNTAGGED, company="Hire Feed", title="Python Developer")
+
+    assert report.body_words > 40, report.body_words
 
 
 def test_paragraphs_survive_a_container_div():

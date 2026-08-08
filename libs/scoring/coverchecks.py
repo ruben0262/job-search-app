@@ -51,6 +51,23 @@ def _text(fragment: str) -> str:
     return re.sub(r"\s+", " ", _TAG.sub(" ", fragment)).replace("&amp;", "&").strip()
 
 
+def _blank_line_blocks(document: str) -> list[str]:
+    """Paragraphs from a document that marks them with blank lines instead of tags.
+
+    The last resort, and it is needed: one letter came back with the whole body as bare text
+    inside a single `<div class="profile">`, greeting included and not a `<p>` in the file. Both
+    tag-based passes then see one block that starts with "Dear …", conclude the letter is all
+    signature, and return nothing — which scores as a zero-word letter rather than as a letter
+    the parser could not read.
+    """
+    text = re.sub(r"(?i)<br\s*/?>", "\n", document)
+    text = re.sub(r"(?i)</(p|div|h[1-6]|li|tr)>", "\n\n", text)
+    text = _TAG.sub(" ", text).replace("&amp;", "&")
+    blocks = [re.sub(r"[^\S\n]+", " ", block).strip()
+              for block in re.split(r"\n\s*\n", text)]
+    return [block.replace("\n", " ").strip() for block in blocks if block.strip()]
+
+
 def paragraphs(letter: str) -> list[str]:
     """The prose paragraphs: what sits between the greeting and the sign-off.
 
@@ -59,11 +76,27 @@ def paragraphs(letter: str) -> list[str]:
     a repetition, so folding them into the body would make two checks lie.
     """
     stripped = _NOT_PROSE.sub(" ", letter)
-    blocks = [_text(body) for body in _PARA.findall(stripped)]
-    if len(blocks) < 2:
-        # No paragraph markup to speak of: fall back to whatever containers the letter does use.
-        blocks = [_text(body) for _, body in _BLOCK.findall(stripped)]
-    blocks = [block for block in blocks if block]
+    for candidate in (_paragraph_tags(stripped), _container_tags(stripped),
+                      _blank_line_blocks(stripped)):
+        found = _between_greeting_and_signoff(candidate)
+        if found:
+            return found
+    return []
+
+
+def _paragraph_tags(document: str) -> list[str]:
+    blocks = [_text(body) for body in _PARA.findall(document)]
+    return [block for block in blocks if block] if len(blocks) >= 2 else []
+
+
+def _container_tags(document: str) -> list[str]:
+    return [block for block in (_text(body) for _, body in _BLOCK.findall(document)) if block]
+
+
+def _between_greeting_and_signoff(blocks: list[str]) -> list[str]:
+    """The prose, or nothing if these blocks do not look like a letter."""
+    if not blocks:
+        return []
 
     start = next((i + 1 for i, block in enumerate(blocks) if _GREETING.search(block)), None)
     if start is None:

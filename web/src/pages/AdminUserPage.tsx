@@ -12,6 +12,8 @@ type LimitSpec = {
   unit: string;
   detail: string;
   allow_unlimited: boolean;
+  /** The settable values, from `libs.limits`. Not a copy kept here — see the note on the render. */
+  choices: number[];
 };
 
 type UserDetail = {
@@ -40,23 +42,6 @@ type UserDetail = {
   counts: { labels: number; scored: number; applied: number; notified: number };
   /** `null` is unlimited and is a real value, not a missing one. */
   limits: Record<string, number | null>;
-};
-
-/** The values an operator picks from, plus Unlimited where the ceiling allows it. */
-const CHOICES: Record<string, number[]> = {
-  notifications_per_day: [25, 50, 100, 250, 500, 1000],
-  items_per_run: [5, 10, 15, 20, 30, 50],
-  send_gap_seconds: [3, 4, 5, 8, 12, 20],
-  proxy_mb_per_day: [100, 200, 500, 1000, 2000],
-  // LinkedIn stops counting at 200 and shows "Over 200 applicants", so 200 is the top real step.
-  applicant_cap: [25, 50, 100, 150, 200],
-  linkedin_interval_min: [15, 30, 60, 120],
-  describe_per_run: [20, 40, 60, 100, 200],
-  keywords: [10, 25, 50, 100],
-  documents: [10, 25, 50, 100],
-  conversations: [1, 3, 5, 10],
-  cv_builds_per_day: [5, 10, 20, 50, 100],
-  label_pool: [100, 300, 500, 1000],
 };
 
 export function AdminUserPage({ userId }: { userId: string }) {
@@ -201,7 +186,11 @@ export function AdminUserPage({ userId }: { userId: string }) {
                 disabled={saving === spec.key}
                 onChange={(event) => void save(spec.key, event.target.value)}
               >
-                {(CHOICES[spec.key] ?? []).map((choice) => (
+                {/* From the catalogue, never a list kept here. A ceiling whose options lived in
+                    this file rendered an empty dropdown when it was added to `libs.limits` and
+                    nobody remembered this map — a control that exists, is wired end to end, and
+                    cannot be operated. */}
+                {spec.choices.map((choice) => (
                   <option key={choice} value={choice}>
                     {choice} {spec.unit}
                   </option>

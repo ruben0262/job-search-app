@@ -58,6 +58,13 @@ def handle(session, job: QueueJob) -> None:
                 with redacting(value, bot_token), _http_for(store, job.user_id) as http:
                     result = _build(session, job, client_for(value, credential), bot_token,
                                     job_id=job_id, kind=kind, http=http)
+            # `None` is `NotBuildable`: the account was told why and there is nothing to retry.
+            # Reading `result.calls` regardless raised `AttributeError`, which the worker saw as a
+            # crash rather than as the deliberate non-failure `_build` had already handled — so a
+            # user with no confirmed profile got a job that retried every sixty seconds and told
+            # him again every time, for as long as anybody left it alone.
+            if result is None:
+                return
             logger.info("docgen: built the %s for %s in %d call(s), %s page(s)",
                         kind, job.user_id, result.calls, result.pages)
             return

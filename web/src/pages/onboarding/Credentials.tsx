@@ -132,7 +132,7 @@ function Stored({
 
 function CopyIcon() {
   return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <rect x="8" y="8" width="12" height="12" rx="2" stroke="currentColor" strokeWidth="1.8" />
       <path d="M16 4H6a2 2 0 00-2 2v10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
     </svg>
@@ -141,7 +141,7 @@ function CopyIcon() {
 
 function CheckIcon() {
   return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M4.5 12.5l5 5 10-11" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
@@ -150,7 +150,7 @@ function CheckIcon() {
 /** Removal. A minus reads as "decrement"; a cross reads as "delete this". */
 function CrossIcon() {
   return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
     </svg>
   );
@@ -354,10 +354,10 @@ export function TelegramStep({ onDone }: { onDone: () => void }) {
 
       {/* A field, not a status readout. */}
       <div style={{ marginTop: "1.5rem" }}>
-        <p className="small muted">
+        {/* <p className="small muted">
           <strong>Required: your own chat with the bot.</strong> Commands and your finished CVs
           arrive here, separately from the job stream.
-        </p>
+        </p> */}
         <Field
           label="Your chat ID"
           hint="A positive number, yours rather than the channel's. The channel ID starts with -100 and goes in the box further down."
@@ -409,11 +409,11 @@ export function TelegramStep({ onDone }: { onDone: () => void }) {
       </div>
 
       <div style={{ marginTop: "2rem" }}>
-        <p className="small muted">
+        {/* <p className="small muted">
           <strong>Required: a channel for your job stream.</strong> Jobs land in a channel you can
           scroll like a feed, and the bot chat stays for commands and your finished CVs. Without it
           there is nowhere for matches to go.
-        </p>
+        </p> */}
         <Field
           label="Channel ID"
           hint="Starts with -100. Every job goes to this one channel, if you already have separate channels set up, this replaces that split."

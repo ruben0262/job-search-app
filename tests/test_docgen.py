@@ -4,6 +4,7 @@ from __future__ import annotations
 import pathlib
 import shutil
 import uuid
+from typing import ClassVar
 
 import pytest
 
@@ -578,3 +579,45 @@ def test_a_document_that_fails_its_checks_never_reaches_chrome(monkeypatch, fake
                       token="t", workdir=tmp_path)
 
     assert fake_chrome["calls"] == 0
+
+
+# ── the worker's handling of a deliberate refusal ─────────────────────────────────────────────
+
+def test_a_refusal_is_not_a_crash_and_is_not_retried(monkeypatch):
+    """`NotBuildable` means the account was told why. The worker must finish, not raise.
+
+    `_build` catches `NotBuildable`, notifies the user and returns `None` — its own comment says
+    "Not a failure, and it must not be recorded as one". The caller then read `result.calls`
+    regardless, raising `AttributeError`, which the queue saw as a crash and retried. In
+    production this ran every sixty seconds against an account with no confirmed profile,
+    re-notifying its owner on every attempt, until somebody noticed.
+    """
+    from services.docgen import __main__ as worker
+
+    monkeypatch.setattr(worker, "_build", lambda *args, **kwargs: None)
+
+    class Secret:
+        @staticmethod
+        def reveal():
+            return "sk-ant-api03-" + "x" * 40
+
+    class Store:
+        def __init__(self, _session):
+            pass
+
+        def use(self, _user_id, kind):
+            from contextlib import nullcontext
+            # No proxy for this account: `_http_for` would otherwise be handed the Claude key as
+            # a proxy URL, which is a different failure than the one under test.
+            return nullcontext(None if kind == "proxy" else Secret())
+
+    monkeypatch.setattr(worker, "SecretStore", Store)
+    monkeypatch.setattr(worker, "client_for", lambda _value, _kind: object())
+
+    class Job:
+        id = uuid.uuid4()
+        user_id = uuid.uuid4()
+        payload: ClassVar[dict] = {"job_id": 7, "kind": "cover"}
+
+    # The assertion is that this returns at all: before the fix it raised AttributeError.
+    assert worker.handle(object(), Job()) is None

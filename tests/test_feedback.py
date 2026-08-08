@@ -39,13 +39,17 @@ def api():
     session.add(user)
     session.flush()
 
-    # A finished profile, because the build button now refuses without one.
+    # A finished profile, because the build button now refuses without one. Both halves are
+    # needed and they are different things: the files are what the setup chat writes, and
+    # `user.profile` is the schema the onboarding form confirms. An account with the first and
+    # not the second is the state that promised a document and never sent one.
     from libs.db.models import UserProfileFile
     from libs.profiles import GENERATION_FILES
 
     for name in GENERATION_FILES:
         session.add(UserProfileFile(user_id=user.id, name=name, kind="context",
                                     content=f"Real content for {name}, with no placeholders."))
+    user.profile = {"identity": {"name": "Alice Example"}, "confirmed": True}
     session.flush()
 
     job = CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test", title="Engineer")
@@ -511,3 +515,44 @@ def test_a_build_is_refused_at_the_tap_when_setup_is_unfinished(api):
     assert session.scalar(
         select(func.count()).select_from(QueueJob).where(QueueJob.lane == "docgen")) == 0, (
         "nothing is queued that could only fail")
+
+
+def test_a_build_is_refused_when_the_profile_was_never_confirmed(api):
+    """The state a real account was stuck in, and the reason nothing arrived.
+
+    The setup chat had written every profile file, so the Telegram handler's `is_ready()` check
+    passed and answered "Building your CV — it will arrive here shortly". The worker then asked a
+    different question, `user.profile`, found nothing, and refused. Both checks were individually
+    correct; between them the platform promised a document it could not build, every time, and
+    the queue retried the refusal every sixty seconds.
+    """
+    http, session, user, job = api
+    user.profile = None
+    session.flush()
+
+    # `bc` is the wire prefix for Build my CV (`CALLBACK_PREFIX`).
+    body = tap(http, job.id, action="bc").json()
+
+    assert body["status"] == "not_ready"
+    assert "confirm" in body["answer"].lower()
+    # And nothing was queued for a build that cannot happen.
+    from libs.db.models import QueueJob
+    lanes = [row.lane for row in session.query(QueueJob).filter_by(user_id=user.id).all()]
+    assert "docgen" not in lanes
+
+
+def test_the_admission_check_and_the_worker_ask_the_same_question(api):
+    """One definition. Two would drift again, and drifting is what caused the outage."""
+    from libs.profiles.repository import ProfileFiles
+
+    _http, session, user, job = api
+    user.profile = None
+    session.flush()
+
+    blocker = ProfileFiles(session, user.id).build_blocker()
+
+    assert blocker is not None
+    # The worker's own refusal path must agree with what the handler told the user.
+    from services.docgen import run
+    with pytest.raises(run.NotBuildable):
+        run._load(session, user.id, job.id)

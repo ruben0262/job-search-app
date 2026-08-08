@@ -269,6 +269,20 @@ services:
       context: ..
       dockerfile: deploy/docker/Dockerfile.api
     profiles: ["full"]
+    networks:
+      default:
+        aliases:
+          # **This box runs a second application whose API container is also called `api` and also
+          # listens on 8000**, in its own compose project and its own network. Both tunnels are
+          # therefore configured with the byte-identical origin `http://api:8000`, and the only
+          # thing keeping them apart is that each `cloudflared` is attached to exactly one network.
+          # That is isolation by luck: attach either tunnel to a second network — which joining
+          # `embedder-net` would do — and `api` becomes ambiguous, with Docker's DNS choosing.
+          #
+          # `platform-api` cannot collide. Point the tunnel's origin at it and the routing stops
+          # depending on network membership. The `api` name stays as well, so every in-network
+          # caller keeps working and the two names can be switched over independently.
+          - platform-api
     environment:
       DATABASE_URL: postgresql+psycopg://jobsearch:${POSTGRES_PASSWORD:?}@postgres:5432/jobsearch
       SECRETS_KEK: ${SECRETS_KEK:?the API writes the credential store}

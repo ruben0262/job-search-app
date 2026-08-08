@@ -612,3 +612,31 @@ def test_a_chat_belonging_to_somebody_else_cannot_be_renamed(api):
     assert http.patch(f"/setup/conversations/{theirs.id}",
                       json={"title": "mine now"}).status_code == 404
     assert session.get(SetupConversation, theirs.id).title != "mine now"
+
+
+def test_the_page_is_told_the_ceiling_the_operator_actually_set(api):
+    """The number the page hides New chat at must be the number the API enforces.
+
+    These were two different values. `/setup` reported the `MAX_CONVERSATIONS` constant while
+    `POST /setup/conversations` enforced `limits.resolve(...)`, so raising the ceiling in the admin
+    panel left the user looking at a page that still refused to open a fourth chat. Nothing
+    errored, and the panel showed the new value the whole time.
+    """
+    from libs import limits
+
+    http, session, user = api
+    limits.set_limit(session, user.id, "conversations", 7)
+    session.commit()
+
+    assert http.get("/setup").json()["max_conversations"] == 7
+
+
+def test_unlimited_chats_are_reported_as_unlimited(api):
+    """`None` is Unlimited. A fallback to the constant is how Unlimited silently became three."""
+    from libs import limits
+
+    http, session, user = api
+    limits.set_limit(session, user.id, "conversations", None)
+    session.commit()
+
+    assert http.get("/setup").json()["max_conversations"] is None

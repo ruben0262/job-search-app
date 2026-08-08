@@ -25,7 +25,6 @@ from libs.db.models.queue import CLAIM_TIMEOUT_MIN, JOB_STATES, LANES, MAX_ATTEM
 from libs.db.models.settings import PlatformSetting
 from libs.db.models.setup import (
     DEFAULT_TITLE,
-    MAX_CONVERSATIONS,
     SETUP_AGENTS,
     SetupConversation,
     SetupMessage,
@@ -51,7 +50,6 @@ __all__ = [
     "LANES",
     "MAIL_PURPOSES",
     "MAX_ATTEMPTS",
-    "MAX_CONVERSATIONS",
     "PROFILE_FILE_KINDS",
     "PROXY_STATUSES",
     "SCORING_RELEVANT_FILES",

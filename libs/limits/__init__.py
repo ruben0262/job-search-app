@@ -20,6 +20,11 @@ class Limit:
     detail: str
     # Whether an operator may set this to unlimited.
     allow_unlimited: bool = True
+    # The values the admin panel offers. Here rather than in the panel, because a ceiling with no
+    # settable values is a ceiling nobody can change: the options used to live in a `CHOICES` map
+    # in `AdminUserPage.tsx`, so adding a limit here produced a row with an empty dropdown and no
+    # error anywhere. One definition, served through `describe()`, with nothing to drift.
+    choices: tuple[int, ...] = ()
 
 
 # Telegram's Bot FAQ: 1/second to a chat, 20/minute to a channel, ~30/second across chats.
@@ -29,41 +34,53 @@ LIMITS: tuple[Limit, ...] = (
     Limit("notifications_per_day", "Jobs delivered per day", None, "jobs",
           "How many matches reach this account in a day. Unlimited is safe now that sending is "
           "paced — the cap used to be the only guard against Telegram's rate limits, and it "
-          "guarded them by withholding jobs the user had matched."),
+          "guarded them by withholding jobs the user had matched.",
+          choices=(25, 50, 100, 250, 500, 1000)),
     # Unlimited by default: nothing should stand between a scored match and Telegram.
     Limit("items_per_run", "Jobs per delivery run", None, "jobs",
           "How many are sent in one cycle. Unlimited means a run keeps sending until the queue is "
           "empty or its claim runs out, and whatever is left is picked up immediately rather than "
-          "at the next cycle."),
+          "at the next cycle.",
+          choices=(5, 10, 15, 20, 30, 50)),
     Limit("send_gap_seconds", "Seconds between messages", DEFAULT_SEND_GAP_SECONDS, "seconds",
           "Telegram allows 20 messages a minute to a channel and answers 429 above it. Four "
-          "seconds is 15 a minute.", allow_unlimited=False),
+          "seconds is 15 a minute.", allow_unlimited=False,
+          choices=(3, 4, 5, 8, 12, 20)),
     Limit("proxy_mb_per_day", "LinkedIn bandwidth per day", 200, "MB",
-          "Their own residential proxy pays for this. LinkedIn is the only source that uses it."),
+          "Their own residential proxy pays for this. LinkedIn is the only source that uses it.",
+          choices=(100, 200, 500, 1000, 2000)),
     # The single biggest filter on a feed, and it was a constant nobody could see.
     Limit("applicant_cap", "Drop jobs at or above this many applicants", 200, "applicants",
           "LinkedIn only — it is the one source reporting a count, and it stops counting at 200, "
           "so a posting pinned there has 200 or more. Unlimited shows every job whatever the "
-          "count."),
+          "count.",
+          choices=(10, 25, 50, 100, 150, 200)),
     # Not unlimited-able.
     Limit("linkedin_interval_min", "Minutes between LinkedIn runs", 15, "minutes",
           "How often this account's LinkedIn tier runs. Shorter means fresher and more bandwidth.",
-          allow_unlimited=False),
+          allow_unlimited=False,
+          choices=(15, 30, 60, 120)),
     Limit("describe_per_run", "Job descriptions fetched per run", 60, "postings",
-          "Each one is a request through their proxy. The rest wait for the next cycle."),
+          "Each one is a request through their proxy. The rest wait for the next cycle.",
+          choices=(20, 40, 60, 100, 200)),
     Limit("keywords", "Search terms", 25, "terms",
-          "More terms means broader collection and more proxy spend."),
+          "More terms means broader collection and more proxy spend.",
+          choices=(10, 25, 50, 100)),
     Limit("documents", "Uploaded documents", 25, "files",
-          "CVs, references, diplomas — what the setup agent reads from."),
+          "CVs, references, diplomas — what the setup agent reads from.",
+          choices=(10, 25, 50, 100)),
     Limit("conversations", "Setup chats", 3, "chats",
           "Every turn replays its whole chat on the user's own credential, so more chats is more "
-          "spend re-reading them."),
+          "spend re-reading them.",
+          choices=(1, 3, 5, 10)),
     # Not unlimited-able: the ceiling protects the user's money rather than expressing a preference.
     Limit("cv_builds_per_day", "CV and cover letters per day", 10, "documents",
-          "Each one is a Claude call on this account's own credential.", allow_unlimited=False),
+          "Each one is a Claude call on this account's own credential.", allow_unlimited=False,
+          choices=(5, 10, 20, 50, 100)),
     Limit("label_pool", "Jobs bought per labelling run", 300, "jobs",
           "Labelling runs on the user's own Claude credential, so this is their money.",
-          allow_unlimited=False),
+          allow_unlimited=False,
+          choices=(100, 300, 500, 1000)),
 )
 
 BY_KEY = {limit.key: limit for limit in LIMITS}
@@ -113,4 +130,5 @@ def describe() -> list[dict]:
     """The catalogue, for the admin panel to render without hardcoding any of it."""
     return [{"key": limit.key, "label": limit.label, "default": limit.default,
              "unit": limit.unit, "detail": limit.detail,
-             "allow_unlimited": limit.allow_unlimited} for limit in LIMITS]
+             "allow_unlimited": limit.allow_unlimited,
+             "choices": list(limit.choices)} for limit in LIMITS]
