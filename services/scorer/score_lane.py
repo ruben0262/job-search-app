@@ -25,8 +25,28 @@ BATCH = 500
 MAX_PER_RUN = BATCH
 
 
+def _scorable(user, user_id, filters):
+    """The one definition of "a row this account's current model has not scored yet".
+
+    **Both the counter and the fetcher must ask this.** They did not: `unscored_count` omitted
+    `candidate_conditions`, so it counted every embedded row in the corpus the model had not seen —
+    closed ones, out-of-country ones, proxied ones the account cannot use, ones outside its
+    freshness window. `_candidates` applied the filter and found almost none of them.
+
+    The result was a lane that ran flat out and achieved nothing. A batch scored what little it
+    could reach, read `remaining=2883`, re-enqueued itself, found the same two rows, and repeated —
+    2,326 completed score jobs against a backlog that never moved. `remaining` drives the
+    self-continuation, so a counter that overstates it is not a cosmetic fault: it is an infinite
+    loop spending the account's own credential.
+    """
+    return (CorpusJob.embedding.is_not(None),
+            (UserJobState.scored_model_version.is_(None))
+            | (UserJobState.scored_model_version != user.model_version),
+            *candidate_conditions(filters))
+
+
 def unscored_count(session: Session, user_id: _uuid.UUID) -> int:
-    """How many embedded rows this user's current model has not seen."""
+    """How many rows this user's current model has not seen **and could actually score**."""
     user = session.get(User, user_id)
     if user is None:
         return 0
@@ -35,9 +55,7 @@ def unscored_count(session: Session, user_id: _uuid.UUID) -> int:
         .outerjoin(UserJobState,
                    (UserJobState.job_id == CorpusJob.id)
                    & (UserJobState.user_id == user_id))
-        .where(CorpusJob.embedding.is_not(None),
-               (UserJobState.scored_model_version.is_(None))
-               | (UserJobState.scored_model_version != user.model_version))) or 0
+        .where(*_scorable(user, user_id, filters_for(session, user)))) or 0
 
 
 def _candidates(session, user, user_id, filters, limit):
@@ -51,10 +69,7 @@ def _candidates(session, user, user_id, filters, limit):
         .outerjoin(UserJobState,
                    (UserJobState.job_id == CorpusJob.id)
                    & (UserJobState.user_id == user_id))
-        .where(CorpusJob.embedding.is_not(None),
-               (UserJobState.scored_model_version.is_(None))
-               | (UserJobState.scored_model_version != user.model_version),
-               *candidate_conditions(filters))
+        .where(*_scorable(user, user_id, filters))
         # Newest first.
         .order_by(CorpusJob.first_seen_at.desc())
         .limit(limit)).mappings().all()
