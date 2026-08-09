@@ -66,12 +66,48 @@ STRUCTURE (aim ~200–260 words, small 2–3 sentence paragraphs, easy to skim �
 - Body, FIRST paragraph (2–4 sentences): the single most relevant thing they have built for this role,
   shown through what it did and what it achieved (include one concrete number). Let the fit speak
   for itself. Do not restate their requirements or claim the match.
-- Body, SECOND paragraph (2–4 sentences): a different angle that adds something the first did not,
-  whichever fits this role best — a second relevant piece of work, or the short believable story of
-  a specific moment (a bug chased down, a tricky integration, why they built the thing). Not a
-  restatement of the first paragraph in other words.
+  Write it in your own words, not the CV's. The CV tells you WHAT they did; this paragraph is you
+  explaining it to somebody. If a phrase in this paragraph also appears in their CV, rewrite it.
+  None of these belong in it: "institutional-quality", "end-to-end", "leveraging", "robust",
+  "passionate", "results-driven", "dynamic", "innovative". They describe nothing — every one of
+  them is true of every candidate, so a reader skips them and learns less than if the sentence
+  were shorter.
+- Body, SECOND paragraph (2–4 sentences): THE MOMENT. This paragraph is not a second summary of
+  their experience and it is not optional. It is ONE specific occasion, told the way a person tells
+  a colleague what happened. It must contain all four of these:
+    (a) WHEN or WHERE it happened, concretely enough to place it ("last winter", "three days before
+        the demo", "on the VPS at two in the morning").
+    (b) WHAT WENT WRONG, or what was unknown, or why the thing did not exist yet.
+    (c) WHAT THEY DID about it, in plain words, as an action they took.
+    (d) HOW IT TURNED OUT, in one clause. It does not have to be a triumph.
+  Write it in the past tense, about one occasion, not about a habit. "I once spent three days
+  tracing a pricing feed that went stale every Tuesday, and the answer was a cache nobody owned"
+  is the shape. "I have experience debugging complex production issues" is the failure.
+  The detail is what makes it land, so include one small thing only someone who was there would
+  mention. It must stay consistent with their real experience, stack and projects.
+  WHAT THE MOMENT MAY AND MAY NOT BE MADE OF. The specificity has to come from narrative, never
+  from new facts. You MAY add: when it happened, how long it took, the order things happened in,
+  what they tried first, how it felt, what they did about it. You MAY NOT add ANY of the
+  following, because the candidate would have to defend it in an interview and could not:
+    - A number that is not already in their facts. No error rates, no percentages, no latencies,
+      no throughputs, no user counts, no team sizes, no uptime figures. If the moment seems to
+      need a number, tell it without one — "the success rate climbed" is fine, "the success rate
+      climbed from 40% to 98%" is a fabrication unless both figures are theirs.
+    - A named third party they have not worked with: no client, customer, vendor, provider or
+      partner that is not in their facts.
+    - A restatement of one of their real numbers as a DIFFERENT kind of measurement. "10k+ records
+      in under 1ms" is a latency. Writing it as "ingests 10,000+ records per second" invents a
+      throughput they never claimed. Keep every figure attached to the thing it actually measured.
+    - A vague scale claim standing in for a number: "thousands of customers", "millions of rows",
+      "a large team". If the scale is not in their facts, leave the scale out.
 - Close (1–2 sentences): end STRONG and specific — a confident, forward-looking line that leaves a
-  clear impression and invites a conversation. Never a weak trail-off or filler.
+  clear impression and invites a conversation.
+  Write it about the WORK, never about the process of applying. Something they want to build,
+  solve or see inside that company. These are the closes that waste the last thing the reader
+  reads, and none of them may appear: "I am writing to express", "I believe I would be a great
+  fit", "I would like to discuss how I can contribute", "I would welcome the opportunity", "I look
+  forward to hearing from you", "thank you for your consideration", "I am comfortable [doing X]".
+  Each one could end anybody's letter, which is what makes it worth nothing here.
 
 THE HUMAN TOUCH — this is what's usually missing, so get it right
 - Write in the candidate's own voice: professional, confident, specific, genuine and WARM — a real person
@@ -98,10 +134,6 @@ ATS & KEYWORD MATCHING
 
 WRITE LIKE A SHARP HUMAN
 - Plain and specific beats grand. A recruiter reading 200 letters a day spots "generated" instantly.
-- Ban filler: "institutional-quality", "end-to-end", "leveraging", "robust", "passionate",
-  "results-driven", "I am writing to express", "dynamic", "innovative", "I believe I would be a
-  great fit", "I'd like to discuss how I can contribute", "I'm comfortable [doing X]".
-- Do not reuse stock phrasing from the CV — say it in fresh words.
 - No em-dashes and NO colons in prose (see failure 4). The only colon in the document is the one in
   the contact line. NO contractions ("I have" not "I've", "do not" not "don't"). Vary sentence
   openings. Keep every paragraph to 2–3 short sentences so it stays easy to skim.
@@ -122,7 +154,7 @@ WRITE LIKE A SHARP HUMAN
   somewhere they have no right to work. Languages, if mentioned: <<LANGUAGES>>.
 - No hidden or invisible content.
 
-FINAL MECHANICAL SCAN — do these five passes over your draft before you output. They are literal
+FINAL MECHANICAL SCAN — do these seven passes over your draft before you output. They are literal
 search-and-fix operations, not judgement calls. Each one is a real, repeated failure.
   1. COLONS. Find every ":" in the letter. Delete all of them except the one in the contact line,
      rewriting each sentence per failure 4 above. Target is ZERO colons in the body.
@@ -135,6 +167,17 @@ search-and-fix operations, not judgement calls. Each one is a real, repeated fai
   5. OPENING. Confirm the company name AND the job title (or its closest honest equivalent) both
      appear within the first two sentences. If either is missing, rewrite the opening. Leading
      with concrete work and naming them early are not in conflict, do both in the same breath.
+  6. THE MOMENT. Read the second body paragraph alone. Find the four parts (when/where, what went
+     wrong, what they did, how it turned out). If any one of them is missing, the paragraph is a
+     summary rather than a moment, and you must rewrite it as a single occasion in the past tense
+     before you output. Ask of it: could two different candidates have written this sentence? If
+     yes, it is not specific enough yet.
+  7. EVERY FIGURE. List every number in your letter, including ones written as words ("three
+     days", "six-person"). For each one, find it in the candidate's facts. If it is not there,
+     DELETE it and rewrite the sentence without it. If it is there but you have attached it to a
+     different measurement than the facts do, restore the original meaning. A letter with no
+     numbers is recoverable. A letter with one invented number ends the application when they are
+     asked about it.
 
 SELF-CHECK — verify before outputting (fix any failures first, then output)
   □ SHOWS, does not TELL: no announcing the match, no quoting their requirements back to compare?

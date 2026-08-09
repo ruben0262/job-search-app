@@ -14,6 +14,55 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-08-09
+
+**The cover-letter prompt changed, for the first time under measurement.** `libs/scaffolds/
+tailor_cover.md` is now variant H from the cover-letter bench. Approved explicitly by the owner,
+A/B'd before adoption, and the version it replaced is kept at
+`libs/scaffolds/history/tailor_cover.2026-08-09.pre-H.md` (CLAUDE.md §3a).
+
+**The number:** +8.4 judged points over the previous prompt across 16 paired letters, t=4.19,
+14 of 16 improved. Anecdote 3.0 → 7.0, human voice 3.9 → 5.6, warmth 3.0 → 4.7. Zero invented
+figures in either arm. Judged by a hiring-manager rubric scoring two gates in order — does it pass
+a keyword screen, then does a person open the CV — with the candidate's `not_list` supplied so an
+honest gap is not marked down as a weak letter.
+
+**What H actually changes** is placement, not content. The rules it moves already existed in the
+prompt: the filler ban, the weak-close ban, the instruction not to reuse CV phrasing. H states each
+one *inside the paragraph it governs* rather than in a preamble, and deletes the free-floating copy.
+Nothing was added.
+
+**Why that works, and where it stops.** Four variants tested the idea and two refuted the easy
+version of it:
+
+- Moving a **prohibition** into its slot reliably produces compliance. `WEAK_CLOSE` went to zero
+  across sixteen letters, `BANNED_PHRASE` 15 → 3, and in a separate arm `LONG_SENTENCES` 11 → 5.
+- **Compliance is not quality.** Variant I moved a 25-word sentence cap into every paragraph, hit
+  its target exactly, and produced worse letters — obeying it cost content, and warmth and close
+  strength fell with it.
+- **It does not generalise to positive instructions.** Variant J moved the ATS keyword rules in
+  ("mirror the posting's terminology"). The targeted dimension did not move, and `CV_LIFT` — text
+  copied verbatim from the CV — went from 4 to 17 across two runs. Telling the model to use their
+  words pulls it toward copying.
+- An earlier arm added six literal search-and-fix passes and was the **worst** of four: it nailed
+  the two rules it named and broke rules it had not touched, including one the old prompt never
+  broke. Attention is finite.
+
+So the rule worth carrying to other prompts is narrow and worth stating precisely: **state a
+prohibition where the decision is made, not in a preamble — and do not assume the technique
+transfers to instructions that ask for something rather than forbid it.**
+
+**Reach.** `docgen` reads each account's *own* `tailor_cover.md` and falls back to the scaffold only
+when there is none, so this reaches **new accounts**. Existing accounts keep their own copy until
+`setup-prompts` rewrites it.
+
+**The bench** lives in `scripts/coverlab/` and is deliberately not committed: candidate prompts
+sitting beside the real one is the two-copies failure CLAUDE.md §1 names, its fixtures are one real
+person, and its output is regenerable. `libs/scoring/coverchecks.py` is the tracked half — the
+measurement, so the numbers above are reproducible from something in the repository.
+
+---
+
 ## 2026-08-08
 
 **The credential blocks read field → what is attached → how to get it, and the buttons say which way
