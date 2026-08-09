@@ -235,3 +235,60 @@ def test_query_keys_are_hashable_and_comparable():
     b = QueryKey("linkedin", "python", "london", False, 72)
     assert a == b and hash(a) == hash(b)
     assert sorted([QueryKey("z", "a", "", False, 24), a])[0].source == "linkedin"
+
+
+# ── the operator's keyword ceiling, not a module constant ─────────────────────────────────────
+
+def test_an_account_raised_above_the_default_harvests_all_its_terms():
+    """The panel offers 50 and 100. Reading a constant here made those values do nothing.
+
+    `libs.limits` lets an operator raise an account's `keywords` ceiling, and the config validator
+    lets them save that many terms. The fan-out then took the first 25 and dropped the rest, so a
+    user allowed 100 search terms was searched on a quarter of them, silently.
+    """
+    import uuid as _uuid
+
+    from services.harvester.query_set import build_query_set
+
+    user = _uuid.uuid4()
+    config = {"sections": [{"platform": "all",
+                            "keywords": [f"term{i}" for i in range(40)],
+                            "locations": ["europe"]}]}
+
+    capped = build_query_set({user: config}, sources=("himalayas",), budgets={user: 25})
+    raised = build_query_set({user: config}, sources=("himalayas",), budgets={user: 40})
+
+    assert len({k.keyword_norm for k in capped}) == 25
+    assert len({k.keyword_norm for k in raised}) == 40, (
+        "raising the ceiling in the panel must raise what is actually searched")
+
+
+def test_unlimited_keywords_are_not_collapsed_to_the_default():
+    """`None` is Unlimited. Falling back to the constant is how Unlimited became 25."""
+    import uuid as _uuid
+
+    from services.harvester.query_set import build_query_set
+
+    user = _uuid.uuid4()
+    config = {"sections": [{"platform": "all",
+                            "keywords": [f"term{i}" for i in range(60)],
+                            "locations": ["europe"]}]}
+
+    unlimited = build_query_set({user: config}, sources=("himalayas",), budgets={user: None})
+
+    assert len({k.keyword_norm for k in unlimited}) == 60
+
+
+def test_a_caller_that_names_no_budget_still_gets_the_catalogue_default():
+    """Operator-injected demand has no user row, and must not fan out without bound."""
+    import uuid as _uuid
+
+    from services.harvester.query_set import build_query_set
+
+    user = _uuid.uuid4()
+    config = {"sections": [{"platform": "all",
+                            "keywords": [f"term{i}" for i in range(40)],
+                            "locations": ["europe"]}]}
+
+    assert len({k.keyword_norm for k in build_query_set(
+        {user: config}, sources=("himalayas",))}) == 25

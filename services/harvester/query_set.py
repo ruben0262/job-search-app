@@ -14,6 +14,9 @@ from libs.settings import DEFAULT_QUERIES_PER_CYCLE
 # Imported, not redefined.
 HARVEST_MAX_QUERIES_PER_USER = MAX_KEYWORDS_PER_USER
 
+# What "Unlimited" means to a slice: every keyword the account has.
+_UNBOUNDED = 10_000
+
 # Coarse buckets, so a user wanting 24h shares the 72h fetch and filters down locally.
 AGE_BUCKETS_HOURS = (24, 72, 168)
 
@@ -73,6 +76,7 @@ def build_query_set(
     *,
     locating_sources: Iterable[str] | None = None,
     remote_aware_sources: Iterable[str] | None = None,
+    budgets: Mapping[UUID, int | None] | None = None,
 ) -> dict[QueryKey, frozenset[UUID]]:
     """Fold every active user's config into `{QueryKey: users who want it}`."""
     sources = list(sources)
@@ -87,7 +91,13 @@ def build_query_set(
     for user_id, config in user_configs.items():
         # Read through `migrate_config`, so a stored v1 row folds exactly as it did before.
         sections = migrate_config(dict(config)).get("sections") or []
-        budget = HARVEST_MAX_QUERIES_PER_USER
+        # The account's own ceiling, resolved by the caller from `libs.limits`. The constant is the
+        # fallback for a caller with no session, not the rule: an operator who raised an account to
+        # 100 search terms watched it keep harvesting 25, because this line read a module constant
+        # and the panel read the catalogue. `None` is Unlimited and must not collapse to the
+        # constant — that is how "Unlimited" silently became 25.
+        allowed = (budgets or {}).get(user_id, HARVEST_MAX_QUERIES_PER_USER)
+        budget = _UNBOUNDED if allowed is None else int(allowed)
 
         for section in sections:
             if budget <= 0:

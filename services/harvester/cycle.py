@@ -152,7 +152,8 @@ def run_cycle(
         askable = tuple(sorted(QUERY_TAKING_SOURCES & set(source_configs)))
         # No location axis at all, decided 2026-08-04.
         query_set = build_query_set(configs, sources=askable,
-                                    locating_sources=(), remote_aware_sources=())
+                                    locating_sources=(), remote_aware_sources=(),
+                                    budgets=_keyword_budgets(session, configs))
         planned, deferred = select_within_budget(
             query_set, limits=limits, carried_over=carried_over)
         report.queries_planned = len(planned)
@@ -309,6 +310,18 @@ def _ingest(corpus: CorpusRepository, links: Iterable[JobLink], report: CycleRep
         if link.application_url:
             corpus.set_application_url(job_id, link.application_url)
     return new_jobs
+
+
+def _keyword_budgets(session, configs) -> dict:
+    """Each account's own `keywords` ceiling, so the panel's value is the one that harvests."""
+    from libs import limits  # noqa: PLC0415 - one caller, kept local
+
+    out = {}
+    for user_id in configs:
+        user = session.get(User, user_id)
+        # Operator-injected demand has no user row and keeps the catalogue default.
+        out[user_id] = limits.resolve(user, "keywords") if user is not None else None
+    return out
 
 
 def _enqueue_scoring(session) -> int:

@@ -621,3 +621,28 @@ def test_a_refusal_is_not_a_crash_and_is_not_retried(monkeypatch):
 
     # The assertion is that this returns at all: before the fix it raised AttributeError.
     assert worker.handle(object(), Job()) is None
+
+
+def test_the_prompt_is_told_what_day_it_is():
+    """A cover letter carries a date, and nothing was supplying one.
+
+    The model wrote one from its own sense of time: a letter generated in August 2026 went out
+    dated 22 June 2026. It is the first line an employer reads, on a document nobody proofreads
+    before it is sent.
+    """
+    from datetime import UTC, datetime
+
+    context = build.job_context(FakeJob())
+
+    assert datetime.now(UTC).strftime("%d %B %Y") in context
+
+
+def test_the_date_reaches_the_cover_prompt_itself():
+    """Asserted through the prompt the model is handed, not just the context helper."""
+    from datetime import UTC, datetime
+
+    client = FakeClient(TAILORED)
+    build.tailor_cover(client, PROFILE, base_document(), build.job_context(FakeJob()))
+
+    sent = client.calls[0]["messages"][0]["content"]
+    assert datetime.now(UTC).strftime("%d %B %Y") in sent

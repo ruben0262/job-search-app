@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import UTC, datetime
 
 from libs.contracts.profile import ProfileSchema
 from libs.profiles import PLACEHOLDER_MARKERS
@@ -43,7 +44,12 @@ class BuildFailed(RuntimeError):
 def job_context(job, *, score: float | None = None, description: str | None = None,
                 fit_notes: str | None = None, salary_bands: dict | None = None) -> str:
     """What the model is told about the posting — the reference instance's context, ported whole."""
-    lines = [f"Title: {job.title or ''}",
+    # **The date the document is written.** Nothing supplied it, so the model wrote one from its
+    # own sense of time: a cover letter generated in August 2026 went out dated 22 June 2026. It is
+    # the first line an employer reads and a wrong one reads as carelessness, on a document nobody
+    # on this platform proofreads before it is sent.
+    lines = [f"Today's date: {datetime.now(UTC).strftime('%d %B %Y')}",
+             f"Title: {job.title or ''}",
              f"Company: {job.company or ''}",
              f"Location: {job.location or ''}",
              f"Source: {job.source or ''}",

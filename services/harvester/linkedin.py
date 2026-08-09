@@ -76,7 +76,8 @@ def queries_for(session, user: User) -> list[dict]:
     if not config:
         return []
 
-    keys = build_query_set({user.id: config}, sources=("linkedin",))
+    keys = build_query_set({user.id: config}, sources=("linkedin",),
+                           budgets={user.id: limits.resolve(user, "keywords")})
     terms = original_terms({user.id: config})
     queries = [{"search_term": terms.get(key.keyword_norm, key.keyword_norm),
                 # The board wants a place name, not the slug we store.
