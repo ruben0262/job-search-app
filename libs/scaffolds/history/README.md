@@ -16,6 +16,7 @@ import path. Restoring one is a deliberate copy, done by a person who has read w
 | file | was live until | replaced by | why |
 |---|---|---|---|
 | `tailor_cover.2026-08-09.pre-H.md` | 2026-08-09 | variant H | +8.4 judged points over 16 paired letters (t=4.19); see `CHANGELOG.md` |
+| `tailor_cover.2026-08-09.pre-cv-block-removal.md` | 2026-08-09 | H minus the `<CV_HTML>` block | CV lifting fell from 5 letters in 8 to 1 (t=-2.38); judged score unchanged; see `CHANGELOG.md` |
 
 ## Before replacing a prompt
 

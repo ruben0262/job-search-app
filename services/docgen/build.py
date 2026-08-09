@@ -165,19 +165,23 @@ _MINIMAL_SYSTEM = ("Write only what the base template below already states about
 
 # ── the cover letter ──────────────────────────────────────────────────────────────────────────
 
-# Chars of plain-text CV sent to the cover prompt.
-CV_TEXT_MAX = 1_500
-
 
 def tailor_cover(client, profile: ProfileSchema, cv_html: str, context: str, *,
                  facts_md: str | None = None, template: str | None = None,
                  model: str = CV_MODEL) -> str:
-    """The cover letter for one job, built from the CV that was just tailored for it."""
+    """The cover letter for one job.
+
+    `cv_html` is here for its `<head>`, which carries the fonts and page rules the letter is laid
+    out with. It is deliberately *not* sent as text: the account's whole profile is already the
+    system prompt (`libs.profiles.grounding` — context.md and the candidate profile, tens of
+    thousands of characters, verbatim). A plain-text extract of the CV alongside it repeated a
+    subset of that, truncated at 1,500 characters, which cut mid-sentence before a single
+    experience entry and left a mangled skills list under a heading claiming to be the CV.
+    """
     head = head_block(cv_html)
     prompt = (render_cover_prompt(profile, template=template)
               .replace("<HEAD_BLOCK>", head)
-              .replace("<JOB_CONTEXT>", context)
-              .replace("<CV_HTML>", html_to_text(cv_html)))
+              .replace("<JOB_CONTEXT>", context))
 
     reply = client.complete_text(
         model=model,
@@ -199,13 +203,6 @@ def head_block(document: str) -> str:
     """The `<head>` of the CV template, which is what carries the fonts and the page rules."""
     match = re.search(r"(?is)<head\b.*?</head>", document) or _STYLE.search(document)
     return match.group(0) if match else ""
-
-
-def html_to_text(document: str, max_chars: int = CV_TEXT_MAX) -> str:
-    """Tags out, whitespace collapsed. The CV as facts, for the cover prompt."""
-    text = re.sub(r"<[^>]+>", " ", _STYLE.sub(" ", document))
-    text = re.sub(r"\s+", " ", text).strip()
-    return text[:max_chars]
 
 
 def _strip_cover_emdashes(letter: str) -> str:

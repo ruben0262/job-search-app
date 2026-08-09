@@ -646,3 +646,45 @@ def test_the_date_reaches_the_cover_prompt_itself():
 
     sent = client.calls[0]["messages"][0]["content"]
     assert datetime.now(UTC).strftime("%d %B %Y") in sent
+
+
+def test_the_cover_prompt_is_not_handed_a_text_dump_of_the_cv():
+    """The CV reaches the cover call as grounding, never as a plain-text extract in the prompt.
+
+    It used to be both. The system prompt is the account's whole profile — tens of thousands of
+    characters, verbatim — and the user prompt *also* carried 1,500 characters of tag-stripped
+    `base_cv.html` under a heading announcing itself as the candidate's CV and telling the model
+    not to copy it wholesale. Measured over 8 postings on 2026-08-09, the model copied out of it in
+    five letters of eight; with the extract gone, one of eight (t=-2.38).
+
+    The `<head>` is still read from the same document, because that is what carries the fonts and
+    the page rules, so this asserts the *prose* is absent rather than that the CV is unused.
+    """
+    # A CV with a short head, so its body sits inside the 1,500 characters the extract used to
+    # take. The shipped template's head is longer than that on its own, which is worth recording:
+    # against a real CV the extract carried nothing the `<head>` substitution did not already
+    # carry, and was pure token cost.
+    cv = ("<html><head><style>p{margin:0}</style></head><body>"
+          "<div class='cv-name'>Alice Example</div>"
+          "<p>Rebuilt the settlement ledger so month-end close ran in nine minutes.</p>"
+          "<p>Led the migration off the vendor billing platform without a customer-visible gap.</p>"
+          "</body></html>")
+    sentinel = "Rebuilt the settlement ledger so month-end close ran in nine minutes."
+
+    client = FakeClient(TAILORED)
+    build.tailor_cover(client, PROFILE, cv, build.job_context(FakeJob()),
+                       facts_md="the candidate's grounding block")
+
+    sent = client.calls[0]["messages"][0]["content"]
+    assert sentinel not in sent, "a text extract of the CV reached the cover prompt"
+    assert "<CV_HTML>" not in sent, "the marker was left unfilled in the prompt"
+
+
+def test_the_cover_prompt_still_carries_the_page_rules():
+    """The other half: dropping the extract must not drop the styling the letter is laid out with."""
+    client = FakeClient(TAILORED)
+    cv = base_document()
+    build.tailor_cover(client, PROFILE, cv, build.job_context(FakeJob()))
+
+    sent = client.calls[0]["messages"][0]["content"]
+    assert build.head_block(cv) in sent

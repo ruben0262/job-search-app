@@ -14,6 +14,41 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-08-09 (late)
+
+**The cover prompt no longer receives a text extract of the CV.** Approved explicitly by the owner,
+A/B'd before adoption, previous version kept at
+`libs/scaffolds/history/tailor_cover.2026-08-09.pre-cv-block-removal.md` (CLAUDE.md §3a). The two
+accounts' own `tailor_cover.md` were edited in place by the same rule, matching each file's own
+wording rather than being overwritten with the scaffold.
+
+**Why it was redundant.** The system prompt for a cover call is already `libs.profiles.grounding` —
+`context.md`, `01-candidate-profile.md`, `02-behavioral-profile.md` and `05-cv-templates.md`,
+verbatim. For one account that is 43,000 characters carrying every job, project, grade and skill
+they have. The `<CV_HTML>` block repeated a *subset* of that as 1,500 characters of tag-stripped
+`base_cv.html`, cut mid-sentence before a single experience entry, under a heading announcing
+itself as the candidate's CV. Enlarging it to the whole CV was considered and rejected: that is
+~6,000 tokens a call to say what the system prompt already says.
+
+**The number, and it is not the obvious one.** Variant `k` is variant H with those two lines
+removed and nothing else, over the same 8 postings, judged by the same Sonnet rubric:
+
+| measure | with the block | without | t (paired, n=8) |
+|---|---|---|---|
+| judge /100 | 40.0 | 43.5 | +1.04 — **not significant** |
+| judgement findings | 30 | 18 | **-2.39** |
+| `CV_LIFT` | 6, in 5 of 8 letters | 1, in 1 | **-2.38** |
+| `TELLS_THE_MATCH` | 4, in 3 letters | 0 | -1.87 |
+| mechanical findings | 13 | 11 | -0.61 |
+
+The judged score is a wash and is reported as one — 4 postings better, 4 worse, the +3.5 mean
+carried by two outliers. What holds is the deterministic count: the block was labelled "facts only
+(do not copy wholesale)" and the model copied out of it wholesale in five letters of eight. Remove
+the extract, and the lifting goes with it. That is the justification, not the judged score.
+
+`services.docgen.build.CV_TEXT_MAX` and `html_to_text` are deleted with it — the truncation
+constant was the defect, and the function had no other consumer in the product (§3).
+
 ## 2026-08-09
 
 **The cover-letter prompt changed, for the first time under measurement.** `libs/scaffolds/

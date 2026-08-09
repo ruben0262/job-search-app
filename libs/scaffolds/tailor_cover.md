@@ -197,8 +197,5 @@ SELF-CHECK — verify before outputting (fix any failures first, then output)
 JOB
 <JOB_CONTEXT>
 
-THE CANDIDATE'S CV — plain text extract, facts only (do not copy wholesale):
-<CV_HTML>
-
 Output ONLY the complete cover.html document as your reply text. Do NOT use any tools, do NOT write
 files, do NOT run commands — just write the HTML in your response.
