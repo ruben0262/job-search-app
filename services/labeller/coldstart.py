@@ -35,10 +35,13 @@ def cold_start_batch(session: Session, user_id: _uuid.UUID, client: LlmClient, *
 
     job_ids = select_pool(session, user_id, config, size=size)
     if not job_ids:
-        # Not an error.
+        # Not an error, and **not "nothing owed"**. Returning 0 here for six days told the lane this
+        # account had finished labelling when it was 57 short of its target: the empty pool is a
+        # statement about the corpus this minute, not about how many labels are still wanted. The
+        # caller must be able to tell the two apart, so the shortfall is reported either way.
         logger.warning("user %s: cold start found no unlabelled jobs matching their config",
                        user_id)
-        return 0, 0
+        return 0, _shortfall(session, user)
 
     jobs = list(session.scalars(select(CorpusJob).where(CorpusJob.id.in_(job_ids))).all())
     written = write_labels(session, user_id, score_batch(client, user.rubric_md, jobs), jobs)
@@ -53,6 +56,15 @@ def cold_start_batch(session: Session, user_id: _uuid.UUID, client: LlmClient, *
     audit(logger, "coldstart.batch", user=user_id, written=written, labels=labels,
           remaining=remaining)
     return written, remaining
+
+
+def _shortfall(session: Session, user: User) -> int:
+    """How many labels this account is still short of its target."""
+    labels = session.scalar(
+        select(func.count()).select_from(UserLabel)
+        .where(UserLabel.user_id == user.id,
+               UserLabel.profile_generation == user.profile_generation)) or 0
+    return max(target_for(user) - labels, 0)
 
 
 def ready_to_train(session: Session, user_id: _uuid.UUID) -> bool:

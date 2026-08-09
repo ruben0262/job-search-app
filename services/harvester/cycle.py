@@ -61,6 +61,7 @@ class CycleReport:
     source_failures: dict[str, str] = field(default_factory=dict)
     # How many accounts were asked to catch up their scores.
     scoring_enqueued: int = 0
+    labelling_enqueued: int = 0
     skipped_locked: bool = False
     # How long each stage took.
     timings: Timings = field(default_factory=Timings)
@@ -199,9 +200,11 @@ def run_cycle(
                 logger.error("harvest: embedding failed — those rows stay unembedded and are "
                              "retried next cycle: %s", exc)
 
-        # 7. Ask the `score` lane to catch each account up.
+        # 7. Ask the `score` and `label` lanes to catch each account up.
         with timed("enqueue_scoring", report.timings):
             report.scoring_enqueued = _enqueue_scoring(session)
+        with timed("enqueue_labelling", report.timings):
+            report.labelling_enqueued = _enqueue_labelling(session)
 
     logger.info(
         "harvest: %d queries (%d deferred), %d links, %d duplicates, %d new, %d described, "
@@ -214,6 +217,7 @@ def run_cycle(
           queries=report.queries_planned, links=report.links_found,
           new=report.new_jobs, described=report.described, embedded=report.embedded,
           scoring_enqueued=report.scoring_enqueued,
+          labelling_enqueued=report.labelling_enqueued,
           failed_sources=len(report.source_failures),
           empty_sources=sum(1 for n in report.links_by_source.values() if n == 0))
     return report, [q.key for q in deferred]
@@ -329,5 +333,31 @@ def _enqueue_scoring(session) -> int:
     queued = 0
     for user_id in session.scalars(select(User.id).where(User.active)):
         if enqueue(session, "score", user_id, dedup_key="score") is not None:
+            queued += 1
+    return queued
+
+
+def _enqueue_labelling(session) -> int:
+    """One `label` job per active account that still owes itself labels.
+
+    **The label lane had no way back in.** It was a chain that armed itself and nothing else: finish
+    setup, and it ran until a batch reported nothing left. Any interruption — an empty pool, a
+    rate limit, a `Terminal` error, a restart — ended it permanently, with no error raised and a
+    model that looked trained. One account sat six days at 243 of its 300 labels that way, and the
+    only reason it was found was somebody reading the queue table by hand.
+
+    So the lane gets its work the way `score` does: off the harvest tick, dedup-keyed, idempotent.
+    No new timer — a second clock is a second outage — and no cost when there is nothing to do,
+    because a batch that writes nothing does not re-arm and `labelling_paused` is honoured here as
+    well as at re-arm time.
+    """
+    from libs.labels import labelling_state  # noqa: PLC0415 - one caller, kept local
+
+    queued = 0
+    for user_id, paused in session.execute(
+            select(User.id, User.labelling_paused).where(User.active)):
+        if paused or labelling_state(session, user_id)["action"] == "train":
+            continue
+        if enqueue(session, "label", user_id, dedup_key="label") is not None:
             queued += 1
     return queued

@@ -31,16 +31,24 @@ def handle(session, job: QueueJob) -> None:
                 except LlmError as exc:
                     raise Terminal(str(exc)) from exc
 
-        _queue_follow_up(session, job, did, remaining)
+        _queue_follow_up(session, job, did, written, remaining)
         logger.info("%s: %d written for %s, %d remaining", did, written, job.user_id, remaining)
         return
 
     raise Terminal("no Claude credential stored — labelling needs the user's own key or token")
 
 
-def _queue_follow_up(session, job: QueueJob, did: str, remaining: int) -> None:
-    """Another batch if there is more to do, otherwise a train."""
-    if remaining and did != "train":
+def _queue_follow_up(session, job: QueueJob, did: str, written: int, remaining: int) -> None:
+    """Another batch if this one made progress, otherwise a train.
+
+    **`written` is what makes this safe to re-arm on.** The chain used to continue on `remaining`
+    alone, which is a statement about the target rather than about whether anything happened — so a
+    batch that wrote nothing would either stop forever (when the empty pool reported `remaining=0`)
+    or re-queue itself forever (now that it reports the truth). Neither is wanted: a batch that
+    wrote nothing has nothing left to do *this minute*, and the harvest tick brings the account
+    back once the corpus has grown. That is the same shape the score lane was fixed into.
+    """
+    if written and remaining and did != "train":
         # Release the dedup slot before claiming it again.
         job.dedup_key = None
         session.flush()

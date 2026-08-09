@@ -733,3 +733,122 @@ def test_a_failing_embedder_does_not_take_the_cycle_with_it(ctx):
     assert report.embedded == 0
     # The step after it still ran, which is the whole point.
     assert report.scoring_enqueued >= 0
+
+
+# ── the label lane's only way back in ─────────────────────────────────────────────────────────
+
+def _labellable(s, labels: int) -> User:
+    """An active account with a rubric and `labels` labels already bought."""
+    from libs.db.models import UserLabel
+
+    u = _active_user(s)
+    u.rubric_md = "score it"
+    s.flush()
+    for _ in range(labels):
+        job = CorpusJob(url=f"https://example.com/{uuid.uuid4()}", title="Engineer",
+                        source="himalayas", posted_at=datetime.now(UTC),
+                        text_sha256=uuid.uuid4().hex)
+        s.add(job)
+        s.flush()
+        s.add(UserLabel(user_id=u.id, job_id=job.id, label=50, weight=1.0, source="llm",
+                        profile_generation=u.profile_generation))
+    s.flush()
+    return u
+
+
+def _queued(s, lane: str, user_id) -> int:
+    from sqlalchemy import func
+    from sqlalchemy import select as _select
+
+    from libs.db.models import QueueJob
+
+    return s.scalar(_select(func.count()).select_from(QueueJob)
+                    .where(QueueJob.lane == lane, QueueJob.user_id == user_id,
+                           QueueJob.finished_at.is_(None))) or 0
+
+
+def test_an_account_that_stopped_labelling_is_picked_up_again(ctx):
+    """The defect this exists for: the label lane had no way back in.
+
+    It was a chain that armed only itself — finish setup, and it ran until a batch reported nothing
+    left to do. Nothing else ever enqueued it. So any interruption ended it permanently, with no
+    error raised: in production one account sat six days at 243 of its 300 labels, its lane idle,
+    its model looking trained, and the only reason it was found was somebody reading the queue
+    table by hand.
+
+    An account below its target must therefore be re-entered by the cycle that already runs, the
+    same way `score` is. This asserts the account is queued, not how it got there.
+    """
+    s = ctx
+    user = _labellable(s, labels=3)
+
+    with _embedder() as embedder:
+        report, _ = run_cycle(s, embedder=embedder, expected_embedder=EXPECTED,
+                              source_configs=_sources(himalayas={}),
+                              run_source=lambda *a: [])
+    s.flush()
+
+    assert _queued(s, "label", user.id) == 1
+    assert report.labelling_enqueued >= 1
+
+
+def test_an_account_that_has_finished_labelling_is_left_alone(ctx):
+    """Their own Claude credential pays for every label, so a tick must not buy one it does not owe."""
+    s = ctx
+    from libs.labels import target_for
+
+    user = _labellable(s, labels=0)
+    # Exactly at target: nothing further is owed.
+    user.limits = {**(user.limits or {}), "label_pool": 1}
+    s.flush()
+    _labels_for(s, user, target_for(user))
+
+    with _embedder() as embedder:
+        run_cycle(s, embedder=embedder, expected_embedder=EXPECTED,
+                  source_configs=_sources(himalayas={}), run_source=lambda *a: [])
+    s.flush()
+
+    assert _queued(s, "label", user.id) == 0
+
+
+def _labels_for(s, user, count: int) -> None:
+    from libs.db.models import UserLabel
+
+    for _ in range(count):
+        job = CorpusJob(url=f"https://example.com/{uuid.uuid4()}", title="Engineer",
+                        source="himalayas", posted_at=datetime.now(UTC),
+                        text_sha256=uuid.uuid4().hex)
+        s.add(job)
+        s.flush()
+        s.add(UserLabel(user_id=user.id, job_id=job.id, label=50, weight=1.0, source="llm",
+                        profile_generation=user.profile_generation))
+    s.flush()
+
+
+def test_an_account_that_paused_labelling_stays_paused(ctx):
+    """A user who turned it off must not be restarted by a background tick."""
+    s = ctx
+    user = _labellable(s, labels=3)
+    user.labelling_paused = True
+    s.flush()
+
+    with _embedder() as embedder:
+        run_cycle(s, embedder=embedder, expected_embedder=EXPECTED,
+                  source_configs=_sources(himalayas={}), run_source=lambda *a: [])
+    s.flush()
+
+    assert _queued(s, "label", user.id) == 0
+
+
+def test_a_second_tick_does_not_stack_a_second_label_job(ctx):
+    """Fifteen minutes apart, forever — one waiting job is the whole point of the dedup key."""
+    s = ctx
+    user = _labellable(s, labels=3)
+
+    with _embedder() as embedder:
+        for _ in range(3):
+            run_cycle(s, embedder=embedder, expected_embedder=EXPECTED,
+                      source_configs=_sources(himalayas={}), run_source=lambda *a: [])
+            s.flush()
+
+    assert _queued(s, "label", user.id) == 1

@@ -242,47 +242,59 @@ def test_an_undated_posting_is_aged_from_when_we_found_it(db):
     assert old.id not in kept, "found forty hours ago and still undated, so it is not fresh"
 
 
-# ── sources somebody else's proxy paid for ────────────────────────────────────────────────────
+# ── the corpus is shared, and every account reads all of it ───────────────────────────────────
 
-def test_an_account_with_no_proxy_is_not_scored_on_proxied_postings(db):
-    """The leak this rule exists for.
+def test_every_account_is_scored_on_the_whole_corpus_whoever_fetched_it(db):
+    """No source is withheld from an account for how it was paid for.
 
-    LinkedIn is fetched per account on that account's own residential proxy, and the harvester
-    refuses to run it at all for an account with no proxy credential. The corpus is shared, so
-    without a matching rule here every posting one account paid to fetch was scored for everybody.
-    Measured in production on 2026-08-08: two accounts, 24,902 LinkedIn rows scored each, one
-    proxy between them.
+    A read gate used to keep LinkedIn away from accounts with no proxy credential of their own, on
+    the grounds that somebody else's proxy paid to fetch it. The owner's decision on 2026-08-09 is
+    that the fetch cost is already sunk: the row is in the shared corpus, showing it to a second
+    reader costs nothing further, and withholding it cost far more. It was 72% of the corpus, and
+    the account it was withheld from had 8,918 rows to be scored against instead of 31,352.
+
+    The split that remains is the one that actually spends money, and it lives in the harvester:
+    an account with no proxy credential does not *cause* a LinkedIn fetch
+    (`services/harvester/linkedin.py` asks the credential store directly). It just reads what is
+    already there.
     """
     linkedin = _row(db, source="linkedin")
     open_board = _row(db, source="himalayas")
 
-    kept = _survivors(db, built(config(), proxied_sources=False))
+    # Through `filters_for`, because owning a proxy credential is what used to decide this and it
+    # is a property of the account rather than of the config. Built by hand, the gate never fires.
+    kept = _survivors(db, _filters_for_account_without_a_proxy(db))
 
-    assert open_board.id in kept
-    assert linkedin.id not in kept
-
-
-def test_an_account_with_a_proxy_still_sees_them(db):
-    """The rule is about who pays, not about disliking a source."""
-    linkedin = _row(db, source="linkedin")
-
-    assert linkedin.id in _survivors(db, built(config(), proxied_sources=True))
+    assert {linkedin.id, open_board.id} <= set(kept)
 
 
-def test_a_proxied_posting_already_scored_is_still_not_delivered():
-    """`candidate_conditions` keeps them out of new scoring passes; this keeps the rows that were
-    scored while the account still had a proxy from being sent after it stopped paying."""
-    filters = built(config(), proxied_sources=False)
+def test_no_source_is_a_reason_to_withhold_a_posting_already_scored(db):
+    """The delivery-side half of the same rule.
 
-    assert filters.unwanted({"source": "linkedin", "title": "Engineer"}) == "proxied_source"
+    `candidate_conditions` keeps rows out of a fresh scoring pass; `unwanted` is what stops one
+    already scored from being sent. Both used to reject on source, so both have to stop.
+    """
+    filters = _filters_for_account_without_a_proxy(db)
+
+    assert filters.unwanted({"source": "linkedin", "title": "Engineer"}) is None
     assert filters.unwanted({"source": "himalayas", "title": "Engineer"}) is None
 
 
-def test_which_sources_are_proxied_is_defined_once():
-    """The harvest gate and the scoring gate must not disagree about the list."""
-    from libs.settings import PROXIED_SOURCES
+def _filters_for_account_without_a_proxy(db):
+    """A real account with no `proxy` secret — the case the old gate silenced."""
+    import uuid
 
-    assert "linkedin" in PROXIED_SOURCES
+    from libs.db.models import User
+    from libs.tenant.filters import filters_for
+    from libs.tenant.repository import TenantRepository
+
+    user = User(email=f"{uuid.uuid4()}@example.test", password_hash="x", status="active",
+                active=True)
+    db.add(user)
+    db.flush()
+    TenantRepository(db).save_config(user.id, config())
+    db.flush()
+    return filters_for(db, user)
 
 
 # ── freshness, per source and per timestamp quality ───────────────────────────────────────────
