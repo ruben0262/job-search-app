@@ -2036,8 +2036,15 @@ td.num {
   font-size: 0.85rem;
 }
 
+/* The save confirmation, under the button that earned it. It was in the fold head, above a section
+   long enough that nobody who had just pressed Save was still looking there. */
 .saved-flash {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.9rem;
   color: var(--score);
+  font-size: 0.875rem;
 }
 
 .fold-chevron {

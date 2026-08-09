@@ -128,9 +128,30 @@ export function AdminUserPage({ userId }: { userId: string }) {
         </div>
       </dl>
 
-      {/* Per account, and closed until somebody opens it. */}
-      <h2>Profile files</h2>
-      <label className="pick">
+      <h2>Setup</h2>
+      {setup.missing.length ? (
+        <p className="error">
+          Incomplete, {setup.missing.length} file(s) missing or unfilled:{" "}
+          {setup.missing.join(", ")}. Training is refused until these exist.
+        </p>
+      ) : (
+        <p className="facts" style={{ color: "var(--score)" }}>
+          Complete, every required profile file is written.
+        </p>
+      )}
+      <div className="sources">
+        {setup.files.map((file) => (
+          <div key={file.name} className="source-row">
+            <span className="source-name">{file.name}</span>
+            <span className="small" style={{ color: file.filled ? "var(--score)" : "var(--dim)" }}>
+              {file.filled ? "written" : "empty"}
+            </span>
+          </div>
+        ))}
+      </div>
+      {/* Whether the user may open the files listed directly above. Per account, and closed until
+          somebody opens it — it was its own heading further up, with nothing else under it. */}
+      <label className="pick" style={{ marginBottom: "2rem" }}>
         <input
           type="checkbox"
           checked={user.profile_files_visible === true}
@@ -143,28 +164,6 @@ export function AdminUserPage({ userId }: { userId: string }) {
             : "Closed, the tiles are shown but cannot be opened"}
         </span>
       </label>
-
-      <h2>Setup</h2>
-      {setup.missing.length ? (
-        <p className="error">
-          Incomplete, {setup.missing.length} file(s) missing or unfilled:{" "}
-          {setup.missing.join(", ")}. Training is refused until these exist.
-        </p>
-      ) : (
-        <p className="facts" style={{ color: "var(--score)" }}>
-          Complete, every required profile file is written.
-        </p>
-      )}
-      <div className="sources" style={{ marginBottom: "2rem" }}>
-        {setup.files.map((file) => (
-          <div key={file.name} className="source-row">
-            <span className="source-name">{file.name}</span>
-            <span className="small" style={{ color: file.filled ? "var(--score)" : "var(--dim)" }}>
-              {file.filled ? "written" : "empty"}
-            </span>
-          </div>
-        ))}
-      </div>
 
       {/* Set here, and nowhere the user can reach. */}
       <h2>Limits</h2>

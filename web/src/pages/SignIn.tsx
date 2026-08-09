@@ -9,7 +9,8 @@ export function SignIn({
   onSignedIn,
   initialMode = "in",
 }: {
-  onSignedIn: () => void;
+  /** Resolves once the dashboard has been read, which is what makes the route safe to change. */
+  onSignedIn: () => void | Promise<void>;
   initialMode?: "in" | "up";
 }) {
   const [mode, setMode] = useState<"in" | "up">(initialMode);
@@ -24,9 +25,12 @@ export function SignIn({
       return;
     }
     await api.post("/auth/login", { email, password });
+    // The session first, then the route. Changing the hash while the app still believes it is
+    // signed out routes `/` to the landing page for as long as the dashboard takes to answer —
+    // which is the flash of marketing copy people saw between pressing Sign in and arriving.
+    await onSignedIn();
     // Land on the overview, not on `#/signin`.
     window.location.hash = "/";
-    onSignedIn();
   });
 
   if (sent) {

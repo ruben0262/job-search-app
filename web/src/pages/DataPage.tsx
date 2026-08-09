@@ -42,7 +42,8 @@ export function DataPage({ onChanged }: { onChanged: () => void }) {
           <Section
             key={section.key}
             title={section.title}
-            hint={saved === section.key ? "Saved" : section.hint}
+            hint={section.hint}
+            saved={saved === section.key}
             open={open === section.key}
             onToggle={() => setOpen(open === section.key ? null : section.key)}
           >
@@ -57,12 +58,15 @@ export function DataPage({ onChanged }: { onChanged: () => void }) {
 function Section({
   title,
   hint,
+  saved,
   open,
   onToggle,
   children,
 }: {
   title: string;
   hint: string;
+  /** Just saved. Confirmed beside the button that did it, not in the head the user scrolled past. */
+  saved: boolean;
   open: boolean;
   onToggle: () => void;
   children: ReactNode;
@@ -72,14 +76,33 @@ function Section({
       <button type="button" className="fold-head" onClick={onToggle} aria-expanded={open}>
         <span>
           <span className="fold-title">{title}</span>
-          <span className={`fold-hint${hint === "Saved" ? " saved-flash" : ""}`}>{hint}</span>
+          <span className="fold-hint">{hint}</span>
         </span>
         <span className="fold-chevron" aria-hidden="true">
           ›
         </span>
       </button>
-      {open ? <div className="fold-body page-in">{children}</div> : null}
+      {open ? (
+        <div className="fold-body page-in">
+          {children}
+          {/* The save button is the last thing in every step, so this lands directly under it. */}
+          {saved ? (
+            <p className="saved-flash" role="status">
+              <CheckIcon /> Saved
+            </p>
+          ) : null}
+        </div>
+      ) : null}
     </section>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M4.5 12.5l5 5 10-11" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"
+            strokeLinejoin="round" />
+    </svg>
   );
 }
 
