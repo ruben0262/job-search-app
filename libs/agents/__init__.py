@@ -133,14 +133,25 @@ FILE_OWNERS: dict[str, str] = {
     "context.md": "setup-context",
     "08-role-angles.md": "setup-role-angles",
     "label.md": "setup-scorer",
+    # The two documents the platform writes FOR a person, about a specific job. They ship as
+    # scaffolds carrying `<<NAME>>`, `<<CONTACT>>` and three more, and nothing owned them — so
+    # nothing filled them. One account's were filled only because they were imported from the
+    # single-user reference instance; every account onboarded normally had five placeholders in
+    # both prompts and passed every completeness check.
+    "tailor_cv.md": "setup-prompts",
+    "tailor_cover.md": "setup-prompts",
 }
 
 # Files no command produces.
 UNOWNED_FILES: dict[str, str] = {}
 
 # The commands a user may start from the chat, in the order they should run.
-STARTABLE: tuple[str, ...] = ("setup-director", "setup-context", "setup", "setup-role-angles",
-                              "setup-scorer")
+# `setup-prompts` sits after the profile it reads and before the rubric, because it personalises
+# the writing prompts from `01-candidate-profile.md` and `base_cv.html`. It was absent from this
+# tuple while being present in `SETUP_AGENTS`: a real command, with real instructions, that no user
+# could start and no file depended on.
+STARTABLE: tuple[str, ...] = ("setup-director", "setup-context", "setup", "setup-prompts",
+                              "setup-role-angles", "setup-scorer")
 
 # What a chat started by a command is called.
 COMMAND_TITLES: dict[str, str] = {

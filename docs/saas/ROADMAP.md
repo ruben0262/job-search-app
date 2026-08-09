@@ -1569,6 +1569,94 @@ promise, and nothing was checking that anything fulfilled it. Same shape as
 `telegram_webhook_secret` in 6af — a column with no producer — and found the same way, by following
 a user-visible symptom rather than by reading code.
 
+### 6ap — the second account, and why a new user gets almost nothing (added 2026-08-09)
+
+**The platform has two accounts. One works and one barely does, and the difference is not talent —
+it is that every gap in the new-user path is invisible.** The working account was migrated from the
+single-user reference instance with its files already written; the second went through onboarding
+as designed. So the second account *is* the new-user experience, and everything below is what a
+new user currently gets.
+
+| | new account | migrated account |
+|---|---|---|
+| labels | 243 | 2,647 |
+| feedback labels | 2 | 100 |
+| model version | 1 | 4 |
+| feature spec: core terms | **0** | 55 |
+| feature spec: off-stack terms | **0** | 24 |
+| score p50 / p90 / p99 | 11 / **18** / 33 | 5 / **65** / 97 |
+| above own cutoff | **1.5%** | 17.4% |
+| `tailor_cover.md` | byte-identical to the shipped scaffold | written for them |
+
+The score distribution is the symptom worth staring at. The migrated account's model is bimodal —
+it *decides*. The new account's is a lump between 11 and 33: it cannot separate a good job from a
+bad one, so almost nothing clears even its lower cutoff.
+
+**Five faults, and each one alone would have been survivable.**
+
+1. **`users.profile` is NULL, so two of nine model features are hard-zero.** `spec_for` falls back
+   to an empty profile, and `core_stack_count` / `offstack_count` carry no signal at training time
+   *or* serving time. The schema is only ever written by the document-capture flow, which a user
+   who completed setup by conversation never runs.
+2. **~~Cold-start labelling stopped at 243.~~ Not a fault — corrected by the owner 2026-08-09.**
+   243 was every job in the corpus worth labelling for that account at the time: the corpus held
+   almost nothing in their field, so the pool was bounded by supply rather than by a bug. Training
+   on 243 was a deliberate choice over having no model at all. It is still *a reason the model is
+   flat*, but the fix is fault 5 — more of the right jobs — not the labelling pipeline. Recording
+   it as a defect would have sent somebody hunting for one that does not exist.
+3. **`tailor_cover.md` was never personalised.** `setup-prompts` is a real command with real
+   instructions that was absent from `STARTABLE` and owned no files, so nothing ran it. Wired on
+   2026-08-09.
+4. **Nothing could see any of it.** `filled` is True for a writing prompt from the moment it is
+   seeded, because it ships usable. `missing_setup` was clean. The status page was green.
+5. **The shared sources are tech boards.** With LinkedIn correctly excluded for an account with no
+   proxy, what remains — himalayas, nofluffjobs, jooble, hiringcafe, and the Greenhouse/Lever/
+   Ashby/Workday tier — is overwhelmingly software. A mechanical engineer is searching a corpus
+   assembled for developers, and no model fixes that.
+
+**The rule for this work: fix the mechanism, never the account.** Hand-writing a profile row would
+make the symptom disappear and leave the next user in exactly the same place. Every step below is
+verified by an account going through the real path, not by a repaired row.
+
+#### The order, and why it is this order
+
+Ordered so each step changes as little as possible for the ones after it. The corpus is the
+denominator for every scoring measurement, so anything that changes *what* is harvested comes last.
+
+**Step 0 — measure, change nothing.** Retrain the new account with a populated feature spec derived
+from its own `label.md`, and compare score distributions against its current model on the same
+labels. This is the number that decides whether the schema is worth replacing or deleting, and it
+is worthless once the corpus or the label count moves. Also: find why labelling stopped at 243 —
+read-only, no fix yet.
+
+**Step 1 — the setup gate.** `personalised` (built 2026-08-09) makes "carrying the shipped
+scaffold" visible; the director needs a writing-prompts step with that as its success criterion.
+Touches only the onboarding path, so it cannot disturb Step 0's measurement. Verified by the new
+account's `tailor_cover.md` ceasing to be byte-identical to the default.
+
+**Step 2 — one deterministic source for the five identity values.** Name and links are already
+columns; work eligibility, home location and languages are not. Fills the `<<NAME>>` family at
+build time from data that always exists. Deletes `users.profile`'s docgen role. Does not touch
+scoring, so Step 0's measurement stands.
+
+**Step 3 — the feature spec's source**, decided by Step 0's number. Either derive the term lists
+from `label.md` (what the reference instance does by hand) or delete both features. This is the
+step that changes scores, so it comes after everything that could confound reading them, and needs
+a before/after on the same corpus.
+
+**Step 4 — the label pipeline**, once Step 0 has said why it stalled. Changes the training set, so
+it must not run while Step 3 is being measured.
+
+**Step 5 — sources.** The only fix for a mechanical engineer searching software boards, and the
+one that changes the corpus for every account at once. Last, deliberately: it moves the denominator
+under every measurement above.
+
+#### What "done" looks like
+
+A new account, created through the normal path, that: finishes setup with every file written for
+them; trains a model whose scores separate; and receives jobs from its own industry. Verified on
+the account that currently fails all three, without that account being touched by hand.
+
 ### 6ao — a support ticket the user can actually send (added 2026-08-08)
 
 **Not started. Owner's request, 2026-08-08.** There is no way for a user to tell us anything. When

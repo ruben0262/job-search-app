@@ -5,7 +5,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select, true
+from sqlalchemy import case, func, select, true
 
 from libs.contracts.config import migrate_config
 from libs.corpus import langfilter, workfilter
@@ -14,7 +14,11 @@ from libs.corpus.ranking import applicant_glut
 from libs.corpus.repository import DESCRIBE_MAX_FAILURES
 from libs.db.models import CorpusJob
 from libs.limits import limit_default
-from libs.settings import PROXIED_SOURCES
+from libs.settings import (
+    DEFAULT_SOURCE_MIN_AGE_HOURS,
+    PROXIED_SOURCES,
+    SOURCE_MIN_AGE_HOURS,
+)
 
 # The catalogue's ceiling, for a caller with no user to resolve against — a test, or a direct construction.
 CATALOGUE_APPLICANT_CAP = limit_default("applicant_cap")
@@ -133,6 +137,39 @@ class UserFilters:
         return None
 
 
+def _fresh_enough(filters: UserFilters, *, now: datetime | None = None):
+    """Whether a posting is recent enough for this account, judged per source.
+
+    **One global window does not mean "fresher jobs", it means "LinkedIn only".** Measured against
+    the live corpus on 2026-08-09 with the operator's window at six hours, fifteen of seventeen
+    sources returned nothing — a board that publishes a few times a day has nothing posted in the
+    last six hours, so the window was switching sources off rather than raising the bar. Each
+    source is therefore given at least the window it can actually serve (`min_age_hours`), and the
+    operator's setting applies on top of that rather than underneath it.
+
+    The second half is about which clock to read. Most sources report a real posting time and are
+    judged on it. A few report a date only — every `posted_at` at midnight — so by mid-morning
+    their whole catalogue looks half a day old however fresh it is. Those are judged on
+    `first_seen_at` instead, which is trustworthy here because the harvest runs every fifteen
+    minutes and every ATS token is polled every cycle: when we first saw a posting is a better
+    statement about its age than a date stamped to midnight.
+    """
+    reference = now or datetime.now(UTC)
+    per_source = case(
+        *[(CorpusJob.source == source,
+           reference - timedelta(hours=max(hours, filters.max_age_hours)))
+          for source, hours in sorted(SOURCE_MIN_AGE_HOURS.items())],
+        else_=reference - timedelta(
+            hours=max(DEFAULT_SOURCE_MIN_AGE_HOURS, filters.max_age_hours)))
+
+    # A midnight timestamp is a date, not a time. Judge those on when we found the row.
+    date_only = func.date_trunc("day", CorpusJob.posted_at) == CorpusJob.posted_at
+    return (
+        (CorpusJob.posted_at.is_(None) & (CorpusJob.first_seen_at >= per_source))
+        | (date_only & (CorpusJob.first_seen_at >= per_source))
+        | (CorpusJob.posted_at.is_not(None) & ~date_only & (CorpusJob.posted_at >= per_source)))
+
+
 def pending_match_conditions(cutoff: float) -> list:
     """Matches this account is actually still owed: scored above their cutoff and not given up on.
 
@@ -183,13 +220,10 @@ def filters_for(session, user) -> UserFilters:
 
 def candidate_conditions(filters: UserFilters, *, now: datetime | None = None) -> list:
     """The SQL every "is this row a candidate for this account" question must ask."""
-    fresh = filters.fresh_since(now=now)
     return [
         # Nothing to apply for.
         CorpusJob.closed_at.is_(None),
-        # Dated rows against their posted time, undated ones against when we found them.
-        (CorpusJob.posted_at >= fresh)
-        | (CorpusJob.posted_at.is_(None) & (CorpusJob.first_seen_at >= fresh)),
+        _fresh_enough(filters, now=now),
         # Their countries, or a posting that names no readable place.
         true() if not filters.countries
         else CorpusJob.country.is_(None) | CorpusJob.country.in_(filters.countries),

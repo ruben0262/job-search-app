@@ -188,10 +188,16 @@ def test_the_context_draft_excludes_the_platforms_own_rules():
 
 # ── a scenario walked end to end ──────────────────────────────────────────────────────────────
 
-def test_the_directors_four_steps_produce_exactly_the_required_files():
-    """Model the run before paying for one."""
+def test_the_directors_steps_produce_exactly_the_required_files():
+    """Model the run before paying for one.
+
+    `setup-prompts` joined this list on 2026-08-09. It was a real command with real instructions
+    that no user could start and no file depended on, so `tailor_cv.md` and `tailor_cover.md` were
+    seeded carrying five placeholders each and never written — and every completeness check passed,
+    because both files were declared "usable as shipped".
+    """
     claimed: set[str] = set()
-    for name in ("setup-context", "setup", "setup-role-angles", "setup-scorer"):
+    for name in ("setup-context", "setup", "setup-prompts", "setup-role-angles", "setup-scorer"):
         text = _text(name)
         claimed |= {f for f in setup_files() if f in text}
 

@@ -13,11 +13,25 @@ from libs.profiles import (
     grounding,
     is_filled,
     missing_setup,
+    scaffold,
     seed_files,
     ships_usable,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _personalised(name: str, content: str | None) -> bool:
+    """Whether this file has been written for this person, rather than left as it shipped.
+
+    A file with no scaffold of its own has nothing to differ from, so it counts as personalised
+    the moment it has content — the question only means anything for the ones that ship usable.
+    """
+    try:
+        base = scaffold(name)
+    except (FileNotFoundError, KeyError, ValueError):
+        return bool((content or "").strip())
+    return (content or "").strip() != (base or "").strip()
 
 
 class ProfileFiles:
@@ -40,13 +54,25 @@ class ProfileFiles:
             .where(UserProfileFile.user_id == self._user, UserProfileFile.name == name))
 
     def listing(self) -> list[dict]:
-        """What the setup agent and the file panel both need: names, kinds, filled state."""
+        """What the setup agent and the file panel both need: names, kinds, filled state.
+
+        `personalised` answers a question `filled` cannot. Some files ship usable — the writing
+        prompts are complete documents carrying `<<NAME>>` markers that are substituted at build
+        time — so `filled` is True for them from the moment an account is seeded, whether or not
+        anybody has written a word for that person.
+
+        Comparing against the shipped scaffold separates the two. Measured 2026-08-09: one
+        account's `tailor_cover.md` was byte-identical to the default while every check reported
+        it complete, so it had been reporting a personalised cover-letter prompt it did not have.
+        """
         rows = self._s.execute(
             select(UserProfileFile.name, UserProfileFile.kind, UserProfileFile.filled,
-                   UserProfileFile.updated_at)
+                   UserProfileFile.content, UserProfileFile.updated_at)
             .where(UserProfileFile.user_id == self._user)
             .order_by(UserProfileFile.name)).all()
-        return [{"name": n, "kind": k, "filled": f, "updated_at": u} for n, k, f, u in rows]
+        return [{"name": n, "kind": k, "filled": f,
+                 "personalised": _personalised(n, c),
+                 "updated_at": u} for n, k, f, c, u in rows]
 
     def write(self, name: str, content: str, *, kind: str | None = None) -> bool:
         """Store a file."""

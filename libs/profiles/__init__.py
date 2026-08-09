@@ -48,6 +48,11 @@ GENERATION_FILES: tuple[str, ...] = (
 )
 
 # What an unfilled scaffold looks like.
+# `<<NAME>>` and its siblings are deliberately NOT here. They are substitution markers, filled at
+# build time from one authoritative source, and a prompt carrying them is complete rather than
+# unfinished. Treating them as placeholders would mean setup never finishes for anybody — and
+# baking real values into the file instead would put a person's contact details in two places,
+# which is how they go stale without erroring.
 PLACEHOLDER_MARKERS = ("[FILLED BY", "[YOUR NAME]", "[BRACKETED]", "[CITY, COUNTRY]")
 
 # Files that ship usable rather than as placeholders: framework rules and the task prompts.

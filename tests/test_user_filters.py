@@ -283,3 +283,71 @@ def test_which_sources_are_proxied_is_defined_once():
     from libs.settings import PROXIED_SOURCES
 
     assert "linkedin" in PROXIED_SOURCES
+
+
+# ── freshness, per source and per timestamp quality ───────────────────────────────────────────
+
+def test_a_slow_source_is_not_silenced_by_a_tight_global_window(db):
+    """A window below what a source can serve switches it off rather than raising the bar.
+
+    Measured on the live corpus 2026-08-09 with the operator's window at six hours: fifteen of
+    seventeen sources returned nothing at all. `arbeitnow` held 2,691 open jobs and none inside 72
+    hours — harvested every cycle and discarded in full.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    now = datetime.now(UTC)
+    slow = _row(db, source="arbeitnow", posted_at=now - timedelta(hours=100))
+    fast = _row(db, source="linkedin", posted_at=now - timedelta(hours=100))
+
+    kept = _survivors(db, built(config(), max_age_hours=6))
+
+    assert slow.id in kept, "arbeitnow's floor is a week; six hours must not delete it"
+    assert fast.id not in kept, "linkedin sustains an hour, so 100 hours is genuinely stale"
+
+
+def test_the_operator_can_widen_a_window_but_not_narrow_it_past_the_floor(db):
+    """The global setting applies on top of each source's floor, never underneath it."""
+    from datetime import UTC, datetime, timedelta
+
+    now = datetime.now(UTC)
+    recent_linkedin = _row(db, source="linkedin", posted_at=now - timedelta(hours=100))
+
+    # A generous global admits it; a tight one does not, because linkedin's own floor is 1h.
+    assert recent_linkedin.id in _survivors(db, built(config(), max_age_hours=168))
+    assert recent_linkedin.id not in _survivors(db, built(config(), max_age_hours=1))
+
+
+def test_a_date_only_posting_is_judged_on_when_we_found_it(db):
+    """Some sources report a date rather than a time, so every posting reads as midnight.
+
+    Workday reported one single time value across every row measured. Judged on `posted_at`, its
+    whole catalogue looks half a day old by mid-morning however fresh it is. The harvest runs every
+    fifteen minutes and polls every ATS token each cycle, so when we first saw a row is the better
+    statement about its age.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    now = datetime.now(UTC)
+    midnight_today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    # Stamped midnight, but we watched the board and saw it appear minutes ago.
+    row = _row(db, source="workday", posted_at=midnight_today)
+    row.first_seen_at = now - timedelta(minutes=10)
+    db.flush()
+
+    assert row.id in _survivors(db, built(config(), max_age_hours=6)), (
+        "a job we saw ten minutes ago is not stale because its source stamps dates")
+
+
+def test_a_real_timestamp_is_still_judged_on_the_posting_time(db):
+    """The date-only rule must not become a way for genuinely old jobs to slip through."""
+    from datetime import UTC, datetime, timedelta
+
+    now = datetime.now(UTC)
+    old = _row(db, source="linkedin", posted_at=now - timedelta(hours=30))
+    old.first_seen_at = now - timedelta(minutes=5)
+    db.flush()
+
+    assert old.id not in _survivors(db, built(config(), max_age_hours=6)), (
+        "seeing an old posting recently does not make it fresh"
+    )

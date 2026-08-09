@@ -120,6 +120,46 @@ HARVEST_CYCLE_BUDGET_SECONDS = 11 * 60
 # user's feed.
 DEFAULT_JOB_MAX_AGE_HOURS = 24
 
+# The floor a source's delivery window may not go below, because below it that source stops
+# existing rather than getting stricter.
+#
+# Measured 2026-08-09 against the live corpus, counting open postings inside each window. At the
+# operator's setting of 6 hours, **fifteen of seventeen sources returned nothing at all** — not
+# because their jobs were poor but because a board that publishes a few times a day has nothing
+# posted in the last six hours. `arbeitnow` is the extreme: 2,691 open jobs and zero inside 72
+# hours, harvested every cycle and discarded in full.
+#
+# So one global window does not mean "fresher jobs", it means "LinkedIn only". These numbers are
+# the smallest window at which each source still answers.
+SOURCE_MIN_AGE_HOURS: dict[str, int] = {
+    # Sustains an hour: 91 open postings inside 60 minutes.
+    "linkedin": 1,
+    # 8 inside an hour, 41 inside six.
+    "himalayas": 6,
+    "profession": 12,
+    "hiringcafe": 12,
+    "ashby": 12,
+    "nofluffjobs": 24,
+    "lever": 24,
+    "justjoinit": 24,
+    "smartrecruiters": 48,
+    "recruitee": 48,
+    "breezy": 48,
+    "greenhouse": 72,
+    # 2,691 open jobs, none inside 72 hours. A weekly batch rather than a live feed.
+    "arbeitnow": 168,
+    "workingnomads": 168,
+    "workable": 168,
+}
+
+# A source nobody measured gets the global window and nothing else.
+DEFAULT_SOURCE_MIN_AGE_HOURS = 24
+
+
+def min_age_hours(source: str | None) -> int:
+    """The smallest delivery window this source can actually serve."""
+    return SOURCE_MIN_AGE_HOURS.get((source or "").lower(), DEFAULT_SOURCE_MIN_AGE_HOURS)
+
 
 DEFAULTS: dict[str, object] = {
     "job_max_age_hours": DEFAULT_JOB_MAX_AGE_HOURS,
