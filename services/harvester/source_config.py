@@ -163,6 +163,7 @@ def build_source_configs(
     freshness: Mapping[str, int] | None = None,
     pages: Mapping[str, int] | None = None,
     results: Mapping[str, int] | None = None,
+    queries: Mapping[str, int] | None = None,
     ats_companies: int | None = None,
 ) -> dict[str, dict]:
     """Platform defaults plus the union-derived filters, for every enabled source."""
@@ -211,7 +212,10 @@ def build_source_configs(
             cfg["queries"] = _queries_for(source, keywords)
         if source == "adzuna":
             _shape_adzuna(cfg, keywords=keywords, locations=locations,
-                          max_queries=(results or {}).get("adzuna"))
+                          # `queries_per_cycle`, not `results_per_query`: this is how many calls
+                          # the source may make, which is what the free tier meters. Wiring it to
+                          # the results knob meant the panel's queries control did nothing here.
+                          max_queries=(queries or {}).get("adzuna"))
         out[source] = cfg
     return out
 

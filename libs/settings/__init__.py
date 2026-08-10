@@ -16,6 +16,13 @@ DEFAULT_SOURCE_FRESHNESS_HOURS: dict[str, int] = {
     "linkedin": 4,
     "indeed": 6,
     "google": 6,
+    # Not a statement about Adzuna, which is a live feed — 27 postings inside sixty minutes when
+    # probed directly. It is a statement about *us*: the free tier allows ~250 calls a day against
+    # ninety-six cycles, so each (country, keyword) pair is asked roughly once every twenty-four
+    # hours. A window shorter than the sweep asks for jobs posted since a moment we were not
+    # looking, and returns nothing every time. Measured 2026-08-10: 2 of 243 pairs a cycle against
+    # a six-hour window produced one row in three cycles.
+    "adzuna": 48,
     # Feed-shaped aggregators: what they publish is what is new.
     "himalayas": 12,
     "justjoinit": 12,
@@ -28,7 +35,7 @@ DEFAULT_SOURCE_FRESHNESS_HOURS: dict[str, int] = {
     "profession": 24,
     # Company boards, reached when our token list gets there.
     "greenhouse": 72, "ashby": 72, "lever": 72, "smartrecruiters": 72,
-    "recruitee": 168, "breezy": 72, "workday": 168, "personio": 72, "workable": 72,
+    "recruitee": 72, "breezy": 72, "workday": 168, "personio": 72, "workable": 72,
 }
 
 # Anything not named above.
@@ -71,6 +78,11 @@ DEFAULT_SOURCE_QUERIES_PER_CYCLE: dict[str, int] = {
     "hiringcafe": 100,
     "nofluffjobs": 100,
     "jooble": 50,
+    # Metered by the vendor, not by politeness: the free tier is roughly 250 calls a day and the
+    # cycle runs ninety-six times, so two is what stays inside it. Everything else in this map is
+    # a rate-limit guess; this one is an allowance. Raising it in the panel spends real quota, and
+    # the sweep it implies is why `adzuna` carries a 48-hour window rather than a live one.
+    "adzuna": 2,
 }
 
 # A source nobody has tuned.
@@ -138,18 +150,25 @@ DEFAULT_JOB_MAX_AGE_HOURS = 24
 SOURCE_MIN_AGE_HOURS: dict[str, int] = {
     # Live aggregators: they publish continuously, so an hour is a real window and not an outage.
     "linkedin": 1,          # 152 open postings inside 60 minutes
-    "adzuna": 1,            # 27 inside 60 minutes, probed live through the adapter
-    "smartrecruiters": 1,   # 20 inside 60 minutes
     # A few times an hour.
     "himalayas": 6,         # 1 at 1h, 42 at 6h
-    "ashby": 6,             # 3 at 1h, 30 at 6h
     "justjoinit": 6,        # 4 at 1h, 20 at 6h
-    "nofluffjobs": 6,       # 1 at 1h, 17 at 6h
-    "recruitee": 6,         # 0 at 1h, 10 at 6h
     "profession": 12,       # 6 at 6h, 23 at 12h
-    # Company boards, reached when the token list gets to them rather than when they publish.
+    # The board APIs, matched to the window they are actually fetched over.
+    "nofluffjobs": 48,      # 17 at 6h, 87 at 48h, and 48h is what the cycle asks for
+    # Bounded by our own sweep rather than by the board: see the note in the harvest windows above.
+    # A floor below the harvest window discards what the cycle just paid to fetch.
+    "adzuna": 48,
+    # Company boards, reached when the token list gets to them rather than when they publish, so
+    # the whole family keeps the window it is polled over. A floor below that is not "fresher": it
+    # is the describe and embed spend for rows that are dropped before anybody sees them, and
+    # `recruitee` was the worst of it at 168 hours fetched against 24 delivered.
     "greenhouse": 72,       # 7 at 6h, 21 at 72h
     "lever": 72,            # 7 at 6h, 16 at 72h
+    "ashby": 72,            # 30 at 6h, 152 at 72h
+    "smartrecruiters": 72,  # 118 at 6h, 257 at 72h
+    "recruitee": 72,        # 10 at 6h, 16 at 72h
+    "personio": 72,
     # Weekly batches and slow boards. A tighter window here is not stricter, it is off.
     "hiringcafe": 168,      # **1 at 12h and 526 at 168h.** It was set to 12.
     "workday": 168,         # 6 at 24h, 133 at 168h
@@ -224,6 +243,16 @@ def put(session: Session, key: str, value: object, *, by: str | None = None) -> 
                                set_={"value": value, "updated_by": by}))
 
 
+
+
+def queries_per_cycle_default(source: str) -> int:
+    """The catalogue ceiling for a caller with no session — an adapter reading its own fallback.
+
+    Split out so `services.harvester.sources` can share this map instead of restating a number
+    beside it. A constant on each side plus a test asserting they are equal passes while both are
+    wrong; one definition cannot disagree with itself (CLAUDE.md §5).
+    """
+    return DEFAULT_SOURCE_QUERIES_PER_CYCLE.get(source, DEFAULT_QUERIES_PER_CYCLE)
 
 
 def queries_per_cycle(session: Session, source: str) -> int:

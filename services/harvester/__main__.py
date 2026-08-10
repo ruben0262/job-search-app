@@ -154,6 +154,9 @@ def main(argv: list[str] | None = None) -> int:
                          if results_per_query(session, name)},
                 pages={name: pages_per_cycle(session, name) for name in HARVEST_SOURCES
                        if pages_per_cycle(session, name)},
+                # Sources that iterate their own demand rather than a planned query set read their
+                # ceiling from the config; `select_within_budget` never sees them.
+                queries={name: queries_per_cycle(session, name) for name in HARVEST_SOURCES},
                 ats_companies=ats_companies_per_cycle(session))
             # The operator's per-source query ceilings, read where the session is.
             limits = (dict.fromkeys(HARVEST_SOURCES, args.max_queries)

@@ -47,6 +47,7 @@ from urllib.parse import quote
 import httpx
 
 from libs.corpus.filters import epoch_to_iso, is_within_hours
+from libs.settings import queries_per_cycle_default
 from services.harvester.fetch import make_shared_client
 from services.harvester.sources.base import JobLink
 
@@ -453,10 +454,9 @@ ADZUNA_COUNTRIES: frozenset[str] = frozenset({
     "mx", "nl", "nz", "pl", "sg", "us", "za",
 })
 
-# Calls per cycle when the operator has set no ceiling. The free tier is roughly 250 calls a day
-# and the cycle runs ninety-six times, so this is the number that keeps it inside the allowance
-# with room to spare — not a throughput choice. Each call still returns up to `results_per_page`.
-DEFAULT_ADZUNA_QUERIES = 2
+# The ceiling comes from `libs.settings`, which is where the operator's value lives too. A constant
+# here as well would be the defect this project ships most often: the panel showing one number
+# while the code reads another, with nothing erroring.
 
 
 def gather_adzuna(cfg: dict[str, Any], logger) -> list[JobLink]:
@@ -490,7 +490,7 @@ def gather_adzuna(cfg: dict[str, Any], logger) -> list[JobLink]:
     # being asked ninety-six times. Derived from the clock rather than stored: a cursor in the
     # database would be one more thing to write, read and disagree about.
     pairs = [(country, term) for country in countries for term in keywords]
-    budget = max(1, int(cfg.get("max_queries") or DEFAULT_ADZUNA_QUERIES))
+    budget = max(1, int(cfg.get("max_queries") or queries_per_cycle_default("adzuna")))
     if len(pairs) > budget:
         start = (int(time.time()) // 900) * budget % len(pairs)
         pairs = [pairs[(start + step) % len(pairs)] for step in range(budget)]
