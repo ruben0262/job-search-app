@@ -13,6 +13,7 @@ from libs.contracts.profile import ProfileSchema
 from libs.db.models import User, UserDocument
 from libs.llm import LlmClient, LlmError
 from libs.obs import audit
+from libs.tenant.repository import TenantRepository
 from services.capture.prompt import (
     CAPTURE_MODEL,
     CAREER_FIELDS,
@@ -113,10 +114,29 @@ def process_user(session: Session, user_id: _uuid.UUID, client: LlmClient) -> Pr
     documents = documents_for(session, user_id)
     draft = with_account_links(capture_profile(client, documents, full_name=user.full_name), user)
 
-    user.profile_draft = draft.model_dump()
     user.capture_source = "capture"
     audit(logger, "process.drafted", user=user_id, documents=len(documents),
           not_list=len(draft.not_list), conflicts=len(draft.conflicts))
+
+    if user.profile:
+        # A *replacement* keeps its review step, and should: confirming one stales every label the
+        # account owns and buys them again on their own credential. That is a decision with a
+        # price, so a person makes it.
+        user.profile_draft = draft.model_dump()
+        notifylib.notify(session, user_id, notifylib.PROCESSING_DONE,
+                         "Read it before anything uses it — the not-a-fit list especially.")
+        return draft
+
+    # A *first* profile adopts itself. There is nothing to invalidate and nothing to spend, and
+    # waiting for a click is what left an account with a finished setup, a trained model and a
+    # full corpus unable to build a single CV — every build refused on one NULL column while the
+    # dashboard showed a button nobody had pressed.
+    adopted = draft.model_dump()
+    adopted["confirmed"] = True
+    generation = TenantRepository(session).save_profile(user_id, adopted)
+    user.profile_draft = None
+    audit(logger, "process.adopted", user=user_id, generation=generation, first=True)
     notifylib.notify(session, user_id, notifylib.PROCESSING_DONE,
-                     "Read it before anything uses it — the not-a-fit list especially.")
+                     "Your profile is built and your CV and cover letters can be generated. "
+                     "Read it when you get a chance — the not-a-fit list especially.")
     return draft

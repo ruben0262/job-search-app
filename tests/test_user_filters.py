@@ -363,3 +363,44 @@ def test_a_real_timestamp_is_still_judged_on_the_posting_time(db):
     assert old.id not in _survivors(db, built(config(), max_age_hours=6)), (
         "seeing an old posting recently does not make it fresh"
     )
+
+
+def test_the_delivery_floor_is_the_operator_s_to_change(db):
+    """It was a constant, beside a platform setting answering the adjacent question.
+
+    `source_freshness_hours` says how far back a source is *asked* and has a panel control;
+    `SOURCE_MIN_AGE_HOURS` said how long what it returned stays deliverable and had none. So an
+    operator could widen a source's harvest window, watch rows arrive, and never learn that a floor
+    they could not see was discarding them. Both are now set in the same place.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from libs import settings
+    from libs.db.models import User
+    from libs.tenant.filters import filters_for
+    from libs.tenant.repository import TenantRepository
+
+    old = _row(db, source="greenhouse",
+               posted_at=datetime.now(UTC) - timedelta(hours=100), first_seen_at=datetime.now(UTC))
+    db.flush()
+
+    user = User(email=f"{uuid_hex()}@example.test", password_hash="x", status="active", active=True)
+    db.add(user)
+    db.flush()
+    TenantRepository(db).save_config(user.id, config())
+    db.flush()
+
+    # Measured default for greenhouse is 72 hours, so a 100-hour-old posting is out.
+    assert old.id not in _survivors(db, filters_for(db, user))
+
+    settings.put(db, "source_min_age_hours", {"greenhouse": 168})
+    db.flush()
+
+    assert old.id in _survivors(db, filters_for(db, user)), (
+        "raising the floor in the panel must change what is actually delivered")
+
+
+def uuid_hex() -> str:
+    import uuid
+
+    return uuid.uuid4().hex

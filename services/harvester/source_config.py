@@ -185,16 +185,7 @@ def build_source_configs(
     for source in active:
         cfg = dict(PLATFORM_DEFAULTS.get(source, {}))
         cfg["enabled"] = True
-        # Both keys, because the two tiers read different ones.
-        window = int((freshness or {}).get(source) or 0) or max_age
-        cfg["max_age_hours"] = window
-        cfg["hours_old"] = window
-        # `ats.JobFilter` prefers `posted_within_hours`, and PLATFORM_DEFAULTS silently outranked this.
-        if "posted_within_hours" in cfg:
-            cfg["posted_within_hours"] = window
-        # And HiringCafe counts in days.
-        if "posted_within_days" in cfg:
-            cfg["posted_within_days"] = max(1, -(-window // 24))
+        _apply_window(cfg, int((freshness or {}).get(source) or 0) or max_age)
         # How deep one query reaches, under whichever key this adapter reads.
         depth = (results or {}).get(source)
         if depth and source in RESULT_KEYS:
@@ -213,8 +204,52 @@ def build_source_configs(
             cfg["location_keywords"] = locations
         if source in QUERY_TAKING_SOURCES:
             cfg["queries"] = _queries_for(source, keywords)
+        if source == "adzuna":
+            _shape_adzuna(cfg, keywords=keywords, locations=locations,
+                          max_queries=(results or {}).get("adzuna"))
         out[source] = cfg
     return out
+
+
+def _apply_window(cfg: dict, window: int) -> None:
+    """One harvest window, under every key an adapter might read it as."""
+    # Both, because the two tiers read different ones.
+    cfg["max_age_hours"] = window
+    cfg["hours_old"] = window
+    # `ats.JobFilter` prefers `posted_within_hours`, and PLATFORM_DEFAULTS silently outranked this.
+    if "posted_within_hours" in cfg:
+        cfg["posted_within_hours"] = window
+    # And HiringCafe counts in days.
+    if "posted_within_days" in cfg:
+        cfg["posted_within_days"] = max(1, -(-window // 24))
+
+
+def _shape_adzuna(cfg: dict, *, keywords: list[str], locations: list[str],
+                  max_queries: int | None) -> None:
+    """Adzuna iterates (country x keyword) itself rather than a query set, and was given neither.
+
+    So it fell back to its own hardcoded `["python developer", "backend engineer"]` in `gb` with
+    `where="remote"` — a source added to widen the corpus beyond software would have searched only
+    for remote software. The adapter's defaults are gone; this is where it gets its demand.
+    """
+    cfg["keywords"] = keywords
+    cfg["countries"] = adzuna_countries(locations)
+    if max_queries:
+        cfg["max_queries"] = int(max_queries)
+
+
+def adzuna_countries(locations: list[str]) -> list[str]:
+    """The Adzuna country codes the active users' locations actually admit.
+
+    `libs.corpus.geo` is the one place that turns a place into countries, and it is reused here
+    rather than restated: a second mapping is the defect this project ships most often. Adzuna
+    serves a subset, so the result is intersected with what the vendor answers for.
+    """
+    from libs.corpus.geo import wanted_countries  # noqa: PLC0415 - one caller, kept local
+    from services.harvester.sources.http_apis import ADZUNA_COUNTRIES  # noqa: PLC0415
+
+    wanted = wanted_countries(locations) or frozenset()
+    return sorted({code.lower() for code in wanted} & ADZUNA_COUNTRIES)
 
 
 def _queries_for(source: str, keywords: list[str]) -> list[dict | str]:

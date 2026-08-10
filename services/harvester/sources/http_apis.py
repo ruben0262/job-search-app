@@ -445,6 +445,20 @@ def gather_findwork(cfg: dict[str, Any], logger) -> list[JobLink]:
 
 # ── Adzuna ────────────────────────────────────────────────────────────
 
+# The countries Adzuna actually serves. A vendor fact, so it lives beside the vendor's adapter:
+# asking for a code outside this list is a 404, and the user-facing location list is much wider
+# (`libs.corpus.geo` knows all 27 EU members; Adzuna covers eight of them).
+ADZUNA_COUNTRIES: frozenset[str] = frozenset({
+    "at", "au", "be", "br", "ca", "ch", "de", "es", "fr", "gb", "in", "it",
+    "mx", "nl", "nz", "pl", "sg", "us", "za",
+})
+
+# Calls per cycle when the operator has set no ceiling. The free tier is roughly 250 calls a day
+# and the cycle runs ninety-six times, so this is the number that keeps it inside the allowance
+# with room to spare — not a throughput choice. Each call still returns up to `results_per_page`.
+DEFAULT_ADZUNA_QUERIES = 2
+
+
 def gather_adzuna(cfg: dict[str, Any], logger) -> list[JobLink]:
     """Adzuna aggregator API — broad EU coverage, native recency (max_days_old). Requires FREE
     credentials: set ADZUNA_APP_ID and ADZUNA_APP_KEY in .env. Disabled when either is absent.
@@ -459,38 +473,64 @@ def gather_adzuna(cfg: dict[str, Any], logger) -> list[JobLink]:
         return []
     max_age = cfg.get("max_age_hours", 24)
     per_page = int(cfg.get("results_per_page", 50))
-    countries: list[str] = cfg.get("countries", ["gb"])
-    keywords: list[str] = cfg.get("keywords", ["python developer", "backend engineer"])
+    countries: list[str] = [c for c in cfg.get("countries") or [] if c in ADZUNA_COUNTRIES]
+    keywords: list[str] = [t for t in cfg.get("keywords") or [] if t]
+    if not (countries and keywords):
+        # Never a hardcoded fallback. This adapter used to default to
+        # `["python developer", "backend engineer"]` in `gb`, `where="remote"` — so switching the
+        # credential on would have harvested remote Python jobs regardless of who the platform's
+        # users were, which is the bias the source was added to correct.
+        logger.warning("adzuna: no %s from the active configs — asking for nothing this cycle",
+                       "countries" if not countries else "keywords")
+        return []
+
+    # The free tier allows roughly 250 calls a day against a cycle that runs every fifteen minutes,
+    # so the whole (country x keyword) grid cannot be asked every time. A slice of it is, and the
+    # slice advances each cycle, so the grid is covered over the day rather than its first N cells
+    # being asked ninety-six times. Derived from the clock rather than stored: a cursor in the
+    # database would be one more thing to write, read and disagree about.
+    pairs = [(country, term) for country in countries for term in keywords]
+    budget = max(1, int(cfg.get("max_queries") or DEFAULT_ADZUNA_QUERIES))
+    if len(pairs) > budget:
+        start = (int(time.time()) // 900) * budget % len(pairs)
+        pairs = [pairs[(start + step) % len(pairs)] for step in range(budget)]
+        logger.info("adzuna: %d of %d (country, keyword) pairs this cycle, rotating",
+                    len(pairs), len(countries) * len(keywords))
+
     max_days = max(1, round(max_age / 24))
     out: list[JobLink] = []
     seen: set[str] = set()
     with make_shared_client(headers={"Accept": "application/json"}, follow_redirects=True) as client:
-        for country in countries:
+        for country, term in pairs:
             base = f"https://api.adzuna.com/v1/api/jobs/{country}/search/1"
-            for term in keywords:
-                params = {"app_id": app_id, "app_key": app_key, "results_per_page": per_page,
-                          "what": term, "where": cfg.get("where", "remote"),
-                          "max_days_old": max_days, "sort_by": "date", "content-type": "application/json"}
-                try:
-                    results = client.get(base, params=params).json().get("results", [])
-                except Exception as exc:
-                    logger.warning("adzuna %s/%r failed: %s", country, term, exc)
+            params = {"app_id": app_id, "app_key": app_key, "results_per_page": per_page,
+                      # No `where`. It used to default to "remote", which is a search preference
+                      # this adapter has no business holding: the workplace filter and the user's
+                      # own config decide that later, and biasing the query here removed every
+                      # on-site role before anybody could choose to filter it.
+                      "what": term,
+                      "max_days_old": max_days, "sort_by": "date",
+                      "content-type": "application/json"}
+            try:
+                results = client.get(base, params=params).json().get("results", [])
+            except Exception as exc:
+                logger.warning("adzuna %s/%r failed: %s", country, term, exc)
+                continue
+            for j in results:
+                url = (j.get("redirect_url") or "").strip()
+                if not url or url in seen:
                     continue
-                for j in results:
-                    url = (j.get("redirect_url") or "").strip()
-                    if not url or url in seen:
-                        continue
-                    iso = j.get("created")
-                    if not is_within_hours(iso, max_age):
-                        continue
-                    seen.add(url)
-                    out.append(JobLink(
-                        url=url, title=j.get("title", ""),
-                        company=(j.get("company") or {}).get("display_name", ""),
-                        location=(j.get("location") or {}).get("display_name", ""),
-                        source="adzuna", date_posted=iso,
-                        snippet=_striptags(j.get("description"))[:4000], is_remote=None,
-                    ))
+                iso = j.get("created")
+                if not is_within_hours(iso, max_age):
+                    continue
+                seen.add(url)
+                out.append(JobLink(
+                    url=url, title=j.get("title", ""),
+                    company=(j.get("company") or {}).get("display_name", ""),
+                    location=(j.get("location") or {}).get("display_name", ""),
+                    source="adzuna", date_posted=iso,
+                    snippet=_striptags(j.get("description"))[:4000], is_remote=None,
+                ))
     return out
 
 

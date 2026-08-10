@@ -35,6 +35,10 @@ class UserFilters:
     applicant_cap: int = 0
     onsite_locations: tuple[str, ...] = field(default_factory=tuple)
     languages: frozenset[str] = field(default_factory=frozenset)
+    # How long a posting from each source stays deliverable. The operator's, via platform
+    # settings, with the measured map as the default — `filters_for` resolves it. Held here rather
+    # than read inside `candidate_conditions` so the SQL builder stays free of a session.
+    source_min_ages: tuple[tuple[str, int], ...] = ()
 
     def __post_init__(self) -> None:
         # Compiled once per batch: one pass over title and company against every term at once.
@@ -45,7 +49,8 @@ class UserFilters:
 
     @classmethod
     def from_config(cls, config: dict | None, *, max_age_hours: int,
-                    applicant_cap: int | None = CATALOGUE_APPLICANT_CAP) -> UserFilters:
+                    applicant_cap: int | None = CATALOGUE_APPLICANT_CAP,
+                    source_min_ages: tuple[tuple[str, int], ...] = ()) -> UserFilters:
         """Build from a stored `user_config.config`."""
         config = migrate_config(config or {}) if config else {}
         sections = config.get("sections") or []
@@ -66,6 +71,7 @@ class UserFilters:
             onsite_locations=tuple(workfilter.onsite_locations(config.get("onsite_locations"))),
             # An empty set means no opinion and admits every language.
             languages=frozenset(str(code).lower() for code in config.get("languages") or []),
+            source_min_ages=source_min_ages,
         )
 
     def fresh_since(self, *, now: datetime | None = None) -> datetime:
@@ -139,10 +145,11 @@ def _fresh_enough(filters: UserFilters, *, now: datetime | None = None):
     statement about its age than a date stamped to midnight.
     """
     reference = now or datetime.now(UTC)
+    floors = dict(filters.source_min_ages) or SOURCE_MIN_AGE_HOURS
     per_source = case(
         *[(CorpusJob.source == source,
            reference - timedelta(hours=max(hours, filters.max_age_hours)))
-          for source, hours in sorted(SOURCE_MIN_AGE_HOURS.items())],
+          for source, hours in sorted(floors.items())],
         else_=reference - timedelta(
             hours=max(DEFAULT_SOURCE_MIN_AGE_HOURS, filters.max_age_hours)))
 
@@ -191,7 +198,8 @@ def filters_for(session, user) -> UserFilters:
     return UserFilters.from_config(
         session.scalar(select(UserConfig.config).where(UserConfig.user_id == user.id)),
         max_age_hours=int(settings.get(session, "job_max_age_hours")),
-        applicant_cap=None if cap is None else int(cap))
+        applicant_cap=None if cap is None else int(cap),
+        source_min_ages=tuple(sorted(settings.source_min_ages(session).items())))
 
 
 def candidate_conditions(filters: UserFilters, *, now: datetime | None = None) -> list:

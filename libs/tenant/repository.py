@@ -186,12 +186,24 @@ class TenantRepository:
         except ValidationError:
             unchanged = False
 
-        rubric = render_rubric(validated)
         user.profile = profile
         user.profile_schema_version = schema_version
-        user.rubric_md = rubric
         # Rendered in the same write as the rubric.
         user.facts_md = render_facts(validated)
+
+        # An account whose rubric is its own `label.md` keeps it. The file is the tuned artifact
+        # and it is what every label that account owns was bought against, so overwriting it with
+        # a rendered summary would both lower the labelling quality and — via the generation bump
+        # — stale every existing label and buy them all again on the user's own credential.
+        # Storing the profile is still what makes their documents buildable, which is the whole
+        # reason this runs for them; it just stops short of touching somebody else's rubric.
+        from libs.profiles.repository import ProfileFiles  # noqa: PLC0415 - avoids a cycle
+
+        if ProfileFiles(self._s, user_id).owns_rubric():
+            return user.profile_generation
+
+        rubric = render_rubric(validated)
+        user.rubric_md = rubric
         user.profile_version = profile_version(rubric)
         if not unchanged:
             user.profile_generation += 1

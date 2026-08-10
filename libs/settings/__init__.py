@@ -144,14 +144,28 @@ SOURCE_MIN_AGE_HOURS: dict[str, int] = {
 DEFAULT_SOURCE_MIN_AGE_HOURS = 24
 
 
-def min_age_hours(source: str | None) -> int:
-    """The smallest delivery window this source can actually serve."""
-    return SOURCE_MIN_AGE_HOURS.get((source or "").lower(), DEFAULT_SOURCE_MIN_AGE_HOURS)
+def source_min_ages(session: Session) -> dict[str, int]:
+    """The delivery floor per source, with the operator's overrides applied over the measured map.
+
+    The twin of `freshness_hours`, and it needed to become one. That setting says how far back a
+    source is *asked*; this says how long what it returned stays a candidate. Both are per-source
+    hour maps on adjacent halves of one pipeline, but only the first had a control — so an operator
+    could widen a source's harvest window in the panel, watch the corpus fill with rows, and never
+    learn that a floor they could not see was discarding them. Now they are set in the same place.
+    """
+    stored = get(session, "source_min_age_hours") or {}
+    merged = dict(SOURCE_MIN_AGE_HOURS)
+    merged.update({str(name).lower(): int(hours) for name, hours in stored.items()})
+    return merged
 
 
 DEFAULTS: dict[str, object] = {
     "job_max_age_hours": DEFAULT_JOB_MAX_AGE_HOURS,
     "source_freshness_hours": DEFAULT_SOURCE_FRESHNESS_HOURS,
+    # Its twin, and deliberately adjacent: one says how far back a source is asked, the
+    # other how long what it returned stays deliverable. Kept in one place so an operator
+    # cannot widen the first while an invisible second discards the result.
+    "source_min_age_hours": SOURCE_MIN_AGE_HOURS,
     "default_freshness_hours": DEFAULT_FRESHNESS_HOURS,
     "source_queries_per_cycle": DEFAULT_SOURCE_QUERIES_PER_CYCLE,
     "source_results_per_query": DEFAULT_SOURCE_RESULTS_PER_QUERY,

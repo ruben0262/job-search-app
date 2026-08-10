@@ -110,6 +110,27 @@ class ProfileFiles:
         """The system prompt for a generation call. Raises `ProfileIncomplete` if setup is unfinished."""
         return grounding(self.all())
 
+    def owns_rubric(self) -> bool:
+        """Whether this account's labelling rubric is its own `label.md` rather than a rendered one.
+
+        Two mechanisms write `users.rubric_md` and they disagree about who owns it. The setup agent
+        mirrors `label.md` onto the row as it writes it (`libs/agents/tools.py::_sync_rubric`); the
+        capture flow renders one from the confirmed schema. For an account that went through the
+        setup chat the file is the tuned artifact — thousands of characters, written for that
+        person, and the one every label they own was bought against. Storing a captured profile
+        would have replaced it with a generated summary and bumped the generation, which stales
+        every existing label and buys them again on the user's own credential. Measured on
+        2026-08-09: one account, 320 labels.
+
+        So the file is asked directly, rather than trusting `users.capture_source` — that column is
+        only ever written with `"capture"` and cannot tell the two flows apart.
+        """
+        content = self._s.scalar(
+            select(UserProfileFile.content)
+            .where(UserProfileFile.user_id == self._user,
+                   UserProfileFile.name == "label.md"))
+        return content is not None and is_filled(content)
+
     def is_ready(self) -> bool:
         """Whether this account can generate documents at all.
 

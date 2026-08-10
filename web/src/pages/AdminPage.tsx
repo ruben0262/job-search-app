@@ -179,6 +179,7 @@ type PipelineReport = {
 type Settings = {
   job_max_age_hours: number;
   source_freshness_hours: Record<string, number>;
+  source_min_age_hours: Record<string, number>;
   default_freshness_hours: number;
   source_queries_per_cycle: Record<string, number>;
   source_results_per_query: Record<string, number>;
@@ -191,6 +192,9 @@ type Settings = {
 type Source = {
   name: string;
   hours: number;
+  /** How long a posting from this source stays deliverable once stored — the floor the global
+   *  window cannot push below. The other half of `hours`, and until 2026-08-09 it had no control. */
+  min_age_hours: number;
   queries_per_cycle: number;
   /** `null` where the source has no result cap to set — it serves a feed or counts pages. */
   results_per_query: number | null;
@@ -312,6 +316,19 @@ export function AdminPage() {
       "/admin/settings/source_freshness_hours", { value: next });
     setSettings(body.settings);
     setSources((rows) => rows?.map((row) => (row.name === name ? { ...row, hours } : row)) ?? rows);
+  });
+
+  // The other half of the same question, and it had no control until 2026-08-09: `fresh` is how
+  // far back the source is asked, `keep` is how long what it returned stays deliverable. Setting
+  // the first without the second meant an operator could widen a window, watch rows arrive, and
+  // never learn that a floor they could not see was discarding them.
+  const saveMinAge = useAction(async (name: string, hours: number) => {
+    const next = { ...(settings?.source_min_age_hours ?? {}), [name]: hours };
+    const body = await api.put<{ settings: Settings }>(
+      "/admin/settings/source_min_age_hours", { value: next });
+    setSettings(body.settings);
+    setSources((rows) =>
+      rows?.map((row) => (row.name === name ? { ...row, min_age_hours: hours } : row)) ?? rows);
   });
 
   // The alert key is `dead_letter:<lane>`.
@@ -498,6 +515,10 @@ export function AdminPage() {
 
           <p className="label" style={{ marginTop: "1.5rem" }}>Per source</p>
           <span className="hint">
+            <strong>Keep</strong> is how long a posting from that source stays deliverable once
+            it is in the corpus, and it is the floor the global window cannot push below: at six
+            hours globally, fifteen of seventeen sources returned nothing at all, because a board
+            that publishes a few times a day has nothing posted in the last six.{" "}
             <strong>Freshness</strong> is how recent a posting must be to qualify. LinkedIn lists
             within minutes; a company board is reached whenever our token list gets there, so the
             same window would keep 2% of it. <strong>Queries</strong> is how many times a cycle that
@@ -505,11 +526,12 @@ export function AdminPage() {
             unrelated boards queue behind each other. <strong>Wanted</strong> is how many it
             currently has: equal or under the ceiling means it is fully served each cycle.
           </span>
-          <Error>{saveFreshness.error ?? saveQueries.error}</Error>
+          <Error>{saveFreshness.error ?? saveMinAge.error ?? saveQueries.error}</Error>
           <div className="sources">
             <div className="source-row source-head">
               <span className="source-name">source</span>
               <span>fresh</span>
+              <span>keep</span>
               <span>queries</span>
               <span>results</span>
               <span>pages</span>
@@ -524,6 +546,17 @@ export function AdminPage() {
                   aria-label={`${source.name} freshness`}
                   onChange={(event) =>
                     void saveFreshness.run(source.name, Number(event.target.value))}
+                >
+                  {[1, 2, 4, 6, 12, 24, 48, 72, 168].map((hours) => (
+                    <option key={hours} value={hours}>{hours}h</option>
+                  ))}
+                </select>
+                <select
+                  value={source.min_age_hours}
+                  disabled={saveMinAge.busy}
+                  aria-label={`${source.name} keep`}
+                  onChange={(event) =>
+                    void saveMinAge.run(source.name, Number(event.target.value))}
                 >
                   {[1, 2, 4, 6, 12, 24, 48, 72, 168].map((hours) => (
                     <option key={hours} value={hours}>{hours}h</option>

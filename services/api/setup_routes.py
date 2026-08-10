@@ -349,10 +349,27 @@ def start_search(db: Session = Depends(get_db),
         user.labelling_paused = False
         db.flush()
     enqueue(db, "label", user_id, dedup_key="label")
+
+    # Scoring reads the profile *files*; documents are built from the confirmed profile *schema*.
+    # An account that finished the setup chat has the first and not the second, so it trained a
+    # model, filled a feed, and then refused every CV it was asked for — on a NULL column, with
+    # the only route out being a Process button the dashboard offered and nobody pressed. It is
+    # the same step either way, so it is taken here rather than waited for.
+    if user is not None and not user.profile and _has_documents(db, user_id):
+        enqueue(db, "process", user_id, dedup_key="process")
+
     db.commit()
     audit(logger, "setup.search_started", user=user_id)
     return {"status": "started",
             "message": "Scoring your first jobs. Your feed will fill in as it runs."}
+
+
+def _has_documents(db: Session, user_id: _uuid.UUID) -> bool:
+    """Whether there is anything for the process lane to read."""
+    from libs.db.models import UserDocument  # noqa: PLC0415 - one caller, kept local
+
+    return db.scalar(
+        select(UserDocument.id).where(UserDocument.user_id == user_id).limit(1)) is not None
 
 
 def _written(tool_calls: list | None) -> list[str]:

@@ -24,8 +24,8 @@ truth in two places and they drift.
 - `CLAUDE.md` → "CV Content Judgement" (the per-user angle rules the prompts defer to)
 - `docs/PROJECT_STATE.md` → "CV / cover / outreach / interview builds"
 
-**Do NOT touch** the `<PLACEHOLDERS>` (`<JOB_CONTEXT>`, `<BASE_TEMPLATE>`, `<CV_HTML>`,
-`<CV_TEXT>`, `<HEAD_BLOCK>`): Python substitutes them at build time. Breaking one breaks builds.
+**Do NOT touch** the `<PLACEHOLDERS>` (`<JOB_CONTEXT>`, `<BASE_TEMPLATE>`, `<CV_TEXT>`,
+`<HEAD_BLOCK>`): Python substitutes them at build time. Breaking one breaks builds.
 
 **Do NOT weaken** the MOST COMMON FAILURES / HARD RULES / SELF-CHECK blocks. Each line exists
 because a real generated document failed that way. Add to them; do not delete.

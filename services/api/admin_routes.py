@@ -40,6 +40,7 @@ from libs.ops.pipeline import pipeline
 from libs.profiles.repository import ProfileFiles
 from libs.scoring.history import model_history
 from libs.settings import (
+    DEFAULT_SOURCE_MIN_AGE_HOURS,
     DEFAULTS,
     HARVEST_SOURCES,
     QUERY_TAKING_SOURCES,
@@ -50,6 +51,7 @@ from libs.settings import (
     put,
     queries_per_cycle,
     results_per_query,
+    source_min_ages,
 )
 from libs.tenant.repository import TenantRepository
 from services.api.deps import current_user, get_db
@@ -267,9 +269,16 @@ def sources(db: Session = Depends(get_db), admin: User = Depends(require_admin))
     # One number per query-taking source: a source is asked once per distinct keyword.
     wanted = len(distinct_keywords(TenantRepository(db).active_configs()))
     asked = QUERY_TAKING_SOURCES | {"linkedin"}
+    floors = source_min_ages(db)
     return {
         "sources": [{"name": name,
                      "hours": freshness_hours(db, name),
+                     # Its twin, shown beside it: `hours` is how far back the source is asked,
+                     # this is how long what it returned stays deliverable. They were set in two
+                     # different places, and only this one had no control at all — so widening a
+                     # source's harvest window did nothing an operator could see if the floor
+                     # below was discarding the result.
+                     "min_age_hours": floors.get(name, DEFAULT_SOURCE_MIN_AGE_HOURS),
                      "queries_per_cycle": queries_per_cycle(db, name),
                      # `None` where the source has no result cap to set at all.
                      "results_per_query": results_per_query(db, name),

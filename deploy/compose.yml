@@ -70,6 +70,19 @@ services:
       # set yet — but `libs.secrets` refuses to construct without it, so the LinkedIn loop fails
       # loudly rather than silently skipping.
       SECRETS_KEK: ${SECRETS_KEK:-}
+      # The platform's own credentials for three free aggregator APIs, not the user's. Adzuna,
+      # Jooble and Findwork are general boards — every industry, not only software — which is what
+      # makes them worth having: on 2026-08-09 the corpus was 336 ATS companies and every one was a
+      # software startup, so a mechanical engineer had 2.9% of the platform to look at.
+      #
+      # Passed through with `:-` rather than required, because each adapter self-disables when its
+      # key is unset and the rest of the harvest carries on. That is also how they were silently
+      # doing nothing for weeks: `HARVEST_SOURCES` names twenty, the harvester logged "17 sources
+      # enabled", and nothing connected the two numbers.
+      ADZUNA_APP_ID: ${ADZUNA_APP_ID:-}
+      ADZUNA_APP_KEY: ${ADZUNA_APP_KEY:-}
+      JOOBLE_API_KEY: ${JOOBLE_API_KEY:-}
+      FINDWORK_API_KEY: ${FINDWORK_API_KEY:-}
       # Inside the container; bind-mounted to ./logs on the host below. Without the mount a
       # `compose run --rm` harvest writes its log into a filesystem that is deleted the moment the
       # cycle exits — which is precisely the run you want to read afterwards.
