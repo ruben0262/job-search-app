@@ -102,6 +102,14 @@ DEFAULT_SOURCE_RESULTS_PER_QUERY: dict[str, int] = {
 # How many company boards the ATS family polls in one cycle.
 DEFAULT_ATS_COMPANIES_PER_CYCLE = 400
 
+# How far back the cycle reads posting URLs looking for company boards it does not already poll,
+# and how many rows it will read. Both are guards rather than tuning: the pass is idempotent —
+# `add_tokens` ignores a token already enrolled — so the lookback only has to cover the gap since
+# the last cycle, with enough margin that a few missed ticks lose nothing. The row cap keeps one
+# cycle's cost bounded when a backfill lands a very large batch at once.
+ATS_DISCOVERY_LOOKBACK_HOURS = 48
+ATS_DISCOVERY_MAX_ROWS = 20_000
+
 # How many postings the shared cycle will fetch descriptions for in one pass.
 DEFAULT_DESCRIBE_PER_CYCLE = 200
 

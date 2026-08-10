@@ -7,6 +7,7 @@ from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from time import monotonic
 
 from sqlalchemy import select, text
@@ -14,11 +15,16 @@ from sqlalchemy.orm import Session
 
 from libs.contracts.embedder import EmbedderClient, EmbedderError, EmbedderVersion
 from libs.corpus.ats import AtsRepository
+from libs.corpus.ats_urls import tokens_from_urls
 from libs.corpus.repository import CorpusRepository
-from libs.db.models import User
+from libs.db.models import CorpusJob, User
 from libs.obs import Timings, audit, report_timings, timed
 from libs.queue import enqueue
-from libs.settings import HARVEST_CYCLE_BUDGET_SECONDS
+from libs.settings import (
+    ATS_DISCOVERY_LOOKBACK_HOURS,
+    ATS_DISCOVERY_MAX_ROWS,
+    HARVEST_CYCLE_BUDGET_SECONDS,
+)
 from libs.tenant.repository import TenantRepository
 from services.harvester.describe import SHARED_LIMIT as DESCRIBE_PER_CYCLE_DEFAULT
 from services.harvester.describe import describe_pending
@@ -61,6 +67,8 @@ class CycleReport:
     source_failures: dict[str, str] = field(default_factory=dict)
     # How many accounts were asked to catch up their scores.
     scoring_enqueued: int = 0
+    # Company boards learned from posting URLs this cycle, not polled for.
+    ats_tokens_found: int = 0
     labelling_enqueued: int = 0
     skipped_locked: bool = False
     # How long each stage took.
@@ -188,6 +196,10 @@ def run_cycle(
         with timed("language", report.timings):
             report.languages_read = corpus.fill_missing_languages()
 
+        # 5d. Learn which company boards to poll, from the URLs already stored.
+        with timed("ats_discovery", report.timings):
+            report.ats_tokens_found = _discover_ats_tokens(session, ats)
+
         # 6. Embed the new rows. Once, for everyone.
         if embedder is not None:
             try:
@@ -200,11 +212,8 @@ def run_cycle(
                 logger.error("harvest: embedding failed — those rows stay unembedded and are "
                              "retried next cycle: %s", exc)
 
-        # 7. Ask the `score` and `label` lanes to catch each account up.
-        with timed("enqueue_scoring", report.timings):
-            report.scoring_enqueued = _enqueue_scoring(session)
-        with timed("enqueue_labelling", report.timings):
-            report.labelling_enqueued = _enqueue_labelling(session)
+        # 7. Ask the per-account lanes to catch up.
+        _enqueue_follow_up(session, report)
 
     logger.info(
         "harvest: %d queries (%d deferred), %d links, %d duplicates, %d new, %d described, "
@@ -217,6 +226,7 @@ def run_cycle(
           queries=report.queries_planned, links=report.links_found,
           new=report.new_jobs, described=report.described, embedded=report.embedded,
           scoring_enqueued=report.scoring_enqueued,
+          ats_tokens_found=report.ats_tokens_found,
           labelling_enqueued=report.labelling_enqueued,
           failed_sources=len(report.source_failures),
           empty_sources=sum(1 for n in report.links_by_source.values() if n == 0))
@@ -326,6 +336,55 @@ def _keyword_budgets(session, configs) -> dict:
         # Operator-injected demand has no user row and keeps the catalogue default.
         out[user_id] = limits.resolve(user, "keywords") if user is not None else None
     return out
+
+
+def _discover_ats_tokens(session, ats: AtsRepository) -> int:
+    """Enrol company boards named by postings the corpus already holds. Returns how many are new.
+
+    **The company list was a closed loop.** Tokens came only from hiring.cafe's `board_token`
+    field, and hiring.cafe is queried with our users' keywords — so the boards we polled were the
+    boards our existing users had already surfaced, and the ATS tier stayed as narrow as the corpus
+    that seeded it. Sampled 2026-08-09: all 336 live tokens were software startups, on a platform
+    where nine of seventeen enabled sources are ATS boards polling that list.
+
+    Every other source carries the same signal in the posting URL and it was being discarded. A
+    LinkedIn or Adzuna listing for an automotive company links to its Greenhouse board, and the
+    token is in the link. Measured 2026-08-10 against the live corpus: 592 companies with an
+    ATS-shaped URL, 171 of them boards nobody was polling — a 52% increase on the list, from rows
+    already fetched and stored, with no request made.
+
+    It runs over recent rows rather than the whole corpus because it is idempotent and the corpus
+    only grows: a token found last week is already enrolled, and `add_tokens` ignores duplicates.
+    """
+    since = datetime.now(UTC) - timedelta(hours=ATS_DISCOVERY_LOOKBACK_HOURS)
+    urls = session.scalars(
+        select(CorpusJob.url)
+        .where(CorpusJob.first_seen_at >= since, CorpusJob.url.is_not(None))
+        .limit(ATS_DISCOVERY_MAX_ROWS)).all()
+
+    pairs = tokens_from_urls(urls)
+    if not pairs:
+        return 0
+    added = ats.add_tokens(pairs)
+    if added:
+        by_ats: dict[str, int] = {}
+        for name, _token in pairs:
+            by_ats[name] = by_ats.get(name, 0) + 1
+        logger.info("harvest: %d new company board(s) from %d posting URLs %s",
+                    added, len(urls), by_ats)
+    return added
+
+
+def _enqueue_follow_up(session, report: CycleReport) -> None:
+    """Hand the cycle's work on to the per-account lanes.
+
+    Both lanes are re-entered from this tick rather than from clocks of their own — a second clock
+    is a second outage — and both are dedup-keyed, so a still-pending job is not duplicated.
+    """
+    with timed("enqueue_scoring", report.timings):
+        report.scoring_enqueued = _enqueue_scoring(session)
+    with timed("enqueue_labelling", report.timings):
+        report.labelling_enqueued = _enqueue_labelling(session)
 
 
 def _enqueue_scoring(session) -> int:
