@@ -1,4 +1,10 @@
+"""What each source is actually asked for, built from the active users' configs.
 
+The failure this guards is a source that looks enabled and searches for the wrong thing. An
+adapter carrying its own default keyword list answers every call, logs no error and fills the
+corpus — with somebody else's demand.
+"""
+from __future__ import annotations
 
 # ── Adzuna: a general board that was searching only for software ──────────────────────────────
 
