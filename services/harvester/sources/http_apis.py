@@ -685,13 +685,13 @@ def gather_profession(cfg: dict[str, Any], logger) -> list[JobLink]:
 
 
 
-# ── Jooble (aggregator; hu.jooble.org = strong Hungarian coverage) ────
+# ── Jooble (aggregator, international edition) ────────────────────────
 
 def gather_jooble(cfg: dict[str, Any], logger) -> list[JobLink]:
     """Jooble partner API — free key required (jooble.org/api/about -> JOOBLE_API_KEY in .env).
     Adapter is a no-op (returns []) while the key is absent, like findwork/adzuna.
 
-    ⚠ NOT yet live-probed (NEW_SOURCE_CHECKLIST §1 needs a key): built from the published
+    Live-probed 2026-08-10 with the platform's key. Built from the published
     partner-API contract — POST https://<host>/api/<key> with {"keywords", "location", "page"}
     returning {"totalCount", "jobs": [{title, location, snippet, salary, source, type, link,
     company, updated, id}]}. Field handling is defensive; on the FIRST run with a real key,
@@ -704,7 +704,11 @@ def gather_jooble(cfg: dict[str, Any], logger) -> list[JobLink]:
     key = os.environ.get("JOOBLE_API_KEY", "").strip()
     if not key:
         return []
-    host = cfg.get("host", "hu.jooble.org")
+    # `jooble.org`, not a country edition. Probed 2026-08-10 with the platform's key:
+    # `hu.jooble.org` and `uk.jooble.org` both answer HTTP 403 with an HTML block page, while the
+    # international host answers 200 and serves every country. A per-country host was a guess at
+    # better local coverage that in fact returned nothing at all.
+    host = cfg.get("host", "jooble.org")
     max_age = cfg.get("max_age_hours", 24)
     suffix = cfg.get("location_suffix", "")
     out: list[JobLink] = []

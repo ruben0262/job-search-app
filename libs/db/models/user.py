@@ -115,7 +115,6 @@ class User(Base):
     rubric_md: Mapped[str | None] = mapped_column(Text)
 
     # The generation-grounding block (PROFILE_CAPTURE_PLAN.md §6.2).
-    facts_md: Mapped[str | None] = mapped_column(Text)
 
 
     # Per-user DEK, wrapped by the KEK.

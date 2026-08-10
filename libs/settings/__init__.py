@@ -46,7 +46,14 @@ HARVEST_SOURCES: tuple[str, ...] = (
     # European boards.
     "nofluffjobs", "profession", "justjoinit",
     # Key-gated, enabled only with a credential.
-    "jooble", "findwork", "adzuna",
+    #
+    # `jooble` is deliberately absent. The platform holds a valid key and the international host
+    # answers 200 from a laptop, but every request from the VPS comes back as an HTML 403 block
+    # page — the country editions (`hu.`, `uk.`) refuse from anywhere. It is an IP block, not a
+    # credential or a host problem, and a source that fails every cycle drowns the failures that
+    # matter (CLAUDE.md §8). The adapter and the key stay; only the enrolment goes, so restoring
+    # it is one line if the block lifts or the harvest moves.
+    "findwork", "adzuna",
     # The per-user tier, on the user's own proxy.
     "linkedin",
 )
@@ -118,26 +125,41 @@ DEFAULT_JOB_MAX_AGE_HOURS = 24
 # hours, harvested every cycle and discarded in full.
 #
 # So one global window does not mean "fresher jobs", it means "LinkedIn only". These numbers are
-# the smallest window at which each source still answers.
+# the smallest window at which each source still answers with a useful count rather than a token
+# one or two — remeasured against the live corpus on 2026-08-10, and **the direction is worth
+# stating because it is the opposite of the intuition**: a smaller number here is *stricter* and
+# yields fewer jobs, not fresher ones. There is nothing to gain by lowering one below what its
+# source can serve, and `hiringcafe` is what that costs — it sat at 12 hours, where the corpus
+# holds one open posting, while at 168 it holds 526. It is also the richest non-software source
+# on the platform, so the tightest window was on the board that mattered most.
+#
+# A floor below the harvest window (`source_freshness_hours`) discards rows the cycle just paid to
+# fetch, so the two are set together in the admin panel.
 SOURCE_MIN_AGE_HOURS: dict[str, int] = {
-    # Sustains an hour: 91 open postings inside 60 minutes.
-    "linkedin": 1,
-    # 8 inside an hour, 41 inside six.
-    "himalayas": 6,
-    "profession": 12,
-    "hiringcafe": 12,
-    "ashby": 12,
-    "nofluffjobs": 24,
-    "lever": 24,
-    "justjoinit": 24,
-    "smartrecruiters": 48,
-    "recruitee": 48,
-    "breezy": 48,
-    "greenhouse": 72,
-    # 2,691 open jobs, none inside 72 hours. A weekly batch rather than a live feed.
-    "arbeitnow": 168,
-    "workingnomads": 168,
+    # Live aggregators: they publish continuously, so an hour is a real window and not an outage.
+    "linkedin": 1,          # 152 open postings inside 60 minutes
+    "adzuna": 1,            # 27 inside 60 minutes, probed live through the adapter
+    "smartrecruiters": 1,   # 20 inside 60 minutes
+    # A few times an hour.
+    "himalayas": 6,         # 1 at 1h, 42 at 6h
+    "ashby": 6,             # 3 at 1h, 30 at 6h
+    "justjoinit": 6,        # 4 at 1h, 20 at 6h
+    "nofluffjobs": 6,       # 1 at 1h, 17 at 6h
+    "recruitee": 6,         # 0 at 1h, 10 at 6h
+    "profession": 12,       # 6 at 6h, 23 at 12h
+    # Company boards, reached when the token list gets to them rather than when they publish.
+    "greenhouse": 72,       # 7 at 6h, 21 at 72h
+    "lever": 72,            # 7 at 6h, 16 at 72h
+    # Weekly batches and slow boards. A tighter window here is not stricter, it is off.
+    "hiringcafe": 168,      # **1 at 12h and 526 at 168h.** It was set to 12.
+    "workday": 168,         # 6 at 24h, 133 at 168h
+    "breezy": 168,          # 4 at 6h, 21 at 168h
+    "jobicy": 168,          # 3 at 12h, 13 at 168h
+    "arbeitnow": 168,       # nothing at all inside 72h, 1,075 at 168h
+    "workingnomads": 168,   # nothing inside 72h, 14 at 168h
     "workable": 168,
+    "themuse": 168,
+    "findwork": 168,        # a developer board, and a thin one
 }
 
 # A source nobody measured gets the global window and nothing else.

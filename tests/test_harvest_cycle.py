@@ -506,8 +506,23 @@ def test_key_gated_sources_stay_off_without_their_credential(ctx):
     """A source that 401s every cycle is a failure count that means nothing and drowns real ones."""
     from services.harvester.source_config import build_source_configs
 
-    assert "jooble" not in build_source_configs({}, env={})
-    assert "jooble" in build_source_configs({}, env={"JOOBLE_API_KEY": "x"})
+    assert "adzuna" not in build_source_configs({}, env={})
+    assert "adzuna" in build_source_configs(
+        {}, env={"ADZUNA_APP_ID": "x", "ADZUNA_APP_KEY": "y"})
+
+
+def test_a_source_blocked_at_the_network_stays_off_even_holding_its_key(ctx):
+    """Holding a valid credential is not the same as being able to reach the board.
+
+    Jooble answers every request from the VPS with an HTML 403 block page — probed 2026-08-10 with
+    a working key, on the international host and both country editions. `KEY_GATED` is what
+    actually enables a source, appending to the active list whenever the credential is present and
+    regardless of `HARVEST_SOURCES`, so dropping it from that tuple alone left it running and
+    failing every cycle.
+    """
+    from services.harvester.source_config import build_source_configs
+
+    assert "jooble" not in build_source_configs({}, env={"JOOBLE_API_KEY": "x"})
 
 
 def test_query_taking_sources_always_get_a_query(ctx):

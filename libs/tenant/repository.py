@@ -6,13 +6,12 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from pydantic import ValidationError
 from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from libs.contracts.config import CONFIG_SCHEMA_VERSION
-from libs.contracts.profile import PROFILE_SCHEMA_VERSION, ProfileSchema
+from libs.contracts.profile import PROFILE_SCHEMA_VERSION
 from libs.corpus.repository import CorpusRepository
 from libs.db.models import (
     CorpusJob,
@@ -27,8 +26,6 @@ from libs.db.models import (
 )
 from libs.db.models.user import DORMANT_AFTER_DAYS
 from libs.feedback.actions import FEEDBACK_WEIGHT
-from libs.scoring.facts import render_facts
-from libs.scoring.rubric import profile_version, render_rubric, rubric_relevant_digest
 
 # The reference maps its two verdicts onto these scores, so feedback blends with LLM labels.
 APPLIED_SCORE, SKIPPED_SCORE = 90, 10
@@ -169,53 +166,30 @@ class TenantRepository:
 
     def save_profile(self, user_id: _uuid.UUID, profile: dict, *,
                      schema_version: int = PROFILE_SCHEMA_VERSION) -> int:
-        """Store a confirmed profile, render its rubric and facts block, bump the generation."""
+        """Store a confirmed profile. **Never touches the rubric.**
+
+        `label.md` is the rubric, for every account, with no second path. It is in `SEED_FILES`, so
+        every account is created with one, and the setup agent mirrors it onto the row as it writes
+        it (`libs/agents/tools.py::_sync_rubric`). One mechanism, one owner.
+
+        It used to be two: this method also rendered a rubric from the confirmed schema and wrote
+        that instead, which meant storing a profile could silently replace a person's own tuned
+        file with a generated summary — and bump `profile_generation`, staling every label they had
+        already bought and charging them to buy the lot again. Measured on one account: a 13,809
+        character `label.md` against 320 labels.
+
+        Storing the profile is what makes documents buildable, and that is all it does now. The
+        generation is not bumped either: nothing here changes what a label means.
+        """
         if not profile.get("confirmed"):
             raise ValueError("refusing to store an unconfirmed profile — see PROFILE_CAPTURE_PLAN §5")
         user = self._s.get(User, user_id)
         if user is None:
             raise ValueError(f"no such user: {user_id}")
 
-        validated = ProfileSchema.model_validate(profile)
-        # Compared before anything is written.
-        previous = user.profile
-        try:
-            unchanged = (previous is not None
-                         and rubric_relevant_digest(ProfileSchema.model_validate(previous))
-                         == rubric_relevant_digest(validated))
-        except ValidationError:
-            unchanged = False
-
         user.profile = profile
         user.profile_schema_version = schema_version
-        # Rendered in the same write as the rubric.
-        user.facts_md = render_facts(validated)
-
-        # An account whose rubric is its own `label.md` keeps it. The file is the tuned artifact
-        # and it is what every label that account owns was bought against, so overwriting it with
-        # a rendered summary would both lower the labelling quality and — via the generation bump
-        # — stale every existing label and buy them all again on the user's own credential.
-        # Storing the profile is still what makes their documents buildable, which is the whole
-        # reason this runs for them; it just stops short of touching somebody else's rubric.
-        from libs.profiles.repository import ProfileFiles  # noqa: PLC0415 - avoids a cycle
-
-        if ProfileFiles(self._s, user_id).owns_rubric():
-            return user.profile_generation
-
-        rubric = render_rubric(validated)
-        user.rubric_md = rubric
-        user.profile_version = profile_version(rubric)
-        if not unchanged:
-            user.profile_generation += 1
         return user.profile_generation
-
-    def refresh_facts(self, user_id: _uuid.UUID) -> bool:
-        """Re-render the facts block from the stored profile."""
-        user = self._s.get(User, user_id)
-        if user is None or not user.profile:
-            return False
-        user.facts_md = render_facts(ProfileSchema.model_validate(user.profile))
-        return True
 
     def profile(self, user_id: _uuid.UUID) -> dict | None:
         user = self._s.get(User, user_id)

@@ -85,8 +85,14 @@ def test_a_setup_written_rubric_survives_storing_a_profile(db):
         "the generation moved, which stales every label this account has bought")
 
 
-def test_an_account_with_no_rubric_file_still_gets_one_rendered(db):
-    """The capture flow is unchanged: it has no `label.md`, so the schema is the only source."""
+def test_storing_a_profile_never_writes_a_rubric(db):
+    """No account gets a schema-rendered rubric any more, whether it has a file or not.
+
+    `label.md` is in `SEED_FILES`, so every account is created with one and the setup agent mirrors
+    it onto the row. A second renderer meant a profile save could silently replace it — and the
+    guard against that was a condition, which is one bad branch away from doing the damage anyway.
+    The renderer is gone instead.
+    """
     from libs.tenant.repository import TenantRepository
 
     user = _account(db)
@@ -94,8 +100,9 @@ def test_an_account_with_no_rubric_file_still_gets_one_rendered(db):
     TenantRepository(db).save_profile(user.id, {**PROFILE, "confirmed": True})
     db.flush()
 
-    assert user.rubric_md, "an account with no file of its own must still get a rubric"
-    assert user.profile_generation == 1
+    assert user.profile is not None, "the profile is stored — that is what unblocks documents"
+    assert not user.rubric_md, "a rubric was rendered from the schema"
+    assert user.profile_generation == 0, "storing a profile must not stale anybody's labels"
 
 
 def test_a_first_profile_needs_no_confirmation(db):

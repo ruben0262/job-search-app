@@ -197,26 +197,20 @@ def test_an_unconfirmed_profile_cannot_be_stored():
             repo.save_profile(user.id, manual_profile(VALID_PROFILE).model_dump())
 
         confirmed = manual_profile(VALID_PROFILE | {"confirmed": True}).model_dump()
-        assert repo.save_profile(user.id, confirmed) == 1
+        # Storing a profile never moves the generation, whatever changed in it. The generation says
+        # which labels are current, and that is a statement about the *rubric* — which comes only
+        # from the account's own `label.md` now. Rendering a second rubric from this schema and
+        # bumping the generation is what used to throw away a tuned file and every label bought
+        # against it.
+        assert repo.save_profile(user.id, confirmed) == 0
         s.flush()
         assert repo.profile(user.id)["identity"]["name"] == "Alice Example"
 
-        # Re-confirming an unchanged profile does not move the generation.
-        assert repo.save_profile(user.id, confirmed) == 1
-
-        # A contact detail is not rubric-relevant.
-        with_email = manual_profile(
-            VALID_PROFILE | {"confirmed": True}
-            | {"identity": VALID_PROFILE["identity"] | {"links": {"email": "a@example.test"}}}
-        ).model_dump()
-        assert repo.save_profile(user.id, with_email) == 1
-        s.flush()
-        assert "a@example.test" in s.get(User, user.id).facts_md
-
-        # A change the rubric does read still re-versions, or a stale rubric would score the feed.
         changed = manual_profile(
             VALID_PROFILE | {"confirmed": True} | {"not_list": ["mobile (iOS/Android)"]}).model_dump()
-        assert repo.save_profile(user.id, changed) == 2
+        assert repo.save_profile(user.id, changed) == 0
+        s.flush()
+        assert repo.profile(user.id)["not_list"] == ["mobile (iOS/Android)"]
     finally:
         s.close()
         trans.rollback()

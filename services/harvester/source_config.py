@@ -93,10 +93,15 @@ DEFAULT_HARVEST_WINDOW_HOURS = 72
 
 # Sources gated on a credential.
 KEY_GATED = {
-    "jooble": "JOOBLE_API_KEY",
     "findwork": "FINDWORK_API_KEY",
     "adzuna": "ADZUNA_APP_ID",
 }
+
+# `jooble` is not here on purpose, and holding the key is not enough to bring it back. This map is
+# what actually enables a source — it appends to `active` whenever the credential is present,
+# independent of `HARVEST_SOURCES` — so removing it from that tuple alone would have left it
+# running. Probed 2026-08-10 from the VPS with a valid key: every host returns an HTML 403 block
+# page. The block is on the address, not the credential.
 
 # Endpoints and rate limits: genuinely platform-level, lifted from the reference's config.yaml.
 PLATFORM_DEFAULTS: dict[str, dict] = {

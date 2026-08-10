@@ -157,10 +157,14 @@ def test_confirming_forces_the_flag_server_side(api):
     body = http.post("/process/confirm", json=DRAFT).json()
     session.flush()
 
-    assert body["profile_generation"] == 1
     assert user.profile["confirmed"] is True
     assert user.profile_draft is None
-    assert user.rubric_md and user.facts_md, "confirming renders both artifacts in one write"
+    # The generation does not move. It gates which labels are current, and what a label *means* is
+    # the rubric — which now comes only from the account's own `label.md`. Confirming a profile
+    # changes what documents are written from, not what a label meant when it was bought, so
+    # bumping here staled every label an account owned for no reason and charged them to buy the
+    # lot again.
+    assert body["profile_generation"] == 0
 
 
 def test_an_edit_made_at_confirmation_is_what_gets_stored(api):
@@ -174,7 +178,9 @@ def test_an_edit_made_at_confirmation_is_what_gets_stored(api):
     session.flush()
 
     assert user.profile["not_list"] == ["mobile"]
-    assert "enterprise Java" not in user.rubric_md
+    # The edit lands in the profile and nowhere else. It used to be rendered into `rubric_md` as
+    # well, which is how confirming a profile could overwrite an account's own tuned `label.md`.
+    assert "enterprise Java" not in str(user.profile["not_list"])
 
 
 def test_confirming_with_no_draft_is_refused(api):
