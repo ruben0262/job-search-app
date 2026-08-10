@@ -1124,8 +1124,31 @@ The budget is `HARVEST_CYCLE_BUDGET_SECONDS = 11 * 60`, below `harvester.service
 skipped** — which is exactly the failure `test_schedules.py` was written for. Gather was already
 the slowest stage at 23 seconds of a 30-second cycle.
 
-Open: whether 641 boards fits, and if not whether to stage them in rather than leave them all live.
-The discovery step itself is not the cost — it measured 172 ms.
+**Resolved the same afternoon: it fits, and the cost is not where it looked.**
+
+| cycle | duration | links | new jobs | slowest stage |
+|---|---|---|---|---|
+| 13:02, before | 30.7 s | 285 | 2 | gather 23 s |
+| 13:22 | **8.4 min** | 1,553 | **1,084** | embed 385 s |
+| 13:35 | 5.6 min | 1,252 | 115 | embed 216 s |
+
+Peak was 8.4 minutes against an 11-minute budget — it held, with 2.6 minutes of margin, and fell
+again as the one-off backlog from 304 newly-polled boards was absorbed. Gather was 39 seconds:
+**polling twice the boards is not what costs the time, embedding what they return is.** The
+discovery step itself measured 172-329 ms.
+
+`empty_sources` fell from 10 to 4, and 1,335 jobs arrived in forty minutes against roughly two a
+cycle before.
+
+**What it did for the account it was built for**: 39 of those 1,335 were mechanical or automotive.
+The *rate* barely moved — 2.9%, the same share as before — but the volume did, which is the whole
+point. The corpus was never going to become a mechanical-engineering board; it needed to be large
+enough that 2.9% is a real feed rather than nothing.
+
+**Left open**: the margin is thinner than it looks. A future backfill, a second proxy account, or a
+slower embedder would put a cycle over 11 minutes, and the failure is silent — stages behind the
+overrun are skipped, not retried. Worth a warning when a cycle exceeds some fraction of its budget,
+rather than discovering it from a corpus that stopped growing.
 
 ### 6ay — the ATS company list was a closed loop ✅ **done 2026-08-10** (`f8da2a1`)
 
