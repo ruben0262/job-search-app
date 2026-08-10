@@ -1061,6 +1061,83 @@ which is what "harvest broadly, match per user" has always said. Worth checking 
 an unused upstream parameter exists — Jobicy takes a `tag`, TheMuse takes categories — since a
 server-side filter is a different mechanism from discarding what already arrived.
 
+### 6bd — what grows and nothing drains (added 2026-08-10)
+
+**Audited on the owner's instruction: "make sure there are no backfills or secret sink states where
+jobs just stack and queue up for no reason."** Four found. Three are unbounded growth with no
+mechanism at all; one is a mechanism that exists, is tested, and has never been called.
+
+The corpus was named as the exception — "the corpus doesn't count because we take jobs from there
+to score and deliver and also after 30d archive those jobs". **That archive does not exist.**
+
+| what | measured 2026-08-10 | what drains it |
+|---|---|---|
+| `user_job_state` | 88,041 rows / 26 MB | nothing |
+| `corpus` | 46,005 rows / **386 MB**, 0 ever trimmed | `trim_cold` — **no caller** |
+| `jobs` (the queue) | 3,865 rows, all `done`, back to 2026-07-28 | nothing |
+| model artifacts on disk | 34 MB, `v1`–`v4` for one account | `prune_model_artifacts` — **no caller** |
+
+Both dead drains have tests, which is what makes them dangerous: `tests/test_corpus_repository.py`
+asserts `trim_cold()` trims, so the suite is green and the feature is absent. That is the §5
+defect — a mechanism with a friendly face and no consumer — and it is why the platform is 386 MB
+at fourteen days old with nothing removed.
+
+`user_job_state` is the one that grows fastest, because it gains a row per *(user × corpus job)*
+considered: it scales with corpus size **times** account count. 88,041 rows for two accounts in
+two weeks.
+
+**Not sinks, checked and cleared:**
+
+- The 30,442 rows with `score IS NULL` are deliberate. `score_lane.skip()` writes a tombstone for
+  a row the filter excluded or the centroid rejected, and removing them makes the scorer re-read
+  those rows every cycle forever. They are the fix for a backlog, not a backlog.
+- `retire_stale_matches` is wired and running (`libs/queue/queue.py:140`).
+- No dead-letter build-up, no expired sessions, no lane pauses.
+- The `label` lane's six-day stall was a real sink and was fixed on 2026-08-10 (`2137ad0`).
+
+**What has to be decided before anything is built**, because all of it deletes user data:
+
+1. **Retention window.** `CORPUS_HOT_DAYS = 90` in code; the owner has twice said 30. Which.
+2. **Archive, not delete.** The stated requirement is "stored away somewhere else in a file, don't
+   perma delete them". Nothing in the tree writes an archive. Where does it go, and who reads it?
+3. **`user_job_state` is the harder half.** Trimming corpus rows does not shrink it, and a user's
+   scored history is what stops re-scoring. Deleting a row means that job can come back as new.
+   `pinned` protects applied jobs; nothing protects the rest.
+4. **Completed queue rows and old model artifacts** are the easy two: nobody needs a `done` job
+   from July, and `KEEP_MODEL_VERSIONS = 2` already states the intent for artifacts. One artifact
+   on the box belongs to a **deleted user** — 24 MB for an account that no longer exists.
+
+**Sequencing note:** the two easy drains can ship without answering 1–3, and should, because they
+are the ones with an existing stated intent to enforce.
+
+### 6az — the ATS backfill doubled the cycle time (added 2026-08-10)
+
+`f8da2a1` taught the harvester to read company boards out of posting URLs it already stores, and a
+one-off backfill over all 45,902 corpus URLs enrolled **304 new boards, taking the live token list
+from 337 to 641**. That is the fix for the closed loop in **6ay** and it worked.
+
+It also roughly doubled what the ATS tier polls each cycle, and **the cycle went from 30.7 seconds
+to over four minutes on the first run afterwards** — still running when this was written.
+
+The budget is `HARVEST_CYCLE_BUDGET_SECONDS = 11 * 60`, below `harvester.service`'s
+`TimeoutStartSec`, and a cycle that overruns is killed **with the stages behind it silently
+skipped** — which is exactly the failure `test_schedules.py` was written for. Gather was already
+the slowest stage at 23 seconds of a 30-second cycle.
+
+Open: whether 641 boards fits, and if not whether to stage them in rather than leave them all live.
+The discovery step itself is not the cost — it measured 172 ms.
+
+### 6ay — the ATS company list was a closed loop ✅ **done 2026-08-10** (`f8da2a1`)
+
+Tokens came from one place, hiring.cafe's `board_token` field, and hiring.cafe is queried with our
+users' keywords — so the boards polled were the boards our existing users had already surfaced. All
+336 live tokens were software startups on a platform where nine of seventeen sources are ATS boards
+polling that list. A mechanical engineer had 2.9% of the corpus.
+
+Fixed by reading the token out of any posting URL, from any source. Kept here because the *shape*
+recurs: a discovery mechanism fed only by its own output cannot widen, and nothing errors while it
+fails to.
+
 ## Phase 7 — the pipeline, in the order it has to be right (added 2026-08-04)
 
 **The owner's sequencing, and it is the correction to how this work was being picked up.** The
