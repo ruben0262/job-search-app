@@ -61,6 +61,14 @@ class UserJobState(Base):
         # The sweep's predicate: what is still waiting to be sent, per account.
         Index("ix_user_job_state_pending", "user_id",
               postgresql_where=text("notified_at IS NULL AND retired_at IS NULL")),
+        # What the health check asks: "does this account have anything owed". The index above cannot
+        # answer it — on the live platform 95,203 of 101,903 rows satisfy its predicate, so it
+        # selects 93% of the table and the planner correctly ignores it. The selective part is
+        # `score`: 30,442 of those rows are `score_lane.skip()` tombstones with no score at all, and
+        # the rest are ordered so a cutoff becomes a range seek rather than a scan.
+        Index("ix_ujs_owed", "user_id", "score",
+              postgresql_where=text(
+                  "notified_at IS NULL AND retired_at IS NULL AND score IS NOT NULL")),
     )
 
 

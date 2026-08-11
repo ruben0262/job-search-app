@@ -1261,9 +1261,53 @@ loop removes 2N queries and changes no behaviour. `cutoff_for` re-reads the `Use
 3. `_enqueue_scoring` and the describe pass are inside the cycle budget. The budget warning shipped
    2026-08-11 will fire from user growth alone, which is the correct place for it to surface.
 
-**Deliberately not done yet**: no measurement exists at fifty accounts, only the extrapolation above.
-The drill is to load a scratch database to fifty accounts and time the health check before touching
-anything, exactly as `ix_user_labels_job` was justified at 21.2 ms → 10.6 ms.
+✅ **Done 2026-08-11, and the drill was run first.** A scratch database at **50 accounts, 53,000
+corpus rows and 2.65M `user_job_state` rows** — the production ratio, and its distribution: 93% of
+live state rows satisfy `notified_at IS NULL AND retired_at IS NULL`, so the fixture is not
+optimistic.
+
+| | before | after |
+|---|---|---|
+| `user_health`, 50 accounts | **18.83 s** | **1.00 s** |
+| queries | 351 | 156 |
+| queries per extra account | 5.0 | 3.0 |
+
+**18.8× faster, and the extrapolation that motivated this was wrong in the honest direction** — the
+earlier "order thirty seconds" was a guess, the measured baseline was 18.8. The cliff was real; the
+number was not.
+
+Three changes, in the order they were measured:
+
+1. **`PlatformWindows`, read once per pass.** `job_max_age_hours` and the source floors are operator
+   settings, identical for every account, and `filters_for` read both from the database *per
+   account*. Passing them down removed 2N queries and changed no behaviour. Not a cache: nothing is
+   stored and nothing expires, so there is no second copy to go stale (§1).
+2. **The platform-wide questions asked once.** Last delivery and proxy status were a query each per
+   account; both are now one grouped query for everybody.
+3. **`ix_ujs_owed`, and it is the whole of the 9.5 → 1.0 second step.** `ix_user_job_state_pending`
+   could not serve "has this account anything owed": 95,203 of 101,903 live rows satisfy its
+   predicate, so it selects 93% of the table and the planner correctly ignores it. `score` is the
+   selective column — 30,442 of those are `score_lane.skip()` tombstones with no score at all — so
+   `(user_id, score) WHERE … AND score IS NOT NULL` turns the common answer, *nothing owed*, into a
+   seek that reads no corpus rows.
+
+**One behaviour change, stated because it is one**: `pending_matches` stops counting at
+`PENDING_MATCH_CEILING = 200`. Its only consumers are a `> 0` test and the number in the
+`silent_feed` message — nothing in the panel reads it — and nobody acts differently on 400 than on
+4,000. The point is that the cost was otherwise **proportional to how badly delivery was broken**: an
+outage leaves thousands owed per account, and the monitor that should report it would be the thing
+that timed out. The alert now renders `200+` rather than `200`, because a number that is really a
+floor and does not say so is what an operator plans against.
+
+**The guard is a relationship, not a stopwatch.** `test_the_health_check_does_not_ask_the_platform_a
+_question_per_account` counts queries at two account counts and fails if the per-account cost grows;
+timing would be flaky and would not say what broke. It fails at 5.0 queries per account against the
+previous code and passes at 3.0.
+
+**Still open, and deliberately**: the three remaining per-account queries are per-account by nature
+(this account's config, its own cutoff, its own owed count). `_enqueue_scoring` and the describe pass
+inside the harvest budget are untouched — they are enqueues rather than scans, and the cycle's own
+budget warning will report them if they ever matter.
 
 ### 6bf — every source reports when a posting went up, and the filter can trust it (added 2026-08-11)
 

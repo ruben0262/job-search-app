@@ -15,7 +15,7 @@ from libs.db.models import CorpusJob, QueueJob, User, UserJobState
 from libs.scoring.thresholds import cutoff_for
 from libs.settings import PLATFORM_TICK_MIN
 from libs.settings import get as settings_get
-from libs.tenant.filters import candidate_conditions, filters_for
+from libs.tenant.filters import candidate_conditions, filters_for, platform_windows
 
 # How long a row may sit at a stage before the colour changes, as multiples of its tick.
 AMBER_TICKS = 2
@@ -174,8 +174,11 @@ def _per_user_stages(session: Session, since) -> list[Stage]:
     to_score = to_deliver = expired = 0
     oldest_to_score = oldest_to_deliver = None
 
+    # Read once for the platform rather than once per account: both are operator settings and
+    # identical for everybody, so asking per account is 2N queries with one answer (ROADMAP 6be).
+    windows = platform_windows(session)
     for user in session.scalars(select(User).where(User.active)):
-        filters = filters_for(session, user)
+        filters = filters_for(session, user, windows=windows)
         conditions = candidate_conditions(filters)
         cutoff = cutoff_for(session, user.id)
 

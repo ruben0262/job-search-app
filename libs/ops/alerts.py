@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from libs.ops.health import PlatformHealth
+from libs.ops.health import PENDING_MATCH_CEILING, PlatformHealth
 
 # Disk headroom before a full disk stops being hypothetical.
 POSTGRES_DISK_BUDGET_BYTES = 60 * 1024**3
@@ -91,9 +91,14 @@ def _user_alerts(health: PlatformHealth) -> list[Alert]:
         if silent:
             waited = ("never" if user.hours_since_delivery is None
                       else f"{user.hours_since_delivery:.0f}h ago")
+            # `pending_matches` stops counting at its ceiling so the health check cannot be made slow
+            # by the outage it is reporting. Said as "200+" rather than "200", because a number that
+            # is really a floor and does not say so is the kind of thing an operator plans against.
+            waiting = (f"{PENDING_MATCH_CEILING}+" if user.pending_matches >= PENDING_MATCH_CEILING
+                       else str(user.pending_matches))
             alerts.append(Alert(
                 "page", "silent_feed",
-                f"{user.pending_matches} matching job(s) waiting and last delivery was {waited}",
+                f"{waiting} matching job(s) waiting and last delivery was {waited}",
                 # Where the answer actually is, in the order it is usually in.
                 # Where the answer actually is. This used to name a `dropped {...}` log line that
                 # does not exist anywhere in the notifier, so the first step of the remedy was a

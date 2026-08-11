@@ -14,6 +14,56 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-08-11 (night) — the health check, 18.8 seconds to 1.0 at fifty accounts
+
+ROADMAP **6be**, and the drill was run before anything was touched: a scratch database at **50
+accounts, 53,000 corpus rows, 2.65M `user_job_state` rows**, matching production's ratio *and* its
+distribution — 93% of live state rows satisfy `notified_at IS NULL AND retired_at IS NULL`, so the
+fixture is not a flattering one.
+
+| | before | after |
+|---|---|---|
+| `user_health`, 50 accounts | **18.83 s** | **1.00 s** |
+| queries | 351 | 156 |
+| queries per extra account | 5.0 | 3.0 |
+
+Against `health.service`'s `TimeoutStartSec=60`. **The monitor was on course to be the first thing
+the platform's own growth broke** — the failure `OPERATIONS_PLAN.md` §1 is about, and one this
+project has now hit twice in a day from different directions.
+
+**Correcting my own estimate**: the earlier note said "order thirty seconds" at fifty accounts. The
+measured baseline is 18.8. The cliff was real, the number was not, which is why rule 4 says to
+measure rather than to argue.
+
+Three changes, in the order they were measured:
+
+1. **`PlatformWindows`.** `job_max_age_hours` and the source floors are platform settings, identical
+   for every account, and `filters_for` read both *per account* — 2N queries with one answer. Read
+   once and passed down. Not a cache: nothing is stored and nothing expires, so there is no second
+   copy to drift (§1). Applied to all three looping callers.
+2. **Last delivery and proxy status** were a query each per account; both are now one grouped query
+   for the whole platform.
+3. **`ix_ujs_owed`, which is the whole of the 9.5 → 1.0 second step.** `ix_user_job_state_pending`
+   cannot answer "has this account anything owed": 95,203 of 101,903 live rows satisfy its predicate,
+   so it selects 93% of the table and the planner ignores it, correctly. `score` is the selective
+   column — 30,442 of those rows are `score_lane.skip()` tombstones with no score — so
+   `(user_id, score) WHERE … AND score IS NOT NULL` turns the common answer, *nothing owed*, into a
+   seek that reads no corpus rows at all.
+
+**One behaviour change, said plainly.** `pending_matches` stops counting at
+`PENDING_MATCH_CEILING = 200`. Its only two consumers are a `> 0` test and the number in the
+`silent_feed` message; nothing in the panel reads it, and nobody acts differently on 400 than 4,000.
+The reason to bound it is that the cost was otherwise **proportional to how badly delivery was
+broken** — an outage leaves thousands owed per account, and the monitor that should report it becomes
+the thing that times out. The alert renders `200+` rather than `200`: a number that is really a floor
+and does not say so is what an operator plans against.
+
+`_proxy_status` went with the change that replaced it (§3).
+
+**The guard is a relationship, not a stopwatch.** The new test counts queries at two account counts
+and fails if the per-account cost grows — timing would be flaky and would not say what broke. It
+fails at 5.0 queries per account against the previous code and passes at 3.0.
+
 ## 2026-08-11 (evening) — matches destroyed two minutes after we found them
 
 **Reported as a delivery failure. It was the retirement sweep, and the code carried a comment

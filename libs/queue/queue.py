@@ -124,11 +124,17 @@ def dispatch_due_notifications(session: Session) -> int:
     account whose notify job died. It enqueues nothing when there is nothing waiting.
     """
     from libs.scoring.thresholds import cutoff_for  # noqa: PLC0415 - avoids a cycle at import time
-    from libs.tenant.filters import filters_for, pending_match_conditions  # noqa: PLC0415
+    from libs.tenant.filters import (  # noqa: PLC0415
+        filters_for,
+        pending_match_conditions,
+        platform_windows,
+    )
     from libs.tenant.repository import TenantRepository  # noqa: PLC0415
 
     tenant = TenantRepository(session)
     enqueued = retired = 0
+    # Once for the platform, not once per account: both are operator settings (ROADMAP 6be).
+    windows = platform_windows(session)
 
     # Whole rows rather than ids: `filters_for` needs the account's own limits, and re-fetching it
     # per call is the per-user query multiplier this loop already has too much of.
@@ -140,7 +146,7 @@ def dispatch_due_notifications(session: Session) -> int:
         # lane failed to send in time, and sending it late is worse than not sending it. Judged by
         # that same filter, never by a window of its own — see `retire_stale_matches`.
         gone = tenant.retire_stale_matches(
-            user.id, cutoff=cutoff, filters=filters_for(session, user))
+            user.id, cutoff=cutoff, filters=filters_for(session, user, windows=windows))
         if gone:
             retired += gone
             logger.warning(

@@ -364,3 +364,55 @@ def test_the_status_reads_the_secret_not_just_the_row():
         session.close()
         trans.rollback()
         conn.close()
+
+
+# ── what the health check costs as the platform grows (ROADMAP 6be) ───────────────────────────
+
+@pytestmark_db
+def test_the_health_check_does_not_ask_the_platform_a_question_per_account():
+    """**A relationship, not a stopwatch.** The count of queries must not scale with accounts.
+
+    `user_health` was a loop of about seven queries an account, three of which returned the same
+    platform-wide answer every time. Measured against a scratch database of fifty accounts and 2.65M
+    `user_job_state` rows: **18.83 seconds and 351 queries**, against `health.service`'s 60-second
+    timeout. The monitor would have been the first thing to break as the platform grew.
+
+    Timing here would be flaky and would not say what went wrong. The number of queries is the thing
+    that was actually wrong, so that is what this pins: adding an account may add a bounded number of
+    queries, never a new platform-wide read.
+    """
+    from sqlalchemy import create_engine, event
+    from sqlalchemy.orm import Session
+
+    from libs.db.models import User
+    from libs.ops.health import user_health
+
+    engine = create_engine(os.environ["DATABASE_URL"])
+    counted = []
+    event.listen(engine, "before_cursor_execute",
+                 lambda *a, **k: counted.append(1))
+
+    def queries_for(accounts: int) -> int:
+        conn = engine.connect()
+        trans = conn.begin()
+        session = Session(bind=conn, join_transaction_mode="create_savepoint")
+        try:
+            for _ in range(accounts):
+                session.add(User(email=f"{uuid.uuid4()}@example.com", password_hash="x",
+                                 status="active", active=True))
+            session.flush()
+            counted.clear()
+            user_health(session)
+            return len(counted)
+        finally:
+            session.close()
+            trans.rollback()
+            conn.close()
+
+    few, many = queries_for(2), queries_for(12)
+    # Ten more accounts may cost a bounded number of per-account queries; what must not happen is
+    # the platform-wide reads being repeated for each of them.
+    per_account = (many - few) / 10
+    assert per_account <= 4, (
+        f"each extra account costs {per_account:.1f} queries. Anything the whole platform shares — "
+        "`job_max_age_hours`, the source floors — must be read once per pass, not once per account")

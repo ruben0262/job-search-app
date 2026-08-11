@@ -204,24 +204,54 @@ def pending_match_conditions(cutoff: float) -> list:
     ]
 
 
-def filters_for(session, user) -> UserFilters:
+@dataclass(frozen=True)
+class PlatformWindows:
+    """The two operator settings every account's filters are built from.
+
+    Identical for every account by definition — they are platform settings — and `filters_for` read
+    both from the database **once per account**. In a loop over every account that is 2N queries
+    returning the same two answers. Measured at fifty accounts: 351 queries for one health check.
+
+    Read once with `platform_windows` and passed down. Not a cache: nothing is stored and nothing
+    expires, so there is no second copy to go stale (CLAUDE.md §1).
+    """
+
+    max_age_hours: int
+    source_min_ages: tuple[tuple[str, int], ...]
+
+
+def platform_windows(session) -> PlatformWindows:
+    """Read the platform-wide filter settings once, for a caller about to loop over accounts."""
+    from libs import settings  # noqa: PLC0415 - avoids a cycle at import time
+
+    return PlatformWindows(
+        max_age_hours=int(settings.get(session, "job_max_age_hours")),
+        source_min_ages=tuple(sorted(settings.source_min_ages(session).items())))
+
+
+def filters_for(session, user, *, windows: PlatformWindows | None = None) -> UserFilters:
     """This account's pre-score conditions, with the operator's numbers already resolved.
 
     One construction site for the three lanes that ask the same question, so the ceiling an operator
     sets and the window they set arrive together rather than one of them being forgotten.
+
+    `windows` is the platform half, for a caller looping over accounts: pass it and the two settings
+    are read once rather than once per account. Omit it and it is read here, so a caller with one
+    account stays a one-liner.
     """
-    from libs import limits, settings  # noqa: PLC0415 - avoids a cycle at import time
+    from libs import limits  # noqa: PLC0415 - avoids a cycle at import time
     from libs.db.models import UserConfig  # noqa: PLC0415
 
+    windows = windows or platform_windows(session)
     # Kept next to the `None` that honours Unlimited: `test_unlimited_is_honoured_wherever_it_is
     # _offered` reads the few lines after a `resolve(...)` looking for it, and putting anything
     # between the two hides the check from the guard as well as from a reader.
     cap = limits.resolve(user, "applicant_cap")
     return UserFilters.from_config(
         session.scalar(select(UserConfig.config).where(UserConfig.user_id == user.id)),
-        max_age_hours=int(settings.get(session, "job_max_age_hours")),
+        max_age_hours=windows.max_age_hours,
         applicant_cap=None if cap is None else int(cap),
-        source_min_ages=tuple(sorted(settings.source_min_ages(session).items())))
+        source_min_ages=windows.source_min_ages)
 
 
 def candidate_conditions(filters: UserFilters, *, now: datetime | None = None) -> list:

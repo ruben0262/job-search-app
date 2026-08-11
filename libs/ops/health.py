@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import Float, cast, func, select, text
+from sqlalchemy import Float, cast, func, literal, select, text
 from sqlalchemy.orm import Session
 
 from libs.db.models import (
@@ -17,7 +17,13 @@ from libs.db.models import (
 )
 from libs.db.models.queue import LANES
 from libs.scoring.thresholds import cutoff_for
-from libs.tenant.filters import candidate_conditions, filters_for, pending_match_conditions
+from libs.tenant.filters import (
+    PlatformWindows,
+    candidate_conditions,
+    filters_for,
+    pending_match_conditions,
+    platform_windows,
+)
 
 # What a lane's oldest waiting job is *expected* to be, in minutes.
 EXPECTED_WAIT_MIN = {"notify": 5, "train": 30, "docgen": 10, "label": 60, "process": 15,
@@ -25,6 +31,17 @@ EXPECTED_WAIT_MIN = {"notify": 5, "train": 30, "docgen": 10, "label": 60, "proce
 
 # The steady-state corpus projection from `PLATFORM_ARCHITECTURE.md` §4, in rows.
 CORPUS_PROJECTION_ROWS = 400_000
+
+# How many owed matches are worth counting per account before the answer stops changing what an
+# operator does. `pending_matches` has exactly two consumers, both in `libs.ops.alerts`: a `> 0`
+# test and the number in the message. Nobody acts differently on 400 than on 4,000.
+#
+# **Bounded because the cost is otherwise proportional to how badly delivery is broken.** Counting
+# every owed row makes the health check slowest at precisely the moment it matters most — an outage
+# that stops delivery for a day leaves thousands of rows owed per account, and the monitor that
+# should report it is the thing that then times out. Measured at fifty accounts and 2.65M state
+# rows: 121 ms per account counting them all.
+PENDING_MATCH_CEILING = 200
 
 
 @dataclass
@@ -100,17 +117,8 @@ def lane_health(session: Session) -> list[LaneHealth]:
     ]
 
 
-def _proxy_status(session: Session, user_id, proxy) -> str | None:
-    """What the panel should say about this account's proxy."""
-    if proxy is None:
-        return None
-    stored = session.scalar(
-        select(func.count()).select_from(UserSecret)
-        .where(UserSecret.user_id == user_id, UserSecret.kind == "proxy")) or 0
-    return proxy.status if stored else "no_secret"
-
-
-def pending_matches(session: Session, user: User) -> int:
+def pending_matches(session: Session, user: User, *,
+                    windows: PlatformWindows | None = None) -> int:
     """How many jobs this account is actually waiting on — the same pool the notifier would draw.
 
     **`pending_match_conditions` is that pool, and this asked its own question until 2026-08-11.**
@@ -126,37 +134,69 @@ def pending_matches(session: Session, user: User) -> int:
     those rows first, by the same rule.
     """
     cutoff = cutoff_for(session, user.id)
-    filters = filters_for(session, user)
-    return session.scalar(
-        select(func.count()).select_from(UserJobState)
+    filters = filters_for(session, user, windows=windows)
+    # Counted through a bounded subquery rather than over the whole set: Postgres stops reading at
+    # the ceiling, so a broken feed costs the same as a healthy one. `ix_ujs_owed` is what makes the
+    # far more common answer — nothing owed — a seek that touches no corpus rows at all.
+    owed = (
+        select(literal(1))
+        .select_from(UserJobState)
         .join(CorpusJob, CorpusJob.id == UserJobState.job_id)
         .where(UserJobState.user_id == user.id,
                *pending_match_conditions(cutoff),
-               *candidate_conditions(filters))) or 0
+               *candidate_conditions(filters))
+        .limit(PENDING_MATCH_CEILING)
+        .subquery())
+    return session.scalar(select(func.count()).select_from(owed)) or 0
+
+
+def _last_deliveries(session: Session) -> dict:
+    """Every account's most recent delivery, in one grouped query rather than one query each."""
+    return dict(session.execute(
+        select(UserJobState.user_id, func.max(UserJobState.notified_at))
+        .where(UserJobState.notified_at.is_not(None))
+        .group_by(UserJobState.user_id)).all())
+
+
+def _proxy_statuses(session: Session) -> dict:
+    """Every account's proxy state, as two queries for the platform rather than two per account."""
+    proxies = {row.user_id: row for row in session.scalars(select(ProxyCredential))}
+    with_secret = set(session.scalars(
+        select(UserSecret.user_id).where(UserSecret.kind == "proxy")))
+    return {user_id: (proxy.status if user_id in with_secret else "no_secret")
+            for user_id, proxy in proxies.items()}
 
 
 def user_health(session: Session) -> list[UserHealth]:
-    """Per-account state, for the alerts that name a user."""
+    """Per-account state, for the alerts that name a user.
+
+    **Everything that can be asked for the whole platform at once is.** This was a loop of about
+    seven queries an account, three of which returned the same platform-wide answer every time, and
+    one of which sequentially scanned `user_job_state` in full. At fifty accounts and 2.65M state
+    rows that measured **18.8 seconds and 351 queries**, against `health.service`'s 60-second
+    timeout — the monitor would have been the first thing to break as the platform grew, which is
+    the failure `OPERATIONS_PLAN.md` §1 is about.
+
+    What is left in the loop is per-account by nature: this account's config and its own cutoff.
+    """
+    windows = platform_windows(session)
+    deliveries = _last_deliveries(session)
+    proxies = _proxy_statuses(session)
+
     out = []
     for user in session.scalars(select(User).where(User.status == "active").order_by(User.email)):
-        pending = pending_matches(session, user)
-        last_delivery = session.scalar(
-            select(func.max(UserJobState.notified_at))
-            .where(UserJobState.user_id == user.id))
-        proxy = session.scalar(
-            select(ProxyCredential).where(ProxyCredential.user_id == user.id))
-
+        last_delivery = deliveries.get(user.id)
         out.append(UserHealth(
             user_id=str(user.id),
             email=user.email,
             telegram_status=user.telegram_status,
             model_version=user.model_version,
-            pending_matches=pending,
+            pending_matches=pending_matches(session, user, windows=windows),
             hours_since_delivery=(
                 round((datetime.now(UTC) - last_delivery).total_seconds() / 3600, 1)
                 if last_delivery else None),
             # A row is not a credential.
-            proxy_status=_proxy_status(session, user.id, proxy),
+            proxy_status=proxies.get(user.id),
         ))
     return out
 
