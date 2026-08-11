@@ -14,8 +14,11 @@ Type=oneshot
 User=ruben
 WorkingDirectory=/home/ruben/job-search-app
 EnvironmentFile=/home/ruben/job-search-app/deploy/.env
-Environment=DATABASE_URL=postgresql+psycopg://jobsearch:${POSTGRES_PASSWORD}@127.0.0.1:5432/jobsearch
-ExecStart=/home/ruben/job-search-app/.venv/bin/python deploy/scripts/backup.py \
-    --out /home/ruben/backups --models /var/lib/jobsearch/models
+# **`DATABASE_URL` is built here and not in an `Environment=` line, because systemd does not expand
+# `${VAR}` in `Environment=`** — it passes the literal text through. This unit authenticated with
+# the string `${POSTGRES_PASSWORD}` from 2026-07-29, so `pg_dump` failed every night and
+# `backup.py` correctly removed each partial file: fourteen days with no backup at all, and the
+# only dumps on disk dated Jul 28. A shell expands it.
+ExecStart=/bin/sh -c 'DATABASE_URL="postgresql+psycopg://jobsearch:$${POSTGRES_PASSWORD}@127.0.0.1:5432/jobsearch" exec /home/ruben/job-search-app/.venv/bin/python deploy/scripts/backup.py --out /home/ruben/backups --models /var/lib/jobsearch/models --archive /home/ruben/job-search-app/archive'
 # A dump that cannot finish in fifteen minutes at this size is a symptom, not a slow disk.
 TimeoutStartSec=15min

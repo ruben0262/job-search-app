@@ -1,8 +1,14 @@
 # One health evaluation, then exit. Invoked by health.timer.
 #
-# **The exit code is the interface**: 0 nothing, 1 warnings, 2 something needs a person. The script
+# **The exit code is the interface**: 0 nothing, 3 warnings, 2 something needs a person. The script
 # also emails on a page, but the exit code is what survives a broken mail configuration — and a
 # monitoring system whose own failure is silent is the thing OPERATIONS_PLAN.md §1 warns about.
+#
+# **Warnings are 3 and not 1 because 1 is what an uncaught exception returns.** They were the same
+# number until 2026-08-11, and `SuccessExitStatus` tolerated it, so when this check started dying on
+# a bad password on 2026-07-29 systemd read the crash as a clean run: 2,318 failures, zero successes,
+# and `systemctl --failed` clean for thirteen days. The one thing that would have reported the
+# backup dying the same day was the thing quietly not running.
 [Unit]
 Description=job-search-app platform health check (one-shot)
 After=docker.service
@@ -12,13 +18,16 @@ Requires=docker.service
 Type=oneshot
 User=ruben
 WorkingDirectory=/home/ruben/job-search-app
-# Reads DATABASE_URL, SECRETS_KEK, the SMTP settings and ADMIN_EMAILS. Same file the stack uses, so
-# there is one place to change a password rather than two that drift.
+# Reads SECRETS_KEK, the SMTP settings, ADMIN_EMAILS and POSTGRES_PASSWORD. Same file the stack
+# uses, so there is one place to change a password rather than two that drift.
 EnvironmentFile=/home/ruben/job-search-app/deploy/.env
-Environment=DATABASE_URL=postgresql+psycopg://jobsearch:${POSTGRES_PASSWORD}@127.0.0.1:5432/jobsearch
-ExecStart=/home/ruben/job-search-app/.venv/bin/python deploy/scripts/check_health.py --email-on page
+# **`DATABASE_URL` is built here and not in an `Environment=` line, because systemd does not expand
+# `${VAR}` in `Environment=`** — it passes the literal text through, which is exactly how this unit
+# spent a fortnight authenticating with the string `${POSTGRES_PASSWORD}`. A shell expands it.
+ExecStart=/bin/sh -c 'DATABASE_URL="postgresql+psycopg://jobsearch:$${POSTGRES_PASSWORD}@127.0.0.1:5432/jobsearch" exec /home/ruben/job-search-app/.venv/bin/python deploy/scripts/check_health.py --email-on page'
 # A check that cannot finish in a minute is itself a symptom.
 TimeoutStartSec=60
-# SuccessExitStatus so a warning (1) does not mark the unit failed and start a restart storm. A
-# page (2) IS a unit failure on purpose — `systemctl --failed` then shows it even if mail is down.
-SuccessExitStatus=0 1
+# So a warning (3) does not mark the unit failed and start a restart storm. A page (2) IS a unit
+# failure on purpose — `systemctl --failed` then shows it even if mail is down. **1 is deliberately
+# absent**: that is the code a crash returns, and tolerating it is what hid this for thirteen days.
+SuccessExitStatus=0 3

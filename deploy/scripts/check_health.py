@@ -17,8 +17,20 @@ from libs.ops import evaluate, platform_health, render
 logger = logging.getLogger("health")
 
 
-# Every timer the platform depends on.
-REQUIRED_TIMERS = ("harvester", "linkedin", "notify-dispatch", "health", "backup")
+# Every timer the platform depends on, and it is the list of unit files in `deploy/` rather than a
+# second copy of it. Written out, it named `linkedin` and `notify-dispatch` for six days after both
+# were deliberately deleted (ROADMAP 6ar: three timers, down from five — the LinkedIn pass rides the
+# harvest tick and the dispatcher runs inside the notifier's own loop). So every run reported
+# "TIMERS NOT ENABLED" and told the operator to install two units that do not exist, which is a
+# message that cannot be false and therefore is not information (CLAUDE.md §8).
+REQUIRED_TIMERS = tuple(sorted(
+    path.stem for path in (Path(__file__).resolve().parents[1]).glob("*.timer")))
+
+# What the exit code means. **`WARN_EXIT` is deliberately not 1**: that is what an uncaught exception
+# returns, `health.service` tolerated 1 so a warning would not page, and the two together meant a
+# crashing health check reported success for thirteen days while nothing was checked.
+WARN_EXIT = 3
+PAGE_EXIT = 2
 
 # How long the embedder gets to answer before it counts as down.
 EMBEDDER_TIMEOUT_SEC = 20.0
@@ -121,7 +133,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"\nALERT EMAIL FAILED ({type(exc).__name__}) — the exit code still reports it",
                   file=sys.stderr)
 
-    return 2 if paging else (1 if alerts else 0)
+    return PAGE_EXIT if paging else (WARN_EXIT if alerts else 0)
 
 
 if __name__ == "__main__":

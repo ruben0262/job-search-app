@@ -115,6 +115,54 @@ def test_every_timer_has_a_service_and_every_service_a_timer():
         f"services no timer starts: {sorted(orphan_services)} — if that is intended, say so here")
 
 
+def test_no_unit_expects_systemd_to_expand_a_variable_in_environment():
+    """**systemd does not expand `${VAR}` inside `Environment=`.** It passes the literal string.
+
+    This cost the platform its backups and its monitoring for a fortnight, silently. Both units read
+    `POSTGRES_PASSWORD` from an `EnvironmentFile=` and built `DATABASE_URL` from it in an
+    `Environment=` line; systemd handed the process the literal `${POSTGRES_PASSWORD}`, Postgres
+    refused it, and every run died on `password authentication failed`.
+
+    Measured on the box 2026-08-11: **2,318 failed health runs since Jul 29, zero successful**, and
+    the only database dumps on disk were from Jul 28 — fourteen days stale, because `backup.py`
+    correctly deletes its partial file on failure.
+
+    Expansion works in `ExecStart=`, which is where it belongs.
+    """
+    offenders = []
+    for unit in sorted(UNITS.glob("*.service")):
+        for raw in unit.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if line.startswith("Environment=") and "${" in line:
+                offenders.append(f"{unit.name}: {line.split('=', 1)[0]}=...${{...}}")
+
+    assert not offenders, (
+        "systemd passes these through literally rather than expanding them, so the process gets "
+        f"`${{VAR}}` as a value: {offenders}. Build the value in ExecStart, where the shell expands "
+        "it.")
+
+
+def test_the_health_checks_warning_code_is_not_the_code_a_crash_returns():
+    """A monitor whose own failure is indistinguishable from a clean run is not a monitor.
+
+    `check_health.py` returned 1 for "warnings" and `health.service` listed `SuccessExitStatus=0 1`
+    so a warning would not mark the unit failed. **An uncaught Python exception also exits 1.** So
+    when the check began crashing on 2026-07-29 it exited 1, systemd read that as success, and
+    `systemctl --failed` stayed clean for thirteen days while nothing was being checked — including
+    the backup failure it existed to report.
+    """
+    from deploy.scripts.check_health import WARN_EXIT
+
+    assert WARN_EXIT != 1, "a crash exits 1; the warning code must not collide with it"
+
+    tolerated = directive(UNITS / "health.service", "SuccessExitStatus").split()
+    assert "1" not in tolerated, (
+        "health.service tolerates exit 1, which is what an uncaught exception returns — a crashing "
+        f"health check would report success. Tolerated: {tolerated}")
+    assert str(WARN_EXIT) in tolerated, (
+        f"a warning ({WARN_EXIT}) must not mark the unit failed, or a warning starts a restart storm")
+
+
 def test_an_embed_batch_can_finish_inside_the_client_timeout():
     """A batch that cannot finish is a deadlock, not a slow path."""
     from libs.contracts.embedder import DEFAULT_EMBED_TIMEOUT

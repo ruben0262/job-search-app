@@ -78,6 +78,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", required=True, help="directory to write the dump into")
     parser.add_argument("--models", help="model artifact directory to archive alongside")
+    parser.add_argument("--archive", help="corpus archive directory to copy alongside")
     parser.add_argument("--keep-days", type=int, default=KEEP_DAYS)
     parser.add_argument("--verify-only", help="verify an existing dump and exit")
     args = parser.parse_args(argv)
@@ -123,6 +124,22 @@ def main(argv: list[str] | None = None) -> int:
         if models.is_dir():
             archive = shutil.make_archive(str(out / f"models-{stamp}"), "gztar", root_dir=models)
             print(f"  models: {Path(archive).name}")
+
+    # **The archive is the only copy of a posting once retention has deleted its row**
+    # (`libs.corpus.archive`), so leaving it out of the backup would make the dump a partial record
+    # of the platform rather than a full one. Copied whole rather than rotated with the dumps: the
+    # archive is append-only by design, and pruning it here would re-create the deletion it exists
+    # to prevent.
+    if args.archive:
+        source = Path(args.archive)
+        if source.is_dir() and any(source.iterdir()):
+            bundle = shutil.make_archive(str(out / f"corpus-archive-{stamp}"), "gztar",
+                                         root_dir=source)
+            print(f"  corpus archive: {Path(bundle).name}")
+        else:
+            # Not an error: nothing has aged out yet. Said out loud so an empty backup is a fact
+            # somebody chose to read rather than a silence.
+            print(f"  corpus archive: nothing at {source} yet")
 
     removed = prune(out, args.keep_days)
     if removed:
