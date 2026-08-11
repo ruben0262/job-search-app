@@ -161,6 +161,28 @@ def _fresh_enough(filters: UserFilters, *, now: datetime | None = None):
         | (CorpusJob.posted_at.is_not(None) & ~date_only & (CorpusJob.posted_at >= per_source)))
 
 
+def too_old_to_send(filters: UserFilters, *, now: datetime | None = None):
+    """A posting that is no longer a candidate, for the sweep that gives up on unsent matches.
+
+    **The negation of the admission rule, not a rule of its own**, and that is the whole point. The
+    retirement sweep used to read a flat `job_max_age_hours` against
+    `coalesce(posted_at, first_seen_at)` while carrying a comment claiming it read "the same clock
+    the pre-score filter reads". It did not, in two ways: no per-source floor, and no handling of a
+    date-only `posted_at`.
+
+    What that cost, measured on the live platform 2026-08-11: **13 Adzuna matches destroyed an
+    average of two minutes after the posting was first seen.** Adzuna's floor is 48 hours and
+    `hiringcafe`'s is 168, so the filter admitted those postings on purpose; the sweep then judged
+    them at the operator's 6 and retired them before the notifier could send them. Every source
+    except LinkedIn has a floor above 6 hours, so this reached every account.
+
+    Whether a given match survived was a race: delivery applies no age filter at all, so if the
+    score lane's own notify job ran first the posting went out — 27 hours old and fine — and if the
+    sweep ran first the same row was destroyed.
+    """
+    return ~_fresh_enough(filters, now=now)
+
+
 def pending_match_conditions(cutoff: float) -> list:
     """Matches this account is actually still owed: scored above their cutoff and not given up on.
 

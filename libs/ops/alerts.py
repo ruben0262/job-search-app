@@ -68,15 +68,16 @@ def _capacity_alerts(health: PlatformHealth) -> list[Alert]:
             f"Postgres is using {health.postgres_bytes / 1024**3:.1f} GB, "
             f"{used:.0%} of its budget",
             "Everything is in one database by design, so this is the whole platform. Check the "
-            "retention trim ran, then the disk."))
+            "archive pass ran (`archive:` in the harvester log), then the disk."))
 
     if health.corpus_rows > health.corpus_projection_rows * CORPUS_GROWTH_ALERT_FACTOR:
         alerts.append(Alert(
             "warn", "corpus_growth",
             f"the corpus holds {health.corpus_rows:,} rows against a projection of "
             f"{health.corpus_projection_rows:,}",
-            "The 90-day retention trim is probably not running. Left alone this is a full disk in "
-            "a few months, and nothing else will report it."))
+            "The 30-day archive pass is probably not running — it moves aged-out postings to "
+            "`ARCHIVE_DIR` and deletes them (`libs.corpus.archive`). Left alone this is a full disk "
+            "in a few months, and nothing else will report it."))
     return alerts
 
 
@@ -94,9 +95,12 @@ def _user_alerts(health: PlatformHealth) -> list[Alert]:
                 "page", "silent_feed",
                 f"{user.pending_matches} matching job(s) waiting and last delivery was {waited}",
                 # Where the answer actually is, in the order it is usually in.
-                "Read the notifier's `dropped {...}` line for this account first — it says which "
-                "filter is emptying the feed. If nothing was dropped, check the notify lane and "
-                "this account's Telegram status.", user.email))
+                # Where the answer actually is. This used to name a `dropped {...}` log line that
+                # does not exist anywhere in the notifier, so the first step of the remedy was a
+                # dead end — which is most of why this alert went unactioned.
+                "Grep the notifier log for this account's id: `notified <id> with N item(s)` is a "
+                "delivery, and `sweep: retired` means matches were given up on. If neither appears, "
+                "check the notify lane's depth and this account's Telegram status.", user.email))
 
         if user.telegram_status == "broken":
             alerts.append(Alert(

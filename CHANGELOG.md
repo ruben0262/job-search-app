@@ -14,6 +14,60 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-08-11 (evening) — matches destroyed two minutes after we found them
+
+**Reported as a delivery failure. It was the retirement sweep, and the code carried a comment
+asserting the opposite.** Found from the live notifier log after the alert proved unactionable.
+
+`retire_stale_matches` read a flat `job_max_age_hours` — the operator has it at **6** — against
+`coalesce(posted_at, first_seen_at)`. The pre-score filter admits a posting against its **own source
+floor**: 48 hours for Adzuna, 168 for hiringcafe, 24 by default, because a six-hour window switches
+most boards off entirely rather than raising the bar (6bf). So the filter let those postings in on
+purpose and the sweep destroyed them.
+
+Measured on production over 48 hours — all 21 retirements the panel was reporting:
+
+| source | retired | avg minutes from first seen → retired |
+|---|---|---|
+| adzuna | 13 | **2** |
+| hiringcafe | 8 | 8,855 |
+
+**Two minutes.** Found, scored, and written off before the notifier could ever send them — while the
+log line blamed the notify lane: *"the notify lane did not keep up"*. It had; it delivered 1–7 items
+regularly through the whole window. Every source except LinkedIn has a floor above six hours, so this
+reached **every account**.
+
+Whether a given match survived was a **race**. Delivery applies no age filter at all, so if the score
+lane's own notify job ran first the posting went out — one was 27 hours old and fine — and if the
+sweep ran first the same row was destroyed.
+
+**The comment is why it survived a year of reading.** It said: *"The same clock the pre-score filter
+reads, so 'too old to score' and 'too old to send' cannot mean two different things."* It read a
+different clock, with a different window, and no handling of a date-only `posted_at`. §5's defect with
+a reassurance attached is worse than the defect alone.
+
+**The fix removes the second number rather than correcting it.** `too_old_to_send()` is defined as
+`~_fresh_enough()` — the negation of the admission rule — and `retire_stale_matches` now takes the
+account's `filters` instead of an hours count, so passing a bare window is no longer expressible.
+Two tests; the first fails against the previous code with the message naming the defect.
+
+**Three more, found looking for the first:**
+
+- **`pending_matches` never adopted the shared conditions.** `pending_match_conditions` was written on
+  2026-08-08 after an account showed "99 matches waiting" with all 99 retired; the notifier was
+  switched to it and `libs/ops/health.py` was not. So the page that pages an operator kept counting
+  work the notifier had correctly abandoned — the reported "2 matching job(s) waiting" on a healthy
+  account. One caller fixed, one forgotten, is how the same defect gets found twice.
+- **The alert's remedy named a log line that does not exist.** It said to read the notifier's
+  `dropped {...}` line; nothing in the notifier logs `dropped`. The first step of the runbook was a
+  dead end, which is most of why the alert went unactioned. Replaced with the two lines that do exist.
+- **Two alert texts still described the 90-day retention trim**, replaced that morning by the 30-day
+  archive. Same-day drift, in the commit that renamed the thing.
+
+Also here: `dispatch_due_notifications` now selects whole `User` rows rather than ids, because
+`filters_for` needs the account's own limits — one fewer per-account fetch in a loop that has too
+many (6be).
+
 ## 2026-08-11 (late) — the four sinks, closed
 
 ROADMAP **6bd** and **6c**. Three mechanisms existed to drain what grows, all three were implemented

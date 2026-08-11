@@ -17,7 +17,7 @@ from libs.db.models import (
 )
 from libs.db.models.queue import LANES
 from libs.scoring.thresholds import cutoff_for
-from libs.tenant.filters import candidate_conditions, filters_for
+from libs.tenant.filters import candidate_conditions, filters_for, pending_match_conditions
 
 # What a lane's oldest waiting job is *expected* to be, in minutes.
 EXPECTED_WAIT_MIN = {"notify": 5, "train": 30, "docgen": 10, "label": 60, "process": 15,
@@ -111,16 +111,27 @@ def _proxy_status(session: Session, user_id, proxy) -> str | None:
 
 
 def pending_matches(session: Session, user: User) -> int:
-    """How many jobs this account is actually waiting on — the same pool the notifier would draw."""
+    """How many jobs this account is actually waiting on — the same pool the notifier would draw.
+
+    **`pending_match_conditions` is that pool, and this asked its own question until 2026-08-11.**
+    It omitted `retired_at IS NULL`, which is the exact clause added on 2026-08-08 after an account
+    showed "99 matches waiting" with all 99 retired. The notifier was switched to the shared
+    definition then and this caller was not, so the phantom stayed alive on the page that pages an
+    operator — reporting work the notifier had correctly abandoned, which is a `silent_feed` alert
+    for a healthy account.
+
+    `candidate_conditions` stays on top of it deliberately, and is the one thing this asks that the
+    feed does not: it answers "could this account still be shown this posting", so a row the filter
+    has since aged out is not counted as owed. The feed does not need that because the sweep retires
+    those rows first, by the same rule.
+    """
     cutoff = cutoff_for(session, user.id)
     filters = filters_for(session, user)
     return session.scalar(
         select(func.count()).select_from(UserJobState)
         .join(CorpusJob, CorpusJob.id == UserJobState.job_id)
         .where(UserJobState.user_id == user.id,
-               UserJobState.notified_at.is_(None),
-               UserJobState.score.is_not(None),
-               UserJobState.score >= cutoff,
+               *pending_match_conditions(cutoff),
                *candidate_conditions(filters))) or 0
 
 

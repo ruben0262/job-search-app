@@ -1215,6 +1215,102 @@ Fixed by reading the token out of any posting URL, from any source. Kept here be
 recurs: a discovery mechanism fed only by its own output cannot widen, and nothing errors while it
 fails to.
 
+### 6be — what scales with user count, measured before anything is changed (added 2026-08-11)
+
+**Audited on the owner's instruction: find the implementations that lean on user count and will cost
+latency.** Five, and they are all the same shape — a loop over every account with platform-wide work
+inside it. Measured on the live box, 2026-08-11: 53,383 corpus rows, **100,583 `user_job_state`**,
+480 MB, **two** active accounts.
+
+**The cliff, and it is in the thing that watches for cliffs.** `EXPLAIN ANALYZE` of `pending_matches`
+against production, for one account:
+
+```
+Parallel Seq Scan on user_job_state  (actual rows=0)
+Execution Time: 25.051 ms
+```
+
+A **full sequential scan of all 100,583 rows to return zero**, once per account, every fifteen
+minutes. `ix_user_job_state_pending` exists and the planner declines it, because each account owns
+half the table — an index is no cheaper than the scan when the predicate selects half of everything.
+
+That is ~50,000 state rows per account, and the scan is over the *whole table* for *each* account. At
+fifty accounts the table is ~2.5M rows and one health check is order **thirty seconds**, against
+`health.service`'s `TimeoutStartSec=60`. **The monitor is the first thing that breaks**, and a
+monitor whose own failure is silent is what `OPERATIONS_PLAN.md` §1 exists to warn about.
+
+| where | per account | when |
+|---|---|---|
+| `libs/ops/health.py:138` `user_health` | ~6 queries, incl. the seq scan above | every 15 min |
+| `libs/queue/queue.py:134` `dispatch_due_notifications` | `cutoff_for` + `filters_for` + retire (UPDATE with a join) + a probe | every notifier tick |
+| `libs/ops/pipeline.py:177` | `filters_for` + `cutoff_for` | every admin page load |
+| `services/harvester/cycle.py` `_enqueue_scoring` | one enqueue each | **inside the 11-minute harvest budget** |
+| `services/harvester/describe.py` proxied pass | proxy lease + secret decrypt + fetches | same budget |
+
+**The cheapest fix first, and it is not an index.** `filters_for` calls
+`settings.get(session, "job_max_age_hours")` and `settings.source_min_ages(session)` — **two
+platform-wide values, re-queried once per account**, identical every time. Hoisting them out of the
+loop removes 2N queries and changes no behaviour. `cutoff_for` re-reads the `User` row it was handed.
+
+**What to do, in order** — and nothing here ships without the number it was justified by (rule 4):
+
+1. Hoist the platform-wide reads out of the per-user loops. No behaviour change, 2N queries removed.
+2. Re-measure `pending_matches`. A covering index on `(user_id, score) WHERE notified_at IS NULL AND
+   retired_at IS NULL` may still lose to the scan; if it does, the answer is to stop asking per
+   account and compute every account's count in **one grouped query**.
+3. `_enqueue_scoring` and the describe pass are inside the cycle budget. The budget warning shipped
+   2026-08-11 will fire from user growth alone, which is the correct place for it to surface.
+
+**Deliberately not done yet**: no measurement exists at fifty accounts, only the extrapolation above.
+The drill is to load a scratch database to fifty accounts and time the health check before touching
+anything, exactly as `ix_user_labels_job` was justified at 21.2 ms → 10.6 ms.
+
+### 6bf — every source reports when a posting went up, and the filter can trust it (added 2026-08-11)
+
+**The owner's question, and the measurement says yes.** Asked whether sources carry the posting's own
+date, so that a 24-hour harvest sweep every fifteen minutes can tell a genuinely new posting from an
+old one rather than judging everything by one global window. Measured over seven days of live corpus:
+
+**`posted_at` coverage is effectively total** — 36,000+ of ~36,300 rows across twenty sources. And
+most sources hand us a posting within about two hours of it going up:
+
+| source | rows/7d | avg hours old when found | date-only stamps |
+|---|---|---|---|
+| linkedin | 26,852 | 1.9 | 0 |
+| smartrecruiters | 3,775 | 1.3 | 0 |
+| ashby | 1,118 | 0.9 | 0 |
+| greenhouse | 385 | 1.6 | 0 |
+| justjoinit | 185 | 0.1 | 0 |
+| adzuna | 1,561 | **14.9** | 0 |
+| hiringcafe | 545 | 14.8 | 212 of 545 |
+| workday | 145 | 13.6 | **145 of 145** |
+| workable | 8 | 12.2 | **8 of 8** |
+
+**The three slow ones are two different problems, and conflating them is what the per-source floors
+do.**
+
+- **workday, workable, and 39% of hiringcafe stamp a date, not a time.** Read as a time, a midnight
+  stamp makes a posting look ~12 hours old on average — and 13.6, 12.2 and 14.8 are all ≈ half a day,
+  which is the arithmetic artifact rather than a statement about the job. `_fresh_enough` already
+  detects this (`date_trunc('day', posted_at) = posted_at`) and judges those rows on `first_seen_at`.
+  **Their 168-hour floors are therefore belt-and-braces on a problem already solved**, and are worth
+  re-measuring rather than trusted.
+- **adzuna is genuinely 14.9 hours behind, with zero date-only stamps.** That is *our* lag, not the
+  posting's age: the free tier allows ~250 calls a day against ninety-six cycles, so each (country,
+  keyword) pair is asked roughly once every twenty-four hours. A floor is the right answer here, and
+  48 hours is defensible.
+
+**So `job_max_age_hours = 6` was never what was throwing jobs away**, and the floors exist precisely
+to stop it doing so. The defect was the retirement sweep ignoring them — fixed 2026-08-11, see
+`CHANGELOG.md`.
+
+**What this opens, and it is worth doing**: the floors currently answer two questions at once — "how
+stale is this board's clock" and "how far behind are we on this board". Now that `posted_at` is known
+to be near-universal and its date-only cases are detectable, a floor only needs to cover *our* lag.
+Recommended next: re-measure each floor against `avg_h_old_when_found` per source and cut the ones
+that are covering for the date-only rule instead. Every number above is reproducible from one query
+over `corpus`.
+
 ## Phase 7 — the pipeline, in the order it has to be right (added 2026-08-04)
 
 **The owner's sequencing, and it is the correction to how this work was being picked up.** The

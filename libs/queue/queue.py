@@ -123,35 +123,36 @@ def dispatch_due_notifications(session: Session) -> int:
     written by something other than the score lane (a relabel, an operator's `score_user.py`) and an
     account whose notify job died. It enqueues nothing when there is nothing waiting.
     """
-    from libs import settings  # noqa: PLC0415 - avoids a cycle at import time
-    from libs.scoring.thresholds import cutoff_for  # noqa: PLC0415
+    from libs.scoring.thresholds import cutoff_for  # noqa: PLC0415 - avoids a cycle at import time
+    from libs.tenant.filters import filters_for, pending_match_conditions  # noqa: PLC0415
     from libs.tenant.repository import TenantRepository  # noqa: PLC0415
 
-    window = int(settings.get(session, "job_max_age_hours"))
     tenant = TenantRepository(session)
     enqueued = retired = 0
 
-    for user_id in session.scalars(
-            select(User.id).where(User.active.is_(True), User.status == "active",
-                                  User.telegram_status == "connected")):
-        cutoff = cutoff_for(session, user_id)
-        # Before queueing anything: a match that aged past the window while waiting is one this lane
-        # failed to send in time, and sending it late is worse than not sending it.
-        gone = tenant.retire_stale_matches(user_id, cutoff=cutoff, max_age_hours=window)
+    # Whole rows rather than ids: `filters_for` needs the account's own limits, and re-fetching it
+    # per call is the per-user query multiplier this loop already has too much of.
+    for user in session.scalars(
+            select(User).where(User.active.is_(True), User.status == "active",
+                               User.telegram_status == "connected")):
+        cutoff = cutoff_for(session, user.id)
+        # Before queueing anything: a match the pre-score filter would no longer admit is one this
+        # lane failed to send in time, and sending it late is worse than not sending it. Judged by
+        # that same filter, never by a window of its own — see `retire_stale_matches`.
+        gone = tenant.retire_stale_matches(
+            user.id, cutoff=cutoff, filters=filters_for(session, user))
         if gone:
             retired += gone
             logger.warning(
-                "sweep: retired %d match(es) for %s that aged past %dh while waiting — the notify "
-                "lane did not keep up", gone, user_id, window)
+                "sweep: retired %d match(es) for %s that aged out of their own source's window "
+                "while waiting — the notify lane did not keep up", gone, user.id)
 
         waiting = session.scalar(
             select(UserJobState.job_id)
-            .where(UserJobState.user_id == user_id,
-                   UserJobState.notified_at.is_(None),
-                   UserJobState.retired_at.is_(None),
-                   UserJobState.score >= cutoff)
+            # The shared definition, so "waiting" cannot mean one thing here and another in the feed.
+            .where(UserJobState.user_id == user.id, *pending_match_conditions(cutoff))
             .limit(1))
-        if waiting is not None and enqueue(session, "notify", user_id, dedup_key="due") is not None:
+        if waiting is not None and enqueue(session, "notify", user.id, dedup_key="due") is not None:
             enqueued += 1
     return enqueued
 

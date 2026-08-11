@@ -4,7 +4,7 @@ from __future__ import annotations
 import uuid as _uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
 
 from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -24,6 +24,9 @@ from libs.db.models import (
     UserSecret,
 )
 from libs.feedback.actions import FEEDBACK_WEIGHT
+
+if TYPE_CHECKING:  # Runtime import lives inside the method, to avoid a cycle.
+    from libs.tenant.filters import UserFilters
 
 # The reference maps its two verdicts onto these scores, so feedback blends with LLM labels.
 APPLIED_SCORE, SKIPPED_SCORE = 90, 10
@@ -80,20 +83,23 @@ class TenantRepository:
         row.scored_model_version = model_version
 
     def retire_stale_matches(self, user_id: _uuid.UUID, *, cutoff: float,
-                             max_age_hours: int) -> int:
-        """Give up on matches too old to be worth sending, and say how many.
+                             filters: UserFilters) -> int:
+        """Give up on matches the pre-score filter would no longer admit, and say how many.
 
         Delivery does not filter — a posting is judged once, before scoring. This is the queue being
-        maintained rather than the send path being second-guessed: a match that has aged past the
-        operator's window while waiting is one the lane failed to send in time, and sending it late
-        is worse than not sending it. The count is the honest version of "expired".
+        maintained rather than the send path being second-guessed: a match that has aged out while
+        waiting is one the lane failed to send in time, and sending it late is worse than not
+        sending it. The count is the honest version of "expired".
+
+        **Asked as the negation of the admission rule** (`too_old_to_send`), never as a window of its
+        own. It was a window of its own until 2026-08-11, and it destroyed 13 Adzuna matches an
+        average of two minutes after we first saw them — admitted by a 48-hour source floor, retired
+        against a flat 6-hour setting. `filters` rather than a number is the fix: there is no second
+        number here to disagree with the first.
         """
-
         from libs.db.models import CorpusJob  # noqa: PLC0415 - avoids a cycle at import time
+        from libs.tenant.filters import too_old_to_send  # noqa: PLC0415
 
-        # The same clock the pre-score filter reads, so "too old to score" and "too old to send"
-        # cannot mean two different things.
-        too_old = datetime.now(UTC) - timedelta(hours=int(max_age_hours))
         stale = (
             select(UserJobState.job_id)
             .join(CorpusJob, CorpusJob.id == UserJobState.job_id)
@@ -101,7 +107,7 @@ class TenantRepository:
                    UserJobState.notified_at.is_(None),
                    UserJobState.retired_at.is_(None),
                    UserJobState.score >= cutoff,
-                   func.coalesce(CorpusJob.posted_at, CorpusJob.first_seen_at) < too_old))
+                   too_old_to_send(filters)))
 
         return self._s.execute(
             update(UserJobState)
