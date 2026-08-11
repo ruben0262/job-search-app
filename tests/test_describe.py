@@ -7,7 +7,7 @@ import uuid
 import pytest
 
 pytest.importorskip("sqlalchemy")
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from libs.corpus import postings
@@ -95,13 +95,9 @@ def test_a_row_with_a_real_description_is_left_alone(repo):
     assert job_id not in [job.id for job in corpus.awaiting_description()]
 
 
-def test_a_trimmed_row_is_never_re_fetched(repo):
-    """Retention dropped that text on purpose."""
-    corpus, session = repo
-    job_id = _board(corpus)
-    session.get(CorpusJob, job_id).trimmed_at = session.scalar(select(func.now()))
-    session.flush()
-    assert job_id not in [job.id for job in corpus.awaiting_description()]
+# A trimmed row used to be excluded here, because retention nulled a description in place and the
+# describer would otherwise fetch it again forever. Retention deletes the row now, so there is no
+# trimmed state for this pass to skip.
 
 
 def test_the_two_passes_do_not_take_each_other_s_work(repo):
@@ -372,7 +368,7 @@ def test_marking_closed_keeps_the_row_and_its_description(repo):
     session.flush()
 
     job = session.get(CorpusJob, job_id)
-    assert job.description and job.trimmed_at is None
+    assert job.description, "closing a posting must not touch the text somebody may still train on"
 
 
 def test_closing_twice_does_not_move_the_timestamp(repo):

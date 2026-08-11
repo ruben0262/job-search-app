@@ -23,6 +23,16 @@ accounts.local.txt
 # Vite build output. Cloudflare Pages builds it; the repo carries the source.
 web/dist/
 
+# Archived postings — retention writes them here before deleting the rows (`libs.corpus.archive`).
+# Never in git: it is real job text at whatever volume the corpus turns over, and on the box it is
+# the ONLY remaining copy, so it belongs in the off-box backup rather than in a repository.
+archive/
+
+# Rendered CVs and cover letters from a local docgen run. Same two reasons as `scripts/coverlab/`
+# below: each one is a real person's contact details and whole career, and each is regenerable from
+# the profile that produced it. `3dbe1b5` committed one by accident.
+out/
+
 # The cover-letter bench: prompt variants, job fixtures, the judge, and one HTML letter per
 # (variant x posting). Experimental and deliberately local.
 #

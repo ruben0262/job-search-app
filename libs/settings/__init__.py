@@ -124,10 +124,29 @@ DEFAULT_SOURCE_PAGES_PER_CYCLE: dict[str, int] = {
 # How many users' LinkedIn passes run in one tick.
 DEFAULT_LINKEDIN_CONCURRENT_USERS = 4
 
+# How long a posting stays in the corpus before it is archived to a file and deleted
+# (`libs.corpus.archive`). Thirty days, set by the owner 2026-08-11.
+#
+# One definition, because the number this replaced had two: `CORPUS_HOT_DAYS = 90` in the corpus
+# repository against the 30 the owner had stated twice, and the code wins that argument silently.
+# Not a platform setting yet — nothing has needed it changed on a live box, and the panel control
+# every setting must have is worth adding when somebody wants to move it, not before.
+CORPUS_RETENTION_DAYS = 30
+
 # How long one harvest cycle may spend before it must stop and let the next tick have the box.
 # Below `harvester.service`'s TimeoutStartSec, which is what kills a cycle that ignores this — and
 # a killed cycle skips the stages after the one that overran, silently (`test_schedules.py`).
 HARVEST_CYCLE_BUDGET_SECONDS = 11 * 60
+
+# The share of that budget above which a cycle is reported as close to its ceiling. Derived from the
+# budget rather than being a second time bound, so raising one raises both.
+#
+# Measured 2026-08-10, when the ATS backfill took the polled board list from 337 to 641 and the
+# cycle went from seconds to minutes: the peak was 8.4 minutes (76% of budget), the cycle after it
+# 5.6 minutes (51%), and the one before 30.7 seconds (5%). 0.75 reports the one cycle worth knowing
+# about and stays quiet for the routine ones — and a threshold that fires on the routine case is a
+# line an operator learns to skip past, which is the same as no line (ROADMAP 6az).
+HARVEST_CYCLE_WARN_FRACTION = 0.75
 
 # How old a posting may be and still be worth scoring and sending. A different question from the
 # freshness windows above, which say how far back to *ask* a source: this one is how long a posting

@@ -21,10 +21,12 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from libs.db.base import Base, timestamptz
 
 # Account lifecycle (GAPS_REVIEW G11, TENANT_SAFETY.md §5).
-USER_STATUSES = ("pending_verification", "active", "dormant", "suspended", "deleted")
-
-# No engagement for this long → dormant.
-DORMANT_AFTER_DAYS = 30
+#
+# `dormant` was removed 2026-08-11. It was a state one function wrote, nothing called, and the login
+# path un-set incompletely — `status` went back to 'active' while `active` stayed False, which is a
+# silently-harvesting-nothing account. An operator reads `last_active_at` in the accounts list and
+# deletes the account if they want it gone; that needs no state of its own (ROADMAP 6c).
+USER_STATUSES = ("pending_verification", "active", "suspended", "deleted")
 
 # G6: the likeliest real-world delivery failure is the user blocking the bot or revoking the token.
 TELEGRAM_STATUSES = ("unconfigured", "connected", "broken")
@@ -56,7 +58,9 @@ class User(Base):
     # Set once every onboarding page is satisfied (`ONBOARDING_AND_PROCESSING.md` §2).
     onboarding_completed_at: Mapped[timestamptz | None]
 
-    # Engagement, not login — a deliberate departure from G11's "no login in N days".
+    # Engagement, not login: a Telegram tap counts as much as a sign-in, because somebody reading
+    # their cards is using the product. Reported in the admin accounts list, and read by a person
+    # deciding whether to delete the account — nothing acts on it automatically.
     last_active_at: Mapped[timestamptz | None]
 
     # The plan whose limits apply, and per-user grants layered over them.

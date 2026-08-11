@@ -11,9 +11,11 @@ from datetime import UTC, datetime, timedelta
 from time import monotonic
 
 from sqlalchemy import select, text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from libs.contracts.embedder import EmbedderClient, EmbedderError, EmbedderVersion
+from libs.corpus.archive import archive_expired
 from libs.corpus.ats import AtsRepository
 from libs.corpus.ats_urls import tokens_from_urls
 from libs.corpus.repository import CorpusRepository
@@ -24,6 +26,7 @@ from libs.settings import (
     ATS_DISCOVERY_LOOKBACK_HOURS,
     ATS_DISCOVERY_MAX_ROWS,
     HARVEST_CYCLE_BUDGET_SECONDS,
+    HARVEST_CYCLE_WARN_FRACTION,
 )
 from libs.tenant.repository import TenantRepository
 from services.harvester.describe import SHARED_LIMIT as DESCRIBE_PER_CYCLE_DEFAULT
@@ -69,6 +72,8 @@ class CycleReport:
     scoring_enqueued: int = 0
     # Company boards learned from posting URLs this cycle, not polled for.
     ats_tokens_found: int = 0
+    # Postings written to the archive file and deleted from the corpus.
+    archived: int = 0
     labelling_enqueued: int = 0
     skipped_locked: bool = False
     # How long each stage took.
@@ -139,7 +144,8 @@ def run_cycle(
 ) -> tuple[CycleReport, list[QueryKey]]:
     """Run one shared harvest cycle."""
     # The cycle's own clock, so a slow stage stops rather than taking the stages behind it with it.
-    deadline = monotonic() + HARVEST_CYCLE_BUDGET_SECONDS
+    started = monotonic()
+    deadline = started + HARVEST_CYCLE_BUDGET_SECONDS
     report = CycleReport()
     corpus = CorpusRepository(session)
     tenant = TenantRepository(session)
@@ -201,19 +207,15 @@ def run_cycle(
             report.ats_tokens_found = _discover_ats_tokens(session, ats)
 
         # 6. Embed the new rows. Once, for everyone.
-        if embedder is not None:
-            try:
-                with timed("embed", report.timings):
-                    result = embed_all_pending(corpus, embedder, expected=expected_embedder,
-                                               deadline=deadline)
-                report.embedded = result.embedded
-            except EmbedderError as exc:
-                report.embed_error = str(exc)
-                logger.error("harvest: embedding failed — those rows stay unembedded and are "
-                             "retried next cycle: %s", exc)
+        _embed_new_rows(corpus, embedder, expected_embedder, deadline, report)
 
         # 7. Ask the per-account lanes to catch up.
         _enqueue_follow_up(session, report)
+
+        # 8. Retire what has aged out. On this tick rather than a timer of its own: the corpus is
+        # the thing that grows and this is the pass that already touches it, and a second clock is
+        # a second outage (CLAUDE.md §6). Bounded per pass, so it cannot become the slow stage.
+        _archive_expired(session, report)
 
     logger.info(
         "harvest: %d queries (%d deferred), %d links, %d duplicates, %d new, %d described, "
@@ -222,15 +224,72 @@ def run_cycle(
         report.duplicates_total, report.new_jobs, report.described, report.embedded)
     report_timings(report.timings, event="harvest.timing", log=logger,
                    links=report.links_found, new=report.new_jobs)
+
+    _warn_if_near_budget(monotonic() - started, report)
     audit(logger, "harvest.cycle",
           queries=report.queries_planned, links=report.links_found,
           new=report.new_jobs, described=report.described, embedded=report.embedded,
           scoring_enqueued=report.scoring_enqueued,
-          ats_tokens_found=report.ats_tokens_found,
+          ats_tokens_found=report.ats_tokens_found, archived=report.archived,
           labelling_enqueued=report.labelling_enqueued,
           failed_sources=len(report.source_failures),
           empty_sources=sum(1 for n in report.links_by_source.values() if n == 0))
     return report, [q.key for q in deferred]
+
+
+def _embed_new_rows(corpus: CorpusRepository, embedder: EmbedderClient | None,
+                    expected: EmbedderVersion | None, deadline: float,
+                    report: CycleReport) -> None:
+    """Vectorise what arrived this cycle. One embed serves every account on the platform.
+
+    An embedder failure is recorded and survived: the rows stay unembedded and the next cycle picks
+    them up, which is better than losing the intake that has already been stored.
+    """
+    if embedder is None:
+        return
+    try:
+        with timed("embed", report.timings):
+            result = embed_all_pending(corpus, embedder, expected=expected, deadline=deadline)
+        report.embedded = result.embedded
+    except EmbedderError as exc:
+        report.embed_error = str(exc)
+        logger.error("harvest: embedding failed — those rows stay unembedded and are "
+                     "retried next cycle: %s", exc)
+
+
+def _archive_expired(session: Session, report: CycleReport) -> None:
+    """Move aged-out postings to the archive file, and never let that stop a harvest.
+
+    Retention failing is not a reason to lose a cycle's intake: nothing is deleted unless it was
+    written first, so the rows stay where they are and the next tick tries again. Logged at ERROR
+    because the corpus grows without this and nothing else would say so — the symptom of a silent
+    failure here is a disk filling up in a month's time.
+    """
+    try:
+        with timed("archive", report.timings):
+            report.archived = archive_expired(session).jobs
+    except (OSError, SQLAlchemyError) as exc:
+        logger.error("harvest: archiving aged-out postings failed, nothing was deleted "
+                     "and the corpus keeps growing: %s", exc)
+
+
+def _warn_if_near_budget(elapsed: float, report: CycleReport) -> None:
+    """Say so while there is still margin left to say it in.
+
+    Past the budget `harvester.service`'s `TimeoutStartSec` kills the cycle, and the stages behind
+    the overrun are skipped rather than retried — nothing raises, so the only symptom is a corpus
+    that quietly stops growing. That is how the 8.4-minute peak of 2026-08-10 was found (6az).
+    """
+    if elapsed <= HARVEST_CYCLE_BUDGET_SECONDS * HARVEST_CYCLE_WARN_FRACTION:
+        return
+    slowest = report.timings.slowest()
+    logger.warning(
+        "harvest: cycle took %.1f min of its %.1f-min budget (%.0f%%), slowest stage %s at %.1f "
+        "min — past the budget the cycle is killed and the stages behind the overrun are skipped, "
+        "not retried",
+        elapsed / 60, HARVEST_CYCLE_BUDGET_SECONDS / 60,
+        100 * elapsed / HARVEST_CYCLE_BUDGET_SECONDS,
+        slowest[0] if slowest else "none", (slowest[1] / 60_000) if slowest else 0.0)
 
 
 def _gather(source_configs: dict[str, dict], planned: list[PlannedQuery], ats: AtsRepository,

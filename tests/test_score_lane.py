@@ -123,9 +123,9 @@ def test_the_harvest_cycle_asks_every_active_account_to_catch_up(db):
     from services.harvester.cycle import _enqueue_scoring
 
     session, user, _ = db
-    dormant = User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active",
-                   active=False)
-    session.add(dormant)
+    switched_off = User(email=f"{uuid.uuid4()}@example.com", password_hash="x",
+                       status="active", active=False)
+    session.add(switched_off)
     session.flush()
 
     assert _enqueue_scoring(session) >= 1
@@ -134,7 +134,7 @@ def test_the_harvest_cycle_asks_every_active_account_to_catch_up(db):
     queued = session.scalars(
         select(QueueJob.user_id).where(QueueJob.lane == "score")).all()
     assert user.id in queued
-    assert dormant.id not in queued, "an inactive account must not consume a worker slot"
+    assert switched_off.id not in queued, "an inactive account must not consume a worker slot"
 
     # A second cycle finding nothing new must not pile up work.
     _enqueue_scoring(session)

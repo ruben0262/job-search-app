@@ -16,9 +16,6 @@ from libs.corpus.geo import read_country
 from libs.corpus.keys import canonical_url, content_key
 from libs.db.models import CorpusJob
 
-# A job keeps its description and vector for this long.
-CORPUS_HOT_DAYS = 90
-
 # Below this, stored text is a teaser rather than a description and the job is re-fetched from its own page.
 MIN_DESCRIPTION = 200
 
@@ -63,8 +60,7 @@ def awaiting_description_conditions(min_chars: int = MIN_DESCRIPTION,
         fresh = (or_(CorpusJob.posted_at >= cutoff,
                      CorpusJob.posted_at.is_(None) & (CorpusJob.first_seen_at >= cutoff)),)
 
-    return (CorpusJob.trimmed_at.is_(None),
-            CorpusJob.closed_at.is_(None),
+    return (CorpusJob.closed_at.is_(None),
             *_readable(),
             *fresh,
             or_(CorpusJob.description.is_(None),
@@ -77,8 +73,7 @@ def awaiting_embedding_conditions() -> tuple:
     Same reason as above in CPU rather than bandwidth: the pre-score filter refuses a closed row,
     so embedding one is ~0.37s of the shared embedder spent on nothing.
     """
-    return (CorpusJob.trimmed_at.is_(None),
-            CorpusJob.closed_at.is_(None),
+    return (CorpusJob.closed_at.is_(None),
             # An abandoned row's only "description" is its own title. Embedding that produces a
             # vector for a sentence rather than for a job, and scoring against it is worse than
             # not scoring at all.
@@ -260,8 +255,7 @@ class CorpusRepository:
         """Detect the language of rows described before the column existed. No network, bounded."""
         rows = list(self._s.scalars(
             select(CorpusJob)
-            .where(CorpusJob.description.is_not(None), CorpusJob.language.is_(None),
-                   CorpusJob.trimmed_at.is_(None))
+            .where(CorpusJob.description.is_not(None), CorpusJob.language.is_(None))
             .order_by(CorpusJob.first_seen_at.desc())
             .limit(limit)))
         filled = 0
@@ -275,8 +269,8 @@ class CorpusRepository:
     # ── what each stage is still waiting for ──────────────────────────────────────────────────
     #
     # Defined here, beside the workers that consume them, and imported by the operator dashboard
-    # rather than restated there. The dashboard used to ask only `trimmed_at IS NULL`, so a
-    # **closed** posting with text and no vector counted as waiting to be embedded forever: the
+    # rather than restated there. The dashboard used to ask a different question from the workers, so
+    # a **closed** posting with text and no vector counted as waiting to be embedded forever: the
     # embedder skips closed rows on purpose, so the backlog could never drain. Two rows sat there
     # for 25 hours reading as a stuck pipeline, and nothing was stuck.
 
@@ -299,8 +293,7 @@ class CorpusRepository:
         """LinkedIn rows whose description is fine but whose posting signals were never read."""
         return list(self._s.scalars(
             select(CorpusJob)
-            .where(CorpusJob.trimmed_at.is_(None),
-                   CorpusJob.closed_at.is_(None),
+            .where(CorpusJob.closed_at.is_(None),
                    CorpusJob.url.like("%/jobs/view/%"),
                    CorpusJob.applicants.is_(None),
                    CorpusJob.posted_at.is_(None))
@@ -373,26 +366,7 @@ class CorpusRepository:
                     embedded_at=func.clock_timestamp()))
         return result.rowcount == 1
 
-    # ── retention ────────────────────────────────────────────────────────────────────────────
-
-    def pin(self, job_id: int) -> None:
-        """Mark a job as acted upon, so retention never trims it."""
-        self._s.execute(update(CorpusJob).where(CorpusJob.id == job_id).values(pinned=True))
-
-    def trim_cold(self, *, hot_days: int = CORPUS_HOT_DAYS, limit: int = 1000) -> int:
-        """Drop description and vector from unpinned rows older than `hot_days`."""
-        cutoff = datetime.now(UTC) - timedelta(days=hot_days)
-        stale = (
-            select(CorpusJob.id)
-            .where(CorpusJob.pinned.is_(False),
-                   CorpusJob.trimmed_at.is_(None),
-                   CorpusJob.first_seen_at < cutoff)
-            .limit(limit)
-            .scalar_subquery())
-        result = self._s.execute(
-            update(CorpusJob)
-            .where(CorpusJob.id.in_(stale))
-            .values(description=None, embedding=None, text_sha256=None, embedding_model=None,
-                    embedding_dim=None, embedding_version=None, embedded_at=None,
-                    trimmed_at=func.clock_timestamp()))
-        return result.rowcount
+    # Retention lives in `libs.corpus.archive`. `trim_cold` and `pin` were removed on 2026-08-11:
+    # trimming nulled the description and vector in place, which dropped the row out of every future
+    # training set without raising, and `pinned` was a denormalised copy of "somebody labelled or
+    # acted on this" that two of the three label writers never set.

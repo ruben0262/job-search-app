@@ -121,7 +121,30 @@ def test_the_user_list_shows_what_an_operator_actually_needs(api):
 
     rows = {row["email"]: row for row in http.get("/admin/users").json()["users"]}
     assert ordinary.email in rows
-    assert {"status", "telegram", "model_version", "onboarded"} <= set(rows[ordinary.email])
+    assert {"status", "telegram", "model_version", "onboarded",
+            "last_active_at"} <= set(rows[ordinary.email])
+
+
+def test_the_account_list_reports_how_long_an_account_has_been_quiet(api):
+    """The replacement for automatic dormancy: a number a person reads, then decides (ROADMAP 6c).
+
+    Nothing pauses a quiet account any more, so this column is the only thing standing between an
+    abandoned account and it harvesting forever. If it stops being reported, the decision it exists
+    for cannot be made.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    http, session, operator, ordinary, sign_in = api
+    ordinary.last_active_at = datetime.now(UTC) - timedelta(days=45)
+    session.flush()
+    sign_in(http, operator)
+
+    rows = {row["email"]: row for row in http.get("/admin/users").json()["users"]}
+    assert rows[ordinary.email]["last_active_at"] is not None, (
+        "an account quiet for 45 days reports nothing, so an operator cannot see it is quiet")
+    # An account that has never signed in or tapped anything reports null rather than a date, which
+    # is the case an operator most wants to see — a signup that never came back.
+    assert rows[operator.email]["last_active_at"] is None
 
 
 # ── operator access, granted from the panel ───────────────────────────────────────────────────

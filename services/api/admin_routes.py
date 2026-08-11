@@ -120,6 +120,10 @@ def users(db: Session = Depends(get_db), admin: User = Depends(require_admin)) -
                 "onboarded": row.onboarding_completed_at is not None,
                 "processed_at": row.processed_at.isoformat() if row.processed_at else None,
                 "created_at": row.created_at.isoformat() if row.created_at else None,
+                # The whole of account lifecycle now: an operator reads this and decides whether to
+                # delete. Nothing acts on it automatically (ROADMAP 6c).
+                "last_active_at": (row.last_active_at.isoformat()
+                                   if row.last_active_at else None),
             }
             for row in db.scalars(select(User).order_by(User.created_at))],
     }

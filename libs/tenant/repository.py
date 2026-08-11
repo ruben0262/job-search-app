@@ -12,7 +12,6 @@ from sqlalchemy.orm import Session
 
 from libs.contracts.config import CONFIG_SCHEMA_VERSION
 from libs.contracts.profile import PROFILE_SCHEMA_VERSION
-from libs.corpus.repository import CorpusRepository
 from libs.db.models import (
     CorpusJob,
     ProxyCredential,
@@ -24,7 +23,6 @@ from libs.db.models import (
     UserModel,
     UserSecret,
 )
-from libs.db.models.user import DORMANT_AFTER_DAYS
 from libs.feedback.actions import FEEDBACK_WEIGHT
 
 # The reference maps its two verdicts onto these scores, so feedback blends with LLM labels.
@@ -61,7 +59,6 @@ class TenantRepository:
 
     def __init__(self, session: Session):
         self._s = session
-        self._corpus = CorpusRepository(session)
 
     # ── job state ────────────────────────────────────────────────────────────────────────────
 
@@ -91,7 +88,6 @@ class TenantRepository:
         operator's window while waiting is one the lane failed to send in time, and sending it late
         is worse than not sending it. The count is the honest version of "expired".
         """
-        from datetime import UTC, datetime, timedelta  # noqa: PLC0415 - one caller, one path
 
         from libs.db.models import CorpusJob  # noqa: PLC0415 - avoids a cycle at import time
 
@@ -124,7 +120,6 @@ class TenantRepository:
             row.applied_at = func.now()
         if cover_built:
             row.cover_built = True
-        self._corpus.pin(job_id)
         return is_new
 
     def applied(self, user_id: _uuid.UUID, limit: int = 200) -> list[AppliedRecord]:
@@ -194,35 +189,6 @@ class TenantRepository:
     def profile(self, user_id: _uuid.UUID) -> dict | None:
         user = self._s.get(User, user_id)
         return user.profile if user is not None else None
-
-    def touch_activity(self, user_id: _uuid.UUID) -> None:
-        """Record engagement."""
-        self._s.execute(
-            update(User).where(User.id == user_id).values(last_active_at=func.now()))
-
-    def mark_dormant(self, *, after_days: int = DORMANT_AFTER_DAYS) -> list[_uuid.UUID]:
-        """Pause accounts with no engagement for `after_days`."""
-        cutoff = datetime.now(UTC) - timedelta(days=after_days)
-        rows = self._s.scalars(
-            select(User.id).where(
-                User.status == "active",
-                func.coalesce(User.last_active_at, User.created_at) < cutoff))
-        paused = list(rows)
-        if paused:
-            self._s.execute(
-                update(User).where(User.id.in_(paused))
-                .values(status="dormant", active=False))
-        return paused
-
-    def reactivate(self, user_id: _uuid.UUID) -> bool:
-        """Bring a dormant account back."""
-        user = self._s.get(User, user_id)
-        if user is None or user.status != "dormant":
-            return False
-        user.status = "active"
-        user.active = True
-        user.last_active_at = func.now()
-        return True
 
     def active_configs(self) -> dict[_uuid.UUID, dict]:
         """Every active user's config, for the harvester's query-set fold."""
@@ -311,7 +277,6 @@ class TenantRepository:
             .on_conflict_do_update(
                 index_elements=[UserLabel.user_id, UserLabel.job_id],
                 set_={k: v for k, v in values.items() if k not in ("user_id", "job_id")}))
-        self._corpus.pin(job_id)
 
     def record_feedback(self, user_id: _uuid.UUID, job_id: int, *, applied: bool,
                         profile_version: str | None = None,

@@ -20,6 +20,7 @@ from libs.profiles.repository import ProfileFiles
 from libs.scoring import centroid
 from libs.scoring.features import FEATURE_SCHEMA_VERSION, job_features, spec_for
 from libs.scoring.thresholds import DEFAULT_CUTOFF
+from libs.tenant.repository import TenantRepository
 
 logger = logging.getLogger(__name__)
 
@@ -285,7 +286,36 @@ def train_user(session: Session, user_id: _uuid.UUID, *,
     notifylib.notify(session, user_id, notifylib.MODEL_TRAINED,
                      f"Version {version}, trained on {len(data.targets)} of your decisions. "
                      "Your feed is ranked by it from the next cycle.")
+
+    # Every retrain writes an artifact and nothing removed one, so the disk held `v1`–`v4` for a
+    # single account after a fortnight. Pruned here rather than on a timer of its own: this is the
+    # only thing that creates them, so it is the only place that can know one is now surplus.
+    _prune_artifacts(session, user_id)
     return version
+
+
+def _prune_artifacts(session: Session, user_id: _uuid.UUID) -> int:
+    """Delete the artifacts past `KEEP_MODEL_VERSIONS`, rows **and** files.
+
+    `prune_model_artifacts` deletes the rows and returns the paths; it deliberately does not touch
+    the filesystem, because a repository should not. Unlinking is this caller's job, and skipping it
+    is why 34 MB was still on the box with every row long gone.
+
+    Never allowed to fail a retrain: the model is trained and recorded by this point, and losing that
+    over an unlinkable file would be the wrong trade. Logged at WARNING so a file that cannot be
+    removed is visible rather than accumulating silently.
+    """
+    removed = 0
+    for path in TenantRepository(session).prune_model_artifacts(user_id):
+        try:
+            Path(path).unlink(missing_ok=True)
+            removed += 1
+        except OSError as exc:
+            logger.warning("trainer: could not delete the superseded artifact %s for %s, "
+                           "its row is gone but the file remains: %s", path, user_id, exc)
+    if removed:
+        logger.info("trainer: pruned %d superseded artifact(s) for %s", removed, user_id)
+    return removed
 
 
 def should_retrain(session: Session, user_id: _uuid.UUID, *,

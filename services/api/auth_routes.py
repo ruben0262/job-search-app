@@ -210,8 +210,6 @@ def login(body: LoginRequest, request: Request, response: Response,
                             ip=_client_ip(request))
     _set_session_cookies(response, issue_access_token(user.id, session.session_id),
                          session.refresh_token)
-    if user.status == "dormant":
-        user.status = "active"
     user.last_active_at = _now()
     return {"status": "ok"}
 

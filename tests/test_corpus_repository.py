@@ -278,45 +278,16 @@ def test_awaiting_embedding_finds_text_without_a_vector(repo):
 
 # ── retention ────────────────────────────────────────────────────────────────────────────────
 
-def test_trimming_drops_text_but_keeps_the_dedup_key_forever(repo):
-    """Deleting the row instead would make the corpus re-acquire and re-embed the same job forever."""
-    r, s = repo
-    url = _u()
-    job_id = r.add(url=url, source="greenhouse", title="Backend Engineer", company="Acme")
-    s.flush()
-    r.set_description(job_id, "Go, gRPC, Postgres.")
-    s.flush()
-    s.get(CorpusJob, job_id).first_seen_at = datetime.now(UTC) - timedelta(days=200)
-    s.flush()
+def test_the_repository_no_longer_trims_rows_in_place(repo):
+    """Removed 2026-08-11, and this fails if it comes back.
 
-    assert r.trim_cold() >= 1
-    s.flush()
-    s.expire_all()
-
-    job = s.get(CorpusJob, job_id)
-    assert job is not None, "the row must survive — it is the dedup key"
-    assert job.description is None
-    assert job.embedding is None
-    assert job.trimmed_at is not None
-    assert job.url == url and job.canonical_url is not None
-
-
-def test_a_job_a_user_acted_on_is_never_trimmed(repo):
-    """Losing the text under a label leaves the label meaningless."""
-    r, s = repo
-    job_id = r.add(url=_u(), source="greenhouse", title="Backend Engineer", company="Acme")
-    s.flush()
-    r.set_description(job_id, "Go, gRPC, Postgres.")
-    r.pin(job_id)
-    s.flush()
-    s.get(CorpusJob, job_id).first_seen_at = datetime.now(UTC) - timedelta(days=200)
-    s.flush()
-
-    r.trim_cold()
-    s.flush()
-    s.expire_all()
-
-    assert s.get(CorpusJob, job_id).description is not None
+    `trim_cold` nulled the description and vector and kept the row. The trainer joins labels back to
+    the corpus and requires `embedding IS NOT NULL`, so a trimmed row silently left every future
+    training set. Retention is `libs.corpus.archive` now: the whole row, written out then deleted.
+    """
+    r, _s = repo
+    assert not hasattr(r, "trim_cold")
+    assert not hasattr(r, "pin")
 
 
 def test_a_long_real_world_content_key_is_storable(repo):

@@ -87,8 +87,15 @@ services:
       # `compose run --rm` harvest writes its log into a filesystem that is deleted the moment the
       # cycle exits — which is precisely the run you want to read afterwards.
       LOG_DIR: /var/log/jobsearch
+      # Where retention writes postings before deleting them (`libs.corpus.archive`). Mounted for
+      # the same reason as LOG_DIR and with a sharper consequence: this is a `compose run --rm`, so
+      # an unmounted archive is written into a filesystem that is destroyed when the cycle exits —
+      # and the rows have already been deleted from Postgres by then. **This mount is the only copy
+      # of an archived posting**, so it belongs in whatever gets backed up off the box.
+      ARCHIVE_DIR: /var/lib/jobsearch/archive
     volumes:
       - ../logs:/var/log/jobsearch
+      - ../archive:/var/lib/jobsearch/archive
     depends_on:
       postgres:
         condition: service_healthy

@@ -90,6 +90,11 @@ class UserLabel(Base):
         CheckConstraint(f"source IN {LABEL_SOURCES}", name="source_valid"),
         # The trainer's read: this user's labels for the current generation.
         Index("ix_user_labels_training_set", "user_id", "profile_generation"),
+        # Retention's read, and it cannot use the primary key: "does *any* account have a label on
+        # this posting" is a lookup by `job_id` alone, and `job_id` is the PK's second column.
+        # Measured on 50,000 postings and 2,000 labels: 21.2 ms without this, 10.6 ms with it, and
+        # the plan turns a sequential scan of every label into an index-only scan.
+        Index("ix_user_labels_job", "job_id"),
         CheckConstraint("weight > 0", name="weight_positive"),
     )
 

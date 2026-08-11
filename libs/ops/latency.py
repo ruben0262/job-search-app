@@ -288,8 +288,7 @@ STAGES: tuple[Stage, ...] = (
         scope="corpus",
         start="c.first_seen_at",
         end="c.description_fetched_at",
-        backlog_where="c.description_fetched_at IS NULL AND c.trimmed_at IS NULL "
-                      "AND c.closed_at IS NULL",
+        backlog_where="c.description_fetched_at IS NULL AND c.closed_at IS NULL",
         backlog_since="c.first_seen_at",
     ),
     Stage(
@@ -301,7 +300,7 @@ STAGES: tuple[Stage, ...] = (
         scope="corpus",
         start="c.description_fetched_at",
         end="c.embedded_at",
-        backlog_where="c.description IS NOT NULL AND c.embedding IS NULL AND c.trimmed_at IS NULL",
+        backlog_where="c.description IS NOT NULL AND c.embedding IS NULL",
         backlog_since="c.description_fetched_at",
         caveat="`embedded_at` was added on 2026-08-03 and older rows were deliberately not "
                "backfilled — filling it from another column would have invented a measurement. "

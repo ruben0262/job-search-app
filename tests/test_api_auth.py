@@ -130,6 +130,29 @@ def test_verification_activates_the_account_and_works_once(client):
     assert replayed.status_code == 400
 
 
+def test_signing_in_records_when_the_account_was_last_active(client):
+    """The accounts list is the whole of account lifecycle now, and this is what fills it.
+
+    Nothing pauses a quiet account any more (ROADMAP 6c) — an operator reads `last_active_at` and
+    decides. If the login path stops stamping it, every account reads as never-used and the decision
+    is made on a column that is always null.
+    """
+    http, session, mailer = client
+    email = _email()
+    _signup(http, email)
+    session.flush()
+    assert http.post("/auth/verify", json={"token": _link_token(mailer)}).status_code == 200
+    session.flush()
+
+    user = session.scalar(select(User).where(User.email == email))
+    assert user.last_active_at is None, "verifying an address is not using the product"
+
+    assert http.post("/auth/login", json={"email": email, "password": PASSWORD}).status_code == 200
+    session.flush()
+    session.refresh(user)
+    assert user.last_active_at is not None
+
+
 def test_verification_does_not_log_the_user_in(client):
     """A verification link travels through email and can be forwarded."""
     http, session, mailer = client

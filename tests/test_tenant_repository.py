@@ -11,7 +11,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from libs.corpus.repository import CorpusRepository
-from libs.db.models import CorpusJob, User, UserJobState, UserLabel
+from libs.db.models import User, UserJobState, UserLabel
 from libs.tenant.repository import APPLIED_SCORE, FEEDBACK_WEIGHT, SKIPPED_SCORE, TenantRepository
 
 pytestmark = pytest.mark.skipif(
@@ -68,13 +68,10 @@ def test_applied_at_is_set_once_and_never_moved(ctx):
     assert row.cover_built is True
 
 
-def test_applying_pins_the_job_against_retention(ctx):
-    """The one place a per-user action reaches into shared state, and the reason `pin()` exists."""
-    t, c, s = ctx
-    u, job_id = _user(s), _job(c, s)
-    t.record_applied(u.id, job_id)
-    s.flush()
-    assert s.get(CorpusJob, job_id).pinned is True
+# Applying used to also set `pinned` on the shared corpus row to keep retention off it. Retention
+# reads `applied_at` directly now, so there is nothing to assert here that
+# `tests/test_corpus_archive.py::test_a_posting_the_user_applied_to_is_never_archived` does not
+# assert against the mechanism that actually enforces it.
 
 
 def test_the_applied_log_stores_no_job_text(ctx):
@@ -321,94 +318,38 @@ def test_one_users_queue_is_never_visible_to_another(ctx):
     assert len(t.pending_jobs(bob.id)) == 2
 
 
-# ── G11: account lifecycle ────────────────────────────────────────────────────────────────────
+# ── account lifecycle: reported, never automatic (ROADMAP 6c) ─────────────────────────────────
 
-def test_an_engaged_telegram_user_is_never_marked_dormant(ctx):
-    """The reason G11's "no login in N days" was not implemented as written."""
+def test_no_mechanism_pauses_an_account_for_being_quiet(ctx):
+    """Removed 2026-08-11, and this fails if it comes back by another name.
+
+    `mark_dormant` paused an account after 30 quiet days and the login path restored `status` while
+    leaving `active` False — an account that reads as live and puts no keywords into the harvest
+    fold. The replacement is a number in the accounts list and an operator's judgement.
+    """
+    t, _, _s = ctx
+    assert not hasattr(t, "mark_dormant")
+    assert not hasattr(t, "reactivate")
+    assert not hasattr(t, "touch_activity")
+
+    from libs.db.models.user import USER_STATUSES
+    assert "dormant" not in USER_STATUSES
+
+
+def test_a_quiet_account_keeps_running_and_keeps_its_keywords(ctx):
+    """The behaviour that changed: quiet is no longer a reason to stop harvesting for somebody."""
     from datetime import UTC, datetime, timedelta
 
     t, _, s = ctx
-    engaged = _user(s)
-    engaged.status, engaged.active = "active", True
-    # Logged in long ago, but acted through Telegram yesterday.
-    engaged.last_active_at = datetime.now(UTC) - timedelta(days=1)
+    quiet = _user(s)
+    quiet.status, quiet.active = "active", True
+    quiet.last_active_at = datetime.now(UTC) - timedelta(days=45)
+    t.save_config(quiet.id, {"keywords": ["python"]})
     s.flush()
 
-    assert engaged.id not in t.mark_dormant(after_days=30)
-    s.flush()
-    assert engaged.status == "active"
-
-
-def test_an_abandoned_account_stops_consuming_budget(ctx):
-    """The cost G11 exists to stop: an abandoned account scraping LinkedIn on a paid proxy."""
-    from datetime import UTC, datetime, timedelta
-
-    t, _, s = ctx
-    abandoned = _user(s)
-    abandoned.status, abandoned.active = "active", True
-    abandoned.last_active_at = datetime.now(UTC) - timedelta(days=45)
-    t.save_config(abandoned.id, {"keywords": ["python"]})
-    s.flush()
-
-    assert abandoned.id in t.mark_dormant(after_days=30)
-    s.flush()
-    assert abandoned.status == "dormant"
-    assert abandoned.active is False
-    assert abandoned.id not in t.active_configs(), "a dormant user must leave the harvest fold"
-
-
-def test_a_signup_that_never_engaged_is_measured_from_creation(ctx):
-    """Otherwise a null `last_active_at` means "never dormant" and the account runs forever."""
-    from datetime import UTC, datetime, timedelta
-
-    t, _, s = ctx
-    never = _user(s)
-    never.status, never.active = "active", True
-    never.last_active_at = None
-    never.created_at = datetime.now(UTC) - timedelta(days=60)
-    s.flush()
-
-    assert never.id in t.mark_dormant(after_days=30)
-
-
-def test_any_activity_brings_a_dormant_account_straight_back(ctx):
-    """Reversal must be automatic."""
-    t, _, s = ctx
-    user = _user(s)
-    user.status, user.active = "dormant", False
-    s.flush()
-
-    assert t.reactivate(user.id) is True
-    s.flush()
-    assert user.status == "active"
-    assert user.active is True
-    assert user.last_active_at is not None
-
-
-def test_reactivation_never_un_suspends_a_suspended_account(ctx):
-    """`dormant` is a cost control; `suspended` is a decision. Activity must not undo a decision."""
-    t, _, s = ctx
-    suspended = _user(s)
-    suspended.status, suspended.active = "suspended", False
-    s.flush()
-
-    assert t.reactivate(suspended.id) is False
-    s.flush()
-    assert suspended.status == "suspended"
-
-
-def test_touching_activity_defers_dormancy(ctx):
-    from datetime import UTC, datetime, timedelta
-
-    t, _, s = ctx
-    user = _user(s)
-    user.status, user.active = "active", True
-    user.last_active_at = datetime.now(UTC) - timedelta(days=45)
-    s.flush()
-
-    t.touch_activity(user.id)
-    s.flush()
-    assert t.mark_dormant(after_days=30) == []
+    assert quiet.id in t.active_configs(), (
+        "45 days of silence must not remove an account from the harvest fold — an operator deletes "
+        "it deliberately or it keeps working")
 
 
 # ── G12: model artifact growth ────────────────────────────────────────────────────────────────

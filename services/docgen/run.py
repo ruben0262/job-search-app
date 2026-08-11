@@ -13,7 +13,6 @@ from dataclasses import dataclass
 from sqlalchemy import func, select
 
 from libs.contracts.profile import ProfileSchema
-from libs.corpus.repository import CorpusRepository
 from libs.db.models import CorpusJob, User, UserJobState, UserLabel
 from libs.obs import audit
 from libs.profiles import ProfileIncomplete
@@ -223,7 +222,8 @@ def _record(session, user_id: _uuid.UUID, job: CorpusJob) -> None:
     if state.applied_at is None:
         state.applied_at = func.now()
 
-    CorpusRepository(session).pin(job.id)
+    # No `pin()` any more: `applied_at` above IS the record that keeps this posting out of the
+    # archive, asked directly by `libs.corpus.archive` rather than copied to a flag.
     session.flush()
 
 

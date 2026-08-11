@@ -48,6 +48,8 @@ type AdminUser = {
   model_version: number | null;
   onboarded: boolean;
   is_admin: boolean;
+  /** Last sign-in or Telegram tap. Null for an account that has never done either. */
+  last_active_at: string | null;
 };
 
 /** One latency stage. */
@@ -256,6 +258,20 @@ function BinIcon() {
             stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
     </svg>
   );
+}
+
+/**
+ * How long since an account did anything, in the unit an operator judges on.
+ *
+ * A date makes the reader do the subtraction; "45 days" is the answer they arrived for. This is the
+ * whole of account lifecycle now — there is no automatic dormancy, so the only consequence of a
+ * large number here is a person deciding to delete the account.
+ */
+function lastActive(iso: string | null): string {
+  if (!iso) return "never";
+  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
+  if (days < 1) return "today";
+  return days === 1 ? "1 day" : `${days} days`;
 }
 
 export function AdminPage() {
@@ -690,6 +706,7 @@ export function AdminPage() {
             <th>Telegram</th>
             <th>Model</th>
             <th>Onboarded</th>
+            <th>Last active</th>
             <th>Access</th>
             <th />
           </tr>
@@ -706,6 +723,7 @@ export function AdminPage() {
               <td className="job-sub">{user.telegram}</td>
               <td className="num job-sub">{user.model_version ? `v${user.model_version}` : "—"}</td>
               <td className="job-sub">{user.onboarded ? "yes" : "no"}</td>
+              <td className="job-sub">{lastActive(user.last_active_at)}</td>
               {/* Both controls stop the click reaching the row, or granting access would also navigate. */}
               <td onClick={(event) => event.stopPropagation()}>
                 <label className="switch" title="Operator access">

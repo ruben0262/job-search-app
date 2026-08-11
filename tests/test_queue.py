@@ -268,16 +268,16 @@ def test_a_user_whose_bot_is_broken_is_not_enqueued(ctx):
     assert dispatch_due_notifications(ctx) == 0
 
 
-def test_a_dormant_user_is_not_enqueued(ctx):
-    """G11: an abandoned account must stop costing anything, including delivery attempts."""
-    user = _user(ctx, active=True, status="dormant", telegram_status="connected")
+def test_a_suspended_user_is_not_enqueued(ctx):
+    """A stopped account must stop costing anything, including delivery attempts."""
+    user = _user(ctx, active=True, status="suspended", telegram_status="connected")
     _waiting_match(ctx, user)
     assert dispatch_due_notifications(ctx) == 0
 
 
 def test_an_unscheduled_account_still_obeys_every_other_gate(ctx):
     """Reading NULL as "due" must not become "due regardless of anything else"."""
-    _user(ctx, active=True, status="dormant", telegram_status="connected")
+    _user(ctx, active=True, status="suspended", telegram_status="connected")
     _user(ctx, active=True, status="active", telegram_status="broken")
     _user(ctx, active=False, status="active", telegram_status="connected")
 

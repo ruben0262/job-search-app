@@ -198,6 +198,30 @@ def test_a_retrain_supersedes_the_previous_artifact(ctx, tmp_path):
     assert active == [second] == [2]
 
 
+def test_retraining_deletes_the_artifacts_it_supersedes_from_disk(ctx, tmp_path):
+    """**`prune_model_artifacts` had no caller at all** (ROADMAP 6bd), and it does not unlink.
+
+    Two halves of one defect. Nothing invoked it, so every version ever trained stayed on the box —
+    `v1`–`v4` for one account, 34 MB in a fortnight, growing per retrain forever. And it deletes the
+    row while only *returning* the path, so a caller that ignores the return value frees no disk at
+    all. This asserts the files are gone, not that a function was called.
+    """
+    user = _user(ctx)
+    _labelled(ctx, user, 30)
+
+    for _ in range(3):
+        train_user(ctx, user.id, artifact_dir=tmp_path, fit=_fit)
+        ctx.flush()
+        _labelled(ctx, user, 10)
+
+    on_disk = sorted(p.name for p in tmp_path.glob("*.joblib"))
+    assert len(on_disk) == 2, (
+        f"three retrains left {len(on_disk)} artifact(s) on disk: {on_disk} — the disk grows per "
+        "retrain forever")
+    assert on_disk == [f"{user.id}.v2.joblib", f"{user.id}.v3.joblib"], (
+        "the current artifact and one previous, so a rollback is still possible")
+
+
 def test_a_trivial_change_does_not_earn_a_retrain(ctx, tmp_path):
     """The queue collapses a burst into one job; this is the other half."""
     user = _user(ctx)

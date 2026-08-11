@@ -77,14 +77,10 @@ def test_a_row_with_no_description_waits_at_describe_not_at_embed(db):
     assert stage(report, "embed")["waiting"] == 0
 
 
-def test_a_trimmed_row_is_not_a_backlog(db):
-    """Retention drops the description and vector after 90 days, deliberately."""
-    from libs.ops.pipeline import pipeline
-
-    _job(db, trimmed_at=datetime.now(UTC))
-    db.flush()
-
-    assert stage(pipeline(db), "describe")["waiting"] == 0
+# A trimmed row used to be the case here: retention nulled a description in place, leaving a row
+# that read as waiting to be described forever. Retention deletes the row now, so there is no such
+# state to exclude — the backlog cannot count what is not there. The closed-posting case below is
+# the one that still needs asserting, because a closed row does stay in the corpus.
 
 
 def test_the_verdict_is_about_age_not_size(db):

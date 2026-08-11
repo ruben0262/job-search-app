@@ -280,7 +280,6 @@ def _session(monkeypatch, *, profile=PROFILE, chat_id="4242", description="Backe
                           "telegram_chat_id": chat_id})()
     job = FakeJob(description=description)
     state = type("S", (), {"score": 88.0, "applied_at": None})()
-    pinned: list[int] = []
 
     class Session:
         def scalar(self, _statement):
@@ -301,9 +300,6 @@ def _session(monkeypatch, *, profile=PROFILE, chat_id="4242", description="Backe
         def flush(self):
             pass
 
-    monkeypatch.setattr(run, "CorpusRepository",
-                        lambda _s: type("R", (), {"pin": lambda _self, job_id: pinned.append(job_id)})())
-
     # The profile is files now (`libs/profiles`), not a schema render.
     class Files:
         def __init__(self, *_args):
@@ -319,12 +315,12 @@ def _session(monkeypatch, *, profile=PROFILE, chat_id="4242", description="Backe
 
     monkeypatch.setattr(run, "ProfileFiles", Files)
     # `func.now()` is a SQL expression, not a value; nothing here evaluates it.
-    return Session(), user, job, state, pinned
+    return Session(), user, job, state
 
 
 def test_a_build_delivers_the_pdf_to_the_personal_chat(monkeypatch, fake_chrome, tmp_path):
     """Never a feed channel."""
-    session, user, _job, _state, _pinned = _session(monkeypatch)
+    session, user, _job, _state = _session(monkeypatch)
     send = Recorder()
 
     result = run.run_build(session, user.id, 7, client=FakeClient(),
@@ -338,20 +334,23 @@ def test_a_build_delivers_the_pdf_to_the_personal_chat(monkeypatch, fake_chrome,
     assert result.pages == 1 and result.calls == 1
 
 
-def test_the_build_records_that_the_user_applied_and_pins_the_posting(monkeypatch, fake_chrome,
-                                                                     tmp_path):
-    """An ephemeral document needs a durable record."""
-    session, user, _job, state, pinned = _session(monkeypatch)
+def test_the_build_records_that_the_user_applied(monkeypatch, fake_chrome, tmp_path):
+    """An ephemeral document needs a durable record.
+
+    `applied_at` is the whole of it now. It used to also set a `pinned` flag on the corpus row to
+    keep retention off it; retention reads `applied_at` itself, so the flag was a copy that could
+    disagree with the thing it copied (ROADMAP 6bd).
+    """
+    session, user, _job, state = _session(monkeypatch)
 
     run.run_build(session, user.id, 7, client=FakeClient(), send_document=Recorder(),
                   token="t", workdir=tmp_path)
 
     assert state.applied_at is not None
-    assert pinned == [7]
 
 
 def test_a_three_page_cv_is_revised_once(monkeypatch, fake_chrome, tmp_path):
-    session, user, _job, _state, _pinned = _session(monkeypatch)
+    session, user, _job, _state = _session(monkeypatch)
     fake_chrome["pages"] = 3
     client = FakeClient(TAILORED, TAILORED)
 
@@ -364,7 +363,7 @@ def test_a_three_page_cv_is_revised_once(monkeypatch, fake_chrome, tmp_path):
 
 def test_a_cv_that_already_fits_is_not_revised(monkeypatch, fake_chrome, tmp_path):
     """A second call is the user's money."""
-    session, user, _job, _state, _pinned = _session(monkeypatch)
+    session, user, _job, _state = _session(monkeypatch)
     client = FakeClient()
 
     result = run.run_build(session, user.id, 7, client=client, send_document=Recorder(),
@@ -375,7 +374,7 @@ def test_a_cv_that_already_fits_is_not_revised(monkeypatch, fake_chrome, tmp_pat
 
 def test_a_cv_with_hidden_content_is_never_delivered(monkeypatch, fake_chrome, tmp_path):
     """Fail closed."""
-    session, user, _job, state, _pinned = _session(monkeypatch)
+    session, user, _job, state = _session(monkeypatch)
     # Zero-width characters inside a *tag name* survive the sanitiser's attribute-level cleanup.
     sneaky = TAILORED.replace('<p class="profile">',
                               f'<p class="profile" data-x="{ZERO_WIDTH}">')
@@ -393,7 +392,7 @@ def test_a_cv_with_hidden_content_is_never_delivered(monkeypatch, fake_chrome, t
 def test_an_account_with_no_completed_profile_refuses_before_spending_a_call(monkeypatch,
                                                                             fake_chrome, tmp_path):
     """Setup was never finished."""
-    session, user, _job, _state, _pinned = _session(monkeypatch, profile_files=None)
+    session, user, _job, _state = _session(monkeypatch, profile_files=None)
     client = FakeClient()
 
     with pytest.raises(run.NotBuildable):
@@ -405,7 +404,7 @@ def test_an_account_with_no_completed_profile_refuses_before_spending_a_call(mon
 
 def test_an_account_with_no_base_cv_refuses(monkeypatch, fake_chrome, tmp_path):
     """The base CV is the document the tailoring prompt edits."""
-    session, user, _job, _state, _pinned = _session(
+    session, user, _job, _state = _session(
         monkeypatch, profile_files={"grounding": "# Facts", "base_cv.html": ""})
 
     with pytest.raises(run.NotBuildable):
@@ -414,7 +413,7 @@ def test_an_account_with_no_base_cv_refuses(monkeypatch, fake_chrome, tmp_path):
 
 
 def test_an_account_with_no_telegram_chat_refuses(monkeypatch, fake_chrome, tmp_path):
-    session, user, _job, _state, _pinned = _session(monkeypatch, chat_id=None)
+    session, user, _job, _state = _session(monkeypatch, chat_id=None)
 
     with pytest.raises(run.NotBuildable):
         run.run_build(session, user.id, 7, client=FakeClient(), send_document=Recorder(),
@@ -423,7 +422,7 @@ def test_an_account_with_no_telegram_chat_refuses(monkeypatch, fake_chrome, tmp_
 
 def test_a_posting_with_no_description_is_refused(monkeypatch, fake_chrome, tmp_path):
     """A CV tailored to a job title is the generic CV the user already has."""
-    session, user, _job, _state, _pinned = _session(monkeypatch, description="")
+    session, user, _job, _state = _session(monkeypatch, description="")
 
     with pytest.raises(run.NotBuildable):
         run.run_build(session, user.id, 7, client=FakeClient(), send_document=Recorder(),
@@ -432,7 +431,7 @@ def test_a_posting_with_no_description_is_refused(monkeypatch, fake_chrome, tmp_
 
 def test_the_documents_do_not_outlive_the_build(monkeypatch, fake_chrome, tmp_path):
     """D9, and the reason this service needs no volume: a scratch directory for the length of one upload."""
-    session, user, _job, _state, _pinned = _session(monkeypatch)
+    session, user, _job, _state = _session(monkeypatch)
     scratch = tmp_path / "build"
     scratch.mkdir()
 
@@ -444,7 +443,7 @@ def test_the_documents_do_not_outlive_the_build(monkeypatch, fake_chrome, tmp_pa
 
 def test_the_documents_do_not_survive_a_failure_either(monkeypatch, fake_chrome, tmp_path):
     """The half-written CV of a crashed build is exactly the file that must not stay on disk."""
-    session, user, _job, _state, _pinned = _session(monkeypatch)
+    session, user, _job, _state = _session(monkeypatch)
     scratch = tmp_path / "build"
     scratch.mkdir()
 
@@ -525,7 +524,7 @@ def test_a_cover_letter_is_not_judged_by_the_cvs_checklist(tmp_path):
 
 def test_a_cv_that_fits_is_rendered_once(monkeypatch, fake_chrome, tmp_path):
     """Chrome is ~6s a launch on the box, and the old final compile re-rendered the probe's bytes."""
-    session, user, _job, _state, _pinned = _session(monkeypatch)
+    session, user, _job, _state = _session(monkeypatch)
 
     result = run.run_build(session, user.id, 7, client=FakeClient(),
                            send_document=Recorder(), token="t", workdir=tmp_path)
@@ -538,7 +537,7 @@ def test_a_cv_that_fits_is_rendered_once(monkeypatch, fake_chrome, tmp_path):
 def test_a_cv_that_came_back_too_long_is_rendered_twice_and_says_so(monkeypatch, fake_chrome,
                                                                     tmp_path):
     """The revision loop is unchanged — but each one costs a second call and a second render."""
-    session, user, _job, _state, _pinned = _session(monkeypatch)
+    session, user, _job, _state = _session(monkeypatch)
     fake_chrome["pages"] = 4
 
     result = run.run_build(session, user.id, 7, client=FakeClient(),
@@ -551,7 +550,7 @@ def test_a_cv_that_came_back_too_long_is_rendered_twice_and_says_so(monkeypatch,
 
 def test_the_delivered_file_is_never_named_after_the_retry(monkeypatch, fake_chrome, tmp_path):
     """Telegram shows the filename to the user."""
-    session, user, _job, _state, _pinned = _session(monkeypatch)
+    session, user, _job, _state = _session(monkeypatch)
     fake_chrome["pages"] = 4
     send = Recorder()
 
@@ -571,7 +570,7 @@ def test_a_document_that_fails_its_checks_never_reaches_chrome(monkeypatch, fake
     strip worked, so the two agreeing is the normal case — this forces the disagreement to assert
     the ordering: the scan runs first, and a document that fails it is refused before any render.
     """
-    session, user, _job, _state, _pinned = _session(monkeypatch)
+    session, user, _job, _state = _session(monkeypatch)
     monkeypatch.setattr(run.build, "scan_hidden", lambda _html: ["display:none in the header"])
 
     with pytest.raises(run.NotBuildable, match="hidden content"):

@@ -36,7 +36,6 @@ def rating_pool(session: Session, user_id: _uuid.UUID, *, threshold: float = DEF
                # One column covers "skipped" and "dismissed": both mean the user has answered about this job.
                UserJobState.dismissed_at.is_(None),
                UserJobState.job_id.notin_(answered),
-               CorpusJob.trimmed_at.is_(None),
                func.length(func.coalesce(CorpusJob.description, "")) >= MIN_DESCRIPTION)
         .order_by(func.abs(UserJobState.score - threshold))
         .limit(limit)).all())

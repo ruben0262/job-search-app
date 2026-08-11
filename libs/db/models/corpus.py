@@ -99,9 +99,10 @@ class CorpusJob(Base):
     last_seen_at: Mapped[timestamptz] = mapped_column(
         server_default=func.clock_timestamp())
 
-    # Set when any user acts on the row (applied, built a CV, labelled).
-    pinned: Mapped[bool] = mapped_column(Boolean, default=False)
-    trimmed_at: Mapped[timestamptz | None]
+    # `pinned` and `trimmed_at` were dropped 2026-08-11 with the mechanism that used them. Retention
+    # now archives the whole row and deletes it (`libs.corpus.archive`), and it asks `user_labels`
+    # and `user_job_state` directly whether a row may leave — a flag two of the three label writers
+    # never set was the second source of truth, not the answer.
 
     schema_version: Mapped[int] = mapped_column(SmallInteger, default=1)
 
@@ -123,9 +124,9 @@ class CorpusJob(Base):
         Index("ix_corpus_open", "id", postgresql_where=text("closed_at IS NULL")),
         Index("ix_corpus_unembedded", "id",
               postgresql_where=text("embedding IS NULL AND description IS NOT NULL")),
-        # Drives the retention sweep.
-        Index("ix_corpus_trim_candidates", "first_seen_at",
-              postgresql_where=text("pinned = false AND trimmed_at IS NULL")),
+        # Drives retention: the archive pass reads oldest-first, so it needs `first_seen_at` ordered
+        # without a partial predicate — what may leave is now decided by a join, not by a flag.
+        Index("ix_corpus_first_seen", "first_seen_at"),
         CheckConstraint(
             "(embedding IS NULL) OR (text_sha256 IS NOT NULL AND embedding_dim IS NOT NULL)",
             name="embedding_has_provenance"),

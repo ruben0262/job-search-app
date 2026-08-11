@@ -67,7 +67,7 @@ def record(session: Session, user_id: _uuid.UUID, job_id: int, action: str, *,
                       "profile_version": user.profile_version,
                       "profile_generation": user.profile_generation}))
 
-    # Any action is engagement, and engagement is what keeps an account out of `dormant`.
+    # Any action is engagement, and engagement is what the accounts list reports.
     user.last_active_at = func.now()
     session.flush()
 

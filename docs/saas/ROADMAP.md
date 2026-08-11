@@ -697,12 +697,15 @@ neither of them answers "is it up" from outside.
    receiving jobs on 2026-08-03, which is the first time anyone but the founder has had a card to
    tap, so this is finally testable rather than blocked.
 
-### 6c — the two sweeps that never run
+### 6c — the two sweeps that never run ✅ **done 2026-08-11**
 
-`mark_dormant` and `prune_model_artifacts` are implemented, tested, and called by nothing. Dormant
-accounts keep consuming harvest budget and their own LinkedIn tier; every model artifact ever
-trained is still on disk. Both want a caller on a schedule — a small unit, or a step in an existing
-timer.
+`mark_dormant` and `prune_model_artifacts` were implemented, tested, and called by nothing.
+
+Resolved as part of **6bd**, and not by giving both a caller as this entry assumed:
+`prune_model_artifacts` got one (at the end of `train_user`, with the caller unlinking the files it
+only ever returned), and **`mark_dormant` was deleted** — an operator reads `last_active_at` in the
+accounts list and deletes the account. See 6bd for the incomplete-reactivation bug that removal took
+out with it.
 
 ### 6d — the cheap operational debts
 
@@ -1110,6 +1113,50 @@ two weeks.
 **Sequencing note:** the two easy drains can ship without answering 1–3, and should, because they
 are the ones with an existing stated intent to enforce.
 
+✅ **Closed 2026-08-11, and two of the three "drains" turned out to be the wrong mechanism.**
+
+The owner's decisions: **retention is 30 days**; a row **leaves whole and is archived**, never nulled
+in place; `mark_dormant` is **deleted**, not wired, and replaced by a last-active column an operator
+reads; re-ingestion of an archived posting is **accepted**.
+
+| what | resolution |
+|---|---|
+| `corpus` | `libs/corpus/archive.py` — write to a gzipped JSONL archive, then delete. Runs on the harvest tick, 1,000 rows a pass, no new timer |
+| model artifacts | pruned at the end of `train_user`, with the **caller unlinking the files** — the repository only ever returned the paths |
+| the orphaned 24 MB | `deploy/scripts/prune_orphaned_artifacts.py`, dry-run by default. Unreachable by the pruner because the account's rows were CASCADE-deleted |
+| dormancy | deleted entirely; `last_active_at` reported in the accounts list beside the delete control |
+| `user_job_state` | drained by the same pass, one rule: a row survives while its posting does, or because it records what that account's own user *did* |
+
+**`user_job_state` needed a second half, and it is the interesting one.** Deleting a posting takes its
+state rows with it, which handles most of the table. But a posting one account labelled stays forever —
+correctly — and every *other* account's score row against it stayed too, with nothing that would ever
+remove it. That is growth in **accounts × kept postings**, not in the retention window, and it is why
+88,041 rows existed for two accounts. `forget_stale_state` removes those; a score is reproducible from
+the posting and the model, so unlike a posting there is nothing to archive. The test asserts the
+invariant rather than a count: after a pass, no row is both past the window and recording nothing.
+
+**Measured, per rule 4**: retention's "does any account have a label on this posting" is a lookup by
+`job_id` alone, and `job_id` is the second column of `user_labels`' primary key, so the PK cannot serve
+it. On a scratch database at 50,000 postings / 100,000 state rows / 2,000 labels, adding
+`ix_user_labels_job` took the candidate query from **21.2 ms to 10.6 ms** and turned a sequential scan
+of every label into an index-only scan.
+
+**Two findings worth keeping, because both were invisible and neither would have raised:**
+
+1. **`trim_cold` was silently destroying training sets.** The trainer joins `user_labels` to the
+   corpus and requires `embedding IS NOT NULL`. Nulling the embedding therefore removed that label
+   from every future retrain while leaving the label row in place — a smaller training set and a
+   worse model, with nothing to see. Only harmless because it had never run.
+2. **`pinned` did not mean what it said.** It was supposed to mean "labelled or acted on", and two of
+   the three label writers never set it — including the bulk labeller that produces most of every
+   training set. The replacement asks `user_labels` and `user_job_state` with `NOT EXISTS`, so the
+   answer is derived rather than copied. **This is §5's defect in its purest form**: the flag and the
+   thing it described disagreed, nothing errored, and the enforced copy was not the visible one.
+
+**And the bug deleting `mark_dormant` removed**: it set `status='dormant', active=False`, while the
+login path restored only `status`. `active_configs()` requires both, so a returning user would have
+looked active and harvested nothing, forever. Unreachable only because the sweep had no caller.
+
 ### 6az — the ATS backfill doubled the cycle time (added 2026-08-10)
 
 `f8da2a1` taught the harvester to read company boards out of posting URLs it already stores, and a
@@ -1149,6 +1196,13 @@ enough that 2.9% is a real feed rather than nothing.
 slower embedder would put a cycle over 11 minutes, and the failure is silent — stages behind the
 overrun are skipped, not retried. Worth a warning when a cycle exceeds some fraction of its budget,
 rather than discovering it from a corpus that stopped growing.
+
+✅ **Closed 2026-08-11.** `HARVEST_CYCLE_WARN_FRACTION = 0.75` in `libs.settings`, read by
+`run_cycle`, which now times *itself* and not only the embedder it was already handing the deadline
+to. Set from the three cycles above: 8.4 min (76%) warns, 5.6 min (51%) and 30.7 s (5%) do not. A
+fraction of the existing budget rather than a duration of its own, so it cannot drift from it (§6).
+Still open by design: the budget remains a module constant with no operator control, on the grounds
+that nothing has yet needed to change it on a live box.
 
 ### 6ay — the ATS company list was a closed loop ✅ **done 2026-08-10** (`f8da2a1`)
 
@@ -2188,6 +2242,24 @@ adds a dependency this platform has so far avoided. The cost difference at 3 GB 
 that "simplest" probably wins for now and the interface should make the other swap-in-able.
 
 Wants a caller on a schedule, like 6c. Not urgent at 136 MB; not something to discover at 30 GB.
+
+✅ **Closed 2026-08-11 as part of 6bd — and the owner overruled the design above in one respect.**
+
+This entry proposed keeping the ~258-byte row so dedup still works and moving only the text. The
+owner's instruction was simpler: **take the row out entirely and archive it.** "Losing data once we
+have it is illogical" applies to the row as much as the text, and half a row in the hot table is
+still a second representation of the same posting.
+
+So the re-ingestion this entry was protecting against is **accepted** rather than prevented: an
+archived posting rediscovered later re-enters as new and is embedded again. At a 30-day window no
+source's freshness setting reaches back that far, so it is unlikely rather than impossible, and the
+cost when it happens is one embed.
+
+The cold-storage question is answered the cheapest way that loses nothing: **a gzipped JSONL file per
+day** on the same box, appended to, under `ARCHIVE_DIR`. No second table, no object storage, no new
+dependency — and every future experiment this entry lists (a better field classifier, a salary
+parser, an A/B against old postings) can read it with `gzip.open`. `libs/corpus/archive.py` exposes
+`read_archive` for exactly that, and a test asserts what was written comes back.
 
 ### 6ac — LinkedIn's card signals, measured against live pages (added 2026-08-04)
 

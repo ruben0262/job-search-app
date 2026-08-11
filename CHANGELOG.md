@@ -14,6 +14,120 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-08-11 (late) — the four sinks, closed
+
+ROADMAP **6bd** and **6c**. Three mechanisms existed to drain what grows, all three were implemented
+and tested, and **none of them had a caller**. Two of the three turned out to be the wrong mechanism
+rather than a missing call, which is why this is a replacement and not a wiring job.
+
+**Retention archives a posting whole; it no longer nulls it in place.** `trim_cold` set
+`description`, `embedding` and the embedding metadata to NULL and kept the row. The owner's
+objection — losing data we already have is illogical — was right, and the cost was worse than it
+looked: `services/trainer/train.py` rebuilds every training set by joining `user_labels` back to the
+corpus and reading the embedding, `WHERE embedding IS NOT NULL`. **A trimmed row therefore left every
+future retrain silently** — no error, just a smaller training set and a worse model. Nothing had ever
+been trimmed on any box, which is the only reason this never happened.
+
+`libs/corpus/archive.py` replaces it: rows past `CORPUS_RETENTION_DAYS` (**30**, set by the owner;
+the constant it replaces said 90) are written to an append-only gzipped JSONL file and then deleted.
+**Write, then delete** — if the write raises, nothing is removed and the next pass retries, so a full
+disk cannot cost a posting. Columns come from the mapper rather than a hand-written list, so a new
+column cannot be dropped from the archive unnoticed. The one exclusion is `embedding`: the vectors
+are the bulk of the 386 MB and are reproducible from the description, which is kept.
+
+**`pinned` is gone, and it is the more interesting removal.** It was a denormalised copy of "somebody
+labelled or acted on this", and **two of the three places that write a label never set it** —
+`libs/feedback/actions.py` (a Telegram tap, weight 5×) and `services/labeller/label.py` (the bulk
+labeller, most of every training set). So the majority of every user's training data sat on rows the
+retention code considered disposable. The archive asks `user_labels` and `user_job_state` directly
+with `NOT EXISTS`. A derived answer cannot drift from what it describes; a copy always can (§5).
+`trimmed_at` went with it — nothing would have written it again, and a column with no producer fails
+`tests/test_columns_have_producers.py`, which is what forced the cleanup to be complete.
+
+Runs on the harvest tick, after the follow-up enqueue, bounded at 1,000 rows a pass. **No new
+timer**: the corpus is what grows, that cycle already touches it, and a second clock is a second
+outage (§6). A failure there is caught and logged at ERROR rather than losing the cycle's intake.
+
+**`prune_model_artifacts` was two defects, not one.** It had no caller, *and* it deletes the `models`
+rows while only returning the paths — so even called, it frees no disk. Now invoked at the end of
+`train_user`, the only thing that creates artifacts and so the only thing that can know one is
+surplus, with the caller doing the unlinking. Four versions and 34 MB had accumulated for one account
+in a fortnight, growing per retrain forever. The new test asserts **two files on disk after three
+retrains**; it fails with three against the previous code.
+
+The 24 MB belonging to a **deleted** account cannot be reached by that function at all — `user_id` is
+`ON DELETE CASCADE`, so the rows went and the files stayed, leaving nothing to prune from. That is a
+one-off shape, so it gets `deploy/scripts/prune_orphaned_artifacts.py`, dry-run by default.
+
+**`mark_dormant` was deleted rather than wired**, on the owner's instruction, and the latent bug it
+was hiding is the argument for it: it set `status='dormant', active=False`, and the login path
+restored only `status`. A returning user would have read as active while `active_configs()` — which
+requires both — silently left them out of every harvest. A permanently silent account, unreachable
+today only because nothing ever called the sweep. Gone with it: `reactivate()` (a duplicate of the
+inline login flip), `touch_activity()` (a third writer of a column two live paths already write),
+`DORMANT_AFTER_DAYS`, and the `dormant` status itself, with a migration for the CHECK constraint.
+
+What replaces it is a number and a person: `last_active_at` is now in the `/admin/users` payload and
+rendered as "45 days" in the accounts list, beside the delete control that already existed. Nothing
+acts on it. Four tests that used `status="dormant"` as shorthand for "not eligible" now say
+`suspended`, which is what actually gates them.
+
+**`user_job_state` is drained by the same pass, under one rule**: a row survives while its posting
+does, or because it records something that account's own user did — applied, built a cover letter,
+dismissed, or labelled. Everything else (`score`, `scored_at`, `notified_at`, `retired_at`) is
+working-out the platform can reproduce, so nothing is archived here; there is nothing to lose.
+
+The half that archiving a posting does **not** cover is the one that made this a sink. A posting one
+account labelled stays in the corpus permanently and correctly — and every *other* account's score row
+for it stayed too, forever, with no reason to. That is growth in accounts × kept postings rather than
+in the retention window, and it is how the table reached 88,041 rows for two accounts in a fortnight.
+`forget_stale_state` removes exactly those. The invariant is asserted as a relationship: after a pass,
+no row exists that is both past the window and records nothing.
+
+The 30,442 `score IS NULL` rows are unaffected as tombstones inside the window — they are
+`score_lane.skip()`'s record that the filter already judged a posting, and a test pins that they do
+**not** keep a posting alive.
+
+**One index, with the number that justifies it.** Retention asks "does *any* account have a label on
+this posting", a lookup by `job_id` alone — and `job_id` is the *second* column of `user_labels`'
+primary key, so the PK cannot serve it. Measured on a scratch database loaded to 50,000 postings,
+100,000 state rows and 2,000 labels: **21.2 ms → 10.6 ms**, with the plan turning a sequential scan of
+every label into an index-only scan. `ix_user_labels_job` in the same migration.
+
+**Accepted risk, confirmed by the owner:** an archived posting that gets re-discovered re-enters as
+new and is embedded again. At 30 days no source's freshness window reaches back that far, so it is
+unlikely rather than prevented.
+
+## 2026-08-11
+
+**A harvest cycle now says when it is close to its budget, while the margin still exists.** The
+cycle already had a deadline (`HARVEST_CYCLE_BUDGET_SECONDS`, 11 minutes), but it was only handed to
+`embed_all_pending` — nothing compared the *cycle's* own duration against it. Past the budget
+`harvester.service`'s `TimeoutStartSec` kills the run with the stages behind the overrun skipped
+rather than retried, and nothing raises, so the failure is a corpus that quietly stops growing.
+
+**Why now, and the numbers it was set from** (ROADMAP 6az). The ATS backfill took the polled board
+list from 337 to 641 in one step and the cycle went from 30.7 seconds to a peak of 8.4 minutes —
+76% of the budget, 2.6 minutes of margin, and the only evidence any of it happened was that the
+corpus grew. The cycle after it fell to 5.6 minutes (51%). `HARVEST_CYCLE_WARN_FRACTION = 0.75` is
+the value that reports the one cycle worth knowing about and stays silent for both routine ones; a
+threshold that fires on the ordinary case is a line an operator learns to skip past, which is the
+same as no line.
+
+**Not a second clock** (CLAUDE.md §6). The fraction multiplies the budget that is already there
+rather than naming a duration of its own, and both live in `libs.settings` beside each other, so
+raising the budget raises the warning with it. It is a module constant and not a platform setting on
+purpose: the budget it is a share of is not operator-facing either, and making the alarm tunable
+while the thing it watches is not would be the two-sources-of-truth shape §5 is about. If the budget
+is ever exposed, this goes with it.
+
+Two tests, and the first fails against the code that made it necessary: a cycle at the measured 8.4
+minutes warns and carries its own duration, and a 30.7-second cycle does not.
+
+**`out/` is ignored.** `3dbe1b5` committed a rendered CV by accident. Generated documents are one
+real person's contact details and whole career, and regenerable from the profile that produced
+them — the same two reasons `scripts/coverlab/` is ignored.
+
 ## 2026-08-09 (late)
 
 **The cover prompt no longer receives a text extract of the CV.** Approved explicitly by the owner,

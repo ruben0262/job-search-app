@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from libs.contracts.embedder import EmbedderClient, EmbedderVersion
 from libs.db.models import CorpusJob, User
 from libs.tenant.repository import TenantRepository
+from services.harvester import cycle
 from services.harvester.cycle import harvest_lock, run_cycle
 from services.harvester.sources import JobLink
 
@@ -196,17 +197,17 @@ def test_a_source_the_operator_has_not_tuned_still_gets_a_ceiling(ctx):
 
 # ── who is in the fold ────────────────────────────────────────────────────────────────────────
 
-def test_a_dormant_user_costs_nothing(ctx):
-    """G11's whole point: an abandoned account must stop consuming harvest budget."""
+def test_a_switched_off_user_costs_nothing(ctx):
+    """An account an operator has stopped must stop consuming harvest budget."""
     s = ctx
     active = _active_user(s, keywords=["activeterm"])
-    dormant = _active_user(s, keywords=["dormantterm"])
-    dormant.status, dormant.active = "dormant", False
+    stopped = _active_user(s, keywords=["stoppedterm"])
+    stopped.status, stopped.active = "suspended", False
     s.flush()
 
     report, _ = run_cycle(s, source_configs=_sources(himalayas={}), run_source=lambda *a: [])
     assert report.queries_planned >= 1
-    assert active.id and dormant.id
+    assert active.id and stopped.id
 
 
 def test_an_unverified_signup_consumes_no_harvest_budget(ctx):
@@ -241,6 +242,49 @@ def test_one_dead_source_cannot_sink_the_cycle(ctx):
 
     assert "himalayas" in report.source_failures
     assert report.new_jobs == 1, "the healthy source still delivered"
+
+
+# ── the budget ────────────────────────────────────────────────────────────────────────────────
+
+def _cycle_lasting(monkeypatch, seconds: float) -> None:
+    """Make the cycle's own clock report `seconds` between its first and last read."""
+    reads = iter([0.0])
+    monkeypatch.setattr(cycle, "monotonic", lambda: next(reads, seconds))
+
+
+def test_a_cycle_close_to_its_budget_says_so_while_there_is_still_margin(ctx, monkeypatch, caplog):
+    """A cycle that overruns is killed with the stages behind it skipped, and nothing says why.
+
+    The margin has to be reported while it still exists. 8.4 minutes of an 11-minute budget is the
+    peak that was actually measured on 2026-08-10, and the only evidence it happened was a corpus
+    that grew.
+    """
+    s = ctx
+    _active_user(s)
+    _cycle_lasting(monkeypatch, 8.4 * 60)
+
+    with caplog.at_level("WARNING", logger="services.harvester.cycle"):
+        run_cycle(s, source_configs=_sources(himalayas={}),
+                  run_source=lambda source, cfg, repo: [_link()])
+
+    warned = [r.getMessage() for r in caplog.records
+              if r.levelname == "WARNING" and "budget" in r.getMessage()]
+    assert warned, "a cycle at 76% of its budget passed without a word"
+    assert "8.4" in warned[0], f"the warning has to carry how long it took: {warned[0]}"
+
+
+def test_an_ordinary_cycle_is_not_warned_about(ctx, monkeypatch, caplog):
+    """A warning that fires on the routine case is one an operator learns to skip past."""
+    s = ctx
+    _active_user(s)
+    _cycle_lasting(monkeypatch, 30.7)
+
+    with caplog.at_level("WARNING", logger="services.harvester.cycle"):
+        run_cycle(s, source_configs=_sources(himalayas={}),
+                  run_source=lambda source, cfg, repo: [_link()])
+
+    assert not [r for r in caplog.records
+                if r.levelname == "WARNING" and "budget" in r.getMessage()]
 
 
 # ── overlap ───────────────────────────────────────────────────────────────────────────────────
@@ -479,14 +523,14 @@ def test_no_locating_sources_is_not_the_same_as_not_saying(ctx):
     assert len(build_query_set(config, sources=("linkedin",), locating_sources=())) == 1
 
 
-def test_a_dormant_users_keywords_leave_the_filter(ctx):
+def test_a_switched_off_users_keywords_leave_the_filter(ctx):
     """Their terms should stop widening the harvest the moment they stop costing anything."""
     from services.harvester.source_config import build_source_configs
 
     s = ctx
     _active_user(s, keywords=["stillhere"])
     leaving = _active_user(s, keywords=["goneaway"])
-    leaving.status, leaving.active = "dormant", False
+    leaving.status, leaving.active = "suspended", False
     s.flush()
 
     built = build_source_configs(TenantRepository(s).active_configs(), env={})
