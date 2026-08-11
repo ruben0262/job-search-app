@@ -337,3 +337,29 @@ def test_trimming_does_not_soften_the_checks_that_catch_a_wrong_shape():
 
     with _pytest.raises(ValidationError):
         ProfileSchema.model_validate({"identity": {}})
+
+
+def test_both_capture_calls_together_ask_for_every_field_in_the_schema():
+    """A field in the schema that neither call asks for comes back empty, forever, silently.
+
+    Capture is two calls over the same documents because one grammar is too large, and each is given
+    a subset of the top-level fields. The split is an editorial decision — career transcription
+    versus judgement — so it stays hand-written. What must not be hand-written is the *coverage*: add
+    a field to `ProfileSchema`, forget these tuples, and the model is never asked for it.
+
+    `profile.py` still carries the comment "The field that was silently coming back empty" above
+    `experience`, which is what that failure looked like the last time.
+    """
+    from libs.contracts.profile import ProfileSchema
+    from services.capture.prompt import CAREER_FIELDS, JUDGEMENT_FIELDS
+
+    # `confirmed` is deliberately withheld from the model — it is the flag only a human sets.
+    asked = set(CAREER_FIELDS) | set(JUDGEMENT_FIELDS)
+    declared = set(ProfileSchema.model_fields) - {"confirmed"}
+
+    assert declared - asked == set(), (
+        f"these schema fields are asked for by neither capture call, so they will always be empty: "
+        f"{sorted(declared - asked)}")
+    assert asked - declared == set(), (
+        f"these are asked for and are not in the schema, so the reply is discarded: "
+        f"{sorted(asked - declared)}")

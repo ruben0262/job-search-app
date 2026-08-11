@@ -235,7 +235,3 @@ def _migrate_locations(section: dict) -> dict:
             moved.append(replacement)
     return {**section, "locations": moved}
 
-
-def json_schema() -> dict:
-    """The JSON Schema the frontend generates its form and TypeScript types from."""
-    return UserConfigSchema.model_json_schema()

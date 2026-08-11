@@ -10,7 +10,6 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from libs.contracts.profile import ProfileSchema
-from libs.contracts.profile import json_schema as profile_schema
 from libs.db.models import QueueJob, User, UserDocument, UserLabel
 from libs.labels import labelling_state
 from libs.obs import audit
@@ -114,12 +113,11 @@ def start(db: Session = Depends(get_db), user_id: _uuid.UUID = Depends(current_u
 
 @router.get("/draft")
 def draft(db: Session = Depends(get_db), user_id: _uuid.UUID = Depends(current_user)) -> dict:
-    """The proposal, plus the schema the confirmation form is generated from."""
+    """The proposal the user is being asked to confirm."""
     user = db.get(User, user_id)
     if not user.profile_draft:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="nothing to review")
-    return {"draft": user.profile_draft, "schema": profile_schema(),
-            "source": user.capture_source}
+    return {"draft": user.profile_draft, "source": user.capture_source}
 
 
 @router.post("/confirm")

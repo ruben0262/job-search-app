@@ -11,9 +11,7 @@ from sqlalchemy.orm import Session
 
 from libs import limits
 from libs.contracts.config import UserConfigSchema, migrate_config
-from libs.contracts.config import json_schema as config_schema
 from libs.contracts.onboarding import IdentitySchema
-from libs.contracts.onboarding import json_schema as identity_schema
 from libs.db.models import CorpusJob, User, UserDocument
 from libs.documents import UnsupportedDocument, extract_text
 from libs.obs import audit
@@ -41,8 +39,7 @@ def state(db: Session = Depends(get_db), user_id: _uuid.UUID = Depends(current_u
 def get_identity(db: Session = Depends(get_db),
                  user_id: _uuid.UUID = Depends(current_user)) -> dict:
     user = db.get(User, user_id)
-    return {"full_name": user.full_name, "links": user.links or [],
-            "schema": identity_schema()}
+    return {"full_name": user.full_name, "links": user.links or []}
 
 
 @router.put("/identity")
@@ -107,9 +104,9 @@ def get_history(db: Session = Depends(get_db),
 @router.get("/config")
 def get_config(db: Session = Depends(get_db),
                user_id: _uuid.UUID = Depends(current_user)) -> dict:
-    """The stored config in the *current* shape, plus the schema the form is generated from."""
+    """The stored config, read in the *current* shape whatever version it was written in."""
     stored = TenantRepository(db).get_config(user_id)
-    return {"config": migrate_config(stored) if stored else None, "schema": config_schema()}
+    return {"config": migrate_config(stored) if stored else None}
 
 
 @router.put("/config")
@@ -182,7 +179,7 @@ def complete(db: Session = Depends(get_db), user_id: _uuid.UUID = Depends(curren
             "next_action": "process_data"}
 
 
-@router.get("/schema")
-def schemas() -> dict:
-    """Both JSON Schemas the front end generates its forms from, in one call."""
-    return {"identity": identity_schema(), "config": config_schema()}
+# `GET /onboarding/schema` was here, and served both JSON Schemas "the front end generates its forms
+# from". It generated nothing: the forms are hand-written TSX against the types in `api-types.ts`, so
+# the payload was a second copy of every field list, kept in step by hand. Removed 2026-08-11 with
+# the same key on `/onboarding/identity`, `/onboarding/config` and `/process/draft`.

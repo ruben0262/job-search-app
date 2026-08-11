@@ -17,7 +17,6 @@ from libs.contracts.config import (
     SearchSection,
     Seniority,
     UserConfigSchema,
-    json_schema,
     migrate_config,
 )
 from services.harvester.query_set import HARVEST_MAX_QUERIES_PER_USER, build_query_set
@@ -40,9 +39,10 @@ def _field(config: UserConfigSchema, name: str):
     return getattr(config, name) if hasattr(config, name) else getattr(config.sections[0], name)
 
 
-def _section_schema() -> dict:
-    """`SearchSection` properties, which pydantic exports under `$defs`."""
-    return json_schema()["$defs"]["SearchSection"]["properties"]
+def _keyword_cap() -> int:
+    """The keyword ceiling, read off the field rather than off an exported JSON Schema."""
+    return next(rule.max_length for rule in SearchSection.model_fields["keywords"].metadata
+                if getattr(rule, "max_length", None) is not None)
 
 
 # ── the minimum viable config ─────────────────────────────────────────────────────────────────
@@ -176,14 +176,16 @@ def test_duplicate_enum_selections_collapse():
 
 # ── the contract the frontend is generated from ───────────────────────────────────────────────
 
-def test_the_json_schema_exposes_every_field_and_its_bounds():
-    """The form and the TypeScript types are generated from this."""
-    schema = json_schema()
-    for field in UserConfigSchema.model_fields:
-        assert field in schema["properties"], f"{field} would be invisible to the form"
-    for field in SearchSection.model_fields:
-        assert field in _section_schema(), f"{field} would be invisible on the section form"
-    assert _section_schema()["keywords"]["maxItems"] == HARVEST_MAX_QUERIES_PER_USER
+def test_the_keyword_cap_is_the_one_the_harvester_enforces():
+    """Two numbers, one question: how many search terms one account may have.
+
+    This used to read an exported JSON Schema and also loop over every field asserting it appeared in
+    that schema's `properties` — which pydantic guarantees, so those loops could not fail. The cap
+    equality is the part that can, and it is read straight off the field now: the export existed to
+    generate a form that is in fact hand-written TSX, and it is gone (2026-08-11).
+    """
+    assert _keyword_cap() == HARVEST_MAX_QUERIES_PER_USER, (
+        "the config accepts a different number of keywords than the harvester will run")
 
 
 def test_the_schema_version_is_recorded_so_old_rows_stay_readable():
@@ -215,7 +217,7 @@ def test_a_validated_config_produces_the_expected_query_set():
 def test_the_per_user_cap_is_one_definition_not_two():
     """This rule was briefly written twice — a literal in the schema and a constant in the harvester."""
     assert HARVEST_MAX_QUERIES_PER_USER is MAX_KEYWORDS_PER_USER
-    assert _section_schema()["keywords"]["maxItems"] == MAX_KEYWORDS_PER_USER
+    assert _keyword_cap() == MAX_KEYWORDS_PER_USER
 
     with pytest.raises(ValidationError):
         UserConfigSchema(sections=[
@@ -267,3 +269,29 @@ def test_migrating_a_config_twice_changes_nothing():
     """It runs on every read."""
     once = migrate_config({"keywords": ["go"], "locations": ["london"]})
     assert migrate_config(once) == once
+
+
+def test_the_frontends_copy_of_the_location_cap_still_agrees_with_python():
+    """`ConfigStep.tsx` hand-copies `MAX_LOCATIONS_PER_USER` and says so in a comment.
+
+    A comment is not enforcement. The form uses its copy to disable the "add a place" control and to
+    render "N of 12 places picked", so if Python's number moves the user is told the wrong limit or
+    stopped early — and the server then rejects a config the form said was fine.
+
+    There is no shared module to put it in: one side is Python, the other TypeScript. So the number
+    stays copied and the copy is checked, which is what `test_schedules.py` does for the systemd
+    units. This is not §5's "two constants and a test asserting they are equal" — that warns about a
+    value that *could* have one definition. Across a language boundary it cannot.
+    """
+    import re
+    from pathlib import Path
+
+    from libs.contracts.config import MAX_LOCATIONS_PER_USER
+
+    source = (Path(__file__).resolve().parents[1]
+              / "web" / "src" / "pages" / "onboarding" / "ConfigStep.tsx").read_text(
+                  encoding="utf-8")
+    found = re.search(r"const MAX_LOCATIONS\s*=\s*(\d+)", source)
+    assert found, "ConfigStep.tsx no longer declares MAX_LOCATIONS — update or delete this guard"
+    assert int(found.group(1)) == MAX_LOCATIONS_PER_USER, (
+        f"the form allows {found.group(1)} places and the server allows {MAX_LOCATIONS_PER_USER}")

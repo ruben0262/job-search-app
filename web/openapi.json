@@ -3733,7 +3733,7 @@
     },
     "/onboarding/config": {
       "get": {
-        "description": "The stored config in the *current* shape, plus the schema the form is generated from.",
+        "description": "The stored config, read in the *current* shape whatever version it was written in.",
         "operationId": "get_config_onboarding_config_get",
         "responses": {
           "200": {
@@ -3972,30 +3972,6 @@
         ]
       }
     },
-    "/onboarding/schema": {
-      "get": {
-        "description": "Both JSON Schemas the front end generates its forms from, in one call.",
-        "operationId": "schemas_onboarding_schema_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Schemas Onboarding Schema Get",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Schemas",
-        "tags": [
-          "onboarding"
-        ]
-      }
-    },
     "/onboarding/state": {
       "get": {
         "description": "What is done, what is left, and where to send the user next.",
@@ -4112,7 +4088,7 @@
         ]
       },
       "get": {
-        "description": "The proposal, plus the schema the confirmation form is generated from.",
+        "description": "The proposal the user is being asked to confirm.",
         "operationId": "draft_process_draft_get",
         "responses": {
           "200": {

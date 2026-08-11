@@ -85,7 +85,3 @@ class IdentitySchema(BaseModel):
                 unique.append(link)
         return unique
 
-
-def json_schema() -> dict:
-    """Exported like `libs.contracts.config.json_schema`: the form is generated from it."""
-    return IdentitySchema.model_json_schema()

@@ -1007,7 +1007,7 @@ export interface paths {
         };
         /**
          * Get Config
-         * @description The stored config in the *current* shape, plus the schema the form is generated from.
+         * @description The stored config, read in the *current* shape whatever version it was written in.
          */
         get: operations["get_config_onboarding_config_get"];
         /**
@@ -1087,26 +1087,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/onboarding/schema": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Schemas
-         * @description Both JSON Schemas the front end generates its forms from, in one call.
-         */
-        get: operations["schemas_onboarding_schema_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/onboarding/state": {
         parameters: {
             query?: never;
@@ -1176,7 +1156,7 @@ export interface paths {
         };
         /**
          * Draft
-         * @description The proposal, plus the schema the confirmation form is generated from.
+         * @description The proposal the user is being asked to confirm.
          */
         get: operations["draft_process_draft_get"];
         put?: never;
@@ -3890,28 +3870,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    schemas_onboarding_schema_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
                 };
             };
         };

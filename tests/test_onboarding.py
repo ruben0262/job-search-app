@@ -232,3 +232,28 @@ def test_onboarding_requires_signing_in(api):
     http, _, _ = api
     http.cookies.clear()
     assert http.get("/onboarding/state").status_code == 401
+
+
+# ── the schema payloads nobody reads (2026-08-11) ──────────────────────────────────────────────
+
+def test_the_identity_and_config_routes_return_the_users_own_data(api):
+    """**Written before removing the `schema` key from these payloads**, to pin what must survive.
+
+    Three routes served a runtime JSON Schema with the docstring "the front end generates its forms
+    from it". Nothing in `web/src` reads a runtime schema — the forms are hand-written TSX against
+    the generated TypeScript types — so the payload was a second copy of every field list, kept in
+    step by hand.
+
+    What these routes are actually for is the account's own stored values. That is what this asserts,
+    so the removal is provably a removal of the unused half.
+    """
+    http, _session, _user = api
+    http.put("/onboarding/identity", json={"full_name": "Alice Example"})
+    http.put("/onboarding/config", json=CONFIG)
+
+    identity = http.get("/onboarding/identity").json()
+    assert identity["full_name"] == "Alice Example"
+    assert identity["links"] == []
+
+    config = http.get("/onboarding/config").json()
+    assert config["config"]["sections"][0]["keywords"] == CONFIG["sections"][0]["keywords"]

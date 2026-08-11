@@ -176,7 +176,3 @@ class ProfileSchema(_Strict):
                 out.append(value)
         return out
 
-
-def json_schema() -> dict:
-    """What the confirmation form and the TypeScript types are generated from."""
-    return ProfileSchema.model_json_schema()
