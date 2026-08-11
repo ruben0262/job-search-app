@@ -23,3 +23,12 @@ python-jobspy>=1.1.80
 # nav and cookie banner, and that text is what every label is formed from.
 beautifulsoup4>=4.12
 cryptography>=44.0       # libs/secrets, reached from libs/obs — every service that logs needs it
+
+# The language filter (`libs/corpus/langfilter.py`). Pure Python, no models to download.
+#
+# **This image is the one that detects**, via `set_description` and `fill_missing_languages`, and it
+# did not carry the library — the declaration stayed in the notifier's image after the code moved.
+# The import failure was swallowed by the same blind `except` as an unreadable posting, so every
+# row was stored with no language and every account's language filter admitted everything. Measured
+# 2026-08-11: one account went from 608 detected in a day to 1.
+langdetect>=1.0.9

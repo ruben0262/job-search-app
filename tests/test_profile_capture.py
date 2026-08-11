@@ -291,3 +291,49 @@ def test_a_model_that_answered_with_a_map_anyway_is_left_alone():
 
     already = {"identity": {"links": {"github": "https://github.com/alice"}}}
     assert links_to_map(already) == already
+
+
+# ── a bound is not a verdict on the candidate (2026-08-11) ────────────────────────────────────
+
+def test_an_overlong_value_is_trimmed_rather_than_losing_the_whole_profile():
+    """**The defect this replaced dead-lettered a real account's onboarding.**
+
+    On 2026-08-11 processing failed for one account with "the profile the model produced did not
+    match the schema". The two offending fields were `projects[6].what_built` and
+    `targets.company_size` — the model had written past a 1,000-character and a 40-character cap.
+    Two long strings, and the result was no profile, no onboarding, and a dead `process` job, for a
+    profile that was otherwise entirely correct.
+
+    A length cap is a storage and prompt-cost bound. It is not a statement about the candidate, and
+    enforcing it by throwing everything away is the wrong trade.
+    """
+    from libs.contracts.profile import ProfileSchema
+
+    profile = ProfileSchema.model_validate({
+        "identity": {"name": "Andras Example"},
+        "projects": [{"name": "Telemetry pipeline", "what_built": "x" * 1500}],
+        "targets": {"company_size": "startup to mid-size, 50-500 employees, Series A through C"},
+    })
+
+    assert len(profile.projects[0].what_built) == 1000
+    assert len(profile.targets.company_size) == 40
+    assert profile.identity.name == "Andras Example", "the rest of the profile must survive intact"
+
+
+def test_trimming_does_not_soften_the_checks_that_catch_a_wrong_shape():
+    """The two failures worth keeping: an invented field, and a missing required one.
+
+    Those are the model getting the *shape* wrong, which is a bug worth failing on. A description
+    that ran forty characters long is not, and conflating the two is what cost an account its
+    onboarding.
+    """
+    import pytest as _pytest
+    from pydantic import ValidationError
+
+    from libs.contracts.profile import ProfileSchema
+
+    with _pytest.raises(ValidationError):
+        ProfileSchema.model_validate({"identity": {"name": "A"}, "invented_field": 1})
+
+    with _pytest.raises(ValidationError):
+        ProfileSchema.model_validate({"identity": {}})

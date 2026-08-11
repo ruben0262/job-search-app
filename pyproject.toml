@@ -155,9 +155,14 @@ ignore = [
     "BLE001",   # see above: a fetch failure is data, not an exception to propagate
     "S112",     # one JSON-LD block failing to parse means skip it, not abandon the page
 ]
-# The language filter. `langdetect` is imported inside the function and every failure keeps the
-# job: the library is optional (only the notifier image carries it), and a filter that raised on a
-# posting it could not read would drop a real job over a missing dependency.
+# The language filter. `langdetect` is imported inside the function and a posting it cannot read
+# keeps the job: a filter that raised on malformed text would drop a real job over a parse failure.
+#
+# **A missing library is no longer part of that bargain.** "only the notifier image carries it" was
+# written here and was true; then the code that detects moved to the harvester, the dependency did
+# not, and the `ImportError` fell into the same blind `except` as an unreadable posting. Every row
+# stored no language and every account's language filter admitted everything, silently, for days.
+# `detect_language` now separates the two and logs the missing library once at ERROR.
 "libs/corpus/langfilter.py" = ["BLE001", "PLC0415"]
 # The objective CV checks, lifted from the reference's `pipeline/cv_eval.py` on 2026-07-29. Same
 # argument as the source adapters: every threshold, weight, stopword and tech term came from

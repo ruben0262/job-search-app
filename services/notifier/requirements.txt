@@ -13,7 +13,5 @@ cryptography>=44.0       # libs/secrets: the bot token is decrypted for the dura
 # failure lands as a container that will not start.
 pydantic>=2.10
 
-# The language filter (`libs/corpus/langfilter.py`). Pure Python, no models to download. Optional at
-# import — the filter fails open without it — but shipped here on purpose: failing open means every
-# German posting reaches an English-only user's feed, which is a bad enough feed to look broken.
-langdetect>=1.0.9
+# `langdetect` was here and is not any more: nothing in this service reaches `libs/corpus/langfilter`.
+# The language is read once at ingest by the harvester, which is where the dependency now lives.

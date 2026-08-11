@@ -1,7 +1,11 @@
 """The captured profile: what the interview produces and the confirmation form edits."""
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+import logging
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+logger = logging.getLogger(__name__)
 
 # Bumped when the shape changes.
 PROFILE_SCHEMA_VERSION = 2
@@ -10,6 +14,46 @@ PROFILE_SCHEMA_VERSION = 2
 class _Strict(BaseModel):
     # `forbid` so an agent inventing a field fails validation instead of having it silently dropped.
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _fit_to_bounds(cls, data):
+        """Trim a value that overran its bound instead of rejecting the whole profile.
+
+        **A length limit here is a storage and prompt-cost bound, not a statement about the
+        candidate.** Enforced as a hard failure it throws away everything: on 2026-08-11 one
+        account's processing dead-lettered because the model wrote 1,000-plus characters into one
+        project's `what_built` and a `company_size` longer than forty characters. Two long strings,
+        and the result was no profile at all, no onboarding, and a `process` job in the dead letter
+        queue — for a profile that was otherwise entirely correct.
+
+        So an overlong value is cut to its bound and the fact is logged. What is *not* softened:
+        `extra="forbid"` still rejects an invented field, and a missing required value still fails.
+        Those are the model getting the shape wrong, which is worth failing on. A description that
+        ran forty characters long is not.
+
+        Fields are named in the log, never values — a profile is the candidate's own history.
+        """
+        if not isinstance(data, dict):
+            return data
+
+        trimmed: list[str] = []
+        out = dict(data)
+        for name, field in cls.model_fields.items():
+            if name not in out:
+                continue
+            limit = next((getattr(rule, "max_length", None) for rule in field.metadata
+                          if getattr(rule, "max_length", None) is not None), None)
+            value = out[name]
+            if limit is None or not isinstance(value, str | list) or len(value) <= limit:
+                continue
+            out[name] = value[:limit]
+            trimmed.append(f"{cls.__name__}.{name}")
+
+        if trimmed:
+            logger.warning("profile: trimmed %s to fit; the value was longer than the schema allows",
+                           ", ".join(trimmed))
+        return out
 
 
 class Identity(_Strict):
