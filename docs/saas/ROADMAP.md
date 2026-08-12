@@ -1393,6 +1393,43 @@ assuming either way.
 stops reading it (6q), the fields `feature_spec` needs are the ones that stay — five paths, not
 fifty.
 
+### 6bh — an LLM-written term list is worse than the field concatenation (added 2026-08-12)
+
+**Tested before the prompt was written, and it is why the prompt was not written.** The plan was to
+replace `feature_spec`'s schema reads with a per-user file the setup agent writes — the last thing
+`ProfileSchema` is needed for on the scoring side, and so the last obstacle to removing it. The
+argument for it was that today's `core` list is a mechanical concatenation of `skills.*`,
+`experience[].stack` and `projects[].stack`, in which a technology named once in a 2019 internship
+weighs the same as the one they use daily, and that a model reading the whole profile would judge
+better.
+
+**It does not.** Both lists through the same `_terms` normaliser and the same nine features, so the
+only difference is which phrases went in. Paired on identical folds, average precision:
+
+| account | schema | llm | paired delta | t | folds won by llm |
+|---|---|---|---|---|---|
+| second (340 labels) | 0.5812 | 0.5811 | −0.0002 | −0.05 | 8/20 |
+| owner (2,647 labels) | 0.5967 | 0.5918 | **−0.0050** | **−4.75** | **2/20** |
+
+A tie on the smaller account and a significant loss on the one with enough labels to be sure.
+
+**Why, and it is the opposite of the hypothesis.** The model *broadened* rather than tightened: 108
+core terms for the owner against the schema's 55. `core_stack_count` saturates at 8 hits and is
+normalised by 8, so a longer list makes more postings look equally core and the feature stops
+discriminating. The concatenation is narrower by accident and better targeted for it.
+
+**What this closes and what it does not.** `feature_spec` keeps reading `ProfileSchema` —
+`skills.*`, `experience[].stack`, `projects[].stack`, `not_list`, `identity.work_eligibility`, five
+field paths. The schema does not fully go away, and the end state is a small shape at two boundaries:
+the model's reply at capture, and those five paths at scoring. `docprompt.py` is unaffected and can
+still go; that is the CV path, measured separately.
+
+**The honest limit of this result**: one prompt wording was tested, not the idea. A prompt that capped
+the list — "at most fifteen, most central first" — might beat the concatenation, because the failure
+here is length rather than judgement. Cheap to retest with the same two scripts if it is ever worth
+it; the harness is `extract_terms.py` plus `score_termlist.py`, split because no image carries both
+SECRETS_KEK and sklearn.
+
 ## Phase 7 — the pipeline, in the order it has to be right (added 2026-08-04)
 
 **The owner's sequencing, and it is the correction to how this work was being picked up.** The
