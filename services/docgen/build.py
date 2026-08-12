@@ -5,9 +5,7 @@ import logging
 import re
 from datetime import UTC, datetime
 
-from libs.contracts.profile import ProfileSchema
 from libs.profiles import PLACEHOLDER_MARKERS
-from libs.scoring.docprompt import render_cover_prompt, render_cv_prompt
 from libs.templates import BASE_CV_TEMPLATE
 from libs.templates import load as load_template
 
@@ -118,11 +116,40 @@ def fill_role_angles(template: str, role_angles: str | None) -> str:
     return template.replace("<<ROLE_ANGLES>>", f"ROLE ANGLES FOR THIS CANDIDATE\n{angles}")
 
 
-def build_prompt(profile: ProfileSchema, base_html: str, context: str, *,
+def _require_personalised(template: str | None, name: str) -> str:
+    """This account's own writing prompt, refused if it is still a scaffold.
+
+    `render_cv_prompt` fell back to the shipped scaffold when no per-user template was passed and then
+    substituted five markers into it, so a missing file still produced a working prompt — built from
+    nobody. Without the substitution that fallback would send a CV addressed to `<<NAME>>`, so it
+    refuses instead. The fix is a setup conversation, and the refusal names it.
+    """
+    if not (template or "").strip():
+        raise BuildFailed(f"this account has no {name} yet — finish setup first")
+    found = [marker for marker in PLACEHOLDER_MARKERS if marker in template]
+    if found:
+        raise BuildFailed(
+            f"{name} is still a scaffold ({', '.join(found[:3])}) — run the setup step that "
+            "personalises your writing prompts before building documents")
+    return template
+
+
+def build_prompt(base_html: str, context: str, *,
                  template: str | None = None, feedback: str | None = None,
                  role_angles: str | None = None) -> str:
-    """The SACRED prompt, filled: the candidate, the job, and the base document."""
-    prompt = (fill_role_angles(render_cv_prompt(profile, template=template), role_angles)
+    """The SACRED prompt, filled: the job and the base document.
+
+    **The candidate is no longer substituted here.** `libs/scoring/docprompt.py` replaced five
+    markers — `<<NAME>>`, `<<CONTACT>>`, `<<LANGUAGES>>`, `<<WORK_ELIGIBILITY>>`,
+    `<<HOME_LOCATION>>` — from `ProfileSchema` on every build. That was the last thing the document
+    path read the schema for, and it read the wrong copy of it: one account's three typed links were
+    a single link in its profile, and another's name lost its accent.
+
+    The prompt is that person's own file now, written once by `setup-prompts` with their real details
+    in it — which is how the reference instance has always done it: load the prompt, substitute the
+    job and the base template, send.
+    """
+    prompt = (fill_role_angles(_require_personalised(template, "tailor_cv.md"), role_angles)
               .replace("<JOB_CONTEXT>", context)
               .replace("<BASE_TEMPLATE>", base_html))
     if feedback:
@@ -130,12 +157,12 @@ def build_prompt(profile: ProfileSchema, base_html: str, context: str, *,
     return prompt
 
 
-def tailor(client, profile: ProfileSchema, base_html: str, context: str, *,
+def tailor(client, base_html: str, context: str, *,
            facts_md: str | None = None, feedback: str | None = None, template: str | None = None,
            role_angles: str | None = None, model: str = CV_MODEL) -> str:
     """One call."""
     stripped, style = strip_style(base_html)
-    prompt = build_prompt(profile, strip_comments(stripped), context, template=template,
+    prompt = build_prompt(strip_comments(stripped), context, template=template,
                           role_angles=role_angles,
                           feedback=feedback)
 
@@ -166,7 +193,7 @@ _MINIMAL_SYSTEM = ("Write only what the base template below already states about
 # ── the cover letter ──────────────────────────────────────────────────────────────────────────
 
 
-def tailor_cover(client, profile: ProfileSchema, cv_html: str, context: str, *,
+def tailor_cover(client, cv_html: str, context: str, *,
                  facts_md: str | None = None, template: str | None = None,
                  model: str = CV_MODEL) -> str:
     """The cover letter for one job.
@@ -179,7 +206,7 @@ def tailor_cover(client, profile: ProfileSchema, cv_html: str, context: str, *,
     experience entry and left a mangled skills list under a heading claiming to be the CV.
     """
     head = head_block(cv_html)
-    prompt = (render_cover_prompt(profile, template=template)
+    prompt = (_require_personalised(template, "tailor_cover.md")
               .replace("<HEAD_BLOCK>", head)
               .replace("<JOB_CONTEXT>", context))
 

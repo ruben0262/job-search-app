@@ -1424,6 +1424,31 @@ field paths. The schema does not fully go away, and the end state is a small sha
 the model's reply at capture, and those five paths at scoring. `docprompt.py` is unaffected and can
 still go; that is the CV path, measured separately.
 
+**Corrected 2026-08-12, and the correction matters more than the result.** Both A/Bs above were
+scored on plain stratified folds, and ~10% of each training set is the *same* (company, title)
+appearing more than once — the multi-city postings of 6g, where one role listed in 22 cities is 22
+rows with 22 distinct `content_key`s, so the dedup key cannot see them. Plain k-fold splits those
+copies across train and test, and the model is scored on a job it memorised.
+
+Re-run with `StratifiedGroupKFold`, every copy of a job held in one fold:
+
+| | plain folds | grouped folds |
+|---|---|---|
+| second account, all 9 features | 0.5812 | **0.5455** |
+| owner, all 9 features | 0.5966 | 0.5911 |
+| second, 3 profile features | −0.0074, t=−1.85 | **−0.0052, t=−2.67** |
+| owner, 3 profile features | −0.0075, t=−5.16 | **−0.0054, t=−2.36** |
+| owner, all 9 vs embedding | −0.0118, t=−7.60 | **−0.0113, t=−4.74** |
+
+**Absolute average precision was overstated by up to 0.036** on the smaller account — the numbers in
+6bg's table are optimistic and should be read as grouped. **The conclusion survives**: the features
+still earn their place on both accounts, at an effect nearer −0.005 than −0.0075, and the second
+account's significance *improved* under the stricter test.
+
+6bh was not re-run grouped. Its conclusion was "change nothing", so a taint there costs an
+opportunity rather than a regression — but the −0.0050 it measured is the same order as the taint, so
+that one should be treated as unproven rather than settled.
+
 **The honest limit of this result**: one prompt wording was tested, not the idea. A prompt that capped
 the list — "at most fifteen, most central first" — might beat the concatenation, because the failure
 here is length rather than judgement. Cheap to retest with the same two scripts if it is ever worth

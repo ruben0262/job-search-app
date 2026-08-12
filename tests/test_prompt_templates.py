@@ -45,26 +45,30 @@ def test_an_ungeneralised_prompt_is_not_wired_in(name):
 
 # ── what the placeholders must survive ────────────────────────────────────────────────────────
 
-def test_every_placeholder_a_prompt_uses_is_one_the_renderer_fills():
-    """A prompt reaching Claude with a literal `<<LANGUAGES>>` in it would ask the model to invent the."""
+def test_every_marker_a_scaffold_uses_is_one_the_completeness_check_can_see():
+    """**The guarantee that replaced the renderer, and it is the stronger one.**
+
+    `libs/scoring/docprompt.py` substituted five markers from `ProfileSchema` at every build, so a
+    marker nothing filled would reach the model literally — asking it to invent the candidate. It is
+    deleted: the writing prompts are per-user files that `setup-prompts` writes with real details in
+    them, and `_require_personalised` refuses one that is still a scaffold.
+
+    That refusal only works if every marker a scaffold carries is in `PLACEHOLDER_MARKERS`. A new
+    marker missing from that tuple is a scaffold the check reads as finished — which is exactly how
+    both writing prompts passed every gate while saying `<<NAME>>`.
+
+    `<<ROLE_ANGLES>>` is the exception, filled a stage later from the user's own `08-role-angles.md`.
+    """
     import re
 
-    from libs.contracts.profile import ProfileSchema
-    from libs.scoring.docprompt import render_cover_prompt, render_cv_prompt
+    from libs.profiles import PLACEHOLDER_MARKERS, scaffold
 
-    profile = ProfileSchema.model_validate({
-        "identity": {"name": "Alice Example", "location": "Berlin, Germany",
-                     "work_eligibility": ["European Union"],
-                     "links": {"portfolio": "https://alice.dev"}},
-        "constraints": {"languages": ["English (Native)", "German (C1)"]},
-    })
-
-    # `<<ROLE_ANGLES>>` is filled a stage later, at build time, from the user's own `08-role-angles.md`.
-    for rendered in (render_cv_prompt(profile), render_cover_prompt(profile)):
-        left = set(re.findall(r"<<[A-Z_]+>>", rendered))
-        assert left <= {"<<ROLE_ANGLES>>"}, f"an unfilled placeholder reached the prompt: {left}"
-        assert "Alice Example" in rendered
-        assert "German (C1)" in rendered
+    for name in ("tailor_cv.md", "tailor_cover.md"):
+        markers = set(re.findall(r"<<[A-Z_]+>>", scaffold(name)))
+        unseen = markers - set(PLACEHOLDER_MARKERS) - {"<<ROLE_ANGLES>>"}
+        assert not unseen, (
+            f"{name} carries {sorted(unseen)}, which `is_filled` cannot see — the scaffold would "
+            "count as personalised and reach the model with the marker in it")
 
 
 def test_the_role_angles_placeholder_never_survives_to_the_model():
@@ -91,22 +95,13 @@ def test_a_prompt_that_predates_the_split_is_left_alone():
     assert fill_role_angles("no placeholder here", "angles") == "no placeholder here"
 
 
-def test_a_profile_with_no_languages_still_yields_a_writable_prompt():
-    """A prompt told the candidate writes no languages has no language to write in."""
-    from libs.contracts.profile import ProfileSchema
-    from libs.scoring.docprompt import DEFAULT_LANGUAGES, render_cv_prompt
-
-    profile = ProfileSchema.model_validate({"identity": {"name": "Alice Example"}})
-    assert DEFAULT_LANGUAGES in render_cv_prompt(profile)
-
-
-def test_unstated_work_eligibility_is_never_invented():
-    """The prompt's own rule is "never claim a location the candidate has no right to work in"."""
-    from libs.contracts.profile import ProfileSchema
-    from libs.scoring.docprompt import render_cv_prompt
-
-    profile = ProfileSchema.model_validate({"identity": {"name": "Alice Example"}})
-    assert "do not claim any" in render_cv_prompt(profile)
+# Two tests were here: a profile with no languages still yielding a writable prompt, and unstated work
+# eligibility never being invented. Both asserted fallbacks inside `render_cv_prompt` —
+# `DEFAULT_LANGUAGES` and "do not claim any" — which the renderer substituted when the schema was
+# silent. The renderer is deleted and there is no schema in that path to be silent: the language rule
+# and the eligibility rule are written into each person's own prompt by `setup-prompts`, from their
+# documents. `test_the_language_rule_is_about_the_candidate_not_one_language` below still checks the
+# scaffold states the rule at all, which is the part that lives in this repository.
 
 
 def test_the_language_rule_is_about_the_candidate_not_one_language():

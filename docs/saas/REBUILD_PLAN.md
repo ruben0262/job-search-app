@@ -10,7 +10,7 @@
 | 2. Chat and the agent loop | ✅ Built, then rebuilt twice: a real chat UI on 2026-07-30, and the turn moved off the request path into the `setup` lane the same day. **One setup turn has run in production** |
 | 3. Scoring and the feed | ✅ `fetch_desc`, shadow scores, refresh, `opportunity_score`, `/rate` — all present. The feed is a real table with filters and pagination |
 | 4. Applications page and the retrain popup | ✅ The jobs table carries applied state and filters on it; the Model page owns training and says a retrain is needed rather than running one |
-| 5. Delete the schema machinery | 🟡 **part done.** `templates/cv.py` and `docprompt.py` deleted 2026-07-31. `rubric.py`, `facts.py`, `services/capture`, the `process` lane, `ProcessPage.tsx`, the confirmation form and the generated types remain — that flow is *superseded but wired end to end and passing its tests*, so retiring it is a product cutover rather than a cleanup |
+| 5. Delete the schema machinery | 🟡 **part done.** `templates/cv.py` deleted 2026-07-31; **`docprompt.py` was recorded as deleted then and was not** — it survived until 2026-08-12, still substituting five markers from `ProfileSchema` into every CV and cover letter. `rubric.py`, `facts.py`, `services/capture`, the `process` lane, `ProcessPage.tsx`, the confirmation form and the generated types remain — that flow is *superseded but wired end to end and passing its tests*, so retiring it is a product cutover rather than a cleanup |
 
 **The two buttons work and the loop is not closed.** `libs/feedback/actions.record` writes a
 `user_labels` row with `source='feedback'` and `weight=5`, and the Telegram webhook calls it — but

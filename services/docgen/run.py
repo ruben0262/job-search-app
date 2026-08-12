@@ -125,7 +125,7 @@ def _cover(client, profile: ProfileSchema, context: str, *,
            base_cv: str, grounding: str | None, scratch: pathlib.Path, filename: str,
            template: str | None = None) -> tuple[pathlib.Path, pdf.PdfReport, int]:
     """One call, no revision loop."""
-    letter = build.tailor_cover(client, profile, base_cv, context, facts_md=grounding,
+    letter = build.tailor_cover(client, base_cv, context, facts_md=grounding,
                                 template=template)
     return (*_render(letter, scratch, filename, kind="cover"), 1)
 
@@ -140,7 +140,7 @@ def _tailor_until_it_fits(client, profile: ProfileSchema, context: str, *,
     The document that gets delivered is the one that was measured — there is no separate probe
     render. A CV that fits is one Chrome launch; only a CV that came back too long is two.
     """
-    html = build.tailor(client, profile, base_cv, context, facts_md=facts_md, template=template,
+    html = build.tailor(client, base_cv, context, facts_md=facts_md, template=template,
                         role_angles=role_angles)
     document, report = _render(html, scratch, filename, kind="cv")
 
@@ -149,7 +149,7 @@ def _tailor_until_it_fits(client, profile: ProfileSchema, context: str, *,
         return document, report, 1
 
     logger.info("docgen: %s pages, asking for one revision", report.pages)
-    retried = build.tailor(client, profile, base_cv, context, facts_md=facts_md,
+    retried = build.tailor(client, base_cv, context, facts_md=facts_md,
                            template=template, role_angles=role_angles, feedback=feedback)
     second, second_report = _render(retried, scratch, f"retry-{filename}", kind="cv")
 

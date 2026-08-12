@@ -46,6 +46,30 @@ TAILORED = """<!DOCTYPE html>
 </body></html>"""
 
 
+# The per-user writing prompt as `setup-prompts` leaves it: the person's real details in the file.
+# Every build needs one now. `_require_personalised` refuses a scaffold rather than substituting into
+# it, because the substitution read the wrong copy of the candidate — one account's three typed links
+# were a single link in its profile, and another's name lost its accent. Tests that relied on the
+# scaffold fallback pass this instead, which is what a real account has.
+TAILOR_PROMPT = """You are tailoring Alice Example's CV for ONE specific job.
+Contact: alice@example.com | https://github.com/alice
+Write in British English. Alice may work in the UK and the EU.
+
+<<ROLE_ANGLES>>
+
+<JOB_CONTEXT>
+
+<BASE_TEMPLATE>
+"""
+
+COVER_PROMPT = """Write a one-page cover letter for Alice Example, based in Berlin, Germany.
+
+<HEAD_BLOCK>
+
+<JOB_CONTEXT>
+"""
+
+
 class FakeJob:
     """The corpus row a build reads, without a database."""
 
@@ -83,8 +107,8 @@ class FakeClient:
 def test_the_call_is_grounded_on_the_user_s_own_facts():
     """The reference instance measured what happens without grounding."""
     client = FakeClient()
-    build.tailor(client, PROFILE, base_document(),
-                 build.job_context(FakeJob()), facts_md="# Facts about Alice Example")
+    build.tailor(client, base_document(),
+                 build.job_context(FakeJob()), facts_md="# Facts about Alice Example", template=TAILOR_PROMPT)
 
     assert client.calls[0]["system"].startswith("# Facts about Alice Example")
 
@@ -92,14 +116,14 @@ def test_the_call_is_grounded_on_the_user_s_own_facts():
 def test_a_profile_with_no_facts_block_still_gets_a_grounding_instruction():
     """Nobody should reach this — a confirmed profile always renders one."""
     client = FakeClient()
-    build.tailor(client, PROFILE, base_document(), build.job_context(FakeJob()))
+    build.tailor(client, base_document(), build.job_context(FakeJob()), template=TAILOR_PROMPT)
 
     assert "Never invent" in client.calls[0]["system"]
 
 
 def test_the_prompt_carries_the_candidate_the_posting_and_the_base_document():
-    prompt = build.build_prompt(PROFILE, base_document(),
-                                build.job_context(FakeJob()))
+    prompt = build.build_prompt(base_document(),
+                                build.job_context(FakeJob()), template=TAILOR_PROMPT)
 
     assert "Alice Example" in prompt              # filled by render_cv_prompt
     assert "Northwind" in prompt                  # the base document
@@ -110,7 +134,7 @@ def test_the_prompt_carries_the_candidate_the_posting_and_the_base_document():
 def test_the_model_never_sees_the_stylesheet():
     """It is told CSS is managed externally."""
     client = FakeClient()
-    build.tailor(client, PROFILE, base_document(), build.job_context(FakeJob()))
+    build.tailor(client, base_document(), build.job_context(FakeJob()), template=TAILOR_PROMPT)
 
     assert "@page" not in client.calls[0]["messages"][0]["content"]
 
@@ -132,8 +156,8 @@ def test_a_posting_with_no_description_still_produces_a_context():
 def test_the_layout_is_restored_from_the_template_whatever_came_back():
     """The one guarantee that makes 'the model only changes text' true rather than requested."""
     client = FakeClient(TAILORED.replace("<head>", "<head><style>body{font-size:4pt}</style>"))
-    html = build.tailor(client, PROFILE, base_document(),
-                        build.job_context(FakeJob()))
+    html = build.tailor(client, base_document(),
+                        build.job_context(FakeJob()), template=TAILOR_PROMPT)
 
     assert "@page" in html and "size: A4" in html
     assert "font-size:4pt" not in html
@@ -141,8 +165,8 @@ def test_the_layout_is_restored_from_the_template_whatever_came_back():
 
 def test_commentary_around_the_document_is_discarded():
     client = FakeClient(f"Here is the tailored CV:\n\n{TAILORED}\n\nLet me know if…")
-    html = build.tailor(client, PROFILE, base_document(),
-                        build.job_context(FakeJob()))
+    html = build.tailor(client, base_document(),
+                        build.job_context(FakeJob()), template=TAILOR_PROMPT)
 
     assert html.lstrip().startswith("<!DOCTYPE html")
     assert "Let me know" not in html
@@ -152,7 +176,7 @@ def test_a_reply_with_no_document_is_a_build_failure():
     client = FakeClient("I cannot help with that.")
 
     with pytest.raises(build.BuildFailed):
-        build.tailor(client, PROFILE, base_document(), build.job_context(FakeJob()))
+        build.tailor(client, base_document(), build.job_context(FakeJob()), template=TAILOR_PROMPT)
 
 
 def test_em_dashes_are_stripped_from_prose_and_kept_in_entry_titles():
@@ -219,8 +243,8 @@ def test_a_missing_pdf_is_a_compile_failure_not_a_silent_empty_file(tmp_path, mo
 def test_a_real_chrome_turns_the_rendered_cv_into_a_readable_pdf(tmp_path):
     """The one test that exercises the actual browser."""
     source = tmp_path / "cv.html"
-    source.write_text(build.tailor(FakeClient(), PROFILE, base_document(),
-                                   build.job_context(FakeJob())), encoding="utf-8")
+    source.write_text(build.tailor(FakeClient(), base_document(),
+                                   build.job_context(FakeJob()), template=TAILOR_PROMPT), encoding="utf-8")
 
     report = pdf.inspect_pdf(pdf.compile_pdf(source, tmp_path / "cv.pdf"))
 
@@ -268,7 +292,12 @@ def fake_chrome(monkeypatch):
     return state
 
 
-DEFAULT_FILES = {"grounding": "# Facts about Alice Example", "base_cv.html": TAILORED}
+# A finished account: grounding, a base CV, **and both writing prompts personalised**. The last two
+# were absent, so every build in these tests fell through to the shipped scaffold and had five markers
+# substituted from the schema. That path is gone — a scaffold is now refused — so the fixture carries
+# what a real account carries after `setup-prompts` has run.
+DEFAULT_FILES = {"grounding": "# Facts about Alice Example", "base_cv.html": TAILORED,
+                 "tailor_cv.md": TAILOR_PROMPT, "tailor_cover.md": COVER_PROMPT}
 
 
 def _session(monkeypatch, *, profile=PROFILE, chat_id="4242", description="Backend role. Python.",
@@ -641,7 +670,7 @@ def test_the_date_reaches_the_cover_prompt_itself():
     from datetime import UTC, datetime
 
     client = FakeClient(TAILORED)
-    build.tailor_cover(client, PROFILE, base_document(), build.job_context(FakeJob()))
+    build.tailor_cover(client, base_document(), build.job_context(FakeJob()), template=COVER_PROMPT)
 
     sent = client.calls[0]["messages"][0]["content"]
     assert datetime.now(UTC).strftime("%d %B %Y") in sent
@@ -671,8 +700,8 @@ def test_the_cover_prompt_is_not_handed_a_text_dump_of_the_cv():
     sentinel = "Rebuilt the settlement ledger so month-end close ran in nine minutes."
 
     client = FakeClient(TAILORED)
-    build.tailor_cover(client, PROFILE, cv, build.job_context(FakeJob()),
-                       facts_md="the candidate's grounding block")
+    build.tailor_cover(client, cv, build.job_context(FakeJob()),
+                       facts_md="the candidate's grounding block", template=COVER_PROMPT)
 
     sent = client.calls[0]["messages"][0]["content"]
     assert sentinel not in sent, "a text extract of the CV reached the cover prompt"
@@ -683,7 +712,7 @@ def test_the_cover_prompt_still_carries_the_page_rules():
     """The other half: dropping the extract must not drop the styling the letter is laid out with."""
     client = FakeClient(TAILORED)
     cv = base_document()
-    build.tailor_cover(client, PROFILE, cv, build.job_context(FakeJob()))
+    build.tailor_cover(client, cv, build.job_context(FakeJob()), template=COVER_PROMPT)
 
     sent = client.calls[0]["messages"][0]["content"]
     assert build.head_block(cv) in sent
