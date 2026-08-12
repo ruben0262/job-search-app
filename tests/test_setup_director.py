@@ -244,3 +244,27 @@ def test_the_director_does_not_send_anybody_to_another_chat():
     body = command("setup-director")
     assert "You are not handing off" in body
     assert "no other chat to open" in body
+
+
+def test_the_director_runs_every_command_that_owns_a_file():
+    """**A command that owns a file and is not in the director's steps never runs for anybody.**
+
+    `setup-prompts` owns `tailor_cv.md` and `tailor_cover.md` — the two prompts that ship as
+    scaffolds carrying `<<NAME>>`, `<<CONTACT>>` and three more placeholders. It was in `STARTABLE`,
+    it was in `FILE_OWNERS`, it had a full command file, and it was absent from `DIRECTOR_STEPS`. So
+    guided setup ran four steps out of five and every account onboarded through it kept five
+    placeholders in both writing prompts — while passing every completeness check, because
+    `SHIPS_USABLE` treats those two as complete on arrival.
+
+    Measured on the live platform 2026-08-12: the second account had all five placeholders in both
+    files; the founder's were filled only because they were imported from the single-user reference
+    instance, not because anything on this platform filled them.
+    """
+    from libs.agents import DIRECTOR_STEPS, FILE_OWNERS
+
+    owners = set(FILE_OWNERS.values())
+    missing = sorted(owners - set(DIRECTOR_STEPS))
+
+    assert not missing, (
+        f"these commands own a setup file and guided setup never runs them: {missing}. A file whose "
+        "owner is not a director step is a file nothing fills.")

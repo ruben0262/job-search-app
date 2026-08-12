@@ -105,8 +105,19 @@ asks, send them to their Settings page rather than recording it somewhere that l
 """
 
 
-# The steps the director runs, in order. `context.md` first because the other three read it.
-DIRECTOR_STEPS: tuple[str, ...] = ("setup-context", "setup", "setup-role-angles", "setup-scorer")
+# The steps the director runs, in order. `context.md` first because the others read it.
+#
+# **`setup-prompts` was missing here, and that is why every account onboarded through guided setup
+# kept `<<NAME>>` in both of its writing prompts.** The command existed, owned `tailor_cv.md` and
+# `tailor_cover.md` in `FILE_OWNERS`, sat in `STARTABLE`, and had a full command file — and the
+# director ran four steps out of five. Nothing errored: `SHIPS_USABLE` counts those two as complete
+# on arrival, so every completeness check passed while the prompts still described nobody. The one
+# account whose prompts were filled had them imported from the single-user reference instance.
+#
+# Placed after `setup` because it reads `01-candidate-profile.md` and `base_cv.html`, and before the
+# rubric — the order `STARTABLE` already documented and this tuple did not follow.
+DIRECTOR_STEPS: tuple[str, ...] = ("setup-context", "setup", "setup-prompts",
+                                   "setup-role-angles", "setup-scorer")
 
 
 def system_prompt(name: str) -> str:
