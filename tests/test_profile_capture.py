@@ -301,6 +301,7 @@ def test_an_overlong_value_is_trimmed_rather_than_losing_the_whole_profile():
     On 2026-08-11 processing failed for one account with "the profile the model produced did not
     match the schema". The two offending fields were `projects[6].what_built` and
     `targets.company_size` — the model had written past a 1,000-character and a 40-character cap.
+    (`company_size` has since been removed entirely; `targets.seniority` carries the same 40-char cap.)
     Two long strings, and the result was no profile, no onboarding, and a dead `process` job, for a
     profile that was otherwise entirely correct.
 
@@ -312,11 +313,11 @@ def test_an_overlong_value_is_trimmed_rather_than_losing_the_whole_profile():
     profile = ProfileSchema.model_validate({
         "identity": {"name": "Andras Example"},
         "projects": [{"name": "Telemetry pipeline", "what_built": "x" * 1500}],
-        "targets": {"company_size": "startup to mid-size, 50-500 employees, Series A through C"},
+        "targets": {"seniority": "Senior / Staff / Principal, ideally with a technical lead remit"},
     })
 
     assert len(profile.projects[0].what_built) == 1000
-    assert len(profile.targets.company_size) == 40
+    assert len(profile.targets.seniority) == 40
     assert profile.identity.name == "Andras Example", "the rest of the profile must survive intact"
 
 
@@ -363,3 +364,55 @@ def test_both_capture_calls_together_ask_for_every_field_in_the_schema():
     assert asked - declared == set(), (
         f"these are asked for and are not in the schema, so the reply is discarded: "
         f"{sorted(asked - declared)}")
+
+
+# ── removing a field from the schema must not orphan a stored profile ─────────────────────────
+
+@pytest.mark.skipif(not os.environ.get("DATABASE_URL"), reason="DATABASE_URL not set")
+def test_every_stored_profile_still_validates_against_the_current_schema():
+    """**The guard that makes removing a schema field safe rather than hopeful.**
+
+    `ProfileSchema` is `extra="forbid"`, so a key left in a stored profile after its field is deleted
+    does not degrade — `model_validate` raises, and `docgen` cannot build a CV for that account at
+    all. On 2026-08-11 both live accounts carried `targets.company_size`, a field nothing read, so
+    deleting it without touching the data would have broken every build.
+
+    This asserts the relationship rather than any one field: whatever the schema says today, nothing
+    already written can fail it. Locally there are usually no profiles and it passes trivially; the
+    value is against a restored dump or a real database.
+    """
+    from sqlalchemy import create_engine, select
+    from sqlalchemy.orm import Session
+
+    from libs.contracts.profile import ProfileSchema
+    from libs.db.models import User
+
+    engine = create_engine(os.environ["DATABASE_URL"])
+    with Session(engine) as session:
+        stored = session.execute(
+            select(User.email, User.profile).where(User.profile.is_not(None))).all()
+
+    broken = []
+    for email, profile in stored:
+        try:
+            ProfileSchema.model_validate(profile)
+        except Exception as exc:  # noqa: BLE001 - the failure is the finding
+            broken.append(f"{email}: {type(exc).__name__}")
+
+    assert not broken, (
+        f"these stored profiles no longer validate, so docgen raises for them: {broken}. A field "
+        "removed from the schema needs the key removed from the data in the same change.")
+
+
+def test_a_profile_carrying_the_removed_company_size_is_refused():
+    """`extra="forbid"` means a removed field is a hard refusal, not a shrug — recorded on purpose.
+
+    This is the consequence that made the migration necessary rather than optional: had the key been
+    left in `users.profile`, `docgen` would have raised for both live accounts instead of quietly
+    ignoring a value nothing read. Migration `b2c4e8f60a19` strips it.
+    """
+    with pytest.raises(ValidationError):
+        ProfileSchema.model_validate({
+            "identity": {"name": "Alice Example"},
+            "targets": {"company_size": "startups"},
+        })

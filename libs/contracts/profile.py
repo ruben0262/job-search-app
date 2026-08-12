@@ -7,8 +7,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 logger = logging.getLogger(__name__)
 
-# Bumped when the shape changes.
-PROFILE_SCHEMA_VERSION = 2
+# Bumped when the shape changes. 3 removed `targets.company_size` (2026-08-12).
+#
+# Nothing reads `users.profile_schema_version` today, so this number is bookkeeping rather than a
+# safety mechanism — what makes a shape change safe is the migration that moves the data with it.
+PROFILE_SCHEMA_VERSION = 3
 
 
 class _Strict(BaseModel):
@@ -114,7 +117,11 @@ class Skills(_Strict):
 class Targets(_Strict):
     role_types: list[str] = Field(default_factory=list, max_length=10)
     seniority: str | None = Field(default=None, max_length=40)
-    company_size: str | None = Field(default=None, max_length=40)
+    # `company_size` was here and had no consumer anywhere — not the CV prompt, not the cover letter,
+    # not the scoring features, not the panel. Captured, validated, stored, read by nothing, and one
+    # of the two fields whose length cap dead-lettered an account's onboarding on 2026-08-11.
+    # Removed 2026-08-12; `b2c4e8f60a19` strips the key from stored profiles in the same change,
+    # because `extra="forbid"` turns a leftover key into a refusal rather than a shrug.
 
 
 class Constraints(_Strict):

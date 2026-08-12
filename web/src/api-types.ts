@@ -1859,8 +1859,6 @@ export interface components {
         };
         /** Targets */
         Targets: {
-            /** Company Size */
-            company_size?: string | null;
             /** Role Types */
             role_types?: string[];
             /** Seniority */

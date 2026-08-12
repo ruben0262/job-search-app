@@ -1162,18 +1162,6 @@
       "Targets": {
         "additionalProperties": false,
         "properties": {
-          "company_size": {
-            "anyOf": [
-              {
-                "maxLength": 40,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Company Size"
-          },
           "role_types": {
             "items": {
               "type": "string"
