@@ -115,6 +115,16 @@ class User(Base):
     documents_changed_at: Mapped[timestamptz | None]
     processed_at: Mapped[timestamptz | None]
 
+    # When the user last changed something they typed themselves — their name, their links, their
+    # search settings. Compared against each profile file's own `updated_at` to find the ones written
+    # before it (`libs.profiles.stale_after`).
+    #
+    # **A timestamp rather than a flag, deliberately.** A "needs refresh" boolean has to be cleared by
+    # whatever does the refresh, and a clear that never happens is a permanent banner — or, worse, one
+    # cleared too early leaves the files stale with nothing saying so. A comparison needs no clearing:
+    # rewriting the file moves its `updated_at` past this and the staleness ends by itself.
+    hard_data_changed_at: Mapped[timestamptz | None]
+
     # The rendered rubric.
     rubric_md: Mapped[str | None] = mapped_column(Text)
 

@@ -96,6 +96,25 @@ def setup_files() -> tuple[str, ...]:
     return tuple(name for name, _kind in SEED_FILES if not ships_usable(name))
 
 
+def stale_after(written: dict[str, object], changed_at) -> list[str]:
+    """Which setup files were written before the user last changed what they typed.
+
+    **Derived, never listed.** The obvious shape is a map from "field the user edited" to "files that
+    depend on it", and that map is a second source of truth: add a seed file, forget the map, and the
+    file silently never refreshes. So the question asked here is only "was this written before the
+    change" — a new file is covered the moment it exists, and a file nothing depends on costs one
+    unnecessary refresh rather than a silent staleness.
+
+    Self-clearing, which is why it is a comparison and not a flag: rewriting the file moves its
+    `updated_at` past `changed_at` and it stops being stale with nothing to reset.
+    """
+    if changed_at is None:
+        return []
+    return sorted(name for name in setup_files()
+                  if name in written and written[name] is not None
+                  and written[name] < changed_at)
+
+
 def missing_setup(files: dict[str, str]) -> list[str]:
     """Which setup files are absent or still a scaffold."""
     return [name for name in setup_files()

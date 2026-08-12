@@ -16,6 +16,7 @@ from libs.profiles import (
     scaffold,
     seed_files,
     ships_usable,
+    stale_after,
 )
 
 logger = logging.getLogger(__name__)
@@ -155,6 +156,18 @@ class ProfileFiles:
     def missing_setup(self) -> list[str]:
         """Setup files still absent or unfilled."""
         return missing_setup(self.all())
+
+    def stale_setup(self) -> list[str]:
+        """Setup files written before the user last changed what they typed.
+
+        Answered from each row's own `updated_at`, so nothing extra is stored to know it.
+        """
+        changed_at = self._s.scalar(
+            select(User.hard_data_changed_at).where(User.id == self._user))
+        written = dict(self._s.execute(
+            select(UserProfileFile.name, UserProfileFile.updated_at)
+            .where(UserProfileFile.user_id == self._user)).all())
+        return stale_after(written, changed_at)
 
     def repair_filled_flags(self) -> list[str]:
         """Recompute `filled` from content."""

@@ -303,3 +303,44 @@ def test_two_jobs_that_score_the_same_are_ordered_newest_first(api):
     assert ours.index("https://example.test/tie-newer") < ours.index(
         "https://example.test/tie-older"), "the newer of two equal scores comes first"
     assert ours[-1] == "https://example.test/tie-undated", "an undated row sorts last, not first"
+
+
+def test_changing_your_details_banners_that_the_profile_is_behind(api):
+    """The end of the chain: the stamp has to reach the user, or it is a column nothing reads.
+
+    One account added two links under Your details after setup had finished. `users.links` updated,
+    the prompts carrying their contact line did not, and nothing anywhere said so.
+
+    Deliberately a banner and not an action on the Process page. That page's only button re-reads the
+    documents and replaces the profile, invalidating every label the account has paid for — an
+    expensive and wrong answer to "you added a link". The fix is a setup conversation, so this points
+    there.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from libs.db.models import UserProfileFile
+    from libs.profiles import setup_files
+    from libs.profiles.repository import ProfileFiles
+
+    http, session, user, _ = api
+    ProfileFiles(session, user.id).seed()
+    session.flush()
+    written_a_day_ago = datetime.now(UTC) - timedelta(days=1)
+    for name in setup_files():
+        row = session.get(UserProfileFile, (user.id, name))
+        if row is not None:
+            row.content = f"# {name}\n\nReal content, no placeholders."
+            row.filled = True
+            row.updated_at = written_a_day_ago
+    session.flush()
+
+    keys = {banner["key"] for banner in http.get("/dashboard").json()["banners"]}
+    assert "setup_behind" not in keys, "nothing has changed yet, so there is nothing to say"
+
+    user.hard_data_changed_at = datetime.now(UTC)
+    session.flush()
+
+    banners = {banner["key"]: banner for banner in http.get("/dashboard").json()["banners"]}
+    assert "setup_behind" in banners, (
+        f"details changed, the files predate it, and nothing told the user: {sorted(banners)}")
+    assert "setup chat" in banners["setup_behind"]["text"], "it must say where the fix is"

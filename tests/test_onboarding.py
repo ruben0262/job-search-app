@@ -257,3 +257,39 @@ def test_the_identity_and_config_routes_return_the_users_own_data(api):
 
     config = http.get("/onboarding/config").json()
     assert config["config"]["sections"][0]["keywords"] == CONFIG["sections"][0]["keywords"]
+
+
+def test_saving_your_links_marks_the_profile_files_as_behind(api):
+    """**The bug this closes, end to end through the real route.**
+
+    An account added two links under Your details after setup had finished. `users.links` updated, the
+    prompts that carry their contact line did not, and nothing anywhere said so — no error, no banner,
+    and the CV kept describing the older answer.
+
+    Asserted through the endpoint rather than by calling the stamp directly: the failure was that
+    nothing on the save path set it, so a test that sets it itself would have passed throughout.
+    """
+    from libs.db.models import User
+
+    http, session, user = api
+    assert session.get(User, user.id).hard_data_changed_at is None
+
+    http.put("/onboarding/identity",
+             json={"full_name": "Alice Example",
+                   "links": [{"url": "https://github.com/alice"},
+                             {"url": "https://alice.dev"}]})
+    session.flush()
+
+    assert session.get(User, user.id).hard_data_changed_at is not None, (
+        "saving links left nothing to compare the profile files against")
+
+
+def test_saving_your_search_settings_marks_the_profile_files_as_behind(api):
+    """`label.md` and the role angles were written against the previous keywords."""
+    from libs.db.models import User
+
+    http, session, user = api
+    http.put("/onboarding/config", json=CONFIG)
+    session.flush()
+
+    assert session.get(User, user.id).hard_data_changed_at is not None

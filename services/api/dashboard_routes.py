@@ -88,7 +88,8 @@ def dashboard(db: Session = Depends(get_db),
         "telegram": user.telegram_status,
         # No cadence to report: a match is sent when it is scored.
         "notifications": {"per_day_cap": daily_cap(user)},
-        "banners": _banners(user, servable, onboarding),
+        "banners": _banners(user, servable, onboarding,
+                            stale=ProfileFiles(db, user_id).stale_setup()),
         # Whether to show the operator panel at all.
         "is_admin": _is_admin(user),
     }
@@ -101,7 +102,7 @@ def _stale_reason(user: User, model: UserModel | None) -> str:
             "a retrain")
 
 
-def _banners(user: User, servable: bool, onboarding) -> list[dict]:
+def _banners(user: User, servable: bool, onboarding, *, stale: list[str]) -> list[dict]:
     """The health warnings of `OPERATIONS_PLAN.md` §4b — failures the user can fix, said plainly."""
     banners = []
     if user.telegram_status == "broken":
@@ -113,6 +114,15 @@ def _banners(user: User, servable: bool, onboarding) -> list[dict]:
     if not user.active and servable:
         banners.append({"level": "info", "key": "paused",
                         "text": "Your feed is paused. Turn it on to start receiving jobs."})
+
+    # Their profile files were written before they last changed their name, links or search
+    # settings. Said here rather than as an action on the Process page: that page's only button
+    # re-reads their documents and replaces the profile, which invalidates every label — an expensive
+    # and wrong answer to "you added a link". The fix is a setup chat, so this points there.
+    if stale:
+        banners.append({"level": "info", "key": "setup_behind",
+                        "text": "You have changed your details since your profile was written. "
+                                "Open the setup chat to bring it up to date."})
 
     # Anything that was satisfied at signup and is not any more.
     regressed = [page for page in onboarding.pages

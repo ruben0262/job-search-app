@@ -49,6 +49,9 @@ def put_identity(body: IdentitySchema, db: Session = Depends(get_db),
     user = db.get(User, user_id)
     user.full_name = body.full_name
     user.links = [link.model_dump() for link in body.links]
+    # Their name and links are hard data: typed, theirs, and read by the prompts the setup agents
+    # wrote. Stamped so those files can be found stale rather than silently describing an old you.
+    user.hard_data_changed_at = func.now()
     audit(logger, "onboarding.identity", user=user_id, links=len(user.links))
     return {"status": "saved", "full_name": user.full_name, "links": user.links}
 
@@ -122,6 +125,9 @@ def put_config(body: UserConfigSchema, db: Session = Depends(get_db),
                    "remove a few, or ask us to raise it")
 
     TenantRepository(db).save_config(user_id, body.model_dump())
+    # Same reason as identity: what they search for is hard data, and `label.md` and the role angles
+    # were written against the previous answer.
+    db.get(User, user_id).hard_data_changed_at = func.now()
     audit(logger, "onboarding.config", user=user_id,
           sections=len(body.sections),
           keywords=sum(len(section.keywords) for section in body.sections))

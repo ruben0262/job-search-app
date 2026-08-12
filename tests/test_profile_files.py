@@ -170,3 +170,73 @@ def test_a_writing_prompt_still_holding_a_substitution_marker_is_unfilled():
             f"a prompt still holding {marker} was counted as finished")
 
     assert is_filled("# Tailoring prompt\n\nWrite for Alice Example, honestly.")
+
+
+# ── the typed half changing must not go unnoticed (2026-08-12) ─────────────────────────────────
+
+def test_a_file_written_before_the_change_is_stale_and_one_written_after_is_not():
+    """The gap this closes: one account added two links after setup and nothing was told.
+
+    The prompts that carry a contact line were written from the old answer and stayed that way, with
+    no error and nothing on any page saying so.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from libs.profiles import stale_after
+
+    changed = datetime(2026, 8, 12, 12, 0, tzinfo=UTC)
+    written = {
+        "context.md": changed - timedelta(hours=1),
+        "tailor_cv.md": changed + timedelta(hours=1),
+        "label.md": changed - timedelta(minutes=1),
+    }
+
+    assert stale_after(written, changed) == ["context.md", "label.md"]
+    assert "tailor_cv.md" not in stale_after(written, changed)
+
+
+def test_rewriting_a_stale_file_clears_it_with_nothing_to_reset():
+    """**Why this is a timestamp comparison and not a "needs refresh" flag.**
+
+    A flag has to be cleared by whatever does the refresh. A clear that never happens is a permanent
+    banner; one that happens too early leaves the files stale with nothing saying so. Both are sink
+    states. A comparison has neither: the refresh moves `updated_at` past the change and the staleness
+    ends by itself.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from libs.profiles import stale_after
+
+    changed = datetime(2026, 8, 12, 12, 0, tzinfo=UTC)
+    before = {"context.md": changed - timedelta(hours=1)}
+    assert stale_after(before, changed) == ["context.md"]
+
+    after = {"context.md": changed + timedelta(seconds=1)}
+    assert stale_after(after, changed) == []
+
+
+def test_an_account_that_never_changed_anything_is_never_stale():
+    """A NULL stamp means "typed nothing since setup", not "everything is stale"."""
+    from datetime import UTC, datetime
+
+    from libs.profiles import stale_after
+
+    written = {"context.md": datetime(2026, 1, 1, tzinfo=UTC)}
+    assert stale_after(written, None) == []
+
+
+def test_staleness_needs_no_map_from_field_to_file():
+    """Derived, so a new seed file is covered the moment it exists.
+
+    A map from "field the user edited" to "files that depend on it" is a second source of truth: add a
+    file, forget the map, and it silently never refreshes. This asks only whether the file predates the
+    change, so every setup file is in scope automatically.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from libs.profiles import setup_files, stale_after
+
+    changed = datetime(2026, 8, 12, 12, 0, tzinfo=UTC)
+    everything_old = {name: changed - timedelta(days=1) for name in setup_files()}
+
+    assert stale_after(everything_old, changed) == sorted(setup_files())
