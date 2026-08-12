@@ -134,3 +134,39 @@ def test_only_the_scoring_files_are_scoring_relevant():
     for name, _kind in SEED_FILES:
         if name in ("context.md", "base_cv.html", "01-candidate-profile.md"):
             assert name not in SCORING_RELEVANT_FILES, f"editing {name} must not cost a relabel"
+
+
+# ── a prompt still carrying a placeholder is not finished (2026-08-12) ─────────────────────────
+
+def test_the_writing_prompts_count_as_setup_files():
+    """**They were exempt, and that is why nothing ever filled them.**
+
+    `setup_files()` is `SEED_FILES` minus `SHIPS_USABLE`, and `tailor_cv.md` / `tailor_cover.md` sat
+    in `SHIPS_USABLE` — so `missing_setup()` never checked them and `list_profile_files` reported them
+    filled unconditionally. Guided setup could verify all day and be told they were fine while both
+    still said `<<NAME>>`.
+    """
+    from libs.profiles import setup_files
+
+    files = setup_files()
+    assert "tailor_cv.md" in files
+    assert "tailor_cover.md" in files
+
+
+def test_a_writing_prompt_still_holding_a_substitution_marker_is_unfilled():
+    """`<<NAME>>` and its siblings mean the prompt describes nobody yet.
+
+    They were deliberately excluded from `PLACEHOLDER_MARKERS` on the reasoning that they are "filled
+    at build time from one authoritative source". Measured on the live platform 2026-08-12, that
+    source was two sources already disagreeing — one account's typed name lacked the accent its
+    profile had, and its typed links held three entries where the profile held one. The prompts are
+    filled at setup now, so a marker means unfinished.
+    """
+    from libs.profiles import is_filled
+
+    for marker in ("<<NAME>>", "<<CONTACT>>", "<<LANGUAGES>>", "<<WORK_ELIGIBILITY>>",
+                   "<<HOME_LOCATION>>"):
+        assert not is_filled(f"# Tailoring prompt\n\nWrite for {marker}, honestly."), (
+            f"a prompt still holding {marker} was counted as finished")
+
+    assert is_filled("# Tailoring prompt\n\nWrite for Alice Example, honestly.")

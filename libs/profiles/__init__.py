@@ -48,16 +48,31 @@ GENERATION_FILES: tuple[str, ...] = (
 )
 
 # What an unfilled scaffold looks like.
-# `<<NAME>>` and its siblings are deliberately NOT here. They are substitution markers, filled at
-# build time from one authoritative source, and a prompt carrying them is complete rather than
-# unfinished. Treating them as placeholders would mean setup never finishes for anybody — and
-# baking real values into the file instead would put a person's contact details in two places,
-# which is how they go stale without erroring.
-PLACEHOLDER_MARKERS = ("[FILLED BY", "[YOUR NAME]", "[BRACKETED]", "[CITY, COUNTRY]")
+#
+# **`<<NAME>>` and its four siblings are markers, and the argument for excluding them was wrong.**
+# It read: they are filled at build time from one authoritative source, so a prompt carrying them is
+# complete, and baking values in would put contact details in two places where they go stale.
+#
+# Measured on the live platform 2026-08-12: that "one authoritative source" was already two, and they
+# already disagreed. One account's typed name lacked the accent its profile carried; its three typed
+# links were one link in the profile; the other account's profile held an email and phone it had never
+# typed. Meanwhile the guided setup step that fills these prompts was absent from `DIRECTOR_STEPS`, so
+# for every account onboarded normally they were never filled by anything — and being exempt from
+# `SHIPS_USABLE` below meant no check could see it.
+#
+# So they are filled once, at setup, from the person's own data, and a marker means unfinished.
+PLACEHOLDER_MARKERS = ("[FILLED BY", "[YOUR NAME]", "[BRACKETED]", "[CITY, COUNTRY]",
+                       "<<NAME>>", "<<CONTACT>>", "<<LANGUAGES>>", "<<WORK_ELIGIBILITY>>",
+                       "<<HOME_LOCATION>>")
 
-# Files that ship usable rather than as placeholders: framework rules and the task prompts.
-SHIPS_USABLE = ("05-cv-templates.md", "tailor_cv.md", "tailor_cover.md", "score.md",
-                "interview.md", "outreach.md", "build_cvs.md")
+# Files that ship usable rather than as placeholders: framework rules, and the task prompts nothing
+# personalises yet.
+#
+# `tailor_cv.md` and `tailor_cover.md` were here and are not any more. They are the two documents the
+# platform writes *for* a person, `setup-prompts` owns them, and `setup_files()` excludes whatever is
+# listed here — so `missing_setup()` never checked them and `list_profile_files` reported them filled
+# unconditionally. A gate that cannot see a file cannot report it unfinished.
+SHIPS_USABLE = ("05-cv-templates.md", "score.md", "interview.md", "outreach.md", "build_cvs.md")
 
 
 class ProfileIncomplete(RuntimeError):

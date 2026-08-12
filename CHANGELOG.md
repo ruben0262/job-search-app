@@ -14,6 +14,57 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-08-12 — the writing prompts nothing filled, and the gate that could not see them
+
+**PROMPT CHANGE, approved explicitly by the owner (CLAUDE.md §3a).** `libs/agents/setup-director.md`
+gains one table row and has nine numbers corrected. No tone, no instructions, no gate logic changed.
+Recorded here in full because §3a requires it:
+
+- new table row `| 3 | **Your document style** | tailor_cv.md, tailor_cover.md |`, role angles
+  renumbered to 4 and the rubric to 5
+- "the foundation the other three read" -> "the others read"
+- five occurrences of "eight" files -> "ten"; "none of the four is optional" -> "the five";
+  "Everything the four steps do" -> "the five steps"; "do not start a fourth step" and "rather than a
+  fourth step" -> "a sixth step"; "skipping step 4 means no rubric" -> "step 5"
+
+**Why. `setup-prompts` owns `tailor_cv.md` and `tailor_cover.md` and nothing ever ran it.** Yesterday
+it was added to `DIRECTOR_STEPS`, which put its instructions into the director's system prompt — and
+that was not enough on its own, because the director's own text said there were four steps, listed
+four in a table, and gated on eight files. Five instruction blocks against prose describing four.
+
+**And the gate could not have caught it either way.** `setup_files()` is `SEED_FILES` minus
+`SHIPS_USABLE`, and both writing prompts were in `SHIPS_USABLE` — so `missing_setup()` never checked
+them and `list_profile_files` reported them `filled=True` unconditionally. The director could verify
+all day and be told they were fine while both still said `<<NAME>>`.
+
+Both now leave `SHIPS_USABLE`, and `<<NAME>>`, `<<CONTACT>>`, `<<LANGUAGES>>`, `<<WORK_ELIGIBILITY>>`
+and `<<HOME_LOCATION>>` join `PLACEHOLDER_MARKERS`.
+
+**The comment that argued against this is replaced, because its premise was measurably false.** It
+read: these are filled at build time from one authoritative source, so baking values in would put
+contact details in two places where they go stale. Measured on the live platform 2026-08-12, that one
+source was already two and they already disagreed — one account's typed name lacked the accent its
+profile carried, its three typed links were one link in the profile, and the other account's profile
+held an email and phone it had never typed.
+
+**Consequence, stated because it is user-visible**: the second account's setup now reads as unfinished
+and `may_train` goes false for it, because its two writing prompts genuinely still carry placeholders.
+That is accurate rather than a regression, and it is what prompts the step to be run. Training is not
+blocked — the trainer's gate short-circuits on `user.profile`, which both accounts have.
+
+Three guards, all failing against the previous state:
+
+- `test_the_writing_prompts_count_as_setup_files` and
+  `test_a_writing_prompt_still_holding_a_substitution_marker_is_unfilled`
+- `test_the_file_count_the_director_states_is_the_real_one` — the prose said "eight" in five places
+  while the code decided the number. Proven by setting it back to eight.
+- `test_the_draft_accounts_for_every_file_the_trainer_gates_on` already existed and passed only
+  because those two files were exempt. Removing the exemption is what gave it teeth.
+
+**Two things I got wrong on the way, both worth recording.** The one-line `DIRECTOR_STEPS` change was
+reported as the fix and was half of it. And the proposal listed six prompt edits where there were
+nine — the count "eight" appeared in five places, not one.
+
 ## 2026-08-11 (night) — the health check, 18.8 seconds to 1.0 at fifty accounts
 
 ROADMAP **6be**, and the drill was run before anything was touched: a scratch database at **50

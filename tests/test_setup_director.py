@@ -45,7 +45,12 @@ def test_the_draft_names_nothing_that_does_not_exist_on_this_platform():
 # ── completeness: the gate must cover exactly what the trainer requires ────────────────────────
 
 def test_the_draft_accounts_for_every_file_the_trainer_gates_on():
-    """The director's gate and `train_user`'s gate must be the same eight files."""
+    """The director's gate and `train_user`'s gate must be the same ten files.
+
+    This passed while `tailor_cv.md` and `tailor_cover.md` were exempt from `setup_files()` — the
+    draft never mentioned them and it did not have to. Removing that exemption is what gave this test
+    teeth.
+    """
     text = _text(DRAFT)
     missing = [name for name in setup_files() if name not in text]
 
@@ -268,3 +273,27 @@ def test_the_director_runs_every_command_that_owns_a_file():
     assert not missing, (
         f"these commands own a setup file and guided setup never runs them: {missing}. A file whose "
         "owner is not a director step is a file nothing fills.")
+
+
+def test_the_file_count_the_director_states_is_the_real_one():
+    """The director tells the user "all ten profile files" and gates on that number.
+
+    It said eight for as long as `setup_files()` returned eight, and then two more files joined —
+    a number written into prose in five places cannot be trusted to follow the code that decides it.
+    A director that under-counts declares setup finished early; one that over-counts never finishes.
+    """
+    import re
+
+    text = _text(DRAFT)
+    expected = len(setup_files())
+    words = {8: "eight", 9: "nine", 10: "ten", 11: "eleven", 12: "twelve"}
+    word = words.get(expected)
+    assert word, f"add {expected} to this test's number words"
+
+    stale = sorted({found for found in words.values() if found != word
+                    and re.search(rf"\b{found}\b(?=[^.]*\bfile)", text)})
+    assert not stale, (
+        f"the director says {stale} files somewhere and `setup_files()` returns {expected} ({word}). "
+        "Under-counting declares setup finished early; over-counting never finishes.")
+    assert re.search(rf"\b{word}\b", text), (
+        f"the director never states the real file count ({word}), so nothing pins it to the code")
