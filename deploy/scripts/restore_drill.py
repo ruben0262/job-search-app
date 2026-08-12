@@ -63,35 +63,65 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     try:
-        # Copied in, not handed over.
-        process = subprocess.Popen(["psql", scratch, "-v", "ON_ERROR_STOP=1", "--quiet"],
-                                   stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
-                                   stderr=subprocess.PIPE)
-        with gzip.open(dump, "rb") as source:
-            shutil.copyfileobj(source, process.stdin)
-        process.stdin.close()
-        stderr = process.stderr.read()
-        process.stderr.close()
-        if process.wait() != 0:
-            print(f"restore FAILED: {stderr.decode(errors='replace')[-800:]}", file=sys.stderr)
-            return 1
-
-        failures = _check(live, scratch)
-        if failures:
-            for line in failures:
-                print(f"  FAILED: {line}", file=sys.stderr)
-            print(f"\nDRILL FAILED — {len(failures)} check(s). This backup would not have restored "
-                  f"a working platform.", file=sys.stderr)
-            return 1
-
-        print("\nDRILL PASSED. The dump restores, the rows are there, credentials decrypt with the "
-              "separately-held KEK, and a model is servable.")
-        return 0
+        return _restore_and_check(dump, live, scratch)
     finally:
         if args.keep:
             print(f"scratch database left behind: {scratch_name}")
         else:
             _psql(admin, f'DROP DATABASE IF EXISTS "{scratch_name}" WITH (FORCE)')
+
+
+def _restore_and_check(dump: Path, live: str, scratch: str) -> int:
+    """Load the dump, migrate it, and run the checks. Split out so `main` stays under the
+    return-statement ceiling — the drill has a lot of distinct ways to fail, and each deserves its
+    own exit rather than being folded into a flag."""
+    # Copied in, not handed over.
+    process = subprocess.Popen(["psql", scratch, "-v", "ON_ERROR_STOP=1", "--quiet"],
+                               stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
+                               stderr=subprocess.PIPE)
+    with gzip.open(dump, "rb") as source:
+        shutil.copyfileobj(source, process.stdin)
+    process.stdin.close()
+    stderr = process.stderr.read()
+    process.stderr.close()
+    if process.wait() != 0:
+        print(f"restore FAILED: {stderr.decode(errors='replace')[-800:]}", file=sys.stderr)
+        return 1
+
+    problem = _migrate(scratch)
+    if problem:
+        print(f"migrating the restored database FAILED: {problem}", file=sys.stderr)
+        return 1
+    print("  migrated to head")
+
+    failures = _check(live, scratch)
+    if failures:
+        for line in failures:
+            print(f"  FAILED: {line}", file=sys.stderr)
+        print(f"\nDRILL FAILED — {len(failures)} check(s). This backup would not have restored "
+              f"a working platform.", file=sys.stderr)
+        return 1
+
+    print("\nDRILL PASSED. The dump restores, the rows are there, credentials decrypt with the "
+          "separately-held KEK, and a model is servable.")
+    return 0
+
+
+def _migrate(scratch: str) -> str | None:
+    """Bring the restored database to head. Returns the error, or None.
+
+    **A dump predates the migrations written after it, and a real recovery runs them.** Until this
+    existed the drill could not pass: the ORM asks for every column the current code knows about, the
+    restored schema has only the ones that existed when the dump was taken, and the decryption check
+    died on `UndefinedColumn`. That is not a bad backup — it is an unmigrated one.
+    """
+    result = subprocess.run(
+        [sys.executable, "-m", "alembic", "upgrade", "head"],
+        cwd=str(Path(__file__).resolve().parents[2]),
+        env={**os.environ,
+             "DATABASE_URL": scratch.replace("postgresql://", "postgresql+psycopg://")},
+        capture_output=True, text=True, check=False)
+    return None if result.returncode == 0 else result.stderr.strip()[-800:]
 
 
 def _check(live: str, scratch: str) -> list[str]:
@@ -101,7 +131,17 @@ def _check(live: str, scratch: str) -> list[str]:
     # 1. The rows are there, and match. A dump taken mid-write is the case this catches.
     for table in ("users", "corpus", "user_labels", "models", "user_secrets"):
         live_count, restored = _count(live, table), _count(scratch, table)
-        status = "ok" if restored >= live_count > 0 or live_count == restored else "MISMATCH"
+        # A dump is a moment, and `corpus` grows every fifteen minutes. Fewer rows than live is
+        # expected and was being printed as MISMATCH, which reads as a fault in the backup. Only an
+        # empty or unqueryable table is one, and that is what the checks below actually fail on.
+        if restored < 0:
+            status = "UNQUERYABLE"
+        elif restored == 0 and live_count > 0:
+            status = "EMPTY"
+        elif restored < live_count:
+            status = f"ok (live grew by {live_count - restored:,} since the dump)"
+        else:
+            status = "ok"
         print(f"  {table:14} live={live_count:<8} restored={restored:<8} {status}")
         if restored < 0:
             failures.append(f"{table} is not queryable in the restored database")

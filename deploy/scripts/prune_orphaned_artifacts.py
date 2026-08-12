@@ -35,11 +35,20 @@ def _megabytes(paths: list[Path]) -> float:
 def orphans(session: Session, artifact_dir: Path) -> list[Path]:
     """Files in `artifact_dir` that no row claims.
 
-    Compared by resolved path, because the column stores whatever string the trainer was given and a
-    relative path on one box is an absolute one on another.
+    **Compared by filename, and comparing resolved paths instead was very nearly a disaster.**
+    `models.path` holds the path as the *trainer's container* saw it —
+    `/var/lib/jobsearch/models/<id>.vN.joblib` — while this runs on the host, where the same files
+    live under `MODEL_DIR`. Resolved absolute paths therefore never matched, every file looked
+    unclaimed, and a first run reported all eight as orphans including both **active** models. With
+    `--delete` that would have removed the artifacts the scorer serves from, for every account.
+
+    The filename is the durable identity — `_write_artifact` composes it from the user id and the
+    version, and `resolve_artifact` already falls back to `MODEL_DIR` plus the basename for exactly
+    this reason. Only the dry-run default stood between the bug and the damage, which is the argument
+    for that default rather than a note about it.
     """
-    claimed = {Path(p).resolve() for p in session.scalars(select(UserModel.path))}
-    return sorted(p for p in artifact_dir.glob("*.joblib") if p.resolve() not in claimed)
+    claimed = {Path(p).name for p in session.scalars(select(UserModel.path))}
+    return sorted(p for p in artifact_dir.glob("*.joblib") if p.name not in claimed)
 
 
 def main() -> int:

@@ -23,6 +23,11 @@ accounts.local.txt
 # Vite build output. Cloudflare Pages builds it; the repo carries the source.
 web/dist/
 
+# Trained model artifacts, one or more per account. Bind-mounted into the scorer and trainer so the
+# backup and the pruning tools can see them (they could not while this was a named volume). Never in
+# git: they are per-person classifiers, megabytes each, and rebuildable by a retrain.
+models/
+
 # Archived postings — retention writes them here before deleting the rows (`libs.corpus.archive`).
 # Never in git: it is real job text at whatever volume the corpus turns over, and on the box it is
 # the ONLY remaining copy, so it belongs in the off-box backup rather than in a repository.

@@ -201,7 +201,13 @@ services:
       WORKER_NAME: scorer-1
     volumes:
       - ../logs:/var/log/jobsearch
-      - models:/var/lib/jobsearch/models
+      # A bind mount, not a named volume, and the reason is that three host-side tools point here.
+      # It was `models:` — invisible from the host — so `backup.py --models` silently archived nothing
+      # (`if models.is_dir()` was false), `prune_orphaned_artifacts.py` exited "no artifact
+      # directory", and `restore_drill.py` reported every active artifact missing. One root cause,
+      # three tools quietly doing nothing. `logs` and `archive` were already bind mounts; this makes
+      # the third consistent with them.
+      - ../models:/var/lib/jobsearch/models
     depends_on:
       postgres:
         condition: service_healthy
@@ -223,7 +229,13 @@ services:
       WORKER_NAME: trainer-1
     volumes:
       - ../logs:/var/log/jobsearch
-      - models:/var/lib/jobsearch/models
+      # A bind mount, not a named volume, and the reason is that three host-side tools point here.
+      # It was `models:` — invisible from the host — so `backup.py --models` silently archived nothing
+      # (`if models.is_dir()` was false), `prune_orphaned_artifacts.py` exited "no artifact
+      # directory", and `restore_drill.py` reported every active artifact missing. One root cause,
+      # three tools quietly doing nothing. `logs` and `archive` were already bind mounts; this makes
+      # the third consistent with them.
+      - ../models:/var/lib/jobsearch/models
     depends_on:
       postgres:
         condition: service_healthy
@@ -387,6 +399,6 @@ networks:
 
 volumes:
   pgdata:
-  # Model artifacts. A named volume rather than a bind mount: the trainer writes them and the
-  # scorer reads them, and neither should depend on a host path existing.
-  models:
+  # `models:` was here. It is a bind mount now (`../models`), because three host-side tools read that
+  # directory — the backup, the orphan pruner and the restore drill — and a named volume is invisible
+  # to all three. They were not failing; they were silently finding nothing.
