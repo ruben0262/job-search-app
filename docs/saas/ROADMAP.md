@@ -1355,6 +1355,44 @@ Recommended next: re-measure each floor against `avg_h_old_when_found` per sourc
 that are covering for the date-only rule instead. Every number above is reproducible from one query
 over `corpus`.
 
+### 6bg — the keyword features are worth keeping, measured (added 2026-08-12)
+
+**Asked because they looked like extras.** `job_features` glues nine numbers onto a 768-dimension
+embedding, and only three of them read the account's profile at all — `core_stack_count`,
+`offstack_count` and `region_lock_flag`, built by `feature_spec` from `skills.*`,
+`experience[].stack`, `projects[].stack`, `not_list` and `identity.work_eligibility`. The other six
+are regexes over the posting's own text and need no profile. Three numbers out of 777 is a plausible
+thing to delete, and 6q had already written that the keyword terms were "an addition" because "the
+embedding carries the signal".
+
+**They are not extras. Measured against both live accounts' real training sets, 2026-08-12:**
+
+| account | comparison | paired delta (avg precision) | t | folds won |
+|---|---|---|---|---|
+| owner (2,647 labels) | all 9 vs the 6 needing no profile | **+0.0075** | **+5.18** | **18/20** |
+| owner | all 9 vs embedding alone | +0.0119 | +7.69 | **20/20** |
+| second account (340 labels) | all 9 vs the 6 needing no profile | +0.0074 | +1.85 | 12/20 |
+| second account | all 9 vs embedding alone | +0.0146 | +2.74 | 15/20 |
+
+Same estimator, same repeated stratified folds (5x4), scored as average precision — the measure the
+trainer's own bake-off already records.
+
+**The analysis is the point, and the first version of it was wrong.** Comparing the three variants'
+mean scores with their independent spreads, the effect disappeared: +0.0075 inside a fold spread of
+0.029 to 0.059, which reads as unmeasurable. Paired on identical folds — where the spread that
+matters is the spread of the *difference* — the same data gives t=+5.18 and 18 of 20 folds. An
+unpaired comparison of cross-validated means will hide any small consistent effect, and this one
+would have been deleted on the strength of it.
+
+**Effect size, stated plainly**: about 2% relative improvement in average precision. Real,
+significant on the account with enough labels, and reproduced at the same magnitude on an unrelated
+career. Not transformative. Worth keeping, and worth knowing it is worth about that much rather than
+assuming either way.
+
+**What this means for the schema work**: `ProfileSchema` cannot shrink to nothing. After the CV path
+stops reading it (6q), the fields `feature_spec` needs are the ones that stay — five paths, not
+fifty.
+
 ## Phase 7 — the pipeline, in the order it has to be right (added 2026-08-04)
 
 **The owner's sequencing, and it is the correction to how this work was being picked up.** The
