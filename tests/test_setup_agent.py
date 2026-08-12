@@ -405,3 +405,32 @@ def test_rewriting_the_rubric_marks_existing_labels_stale(account):
     tools.run("write_profile_file", {"name": "label.md", "content": "a different rubric"})
     session.flush()
     assert user.profile_generation == 1
+
+
+def test_every_turn_is_given_what_the_person_typed_without_the_model_asking(account):
+    """**Injected into the system prompt, not offered as a tool, and this reads the real call site.**
+
+    A tool the model *may* call is one it may skip — and then the hard data exists while the agent
+    never looks. That is how one account's two extra links never reached the prompt that writes its
+    contact line: `users.links` had three, the prompt had one, and nothing was wrong enough to error.
+
+    Asserted against what `run_turn` actually handed the client, not by composing `system_prompt()`
+    and `harddata.render()` here. Composing it in the test would pass with the injection deleted,
+    which is the whole class of defect this session has been unpicking.
+    """
+    from libs.agents.loop import run_turn
+
+    session, user = account
+    user.full_name = "Alice Example"
+    user.links = [{"url": "https://github.com/alice", "platform": "github"},
+                  {"url": "https://alice.dev", "platform": "other"}]
+    session.flush()
+
+    chat = _chat(session, user.id)
+    client = FakeClient({"text": "Noted.", "tool_uses": []})
+    run_turn(session, user.id, conversation_id=chat, client=client, message="hello")
+
+    system = client.calls[0]["system"]
+    assert "Alice Example" in system, "the turn never saw the name they typed"
+    assert "https://alice.dev" in system, "the turn never saw every link they typed"
+    assert "typed themselves" in system, "nothing told the model which source is authoritative"

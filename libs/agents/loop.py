@@ -19,6 +19,7 @@ from libs.agents import (
 from libs.agents.tools import SetupTools
 from libs.db.models import DEFAULT_TITLE, SetupConversation, SetupMessage
 from libs.db.models.setup import SETUP_AGENTS
+from libs.profiles import harddata
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +79,11 @@ def run_turn(session: Session, user_id: _uuid.UUID, *, client, message: str,
 
     tools = SetupTools(session, user_id)
     messages = history(session, user_id, conversation_id)
-    prompt = system_prompt(agent)
+    # The command's instructions, then the typed half of this person's profile. Injected rather than
+    # offered as a tool: nothing in it needs judgement, and a tool the model may call is one it may
+    # skip — which is how one account's two new links never reached the prompt writing its contact
+    # line (`libs.profiles.harddata`).
+    prompt = system_prompt(agent) + harddata.render(session, user_id)
 
     reply_parts: list[str] = []
     executed: list[dict] = []
