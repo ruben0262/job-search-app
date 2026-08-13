@@ -140,17 +140,20 @@ class ProfileFiles:
         ever arrived. That is not a rare state — it is every user between finishing setup and
         confirming their details.
 
+        **The `user.profile` half of that question is now gone, because the build stopped asking
+        it.** A confirmed capture schema was required here and in `docgen._load`, and by the time
+        the schema came out of generation the only thing left reading it was `_filename` — a build
+        was gated on a confirmed profile in order to name a PDF, which `users.full_name` already
+        answers. Guided setup writes the ten profile files and never writes `users.profile`, so
+        the gate refused every account that onboarded through the chat: the normal path.
+
         The refusal text is returned rather than a boolean because the caller shows it to the
         person, and the reason is the useful half.
         """
         if not self.is_ready():
             return ("Finish your setup chat first — a CV needs your profile to build from.")
-        user = self._s.get(User, self._user)
-        if user is None:
+        if self._s.get(User, self._user) is None:
             return f"no such user: {self._user}"
-        if not user.profile:
-            return ("Confirm your details first — your CV is built from the profile you "
-                    "confirm, and this account has not confirmed one yet.")
         return None
 
     def missing_setup(self) -> list[str]:

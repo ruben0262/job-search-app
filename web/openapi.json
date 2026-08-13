@@ -4607,7 +4607,7 @@
     },
     "/telegram/webhook/{secret}": {
       "post": {
-        "description": "One button tap.",
+        "description": "One button tap or one typed command, handled and then answered.",
         "operationId": "webhook_telegram_webhook__secret__post",
         "parameters": [
           {

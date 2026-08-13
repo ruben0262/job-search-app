@@ -1427,7 +1427,7 @@ export interface paths {
         put?: never;
         /**
          * Webhook
-         * @description One button tap.
+         * @description One button tap or one typed command, handled and then answered.
          */
         post: operations["webhook_telegram_webhook__secret__post"];
         delete?: never;

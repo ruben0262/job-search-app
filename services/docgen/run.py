@@ -12,7 +12,6 @@ from dataclasses import dataclass
 
 from sqlalchemy import func, select
 
-from libs.contracts.profile import ProfileSchema
 from libs.db.models import CorpusJob, User, UserJobState, UserLabel
 from libs.obs import audit
 from libs.profiles import ProfileIncomplete
@@ -64,7 +63,6 @@ def run_build(session, user_id: _uuid.UUID, job_id: int, *,
             refresh_before_build(session, job, http)
         except PostingClosed as exc:
             raise NotBuildable(str(exc)) from exc
-    profile = ProfileSchema.model_validate(user.profile)
 
     # The reference instance's `CLAUDE.md` and skill files, per user (`libs/profiles`).
     files = ProfileFiles(session, user_id)
@@ -83,15 +81,15 @@ def run_build(session, user_id: _uuid.UUID, job_id: int, *,
         context = build.job_context(job, score=score,
                                     fit_notes=_fit_notes(session, user_id, job_id),
                                     salary_bands=_salary_bands(user))
-        filename = _filename(profile, kind)
+        filename = _filename(user.full_name, kind)
 
         if kind == "cover":
             document, report, calls = _cover(
-                client, profile, context, base_cv=base_cv, grounding=grounding, scratch=scratch,
+                client, context, base_cv=base_cv, grounding=grounding, scratch=scratch,
                 filename=filename, template=files.read("tailor_cover.md"))
         else:
             document, report, calls = _tailor_until_it_fits(
-                client, profile, context, base_cv=base_cv, facts_md=grounding, scratch=scratch,
+                client, context, base_cv=base_cv, facts_md=grounding, scratch=scratch,
                 filename=filename, template=files.read("tailor_cv.md"),
                 role_angles=files.read("08-role-angles.md"))
         pages = report.pages
@@ -121,7 +119,7 @@ def run_build(session, user_id: _uuid.UUID, job_id: int, *,
         shutil.rmtree(scratch, ignore_errors=True)
 
 
-def _cover(client, profile: ProfileSchema, context: str, *,
+def _cover(client, context: str, *,
            base_cv: str, grounding: str | None, scratch: pathlib.Path, filename: str,
            template: str | None = None) -> tuple[pathlib.Path, pdf.PdfReport, int]:
     """One call, no revision loop."""
@@ -130,7 +128,7 @@ def _cover(client, profile: ProfileSchema, context: str, *,
     return (*_render(letter, scratch, filename, kind="cover"), 1)
 
 
-def _tailor_until_it_fits(client, profile: ProfileSchema, context: str, *,
+def _tailor_until_it_fits(client, context: str, *,
                           base_cv: str, facts_md: str | None, scratch: pathlib.Path,
                           filename: str, template: str | None = None,
                           role_angles: str | None = None,
@@ -193,8 +191,6 @@ def _load(session, user_id: _uuid.UUID, job_id: int) -> tuple[User, CorpusJob, f
     user = session.get(User, user_id)
     if user is None:
         raise NotBuildable(f"no such user: {user_id}")
-    if not user.profile:
-        raise NotBuildable("this account has no confirmed profile — finish onboarding first")
 
     job = session.get(CorpusJob, job_id)
     if job is None:
@@ -227,10 +223,10 @@ def _record(session, user_id: _uuid.UUID, job: CorpusJob) -> None:
     session.flush()
 
 
-def _filename(profile: ProfileSchema, kind: str = "cv") -> str:
-    """`Alice_Example_CV.pdf`."""
+def _filename(full_name: str | None, kind: str = "cv") -> str:
+    """`Alice_Example_CV.pdf`, from the name the user typed at signup."""
     label = "Cover" if kind == "cover" else FILENAME_SUFFIX
-    slug = re.sub(r"[^A-Za-z0-9]+", "_", profile.identity.name).strip("_")
+    slug = re.sub(r"[^A-Za-z0-9]+", "_", full_name or "").strip("_")
     return f"{slug}_{label}.pdf" if slug else f"{label}.pdf"
 
 

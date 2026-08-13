@@ -517,45 +517,30 @@ def test_a_build_is_refused_at_the_tap_when_setup_is_unfinished(api):
         "nothing is queued that could only fail")
 
 
-def test_a_build_is_refused_when_the_profile_was_never_confirmed(api):
-    """The state a real account was stuck in, and the reason nothing arrived.
-
-    The setup chat had written every profile file, so the Telegram handler's `is_ready()` check
-    passed and answered "Building your CV — it will arrive here shortly". The worker then asked a
-    different question, `user.profile`, found nothing, and refused. Both checks were individually
-    correct; between them the platform promised a document it could not build, every time, and
-    the queue retried the refusal every sixty seconds.
-    """
-    http, session, user, job = api
-    user.profile = None
-    session.flush()
-
-    # `bc` is the wire prefix for Build my CV (`CALLBACK_PREFIX`).
-    body = tap(http, job.id, action="bc").json()
-
-    assert body["status"] == "not_ready"
-    assert "confirm" in body["answer"].lower()
-    # And nothing was queued for a build that cannot happen.
-    from libs.db.models import QueueJob
-    lanes = [row.lane for row in session.query(QueueJob).filter_by(user_id=user.id).all()]
-    assert "docgen" not in lanes
-
-
 def test_the_admission_check_and_the_worker_ask_the_same_question(api):
-    """One definition. Two would drift again, and drifting is what caused the outage."""
+    """One definition. Two would drift again, and drifting is what caused the outage.
+
+    The condition is now "has the setup chat written this account's files", and nothing else. It
+    used to be that plus a confirmed `user.profile`, asked in two places with different answers —
+    the handler checked the files and promised a document, the worker checked the schema and
+    refused. What retired the second question was finding that the only thing still reading the
+    schema was the line that names the PDF.
+    """
+    from sqlalchemy import delete
+
+    from libs.db.models import UserProfileFile
     from libs.profiles.repository import ProfileFiles
+    from services.docgen import run
 
     _http, session, user, job = api
-    user.profile = None
+    session.execute(delete(UserProfileFile).where(UserProfileFile.user_id == user.id))
     session.flush()
 
-    blocker = ProfileFiles(session, user.id).build_blocker()
-
-    assert blocker is not None
+    assert ProfileFiles(session, user.id).build_blocker() is not None
     # The worker's own refusal path must agree with what the handler told the user.
-    from services.docgen import run
     with pytest.raises(run.NotBuildable):
-        run._load(session, user.id, job.id)
+        run.run_build(session, user.id, job.id, kind="cv", client=None,
+                      send_document=lambda *a, **k: None, token="x")
 
 
 def test_building_records_the_label_but_does_not_start_a_fit(api):
@@ -591,3 +576,129 @@ def test_an_explicit_thumbs_up_still_starts_a_fit(api):
 
     lanes = [row.lane for row in session.query(QueueJob).filter_by(user_id=user.id).all()]
     assert "train" in lanes
+
+
+# ── the reply nobody was getting ───────────────────────────────────────────────────────────────
+#
+# Every handler above composes a sentence for the person who tapped, and until `_reply` existed all
+# of them went into the HTTP response body — which Telegram discards unless it names a Bot API
+# method. So a tap spun and did nothing, `/rate` answered with a card that was never sent, and a
+# refusal was never seen. These tests assert the sentence leaves the building.
+
+@pytest.fixture()
+def bot(api, monkeypatch):
+    """The api fixture, with a stored bot token and every Bot API call captured."""
+    from libs.notify import telegram
+    from libs.secrets import SecretStore
+
+    http, session, user, job = api
+    SecretStore(session).put(user.id, "telegram_bot", "123456:AAtesttoken")
+    session.flush()
+
+    calls: list[tuple] = []
+    monkeypatch.setattr(telegram, "answer_callback",
+                        lambda token, query_id, text="": calls.append(("answer", text)) or True)
+    monkeypatch.setattr(telegram, "send_message",
+                        lambda token, chat_id, text, keyboard=None:
+                        calls.append(("message", chat_id, text, keyboard)) or True)
+    return http, session, user, job, calls
+
+
+def test_a_build_tap_tells_the_person_it_started(bot):
+    """The one acknowledgement that matters: a build takes minutes, so silence reads as broken."""
+    http, _, _, job, calls = bot
+    assert tap(http, job.id, action="bc").json()["status"] == "queued"
+
+    assert calls, "the tap was answered"
+    kind, text = calls[0]
+    assert kind == "answer"
+    assert "Building your CV" in text
+
+
+def test_a_refusal_reaches_the_person_who_tapped(bot):
+    """A refused build is the case with no other evidence — no document ever arrives."""
+    from libs import limits
+    from libs.queue import enqueue
+
+    http, session, user, job, calls = bot
+    # Nothing left for today.
+    allowed = limits.resolve(user, "cv_builds_per_day")
+    for index in range(allowed):
+        enqueue(session, "docgen", user.id, payload={"job_id": 900_000 + index, "kind": "cv"},
+                dedup_key=f"cv:{900_000 + index}")
+    session.flush()
+    calls.clear()
+
+    body = tap(http, job.id, action="bc").json()
+    assert body["status"] == "over_quota"
+    assert calls and calls[0][0] == "answer", "the refusal was delivered, not swallowed"
+    assert calls[0][1], "and it says something"
+
+
+def test_rate_sends_the_card_it_composes(bot):
+    """`/rate` built a keyboard and returned it to Telegram's discarded response body."""
+    http, session, user, _, calls = bot
+    _scored(session, user, score=50.0)
+    session.flush()
+    calls.clear()
+
+    assert say(http, "/rate").json()["status"] == "rate"
+    assert calls, "the card was sent"
+    kind, _chat_id, _text, keyboard = calls[0]
+    assert kind == "message"
+    assert keyboard, "with its two answers attached"
+    assert [b["callback_data"].split(":")[0] for b in keyboard["inline_keyboard"][0]] == ["ap", "sk"]
+
+
+def test_nothing_is_said_when_nothing_happened(bot):
+    """An ordinary message is acknowledged to Telegram and never answered to the person."""
+    http, _, _, _, calls = bot
+    assert say(http, "good morning").json()["status"] == "ignored"
+    assert calls == []
+
+
+def test_a_tap_is_answered_even_when_the_bot_token_has_gone(api):
+    """A missing token loses the acknowledgement, never the build."""
+    from libs.db.models import QueueJob
+
+    http, session, user, job = api
+    assert tap(http, job.id, action="bc").json()["status"] == "queued"
+    session.flush()
+
+    lanes = [row.lane for row in session.query(QueueJob).filter_by(user_id=user.id).all()]
+    assert "docgen" in lanes
+
+
+# ── the gate that refused every chat-onboarded account ─────────────────────────────────────────
+
+def test_an_account_that_only_finished_the_setup_chat_can_build(api):
+    """Guided setup writes the ten profile files and never writes `users.profile`.
+
+    That was criterion three of eight, and it refused the normal onboarding path: the drill account
+    finished every step of the setup chat, had ten filled files and a CV that built by hand, and was
+    told "Confirm your details first". The schema was required in order to name a PDF.
+    """
+    from libs.db.models import QueueJob
+    from libs.profiles.repository import ProfileFiles
+
+    http, session, user, job = api
+    user.profile = None
+    user.full_name = "Dana Testerson"
+    session.flush()
+
+    assert ProfileFiles(session, user.id).build_blocker() is None
+    assert tap(http, job.id, action="bc").json()["status"] == "queued"
+    session.flush()
+
+    lanes = [row.lane for row in session.query(QueueJob).filter_by(user_id=user.id).all()]
+    assert "docgen" in lanes
+
+
+def test_the_document_is_named_from_the_name_the_user_typed():
+    """`users.full_name` is hard data; the capture schema was a second copy of it."""
+    from services.docgen.run import _filename
+
+    assert _filename("Andras Lekli") == "Andras_Lekli_CV.pdf"
+    assert _filename("Andras Lekli", "cover") == "Andras_Lekli_Cover.pdf"
+    # Nullable, and a build must not fail over a filename.
+    assert _filename(None).endswith(".pdf")

@@ -15,6 +15,7 @@ from libs.corpus import ondemand
 from libs.corpus.ondemand import NotAJobLink
 from libs.db.models import CorpusJob, User
 from libs.feedback import ACTIONS, next_to_rate, record
+from libs.notify import telegram
 from libs.obs import audit
 from libs.profiles.repository import ProfileFiles
 from libs.queue import enqueue, jobs_today
@@ -101,14 +102,24 @@ def _build(db, user, action: str, job_id: int) -> dict:
 @router.post("/webhook/{secret}")
 async def webhook(secret: str, request: Request, db: Session = Depends(get_db),
                   x_telegram_bot_api_secret_token: str | None = Header(default=None)) -> dict:
-    """One button tap."""
+    """One button tap or one typed command, handled and then answered."""
     user = _authenticate(secret, db, x_telegram_bot_api_secret_token)
     update = await request.json()
 
     query = update.get("callback_query")
     if not query:
-        return _command(db, user, update.get("message") or {})
+        message = update.get("message") or {}
+        result = _command(db, user, message)
+        _reply(db, user, result, chat_id=str((message.get("chat") or {}).get("id") or ""))
+        return result
 
+    result = _tap(db, user, query)
+    _reply(db, user, result, query_id=str(query.get("id") or ""))
+    return result
+
+
+def _tap(db: Session, user: User, query: dict) -> dict:
+    """One tap on an inline button."""
     tapper = str((query.get("from") or {}).get("id") or "")
     if not _is_owner(user, tapper):
         # A channel member who is not the account owner.
@@ -131,6 +142,45 @@ async def webhook(secret: str, request: Request, db: Session = Depends(get_db),
     return {"status": "recorded" if result.changed else "already",
             "action": result.action,
             "answer": _confirmation(result.action, result.changed)}
+
+
+def _reply(db: Session, user: User, result: dict, *,
+           query_id: str = "", chat_id: str = "") -> None:
+    """Tell the person what happened. **Nothing else does.**
+
+    The handlers above compose a sentence and this is what puts it in front of somebody: an
+    `answerCallbackQuery` for a tap, a `sendMessage` for a typed command. Before this existed the
+    sentence went into the HTTP response body, which Telegram discards, so every tap was silent and
+    `/rate` replied with a card nobody received.
+
+    Committed first, deliberately. "Building your CV" is a promise about a queued row, and saying it
+    before the row is durable is how a person is told about work that then rolls back.
+    """
+    answer = result.get("answer") or result.get("message") or ""
+    if not answer:
+        # `ignored` and `unknown_action` — nothing happened, so there is nothing to say.
+        return
+
+    db.commit()
+    try:
+        with SecretStore(db).use(user.id, "telegram_bot") as secret:
+            if secret is None:
+                logger.warning("telegram: no bot token for %s, so the reply was dropped", user.id)
+                return
+            token = secret.reveal()
+    except SecretsError:
+        logger.warning("telegram: bot token for %s could not be read, so the reply was dropped",
+                       user.id)
+        return
+
+    if query_id:
+        telegram.answer_callback(token, query_id, answer)
+        return
+    target = chat_id or (user.telegram_chat_id or "")
+    if not target:
+        logger.warning("telegram: no chat to reply to for %s", user.id)
+        return
+    telegram.send_message(token, target, answer, result.get("keyboard"))
 
 
 def _command(db: Session, user: User, message: dict) -> dict:

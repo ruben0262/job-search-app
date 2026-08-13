@@ -303,7 +303,11 @@ DEFAULT_FILES = {"grounding": "# Facts about Alice Example", "base_cv.html": TAI
 def _session(monkeypatch, *, profile=PROFILE, chat_id="4242", description="Backend role. Python.",
              profile_files=DEFAULT_FILES):
     """A stand-in for the two `session.get` calls and the pin, with no database."""
+    # `full_name` is where the document's filename comes from — the name the user typed at signup,
+    # not `profile.identity.name`. The schema was a second copy of the same fact and it was the last
+    # thing in a build still reading `user.profile`.
     user = type("U", (), {"id": uuid.uuid4(), "profile": profile.model_dump(),
+                          "full_name": profile.identity.name,
                           "facts_md": "# Facts about Alice Example",
                           "config": None,
                           "telegram_chat_id": chat_id})()
