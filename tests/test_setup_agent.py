@@ -434,3 +434,92 @@ def test_every_turn_is_given_what_the_person_typed_without_the_model_asking(acco
     assert "Alice Example" in system, "the turn never saw the name they typed"
     assert "https://alice.dev" in system, "the turn never saw every link they typed"
     assert "typed themselves" in system, "nothing told the model which source is authoritative"
+
+
+# ── a new account, onboarded end to end (2026-08-13) ──────────────────────────────────────────
+
+def _written(name: str, step: str) -> str:
+    """What a step leaves behind. The writing prompts keep the two markers a real one carries.
+
+    `<JOB_CONTEXT>` and `<BASE_TEMPLATE>` are substituted at build time and are not placeholders —
+    they are the job and the base CV, which change per build. `<<NAME>>` and its siblings are,
+    which is the distinction `PLACEHOLDER_MARKERS` draws.
+    """
+    body = f"# {name} — real content for Alice Example, written by {step}."
+    if name == "tailor_cv.md":
+        return body + " <JOB_CONTEXT> <BASE_TEMPLATE>"
+    if name == "tailor_cover.md":
+        return body + " <HEAD_BLOCK> <JOB_CONTEXT>"
+    return body
+
+
+def test_a_newly_onboarded_account_ends_with_every_file_filled_and_a_buildable_cv(account):
+    """**The guard on the whole onboarding path**, which had four separate holes this week.
+
+    `setup-prompts` was absent from `DIRECTOR_STEPS`, so guided setup ran four steps of five and left
+    both writing prompts saying `<<NAME>>`. Those two files were also exempt from `SHIPS_USABLE`, so
+    `missing_setup()` could not see them and every completeness check passed anyway. The `filled`
+    column said true because it was computed at seed time. And nothing checked that a CV could
+    actually be built at the end.
+
+    So this walks a fresh account through every director step with a fake model, then asserts what a
+    real user needs: nothing missing, no placeholder anywhere, and a CV prompt that assembles.
+    """
+    from libs.agents import DIRECTOR_STEPS, FILE_OWNERS
+    from libs.agents.loop import run_turn
+    from libs.profiles import is_filled, setup_files
+    from libs.profiles.repository import ProfileFiles
+    from services.docgen import build
+
+    session, user = account
+    files = ProfileFiles(session, user.id)
+    assert files.missing_setup(), "a freshly seeded account must start incomplete"
+
+    # Each step writes the files it owns, the way the real commands do.
+    owned: dict[str, list[str]] = {}
+    for name, owner in FILE_OWNERS.items():
+        owned.setdefault(owner, []).append(name)
+
+    for step in DIRECTOR_STEPS:
+        writes = [use("write_profile_file", name=name, content=_written(name, step))
+                  for name in owned.get(step, [])]
+        client = FakeClient({"text": f"Running {step}.", "tool_uses": writes},
+                            {"text": "Done.", "tool_uses": []})
+        run_turn(session, user.id, conversation_id=_chat(session, user.id), client=client,
+                 message=f"/{step}", agent=step)
+
+    missing = files.missing_setup()
+    assert not missing, f"guided setup finished and left {missing} unfilled"
+
+    stored = files.all()
+    for name in setup_files():
+        assert is_filled(stored[name]), f"{name} is still a scaffold after every step ran"
+
+    # The two that were exempt, named explicitly: this is the pair that reached production unfilled.
+    for name in ("tailor_cv.md", "tailor_cover.md"):
+        assert "<<NAME>>" not in stored[name]
+
+    # And the end that matters: a CV prompt assembles rather than refusing.
+    prompt = build.build_prompt("<html><body>base</body></html>", "Backend Engineer at Acme",
+                                template=stored["tailor_cv.md"])
+    assert "Backend Engineer at Acme" in prompt
+    assert "<<" not in prompt, "a marker survived into the prompt the model would receive"
+
+
+def test_an_account_that_skipped_the_prompts_step_cannot_build_a_cv(account):
+    """The refusal that replaced the silent scaffold fallback.
+
+    Before this, a missing `tailor_cv.md` fell through to the shipped scaffold and had five markers
+    substituted from the schema — producing a working prompt built from nobody. It refuses now, and
+    the refusal names the step that fixes it.
+    """
+    import pytest as _pytest
+
+    from libs.profiles.repository import ProfileFiles
+    from services.docgen import build
+
+    session, user = account
+    scaffold_prompt = ProfileFiles(session, user.id).read("tailor_cv.md")
+
+    with _pytest.raises(build.BuildFailed, match="scaffold"):
+        build.build_prompt("<html/>", "a job", template=scaffold_prompt)
