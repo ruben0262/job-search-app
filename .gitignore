@@ -23,6 +23,16 @@ accounts.local.txt
 # Vite build output. Cloudflare Pages builds it; the repo carries the source.
 web/dist/
 
+# The off-box copy of SECRETS_KEK, and anything else that must never reach a remote.
+#
+# **This is the key the nightly dump deliberately does not contain.** A restore without it yields a
+# database of credentials nobody can decrypt — the backup script says so on every run. It lived in
+# exactly one place, `deploy/.env` on the VPS, so the box dying took the key with it.
+#
+# It is a COPY of the live key, never a new one: `generate_key()` mints a fresh key, and swapping it
+# would orphan every stored secret (both Telegram bots, both Claude credentials, the proxy).
+secrets.local/
+
 # Trained model artifacts, one or more per account. Bind-mounted into the scorer and trainer so the
 # backup and the pruning tools can see them (they could not while this was a named volume). Never in
 # git: they are per-person classifiers, megabytes each, and rebuildable by a retrain.
