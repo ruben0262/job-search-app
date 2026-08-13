@@ -720,3 +720,84 @@ def test_the_cover_prompt_still_carries_the_page_rules():
 
     sent = client.calls[0]["messages"][0]["content"]
     assert build.head_block(cv) in sent
+
+
+# ── what must never reach a person ────────────────────────────────────────────────────────────
+
+def test_a_document_that_came_back_carrying_a_placeholder_is_never_delivered(monkeypatch,
+                                                                            fake_chrome, tmp_path):
+    """The prompt is checked before the call; this checks what came back.
+
+    `build._require_personalised` refuses a writing prompt that still carries a marker, so a model
+    handed a real prompt has none to echo. Nothing checked the other end. A CV addressed to
+    `<<NAME>>`, or one whose footer reads `<<CONTACT>>`, would have compiled, been delivered, and
+    gone to an employer — no exception, no failed job, just a worse document than the person
+    thinks they sent. That is the failure class this whole week has been about: silent, and visible
+    only as quality.
+    """
+    session, user, _job, _state = _session(monkeypatch)
+    send = Recorder()
+    leaked = TAILORED.replace("Alice Example", "<<NAME>>")
+
+    with pytest.raises(run.NotBuildable, match="placeholder"):
+        run.run_build(session, user.id, 7, client=FakeClient(leaked, leaked),
+                      send_document=send, token="t", workdir=tmp_path)
+
+    assert send.sent == [], "nothing was delivered"
+
+
+def test_the_worker_builds_the_document_the_tap_asked_for(monkeypatch):
+    """A Build Cover tap must not produce a CV.
+
+    The queue payload is the only thing carrying which document was asked for, and the worker test
+    that drives this path asserted only that it returned. A `kind` dropped or defaulted between the
+    tap and the build would have delivered the wrong document, to the right person, with no error
+    anywhere — and the suite would have stayed green.
+
+    Old rows carry no `kind` at all (the first `docgen` payload in production is `{"job_id": 1396}`),
+    so the default is part of the contract and is asserted here too.
+    """
+    from contextlib import nullcontext
+
+    from services.docgen import __main__ as worker
+
+    class Secret:
+        @staticmethod
+        def reveal():
+            return "sk-ant-api03-" + "x" * 40
+
+    class Store:
+        def __init__(self, _session):
+            pass
+
+        def use(self, _user_id, kind):
+            return nullcontext(None if kind == "proxy" else Secret())
+
+    monkeypatch.setattr(worker, "SecretStore", Store)
+    monkeypatch.setattr(worker, "client_for", lambda _value, _kind: object())
+
+    seen: list[str] = []
+
+    class Result:
+        calls = 1
+        pages = 1
+
+    def spy(_session, _job, _client, _token, *, job_id, kind, http):
+        seen.append(kind)
+        return Result()
+
+    monkeypatch.setattr(worker, "_build", spy)
+
+    for payload, expected in (({"job_id": 7, "kind": "cover"}, "cover"),
+                              ({"job_id": 7, "kind": "cv"}, "cv"),
+                              ({"job_id": 7}, "cv")):
+        seen.clear()
+
+        class Job:
+            id = uuid.uuid4()
+            user_id = uuid.uuid4()
+
+        Job.payload = payload
+        worker.handle(object(), Job())
+
+        assert seen == [expected], f"{payload} built {seen} instead of a {expected}"

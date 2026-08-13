@@ -14,6 +14,43 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-08-13 — a placeholder that could reach an employer, and the document nobody checked was the right one
+
+Closing out the Telegram and CV-generation work by asking what the suite would *not* have caught.
+Two gaps, one of them a real defect.
+
+**A marker in the model's reply was delivered.** `build._require_personalised` refuses a writing
+prompt still carrying `<<NAME>>` or `<<CONTACT>>`, so the input is checked. Nothing checked the
+output. A document that came back with a marker in it compiled, was delivered, and went to an
+employer — no exception, no failed job, just a worse CV than the person believed they sent. The check
+now sits in `_render`, the one chokepoint every document passes on its way to Chrome, beside the
+hidden-content scan and failing closed the same way. Verified by stashing the guard: the test fails
+with `DID NOT RAISE NotBuildable` and nothing is delivered once it is back.
+
+**Nothing asserted the worker built the document that was asked for.** The queue payload is the only
+thing carrying `kind`, and the one test driving that path asserted only that `handle` returned at
+all. A `kind` dropped between the tap and the build would have delivered a CV to somebody who tapped
+Build Cover — right person, wrong document, no error anywhere, suite green. Now asserted for `cover`,
+for `cv`, and for a payload with no `kind`, because production's oldest `docgen` row is
+`{"job_id": 1396}` and the default is part of the contract.
+
+This second one is a **relationship guard**, not a defect test: it passes against the code that
+prompted it, like `test_schedules.py` and `test_columns_have_producers.py`. Recorded as such rather
+than dressed up as a fix.
+
+**What was checked and found already covered**, so that the next person does not repeat it: there are
+**no websockets in this platform** — the notifications migration says so in its own docstring
+("minus websockets and preferences; the dashboard polls"), and the only stream is the admin
+pipeline's SSE endpoint, which has coverage. CV generation had 44 tests before today's two, including
+every refusal path, delivery to the personal chat, hidden-content stripping, the page-limit revision,
+cover-versus-CV checking, and scratch-file cleanup. The Telegram button and webhook paths have 46,
+now including the reply.
+
+Gates: lint-imports 2 kept 0 broken; ruff clean; alembic from empty to `c7a1f2e94d80`; pytest
+**1,487 passed, 13 skipped**; openapi + api-types already current; `npm run build` ok.
+
+---
+
 ## 2026-08-13 — the button that answered nobody, and the gate that named a file
 
 Two defects between them made "tap Build and nothing happens" the normal experience, and neither

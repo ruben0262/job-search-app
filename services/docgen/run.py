@@ -14,7 +14,7 @@ from sqlalchemy import func, select
 
 from libs.db.models import CorpusJob, User, UserJobState, UserLabel
 from libs.obs import audit
-from libs.profiles import ProfileIncomplete
+from libs.profiles import PLACEHOLDER_MARKERS, ProfileIncomplete
 from libs.profiles.repository import ProfileFiles
 from services.docgen import build, pdf
 from services.docgen.refresh import PostingClosed, refresh_before_build
@@ -172,6 +172,15 @@ def _render(html: str, scratch: pathlib.Path, filename: str,
         # Fail closed.
         raise NotBuildable(f"the generated document contained hidden content: "
                            f"{'; '.join(leftover)}")
+
+    # The prompt is checked for markers before the call (`build._require_personalised`); this checks
+    # what came back. A model handed a personalised prompt has no marker to echo, so reaching here
+    # means something upstream leaked one — and the document goes to an employer, so it fails closed
+    # rather than shipping a CV addressed to `<<NAME>>`.
+    markers = [marker for marker in PLACEHOLDER_MARKERS if marker in html]
+    if markers:
+        raise NotBuildable("the generated document still carried a placeholder: "
+                           f"{', '.join(markers)}")
 
     source = scratch / f"{pathlib.Path(filename).stem}.html"
     source.write_text(html, encoding="utf-8")
