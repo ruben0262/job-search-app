@@ -66,6 +66,31 @@ Two consequences worth stating, because they are what makes this rule expensive 
   A/B, and recorded in `CHANGELOG.md` — the rule the reference instance already applied to
   `libs/prompts` (`CODE_STRUCTURE.md` §7.4), extended here to every file above.
 
+**A prompt is measured iteratively, on the model that will run it, against the wording it replaces.**
+One generation is not a result. The output of a language model varies run to run, so a single sample
+cannot tell a better prompt from a luckier one — and a prompt that reads better to a person is not
+the same as a prompt that writes a better CV for a real applicant.
+
+So before a wording change is adopted:
+
+- **Run it several times over the same inputs**, not once. Enough samples that the spread is visible,
+  and reported with the spread rather than as a single number.
+- **On the model that will actually run it.** A wording tuned against a different model measures that
+  model. Prompts here run on the model named in the calling module (`CV_MODEL`, `CAPTURE_MODEL`,
+  `SETUP_MODEL`) — use it.
+- **Against the previous wording, over the same postings**, scored the same way. The comparison is the
+  evidence; an absolute score on its own is not.
+- **Paired, and grouped where samples repeat.** Comparing two averages with their independent spreads
+  hides any small consistent effect — that method nearly deleted a feature worth keeping (ROADMAP
+  6bg). And where the same posting appears more than once, all its copies belong on the same side of
+  a split, or the measurement scores the model on something it memorised: ~10% of this platform's
+  labels are the same role listed in several cities, each with its own `content_key`.
+- **Say what did not move.** A wording that improves one measure and worsens another has not been
+  shown to be better, and reporting only the improvement is how a regression ships.
+
+The number goes in `CHANGELOG.md` with the change, whichever way it came out. A measurement that
+justifies *keeping* the existing wording is worth as much as one that justifies replacing it.
+
 If a prompt looks like the cause of a defect, say so and propose the wording. Do not apply it.
 
 ## 4. Measure before changing, and after
