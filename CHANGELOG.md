@@ -14,6 +14,66 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-08-13 — the button that answered nobody, and the gate that named a file
+
+Two defects between them made "tap Build and nothing happens" the normal experience, and neither
+raised anything.
+
+**The Telegram webhook never replied to Telegram.** Every handler composed a sentence for the person
+who tapped and returned it as the HTTP response body. Telegram discards that body unless it names a
+Bot API method, and `answerCallbackQuery` had never appeared in this repository — checked with
+`git log -S`, it has been absent since the feature was written. So a tap spun and cleared in silence,
+`/rate` answered with a keyboard nobody received, and every refusal — over quota, not ready, not the
+owner — was computed and thrown away. A build takes a minute or two to arrive, so silence was
+indistinguishable from a broken button, and a refused build had no evidence at all.
+
+`libs/notify/telegram.py` sends it: `answerCallbackQuery` for a tap, `sendMessage` for a typed
+command. **Committed before the reply, deliberately** — "Building your CV" is a promise about a
+queued row, and saying it before the row is durable is how somebody is told about work that then
+rolls back. Both are best-effort and log at `WARNING`: the tap is already recorded, and no
+acknowledgement is worth losing a build over. Verified live — the reply reached Telegram and was
+refused only because the drill's synthetic `callback_query.id` was not a real one
+(`"query ID is invalid"`), and the build completed anyway.
+
+**A build was gated on a confirmed capture schema in order to name a PDF.** `build_blocker` and
+`docgen._load` both required `user.profile`. Once the schema came out of generation the only line
+still reading it was `_filename`, for `profile.identity.name` — which `users.full_name` already
+holds, as the name the user typed at signup. Guided setup writes the ten profile files and never
+writes `users.profile`, so the gate refused **every account that onboarded through the chat**: now
+the normal path. Measured on the drill account, which finished every setup step, had ten filled
+files and a CV that built by hand, and was told "Confirm your details first".
+
+`user.profile` keeps its real consumers — `spec_for` in the trainer and the scorer, which build the
+three profile scoring features worth −0.005 average precision (6bg). Only docgen stopped asking.
+Deleted with the gate: the `profile` parameters `_cover` and `_tailor_until_it_fits` still declared
+and never read, and the `ProfileSchema` import.
+
+**What the archaeology actually found, recorded because the conclusion was the opposite of the
+premise.** Andras appeared unable to build, and none of the first four hypotheses held: his
+`build_blocker` was already `None`, his webhook was registered with `callback_query` allowed and no
+errors, his ownership check passed under a synthetic tap, and his `applied=2` turned out to be two
+thumbs-up taps from `/rate`, which shares the `ap:` wire prefix with the old Applied button. He had
+never tapped Build, because tapping it had never visibly done anything.
+
+Verified live, 2026-08-13:
+
+- A real `bc:` tap for his account queued, built and delivered his first document ever —
+  `state=done`, 1 attempt, 2 pages, 1 call, `ats_ok=True`, no error. Before today the `docgen` lane
+  held eight rows and all eight belonged to the owner.
+- A fresh chat-only account (ten filled files, `user.profile` NULL) returned `build_blocker: None`
+  and its tap queued a `docgen` job. Deleted immediately afterwards: no credential, so leaving the
+  row would have burned retries.
+
+Tests: five new, each verified to fail against the code that made it necessary.
+`test_a_build_is_refused_when_the_profile_was_never_confirmed` asserted the behaviour being removed
+and is gone (§3); `test_the_admission_check_and_the_worker_ask_the_same_question` keeps the
+relationship it was written for and asks it about the condition that still exists.
+
+Gates: lint-imports 2 kept 0 broken; ruff clean; alembic from empty to `c7a1f2e94d80`; pytest
+**1,485 passed, 13 skipped**; openapi + api-types regenerated; `npm run build` ok.
+
+---
+
 ## 2026-08-12 — the writing prompts nothing filled, and the gate that could not see them
 
 **PROMPT CHANGE, approved explicitly by the owner (CLAUDE.md §3a).** `libs/agents/setup-director.md`
