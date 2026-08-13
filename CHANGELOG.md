@@ -14,6 +14,53 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-08-13 — three copies of four two-letter codes, and one of them had drifted
+
+Raised as a §5 finding and then fixed on the owner's instruction. It was worse than first reported.
+
+`callback_data` is capped at 64 bytes, so a Telegram tap carries an action code and a job id and
+nothing else — which means the service that *emits* a button and the service that *parses* the tap
+must agree on four strings, and `services` may not import `services`. There were **three copies of
+that agreement plus a fourth literal**:
+
+- `services/notifier/buttons.py` — the keyboard actually sent, plus an `ACTION_CODES` map whose
+  **only consumer was the test asserting it matched the parser**. Exactly the pattern CLAUDE.md §5
+  names: two constants and a test asserting they are equal, which passes while both are wrong.
+- `services/api/telegram_routes.py` — **a second `keyboard()`, still returning the pre-2026-07-29
+  buttons** (✅ Applied / 🚫 Skip / 📄 Build CV). Sent by nothing, exported in `__all__`, and asserted
+  by `test_the_keyboard_carries_three_buttons_within_telegrams_limit` — a test that checked the dead
+  copy carried three buttons while the live feed sent two. This is the drift, and it is the one the
+  equality test could never have caught, because it was not part of the equality.
+- `CALLBACK_PREFIX`, the parse table, written out as a fourth literal.
+
+Now one definition in `libs/notify/buttons.py`: `CALLBACK_CODES`, its inversion `ACTION_FOR_CODE`,
+and both keyboards **built from the codes** rather than repeating them. A button cannot carry a prefix
+the parser does not know — the drift is not tested for, it is unrepresentable. `services/notifier/
+buttons.py` is deleted, the API's stale `keyboard()` and its local `rating_keyboard` are deleted, and
+both services import the one module (§3, §6: a value needed on both sides of a boundary goes in
+`libs`).
+
+This also closes the last loose end in the tap archaeology: Andras' two `ap:` taps came from cards
+delivered *before* 2026-07-29. **Telegram keeps an inline keyboard on a message forever**, so
+changing `keyboard()` never rewrote the buttons already in somebody's history, and old ✅ Applied
+buttons stayed tappable indefinitely.
+
+Tests: `test_the_keyboard_carries_three_buttons_within_telegrams_limit` asserted the removed copy and
+is gone. Three replace it — every callback fits 64 bytes at a ten-digit job id, every button either
+keyboard emits parses to a known action, and **every code the parser accepts is emitted by a button
+somebody can tap**. The last is the one that would have found `ACTION_CODES`.
+
+**One flake, reported rather than smoothed over:** `test_admin.py::test_the_user_list_carries_no_
+credential_material` failed once under one random order, then passed in isolation, on a full re-run
+(1,488), and across four repeats of its own module. It touches the admin user list and credentials,
+not the button surface. Recorded as a suspected pre-existing order dependency to look at, not as a
+clean bill of health.
+
+Gates: lint-imports 2 kept 0 broken; ruff clean; alembic from empty to `c7a1f2e94d80`; pytest
+**1,488 passed, 13 skipped**; openapi + api-types current; `npm run build` ok.
+
+---
+
 ## 2026-08-13 — a placeholder that could reach an employer, and the document nobody checked was the right one
 
 Closing out the Telegram and CV-generation work by asking what the suite would *not* have caught.

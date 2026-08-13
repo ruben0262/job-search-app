@@ -283,29 +283,52 @@ def test_a_cv_build_over_the_daily_limit_is_refused_at_the_tap(api):
     assert BY_KEY["cv_builds_per_day"].default == 10
 
 
-def test_the_keyboard_carries_three_buttons_within_telegrams_limit(api):
-    """`callback_data` is capped at 64 bytes."""
-    from services.api.telegram_routes import keyboard
+def test_every_callback_stays_inside_telegrams_sixty_four_bytes(api):
+    """`callback_data` is capped at 64 bytes, and a job id grows."""
+    from libs.notify.buttons import feed_keyboard, rating_keyboard
 
-    buttons = keyboard(123)["inline_keyboard"][0]
-    assert len(buttons) == 3
-    assert all(len(button["callback_data"].encode()) <= 64 for button in buttons)
+    for build in (feed_keyboard, rating_keyboard):
+        for button in build(9_999_999_999)["inline_keyboard"][0]:
+            assert len(button["callback_data"].encode()) <= 64
 
 
 # ── the two sides agree ───────────────────────────────────────────────────────────────────────
 
-def test_the_buttons_the_notifier_sends_are_the_ones_the_webhook_understands():
-    """The notifier renders the keyboard and the API parses the taps, and they may not import each other."""
-    from services.api.telegram_routes import CALLBACK_PREFIX, _parse
-    from services.notifier.buttons import ACTION_CODES, keyboard
+def test_every_button_the_platform_sends_is_one_the_webhook_parses():
+    """The emitter and the parser are different services, and they may not import each other.
 
-    for action, code in ACTION_CODES.items():
-        assert CALLBACK_PREFIX[code] == action
+    There were three copies of this agreement and one had drifted: the API kept a `keyboard()` still
+    returning the pre-2026-07-29 buttons (✅ Applied / 🚫 Skip / 📄 Build CV), sent by nothing, and
+    the test here asserted *that* copy carried three buttons while the feed was sending two. The codes
+    now live in `libs/notify/buttons.py` and the keyboards are built from them, so a button cannot
+    carry a prefix the parser does not know.
+    """
+    from libs.notify.buttons import feed_keyboard, rating_keyboard
+    from services.api.telegram_routes import _parse
 
-    for button in keyboard(4242)["inline_keyboard"][0]:
-        parsed, job_id = _parse(button["callback_data"])
-        assert parsed in CALLBACK_PREFIX.values()
-        assert job_id == 4242
+    for build in (feed_keyboard, rating_keyboard):
+        for button in build(4242)["inline_keyboard"][0]:
+            action, job_id = _parse(button["callback_data"])
+            assert action is not None, f"{button['callback_data']} parses to nothing"
+            assert job_id == 4242
+
+
+def test_every_wire_code_is_emitted_by_a_button_somewhere():
+    """A code no keyboard sends is a value with no consumer, and that is how a dead copy survives.
+
+    `ACTION_CODES` in the notifier held four codes, two of which no keyboard in that module emitted;
+    its only reader was the test asserting it matched the parser. Both are gone. This asks the
+    question that would have found it: does every code the parser accepts correspond to a button a
+    person can actually tap?
+    """
+    from libs.notify.buttons import CALLBACK_CODES, feed_keyboard, rating_keyboard
+
+    emitted = {button["callback_data"].split(":")[0]
+               for build in (feed_keyboard, rating_keyboard)
+               for button in build(1)["inline_keyboard"][0]}
+
+    assert emitted == set(CALLBACK_CODES.values()), (
+        f"codes with no button: {set(CALLBACK_CODES.values()) - emitted}")
 
 
 def test_a_malformed_callback_is_ignored_rather_than_guessed():

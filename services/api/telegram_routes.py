@@ -16,6 +16,7 @@ from libs.corpus.ondemand import NotAJobLink
 from libs.db.models import CorpusJob, User
 from libs.feedback import ACTIONS, next_to_rate, record
 from libs.notify import telegram
+from libs.notify.buttons import ACTION_FOR_CODE, feed_keyboard, rating_keyboard
 from libs.obs import audit
 from libs.profiles.repository import ProfileFiles
 from libs.queue import enqueue, jobs_today
@@ -42,8 +43,9 @@ router = APIRouter(prefix="/telegram", tags=["telegram"])
 
 # A retrain is debounced so a burst of taps produces one fit (`SCHEDULER_PLAN.md` §5).
 TRAIN_DEBOUNCE_MIN = 10
-# `callback_data` is capped at 64 bytes, so it carries an action and a job id, nothing else.
-CALLBACK_PREFIX = {"ap": "applied", "sk": "skipped", "bc": "build_cv", "co": "build_cover"}
+# The parse table, defined in `libs` beside the keyboards that emit it. It was a fourth literal copy
+# of the same four codes, and one of the other three had drifted (`libs/notify/buttons.py`).
+CALLBACK_PREFIX = ACTION_FOR_CODE
 
 
 def _authenticate(secret: str, db: Session, header_token: str | None) -> User:
@@ -270,16 +272,6 @@ def _rate(db: Session, user: User) -> dict:
             "keyboard": rating_keyboard(job_id)}
 
 
-def rating_keyboard(job_id: int) -> dict:
-    """Two answers and nothing else. `/rate` asks one question: would you have applied?"""
-    return {
-        "inline_keyboard": [[
-            {"text": "👍 Would apply", "callback_data": f"ap:{job_id}"},
-            {"text": "👎 Not for me", "callback_data": f"sk:{job_id}"},
-        ]],
-    }
-
-
 def _is_owner(user: User, tapper_id: str) -> bool:
     """The tap came from the person whose account this is."""
     return bool(tapper_id) and tapper_id == (user.telegram_chat_id or "")
@@ -304,16 +296,5 @@ def _confirmation(action: str, changed: bool) -> str:
     return "Done."
 
 
-def keyboard(job_id: int) -> dict:
-    """The inline keyboard attached to a delivered job."""
-    return {
-        "inline_keyboard": [[
-            {"text": "✅ Applied", "callback_data": f"ap:{job_id}"},
-            {"text": "🚫 Skip", "callback_data": f"sk:{job_id}"},
-            {"text": "📄 Build CV", "callback_data": f"bc:{job_id}"},
-        ]],
-    }
-
-
 __all__ = ["ACTIONS", "CALLBACK_PREFIX", "TRAIN_DEBOUNCE_MIN",
-           "keyboard", "rating_keyboard", "router"]
+           "feed_keyboard", "rating_keyboard", "router"]

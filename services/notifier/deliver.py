@@ -15,12 +15,12 @@ import libs.notify as notifylib
 from libs import limits
 from libs.db.models import CorpusJob, QueueJob, User, UserJobState
 from libs.db.models.queue import CLAIM_TIMEOUT_MIN
+from libs.notify.buttons import feed_keyboard
 from libs.obs import audit
 from libs.queue import enqueue
 from libs.scoring.thresholds import DEFAULT_CUTOFF, cutoff_for
 from libs.secrets import SecretStore
 from libs.tenant.filters import pending_match_conditions
-from services.notifier.buttons import keyboard
 from services.notifier.card import FeedItem
 from services.notifier.card import render as render_card
 from services.notifier.eligibility import CANDIDATE_MULTIPLIER, rank
@@ -134,7 +134,7 @@ def deliver(session: Session, user_id: _uuid.UUID, *,
                     if sent:
                         sleep(gap)
                     send(token.reveal(), chat_id, render_job(item, cutoff=cutoff),
-                         keyboard(item.job_id))
+                         feed_keyboard(item.job_id))
                     # Marked and committed the moment it has gone, one message at a time.
                     session.get(UserJobState, (user_id, item.job_id)).notified_at = func.now()
                     session.commit()
