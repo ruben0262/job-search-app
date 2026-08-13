@@ -192,3 +192,35 @@ def test_every_command_is_told_which_commands_exist_here():
         for absent in ("/setup-boards", "/setup-companies", "/apply"):
             assert absent in prompt, f"{name} must name {absent} as unavailable"
         assert "Which jobs get searched for is not yours to set" in prompt, name
+
+
+def test_the_base_cv_scaffold_uses_the_section_names_the_ats_check_looks_for():
+    """`pdf.inspect_pdf` searches the extracted text for the literal words the checker names.
+
+    A CV headed `Employment` or `Work History` fails it — and one account's did, on every build, after
+    the setup agent renamed the section while writing its base CV. It is a warning rather than a
+    refusal, so the CV delivered anyway and nothing but the log said so.
+
+    The scaffold is the default every new account starts from, so it is the one place that can stop
+    the rename being the norm. Read from `pdf` rather than restated, so the two cannot drift.
+    """
+    import re
+    from pathlib import Path
+
+    from libs.profiles import scaffold
+
+    wanted = {"experience", "education"}
+    checker = (Path(__file__).resolve().parents[1] / "services" / "docgen" / "pdf.py").read_text(
+        encoding="utf-8")
+    named = {name for pair in re.findall(r'for section in \(([^)]*)\)', checker)
+             for name in re.findall(r'"(\w+)"', pair)}
+    assert wanted <= named, (
+        f"pdf.py checks for {sorted(named)}, not {sorted(wanted)} — point this test at whatever it "
+        "checks now rather than guarding a rule that moved")
+
+    headings = {h.strip().lower() for h in
+                re.findall(r'section-title[^>]*>([^<]{1,40})', scaffold("base_cv.html"))}
+    missing = wanted - headings
+    assert not missing, (
+        f"the shipped base CV has no {sorted(missing)} heading, so every account starting from it "
+        f"fails the ATS check. Headings present: {sorted(headings)}")
