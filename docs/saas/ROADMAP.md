@@ -1393,6 +1393,80 @@ assuming either way.
 stops reading it (6q), the fields `feature_spec` needs are the ones that stay — five paths, not
 fifty.
 
+### 6bi — the CV bench, and the third-person draft measured (added 2026-09-12)
+
+**Where to pick this up.** The tailoring half is measured and answered; the setup half is not
+started. Nothing is blocked on code — it is blocked on the account's Claude rate limit and on a
+decision.
+
+**What was built.** `scripts/cvlab/` — the CV equivalent of `coverlab`, and the first runner
+`libs/prompts/eval_cv.md` has ever had. `run.py` writes CVs through the production call
+(`services.docgen.build.tailor`, `CV_MODEL`), scores them with `cvchecks.py` (first person, colon
+bullets, em-dashes, cliches, profile words, entries, estimated pages), judges them with `eval_cv.md`
+on Sonnet, and compares variants **paired by posting with the spread and standard error reported**.
+`live` is read from `libs/scaffolds/tailor_cv.md` at run time, so the baseline cannot drift from
+what a new account is seeded with, and no live prompt was edited (§3a).
+
+Not in git, deliberately: `scripts/cvlab/candidates/` (two real people's profile files, pulled from
+production — the `Candidate` docstring carries the query to re-pull them) and `scripts/cvlab/out/`
+(the generated CVs and their cached verdicts).
+
+**The measurement, 72 cells, 12 paired posting groups, 3 samples each.** `d-both` is the two drafts
+together — third person in `MOST COMMON FAILURES` and the profile-paragraph rule, plus the
+"when there is not enough directly relevant experience" fallback block.
+
+| measure | d-both minus live | +/- SE | reading |
+|---|---|---|---|
+| first person per CV | -1.25 | 0.38 | moved. Andras 2.5 -> 0.0, six groups down, none up |
+| profile words | -6.64 | 1.48 | moved |
+| colon bullets | -0.50 | 0.13 | moved |
+| em-dash violations | 0.00 | 0.00 | zero in both arms |
+| **overall /100** | **-1.06** | **1.03** | **did not move** |
+| six_second_pull | -0.11 | 0.13 | did not move |
+| role_angle_fit | -0.03 | 0.19 | did not move |
+| relevance_coverage | -0.19 | 0.12 | did not move |
+| achievement_quality | +0.03 | 0.15 | did not move |
+| human_voice | +0.06 | 0.15 | did not move |
+| defensibility | +0.19 | 0.26 | did not move |
+| keyword_integration | -0.22 | 0.23 | did not move |
+
+**So the drafts do exactly what they claim mechanically and do not make a better CV by the judge's
+reading.** Per §4 that does not justify shipping them, and none of them has been applied.
+
+Worth keeping beside the number, because the judge cannot see it: on the same Cadillac F1 posting,
+live opens *"...materials knowledge. I develop mechanical assemblies... I prioritise..."* and the
+draft opens *"...specializing in parametric CAD governance... Rebuilt a 500-component engine
+assembly into a configuration-controlled model..."*. Capability claim in the first person versus a
+concrete achievement in the third. That is the change asked for; the judge scored it the same.
+
+**What is unfinished.**
+
+1. **The decomposition** — `d-person` and `d-fallback` as separate arms, to tell whether the
+   third-person half is neutral-good while the fallback half is the drag. Andras reached 32 of 36
+   cells and **none of them were judged**: every verdict call was rate limited, so there is no
+   quality data. Ruben's arm never started. Mechanically, from what did land: `d-person` removes
+   2.67 first-person references and cuts 13 profile words; `d-fallback` adds bullets (+0.42) and
+   pages (+0.15), which is the opposite of the earlier worry that it was shortening CVs.
+   Two paired postings is not a result — it needs re-running.
+2. **The setup-side drafts**, never started: `setup.md` section 7 (write the base CV in the third
+   person) and the fallback angle in the `08-role-angles.md` scaffold. These change what the setup
+   agent writes at onboarding, so their effect on a CV is indirect and they need a fictional
+   candidate and a setup-agent harness rather than this bench. The owner also asked to look at
+   `setup-director` itself, which carries every step's instructions inline and is what actually
+   decides what a new user's CV is made of.
+3. **`coverlab` is broken** and has been for a while: it calls
+   `build.tailor_cover(client, profile, base_cv, context, ...)` and that signature lost its
+   `profile` argument when `ProfileSchema` came out of docgen. It fails on the first call.
+
+**To resume**, with a clear rate limit and a credential at `certificates/anthropic.key`:
+
+```
+python scripts/cvlab/run.py --candidates andras,ruben   --variants d-person,d-fallback --samples 3 --judge --concurrency 2   --only <the same 6 slugs per candidate as the d-both grid>   --key-file certificates/anthropic.key --out scripts/cvlab/out/split
+```
+
+Concurrency 2, not 6: six tripped the account's rate limit twice and the backoff then ate whole
+runs. Finished cells and their verdicts are reused, so a re-run only buys what is missing.
+
 ### 6bh — an LLM-written term list is worse than the field concatenation (added 2026-08-12)
 
 **Tested before the prompt was written, and it is why the prompt was not written.** The plan was to

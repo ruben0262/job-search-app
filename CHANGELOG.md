@@ -14,6 +14,87 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-09-12 — a document read to 41%, a guess that replaced an answer, and a bench for the CVs
+
+Five changes, all from one investigation: why the account this platform onboarded itself gets worse
+CVs than the one migrated into it.
+
+### 60,000 characters was not the ceiling anyone thought it was (`libs/documents`, `libs/agents`)
+
+Two ceilings existed. `MAX_TEXT_CHARS` stored 200,000 characters of an upload, and
+`MAX_DOCUMENT_CHARS` in `libs/agents/tools.py` then re-truncated every `read_document` at **60,000**
+— so a file kept in full was cut before the setup agent ever saw it. Measured on the live platform:
+one account's 145,493-character context file was read to **41%**, and the two headings in the unread
+remainder were `KEY TECHNICAL ACHIEVEMENTS` and `SKILLS DEMONSTRATED` — the material a base CV is
+built from. Nothing errored.
+
+The second cap is deleted. One number now, applied once where the text is stored, raised to
+**300,000**: whatever is kept is what is read.
+
+The truncation notice was going to the wrong reader, too. It was appended into the agent's tool
+result, where the only audience was a model that could do nothing about it, while the person who
+could shorten the file went on believing all of it had been read. The upload response now carries a
+`note` and both upload surfaces show it — kept, not refused, with the choice left to the user.
+
+### A rubric change was replacing ground truth with a guess (`libs/labels`, `services/labeller`)
+
+`stale_job_ids` selected stale labels by generation and **did not filter on source**, so a rubric
+edit made the user's own answers stale and `write_labels` upserted an LLM guess over them. On the
+live box: of the 101 jobs one account had applied to, **one already carried an `llm` label at weight
+1.0** instead of the applied label, and a 98-application backfill sat one rubric edit from the same
+fate.
+
+`bump_generation()` is now the one place that decides what a new generation means: a rubric change
+invalidates an *estimate*, never a *fact*, so feedback labels are carried forward instead of
+relabelled. They stay in the training set and cost nothing to keep. Two guards behind it —
+`stale_job_ids` skips feedback rows so the account never pays to re-buy an answer, and the upsert
+carries `WHERE source != 'feedback'` so no future caller can overwrite one.
+
+### `label_pool` reaches 1,500 and 2,000 (`libs/limits`)
+
+Cold start stops for good once an account hits its target and nothing tops it up as the corpus
+grows, so this is not "per run" in practice — it is the entire automatic training set the account
+will ever have. The first account labelled by the platform rather than migrated stopped at **338**;
+the migrated one's 2,547 labels were imported, not produced here. 1,000 was the old ceiling.
+
+### The Model page says how to teach it (`web/src/pages/ModelPage.tsx`)
+
+Once the automatic run finishes, `/rate` and building a CV are the only things that add training
+data, and nothing said so. `/rate` is not starved either — one account had **5,548** eligible jobs
+waiting and had answered five, because it is one card per typed command.
+
+### One base CV instead of two (`libs/templates`, `services/docgen`)
+
+`libs/templates/base_cv.html` was the marker-filled layout `cv.py` rendered from `ProfileSchema`.
+That path is gone: a CV is built from the person's own `base_cv.html`, seeded from
+`libs/scaffolds/base_cv.html`. Measured before deleting — both live accounts' base CVs carry the
+scaffold's fourteen class names, its `@page` rule and its typography, and neither carries this
+file's, which had seven of those classes and no `.entry`, `.profile` or `.competencies` at all. Its
+only caller was `build.template_base()`, whose only caller was a test. Deleted with the loader, and
+`tests/test_cv_template.py` moved to the scaffold users actually get.
+
+### A bench for CV prompts (`scripts/cvlab/`)
+
+`libs/prompts/eval_cv.md` has existed with no runner since `libs/scoring/cveval.py` was deleted.
+`scripts/cvlab/` is that runner, and the measurement it produced is in ROADMAP 6bi: the third-person
+and fallback drafts move every mechanical measure they target and move **no** judged quality
+measure (overall −1.06 ± 1.03 over 72 cells). Per §4 that does not justify shipping them, and no
+prompt has been changed.
+
+Three defects in the bench itself were found and fixed before its output could be trusted: the seven
+judge dimensions arrived nested and were read top-level, so only `overall_100` was ever compared;
+the comparison column said "better / worse" when half the measures improve by going *down*; and the
+baseline was decided by glob order, which flipped the sign of every difference.
+
+### Also
+
+Six tests that errored or skipped wrongly without `DATABASE_URL` are fixed — `test_feedback.py`
+never set `SECRETS_KEK` and passed only when an alphabetically later file had already leaked it into
+the process, and four more used a DB fixture without their file's own skip guard. The suite is now
+clean on a machine with no database.
+
+---
+
 ## 2026-08-13 — three copies of four two-letter codes, and one of them had drifted
 
 Raised as a §5 finding and then fixed on the owner's instruction. It was worse than first reported.
