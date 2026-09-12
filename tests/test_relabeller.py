@@ -94,6 +94,52 @@ def test_jobs_the_user_never_labelled_are_not_relabelled(db):
     assert jobs[1].id not in selected and jobs[2].id not in selected
 
 
+def test_a_rubric_change_carries_the_users_own_answers_forward(db):
+    """The whole trust policy: a new rubric invalidates a guess, never an answer."""
+    from libs.db.models import UserLabel
+    from libs.labels import bump_generation
+
+    session, user, jobs = db
+    _label(session, user, jobs[0], generation=2)
+    session.add(UserLabel(user_id=user.id, job_id=jobs[1].id, label=90, source="feedback",
+                          weight=5.0, profile_generation=2))
+    session.flush()
+
+    carried = bump_generation(session, user)
+    session.flush()
+
+    assert carried == 1
+    answer = session.get(UserLabel, (user.id, jobs[1].id))
+    assert answer.profile_generation == user.profile_generation, (
+        "a job the user applied to must stay in the training set across a rubric change")
+    assert answer.label == 90 and answer.weight == 5.0
+
+    guess = session.get(UserLabel, (user.id, jobs[0].id))
+    assert guess.profile_generation < user.profile_generation, "the model's guess must be re-bought"
+    assert stale_job_ids(session, user.id) == [jobs[0].id], (
+        "the account must not pay to relabel a job it already has the answer for")
+
+
+def test_a_guess_can_never_overwrite_an_answer(db):
+    """Belt and braces on the write itself, because one answer was already lost to this."""
+    from libs.db.models import UserLabel
+
+    session, user, jobs = db
+    session.add(UserLabel(user_id=user.id, job_id=jobs[0].id, label=90, source="feedback",
+                          weight=5.0, profile_generation=1))
+    session.flush()
+
+    write_labels(session, user.id,
+                 {jobs[0].url: {"url": jobs[0].url, "score": 12, "fit_notes": "poor fit"}},
+                 [jobs[0]])
+    session.flush()
+
+    kept = session.get(UserLabel, (user.id, jobs[0].id))
+    session.refresh(kept)
+    assert kept.source == "feedback" and kept.label == 90, (
+        "the user applied to this job; a model scoring it 12 does not make that untrue")
+
+
 def test_the_selection_is_capped_at_one_batch(db):
     """One queue job is one Haiku call, so an interrupted worker throws away one call rather than four."""
     session, user, jobs = db

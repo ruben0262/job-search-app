@@ -80,6 +80,10 @@ def stale_job_ids(session: Session, user_id: _uuid.UUID, limit: int = MAX_PER_RU
         select(UserLabel.job_id)
         .where(UserLabel.user_id == user_id,
                UserLabel.profile_generation < user.profile_generation,
+               # `bump_generation` carries the user's own answers forward, so one left behind here
+               # is a row some older bump stranded. Buying a label for it would spend the account's
+               # credential on a job whose answer we already have and are not allowed to replace.
+               UserLabel.source != "feedback",
                UserLabel.job_id.notin_(labelled_now))
         .order_by(UserLabel.job_id)
         .limit(limit)).all())
@@ -138,7 +142,12 @@ def write_labels(session: Session, user_id: _uuid.UUID, scored: dict[str, dict],
                 index_elements=["user_id", "job_id"],
                 set_={"label": int(score["score"]), "source": "llm", "rationale": notes,
                       "profile_version": user.profile_version,
-                      "profile_generation": user.profile_generation}))
+                      "profile_generation": user.profile_generation},
+                # **A guess never replaces an answer.** `bump_generation` carries feedback labels
+                # forward so they should never reach a batch — this is the guard that makes it true
+                # regardless of which caller assembled the batch, because what it protects is the
+                # only ground truth the platform has and one was already lost without it.
+                where=UserLabel.source != "feedback"))
         written += 1
     return written
 
