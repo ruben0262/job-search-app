@@ -11,7 +11,13 @@ from sqlalchemy.orm import Session
 from libs import limits
 from libs.db.models import User, UserDocument
 from libs.db.models.document import DOCUMENT_KINDS
-from libs.documents import MAX_FILE_BYTES, SUPPORTED, UnsupportedDocument, extract_text
+from libs.documents import (
+    MAX_FILE_BYTES,
+    MAX_TEXT_CHARS,
+    SUPPORTED,
+    UnsupportedDocument,
+    extract_text,
+)
 from libs.obs import audit
 from services.api.deps import current_user, get_db, rate_limit
 
@@ -20,6 +26,23 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 
 # Enough for a CV, a couple of covers, references, diplomas and a history file, with room to spare.
 MAX_DOCUMENTS_PER_USER = 25
+
+
+def _stored(status_word: str, document_id: int, extracted) -> dict:
+    """One upload's answer, with the warning written for the person rather than for the model.
+
+    A file longer than the ceiling is kept, not refused: the user decides whether to shorten it and
+    upload again. But they have to be told, at the moment they can act on it — the previous
+    behaviour reported the truncation into the setup agent's tool result, where the only reader was
+    the model, and the person went on believing the whole file had been read.
+    """
+    note = None
+    if extracted.truncated:
+        note = (f"This file is longer than we read. We kept the first {MAX_TEXT_CHARS:,} characters "
+                f"and everything after that was not stored. You can carry on, or shorten the file "
+                f"to the parts that matter most and upload it again.")
+    return {"status": status_word, "id": document_id, "chars": extracted.chars,
+            "truncated": extracted.truncated, "note": note}
 
 
 def _documents_changed(db: Session, user_id: _uuid.UUID) -> None:
@@ -53,9 +76,9 @@ async def upload(request: Request, kind: str = Form(...), file: UploadFile = Fil
     if stored is not None:
         stored.kind, stored.filename = kind, file.filename or stored.filename
         _documents_changed(db, user_id)
-        audit(logger, "document.replaced", user=user_id, kind=kind, chars=extracted.chars)
-        return {"status": "replaced", "id": stored.id, "chars": extracted.chars,
-                "truncated": extracted.truncated}
+        audit(logger, "document.replaced", user=user_id, kind=kind, chars=extracted.chars,
+              truncated=extracted.truncated)
+        return _stored("replaced", stored.id, extracted)
 
     if kind == "history":
         # The history is one document, always (owner, 2026-07-30).
@@ -67,9 +90,9 @@ async def upload(request: Request, kind: str = Form(...), file: UploadFile = Fil
             existing.text, existing.text_sha256 = extracted.text, extracted.sha256
             existing.chars = extracted.chars
             _documents_changed(db, user_id)
-            audit(logger, "document.replaced", user=user_id, kind=kind, chars=extracted.chars)
-            return {"status": "replaced", "id": existing.id, "chars": extracted.chars,
-                    "truncated": extracted.truncated}
+            audit(logger, "document.replaced", user=user_id, kind=kind, chars=extracted.chars,
+                  truncated=extracted.truncated)
+            return _stored("replaced", existing.id, extracted)
 
     total = db.scalar(
         select(func.count()).select_from(UserDocument)
@@ -90,8 +113,7 @@ async def upload(request: Request, kind: str = Form(...), file: UploadFile = Fil
     _documents_changed(db, user_id)
     audit(logger, "document.uploaded", user=user_id, kind=kind, chars=extracted.chars,
           truncated=extracted.truncated)
-    return {"status": "stored", "id": document.id, "chars": extracted.chars,
-            "truncated": extracted.truncated}
+    return _stored("stored", document.id, extracted)
 
 
 @router.get("")

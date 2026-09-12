@@ -14,9 +14,14 @@ const KINDS = [
   ["other", "Something else"],
 ] as const;
 
+/** What an upload answers with. `note` is set when the file was longer than we keep. */
+type Uploaded = { note: string | null };
+
 export function DocumentsStep({ onDone }: { onDone: () => void }) {
   const [list, setList] = useState<DocumentList | null>(null);
   const [kind, setKind] = useState("cv");
+  // Kept on screen after the upload, not flashed: the user has to be able to act on it.
+  const [note, setNote] = useState<string | null>(null);
 
   const reload = () => api.get<DocumentList>("/documents").then(setList).catch(() => undefined);
   useEffect(() => {
@@ -27,7 +32,8 @@ export function DocumentsStep({ onDone }: { onDone: () => void }) {
     const form = new FormData();
     form.set("kind", kind);
     form.set("file", file);
-    await api.upload("/documents", form);
+    const result = await api.upload<Uploaded>("/documents", form);
+    setNote(result.note);
     await reload();
     onDone();
   });
@@ -64,6 +70,8 @@ export function DocumentsStep({ onDone }: { onDone: () => void }) {
         />
       </Field>
       <Error>{upload.error ?? remove.error}</Error>
+      {/* Not an error: the file was kept. It says what was left out, while they can still act. */}
+      {note ? <p className="upload-note">{note}</p> : null}
 
       {/* The history is its own page with its own single file. */}
       {list?.documents.filter((document) => document.kind !== "history").length ? (
@@ -95,6 +103,7 @@ export function DocumentsStep({ onDone }: { onDone: () => void }) {
 export function HistoryStep({ onDone }: { onDone: () => void }) {
   const [text, setText] = useState("");
   const [uploaded, setUploaded] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
 
   useEffect(() => {
     void api
@@ -121,7 +130,8 @@ export function HistoryStep({ onDone }: { onDone: () => void }) {
     const form = new FormData();
     form.set("kind", "history");
     form.set("file", file);
-    await api.upload("/documents", form);
+    const result = await api.upload<Uploaded>("/documents", form);
+    setNote(result.note);
     const stored = await api.get<{ text: string }>("/onboarding/history");
     setText(stored.text);
     setUploaded(file.name);
@@ -159,6 +169,7 @@ export function HistoryStep({ onDone }: { onDone: () => void }) {
         />
       </Field>
       {uploaded ? <p className="small muted">Read from {uploaded}. Edit it above if you like.</p> : null}
+      {note ? <p className="upload-note">{note}</p> : null}
 
       <Error>{save.error ?? upload.error}</Error>
       <button type="submit" className={ready ? "advance ready" : "advance"} disabled={save.busy}>

@@ -89,10 +89,25 @@ def test_an_oversized_file_is_refused_before_it_is_parsed():
 
 
 def test_very_long_text_is_truncated_and_says_so():
-    """Silently keeping the first 200k characters would give a user a profile built from half their."""
-    extracted = extract_text("history.txt", ("word " * 60_000).encode())
+    """Silently keeping the first N characters would give a user a profile built from half their."""
+    extracted = extract_text("history.txt", ("word " * (MAX_TEXT_CHARS // 4)).encode())
     assert extracted.truncated is True
     assert extracted.chars == MAX_TEXT_CHARS
+
+
+def test_a_document_the_size_of_a_real_history_is_kept_whole():
+    """The number that decides how much of a person's own writing the platform holds.
+
+    Raised to 300,000 on 2026-08-13. The account that prompted it had uploaded 145,493 characters,
+    which every ceiling on the platform then stored and no ceiling let the setup agent read.
+    """
+    # Longer than the 145,493-character file that prompted the change, and longer than the 200,000
+    # this used to stop at.
+    body = ("word " * 45_000).strip()
+    assert len(body) > 145_493
+    extracted = extract_text("context.txt", body.encode())
+    assert extracted.truncated is False
+    assert extracted.chars == len(body)
 
 
 def test_the_same_content_in_two_formats_hashes_the_same():
@@ -190,6 +205,36 @@ def test_re_uploading_the_same_file_replaces_rather_than_duplicates(api):
     assert second.json()["status"] == "replaced"
     assert session.scalar(select(func.count()).select_from(UserDocument)
                           .where(UserDocument.user_id == users[0].id)) == 1
+
+
+@pytestmark_db
+def test_a_file_longer_than_we_read_is_kept_and_the_uploader_is_told(api):
+    """The person can shorten it; the model cannot.
+
+    The truncation was reported into the setup agent's tool result, so the only reader was a model
+    that could do nothing about it, while the person who could went on believing their whole file
+    had been read. It is not a refusal — the document is stored and usable — so it comes back as a
+    note beside a 201, not an error.
+    """
+    http, _, _ = api
+    response = _upload(http, name="history.txt", body=("word " * (MAX_TEXT_CHARS // 4)).encode(),
+                       kind="history")
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["truncated"] is True
+    assert body["chars"] == MAX_TEXT_CHARS
+    assert body["note"], "a truncated upload must come back with something to show the user"
+    assert f"{MAX_TEXT_CHARS:,}" in body["note"], "the note has to say how much was kept"
+
+
+@pytestmark_db
+def test_an_ordinary_upload_carries_no_warning(api):
+    """A note on every upload is a note nobody reads."""
+    http, _, _ = api
+    body = _upload(http).json()
+    assert body["truncated"] is False
+    assert body["note"] is None
 
 
 @pytestmark_db

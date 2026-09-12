@@ -84,6 +84,36 @@ def test_the_agent_sees_the_documents_the_user_uploaded(account):
     assert "Northwind" in tools.run("read_document", {"name": "cv.pdf"})
 
 
+def test_a_long_document_reaches_the_agent_whole(account):
+    """A second, lower ceiling here cut what the upload had already kept.
+
+    Measured on the live platform 2026-08-13: an account's 145,493-character context file was
+    stored in full and read to 41%, and the sections lost were the ones a CV is built from. The
+    profile written from it was correspondingly thin, and nothing anywhere reported a problem.
+    Whatever the upload keeps is what the agent must see.
+    """
+    from sqlalchemy import select
+
+    from libs.agents.tools import SetupTools
+    from libs.db.models import UserDocument
+
+    session, user = account
+    # Longer than the 60,000 this used to cut at, and well under what an upload stores.
+    body = "The turbocharger match was verified against dyno data. " * 2_000
+    session.add(_document(user.id, "context.txt", "other", body + "KEY TECHNICAL ACHIEVEMENTS"))
+    session.flush()
+
+    text = SetupTools(session, user.id).run("read_document", {"name": "context.txt"})
+    assert len(text) == len(body) + len("KEY TECHNICAL ACHIEVEMENTS")
+    assert text.endswith("KEY TECHNICAL ACHIEVEMENTS"), "the end of the document must survive"
+    assert "truncated" not in text
+
+    stored = session.scalar(
+        select(UserDocument.chars).where(UserDocument.user_id == user.id,
+                                         UserDocument.filename == "context.txt"))
+    assert len(text) == stored, "the agent reads exactly what was stored, no more and no less"
+
+
 def test_an_account_with_no_documents_is_told_to_interview_instead(account):
     """Path C."""
     from libs.agents.tools import SetupTools

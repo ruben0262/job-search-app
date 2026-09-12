@@ -9,8 +9,18 @@ logger = logging.getLogger(__name__)
 
 # 10 MB is a generous CV and a large scanned reference. Above it, something else is going on.
 MAX_FILE_BYTES = 10 * 1024 * 1024
-# Roughly 60 pages of prose.
-MAX_TEXT_CHARS = 200_000
+
+# **The one ceiling on how much of a person's own writing this platform holds, and therefore reads.**
+# Roughly 90 pages of prose. Raised from 200,000 on 2026-08-13 together with the removal of a second,
+# lower cap: `libs/agents/tools.py` re-truncated every `read_document` at 60,000, so an account whose
+# uploads were stored in full still had them cut before the setup agent saw them. Measured on the live
+# platform that day: one account's 145,493-character context file was read to 41%, and the two headings
+# in the unread remainder were "KEY TECHNICAL ACHIEVEMENTS" and "SKILLS DEMONSTRATED" — the material
+# the base CV is built from. Nothing errored, and the truncation notice reached the model rather than
+# the person who uploaded it.
+#
+# So: one number, applied once, at the point the text is stored. Whatever is kept is what is read.
+MAX_TEXT_CHARS = 300_000
 
 SUPPORTED = (".txt", ".md", ".pdf", ".docx")
 

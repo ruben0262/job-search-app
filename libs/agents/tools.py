@@ -8,13 +8,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from libs.db.models import UserDocument
+from libs.labels import bump_generation
 from libs.profiles import WRITEABLE
 from libs.profiles.repository import ProfileFiles
 
 logger = logging.getLogger(__name__)
-
-# Truncation guard for one document.
-MAX_DOCUMENT_CHARS = 60_000
 
 
 
@@ -64,8 +62,9 @@ class SetupTools:
             .where(UserDocument.user_id == self._user, UserDocument.filename == name))
         if text is None:
             return f"No document called {name!r}. Call list_documents to see what there is."
-        if len(text) > MAX_DOCUMENT_CHARS:
-            return text[:MAX_DOCUMENT_CHARS] + f"\n\n[truncated at {MAX_DOCUMENT_CHARS:,} chars]"
+        # Returned whole. The only ceiling is `libs.documents.MAX_TEXT_CHARS`, applied once when the
+        # upload was stored — a second cap here cut the text again, further, and told the model rather
+        # than the person who could have shortened the file.
         return text
 
     # ── the profile files ─────────────────────────────────────────────────────────────────────
@@ -115,6 +114,7 @@ class SetupTools:
         user.rubric_md = content
         user.profile_version = profile_version(content)
         if changed:
-            user.profile_generation += 1
+            # One place decides what a new generation means for the labels already held.
+            bump_generation(self._s, user)
         logger.info("setup: %s rubric synced (%d chars, generation %d)",
                     self._user, len(content), user.profile_generation)
