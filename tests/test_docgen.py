@@ -9,13 +9,17 @@ from typing import ClassVar
 import pytest
 
 from libs.contracts.profile import ProfileSchema
-from libs.templates import BASE_CV_TEMPLATE, load
+from libs.templates import SCAFFOLD_CV, load
 from services.docgen import build, pdf, run
 
 
 def base_document() -> str:
-    """The document handed to the tailoring call."""
-    return load(BASE_CV_TEMPLATE)
+    """The document handed to the tailoring call.
+
+    The scaffold a new account is seeded with, which is what every user's own `base_cv.html`
+    descends from — and since 2026-08-14 the only base CV in the repo.
+    """
+    return load(SCAFFOLD_CV)
 
 
 PROFILE = ProfileSchema.model_validate({
@@ -207,7 +211,7 @@ def test_the_scan_reports_what_it_found():
 
 def test_the_stylesheet_is_not_scanned_as_hidden_content():
     """`hidden-scrollbars` style rules and print CSS are the platform's own and legitimate."""
-    assert build.scan_hidden(build.template_base()) == []
+    assert build.scan_hidden(base_document()) == []
 
 
 # ── the length rule ───────────────────────────────────────────────────────────────────────────

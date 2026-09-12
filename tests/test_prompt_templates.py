@@ -126,8 +126,8 @@ def test_a_wired_prompt_carries_none_of_the_reference_instance_s_specifics(name)
 # ── the CV template ───────────────────────────────────────────────────────────────────────────
 
 def test_the_cv_template_carries_no_identity():
-    """It is the layout every user's CV is built from."""
-    template = (pathlib.Path("libs/templates/base_cv.html")).read_text(encoding="utf-8")
+    """It is seeded into every new account, so an identity in it is one every user starts with."""
+    template = (pathlib.Path("libs/scaffolds/base_cv.html")).read_text(encoding="utf-8")
 
     assert not _IDENTITY.search(template)
     for leak in ("@gmail", "+44", "rubenlekli.com", "github.com/ruben"):
@@ -136,7 +136,7 @@ def test_the_cv_template_carries_no_identity():
 
 def test_the_cv_template_keeps_the_layout_rules_that_are_load_bearing():
     """A4 sizing and the `@page` margin rule are why the PDF does not get a Chrome header drawn over it."""
-    template = (pathlib.Path("libs/templates/base_cv.html")).read_text(encoding="utf-8")
+    template = (pathlib.Path("libs/scaffolds/base_cv.html")).read_text(encoding="utf-8")
 
     assert "@page" in template
     assert "cv-header" in template and "cv-contact" in template

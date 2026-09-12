@@ -6,8 +6,6 @@ import re
 from datetime import UTC, datetime
 
 from libs.profiles import PLACEHOLDER_MARKERS
-from libs.templates import BASE_CV_TEMPLATE
-from libs.templates import load as load_template
 
 logger = logging.getLogger(__name__)
 
@@ -339,8 +337,5 @@ def page_feedback(pages: int | None, *, maximum: int = 2) -> str | None:
             f"remains.")
 
 
-def template_base() -> str:
-    """The unfilled template. Only for callers that need the layout without a profile."""
-    return load_template(BASE_CV_TEMPLATE)
 
 
