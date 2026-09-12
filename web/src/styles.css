@@ -1184,6 +1184,77 @@ td.num {
   padding: 0.1em 0.4em;
 }
 
+/* When, said twice and at two scales: the day once per day, the clock on every message. Neither
+   is relative, so nothing on screen goes stale while the page sits open and no timer is needed to
+   keep it true. The exact moment is on the tooltip. */
+.chat-day {
+  align-self: center;
+  padding: 0.15rem 0.7rem;
+  border-radius: 999px;
+  background: var(--bg-raised);
+  border: 1px solid var(--faint);
+  color: var(--muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.02em;
+}
+
+.turn-when {
+  display: block;
+  margin-top: 0.35rem;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Under the bubble it belongs to, on the same side the bubble sits on. */
+.turn-bubble .turn-when {
+  text-align: right;
+  opacity: 0.75;
+}
+
+/* The one thing a person can do to improve their own model after the automatic run stops. Given a
+   panel rather than a sentence in a paragraph because it is an instruction to act on, not context. */
+.teach-it {
+  margin-top: 1.25rem;
+  padding: 0.9rem 1.1rem;
+  border: 1px solid var(--faint);
+  border-left: 3px solid var(--score, var(--ink));
+  border-radius: var(--radius-sm, 8px);
+  background: var(--bg-raised);
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+.teach-it p {
+  margin: 0;
+}
+
+.teach-it p + p {
+  margin-top: 0.5rem;
+}
+
+.teach-it code {
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  background: color-mix(in srgb, currentColor 10%, transparent);
+  font-family: ui-monospace, monospace;
+  font-size: 0.85em;
+}
+
+/* An upload that was kept but cut short. Not an error — the file is stored and usable — so it does
+   not borrow the error colour, and it stays on screen rather than flashing, because the action it
+   asks for (shorten the file, upload again) takes longer than a toast. */
+.upload-note {
+  margin-top: 0.6rem;
+  padding: 0.6rem 0.8rem;
+  border-radius: var(--radius-sm, 8px);
+  border: 1px solid color-mix(in srgb, #d08a34 45%, transparent);
+  background: color-mix(in srgb, #d08a34 12%, transparent);
+  color: #d08a34;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
 /* What the first-time visitor sees instead of an empty void: three things worth saying. */
 .chat-empty {
   border: 1px dashed var(--faint);

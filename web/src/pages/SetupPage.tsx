@@ -1,8 +1,9 @@
 /** Build your profile — a conversation with the setup agents. */
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 
 import { api } from "../api";
 import { Markdown } from "../markdown";
+import { ago, clock, dayLabel, full } from "../time";
 import { Error, useAction } from "../ui";
 
 /** Split a reply into the steps it is made of. */
@@ -235,7 +236,16 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
             ...previous,
             messages: [
               ...previous.messages,
-              { role: "user", content: text, status: "done", error: null, files_written: [], at: null },
+              // Stamped now rather than left null: the message the user can see was sent has to
+              // say when, and the server's own timestamp replaces this on the next load.
+              {
+                role: "user",
+                content: text,
+                status: "done",
+                error: null,
+                files_written: [],
+                at: new Date().toISOString(),
+              },
               { role: "assistant", content: "", status: "pending", error: null, files_written: [], at: null },
             ],
           }
@@ -347,7 +357,16 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
                   }}
                 />
               ) : (
-                <button type="button" onClick={() => void openChat.run(chat.id)}>
+                <button
+                  type="button"
+                  /* The one place `last_message_at` is read: which chat was spoken to most recently. */
+                  title={
+                    chat.last_message_at
+                      ? `Last message ${ago(chat.last_message_at)}`
+                      : "No messages yet"
+                  }
+                  onClick={() => void openChat.run(chat.id)}
+                >
                   {/* The title truncates on its own element. */}
                   <span className="chat-tab-title">{chat.title}</span>
                 </button>
@@ -428,61 +447,80 @@ export function SetupPage({ onChanged }: { onChanged: () => void }) {
               </p>
             </div>
           ) : null}
-          {state.messages.map((message, index) => (
-            <div key={index} className={`turn ${message.role}`}>
-              {message.role === "assistant" ? (
-                <div className={`turn-body${message.status === "failed" ? " turn-failed" : ""}`}>
-                  {/* Nothing written yet: the turn is queued or the model is still thinking. */}
-                  {message.status === "pending" && !message.content ? (
-                    <span className="pending">
-                      <span className="typing" aria-hidden="true">
-                        <i />
-                        <i />
-                        <i />
-                      </span>
-                      Thinking. This can take a couple of minutes, you can leave this page and come
-                      back, the answer will be here.
-                    </span>
-                  ) : (
-                    <>
-                      {/* One container per step, not one per turn. */}
-                      {steps(message.content).map((step, position) => (
-                        <div key={position} className="turn-step">
-                          <span className="turn-step-dot" aria-hidden="true" />
-                          <Markdown text={step} />
-                        </div>
-                      ))}
-                      {/* A caret while text is still arriving. */}
-                      {message.status === "streaming" ? <span className="caret" /> : null}
-                    </>
-                  )}
-                  {message.status === "cancelled" ? (
-                    <span className="turn-stopped">
-                      You stopped this. Anything it had already written is saved.
-                    </span>
-                  ) : null}
-                  {message.status === "failed" && message.error ? (
-                    <span className="turn-error">{message.error}</span>
-                  ) : null}
-                  {/* What it did, as a list of steps rather than a sentence. */}
-                  {message.files_written.length > 0 ? (
-                    <ul className="activity">
-                      {message.files_written.map((name) => (
-                        <li key={name}>
-                          <span className="activity-dot" aria-hidden="true" />
-                          <span>
-                            Updated <strong>{NAMES[name] ?? name}</strong>
+          {state.messages.map((message, index) => {
+            // A heading only where the day changes, so a transcript written in one sitting carries
+            // one of them rather than one per message.
+            const day = dayLabel(message.at);
+            const previous = index > 0 ? state.messages[index - 1] : undefined;
+            const opensDay = Boolean(day) && day !== (previous ? dayLabel(previous.at) : null);
+            const when = message.at ? (
+              <time className="turn-when" dateTime={message.at} title={full(message.at)}>
+                {clock(message.at)}
+              </time>
+            ) : null;
+            return (
+              <Fragment key={index}>
+                {opensDay ? <div className="chat-day">{day}</div> : null}
+                <div className={`turn ${message.role}`}>
+                  {message.role === "assistant" ? (
+                    <div className={`turn-body${message.status === "failed" ? " turn-failed" : ""}`}>
+                      {/* Nothing written yet: the turn is queued or the model is still thinking. */}
+                      {message.status === "pending" && !message.content ? (
+                        <span className="pending">
+                          <span className="typing" aria-hidden="true">
+                            <i />
+                            <i />
+                            <i />
                           </span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
+                          Thinking. This can take a couple of minutes, you can leave this page and
+                          come back, the answer will be here.
+                        </span>
+                      ) : (
+                        <>
+                          {/* One container per step, not one per turn. */}
+                          {steps(message.content).map((step, position) => (
+                            <div key={position} className="turn-step">
+                              <span className="turn-step-dot" aria-hidden="true" />
+                              <Markdown text={step} />
+                            </div>
+                          ))}
+                          {/* A caret while text is still arriving. */}
+                          {message.status === "streaming" ? <span className="caret" /> : null}
+                        </>
+                      )}
+                      {message.status === "cancelled" ? (
+                        <span className="turn-stopped">
+                          You stopped this. Anything it had already written is saved.
+                        </span>
+                      ) : null}
+                      {message.status === "failed" && message.error ? (
+                        <span className="turn-error">{message.error}</span>
+                      ) : null}
+                      {/* What it did, as a list of steps rather than a sentence. */}
+                      {message.files_written.length > 0 ? (
+                        <ul className="activity">
+                          {message.files_written.map((name) => (
+                            <li key={name}>
+                              <span className="activity-dot" aria-hidden="true" />
+                              <span>
+                                Updated <strong>{NAMES[name] ?? name}</strong>
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                      {when}
+                    </div>
+                  ) : (
+                    <div className="turn-bubble">
+                      {message.content}
+                      {when}
+                    </div>
+                  )}
                 </div>
-              ) : (
-                <div className="turn-bubble">{message.content}</div>
-              )}
-            </div>
-          ))}
+              </Fragment>
+            );
+          })}
           <div ref={bottom} />
         </div>
 

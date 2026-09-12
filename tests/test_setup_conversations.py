@@ -111,6 +111,27 @@ def test_a_new_chat_starts_empty_and_the_old_one_keeps_its_transcript(api):
     assert [m["content"] for m in old["messages"]] == ["Six weeks of profile interview."]
 
 
+def test_every_message_says_when_it_was_sent(api):
+    """The page prints a clock time per message and a heading per day. Both read one field, and a
+    null in it is not an error anywhere — it is a message with no time under it."""
+    import datetime as _dt
+
+    http, session, user = api
+    chat = uuid.UUID(http.get("/setup").json()["conversation_id"])
+    _say(session, user.id, chat, "user", "Two years at a broker.")
+    _say(session, user.id, chat, "assistant", "Noted. What did you do there?")
+
+    messages = http.get(f"/setup?conversation_id={chat}").json()["messages"]
+    assert len(messages) == 2
+    stamps = []
+    for message in messages:
+        assert message["at"], f"a {message['role']} message reached the page with no time on it"
+        # Parsed, not merely truthy: a string the browser cannot read prints "Invalid Date".
+        stamps.append(_dt.datetime.fromisoformat(message["at"]))
+    # The order the transcript is drawn in has to be the order it was said in.
+    assert stamps == sorted(stamps)
+
+
 def test_the_model_is_never_shown_another_chats_transcript(api):
     """The context boundary, asserted where it is enforced rather than through the route."""
     from libs.agents.loop import history

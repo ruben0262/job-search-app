@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api } from "./api";
+import { ago } from "./time";
 
 type Notification = {
   id: number;
@@ -17,15 +18,6 @@ type Notification = {
 type Feed = { unread: number; notifications: Notification[] };
 
 const POLL_MS = 60_000;
-
-function ago(iso: string | null): string {
-  if (!iso) return "";
-  const minutes = Math.floor((Date.now() - new Date(iso).getTime()) / 60_000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  if (minutes < 1440) return `${Math.floor(minutes / 60)}h ago`;
-  return `${Math.floor(minutes / 1440)}d ago`;
-}
 
 export function NotificationBell() {
   const [feed, setFeed] = useState<Feed>({ unread: 0, notifications: [] });
