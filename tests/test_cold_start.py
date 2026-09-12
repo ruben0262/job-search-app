@@ -273,6 +273,7 @@ def test_an_account_allowed_fewer_labels_than_the_constant_can_still_train(db):
         "the account has bought everything it is allowed to buy and still cannot train")
 
 
+@pytestmark_db
 def test_the_label_budget_is_the_operators_to_set(db):
     """The catalogue entry existed and nothing read it."""
     from libs.labels import labelling_state, pool_target, target_for

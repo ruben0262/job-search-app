@@ -18,6 +18,10 @@ OWNER_CHAT = "555000111"
 @pytest.fixture()
 def api():
     os.environ.setdefault("ACCESS_TOKEN_SECRET", "test-" + "x" * 40)
+    # Set here rather than relied on from another file: `setdefault` in a fixture leaks into the
+    # process, so these four tests passed only when a file that sets it had already run. They are
+    # early in the alphabet, so on a clean shell they errored and nothing else did.
+    os.environ.setdefault("SECRETS_KEK", "k1:" + "A" * 43 + "=")
     os.environ["DISABLE_RATE_LIMIT"] = "1"
 
     from fastapi.testclient import TestClient

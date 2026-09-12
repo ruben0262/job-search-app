@@ -236,6 +236,7 @@ def test_onboarding_requires_signing_in(api):
 
 # ── the schema payloads nobody reads (2026-08-11) ──────────────────────────────────────────────
 
+@pytestmark_db
 def test_the_identity_and_config_routes_return_the_users_own_data(api):
     """**Written before removing the `schema` key from these payloads**, to pin what must survive.
 
@@ -259,6 +260,7 @@ def test_the_identity_and_config_routes_return_the_users_own_data(api):
     assert config["config"]["sections"][0]["keywords"] == CONFIG["sections"][0]["keywords"]
 
 
+@pytestmark_db
 def test_saving_your_links_marks_the_profile_files_as_behind(api):
     """**The bug this closes, end to end through the real route.**
 
@@ -284,6 +286,7 @@ def test_saving_your_links_marks_the_profile_files_as_behind(api):
         "saving links left nothing to compare the profile files against")
 
 
+@pytestmark_db
 def test_saving_your_search_settings_marks_the_profile_files_as_behind(api):
     """`label.md` and the role angles were written against the previous keywords."""
     from libs.db.models import User
