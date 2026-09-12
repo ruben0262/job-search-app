@@ -80,7 +80,11 @@ LIMITS: tuple[Limit, ...] = (
     Limit("label_pool", "Jobs bought per labelling run", 300, "jobs",
           "Labelling runs on the user's own Claude credential, so this is their money.",
           allow_unlimited=False,
-          choices=(100, 300, 500, 1000)),
+          # 1,500 and 2,000 added 2026-08-14. This is not "per run" in practice: cold start stops
+          # for good once an account reaches its target and nothing tops it up as the corpus grows,
+          # so this number is the entire automatic training set the account will ever have. The
+          # first account to be labelled by the platform rather than migrated stopped at 338.
+          choices=(100, 300, 500, 1000, 1500, 2000)),
 )
 
 BY_KEY = {limit.key: limit for limit in LIMITS}

@@ -199,6 +199,22 @@ export function ModelPage({
               the work runs on the server, not in your browser. Retraining afterwards is free and
               happens by itself as labels accumulate.
             </p>
+
+            {/* Said here because this is the page somebody reads when they want a better model, and
+                once the first run has finished this is the only thing left that adds to it. */}
+            <div className="teach-it">
+              <p>
+                <strong>Teach it what you actually want.</strong> Send <code>/rate</code> to your
+                Telegram bot and it asks about the one job it is least sure of — the ones sitting
+                right on the line where it is guessing. Your answer is worth five automatic ones,
+                because you know and it does not.
+              </p>
+              <p className="small muted">
+                The automatic run above judges a fixed number of jobs and then stops for good.
+                Rating, and building a CV for a job you like, are what keep the model learning
+                after that.
+              </p>
+            </div>
           </>
         )}
       </div>
