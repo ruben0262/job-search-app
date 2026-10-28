@@ -2,8 +2,7 @@
 import { useEffect, useState } from "react";
 
 import { api } from "../api";
-
-type Span = { key: string; label: string; value: string | number };
+import type { components } from "../api-types";
 
 type LimitSpec = {
   key: string;
@@ -16,33 +15,7 @@ type LimitSpec = {
   choices: number[];
 };
 
-type UserDetail = {
-  user: {
-    id: string;
-    email: string;
-    status: string;
-    active: boolean;
-    plan: string;
-    telegram: string;
-    profile_generation: number;
-    model_version: number | null;
-    profile_files_visible: boolean;
-    onboarded: boolean;
-    created_at: string | null;
-    last_active_at: string | null;
-  };
-  setup: { missing: string[]; files: { name: string; kind: string; filled: boolean }[] };
-  models: {
-    version: number;
-    active: boolean;
-    n_labels: number | null;
-    trained_at: string | null;
-    metrics: Span[];
-  }[];
-  counts: { labels: number; scored: number; applied: number; notified: number };
-  /** `null` is unlimited and is a real value, not a missing one. */
-  limits: Record<string, number | null>;
-};
+type UserDetail = components["schemas"]["AdminAccountDetail"];
 
 export function AdminUserPage({ userId }: { userId: string }) {
   const [detail, setDetail] = useState<UserDetail | null>(null);
@@ -90,8 +63,7 @@ export function AdminUserPage({ userId }: { userId: string }) {
   if (failed) return <p className="error">Could not read that account.</p>;
   if (!detail) return <p className="muted">Loading…</p>;
 
-  const { user, setup, models, counts } = detail;
-  const columns = models[0]?.metrics ?? [];
+  const { user, setup, counts } = detail;
 
   return (
     <div className="page-in">
@@ -111,14 +83,6 @@ export function AdminUserPage({ userId }: { userId: string }) {
 
       <dl className="stats">
         <div className="stat">
-          <dt>{counts.labels.toLocaleString()}</dt>
-          <dd>labels</dd>
-        </div>
-        <div className="stat">
-          <dt>{counts.scored.toLocaleString()}</dt>
-          <dd>jobs scored</dd>
-        </div>
-        <div className="stat">
           <dt>{counts.applied.toLocaleString()}</dt>
           <dd>applied</dd>
         </div>
@@ -132,7 +96,7 @@ export function AdminUserPage({ userId }: { userId: string }) {
       {setup.missing.length ? (
         <p className="error">
           Incomplete, {setup.missing.length} file(s) missing or unfilled:{" "}
-          {setup.missing.join(", ")}. Training is refused until these exist.
+          {setup.missing.join(", ")}.
         </p>
       ) : (
         <p className="facts" style={{ color: "var(--score)" }}>
@@ -201,44 +165,6 @@ export function AdminUserPage({ userId }: { userId: string }) {
           );
         })}
       </div>
-
-      <h2 style={{ marginTop: "2.5rem" }}>Model history</h2>
-      {models[0] ? (
-        <div className="table-scroll">
-          <table className="history">
-            <thead>
-              <tr>
-                <th>Version</th>
-                <th>Trained</th>
-                <th>Labels</th>
-                {columns.map((metric) => (
-                  <th key={metric.key}>{metric.label}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {models.map((entry) => (
-                <tr key={entry.version} className={entry.active ? "on" : undefined}>
-                  <td>
-                    v{entry.version}
-                    {entry.active ? <span className="pill">live</span> : null}
-                  </td>
-                  <td>
-                    {entry.trained_at ? new Date(entry.trained_at).toLocaleDateString() : "—"}
-                  </td>
-                  <td>{entry.n_labels?.toLocaleString() ?? "—"}</td>
-                  {columns.map((column) => {
-                    const cell = entry.metrics.find((metric) => metric.key === column.key);
-                    return <td key={column.key}>{cell ? String(cell.value) : "—"}</td>;
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <p className="facts">No model has ever been trained for this account.</p>
-      )}
     </div>
   );
 }

@@ -220,41 +220,51 @@ def test_a_delayed_job_is_not_claimable_yet(ctx):
 
 # ── the notify dispatcher ─────────────────────────────────────────────────────────────────────
 
-def _waiting_match(ctx, user):
-    """A scored, unsent match — the only thing that makes an account worth a notify job now."""
-    import uuid as _u
+def _posting(ctx, *, minutes_ago: int = 0):
+    """A posting stored `minutes_ago`: what makes an account worth asking again, now nothing scores."""
+    from datetime import UTC, datetime, timedelta
 
-    from libs.db.models import CorpusJob, UserJobState
+    from libs.db.models import CorpusJob
 
-    job = CorpusJob(url=f"https://example.test/{_u.uuid4().hex}", source="greenhouse",
-                    title="Backend Engineer", description="x" * 400)
+    job = CorpusJob(url=f"https://example.test/{uuid.uuid4().hex}", source="greenhouse",
+                    title="Backend Engineer",
+                    first_seen_at=datetime.now(UTC) - timedelta(minutes=minutes_ago))
     ctx.add(job)
-    ctx.flush()
-    ctx.add(UserJobState(user_id=user.id, job_id=job.id, score=90.0))
     ctx.flush()
     return job
 
 
-def test_an_account_with_a_match_waiting_is_queued(ctx):
-    """The sweep behind the score lane: a match nothing queued still goes out."""
+def _finished_run(ctx, user, *, minutes_ago: int) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    ctx.add(QueueJob(lane="notify", user_id=user.id, state="done", dedup_key="due",
+                     finished_at=datetime.now(UTC) - timedelta(minutes=minutes_ago)))
+    ctx.flush()
+
+
+def test_an_account_the_corpus_has_grown_for_is_queued(ctx):
+    """Nothing scores any more, so a posting stored since its last run is what makes one worth it."""
     user = _user(ctx, active=True, status="active", telegram_status="connected")
-    _waiting_match(ctx, user)
+    _finished_run(ctx, user, minutes_ago=30)
+    _posting(ctx, minutes_ago=5)
 
     assert dispatch_due_notifications(ctx) == 1
 
 
-def test_an_account_with_nothing_waiting_is_not_queued(ctx):
-    """There is no cadence to fire on, so an empty queue means an idle lane."""
-    _user(ctx, active=True, status="active", telegram_status="connected")
+def test_an_account_with_nothing_new_since_its_last_run_is_not_queued(ctx):
+    """There is no cadence to fire on, so an unchanged corpus means an idle lane."""
+    user = _user(ctx, active=True, status="active", telegram_status="connected")
+    _posting(ctx, minutes_ago=30)
+    _finished_run(ctx, user, minutes_ago=5)
 
     assert dispatch_due_notifications(ctx) == 0, (
-        "a notify run with nothing to send is a claim, a query and a log line for no reason")
+        "a notify run with nothing new to look at is a claim, a query and a log line for no reason")
 
 
 def test_the_sweep_does_not_queue_a_second_run_while_one_is_pending(ctx):
-    """The dedup key is what stops forty matches becoming forty runs."""
-    user = _user(ctx, active=True, status="active", telegram_status="connected")
-    _waiting_match(ctx, user)
+    """The dedup key is what stops forty postings becoming forty runs."""
+    _user(ctx, active=True, status="active", telegram_status="connected")
+    _posting(ctx)
 
     assert dispatch_due_notifications(ctx) == 1
     ctx.flush()
@@ -263,15 +273,15 @@ def test_the_sweep_does_not_queue_a_second_run_while_one_is_pending(ctx):
 
 def test_a_user_whose_bot_is_broken_is_not_enqueued(ctx):
     """Retrying a revoked token cannot succeed. The fix is a reconnect email, not a queue entry."""
-    user = _user(ctx, active=True, status="active", telegram_status="broken")
-    _waiting_match(ctx, user)
+    _user(ctx, active=True, status="active", telegram_status="broken")
+    _posting(ctx)
     assert dispatch_due_notifications(ctx) == 0
 
 
 def test_a_suspended_user_is_not_enqueued(ctx):
     """A stopped account must stop costing anything, including delivery attempts."""
-    user = _user(ctx, active=True, status="suspended", telegram_status="connected")
-    _waiting_match(ctx, user)
+    _user(ctx, active=True, status="suspended", telegram_status="connected")
+    _posting(ctx)
     assert dispatch_due_notifications(ctx) == 0
 
 
@@ -280,6 +290,7 @@ def test_an_unscheduled_account_still_obeys_every_other_gate(ctx):
     _user(ctx, active=True, status="suspended", telegram_status="connected")
     _user(ctx, active=True, status="active", telegram_status="broken")
     _user(ctx, active=False, status="active", telegram_status="connected")
+    _posting(ctx)
 
     assert dispatch_due_notifications(ctx) == 0
 
@@ -316,39 +327,3 @@ def test_a_finished_job_records_when_it_actually_finished(ctx):
     ctx.refresh(job)
 
     assert job.finished_at > job.claimed_at, "a job that took time must record that it took time"
-
-
-def test_a_match_that_aged_out_while_waiting_is_retired_rather_than_sent_late(ctx):
-    """The 832-row burst on 2026-08-07: nothing between scoring and sending looks at age."""
-    from datetime import UTC, datetime, timedelta
-
-    from libs.db.models import UserJobState
-    from services.notifier.deliver import pending_feed
-
-    user = _user(ctx, active=True, status="active", telegram_status="connected")
-    stale = _waiting_match(ctx, user)
-    stale.posted_at = datetime.now(UTC) - timedelta(days=15)
-    ctx.flush()
-
-    # It is above the cutoff and unsent, so delivery would send it, 15 days old.
-    assert stale.id in {item.job_id for item in pending_feed(ctx, user.id, cutoff=60.0, limit=10)}
-
-    assert dispatch_due_notifications(ctx) == 0, "nothing to queue once the stale row is retired"
-    ctx.flush()
-
-    state = ctx.get(UserJobState, (user.id, stale.id))
-    assert state.retired_at is not None
-    assert state.notified_at is None, "a row we failed to send is not a row we delivered"
-    assert pending_feed(ctx, user.id, cutoff=60.0, limit=10) == []
-
-
-def test_a_fresh_match_is_never_retired(ctx):
-    """The sweep must not become a second filter on healthy work."""
-    from libs.db.models import UserJobState
-
-    user = _user(ctx, active=True, status="active", telegram_status="connected")
-    fresh = _waiting_match(ctx, user)
-
-    assert dispatch_due_notifications(ctx) == 1
-    ctx.flush()
-    assert ctx.get(UserJobState, (user.id, fresh.id)).retired_at is None

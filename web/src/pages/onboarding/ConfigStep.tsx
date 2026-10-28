@@ -27,7 +27,6 @@ type Config = {
   languages: string[];
   min_salary: number | null;
   salary_currency: string;
-  max_notifications_per_day: number;
 };
 
 const BLANK: Config = {
@@ -45,7 +44,6 @@ const BLANK: Config = {
   languages: [],
   min_salary: null,
   salary_currency: "EUR",
-  max_notifications_per_day: 20,
 };
 
 /** Places, grouped the way somebody thinks about them rather than the order the enum happens to be in. */

@@ -2,32 +2,15 @@
 import { useEffect, useState } from "react";
 
 import { api, type Dashboard } from "../api";
+import type { components } from "../api-types";
 import { Banner } from "../ui";
 
-type Component = { key: string; label: string; state: "ok" | "warn" | "down" | "off"; detail: string };
-
-/** The state, as a sentence somebody can act on. */
-const HEADLINES: Record<string, string> = {
-  confirm: "Your profile is ready to review",
-  process: "Your profile is not built yet",
-  upload: "Add your CV to get started",
-};
-
-const ACTIONS: Record<string, { href: string; label: string }> = {
-  confirm: { href: "#/process", label: "Review your profile" },
-  // Not "process your documents" any more: the step is a conversation.
-  process: { href: "#/profile", label: "Build your profile" },
-  upload: { href: "#/settings", label: "Upload your CV" },
-};
+type Component = components["schemas"]["StatusComponent"];
+type StatusReport = components["schemas"]["StatusReport"];
 
 export function DashboardPage({ dashboard }: { dashboard: Dashboard; onChanged: () => void }) {
   if (dashboard.stage === "onboarding") return null;
-  const { next, model, feed, banners, notifications, telegram } = dashboard;
-
-  const action = ACTIONS[next.action];
-  const headline =
-    HEADLINES[next.action] ??
-    (model.servable ? "Your feed is running on your own model" : "Your feed is running on your keywords");
+  const { banners, matching, applied, telegram } = dashboard;
 
   return (
     <>
@@ -39,36 +22,18 @@ export function DashboardPage({ dashboard }: { dashboard: Dashboard; onChanged: 
 
       <div className="overview">
         <p className="kicker">Overview</p>
-        <h1>{headline}</h1>
-        <p className="lede">{next.message}</p>
+        <h1>{matching ? "Jobs that match your words" : "No jobs match your words yet"}</h1>
 
-        {action ? (
-          <a href={action.href}>
-            <button>{action.label}</button>
-          </a>
-        ) : null}
+        <a href="#/feed">
+          <button>See your jobs</button>
+        </a>
 
         <dl className="stats">
-          <Stat value={feed.scored} label="jobs scored for you" />
-          <Stat value={feed.labels} label="labels at this profile" />
-          <Stat value={feed.applied} label="applications recorded" />
+          <Stat value={matching} label="jobs matching now" />
+          <Stat value={applied} label="applications recorded" />
         </dl>
 
-        <p className="facts">
-          {model.servable
-            ? `Model version ${model.version}, trained on your own judgement${
-                model.trained_at ? ` on ${new Date(model.trained_at).toLocaleDateString()}` : ""
-              }.`
-            : model.stale_reason}
-        </p>
-        <p className="facts">
-          Telegram is {telegram}.{" "}
-          {/* null is unlimited, which is the catalogue default. */}
-          {notifications.per_day_cap === null
-            ? "No daily limit on messages"
-            : `At most ${notifications.per_day_cap} messages a day`}
-          . Matches are sent as they are scored.
-        </p>
+        <p className="facts">Telegram is {telegram}.</p>
 
         <StatusList />
       </div>
@@ -82,7 +47,7 @@ function StatusList() {
 
   useEffect(() => {
     api
-      .get<{ components: Component[] }>("/status")
+      .get<StatusReport>("/status")
       .then((body) => setComponents(body.components))
       .catch(() => setComponents([]));
   }, []);

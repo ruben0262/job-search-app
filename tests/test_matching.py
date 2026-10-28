@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from libs.matching import TEXT_POINTS, TITLE_POINTS, green_words, pattern, score
+from libs.matching import TEXT_POINTS, TITLE_POINTS, green_words, pattern, score, underpaid
 
 needs_db = pytest.mark.skipif(not os.environ.get("DATABASE_URL"),
                               reason="DATABASE_URL not set (no live Postgres)")
@@ -26,6 +26,27 @@ def test_a_title_match_outranks_a_text_match_and_says_which_words_matched():
     assert score(regex, "Platform role", "We use Python daily") == (TEXT_POINTS, ("python",))
     assert score(regex, "Backend-Engineer", "Python") == (100, ("backend engineer", "python"))
     assert score(regex, "Nurse", "Ward rounds") == (0, ())
+
+
+@pytest.mark.parametrize(("text", "minimum", "currency", "dropped"), [
+    ("Pays €40,000 - €45,000 per year.", 50_000, "EUR", True),
+    ("Pays €40,000 - €55,000 per year.", 50_000, "EUR", False),
+    # Converted before it is compared: £40k a year is about €47k.
+    ("Salary £40,000 per year.", 50_000, "EUR", True),
+    ("Salary £40,000 per year.", 45_000, "EUR", False),
+    # The minimum is converted too: £40k is about €47k, which €45k does not reach.
+    ("Pays €45,000 per year.", 40_000, "GBP", True),
+    # A month is twelve of them: 1.2M forint a month is about €36k a year.
+    ("Bruttó 1 200 000 Ft havi.", 40_000, "EUR", True),
+    # Unknown is kept: no salary, or no period to tell a month from a year.
+    ("Competitive salary and equity.", 50_000, "EUR", False),
+    ("Pays €3,000.", 50_000, "EUR", False),
+    # And no minimum means nothing is ever dropped for pay.
+    ("Pays €10,000 per year.", None, "EUR", False),
+])
+def test_a_job_is_dropped_for_pay_only_when_its_stated_top_is_known_and_below(
+        text, minimum, currency, dropped):
+    assert underpaid({"min_salary": minimum, "salary_currency": currency}, text) is dropped
 
 
 @pytest.fixture()
@@ -107,6 +128,22 @@ def test_remote_only_drops_jobs_known_to_be_on_site_but_keeps_unknown_ones(db):
     _jobs(session, ("Backend Engineer A", "", False, 1), ("Backend Engineer B", "", None, 2))
 
     assert [m.job.title for m in matching_jobs(session, user)] == ["Backend Engineer B"]
+
+
+@needs_db
+def test_a_minimum_salary_drops_what_pays_less_and_keeps_what_does_not_say(db):
+    from libs.db.models import UserConfig
+    from libs.matching import matching_jobs
+
+    session, user = db
+    config = session.get(UserConfig, user.id)
+    config.config = {**config.config, "min_salary": 60_000, "salary_currency": "EUR"}
+    _low, high, silent = _jobs(session,
+                               ("Backend Engineer A", "€40,000 - €50,000 per year", True, 1),
+                               ("Backend Engineer B", "€70,000 - €90,000 per year", True, 2),
+                               ("Backend Engineer C", "Competitive pay", True, 3))
+
+    assert [m.job.id for m in matching_jobs(session, user)] == [high.id, silent.id]
 
 
 @needs_db

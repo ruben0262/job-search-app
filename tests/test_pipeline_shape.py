@@ -52,32 +52,30 @@ def test_every_stage_of_the_pipeline_is_present(db):
     from libs.ops.pipeline import pipeline
 
     keys = [s["key"] for s in pipeline(db)["stages"]]
-    # No separate "store".
-    assert keys == ["gather", "describe", "embed", "score", "deliver"]
+    # No separate "store", and no "embed" or "score": nothing embeds or scores (ROADMAP Phase 8).
+    assert keys == ["gather", "describe", "deliver"]
     for entry in pipeline(db)["stages"]:
         assert entry["label"] and entry["what"], "every stage says what it is, on the page itself"
 
 
-def test_a_row_waiting_to_be_embedded_is_counted_as_waiting(db):
-    """The incident, in one assertion."""
+def test_a_described_posting_is_waiting_for_nothing(db):
+    """It is matched when it is read. A vector nothing computes is not a backlog to show anybody."""
     from libs.ops.pipeline import pipeline
 
     _job(db, description="We build things. " * 40, description_fetched_at=datetime.now(UTC))
     db.flush()
 
-    assert stage(pipeline(db), "embed")["waiting"] == 1
+    assert all(not entry["waiting"] for entry in pipeline(db)["stages"])
 
 
-def test_a_row_with_no_description_waits_at_describe_not_at_embed(db):
+def test_a_row_with_no_description_waits_at_describe(db):
     """Each stage counts what *it* is holding."""
     from libs.ops.pipeline import pipeline
 
     _job(db)
     db.flush()
 
-    report = pipeline(db)
-    assert stage(report, "describe")["waiting"] == 1
-    assert stage(report, "embed")["waiting"] == 0
+    assert stage(pipeline(db), "describe")["waiting"] == 1
 
 
 # A trimmed row used to be the case here: retention nulled a description in place, leaving a row
@@ -138,7 +136,7 @@ def test_an_empty_stage_is_green_and_says_nothing_about_age(db):
     """`None` rather than zero. Zero minutes is a claim about a queue that does not exist."""
     from libs.ops.pipeline import pipeline
 
-    entry = stage(pipeline(db), "embed")
+    entry = stage(pipeline(db), "describe")
     assert entry["waiting"] == 0
     assert entry["oldest_min"] is None
     assert entry["verdict"] == "ok"
@@ -152,24 +150,6 @@ def test_the_thresholds_come_from_the_tick_that_clears_them(db):
     report = pipeline(db)
     assert report["amber_after_min"] == 2 * PLATFORM_TICK_MIN
     assert report["red_after_min"] == 8 * PLATFORM_TICK_MIN
-
-
-def test_scoring_counts_work_not_postings(db):
-    """One corpus row waiting for three accounts is three units of work."""
-    from libs.db.models import User
-    from libs.ops.pipeline import pipeline
-
-    for _ in range(2):
-        user = User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active",
-                    active=True, model_version=1)
-        db.add(user)
-    db.flush()
-    _job(db, description="x " * 200, embedding=b"\x00" * 8, embedding_dim=2,
-         embedding_version="v1", text_sha256=uuid.uuid4().hex * 2,
-         posted_at=datetime.now(UTC))
-    db.flush()
-
-    assert stage(pipeline(db), "score")["waiting"] >= 2
 
 
 # ── the three ways the first version lied ───────────────────────────────────────────────────────
@@ -244,79 +224,19 @@ def test_a_match_past_its_own_sources_window_is_still_retired(db):
     assert retired == 1
 
 
-def test_the_age_of_a_queue_describes_a_row_that_is_in_it(db):
-    """The count carried the account's filters and the age did not."""
+def test_delivery_shows_no_queue_for_scores_nothing_will_send(db):
+    """The scorer's rows outlive it, and nothing sends them, so they are not a queue at delivery."""
     from libs.ops.pipeline import pipeline
 
     user = _account(db)
-    stale = _job(db, description="x " * 200, embedding=b"\x00" * 8, embedding_dim=2,
-                 embedding_version="v1", text_sha256=uuid.uuid4().hex * 2,
-                 posted_at=datetime.now(UTC) - timedelta(days=6))
-    _scored(db, user, stale, score=99.0, scored_ago_min=60 * 138)
+    _scored(db, user, _job(db, description="x " * 200,
+                           posted_at=datetime.now(UTC) - timedelta(minutes=10)), score=99.0)
+    _scored(db, user, _job(db, description="x " * 200), score=99.0, notified=True)
 
     entry = stage(pipeline(db), "deliver")
-    assert entry["waiting"] == 0, "a six-day-old posting is not a delivery candidate"
-    assert entry["oldest_min"] is None, (
-        "so it cannot be the age of the delivery queue either — the count and the age have to ask "
-        "the same question")
-
-
-def test_the_scoring_queue_can_actually_turn_red(db):
-    """The one colour that cannot fire is the one nobody notices is missing."""
-    from libs.ops.pipeline import pipeline
-
-    _account(db)
-    old = _job(db, description="x " * 200, embedding=b"\x00" * 8, embedding_dim=2,
-               embedding_version="v1", text_sha256=uuid.uuid4().hex * 2,
-               posted_at=datetime.now(UTC) - timedelta(hours=3))
-    old.first_seen_at = datetime.now(UTC) - timedelta(hours=3)
-    db.flush()
-
-    entry = stage(pipeline(db), "score")
-    assert entry["waiting"] == 1
-    assert entry["oldest_min"] is not None and entry["oldest_min"] > 150
-    assert entry["verdict"] == "down"
-
-
-def test_a_delivery_queue_is_the_cap_working_but_an_expired_match_is_not(db):
-    """Delivery is rate-capped on purpose."""
-    from libs.ops.pipeline import pipeline
-
-    user = _account(db)
-    fresh = _job(db, description="x " * 200, embedding=b"\x00" * 8, embedding_dim=2,
-                 embedding_version="v1", text_sha256=uuid.uuid4().hex * 2,
-                 posted_at=datetime.now(UTC) - timedelta(minutes=10))
-    _scored(db, user, fresh, score=99.0)
-
-    queued = stage(pipeline(db), "deliver")
-    assert queued["waiting"] == 1
-    assert queued["expired"] == 0
-    assert queued["verdict"] == "ok", "a queue behind a deliberate cap is not a fault"
-
-    missed = _job(db, description="x " * 200, embedding=b"\x00" * 8, embedding_dim=2,
-                  embedding_version="v1", text_sha256=uuid.uuid4().hex * 2,
-                  posted_at=datetime.now(UTC) - timedelta(days=2))
-    _scored(db, user, missed, score=99.0, scored_ago_min=30)
-
-    # `expired` is what the sweep gave up on, not a condition re-derived here: a row counts once
-    # somebody has actually decided it will never be sent.
-    from libs.db.models import UserJobState
-    from libs.tenant.repository import TenantRepository
-
-    assert stage(pipeline(db), "deliver")["expired"] == 0, "nothing has given up on it yet"
-
-    from libs.tenant.filters import UserFilters
-
-    assert TenantRepository(db).retire_stale_matches(
-        user.id, cutoff=60.0,
-        filters=UserFilters.from_config(None, max_age_hours=24)) == 1
-    db.flush()
-
-    entry = stage(pipeline(db), "deliver")
-    assert entry["expired"] == 1, "matched, never sent, and now written off"
-    assert entry["verdict"] == "down"
-    assert db.get(UserJobState, (user.id, missed.id)).notified_at is None, (
-        "a row we failed to send in time is not a row we delivered")
+    assert entry["waiting"] is None
+    assert entry["verdict"] == "ok"
+    assert entry["entered"] >= 1, "what was sent in the window is still counted"
 
 
 def test_a_stage_with_no_queue_says_so_rather_than_claiming_zero(db):
@@ -340,39 +260,6 @@ def test_a_job_a_worker_is_running_is_counted_as_running(db):
 
     notify = next(lane for lane in pipeline(db)["lanes"] if lane["lane"] == "notify")
     assert notify["running"] == 1
-
-
-def test_a_closed_posting_is_not_counted_as_waiting_to_be_embedded(db):
-    """The page must not report work no worker will ever do.
-
-    The embedder skips closed rows on purpose — the pre-score filter refuses them, so a vector for
-    one is CPU spent on nothing. The dashboard asked only `trimmed_at IS NULL`, so two closed
-    greenhouse postings sat in the Embedded stage for 25 hours reading as a stuck pipeline while
-    the embedder was idle and correct.
-    """
-    from libs.corpus.repository import CorpusRepository
-    from libs.ops.pipeline import pipeline
-
-    _job(db, description="x" * 400, closed_at=datetime.now(UTC))
-    db.flush()
-
-    stages = {stage["key"]: stage for stage in pipeline(db, hours=24)["stages"]}
-    pending = CorpusRepository(db).awaiting_embedding(limit=500)
-
-    assert stages["embed"]["waiting"] == len(pending), (
-        "the page and the embedder must count the same rows")
-
-
-def test_an_open_posting_awaiting_a_vector_is_still_counted(db):
-    """The rule is about closed rows, not about hiding a real backlog."""
-    from libs.ops.pipeline import pipeline
-
-    before = {s["key"]: s for s in pipeline(db, hours=24)["stages"]}["embed"]["waiting"]
-    _job(db, description="x" * 400)
-    db.flush()
-    after = {s["key"]: s for s in pipeline(db, hours=24)["stages"]}["embed"]["waiting"]
-
-    assert after == before + 1
 
 
 def test_the_page_and_the_describer_count_the_same_rows(db):

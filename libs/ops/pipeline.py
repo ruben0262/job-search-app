@@ -7,15 +7,10 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from libs.corpus.repository import (
-    awaiting_description_conditions,
-    awaiting_embedding_conditions,
-)
+from libs.corpus.repository import awaiting_description_conditions
 from libs.db.models import CorpusJob, QueueJob, User, UserJobState
-from libs.scoring.thresholds import cutoff_for
 from libs.settings import PLATFORM_TICK_MIN
 from libs.settings import get as settings_get
-from libs.tenant.filters import candidate_conditions, filters_for, platform_windows
 
 # How long a row may sit at a stage before the colour changes, as multiples of its tick.
 AMBER_TICKS = 2
@@ -35,14 +30,10 @@ class Stage:
     waiting: int | None
     # How long the oldest of those has waited, in minutes.
     oldest_min: float | None
-    # Matched, never sent, and now too old to send — work the platform did and threw away.
-    expired: int | None = None
 
     @property
     def verdict(self) -> str:
         """green, amber or red."""
-        if self.expired is not None:
-            return "down" if self.expired else "ok"
         if not self.waiting or self.oldest_min is None:
             return "ok"
         if self.oldest_min > RED_TICKS * PLATFORM_TICK_MIN:
@@ -94,16 +85,14 @@ def pipeline(session: Session, *, hours: int = 24) -> dict:
                   select(func.count()).select_from(CorpusJob)
                   .where(*describe_conditions)) or 0,
               oldest_min=_age_minutes(session, CorpusJob.first_seen_at, *describe_conditions)),
-        Stage("embed", "Embedded", "One vector per posting, computed once and shared by every "
-                                   "account.",
-              entered=_entered(session, CorpusJob.embedded_at, since),
-              waiting=session.scalar(
-                  select(func.count()).select_from(CorpusJob)
-                  .where(*awaiting_embedding_conditions())) or 0,
-              oldest_min=_age_minutes(session, CorpusJob.description_fetched_at,
-                                      *awaiting_embedding_conditions())),
+        # No queue of its own to show: what is matched is decided when it is read (`libs.matching`),
+        # so the step after a described posting is a message, not a stage a row can wait in.
+        Stage("deliver", "Delivered", "Sent to the people whose words it matches, up to each "
+                                      "account's daily cap.",
+              entered=session.scalar(select(func.count()).select_from(UserJobState)
+                                     .where(UserJobState.notified_at >= since)) or 0,
+              waiting=None, oldest_min=None),
     ]
-    stages += _per_user_stages(session, since)
     return {"window_hours": hours, "stages": [stage.as_dict() for stage in stages],
             "lanes": lanes(session, since),
             # The same lanes, split by account: "docgen 2 dead" is only actionable once you know
@@ -160,89 +149,3 @@ def lane_accounts(session: Session, since: datetime) -> list[dict]:
              # Truncated: this is a panel, and a traceback belongs in the logs.
              "last_error": (row.last_error or "")[:200] or None}
             for row in rows]
-
-
-def _per_user_stages(session: Session, since) -> list[Stage]:
-    """Scoring and delivery, summed across accounts."""
-    scored_entered = session.scalar(
-        select(func.count()).select_from(UserJobState)
-        .where(UserJobState.scored_at.is_not(None), UserJobState.scored_at >= since)) or 0
-    delivered_entered = session.scalar(
-        select(func.count()).select_from(UserJobState)
-        .where(UserJobState.notified_at.is_not(None), UserJobState.notified_at >= since)) or 0
-
-    to_score = to_deliver = expired = 0
-    oldest_to_score = oldest_to_deliver = None
-
-    # Read once for the platform rather than once per account: both are operator settings and
-    # identical for everybody, so asking per account is 2N queries with one answer (ROADMAP 6be).
-    windows = platform_windows(session)
-    for user in session.scalars(select(User).where(User.active)):
-        filters = filters_for(session, user, windows=windows)
-        conditions = candidate_conditions(filters)
-        cutoff = cutoff_for(session, user.id)
-
-        # The count and the age must ask the same question.
-        unscored = (CorpusJob.embedding.is_not(None),
-                    UserJobState.scored_model_version.is_(None)
-                    | (UserJobState.scored_model_version != user.model_version),
-                    *conditions)
-        scoring = (select(func.count()).select_from(CorpusJob)
-                   .outerjoin(UserJobState, (UserJobState.job_id == CorpusJob.id)
-                              & (UserJobState.user_id == user.id)))
-        to_score += session.scalar(scoring.where(*unscored)) or 0
-        # Was never computed, so this stage could not turn amber or red whatever was queued behind it.
-        oldest_to_score = _oldest(oldest_to_score, session.scalar(
-            select(func.min(CorpusJob.first_seen_at))
-            .outerjoin(UserJobState, (UserJobState.job_id == CorpusJob.id)
-                       & (UserJobState.user_id == user.id))
-            .where(*unscored)))
-
-        # What delivery would consider: above this account's cutoff, never sent, not given up on.
-        waiting = (UserJobState.user_id == user.id,
-                   UserJobState.notified_at.is_(None),
-                   UserJobState.retired_at.is_(None),
-                   UserJobState.score.is_not(None),
-                   UserJobState.score >= cutoff)
-        pending = (select(func.count()).select_from(UserJobState)
-                   .join(CorpusJob, CorpusJob.id == UserJobState.job_id))
-        to_deliver += session.scalar(pending.where(*waiting, *conditions)) or 0
-        oldest_to_deliver = _oldest(oldest_to_deliver, session.scalar(
-            select(func.min(UserJobState.scored_at))
-            .join(CorpusJob, CorpusJob.id == UserJobState.job_id)
-            .where(*waiting, *conditions)))
-
-        # Matches this account was owed and did not get, as recorded by the sweep rather than
-        # re-derived here: work the platform did, paid for, and threw away.
-        expired += session.scalar(
-            select(func.count()).select_from(UserJobState)
-            .where(UserJobState.user_id == user.id,
-                   UserJobState.retired_at.is_not(None),
-                   UserJobState.retired_at >= since)) or 0
-
-    return [
-        Stage("score", "Scored", "Filtered against each account, then ranked by their own model.",
-              entered=scored_entered, waiting=to_score,
-              oldest_min=_minutes_since(oldest_to_score)),
-        Stage("deliver", "Delivered",
-              "Sent to Telegram as a card, up to the account's cap each cycle. A queue here is the "
-              "cap working; postings that expired in it are not.",
-              entered=delivered_entered, waiting=to_deliver,
-              oldest_min=_minutes_since(oldest_to_deliver), expired=expired),
-    ]
-
-
-def _oldest(current: datetime | None, candidate: datetime | None) -> datetime | None:
-    """The earlier of two timestamps, ignoring absent ones."""
-    if candidate is None:
-        return current
-    if candidate.tzinfo is None:
-        candidate = candidate.replace(tzinfo=UTC)
-    return candidate if current is None else min(current, candidate)
-
-
-def _minutes_since(when: datetime | None) -> float | None:
-    """How long ago, in minutes. `None` stays `None` — a dash, never a zero."""
-    if when is None:
-        return None
-    return round((datetime.now(UTC) - when).total_seconds() / 60, 1)

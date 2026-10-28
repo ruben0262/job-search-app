@@ -1212,35 +1212,6 @@ td.num {
   opacity: 0.75;
 }
 
-/* The one thing a person can do to improve their own model after the automatic run stops. Given a
-   panel rather than a sentence in a paragraph because it is an instruction to act on, not context. */
-.teach-it {
-  margin-top: 1.25rem;
-  padding: 0.9rem 1.1rem;
-  border: 1px solid var(--faint);
-  border-left: 3px solid var(--score, var(--ink));
-  border-radius: var(--radius-sm, 8px);
-  background: var(--bg-raised);
-  font-size: 0.9rem;
-  line-height: 1.6;
-}
-
-.teach-it p {
-  margin: 0;
-}
-
-.teach-it p + p {
-  margin-top: 0.5rem;
-}
-
-.teach-it code {
-  padding: 0.1rem 0.35rem;
-  border-radius: 4px;
-  background: color-mix(in srgb, currentColor 10%, transparent);
-  font-family: ui-monospace, monospace;
-  font-size: 0.85em;
-}
-
 /* An upload that was kept but cut short. Not an error — the file is stored and usable — so it does
    not borrow the error colour, and it stays on screen rather than flashing, because the action it
    asks for (shorten the file, upload again) takes longer than a toast. */
@@ -2693,23 +2664,6 @@ td.num {
 }
 .chat-tab-rename:focus { outline: none; }
 
-/* How far a cold start has got. A bar rather than a number alone: 140 of 300 means little at a
-   glance, and this run takes long enough that "is it moving" is the actual question. */
-.progress-rail {
-  height: 4px;
-  border-radius: 2px;
-  background: var(--hairline);
-  overflow: hidden;
-  margin: 0 0 1rem;
-  max-width: 26rem;
-}
-.progress-rail span {
-  display: block;
-  height: 100%;
-  background: var(--ink);
-  transition: width 0.6s ease;
-}
-
 /* Search terms, two columns. The three-column source grid put twenty-odd short strings on screen
    with no order anybody could follow — it read as a wall rather than a list, and a term you were
    looking for was as hard to find as one you were not. */
@@ -3006,16 +2960,6 @@ td.num {
   font-style: normal;
   font-variant-numeric: tabular-nums;
   opacity: 0.75;
-}
-
-/* Lost work, not queued work — so it is a sentence rather than another number in the row. */
-.pipeline-expired {
-  grid-column: 1 / -1;
-  margin: 0.55rem 0 0;
-  padding-top: 0.55rem;
-  border-top: 1px solid var(--hairline);
-  font-size: 0.85rem;
-  color: var(--danger);
 }
 
 .lanes {

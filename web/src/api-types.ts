@@ -870,7 +870,7 @@ export interface paths {
         };
         /**
          * Feed
-         * @description The ranked jobs — a page of them, with the filters the table offers.
+         * @description This person's matches, a page at a time, with the filters the table offers.
          */
         get: operations["feed_feed_get"];
         put?: never;
@@ -1104,130 +1104,6 @@ export interface paths {
         get: operations["state_onboarding_state_get"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/process": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Start
-         * @description Queue a processing run.
-         */
-        post: operations["start_process_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/process/confirm": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Confirm
-         * @description Apply the profile the user has read and edited.
-         */
-        post: operations["confirm_process_confirm_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/process/draft": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Draft
-         * @description The proposal the user is being asked to confirm.
-         */
-        get: operations["draft_process_draft_get"];
-        put?: never;
-        post?: never;
-        /**
-         * Discard
-         * @description Throw the proposal away. The live profile, if there is one, is untouched.
-         */
-        delete: operations["discard_process_draft_delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/process/state": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * State
-         * @description What the account needs next, and what it will cost.
-         */
-        get: operations["state_process_state_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/process/training": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Training State
-         * @description What training is doing right now, for a page that polls.
-         */
-        get: operations["training_state_process_training_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/process/training/stop": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Stop Training
-         * @description Cancel queued training work for this account.
-         */
-        post: operations["stop_training_process_training_stop_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1508,10 +1384,68 @@ export interface components {
             /** Active */
             active?: boolean | null;
         };
+        /** AdminAccount */
+        AdminAccount: {
+            /** Active */
+            active: boolean;
+            /** Created At */
+            created_at: string | null;
+            /** Email */
+            email: string;
+            /** Id */
+            id: string;
+            /** Last Active At */
+            last_active_at: string | null;
+            /** Onboarded */
+            onboarded: boolean;
+            /** Plan */
+            plan: string;
+            /** Profile Files Visible */
+            profile_files_visible: boolean;
+            /** Profile Generation */
+            profile_generation: number;
+            /** Status */
+            status: string;
+            /** Telegram */
+            telegram: string;
+        };
+        /** AdminAccountDetail */
+        AdminAccountDetail: {
+            counts: components["schemas"]["AdminCounts"];
+            /** Limits */
+            limits: {
+                [key: string]: number | null;
+            };
+            setup: components["schemas"]["AdminSetup"];
+            user: components["schemas"]["AdminAccount"];
+        };
+        /** AdminCounts */
+        AdminCounts: {
+            /** Applied */
+            applied: number;
+            /** Notified */
+            notified: number;
+        };
         /** AdminFlag */
         AdminFlag: {
             /** Is Admin */
             is_admin: boolean;
+        };
+        /** AdminProfileFile */
+        AdminProfileFile: {
+            /** Filled */
+            filled: boolean;
+            /** Kind */
+            kind: string;
+            /** Name */
+            name: string;
+        };
+        /** AdminSetup */
+        AdminSetup: {
+            /** Files */
+            files: components["schemas"]["AdminProfileFile"][];
+            /** Missing */
+            missing: string[];
         };
         /** Body_upload_documents_post */
         Body_upload_documents_post: {
@@ -1519,18 +1453,6 @@ export interface components {
             file: string;
             /** Kind */
             kind: string;
-        };
-        /**
-         * Certification
-         * @description A course, licence or accreditation.
-         */
-        Certification: {
-            /** Issuer */
-            issuer?: string | null;
-            /** Name */
-            name: string;
-            /** Year */
-            year?: string | null;
         };
         /** ChannelBody */
         ChannelBody: {
@@ -1571,43 +1493,10 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
-        /**
-         * Conflict
-         * @description Something the interview could not resolve. Surfaces in the form as an explicit either/or.
-         */
-        Conflict: {
-            /** Field */
-            field: string;
-            /**
-             * Source A
-             * @default
-             */
-            source_a: string;
-            /**
-             * Source B
-             * @default
-             */
-            source_b: string;
-            /** Value A */
-            value_a: string;
-            /** Value B */
-            value_b: string;
-        };
         /** ConsentBody */
         ConsentBody: {
             /** Version */
             version: string;
-        };
-        /** Constraints */
-        Constraints: {
-            /** Languages */
-            languages?: string[];
-            /** Min Salary */
-            min_salary?: number | null;
-            /** Onsite Locations */
-            onsite_locations?: string[];
-            /** Remote Policy */
-            remote_policy?: string | null;
         };
         /** ConversationTitle */
         ConversationTitle: {
@@ -1629,6 +1518,18 @@ export interface components {
          * @enum {string}
          */
         Currency: "EUR" | "GBP" | "USD" | "CHF" | "HUF" | "PLN" | "SEK" | "DKK";
+        /** DashboardBanner */
+        DashboardBanner: {
+            /** Key */
+            key: string;
+            /**
+             * Level
+             * @enum {string}
+             */
+            level: "error" | "warning" | "info";
+            /** Text */
+            text: string;
+        };
         /** DeleteBody */
         DeleteBody: {
             /** Password */
@@ -1649,48 +1550,55 @@ export interface components {
             /** Ids */
             ids?: number[] | null;
         };
-        /** Education */
-        Education: {
-            /**
-             * Degree
-             * @description e.g. 'BEng Software Engineering'
-             */
-            degree: string;
-            /** Field */
-            field?: string | null;
-            /**
-             * Institution
-             * @description The university, school or awarding body
-             */
-            institution: string;
-            /** Thesis */
-            thesis?: string | null;
+        /** Feed */
+        Feed: {
+            /** Jobs */
+            jobs: components["schemas"]["FeedJob"][];
+            /** Sources */
+            sources: string[];
+            /** Total */
+            total: number;
         };
-        /** Experience */
-        Experience: {
-            /**
-             * Bullets
-             * @description What they did in this role, in their own words, one achievement per bullet. Copy the substance of every bullet the documents give for this role — these become the CV, so a role summarised in one line loses the work.
-             */
-            bullets?: string[];
-            /** End */
-            end?: string | null;
-            /**
-             * Metrics
-             * @description Numbers this role achieved, exactly as stated (e.g. 'AUC 0.82', '10k records')
-             */
-            metrics?: string[];
-            /** Org */
-            org: string;
-            /** Role */
-            role: string;
-            /**
-             * Stack
-             * @description Technologies used in THIS role
-             */
-            stack?: string[];
-            /** Start */
-            start?: string | null;
+        /** FeedJob */
+        FeedJob: {
+            /** Applied At */
+            applied_at: string | null;
+            /** Company */
+            company: string | null;
+            /** First Seen At */
+            first_seen_at: string | null;
+            /** Id */
+            id: number;
+            /** Is Remote */
+            is_remote: boolean | null;
+            /** Location */
+            location: string | null;
+            /** Posted At */
+            posted_at: string | null;
+            salary: components["schemas"]["FeedSalary"] | null;
+            /** Score */
+            score: number;
+            /** Source */
+            source: string;
+            /** Title */
+            title: string;
+            /** Url */
+            url: string;
+            /** Words */
+            words: string[];
+        };
+        /** FeedSalary */
+        FeedSalary: {
+            /** Currency */
+            currency: string;
+            /** Max */
+            max: number;
+            /** Min */
+            min: number;
+            /** Period */
+            period: string;
+            /** Raw */
+            raw: string;
         };
         /** FileEdit */
         FileEdit: {
@@ -1754,19 +1662,6 @@ export interface components {
             status: string;
             /** Truncated */
             truncated: boolean;
-        };
-        /** Identity */
-        Identity: {
-            /** Links */
-            links?: {
-                [key: string]: string;
-            };
-            /** Location */
-            location?: string | null;
-            /** Name */
-            name: string;
-            /** Work Eligibility */
-            work_eligibility?: string[];
         };
         /**
          * IdentitySchema
@@ -1849,6 +1744,20 @@ export interface components {
             /** Session Id */
             session_id: string;
         };
+        /** OnboardingDashboard */
+        OnboardingDashboard: {
+            /** Is Admin */
+            is_admin: boolean;
+            /** Onboarding */
+            onboarding: {
+                [key: string]: unknown;
+            };
+            /**
+             * Stage
+             * @constant
+             */
+            stage: "onboarding";
+        };
         /** OnboardingPage */
         OnboardingPage: {
             /** Complete */
@@ -1890,57 +1799,23 @@ export interface components {
             /** Url */
             url: string;
         };
-        /** ProfileSchema */
-        ProfileSchema: {
+        /** ReadyDashboard */
+        ReadyDashboard: {
+            /** Applied */
+            applied: number;
+            /** Banners */
+            banners: components["schemas"]["DashboardBanner"][];
+            /** Is Admin */
+            is_admin: boolean;
+            /** Matching */
+            matching: number;
             /**
-             * Certifications
-             * @description Courses, licences and accreditations, with the issuer and year where stated
+             * Stage
+             * @constant
              */
-            certifications?: components["schemas"]["Certification"][];
-            /**
-             * Confirmed
-             * @default false
-             */
-            confirmed: boolean;
-            /** Conflicts */
-            conflicts?: components["schemas"]["Conflict"][];
-            constraints?: components["schemas"]["Constraints"];
-            /**
-             * Education
-             * @description Every qualification, most recent first
-             */
-            education?: components["schemas"]["Education"][];
-            /** Exclusions */
-            exclusions?: string[];
-            /**
-             * Experience
-             * @description EVERY role, position and engagement in the documents, most recent first — employment, contract, freelance and substantial independent work. This is what the candidate's CV is built from, so a missing role cannot appear on any application. Never summarise several roles into one entry.
-             */
-            experience?: components["schemas"]["Experience"][];
-            identity: components["schemas"]["Identity"];
-            /** Not List */
-            not_list?: string[];
-            /**
-             * Projects
-             * @description Substantial things they built that are not a job: side projects, research systems, published work.
-             */
-            projects?: components["schemas"]["Project"][];
-            skills?: components["schemas"]["Skills"];
-            targets?: components["schemas"]["Targets"];
-        };
-        /** Project */
-        Project: {
-            /** Metrics */
-            metrics?: string[];
-            /** Name */
-            name: string;
-            /** Stack */
-            stack?: string[];
-            /**
-             * What Built
-             * @default
-             */
-            what_built: string;
+            stage: "ready";
+            /** Telegram */
+            telegram: string;
         };
         /**
          * RemotePolicy
@@ -2025,16 +1900,29 @@ export interface components {
             /** Password */
             password: string;
         };
-        /** Skills */
-        Skills: {
-            /** Domains */
-            domains?: string[];
-            /** Frameworks */
-            frameworks?: string[];
-            /** Languages */
-            languages?: string[];
-            /** Tools */
-            tools?: string[];
+        /** StatusComponent */
+        StatusComponent: {
+            /** Detail */
+            detail: string;
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "ok" | "warn" | "down" | "off";
+        };
+        /** StatusReport */
+        StatusReport: {
+            /**
+             * Checked At
+             * Format: date-time
+             */
+            checked_at: string;
+            /** Components */
+            components: components["schemas"]["StatusComponent"][];
         };
         /** SuggestionDismissal */
         SuggestionDismissal: {
@@ -2050,13 +1938,6 @@ export interface components {
             kind: "green" | "red";
             /** Term */
             term: string;
-        };
-        /** Targets */
-        Targets: {
-            /** Role Types */
-            role_types?: string[];
-            /** Seniority */
-            seniority?: string | null;
         };
         /** Turn */
         Turn: {
@@ -2074,11 +1955,6 @@ export interface components {
         UserConfigSchema: {
             /** Languages */
             languages?: components["schemas"]["Language"][];
-            /**
-             * Max Notifications Per Day
-             * @default 20
-             */
-            max_notifications_per_day: number;
             /** Min Salary */
             min_salary?: number | null;
             /** @default EUR */
@@ -2790,9 +2666,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["AdminAccountDetail"];
                 };
             };
             /** @description Validation Error */
@@ -3566,9 +3440,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["OnboardingDashboard"] | components["schemas"]["ReadyDashboard"];
                 };
             };
         };
@@ -3673,9 +3545,8 @@ export interface operations {
                 remote?: boolean | null;
                 applied?: boolean | null;
                 max_age_days?: number | null;
-                min_score?: number | null;
-                sort?: string;
-                direction?: string;
+                sort?: "score" | "fetched" | "title" | "company";
+                direction?: "asc" | "desc";
             };
             header?: never;
             path?: never;
@@ -3689,9 +3560,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["Feed"];
                 };
             };
             /** @description Validation Error */
@@ -4075,173 +3944,6 @@ export interface operations {
             };
         };
     };
-    start_process_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-        };
-    };
-    confirm_process_confirm_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ProfileSchema"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    draft_process_draft_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-        };
-    };
-    discard_process_draft_delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-        };
-    };
-    state_process_state_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-        };
-    };
-    training_state_process_training_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-        };
-    };
-    stop_training_process_training_stop_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-        };
-    };
     conversation_setup_get: {
         parameters: {
             query?: {
@@ -4564,9 +4266,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["StatusReport"];
                 };
             };
         };

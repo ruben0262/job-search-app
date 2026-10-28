@@ -10,7 +10,7 @@ from sqlalchemy import func, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
-from libs.db.models import QueueJob, User, UserJobState
+from libs.db.models import CorpusJob, QueueJob, User
 from libs.db.models.queue import CLAIM_TIMEOUT_MIN, LANES, MAX_ATTEMPTS
 
 logger = logging.getLogger(__name__)
@@ -115,50 +115,26 @@ def sweep_expired(session: Session, lane: str | None = None) -> int:
 
 
 def dispatch_due_notifications(session: Session) -> int:
-    """Enqueue a `notify` job for every account with a match waiting. The recovery sweep.
+    """Enqueue a `notify` job for every account the corpus has grown for since its last one.
 
-    **There is no delivery cadence.** A scored match is sent as soon as it exists: the score lane
-    enqueues the notify job in the same transaction that records the score, and a run that fills its
-    limit queues its own continuation. This pass is the sweep behind those two — it catches a match
-    written by something other than the score lane (a relabel, an operator's `score_user.py`) and an
-    account whose notify job died. It enqueues nothing when there is nothing waiting.
+    **Nothing scores any more** (ROADMAP Phase 8), so there is no "match waiting" row to look for:
+    what is new for a person is the notify job's own question, answered by `libs.matching`. This
+    pass only decides whether asking is worth a claim — a posting stored after the account's last
+    finished notify run — so a quiet corpus enqueues nothing, and a busy one enqueues one run per
+    account per harvest rather than one a minute.
     """
-    from libs.scoring.thresholds import cutoff_for  # noqa: PLC0415 - avoids a cycle at import time
-    from libs.tenant.filters import (  # noqa: PLC0415
-        filters_for,
-        pending_match_conditions,
-        platform_windows,
-    )
-    from libs.tenant.repository import TenantRepository  # noqa: PLC0415
+    last_run = (select(func.max(QueueJob.finished_at))
+                .where(QueueJob.lane == "notify", QueueJob.state == "done",
+                       QueueJob.user_id == User.id)
+                .scalar_subquery())
+    newest = select(func.max(CorpusJob.first_seen_at)).scalar_subquery()
 
-    tenant = TenantRepository(session)
-    enqueued = retired = 0
-    # Once for the platform, not once per account: both are operator settings (ROADMAP 6be).
-    windows = platform_windows(session)
-
-    # Whole rows rather than ids: `filters_for` needs the account's own limits, and re-fetching it
-    # per call is the per-user query multiplier this loop already has too much of.
-    for user in session.scalars(
-            select(User).where(User.active.is_(True), User.status == "active",
-                               User.telegram_status == "connected")):
-        cutoff = cutoff_for(session, user.id)
-        # Before queueing anything: a match the pre-score filter would no longer admit is one this
-        # lane failed to send in time, and sending it late is worse than not sending it. Judged by
-        # that same filter, never by a window of its own — see `retire_stale_matches`.
-        gone = tenant.retire_stale_matches(
-            user.id, cutoff=cutoff, filters=filters_for(session, user, windows=windows))
-        if gone:
-            retired += gone
-            logger.warning(
-                "sweep: retired %d match(es) for %s that aged out of their own source's window "
-                "while waiting — the notify lane did not keep up", gone, user.id)
-
-        waiting = session.scalar(
-            select(UserJobState.job_id)
-            # The shared definition, so "waiting" cannot mean one thing here and another in the feed.
-            .where(UserJobState.user_id == user.id, *pending_match_conditions(cutoff))
-            .limit(1))
-        if waiting is not None and enqueue(session, "notify", user.id, dedup_key="due") is not None:
+    enqueued = 0
+    for user_id in session.scalars(
+            select(User.id).where(User.active.is_(True), User.status == "active",
+                                  User.telegram_status == "connected",
+                                  last_run.is_(None) | (newest > last_run))):
+        if enqueue(session, "notify", user_id, dedup_key="due") is not None:
             enqueued += 1
     return enqueued
 

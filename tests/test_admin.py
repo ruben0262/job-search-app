@@ -65,6 +65,27 @@ def test_an_operator_sees_the_platform_and_its_alerts(api):
     assert isinstance(body["alerts"], list)
 
 
+def test_an_account_page_shows_what_happened_to_it_and_no_model(api):
+    """Applications and deliveries, in numbers. The model history went with the model."""
+    from datetime import UTC, datetime
+
+    from libs.db.models import CorpusJob, UserJobState
+
+    http, session, operator, ordinary, sign_in = api
+    sign_in(http, operator)
+    job = CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test", title="Engineer")
+    session.add(job)
+    session.flush()
+    session.add(UserJobState(user_id=ordinary.id, job_id=job.id, applied_at=datetime.now(UTC),
+                             notified_at=datetime.now(UTC)))
+    session.flush()
+
+    body = http.get(f"/admin/users/{ordinary.id}").json()
+    assert body["user"]["email"] == ordinary.email
+    assert body["counts"] == {"applied": 1, "notified": 1}
+    assert "models" not in body
+
+
 def test_an_ordinary_user_gets_a_404_not_a_403(api):
     """A 403 confirms the endpoint exists and that somebody is worth phishing for access to it."""
     http, _, _, ordinary, sign_in = api
@@ -534,8 +555,7 @@ def test_the_live_pipeline_pushes_a_usable_frame(api):
     assert frame.startswith("data: ")
     assert frame.endswith("\n\n"), "an unterminated event sits in the browser's buffer forever"
     payload = json.loads(frame[len("data: "):])
-    assert [stage["key"] for stage in payload["stages"]] == [
-        "gather", "describe", "embed", "score", "deliver"]
+    assert [stage["key"] for stage in payload["stages"]] == ["gather", "describe", "deliver"]
     assert "lanes" in payload
 
 

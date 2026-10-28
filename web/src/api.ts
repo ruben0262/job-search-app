@@ -1,4 +1,5 @@
 /** The one place this app talks to the server. */
+import type { components } from "./api-types";
 
 export class ApiError extends Error {
   constructor(
@@ -112,81 +113,13 @@ export type DocumentList = {
   limit: number;
 };
 
-export type ProcessState = {
-  action: "confirm" | "process" | "upload" | "ready";
-  message: string;
-  documents: number;
-  has_draft: boolean;
-  profile_generation: number;
-  warning: {
-    replaces_profile: boolean;
-    labels_invalidated: number;
-    relabel_cost_estimate_usd: number;
-    text: string;
-  };
-};
-
+/** `GET /dashboard` and `GET /feed`, generated from the server's own models (`npm run types`). */
 export type Dashboard =
-  | { stage: "onboarding"; onboarding: OnboardingState }
-  | {
-      stage: "personal" | "rules";
-      next: ProcessState;
-      model: {
-        version: number;
-        servable: boolean;
-        stale_reason: string | null;
-        trained_at: string | null;
-        /** Every version this account has had, newest first. */
-        history: {
-          version: number;
-          active: boolean;
-          n_labels: number | null;
-          trained_at: string | null;
-          metrics: { key: string; label: string; value: string | number }[];
-        }[];
-      };
-      /** Whether setup is finished, by the same check the trainer refuses on. */
-      may_train: boolean;
-      feed: { scored: number; labels: number; applied: number };
-      documents: number;
-      telegram: string;
-      notifications: { per_day_cap: number; interval_min: number };
-      banners: { level: "error" | "warning" | "info"; key: string; text: string }[];
-      // Whether to render the operator panel. A hint, not the access control.
-      is_admin?: boolean;
-    };
-
-export type Salary = {
-  min: number | null;
-  max: number | null;
-  currency: string;
-  period: string;
-  raw?: string;
-} | null;
-
-export type FeedJob = {
-  id: number;
-  title: string;
-  company: string | null;
-  location: string | null;
-  is_remote: boolean | null;
-  url: string;
-  source: string;
-  score: number | null;
-  posted_at: string | null;
-  first_seen_at: string | null;
-  salary: Salary;
-  applied_at: string | null;
-};
-
-export type Feed = {
-  stage: "personal" | "rules";
-  approximate: boolean;
-  detail?: string;
-  total: number;
-  sources: string[];
-  jobs: FeedJob[];
-};
+  | components["schemas"]["OnboardingDashboard"]
+  | components["schemas"]["ReadyDashboard"];
+export type Salary = components["schemas"]["FeedSalary"] | null;
+export type FeedJob = components["schemas"]["FeedJob"];
+export type Feed = components["schemas"]["Feed"];
 
 export type Consent = {
   granted: boolean;

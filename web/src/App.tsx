@@ -1,20 +1,18 @@
 /** Routing, and the one decision the whole app hangs off: where a signed-in user belongs. */
 import { useCallback, useEffect, useState } from "react";
 
-import { ApiError, api, type Dashboard } from "./api";
+import { ApiError, api, type Dashboard, type OnboardingState } from "./api";
 import { Landing } from "./landing/Landing";
 import { AdminPage } from "./pages/AdminPage";
 import { AdminUserPage } from "./pages/AdminUserPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { DataPage } from "./pages/DataPage";
 import { clearFeedCache } from "./pages/FeedPage";
-import { ModelPage } from "./pages/ModelPage";
 import { clearAccountCache } from "./pages/SettingsPage";
 import { clearConversationCache } from "./pages/SetupPage";
 import { FeedPage } from "./pages/FeedPage";
 import { Onboarding } from "./pages/Onboarding";
 import { PrivacyPage } from "./pages/PrivacyPage";
-import { ProcessPage } from "./pages/ProcessPage";
 import { ForgotPassword, ResetPassword } from "./pages/ResetPassword";
 import { SetupPage } from "./pages/SetupPage";
 import { SettingsPage } from "./pages/SettingsPage";
@@ -81,7 +79,8 @@ export function App() {
   const { dashboard } = session;
   if (dashboard.stage === "onboarding") {
     // Deliberately not routable past: a half-configured account produces a bad feed and the user concludes.
-    return <Onboarding state={dashboard.onboarding} onChanged={reload} />;
+    // Passed through untyped by `/dashboard`: what onboarding returns is onboarding's to define.
+    return <Onboarding state={dashboard.onboarding as OnboardingState} onChanged={reload} />;
   }
 
   // Keyed on the route so the fade-up replays on navigation, not only on first load.
@@ -89,32 +88,24 @@ export function App() {
     ? "feed"
     : hash.startsWith("/profile")
       ? "profile"
-      : hash.startsWith("/model")
-        ? "model"
-        : hash.startsWith("/process")
-          ? "process"
-          : hash.startsWith("/data")
-            ? "data"
-            : hash.startsWith("/settings")
-              ? "settings"
-              : hash.startsWith("/admin")
-                ? "admin"
-                : "overview";
+      : hash.startsWith("/data")
+        ? "data"
+        : hash.startsWith("/settings")
+          ? "settings"
+          : hash.startsWith("/admin")
+            ? "admin"
+            : "overview";
 
   return (
     <>
       <div className="backdrop" aria-hidden="true" />
       <div className="app">
-        <Nav current={hash} isAdmin={dashboard.is_admin === true} />
+        <Nav current={hash} isAdmin={dashboard.is_admin} />
         <div className="page-in" key={section}>
           {section === "feed" ? (
             <FeedPage />
           ) : section === "profile" ? (
             <SetupPage onChanged={reload} />
-          ) : section === "model" ? (
-            <ModelPage dashboard={dashboard} onChanged={reload} />
-          ) : section === "process" ? (
-            <ProcessPage onChanged={reload} />
           ) : section === "data" ? (
             <DataPage onChanged={reload} />
           ) : section === "admin" ? (
@@ -140,7 +131,6 @@ function Nav({ current, isAdmin }: { current: string; isAdmin: boolean }) {
     ["/", "Overview"],
     ["/feed", "Jobs"],
     ["/profile", "Profile"],
-    ["/model", "Model"],
     ["/data", "Your details"],
     ["/settings", "Settings"],
     // Only for whoever `ADMIN_EMAILS` names.

@@ -51,34 +51,26 @@ type = "forbidden"
 # profile only. `ignore_imports` is the live code still to be moved off it, and must be empty before
 # `simplify` merges (ROADMAP Phase 8).
 source_modules = [
-    "services.api", "services.notifier", "services.docgen", "services.harvester",
+    # The harvester's children rather than the package: a forbidden module inside a source package
+    # is an "overlapping pair" import-linter skips without saying so, and `embedding` is one.
+    "services.api", "services.notifier", "services.docgen", "services.harvester.*",
     "services.oauthbroker",
     "libs.auth", "libs.claudeauth", "libs.contracts", "libs.corpus", "libs.credentials",
     "libs.db", "libs.documents", "libs.harvest", "libs.legal", "libs.limits", "libs.llm",
     "libs.mail", "libs.notify", "libs.obs", "libs.onboarding", "libs.ops", "libs.profiles",
     "libs.queue", "libs.secrets", "libs.settings", "libs.templates", "libs.tenant",
-    "libs.suggestions",
+    "libs.matching", "libs.suggestions",
 ]
 forbidden_modules = [
     "services.trainer", "services.scorer", "services.labeller", "services.capture",
-    "services.setupagent",
+    "services.setupagent", "services.harvester.embedding",
     "libs.scoring", "libs.labels", "libs.feedback", "libs.agents",
 ]
 ignore_imports = [
-    "libs.ops.health -> libs.scoring.thresholds",
-    "libs.ops.pipeline -> libs.scoring.thresholds",
-    "libs.queue.queue -> libs.scoring.thresholds",
     "libs.tenant.repository -> libs.feedback.actions",
-    "services.api.admin_routes -> libs.scoring.history",
-    "services.api.dashboard_routes -> libs.scoring.history",
-    "services.api.dashboard_routes -> libs.scoring.rules",
-    "services.api.dashboard_routes -> libs.scoring.thresholds",
-    "services.api.process_routes -> libs.labels",
     "services.api.setup_routes -> libs.agents",
     "services.api.setup_routes -> libs.agents.loop",
-    "services.api.status_routes -> libs.scoring.thresholds",
     "services.api.telegram_routes -> libs.feedback",
-    "services.harvester.cycle -> libs.labels",
     "services.notifier.deliver -> libs.scoring.thresholds",
 ]
 
@@ -150,10 +142,6 @@ ignore = [
 #
 # Note what is NOT ignored here: F841 stays on, and it is what caught the port silently dropping
 # RemoteOK's custom User-Agent.
-# The harvester's entry point dispatches five one-shot modes — cycle, linkedin, describe-linkedin,
-# embed-only, dry-run — each of which ends in a return. Collapsing them behind a dispatch table
-# would hide the one thing a reader opens this file to learn: what the process can be asked to do.
-"services/harvester/__main__.py" = ["PLR0911"]
 "services/harvester/sources/*.py" = [
     "BLE001",   # a bare `except` per adapter IS the contract: a source must never raise
     "E501",     # long lines in lifted parsing code

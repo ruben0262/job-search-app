@@ -100,7 +100,6 @@ def test_keyword_length_is_bounded_and_names_the_field(bad):
 @pytest.mark.parametrize(
     ("field", "value"),
     [("min_salary", -1), ("min_salary", 500_001),
-     ("max_notifications_per_day", 0), ("max_notifications_per_day", 101),
      ("posted_within_hours", 0), ("posted_within_hours", 169)])
 def test_out_of_range_values_are_rejected_with_the_field_named(field, value):
     with pytest.raises(ValidationError) as exc:
@@ -111,12 +110,25 @@ def test_out_of_range_values_are_rejected_with_the_field_named(field, value):
 @pytest.mark.parametrize(
     ("field", "value"),
     [("min_salary", 0), ("min_salary", 500_000),
-     ("max_notifications_per_day", 1), ("max_notifications_per_day", 100),
      # 1 hour, not 6.
      ("posted_within_hours", 1), ("posted_within_hours", 168)])
 def test_the_boundaries_themselves_are_accepted(field, value):
     """Off-by-one on a bound is a real bug: it makes a documented-legal value mysteriously fail."""
     assert _field(_valid(**{field: value}), field) == value
+
+
+def test_as_many_red_words_as_the_form_offers_are_accepted():
+    """The form takes 25 of each; the 11th red word used to come back as an error."""
+    words = [f"word{index}" for index in range(MAX_KEYWORDS_PER_USER)]
+    assert len(_valid(exclude_keywords=words).sections[0].exclude_keywords) == 25
+    with pytest.raises(ValidationError):
+        _valid(exclude_keywords=[*words, "one more"])
+
+
+def test_a_stored_config_with_the_retired_daily_cap_still_reads():
+    """`max_notifications_per_day` had no reader and is gone; rows that carry it must not break."""
+    stored = {"sections": [{"platform": "all", "keywords": ["go"]}], "max_notifications_per_day": 20}
+    assert UserConfigSchema.model_validate(migrate_config(stored)).sections[0].keywords == ["go"]
 
 
 def test_too_many_locations_is_rejected():

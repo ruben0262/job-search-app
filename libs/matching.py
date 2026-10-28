@@ -2,7 +2,7 @@
 
 The one definition behind the jobs page and the alerts (CLAUDE.md §1): both ask `matching_jobs`. Red
 words, language, place and the freshness window are `libs.tenant.filters`, unchanged; this module adds
-the green words and the order.
+the green words, the minimum salary and the order.
 """
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from libs.contracts.config import migrate_config
+from libs.corpus import salary
 from libs.db.models import CorpusJob, User, UserConfig
 from libs.tenant.filters import candidate_conditions, filters_for
 
@@ -62,6 +63,20 @@ def score(regex: re.Pattern, title: str | None,
     return points, tuple(sorted(in_title | in_text))
 
 
+def underpaid(config: dict | None, description: str | None) -> bool:
+    """The posting states a top salary below this person's minimum. Unknown is never underpaid."""
+    minimum = (config or {}).get("min_salary")
+    stated = salary.extract(description) if minimum else None
+    # No period is no unit: "€5,000" could be a month or a year, so it says nothing either way.
+    if not stated or not stated["period"]:
+        return False
+    # Private to a module kept byte-identical to the reference, and the one converter there is.
+    to_eur = salary._to_eur_annual
+    top = to_eur(stated["max"], stated["currency"], stated["period"])
+    floor = to_eur(minimum, (config or {}).get("salary_currency") or "EUR", "year")
+    return top is not None and floor is not None and top < floor
+
+
 def matching_jobs(session: Session, user: User, *, since: datetime | None = None,
                   scan: int = SCAN) -> list[Match]:
     """This person's matches, best first, then newest first."""
@@ -82,7 +97,7 @@ def matching_jobs(session: Session, user: User, *, since: datetime | None = None
         if filters.unwanted({name: getattr(job, name) for name in _ROW}):
             continue
         points, words = score(regex, job.title, job.description)
-        if points:
+        if points and not underpaid(config, job.description):
             found.append(Match(job, points, words))
     # A stable sort, so equal scores keep the query's newest-first order.
     return sorted(found, key=lambda match: match.score, reverse=True)

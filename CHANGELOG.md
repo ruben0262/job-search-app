@@ -14,6 +14,78 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-10-28 — the jobs page on rules, uploads read by rules, onboarding in three screens (ROADMAP Phase 8, workstreams 2–3)
+
+Two branches merged into `simplify`, each built by its own agent and checked again after merging.
+
+### The jobs page and the front page ask one function (`services/api/dashboard_routes.py`)
+
+Both now call `libs.matching`, so the number on the front page is the length of the list on the jobs
+page. Every job says which green words put it there. The front page shows two numbers a person reads
+— jobs matching now, applications recorded — instead of model versions, label counts and a
+stale-model reason. `/process` and the Model and Process pages are deleted (UI plumbing for the
+switched-off capture, recoverable from git); the model code itself stays.
+
+`min_salary` was a setting nothing read; it is now a filter: a job goes only when it states a salary,
+in a period that converts, whose top is below the minimum — unknown pay is kept. Red words cap at 25
+like the form (the 11th was refused); `max_notifications_per_day`, which nothing read, is gone.
+
+### Unwiring the model, and two things that would have broken the day it stopped
+
+The fence's `ignore_imports` went from 15 to 5. Operator health lost its silent-feed page: it counted
+the scorer's rows, and on the day the scorer stopped it would have paged for every account. The notify
+sweep's "waiting" was scored rows that nothing writes any more, so it would never have queued a
+delivery again; it now queues an account when a job was stored after its last notify run. The
+harvester stops embedding and no longer needs `EMBEDDER_URL`. capture, setupagent, labeller, scorer
+and trainer sit in a compose `ml` profile nothing starts. import-linter silently skips a forbidden
+module inside a source package (an "overlapping pair"), so the fence names the harvester's children;
+re-adding the embedding import now breaks the contract. Integration also added `libs.matching` itself
+to the fence's live modules, which the foundation commit had missed.
+
+### One reader of what a person uploads (`libs/documents/read.py`)
+
+Name, contact details, links, places, working languages, the jobs they held with their bullets,
+skills and years — read from the text python-docx and pypdf actually return: Word list items without
+glyphs, sidebar-first two-column PDFs, wrapped bullets, LinkedIn exports. Tested on an engineer, a
+nurse, a sales rep, an accountant and a teacher. A misread surfaces on the review screen, where the
+person corrects it.
+
+### Green and red words, each with a reason (`libs/suggestions.py`, `users.suggestions`)
+
+Green: the titles they held, then the skills that real job titles in the corpus name. Red: the
+seniority their years are furthest from, pay that is not pay ("unpaid", "commission only"), and words
+their green words drag in from jobs they never did ("sales" for an engineer whose "engineer" finds
+"Sales Engineer"). Never a word already in their search, one they dismissed, or one inside a green
+word. Recomputed on every document or search change; 228 ms median over 2,000 matching jobs.
+
+### Onboarding is three screens, and the pickers were empty for two months
+
+Your CV → what we found → done; finishing needs a CV, a name and one green word, and Telegram, an AI
+key and a proxy are optional settings. The review arrives filled in from the CV, and anything the
+person saved wins over the CV. The place and language pickers had rendered empty since 2026-08-11:
+ConfigStep read a `schema` key the API had stopped sending, through a hand-written type, so nothing
+failed. The choices are now served typed and labelled and read through the generated type, so a
+dropped list is a `tsc` error. `/onboarding/config/preview` — a second, disagreeing definition of
+"which jobs match" that nothing called — is deleted.
+
+### The free CV and cover letter, by code (`libs/documents/instant.py`)
+
+Their own lines, ordered by relevance to the posting, in the scaffold CV's own style (read at runtime;
+the scaffold is never edited). They pass docgen's ATS check, and every sentence about the person
+traces to their documents.
+
+Every behaviour above was checked by breaking the code on purpose and watching its test fail (36
+mutations in the profile branch, all caught). Gates on the merged tree: lint-imports 3 kept, 0 broken
+(5 ignored); ruff clean; one migration head (`60ea03bb2a00`); pytest 1,531 passed, 3 skipped (no
+reference checkout; an empty parameter list; the score-lane test, switched off per §3); contract 66
+paths, regenerated; web build passes.
+
+Known and carried forward: `GET /feed` measured 442 ms median over 2,000 rows against §0's 300 ms;
+people without a proxy still see LinkedIn rows other users' proxies fetched (`libs.matching` applies
+no LinkedIn gate); `has_consented` has no caller until the AI workstream sends text to a provider.
+
+---
+
 ## 2026-10-28 — simple enough for anyone: the foundation (ROADMAP Phase 8)
 
 The owner's direction: the platform is for someone who finds technology hard, so jobs are chosen by

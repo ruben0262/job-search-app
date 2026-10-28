@@ -1,9 +1,9 @@
-"""The dashboard and the feed."""
+"""The front page and the jobs page, both on `libs.matching`: what a person sees, and why."""
 from __future__ import annotations
 
 import os
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -12,6 +12,7 @@ pytest.importorskip("fastapi")
 pytestmark = pytest.mark.skipif(
     not os.environ.get("DATABASE_URL"), reason="DATABASE_URL not set (no live Postgres)")
 
+# A stored config as accounts actually have them, retired field and all.
 CONFIG = {"sections": [{"platform": "all", "keywords": ["backend engineer"]}],
           "max_notifications_per_day": 20}
 
@@ -26,7 +27,7 @@ def api():
     from sqlalchemy.orm import Session
 
     from libs.auth.access import issue_access_token
-    from libs.db.models import CorpusJob, User, UserConfig, UserDocument, UserSecret
+    from libs.db.models import CorpusJob, User, UserConfig
     from services.api import deps
     from services.api.app import app
 
@@ -35,18 +36,11 @@ def api():
     trans = conn.begin()
     session = Session(bind=conn, join_transaction_mode="create_savepoint")
 
-    # A fully onboarded account: everything the seven pages write.
     user = User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active",
-                full_name="Alice Example", telegram_status="connected", telegram_chat_id="1",
-                onboarding_completed_at=datetime.now(UTC),
-                profile_generation=1, profile={"identity": {"name": "Alice"}, "confirmed": True})
+                active=True, full_name="Alice Example", telegram_status="connected",
+                telegram_chat_id="1", onboarding_completed_at=datetime.now(UTC))
     session.add(user)
     session.flush()
-    for kind in ("cv", "history"):
-        session.add(UserDocument(user_id=user.id, kind=kind, filename=f"{kind}.txt", text="x",
-                                 text_sha256=uuid.uuid4().hex * 2, chars=1))
-    for kind in ("claude_api", "telegram_bot", "proxy"):
-        session.add(UserSecret(user_id=user.id, kind=kind, ciphertext=b"x", nonce=b"n"))
     session.add(UserConfig(user_id=user.id, config=CONFIG, schema_version=2))
 
     jobs = [CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
@@ -68,51 +62,43 @@ def api():
         os.environ.pop("DISABLE_RATE_LIMIT", None)
 
 
-def _model(session, user, *, generation: int):
-    from libs.db.models import UserModel
+def _ids(body: dict) -> list[int]:
+    return [job["id"] for job in body["jobs"]]
 
-    model = UserModel(user_id=user.id, version=1, path="models/m.joblib",
-                      feature_schema_version=1, profile_generation=generation,
-                      embedder_model="e5", embedder_dim=384, embedder_version="v1",
-                      n_labels=300, is_active=True)
-    session.add(model)
-    user.model_version = 1
-    session.flush()
-    return model
 
+# ── the front page ────────────────────────────────────────────────────────────────────────────
 
 def test_an_unfinished_signup_gets_the_onboarding_state_and_nothing_else(api):
     """Empty panels read as a broken product rather than an unfinished signup."""
     http, session, user, _ = api
     user.onboarding_completed_at = None
-    user.full_name = None
     session.flush()
 
     body = http.get("/dashboard").json()
     assert body["stage"] == "onboarding"
-    assert "feed" not in body
+    assert body["onboarding"], "the onboarding state is passed through for the signup screens"
+    assert "matching" not in body
 
 
-def test_an_account_without_a_model_is_told_why_in_words(api):
-    """A greyed-out button is not something a person can act on."""
-    http, _, _, _ = api
-    model = http.get("/dashboard").json()["model"]
-    assert model["servable"] is False
-    assert "no model yet" in model["stale_reason"]
+def test_the_front_page_counts_what_the_jobs_page_lists(api):
+    """One number in two places is one answer, or a person finds the two pages disagreeing."""
+    from sqlalchemy import func
 
+    from libs.db.models import UserJobState
 
-def test_a_model_from_before_the_last_profile_change_is_stale(api):
-    """The one-directional coupling made visible: a profile edit invalidates the artifact."""
-    http, session, user, _ = api
-    _model(session, user, generation=1)
-    assert http.get("/dashboard").json()["model"]["servable"] is True
-
-    user.profile_generation = 2
+    http, session, user, jobs = api
+    session.add(UserJobState(user_id=user.id, job_id=jobs[0].id, applied_at=func.now()))
     session.flush()
 
-    model = http.get("/dashboard").json()["model"]
-    assert model["servable"] is False
-    assert "profile changed" in model["stale_reason"]
+    front = http.get("/dashboard").json()
+    assert front["stage"] == "ready"
+    assert front["matching"] == 2, "both backend roles match, the nurse does not"
+    assert front["applied"] == 1
+
+    # A dismissed job leaves both counts, or the front page promises a job the list does not have.
+    session.add(UserJobState(user_id=user.id, job_id=jobs[1].id, dismissed_at=func.now()))
+    session.flush()
+    assert http.get("/dashboard").json()["matching"] == http.get("/feed").json()["total"] == 1
 
 
 def test_a_broken_telegram_token_is_an_error_banner_not_a_trip_back_to_signup(api):
@@ -125,63 +111,47 @@ def test_a_broken_telegram_token_is_an_error_banner_not_a_trip_back_to_signup(ap
     assert banners["telegram_broken"]["level"] == "error"
 
 
-# ── the feed ──────────────────────────────────────────────────────────────────────────────────
+def test_a_paused_account_is_told_it_is_paused(api):
+    """It used to be said only to accounts with a trained model, which after Phase 8 is nobody."""
+    http, session, user, _ = api
+    user.active = False
+    session.flush()
 
-def test_the_feed_says_when_it_is_only_keyword_matching(api):
-    """Presenting stage 0 as "your model" would make the product look broken when the real model arrives."""
+    keys = {banner["key"] for banner in http.get("/dashboard").json()["banners"]}
+    assert "paused" in keys
+
+
+def test_the_dashboard_requires_signing_in(api):
     http, _, _, _ = api
+    http.cookies.clear()
+    assert http.get("/dashboard").status_code == 401
+
+
+# ── the jobs page ─────────────────────────────────────────────────────────────────────────────
+
+def test_green_words_pick_the_jobs_and_each_says_why(api):
+    """The question a person has about every row: why am I seeing this?"""
+    http, _, _, jobs = api
     body = http.get("/feed").json()
 
-    assert body["stage"] == "rules"
-    assert body["approximate"] is True
-    # A set, not a sequence.
-    assert {job["title"] for job in body["jobs"]} == {"Backend Engineer",
-                                                      "Senior Backend Engineer"}
+    assert set(_ids(body)) == {jobs[0].id, jobs[1].id}, "the nurse has none of the green words"
+    for job in body["jobs"]:
+        assert job["words"] == ["backend engineer"]
+        assert job["score"] == 75, "a green word in the title"
 
 
-def test_the_rules_feed_leaves_out_what_the_config_excludes(api):
-    http, _, _, _ = api
-    titles = [job["title"] for job in http.get("/feed").json()["jobs"]]
-    assert "Registered Nurse" not in titles
-
-
-def test_a_servable_model_takes_over_the_ranking(api):
-    """And the stage changes with it, so the user can see why their feed suddenly reordered."""
-    from libs.db.models import UserJobState
+def test_a_red_word_takes_a_job_off_the_page(api):
+    from libs.db.models import UserConfig
 
     http, session, user, jobs = api
-    _model(session, user, generation=1)
-    # Deliberately the reverse of the keyword ranking, so this cannot pass by coincidence.
-    session.add(UserJobState(user_id=user.id, job_id=jobs[1].id, score=95.0))
-    session.add(UserJobState(user_id=user.id, job_id=jobs[0].id, score=10.0))
+    session.get(UserConfig, user.id).config = {"sections": [{
+        "platform": "all", "keywords": ["backend engineer"], "exclude_keywords": ["senior"]}]}
     session.flush()
 
-    # `min_score=0` because the point here is the *ordering*.
-    body = http.get("/feed?min_score=0").json()
-    assert body["stage"] == "personal"
-    assert [job["title"] for job in body["jobs"]] == ["Senior Backend Engineer", "Backend Engineer"]
+    assert _ids(http.get("/feed").json()) == [jobs[0].id]
 
 
-def test_the_table_defaults_to_the_score_that_reaches_telegram(api):
-    """The corpus is shared and the harvest is broad."""
-    from libs.db.models import UserJobState
-    from libs.scoring.thresholds import DEFAULT_CUTOFF
-
-    http, session, user, jobs = api
-    _model(session, user, generation=1)
-    session.add(UserJobState(user_id=user.id, job_id=jobs[0].id, score=DEFAULT_CUTOFF + 5))
-    session.add(UserJobState(user_id=user.id, job_id=jobs[1].id, score=DEFAULT_CUTOFF - 5))
-    session.flush()
-
-    default = http.get("/feed").json()
-    assert [job["title"] for job in default["jobs"]] == ["Backend Engineer"]
-
-    # Widening is a thing a user may genuinely want, and should have to ask for.
-    widened = http.get("/feed?min_score=0").json()
-    assert len(widened["jobs"]) == 2
-
-
-def test_a_dismissed_job_stays_out_of_both_feeds(api):
+def test_a_dismissed_job_stays_off_the_page(api):
     """Dismissing has to mean something, or the button is a lie."""
     from sqlalchemy import func
 
@@ -191,7 +161,9 @@ def test_a_dismissed_job_stays_out_of_both_feeds(api):
     session.add(UserJobState(user_id=user.id, job_id=jobs[0].id, dismissed_at=func.now()))
     session.flush()
 
-    assert "Backend Engineer" not in [job["title"] for job in http.get("/feed").json()["jobs"]][:1]
+    body = http.get("/feed").json()
+    assert _ids(body) == [jobs[1].id]
+    assert body["total"] == 1
 
 
 def test_the_feed_does_not_carry_the_full_description(api):
@@ -202,51 +174,52 @@ def test_the_feed_does_not_carry_the_full_description(api):
 
 def test_the_feed_pages_and_reports_the_total_behind_the_page(api):
     """The pager needs the count under the same filters as the page, or "1 of 3" lies."""
-    from libs.db.models import UserJobState
-
-    http, session, user, jobs = api
-    _model(session, user, generation=1)
-    for index, job in enumerate(jobs):
-        session.add(UserJobState(user_id=user.id, job_id=job.id, score=90.0 - index))
-    session.flush()
-
-    body = http.get("/feed?limit=2&offset=2").json()
-    assert body["total"] == 3
+    http, _, _, _ = api
+    body = http.get("/feed?limit=1&offset=1").json()
+    assert body["total"] == 2
     assert len(body["jobs"]) == 1
 
 
 def test_the_search_box_reaches_titles_and_links(api):
-    from libs.db.models import UserJobState
-
-    http, session, user, jobs = api
-    _model(session, user, generation=1)
-    for job in jobs:
-        session.add(UserJobState(user_id=user.id, job_id=job.id, score=75.0))
-    session.flush()
-
-    titles = [job["title"] for job in http.get("/feed?q=nurse").json()["jobs"]]
-    assert titles == ["Registered Nurse"]
+    http, _, _, jobs = api
+    assert _ids(http.get("/feed?q=senior").json()) == [jobs[1].id]
     # And the URL, because a pasted link is how people look a job back up.
-    by_url = http.get(f"/feed?q={jobs[0].url.rsplit('/', 1)[1][:12]}").json()["jobs"]
-    assert [job["id"] for job in by_url] == [jobs[0].id]
+    assert _ids(http.get(f"/feed?q={jobs[0].url.rsplit('/', 1)[1][:12]}").json()) == [jobs[0].id]
 
 
 def test_the_applied_filter_splits_the_feed_both_ways(api):
-    from sqlalchemy import func as sqlfunc
+    from sqlalchemy import func
 
     from libs.db.models import UserJobState
 
     http, session, user, jobs = api
-    _model(session, user, generation=1)
-    session.add(UserJobState(user_id=user.id, job_id=jobs[0].id, score=75.0,
-                             applied_at=sqlfunc.now()))
-    session.add(UserJobState(user_id=user.id, job_id=jobs[1].id, score=60.0))
+    session.add(UserJobState(user_id=user.id, job_id=jobs[0].id, applied_at=func.now()))
     session.flush()
 
-    assert [job["id"] for job in http.get("/feed?applied=true").json()["jobs"]] == [jobs[0].id]
-    assert [job["id"] for job in http.get("/feed?applied=false").json()["jobs"]] == [jobs[1].id]
+    assert _ids(http.get("/feed?applied=true").json()) == [jobs[0].id]
+    assert _ids(http.get("/feed?applied=false").json()) == [jobs[1].id]
     # The applied state travels with the row either way, so the table can tag it.
     assert http.get("/feed?applied=true").json()["jobs"][0]["applied_at"] is not None
+
+
+def test_remote_and_age_filters_narrow_the_matches(api):
+    """Both are kept by matching when unknown, and both narrow only when asked to."""
+    from libs.db.models import CorpusJob
+    from libs.settings import SOURCE_MIN_AGE_HOURS
+
+    http, session, _, jobs = api
+    # A source whose own window is a week, so a three-day-old posting is still a match.
+    assert SOURCE_MIN_AGE_HOURS["hiringcafe"] >= 96
+    older = CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="hiringcafe",
+                      title="Backend Engineer II", description="x", is_remote=None,
+                      posted_at=datetime.now(UTC) - timedelta(days=3, hours=1))
+    session.add(older)
+    session.flush()
+
+    assert older.id in _ids(http.get("/feed").json())
+    assert older.id not in _ids(http.get("/feed?remote=true").json()), "unknown is not remote"
+    assert older.id not in _ids(http.get("/feed?max_age_days=1").json())
+    assert set(_ids(http.get("/feed?max_age_days=7").json())) == {older.id, jobs[0].id, jobs[1].id}
 
 
 def test_a_salary_in_the_description_reaches_the_row_without_the_description(api):
@@ -262,85 +235,49 @@ def test_a_salary_in_the_description_reaches_the_row_without_the_description(api
     assert "description" not in row
 
 
-def test_the_source_dropdown_lists_what_the_corpus_actually_has(api):
-    http, _, _, _ = api
-    assert http.get("/feed").json()["sources"] == ["test"]
+def test_the_source_dropdown_offers_what_the_matches_came_from(api):
+    """Not every board in the corpus: a source with nothing for this person is a dead option."""
+    from libs.db.models import CorpusJob
+
+    http, session, _, _ = api
+    session.add_all([
+        CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="greenhouse",
+                  title="Backend Engineer III", description="x", is_remote=True),
+        CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="nhs",
+                  title="Staff Nurse", description="x", is_remote=True)])
+    session.flush()
+
+    assert http.get("/feed").json()["sources"] == ["greenhouse", "test"]
+    assert [job["source"] for job in http.get("/feed?source=greenhouse").json()["jobs"]] == [
+        "greenhouse"]
 
 
-def test_the_rules_feed_takes_the_same_filters(api):
-    """Stage 0 filters in Python rather than SQL, and must not behave differently for it."""
-    http, _, _, _ = api
-    body = http.get("/feed?q=senior&limit=1").json()
-    assert body["total"] == 1
-    assert [job["title"] for job in body["jobs"]] == ["Senior Backend Engineer"]
-
-    assert http.get("/feed?source=nowhere").json()["jobs"] == []
-
-
-def test_the_dashboard_requires_signing_in(api):
-    http, _, _, _ = api
-    http.cookies.clear()
-    assert http.get("/dashboard").status_code == 401
-
-
-def test_two_jobs_that_score_the_same_are_ordered_newest_first(api):
-    """Freshness is the tie-break."""
-    from datetime import UTC, datetime, timedelta
-
+def test_equal_scores_are_newest_first_and_the_order_turns_around(api):
+    """Freshness breaks a tie: the order `libs.matching` gives, not a second one made up here."""
     from libs.db.models import CorpusJob
 
     http, session, _, _ = api
     now = datetime.now(UTC)
-    for age_hours, slug in ((48, "older"), (1, "newer"), (None, "undated")):
-        session.add(CorpusJob(
-            url=f"https://example.test/tie-{slug}", source="test",
-            title="Backend Engineer", description="Backend engineer wanted.",
-            posted_at=None if age_hours is None else now - timedelta(hours=age_hours)))
+    rows = {age: CorpusJob(url=f"https://example.test/tie-{age}", source="test",
+                           title="Backend Engineer", description="x", is_remote=True,
+                           first_seen_at=now - timedelta(hours=age))
+            # The older one first, so its id is the lower: insertion order cannot pass for freshness.
+            for age in (5, 1)}
+    session.add_all(rows.values())
     session.flush()
 
-    titles = [job["url"] for job in http.get("/feed?sort=score").json()["jobs"]]
-    ours = [url for url in titles if "/tie-" in url]
-    assert ours.index("https://example.test/tie-newer") < ours.index(
-        "https://example.test/tie-older"), "the newer of two equal scores comes first"
-    assert ours[-1] == "https://example.test/tie-undated", "an undated row sorts last, not first"
+    order = [i for i in _ids(http.get("/feed?sort=score").json()) if i in {r.id for r in rows.values()}]
+    assert order == [rows[1].id, rows[5].id]
+    turned = [i for i in _ids(http.get("/feed?sort=score&direction=asc").json())
+              if i in {r.id for r in rows.values()}]
+    assert turned == [rows[5].id, rows[1].id]
 
 
-def test_changing_your_details_banners_that_the_profile_is_behind(api):
-    """The end of the chain: the stamp has to reach the user, or it is a column nothing reads.
-
-    One account added two links under Your details after setup had finished. `users.links` updated,
-    the prompts carrying their contact line did not, and nothing anywhere said so.
-
-    Deliberately a banner and not an action on the Process page. That page's only button re-reads the
-    documents and replaces the profile, invalidating every label the account has paid for — an
-    expensive and wrong answer to "you added a link". The fix is a setup conversation, so this points
-    there.
-    """
-    from datetime import UTC, datetime, timedelta
-
-    from libs.db.models import UserProfileFile
-    from libs.profiles import setup_files
-    from libs.profiles.repository import ProfileFiles
-
-    http, session, user, _ = api
-    ProfileFiles(session, user.id).seed()
-    session.flush()
-    written_a_day_ago = datetime.now(UTC) - timedelta(days=1)
-    for name in setup_files():
-        row = session.get(UserProfileFile, (user.id, name))
-        if row is not None:
-            row.content = f"# {name}\n\nReal content, no placeholders."
-            row.filled = True
-            row.updated_at = written_a_day_ago
+def test_a_missing_company_sorts_last_whichever_way_the_column_turns(api):
+    http, session, _, jobs = api
+    jobs[0].company, jobs[1].company = None, "Acme"
     session.flush()
 
-    keys = {banner["key"] for banner in http.get("/dashboard").json()["banners"]}
-    assert "setup_behind" not in keys, "nothing has changed yet, so there is nothing to say"
-
-    user.hard_data_changed_at = datetime.now(UTC)
-    session.flush()
-
-    banners = {banner["key"]: banner for banner in http.get("/dashboard").json()["banners"]}
-    assert "setup_behind" in banners, (
-        f"details changed, the files predate it, and nothing told the user: {sorted(banners)}")
-    assert "setup chat" in banners["setup_behind"]["text"], "it must say where the fix is"
+    for direction in ("asc", "desc"):
+        body = http.get(f"/feed?sort=company&direction={direction}").json()
+        assert _ids(body) == [jobs[1].id, jobs[0].id], direction

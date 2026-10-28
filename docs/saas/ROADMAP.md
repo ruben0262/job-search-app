@@ -3011,12 +3011,14 @@ resend a verification email, the setup chat skipping consent).
 
 1. **Foundation ✅** — CLAUDE.md §0 and the §3 exception, the fence contract, `libs.matching`, and the
    "hungary,budapest" on-site default removed (it dropped every other on-site job for every user).
-2. **Feed** — jobs page and dashboard on `libs.matching`; ML stats gone; the harvester stops
+2. **Feed ✅** — jobs page and dashboard on `libs.matching`; ML stats gone; the harvester stops
    embedding; compose `ml` profile.
-3. **Profile** — rule-based extraction and suggestions; the three onboarding screens; the audit's
-   verification-resend and consent fixes.
-4. **Alerts** — Telegram platform bot, Web Push, the notifier on `libs.matching`, proxy optional.
-5. **Documents** — provider layer (own keys, allowance), instant CV and cover, faster rendering.
+3. **Profile ✅** — rule-based reading of uploads and suggestions; the three onboarding screens;
+   the instant CV and cover letter.
+4. **Alerts** — Telegram platform bot, Web Push, the notifier on `libs.matching`, proxy optional,
+   and the audit's verification-resend fix.
+5. **Documents** — provider layer (own keys, allowance), instant documents wired into docgen,
+   faster rendering, and consent checked wherever text leaves for a provider.
 6. **Frontend** — the three screens, jobs with word chips and suggestions, downloads, settings, phones.
 7. **AI documents and support chat** — the new prompts, measured; the chat port.
 

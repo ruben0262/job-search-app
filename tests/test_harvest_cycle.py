@@ -8,11 +8,9 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 pytest.importorskip("sqlalchemy")
-import httpx
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from libs.contracts.embedder import EmbedderClient, EmbedderVersion
 from libs.db.models import CorpusJob, User
 from libs.tenant.repository import TenantRepository
 from services.harvester import cycle
@@ -22,23 +20,6 @@ from services.harvester.sources import JobLink
 pytestmark = pytest.mark.skipif(
     not os.environ.get("DATABASE_URL"),
     reason="DATABASE_URL not set (no live Postgres)")
-
-DIM = 8
-SERVED = {"ok": True, "model": "m", "dim": DIM, "version": "m|dim=8|norm=1"}
-EXPECTED = EmbedderVersion("m", DIM, "m|dim=8|norm=1")
-
-
-def _embedder() -> EmbedderClient:
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path == "/health":
-            return httpx.Response(200, json=SERVED)
-        import json
-        texts = json.loads(request.content)["texts"]
-        return httpx.Response(200, json={"vectors": [[0.5] * DIM for _ in texts]})
-
-    return EmbedderClient(client=httpx.Client(
-        base_url="http://e", transport=httpx.MockTransport(handler)))
-
 
 @pytest.fixture()
 def ctx():
@@ -78,22 +59,18 @@ def _sources(**by_key):
 
 # ── the happy path ────────────────────────────────────────────────────────────────────────────
 
-def test_a_cycle_ingests_dedups_and_embeds(ctx):
-    """The whole loop: demand → sources → dedup → upsert → embed once."""
+def test_a_cycle_ingests_and_dedups(ctx):
+    """The whole loop: demand → sources → dedup → upsert. Nothing is embedded (ROADMAP Phase 8)."""
     s = ctx
     _active_user(s)
     found = [_link(), _link()]
 
-    with _embedder() as embedder:
-        report, _ = run_cycle(
-            s, embedder=embedder, expected_embedder=EXPECTED,
-            source_configs=_sources(himalayas={}),
-            run_source=lambda source, cfg, repo: list(found))
+    report, _ = run_cycle(s, source_configs=_sources(himalayas={}),
+                          run_source=lambda source, cfg, repo: list(found))
     s.flush()
 
     assert report.links_found == 2
     assert report.new_jobs == 2
-    assert report.embedded == 2
     stored = list(s.scalars(CorpusJob.__table__.select().with_only_columns(CorpusJob.id)))
     assert len(stored) >= 2
 
@@ -104,14 +81,9 @@ def test_the_same_job_twice_is_ingested_once(ctx):
     _active_user(s)
     link = _link()
 
-    with _embedder() as embedder:
-        first, _ = run_cycle(s, embedder=embedder, expected_embedder=EXPECTED,
-                             source_configs=_sources(himalayas={}),
-                             run_source=lambda *a: [link])
-        s.flush()
-        second, _ = run_cycle(s, embedder=embedder, expected_embedder=EXPECTED,
-                              source_configs=_sources(himalayas={}),
-                              run_source=lambda *a: [link])
+    first, _ = run_cycle(s, source_configs=_sources(himalayas={}), run_source=lambda *a: [link])
+    s.flush()
+    second, _ = run_cycle(s, source_configs=_sources(himalayas={}), run_source=lambda *a: [link])
     s.flush()
 
     assert first.new_jobs == 1
@@ -123,10 +95,8 @@ def test_a_snippet_saves_the_description_fetch(ctx):
     """Sources that supply usable text save a whole fetch per job."""
     s = ctx
     _active_user(s)
-    with _embedder() as embedder:
-        run_cycle(s, embedder=embedder, expected_embedder=EXPECTED,
-                  source_configs=_sources(himalayas={}),
-                  run_source=lambda *a: [_link(snippet="A real description. " * 30)])
+    run_cycle(s, source_configs=_sources(himalayas={}),
+              run_source=lambda *a: [_link(snippet="A real description. " * 30)])
     s.flush()
 
     job = s.scalars(CorpusJob.__table__.select().order_by(CorpusJob.id.desc()).limit(1)).first()
@@ -234,10 +204,8 @@ def test_one_dead_source_cannot_sink_the_cycle(ctx):
             raise RuntimeError("upstream changed its JSON again")
         return [good]
 
-    with _embedder() as embedder:
-        report, _ = run_cycle(s, embedder=embedder, expected_embedder=EXPECTED,
-                              source_configs=_sources(himalayas={}, nofluffjobs={}),
-                              run_source=flaky)
+    report, _ = run_cycle(s, source_configs=_sources(himalayas={}, nofluffjobs={}),
+                          run_source=flaky)
     s.flush()
 
     assert "himalayas" in report.source_failures
@@ -763,151 +731,53 @@ def test_workday_walks_the_number_of_pages_it_was_given():
     assert seen == [0, 20]
 
 
-def test_a_failing_embedder_does_not_take_the_cycle_with_it(ctx):
-    """One slow embed call killed the whole harvest, including the scoring enqueue."""
-    from libs.corpus.repository import CorpusRepository
-    from services.harvester.cycle import run_cycle
+# ── no embedder, and no proxy (ROADMAP Phase 8) ─────────────────────────────────────────────
 
-    session = ctx
+def test_a_harvest_runs_without_an_embedder(ctx, monkeypatch):
+    """Nothing embeds any more. A missing `EMBEDDER_URL` used to refuse the whole cycle with exit 2."""
+    from contextlib import contextmanager
 
-    # A row described and waiting, which is what makes the embed step actually call out.
-    corpus = CorpusRepository(session)
-    job_id = corpus.add(url=f"https://example.com/{uuid.uuid4()}", source="test",
-                        title="Backend Engineer", company="Acme")
-    corpus.set_description(job_id, "We build things with Go and gRPC. " * 20)
-    session.flush()
+    from services.harvester import __main__ as entry
 
-    # A real client whose backend times out on the bulk lane and is healthy everywhere else.
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path == "/health":
-            return httpx.Response(200, json=SERVED)
-        raise httpx.ReadTimeout("timed out", request=request)
+    monkeypatch.delenv("EMBEDDER_URL", raising=False)
+    monkeypatch.setattr(entry, "session_scope", contextmanager(lambda: (yield ctx)))
+    monkeypatch.setattr(entry, "_configure_logging", lambda verbose: None)
+    monkeypatch.setattr(entry, "_run_linkedin_pass", lambda: None)
+    ran = []
+    monkeypatch.setattr(entry, "run_cycle", lambda session, **kwargs: (
+        ran.append(kwargs) or (cycle.CycleReport(), [])))
 
-    embedder = EmbedderClient(client=httpx.Client(
-        base_url="http://e", transport=httpx.MockTransport(handler)))
-
-    report, _deferred = run_cycle(session, embedder=embedder, source_configs={}, describe=False)
-
-    assert report.embed_error is not None, "the failure is recorded rather than swallowed"
-    assert report.embedded == 0
-    # The step after it still ran, which is the whole point.
-    assert report.scoring_enqueued >= 0
+    assert entry.main([]) == 0
+    assert ran, "the cycle itself ran, not just the entry point"
 
 
-# ── the label lane's only way back in ─────────────────────────────────────────────────────────
+def test_an_account_with_no_proxy_is_harvested_everywhere_but_linkedin(ctx, monkeypatch):
+    """Proxy optional (ROADMAP Phase 8, D3): no proxy is no LinkedIn, and nothing else is lost."""
+    from libs.secrets import generate_key
+    from services.harvester import linkedin
+    from services.harvester.sources import Tier, sources_for
 
-def _labellable(s, labels: int) -> User:
-    """An active account with a rubric and `labels` labels already bought."""
-    from libs.db.models import UserLabel
-
-    u = _active_user(s)
-    u.rubric_md = "score it"
-    s.flush()
-    for _ in range(labels):
-        job = CorpusJob(url=f"https://example.com/{uuid.uuid4()}", title="Engineer",
-                        source="himalayas", posted_at=datetime.now(UTC),
-                        text_sha256=uuid.uuid4().hex)
-        s.add(job)
-        s.flush()
-        s.add(UserLabel(user_id=u.id, job_id=job.id, label=50, weight=1.0, source="llm",
-                        profile_generation=u.profile_generation))
-    s.flush()
-    return u
-
-
-def _queued(s, lane: str, user_id) -> int:
-    from sqlalchemy import func
-    from sqlalchemy import select as _select
-
-    from libs.db.models import QueueJob
-
-    return s.scalar(_select(func.count()).select_from(QueueJob)
-                    .where(QueueJob.lane == lane, QueueJob.user_id == user_id,
-                           QueueJob.finished_at.is_(None))) or 0
-
-
-def test_an_account_that_stopped_labelling_is_picked_up_again(ctx):
-    """The defect this exists for: the label lane had no way back in.
-
-    It was a chain that armed only itself — finish setup, and it ran until a batch reported nothing
-    left to do. Nothing else ever enqueued it. So any interruption ended it permanently, with no
-    error raised: in production one account sat six days at 243 of its 300 labels, its lane idle,
-    its model looking trained, and the only reason it was found was somebody reading the queue
-    table by hand.
-
-    An account below its target must therefore be re-entered by the cycle that already runs, the
-    same way `score` is. This asserts the account is queued, not how it got there.
-    """
+    monkeypatch.setenv("SECRETS_KEK", f"k1:{generate_key()}")
     s = ctx
-    user = _labellable(s, labels=3)
+    _active_user(s, keywords=["welder"])
+    shared = {source.key for source in sources_for(Tier.SHARED)}
+    asked: dict[str, str] = {}
 
-    with _embedder() as embedder:
-        report, _ = run_cycle(s, embedder=embedder, expected_embedder=EXPECTED,
-                              source_configs=_sources(himalayas={}),
-                              run_source=lambda *a: [])
+    def board(source, cfg, repo):
+        asked[source.key] = str(cfg.get("queries", ""))
+        return [_link(title="Welder")] if source.key == "himalayas" else []
+
+    report, _ = run_cycle(s, source_configs=_sources(**{key: {} for key in shared}),
+                          run_source=board, describe=False)
     s.flush()
 
-    assert _queued(s, "label", user.id) == 1
-    assert report.labelling_enqueued >= 1
+    assert set(asked) == shared, "every shared board was asked"
+    assert all("welder" in asked[key] for key in ("himalayas", "hiringcafe", "jooble", "nofluffjobs"))
+    assert report.new_jobs == 1
 
+    def no_request(*args, **kwargs):
+        raise AssertionError("LinkedIn was fetched for an account with no proxy")
 
-def test_an_account_that_has_finished_labelling_is_left_alone(ctx):
-    """Their own Claude credential pays for every label, so a tick must not buy one it does not owe."""
-    s = ctx
-    from libs.labels import target_for
-
-    user = _labellable(s, labels=0)
-    # Exactly at target: nothing further is owed.
-    user.limits = {**(user.limits or {}), "label_pool": 1}
-    s.flush()
-    _labels_for(s, user, target_for(user))
-
-    with _embedder() as embedder:
-        run_cycle(s, embedder=embedder, expected_embedder=EXPECTED,
-                  source_configs=_sources(himalayas={}), run_source=lambda *a: [])
-    s.flush()
-
-    assert _queued(s, "label", user.id) == 0
-
-
-def _labels_for(s, user, count: int) -> None:
-    from libs.db.models import UserLabel
-
-    for _ in range(count):
-        job = CorpusJob(url=f"https://example.com/{uuid.uuid4()}", title="Engineer",
-                        source="himalayas", posted_at=datetime.now(UTC),
-                        text_sha256=uuid.uuid4().hex)
-        s.add(job)
-        s.flush()
-        s.add(UserLabel(user_id=user.id, job_id=job.id, label=50, weight=1.0, source="llm",
-                        profile_generation=user.profile_generation))
-    s.flush()
-
-
-def test_an_account_that_paused_labelling_stays_paused(ctx):
-    """A user who turned it off must not be restarted by a background tick."""
-    s = ctx
-    user = _labellable(s, labels=3)
-    user.labelling_paused = True
-    s.flush()
-
-    with _embedder() as embedder:
-        run_cycle(s, embedder=embedder, expected_embedder=EXPECTED,
-                  source_configs=_sources(himalayas={}), run_source=lambda *a: [])
-    s.flush()
-
-    assert _queued(s, "label", user.id) == 0
-
-
-def test_a_second_tick_does_not_stack_a_second_label_job(ctx):
-    """Fifteen minutes apart, forever — one waiting job is the whole point of the dedup key."""
-    s = ctx
-    user = _labellable(s, labels=3)
-
-    with _embedder() as embedder:
-        for _ in range(3):
-            run_cycle(s, embedder=embedder, expected_embedder=EXPECTED,
-                      source_configs=_sources(himalayas={}), run_source=lambda *a: [])
-            s.flush()
-
-    assert _queued(s, "label", user.id) == 1
+    passed = linkedin.run_for_due_users(s, gather=no_request)
+    assert passed.skipped_no_lease >= 1
+    assert passed.links_found == 0
