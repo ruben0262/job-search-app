@@ -122,6 +122,93 @@
         "title": "ChatBody",
         "type": "object"
       },
+      "ConfigChoice": {
+        "properties": {
+          "hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hint"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "value",
+          "label"
+        ],
+        "title": "ConfigChoice",
+        "type": "object"
+      },
+      "ConfigChoices": {
+        "description": "What the pickers offer, labelled. Served, so a place cannot exist on one side only.",
+        "properties": {
+          "languages": {
+            "items": {
+              "$ref": "#/components/schemas/ConfigChoice"
+            },
+            "title": "Languages",
+            "type": "array"
+          },
+          "locations": {
+            "items": {
+              "$ref": "#/components/schemas/ConfigChoice"
+            },
+            "title": "Locations",
+            "type": "array"
+          },
+          "remote_policies": {
+            "items": {
+              "$ref": "#/components/schemas/ConfigChoice"
+            },
+            "title": "Remote Policies",
+            "type": "array"
+          }
+        },
+        "required": [
+          "locations",
+          "languages",
+          "remote_policies"
+        ],
+        "title": "ConfigChoices",
+        "type": "object"
+      },
+      "ConfigOut": {
+        "properties": {
+          "choices": {
+            "$ref": "#/components/schemas/ConfigChoices"
+          },
+          "config": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config"
+          }
+        },
+        "required": [
+          "config",
+          "choices"
+        ],
+        "title": "ConfigOut",
+        "type": "object"
+      },
       "Conflict": {
         "additionalProperties": false,
         "description": "Something the interview could not resolve. Surfaces in the form as an explicit either/or.",
@@ -487,6 +574,115 @@
         "title": "ForgotRequest",
         "type": "object"
       },
+      "FoundInDocuments": {
+        "description": "What their documents say, read by rules (`libs.documents.read`).",
+        "properties": {
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "languages": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Languages",
+            "type": "array"
+          },
+          "links": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Links",
+            "type": "array"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
+          "places": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Places",
+            "type": "array"
+          },
+          "skills": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Skills",
+            "type": "array"
+          },
+          "titles": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Titles",
+            "type": "array"
+          },
+          "years": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Years"
+          }
+        },
+        "required": [
+          "name",
+          "email",
+          "phone",
+          "links",
+          "location",
+          "places",
+          "languages",
+          "titles",
+          "skills",
+          "years"
+        ],
+        "title": "FoundInDocuments",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -504,7 +700,7 @@
         "properties": {
           "text": {
             "maxLength": 400000,
-            "minLength": 200,
+            "minLength": 1,
             "title": "Text",
             "type": "string"
           }
@@ -513,6 +709,29 @@
           "text"
         ],
         "title": "HistoryBody",
+        "type": "object"
+      },
+      "HistorySaved": {
+        "properties": {
+          "chars": {
+            "title": "Chars",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "status",
+          "chars",
+          "truncated"
+        ],
+        "title": "HistorySaved",
         "type": "object"
       },
       "Identity": {
@@ -740,6 +959,34 @@
         "title": "MarkRead",
         "type": "object"
       },
+      "NameAndLinks": {
+        "properties": {
+          "full_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Name"
+          },
+          "links": {
+            "items": {
+              "$ref": "#/components/schemas/SavedLink"
+            },
+            "title": "Links",
+            "type": "array"
+          }
+        },
+        "required": [
+          "full_name",
+          "links"
+        ],
+        "title": "NameAndLinks",
+        "type": "object"
+      },
       "OAuthCancelBody": {
         "properties": {
           "session_id": {
@@ -775,6 +1022,79 @@
           "code"
         ],
         "title": "OAuthFinishBody",
+        "type": "object"
+      },
+      "OnboardingPage": {
+        "properties": {
+          "complete": {
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "title",
+          "complete",
+          "detail"
+        ],
+        "title": "OnboardingPage",
+        "type": "object"
+      },
+      "OnboardingSteps": {
+        "properties": {
+          "complete": {
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "next_page": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Page"
+          },
+          "pages": {
+            "items": {
+              "$ref": "#/components/schemas/OnboardingPage"
+            },
+            "title": "Pages",
+            "type": "array"
+          }
+        },
+        "required": [
+          "complete",
+          "next_page",
+          "completed_at",
+          "pages"
+        ],
+        "title": "OnboardingSteps",
         "type": "object"
       },
       "PasswordChange": {
@@ -1006,6 +1326,73 @@
         "title": "RevealBody",
         "type": "object"
       },
+      "ReviewPage": {
+        "properties": {
+          "choices": {
+            "$ref": "#/components/schemas/ConfigChoices"
+          },
+          "config": {
+            "additionalProperties": true,
+            "title": "Config",
+            "type": "object"
+          },
+          "found": {
+            "$ref": "#/components/schemas/FoundInDocuments"
+          },
+          "identity": {
+            "$ref": "#/components/schemas/NameAndLinks"
+          },
+          "suggestions": {
+            "$ref": "#/components/schemas/WordSuggestions"
+          }
+        },
+        "required": [
+          "identity",
+          "config",
+          "found",
+          "suggestions",
+          "choices"
+        ],
+        "title": "ReviewPage",
+        "type": "object"
+      },
+      "SaveResult": {
+        "properties": {
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "SaveResult",
+        "type": "object"
+      },
+      "SavedLink": {
+        "properties": {
+          "platform": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Platform"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "title": "SavedLink",
+        "type": "object"
+      },
       "SearchSection": {
         "additionalProperties": false,
         "description": "One search, targeted at one platform or at all of them.",
@@ -1157,6 +1544,45 @@
           }
         },
         "title": "Skills",
+        "type": "object"
+      },
+      "SuggestionDismissal": {
+        "properties": {
+          "term": {
+            "maxLength": 40,
+            "minLength": 2,
+            "title": "Term",
+            "type": "string"
+          }
+        },
+        "required": [
+          "term"
+        ],
+        "title": "SuggestionDismissal",
+        "type": "object"
+      },
+      "SuggestionPick": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "green",
+              "red"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "term": {
+            "maxLength": 40,
+            "minLength": 2,
+            "title": "Term",
+            "type": "string"
+          }
+        },
+        "required": [
+          "term",
+          "kind"
+        ],
+        "title": "SuggestionPick",
         "type": "object"
       },
       "Targets": {
@@ -1335,6 +1761,48 @@
           "token"
         ],
         "title": "VerifyRequest",
+        "type": "object"
+      },
+      "WordSuggestion": {
+        "properties": {
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "term": {
+            "title": "Term",
+            "type": "string"
+          }
+        },
+        "required": [
+          "term",
+          "reason"
+        ],
+        "title": "WordSuggestion",
+        "type": "object"
+      },
+      "WordSuggestions": {
+        "properties": {
+          "green": {
+            "items": {
+              "$ref": "#/components/schemas/WordSuggestion"
+            },
+            "title": "Green",
+            "type": "array"
+          },
+          "red": {
+            "items": {
+              "$ref": "#/components/schemas/WordSuggestion"
+            },
+            "title": "Red",
+            "type": "array"
+          }
+        },
+        "required": [
+          "green",
+          "red"
+        ],
+        "title": "WordSuggestions",
         "type": "object"
       }
     }
@@ -3704,9 +4172,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Complete Onboarding Complete Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/SaveResult"
                 }
               }
             },
@@ -3721,16 +4187,14 @@
     },
     "/onboarding/config": {
       "get": {
-        "description": "The stored config, read in the *current* shape whatever version it was written in.",
+        "description": "The search, read in the *current* shape whatever version it was written in, and the choices.",
         "operationId": "get_config_onboarding_config_get",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Get Config Onboarding Config Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/ConfigOut"
                 }
               }
             },
@@ -3760,9 +4224,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Put Config Onboarding Config Put",
-                  "type": "object"
+                  "$ref": "#/components/schemas/SaveResult"
                 }
               }
             },
@@ -3780,50 +4242,6 @@
           }
         },
         "summary": "Put Config",
-        "tags": [
-          "onboarding"
-        ]
-      }
-    },
-    "/onboarding/config/preview": {
-      "post": {
-        "description": "How many jobs already in the corpus these terms would match, with a few example titles.",
-        "operationId": "preview_config_onboarding_config_preview_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UserConfigSchema"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Preview Config Onboarding Config Preview Post",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Preview Config",
         "tags": [
           "onboarding"
         ]
@@ -3853,7 +4271,7 @@
         ]
       },
       "put": {
-        "description": "The long-form write-up, typed rather than uploaded.",
+        "description": "Their own words about themselves, typed rather than uploaded.",
         "operationId": "put_history_onboarding_history_put",
         "requestBody": {
           "content": {
@@ -3870,9 +4288,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Put History Onboarding History Put",
-                  "type": "object"
+                  "$ref": "#/components/schemas/HistorySaved"
                 }
               }
             },
@@ -3897,15 +4313,14 @@
     },
     "/onboarding/identity": {
       "get": {
+        "description": "Their name and links; read off their CV until they have saved their own.",
         "operationId": "get_identity_onboarding_identity_get",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Get Identity Onboarding Identity Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/NameAndLinks"
                 }
               }
             },
@@ -3960,6 +4375,28 @@
         ]
       }
     },
+    "/onboarding/review": {
+      "get": {
+        "description": "Everything the review page opens with: what they told us, else what their documents say.",
+        "operationId": "review_onboarding_review_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Review",
+        "tags": [
+          "onboarding"
+        ]
+      }
+    },
     "/onboarding/state": {
       "get": {
         "description": "What is done, what is left, and where to send the user next.",
@@ -3969,9 +4406,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response State Onboarding State Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/OnboardingSteps"
                 }
               }
             },
@@ -4602,6 +5037,112 @@
         "summary": "Status",
         "tags": [
           "status"
+        ]
+      }
+    },
+    "/suggestions": {
+      "get": {
+        "description": "The words worth adding to their search, each with the reason.",
+        "operationId": "get_suggestions_suggestions_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WordSuggestions"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Suggestions",
+        "tags": [
+          "suggestions"
+        ]
+      }
+    },
+    "/suggestions/accept": {
+      "post": {
+        "description": "Add a word to their search: green picks jobs, red hides them.",
+        "operationId": "accept_suggestions_accept_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SuggestionPick"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WordSuggestions"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Accept",
+        "tags": [
+          "suggestions"
+        ]
+      }
+    },
+    "/suggestions/dismiss": {
+      "post": {
+        "description": "Never suggest this word again.",
+        "operationId": "dismiss_suggestions_dismiss_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SuggestionDismissal"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WordSuggestions"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Dismiss",
+        "tags": [
+          "suggestions"
         ]
       }
     },

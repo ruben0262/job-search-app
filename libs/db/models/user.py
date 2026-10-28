@@ -125,6 +125,11 @@ class User(Base):
     # rewriting the file moves its `updated_at` past this and the staleness ends by itself.
     hard_data_changed_at: Mapped[timestamptz | None]
 
+    # The green and red words suggested to them, each with its reason, and the ones they dismissed:
+    # `{"green": [...], "red": [...], "dismissed": [...]}`. Recomputed by `libs.suggestions` whenever
+    # a document or their search changes; NULL until first worked out.
+    suggestions: Mapped[dict | None] = mapped_column(JSONB)
+
     # The rendered rubric.
     rubric_md: Mapped[str | None] = mapped_column(Text)
 

@@ -112,13 +112,6 @@ export type DocumentList = {
   limit: number;
 };
 
-export type ConfigPreview = {
-  matches: number;
-  window_days: number;
-  examples: string[];
-  detail: string;
-};
-
 export type ProcessState = {
   action: "confirm" | "process" | "upload" | "ready";
   message: string;

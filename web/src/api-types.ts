@@ -1007,7 +1007,7 @@ export interface paths {
         };
         /**
          * Get Config
-         * @description The stored config, read in the *current* shape whatever version it was written in.
+         * @description The search, read in the *current* shape whatever version it was written in, and the choices.
          */
         get: operations["get_config_onboarding_config_get"];
         /**
@@ -1016,26 +1016,6 @@ export interface paths {
          */
         put: operations["put_config_onboarding_config_put"];
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/onboarding/config/preview": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Preview Config
-         * @description How many jobs already in the corpus these terms would match, with a few example titles.
-         */
-        post: operations["preview_config_onboarding_config_preview_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1056,7 +1036,7 @@ export interface paths {
         get: operations["get_history_onboarding_history_get"];
         /**
          * Put History
-         * @description The long-form write-up, typed rather than uploaded.
+         * @description Their own words about themselves, typed rather than uploaded.
          */
         put: operations["put_history_onboarding_history_put"];
         post?: never;
@@ -1073,13 +1053,36 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Identity */
+        /**
+         * Get Identity
+         * @description Their name and links; read off their CV until they have saved their own.
+         */
         get: operations["get_identity_onboarding_identity_get"];
         /**
          * Put Identity
          * @description Store the name and links.
          */
         put: operations["put_identity_onboarding_identity_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/onboarding/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Review
+         * @description Everything the review page opens with: what they told us, else what their documents say.
+         */
+        get: operations["review_onboarding_review_get"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -1416,6 +1419,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/suggestions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Suggestions
+         * @description The words worth adding to their search, each with the reason.
+         */
+        get: operations["get_suggestions_suggestions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/suggestions/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept
+         * @description Add a word to their search: green picks jobs, red hides them.
+         */
+        post: operations["accept_suggestions_accept_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/suggestions/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dismiss
+         * @description Never suggest this word again.
+         */
+        post: operations["dismiss_suggestions_dismiss_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/telegram/webhook/{secret}": {
         parameters: {
             query?: never;
@@ -1478,6 +1541,35 @@ export interface components {
         ChatBody: {
             /** Chat Id */
             chat_id: string;
+        };
+        /** ConfigChoice */
+        ConfigChoice: {
+            /** Hint */
+            hint?: string | null;
+            /** Label */
+            label: string;
+            /** Value */
+            value: string;
+        };
+        /**
+         * ConfigChoices
+         * @description What the pickers offer, labelled. Served, so a place cannot exist on one side only.
+         */
+        ConfigChoices: {
+            /** Languages */
+            languages: components["schemas"]["ConfigChoice"][];
+            /** Locations */
+            locations: components["schemas"]["ConfigChoice"][];
+            /** Remote Policies */
+            remote_policies: components["schemas"]["ConfigChoice"][];
+        };
+        /** ConfigOut */
+        ConfigOut: {
+            choices: components["schemas"]["ConfigChoices"];
+            /** Config */
+            config: {
+                [key: string]: unknown;
+            } | null;
         };
         /**
          * Conflict
@@ -1618,6 +1710,32 @@ export interface components {
              */
             email: string;
         };
+        /**
+         * FoundInDocuments
+         * @description What their documents say, read by rules (`libs.documents.read`).
+         */
+        FoundInDocuments: {
+            /** Email */
+            email: string | null;
+            /** Languages */
+            languages: string[];
+            /** Links */
+            links: string[];
+            /** Location */
+            location: string | null;
+            /** Name */
+            name: string | null;
+            /** Phone */
+            phone: string | null;
+            /** Places */
+            places: string[];
+            /** Skills */
+            skills: string[];
+            /** Titles */
+            titles: string[];
+            /** Years */
+            years: number | null;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -1627,6 +1745,15 @@ export interface components {
         HistoryBody: {
             /** Text */
             text: string;
+        };
+        /** HistorySaved */
+        HistorySaved: {
+            /** Chars */
+            chars: number;
+            /** Status */
+            status: string;
+            /** Truncated */
+            truncated: boolean;
         };
         /** Identity */
         Identity: {
@@ -1703,6 +1830,13 @@ export interface components {
             /** Ids */
             ids?: number[] | null;
         };
+        /** NameAndLinks */
+        NameAndLinks: {
+            /** Full Name */
+            full_name: string | null;
+            /** Links */
+            links: components["schemas"]["SavedLink"][];
+        };
         /** OAuthCancelBody */
         OAuthCancelBody: {
             /** Session Id */
@@ -1714,6 +1848,28 @@ export interface components {
             code: string;
             /** Session Id */
             session_id: string;
+        };
+        /** OnboardingPage */
+        OnboardingPage: {
+            /** Complete */
+            complete: boolean;
+            /** Detail */
+            detail: string;
+            /** Key */
+            key: string;
+            /** Title */
+            title: string;
+        };
+        /** OnboardingSteps */
+        OnboardingSteps: {
+            /** Complete */
+            complete: boolean;
+            /** Completed At */
+            completed_at: string | null;
+            /** Next Page */
+            next_page: string | null;
+            /** Pages */
+            pages: components["schemas"]["OnboardingPage"][];
         };
         /** PasswordChange */
         PasswordChange: {
@@ -1803,6 +1959,29 @@ export interface components {
             /** Password */
             password: string;
         };
+        /** ReviewPage */
+        ReviewPage: {
+            choices: components["schemas"]["ConfigChoices"];
+            /** Config */
+            config: {
+                [key: string]: unknown;
+            };
+            found: components["schemas"]["FoundInDocuments"];
+            identity: components["schemas"]["NameAndLinks"];
+            suggestions: components["schemas"]["WordSuggestions"];
+        };
+        /** SaveResult */
+        SaveResult: {
+            /** Status */
+            status: string;
+        };
+        /** SavedLink */
+        SavedLink: {
+            /** Platform */
+            platform?: string | null;
+            /** Url */
+            url: string;
+        };
         /**
          * SearchSection
          * @description One search, targeted at one platform or at all of them.
@@ -1856,6 +2035,21 @@ export interface components {
             languages?: string[];
             /** Tools */
             tools?: string[];
+        };
+        /** SuggestionDismissal */
+        SuggestionDismissal: {
+            /** Term */
+            term: string;
+        };
+        /** SuggestionPick */
+        SuggestionPick: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "green" | "red";
+            /** Term */
+            term: string;
         };
         /** Targets */
         Targets: {
@@ -1911,6 +2105,20 @@ export interface components {
         VerifyRequest: {
             /** Token */
             token: string;
+        };
+        /** WordSuggestion */
+        WordSuggestion: {
+            /** Reason */
+            reason: string;
+            /** Term */
+            term: string;
+        };
+        /** WordSuggestions */
+        WordSuggestions: {
+            /** Green */
+            green: components["schemas"]["WordSuggestion"][];
+            /** Red */
+            red: components["schemas"]["WordSuggestion"][];
         };
     };
     responses: never;
@@ -3659,9 +3867,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["SaveResult"];
                 };
             };
         };
@@ -3681,9 +3887,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ConfigOut"];
                 };
             };
         };
@@ -3707,44 +3911,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    preview_config_onboarding_config_preview_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UserConfigSchema"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["SaveResult"];
                 };
             };
             /** @description Validation Error */
@@ -3799,9 +3966,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["HistorySaved"];
                 };
             };
             /** @description Validation Error */
@@ -3830,9 +3995,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["NameAndLinks"];
                 };
             };
         };
@@ -3872,6 +4035,26 @@ export interface operations {
             };
         };
     };
+    review_onboarding_review_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewPage"];
+                };
+            };
+        };
+    };
     state_onboarding_state_get: {
         parameters: {
             query?: never;
@@ -3887,9 +4070,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["OnboardingSteps"];
                 };
             };
         };
@@ -4386,6 +4567,92 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    get_suggestions_suggestions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WordSuggestions"];
+                };
+            };
+        };
+    };
+    accept_suggestions_accept_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SuggestionPick"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WordSuggestions"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dismiss_suggestions_dismiss_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SuggestionDismissal"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WordSuggestions"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

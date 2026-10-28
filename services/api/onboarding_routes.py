@@ -1,4 +1,4 @@
-"""The seven onboarding pages, as endpoints."""
+"""The onboarding pages, as endpoints: upload a CV, confirm what we found, done."""
 from __future__ import annotations
 
 import logging
@@ -6,14 +6,24 @@ import uuid as _uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from libs import limits
-from libs.contracts.config import UserConfigSchema, migrate_config
-from libs.contracts.onboarding import IdentitySchema
-from libs.db.models import CorpusJob, User, UserDocument
+from libs import limits, suggestions
+from libs.contracts.config import (
+    MAX_LOCATIONS_PER_USER,
+    Language,
+    Location,
+    RemotePolicy,
+    SearchSection,
+    UserConfigSchema,
+    location_search_name,
+    migrate_config,
+)
+from libs.contracts.onboarding import IdentitySchema, ProfileLink
+from libs.db.models import User, UserDocument
 from libs.documents import UnsupportedDocument, extract_text
+from libs.documents.read import LANGUAGE_NAMES, Facts, read
 from libs.obs import audit
 from libs.onboarding import onboarding_state
 from libs.tenant.repository import TenantRepository
@@ -22,50 +32,113 @@ from services.api.deps import current_user, get_db, rate_limit
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/onboarding", tags=["onboarding"])
 
-# How far back the config preview counts.
-PREVIEW_WINDOW_DAYS = 30
-PREVIEW_TITLE_LIMIT = 5
+# What each answer to "how often would you go in" is called on the page.
+_POLICIES = {"remote_only": ("Remote only", "Never asks you to come in"),
+             "remote_or_hybrid": ("Remote or hybrid", "Some days at home is fine"),
+             "any": ("Anything", "Including full-time on site")}
 
 
-@router.get("/state")
+class OnboardingPage(BaseModel):
+    key: str
+    title: str
+    complete: bool
+    detail: str
+
+
+class OnboardingSteps(BaseModel):
+    complete: bool
+    next_page: str | None
+    completed_at: str | None
+    pages: list[OnboardingPage]
+
+
+class SavedLink(BaseModel):
+    url: str
+    platform: str | None = None
+
+
+class NameAndLinks(BaseModel):
+    full_name: str | None
+    links: list[SavedLink]
+
+
+class ConfigChoice(BaseModel):
+    value: str
+    label: str
+    hint: str | None = None
+
+
+class ConfigChoices(BaseModel):
+    """What the pickers offer, labelled. Served, so a place cannot exist on one side only."""
+    locations: list[ConfigChoice]
+    languages: list[ConfigChoice]
+    remote_policies: list[ConfigChoice]
+
+
+class ConfigOut(BaseModel):
+    # Stored, else what their documents suggest; `None` only for an account with nothing to go on.
+    config: dict | None
+    choices: ConfigChoices
+
+
+class WordSuggestion(BaseModel):
+    term: str
+    reason: str
+
+
+class WordSuggestions(BaseModel):
+    green: list[WordSuggestion]
+    red: list[WordSuggestion]
+
+
+class FoundInDocuments(BaseModel):
+    """What their documents say, read by rules (`libs.documents.read`)."""
+    name: str | None
+    email: str | None
+    phone: str | None
+    links: list[str]
+    location: str | None
+    places: list[str]
+    languages: list[str]
+    titles: list[str]
+    skills: list[str]
+    years: int | None
+
+
+class ReviewPage(BaseModel):
+    identity: NameAndLinks
+    config: dict
+    found: FoundInDocuments
+    suggestions: WordSuggestions
+    choices: ConfigChoices
+
+
+class SaveResult(BaseModel):
+    status: str
+
+
+class HistorySaved(SaveResult):
+    chars: int
+    truncated: bool
+
+
+@router.get("/state", response_model=OnboardingSteps)
 def state(db: Session = Depends(get_db), user_id: _uuid.UUID = Depends(current_user)) -> dict:
     """What is done, what is left, and where to send the user next."""
     return onboarding_state(db, user_id).as_dict()
 
 
-# ── page 1: identity ──────────────────────────────────────────────────────────────────────────
-
-@router.get("/identity")
-def get_identity(db: Session = Depends(get_db),
-                 user_id: _uuid.UUID = Depends(current_user)) -> dict:
-    user = db.get(User, user_id)
-    return {"full_name": user.full_name, "links": user.links or []}
-
-
-@router.put("/identity")
-def put_identity(body: IdentitySchema, db: Session = Depends(get_db),
-                 user_id: _uuid.UUID = Depends(current_user)) -> dict:
-    """Store the name and links."""
-    user = db.get(User, user_id)
-    user.full_name = body.full_name
-    user.links = [link.model_dump() for link in body.links]
-    # Their name and links are hard data: typed, theirs, and read by the prompts the setup agents
-    # wrote. Stamped so those files can be found stale rather than silently describing an old you.
-    user.hard_data_changed_at = func.now()
-    audit(logger, "onboarding.identity", user=user_id, links=len(user.links))
-    return {"status": "saved", "full_name": user.full_name, "links": user.links}
-
-
-# ── page 3: history ───────────────────────────────────────────────────────────────────────────
+# ── documents: the CV, and the "about you" text ───────────────────────────────────────────────
 
 class HistoryBody(BaseModel):
-    text: str = Field(min_length=200, max_length=400_000)
+    # Optional and theirs: a sentence is as welcome as a memoir.
+    text: str = Field(min_length=1, max_length=400_000)
 
 
-@router.put("/history")
+@router.put("/history", response_model=HistorySaved)
 def put_history(body: HistoryBody, request: Request, db: Session = Depends(get_db),
                 user_id: _uuid.UUID = Depends(current_user)) -> dict:
-    """The long-form write-up, typed rather than uploaded."""
+    """Their own words about themselves, typed rather than uploaded."""
     rate_limit(request, f"history:{user_id}", limit=60, per_seconds=3600)
     try:
         extracted = extract_text("history.txt", body.text.encode("utf-8"))
@@ -88,6 +161,7 @@ def put_history(body: HistoryBody, request: Request, db: Session = Depends(get_d
     db.flush()
     # The history is a document like any other, so changing it makes the profile stale.
     db.get(User, user_id).documents_changed_at = func.now()
+    suggestions.refresh(db, user_id)
     audit(logger, "onboarding.history", user=user_id, chars=extracted.chars)
     return {"status": "saved", "chars": extracted.chars, "truncated": extracted.truncated}
 
@@ -102,20 +176,67 @@ def get_history(db: Session = Depends(get_db),
     return {"text": document.text if document else "", "chars": document.chars if document else 0}
 
 
-# ── page 7: config ────────────────────────────────────────────────────────────────────────────
+# ── review: what we found, confirmed ──────────────────────────────────────────────────────────
 
-@router.get("/config")
+@router.get("/review", response_model=ReviewPage)
+def review(db: Session = Depends(get_db), user_id: _uuid.UUID = Depends(current_user)) -> dict:
+    """Everything the review page opens with: what they told us, else what their documents say."""
+    facts = read(suggestions.documents_of(db, user_id))
+    found = suggestions.current(db, user_id)
+    stored = TenantRepository(db).get_config(user_id)
+    return {"identity": _identity(db.get(User, user_id), facts),
+            "config": migrate_config(stored) if stored is not None else _prefill(facts, found),
+            "found": {"name": facts.name, "email": facts.email, "phone": facts.phone,
+                      "links": list(facts.links), "location": facts.location,
+                      "places": list(facts.places), "languages": list(facts.languages),
+                      "titles": list(facts.titles), "skills": list(facts.skills),
+                      "years": facts.years},
+            "suggestions": found, "choices": _choices()}
+
+
+@router.get("/identity", response_model=NameAndLinks)
+def get_identity(db: Session = Depends(get_db),
+                 user_id: _uuid.UUID = Depends(current_user)) -> dict:
+    """Their name and links; read off their CV until they have saved their own."""
+    return _identity(db.get(User, user_id), read(suggestions.documents_of(db, user_id)))
+
+
+@router.put("/identity")
+def put_identity(body: IdentitySchema, db: Session = Depends(get_db),
+                 user_id: _uuid.UUID = Depends(current_user)) -> dict:
+    """Store the name and links."""
+    user = db.get(User, user_id)
+    user.full_name = body.full_name
+    user.links = [link.model_dump() for link in body.links]
+    # Their name and links are hard data: typed, theirs, and read by the prompts the setup agents
+    # wrote. Stamped so those files can be found stale rather than silently describing an old you.
+    user.hard_data_changed_at = func.now()
+    audit(logger, "onboarding.identity", user=user_id, links=len(user.links))
+    return {"status": "saved", "full_name": user.full_name, "links": user.links}
+
+
+@router.get("/config", response_model=ConfigOut)
 def get_config(db: Session = Depends(get_db),
                user_id: _uuid.UUID = Depends(current_user)) -> dict:
-    """The stored config, read in the *current* shape whatever version it was written in."""
+    """The search, read in the *current* shape whatever version it was written in, and the choices."""
     stored = TenantRepository(db).get_config(user_id)
-    return {"config": migrate_config(stored) if stored else None}
+    if stored is not None:
+        return {"config": migrate_config(stored), "choices": _choices()}
+    documents = suggestions.documents_of(db, user_id)
+    return {"config": _prefill(read(documents), suggestions.current(db, user_id)) if documents else None,
+            "choices": _choices()}
 
 
-@router.put("/config")
+@router.put("/config", response_model=SaveResult)
 def put_config(body: UserConfigSchema, db: Session = Depends(get_db),
                user_id: _uuid.UUID = Depends(current_user)) -> dict:
     """Validate and store."""
+    save_config(db, user_id, body)
+    return {"status": "saved"}
+
+
+def save_config(db: Session, user_id: _uuid.UUID, body: UserConfigSchema) -> None:
+    """The one way a search is saved: under the account's ceiling, stamped, its suggestions redone."""
     ceiling = limits.resolve(db.get(User, user_id), "keywords")
     total = sum(len(section.keywords) for section in body.sections)
     if ceiling is not None and total > ceiling:
@@ -128,43 +249,54 @@ def put_config(body: UserConfigSchema, db: Session = Depends(get_db),
     # Same reason as identity: what they search for is hard data, and `label.md` and the role angles
     # were written against the previous answer.
     db.get(User, user_id).hard_data_changed_at = func.now()
+    suggestions.refresh(db, user_id)
     audit(logger, "onboarding.config", user=user_id,
           sections=len(body.sections),
           keywords=sum(len(section.keywords) for section in body.sections))
-    return {"status": "saved"}
 
 
-@router.post("/config/preview")
-def preview_config(body: UserConfigSchema, db: Session = Depends(get_db),
-                   user_id: _uuid.UUID = Depends(current_user)) -> dict:
-    """How many jobs already in the corpus these terms would match, with a few example titles."""
-    keywords = [keyword for section in body.sections for keyword in section.keywords]
-    excluded = [keyword for section in body.sections for keyword in section.exclude_keywords]
+def _identity(user: User, facts: Facts) -> dict:
+    """What they saved, else what their CV says. Links they saved as none stay none."""
+    links = user.links
+    if links is None:
+        links = []
+        for url in facts.links:
+            try:
+                links.append(ProfileLink(url=url).model_dump())
+            except ValueError:
+                logger.warning("onboarding: a link read off user %s's CV is not usable; left out",
+                               user.id)
+    return {"full_name": user.full_name or facts.name, "links": links}
 
-    recent = CorpusJob.first_seen_at >= func.now() - func.make_interval(0, 0, 0, PREVIEW_WINDOW_DAYS)
-    matches = or_(*[CorpusJob.title.ilike(f"%{keyword}%") for keyword in keywords])
-    where = [recent, matches]
-    where += [~CorpusJob.title.ilike(f"%{keyword}%") for keyword in excluded]
 
-    total = db.scalar(select(func.count()).select_from(CorpusJob).where(*where)) or 0
-    examples = db.scalars(
-        select(CorpusJob.title).where(*where)
-        .order_by(CorpusJob.first_seen_at.desc()).limit(PREVIEW_TITLE_LIMIT)).all()
+def _prefill(facts: Facts, found: dict) -> dict:
+    """A search filled in from their documents, for them to correct before saving: their latest job
+    title as the green word, the red words suggested, and the places and languages their CV names.
 
+    Built with the schema's own defaults, not a copy of them; validated when they save it.
+    """
+    section = SearchSection.model_construct(
+        keywords=[each["term"] for each in found.get("green", [])[:1]],
+        exclude_keywords=[each["term"] for each in found.get("red", [])],
+        locations=list(facts.places)[:MAX_LOCATIONS_PER_USER])
+    return UserConfigSchema.model_construct(
+        sections=[section], languages=list(facts.languages)).model_dump(mode="json")
+
+
+def _choices() -> dict:
     return {
-        "matches": total,
-        "window_days": PREVIEW_WINDOW_DAYS,
-        "examples": list(examples),
-        "approximate": True,
-        "detail": ("Counted against jobs already collected. Your own searches run against each "
-                   "site directly, so the real number is usually higher — but zero here almost "
-                   "always means a keyword is misspelled."),
+        "locations": [{"value": place.value, "label": location_search_name(place.value)}
+                      for place in Location],
+        "languages": [{"value": code.value, "label": LANGUAGE_NAMES[code.value][0]}
+                      for code in Language],
+        "remote_policies": [{"value": policy.value, "label": _POLICIES[policy.value][0],
+                             "hint": _POLICIES[policy.value][1]} for policy in RemotePolicy],
     }
 
 
 # ── the gate ──────────────────────────────────────────────────────────────────────────────────
 
-@router.post("/complete")
+@router.post("/complete", response_model=SaveResult)
 def complete(db: Session = Depends(get_db), user_id: _uuid.UUID = Depends(current_user)) -> dict:
     """Finish onboarding, if every page is satisfied."""
     current = onboarding_state(db, user_id)
@@ -180,12 +312,13 @@ def complete(db: Session = Depends(get_db), user_id: _uuid.UUID = Depends(curren
         user.onboarding_completed_at = func.now()
         audit(logger, "onboarding.complete", user=user_id)
 
-    return {"status": "complete",
-            # What the dashboard tells them to do next.
-            "next_action": "process_data"}
+    return {"status": "complete"}
 
 
 # `GET /onboarding/schema` was here, and served both JSON Schemas "the front end generates its forms
 # from". It generated nothing: the forms are hand-written TSX against the types in `api-types.ts`, so
 # the payload was a second copy of every field list, kept in step by hand. Removed 2026-08-11 with
 # the same key on `/onboarding/identity`, `/onboarding/config` and `/process/draft`.
+#
+# That removal emptied the location and language pickers for two months: ConfigStep still read the
+# schema's enums, from a response typed by hand. The lists are back as `choices`, typed, with labels.

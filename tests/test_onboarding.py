@@ -1,4 +1,5 @@
-"""Onboarding: the completion gate, and the two pages this service owns."""
+"""Onboarding: the completion gate, the review it fills in from the CV, and its pages."""
+# ruff: noqa: RUF001 - CVs are written with en dashes, and the fixtures are written like CVs
 from __future__ import annotations
 
 import os
@@ -84,139 +85,160 @@ def api():
 CONFIG = {"sections": [{"platform": "all", "keywords": ["backend engineer"],
                         "locations": ["europe"]}]}
 
+CV = """JANE DOE
+Budapest, Hungary | jane.doe@example.com | github.com/janedoe
+EXPERIENCE
+Senior Backend Engineer, Acme Payments\tJan 2014 – Present
+Designed the settlement service in Go
+LANGUAGES
+Hungarian (native), English (C1)
+"""
 
-def _finish_every_page(http, session, user):
-    """Satisfy all seven pages by writing what each one writes, not by calling every endpoint."""
-    from libs.db.models import UserDocument, UserSecret
 
-    http.put("/onboarding/identity", json={"full_name": "Alice Example"})
-    http.put("/onboarding/history", json={"text": "I have done things. " * 20})
-    http.put("/onboarding/config", json=CONFIG)
-    session.add(UserDocument(user_id=user.id, kind="cv", filename="cv.txt", text="Alice",
-                             text_sha256=uuid.uuid4().hex * 2, chars=5))
-    for kind in ("claude_api", "telegram_bot", "proxy"):
-        session.add(UserSecret(user_id=user.id, kind=kind, ciphertext=b"x", nonce=b"n"))
-    user.telegram_status = "connected"
-    # A connected bot is not a finished Telegram setup: the job stream needs a channel to land in.
-    user.telegram_routes = {"jobs": "-1001234567890"}
-    session.flush()
+def _upload_cv(http, text: str = CV):
+    return http.post("/documents", data={"kind": "cv"},
+                     files={"file": ("cv.txt", text.encode(), "text/plain")})
 
 
 @pytestmark_db
-def test_a_new_account_is_sent_to_the_first_page(api):
+def test_a_new_account_is_sent_to_the_first_of_three_screens(api):
+    """Upload, confirm what we found, done (ROADMAP Phase 8). Nothing else stands in the way."""
     http, _, _ = api
     body = http.get("/onboarding/state").json()
     assert body["complete"] is False
-    assert body["next_page"] == "identity"
-    assert [page["key"] for page in body["pages"]] == [
-        "identity", "documents", "history", "telegram", "claude", "proxy", "config"]
+    assert body["next_page"] == "documents"
+    assert [page["key"] for page in body["pages"]] == ["documents", "review"]
 
 
 @pytestmark_db
-def test_completing_a_page_advances_to_the_next_unfinished_one(api):
-    http, session, _ = api
-    http.put("/onboarding/identity", json={"full_name": "Alice Example"})
-    session.flush()
-    assert http.get("/onboarding/state").json()["next_page"] == "documents"
-
-
-@pytestmark_db
-def test_finishing_is_refused_until_every_page_is_done_and_says_which(api):
-    """A gate that says "not ready" without saying what is missing sends the user hunting."""
+def test_uploading_a_cv_moves_them_on_to_the_review(api):
     http, _, _ = api
-    http.put("/onboarding/identity", json={"full_name": "Alice Example"})
+    _upload_cv(http)
+    assert http.get("/onboarding/state").json()["next_page"] == "review"
 
+
+@pytestmark_db
+def test_the_review_arrives_filled_in_from_their_cv(api):
+    """Confirm what we found, rather than type it: every field here was read off the CV."""
+    http, _, _ = api
+    _upload_cv(http)
+
+    review = http.get("/onboarding/review").json()
+
+    assert review["identity"] == {"full_name": "Jane Doe", "links": [
+        {"url": "https://github.com/janedoe", "platform": "github"}]}
+    section = review["config"]["sections"][0]
+    assert section["keywords"] == ["backend engineer"]
+    assert {"junior", "unpaid"} <= set(section["exclude_keywords"])
+    assert section["locations"] == ["budapest"]
+    assert review["config"]["languages"] == ["hu", "en"]
+    assert review["found"]["titles"] == ["Senior Backend Engineer"]
+    assert review["found"]["email"] == "jane.doe@example.com"
+    assert {"term": "backend engineer", "reason": "Your job title at Acme Payments"} in (
+        review["suggestions"]["green"])
+    # The same answer the two pages that edit it give, so the stacked forms open filled in too.
+    assert http.get("/onboarding/identity").json() == review["identity"]
+    assert http.get("/onboarding/config").json()["config"] == review["config"]
+
+
+@pytestmark_db
+def test_what_they_saved_wins_over_what_their_cv_says(api):
+    http, _, _ = api
+    _upload_cv(http)
+    http.put("/onboarding/identity", json={"full_name": "Jane Q. Doe", "links": []})
+    http.put("/onboarding/config", json=CONFIG)
+
+    review = http.get("/onboarding/review").json()
+    assert review["identity"] == {"full_name": "Jane Q. Doe", "links": []}
+    assert review["config"]["sections"][0]["locations"] == ["europe"]
+
+
+@pytestmark_db
+def test_the_pickers_are_served_every_place_language_and_policy_with_a_label(api):
+    """**The bug this closes**: the location and language pickers were empty for two months.
+
+    ConfigStep read `stored.schema`, which this route stopped sending on 2026-08-11, through a
+    response type written by hand, so nothing failed and every list rendered empty.
+    """
+    from libs.contracts.config import Language, Location, RemotePolicy
+
+    http, _, _ = api
+    choices = http.get("/onboarding/config").json()["choices"]
+
+    for key, enum in (("locations", Location), ("languages", Language),
+                      ("remote_policies", RemotePolicy)):
+        assert [choice["value"] for choice in choices[key]] == [member.value for member in enum]
+        assert all(choice["label"] for choice in choices[key]), key
+    assert {"value": "hu", "label": "Hungarian", "hint": None} in choices["languages"]
+    assert {"value": "united_kingdom", "label": "United Kingdom", "hint": None} in choices["locations"]
+
+
+@pytestmark_db
+def test_finishing_needs_a_cv_a_name_and_one_green_word_and_nothing_else(api):
+    """No Telegram, no Claude key, no proxy: none of them is needed to see a matching job."""
+    from libs.db.models import UserSecret
+
+    http, session, user = api
     response = http.post("/onboarding/complete")
     assert response.status_code == 409
-    detail = response.json()["detail"]
-    assert "identity" not in detail["missing"]
-    assert {"documents", "history", "telegram", "claude", "proxy", "config"} <= set(
-        detail["missing"])
+    assert response.json()["detail"]["missing"] == ["documents", "review"]
+
+    _upload_cv(http)
+    http.put("/onboarding/identity", json={"full_name": "Jane Doe"})
+    http.put("/onboarding/config", json=CONFIG)
+
+    assert http.post("/onboarding/complete").json() == {"status": "complete"}
+    session.flush()
+    assert user.onboarding_completed_at is not None
+    assert session.query(UserSecret).filter_by(user_id=user.id).count() == 0
+    assert user.telegram_status == "unconfigured"
 
 
 @pytestmark_db
 def test_finishing_does_not_start_the_notifier(api):
     """`active` means the scheduler may dispatch."""
     http, session, user = api
-    _finish_every_page(http, session, user)
+    _upload_cv(http)
+    http.put("/onboarding/identity", json={"full_name": "Alice Example"})
+    http.put("/onboarding/config", json=CONFIG)
 
     assert http.post("/onboarding/complete").json()["status"] == "complete"
     session.flush()
-    assert user.onboarding_completed_at is not None
     assert user.active is False
 
 
 @pytestmark_db
-def test_revoking_a_credential_reopens_its_page(api):
+def test_deleting_the_cv_reopens_its_page(api):
     """The reason completion is derived rather than stored."""
-    from libs.db.models import UserSecret
-
-    http, session, user = api
-    _finish_every_page(http, session, user)
-    http.post("/onboarding/complete")
-    session.flush()
-
-    session.delete(session.get(UserSecret, (user.id, "claude_api")))
-    user.telegram_status = "unconfigured"
-    session.flush()
-
-    body = http.get("/onboarding/state").json()
-    assert body["complete"] is False
-    assert body["next_page"] == "telegram"
-
-
-@pytestmark_db
-def test_a_connected_bot_without_a_channel_does_not_finish_telegram(api):
-    """Delivery is the product, so the channel is a requirement rather than a nicety."""
-    http, session, user = api
-    _finish_every_page(http, session, user)
-
-    user.telegram_routes = None
-    session.flush()
-
-    body = http.get("/onboarding/state").json()
-    assert body["complete"] is False
-    assert body["next_page"] == "telegram"
-
-    user.telegram_routes = {"jobs": "-1001234567890"}
-    session.flush()
-
+    http, _, _ = api
+    _upload_cv(http)
+    http.put("/onboarding/identity", json={"full_name": "Alice Example"})
+    http.put("/onboarding/config", json=CONFIG)
     assert http.get("/onboarding/state").json()["complete"] is True
 
+    (document,) = http.get("/documents").json()["documents"]
+    http.delete(f"/documents/{document['id']}")
+
+    body = http.get("/onboarding/state").json()
+    assert body["complete"] is False
+    assert body["next_page"] == "documents"
+
 
 @pytestmark_db
-def test_the_history_page_replaces_rather_than_accumulates(api):
-    """It is one document the user edits."""
+def test_the_about_you_text_replaces_rather_than_accumulates(api):
+    """It is one document the user edits, and a sentence is enough."""
     from sqlalchemy import func, select
 
     from libs.db.models import UserDocument
 
     http, session, user = api
     http.put("/onboarding/history", json={"text": "First version. " * 20})
-    http.put("/onboarding/history", json={"text": "Second version. " * 20})
+    assert http.put("/onboarding/history", json={"text": "Night shifts suit me."}).status_code == 200
     session.flush()
 
     assert session.scalar(select(func.count()).select_from(UserDocument)
                           .where(UserDocument.user_id == user.id)) == 1
-    assert "Second version" in http.get("/onboarding/history").json()["text"]
-
-
-@pytestmark_db
-def test_a_config_whose_keywords_match_nothing_says_so_before_it_is_saved(api):
-    """The failure this preview exists to catch: a misspelled keyword."""
-    from libs.db.models import CorpusJob
-
-    http, session, _ = api
-    session.add(CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
-                          title="Senior Backend Engineer"))
-    session.flush()
-
-    matching = http.post("/onboarding/config/preview", json=CONFIG).json()
-    assert matching["matches"] >= 1
-    assert any("Backend Engineer" in title for title in matching["examples"])
-
-    typo = {"sections": [{"platform": "all", "keywords": ["backedn enginer"]}]}
-    assert http.post("/onboarding/config/preview", json=typo).json()["matches"] == 0
+    assert http.get("/onboarding/history").json()["text"] == "Night shifts suit me."
 
 
 @pytestmark_db

@@ -1,4 +1,4 @@
-/** Pages 2 and 3. */
+/** Their documents: the CV and the rest, and the "about you" text they can edit. */
 import { useEffect, useState } from "react";
 
 import { api, type DocumentList } from "../../api";
@@ -138,7 +138,7 @@ export function HistoryStep({ onDone }: { onDone: () => void }) {
     onDone();
   });
 
-  const ready = text.trim().length >= 200;
+  const ready = text.trim().length > 0;
 
   return (
     <form
@@ -173,7 +173,7 @@ export function HistoryStep({ onDone }: { onDone: () => void }) {
 
       <Error>{save.error ?? upload.error}</Error>
       <button type="submit" className={ready ? "advance ready" : "advance"} disabled={save.busy}>
-        {save.busy ? "Saving…" : "Continue"}
+        {save.busy ? "Saving…" : "Save"}
       </button>
     </form>
   );

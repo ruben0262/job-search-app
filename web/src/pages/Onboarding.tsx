@@ -1,32 +1,23 @@
-/** The seven pages, one question at a time. */
+/** Three screens: your CV, what we found in it, done. */
 import { useState } from "react";
 
 import { api, type OnboardingState } from "../api";
 import { ThemeToggle } from "../theme";
 import { Error, useAction } from "../ui";
 import { ConfigStep } from "./onboarding/ConfigStep";
-import { ClaudeStep, ProxyStep, TelegramStep } from "./onboarding/Credentials";
 import { DocumentsStep, HistoryStep } from "./onboarding/DocumentsStep";
 import { IdentityStep } from "./onboarding/IdentityStep";
 
-/** Titles a non-technical person can act on. Most pages need no second line at all. */
+/** Titles a non-technical person can act on. */
 const TITLES: Record<string, { title: string; lede?: string }> = {
-  identity: { title: "What should employers call you?" },
-  documents: { title: "Share your CV" },
-  history: { title: "Tell us what you have done" },
-  telegram: {
-    title: "Where should we send jobs?",
-    lede: "Matches arrive on Telegram, so you get them wherever you are.",
+  documents: {
+    title: "Share your CV",
+    lede: "We read it and fill in the next screen for you. Anything else is optional.",
   },
-  claude: {
-    title: "Connect your Claude account",
-    lede: "Everything runs on your own key, so you can see exactly what it costs.",
+  review: {
+    title: "Is this right?",
+    lede: "We filled this in from your CV. Change anything that is wrong.",
   },
-  proxy: {
-    title: "Add a proxy",
-    lede: "LinkedIn is fetched through your own connection and never a shared one.",
-  },
-  config: { title: "What are you looking for?" },
 };
 
 export function Onboarding({
@@ -126,8 +117,8 @@ export function Onboarding({
               <p className="kicker">All set</p>
               <h1>That is everything</h1>
               <p className="lede">
-                Next you will build your profile in a conversation. That is the first thing that
-                uses your Claude credential, and you decide when.
+                Your jobs are waiting. Telegram alerts and the rest are in Settings, whenever you
+                want them.
               </p>
               <Error>{finish.error}</Error>
               <button className="advance ready" disabled={finish.busy} onClick={() => void finish.run()}>
@@ -173,20 +164,20 @@ function Check() {
 
 function Step({ which, onDone }: { which: string; onDone: () => void }) {
   switch (which) {
-    case "identity":
-      return <IdentityStep onDone={onDone} />;
     case "documents":
-      return <DocumentsStep onDone={onDone} />;
-    case "history":
-      return <HistoryStep onDone={onDone} />;
-    case "telegram":
-      return <TelegramStep onDone={onDone} />;
-    case "claude":
-      return <ClaudeStep onDone={onDone} />;
-    case "proxy":
-      return <ProxyStep onDone={onDone} />;
-    case "config":
-      return <ConfigStep onDone={onDone} />;
+      return (
+        <>
+          <DocumentsStep onDone={onDone} />
+          <HistoryStep onDone={onDone} />
+        </>
+      );
+    case "review":
+      return (
+        <>
+          <IdentityStep onDone={onDone} />
+          <ConfigStep onDone={onDone} />
+        </>
+      );
     default:
       return null;
   }

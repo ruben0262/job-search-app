@@ -1,10 +1,11 @@
-/** Page 1. */
+/** Their name and links, filled in from their CV until they save their own. */
 import { useEffect, useState } from "react";
 
 import { api } from "../../api";
+import type { components } from "../../api-types";
 import { Error, Field, useAction } from "../../ui";
 
-type Link = { url: string; platform?: string };
+type Link = { url: string; platform?: string | null };
 
 function PlusIcon() {
   return (
@@ -28,7 +29,7 @@ export function IdentityStep({ onDone }: { onDone: () => void }) {
 
   useEffect(() => {
     void api
-      .get<{ full_name: string | null; links: Link[] }>("/onboarding/identity")
+      .get<components["schemas"]["NameAndLinks"]>("/onboarding/identity")
       .then((stored) => {
         setFullName(stored.full_name ?? "");
         if (stored.links.length) setLinks(stored.links);
@@ -110,7 +111,7 @@ export function IdentityStep({ onDone }: { onDone: () => void }) {
 
       <Error>{save.error}</Error>
       <button type="submit" className={ready ? "advance ready" : "advance"} disabled={save.busy}>
-        {save.busy ? "Saving…" : "Continue"}
+        {save.busy ? "Saving…" : "Save"}
       </button>
     </form>
   );

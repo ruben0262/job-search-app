@@ -17,6 +17,9 @@ WRITTEN_ELSEWHERE = {
     "sent_at": "server_default now() on the mail_sends insert",
     # A column default on the model (`default="free"`), applied by SQLAlchemy on insert.
     "plan_id": "model column default, applied on insert",
+    # Not a column: the `User.secrets` relationship, which SQLAlchemy fills from `user_secrets` rows.
+    # It passed only because the old onboarding gate had a local variable called `secrets`.
+    "secrets": "relationship, loaded from user_secrets",
 }
 
 # Columns this test found on its first run, each a real answer to "what is silently absent".

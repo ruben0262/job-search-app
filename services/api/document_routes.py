@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from libs import limits
+from libs import limits, suggestions
 from libs.db.models import User, UserDocument
 from libs.db.models.document import DOCUMENT_KINDS
 from libs.documents import (
@@ -46,8 +46,9 @@ def _stored(status_word: str, document_id: int, extracted) -> dict:
 
 
 def _documents_changed(db: Session, user_id: _uuid.UUID) -> None:
-    """Mark the document set as changed, which is what makes the dashboard offer a re-process."""
+    """Mark the document set as changed, and work their suggested words out again from it."""
     db.get(User, user_id).documents_changed_at = func.now()
+    suggestions.refresh(db, user_id)
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)

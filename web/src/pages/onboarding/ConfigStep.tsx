@@ -1,9 +1,13 @@
 /** What to search for. */
 import { useEffect, useMemo, useState } from "react";
 
-// `ConfigPreview` goes back on this import when the match count is switched on again.
 import { api } from "../../api";
+import type { components } from "../../api-types";
 import { Error, useAction } from "../../ui";
+
+/** Generated from the server, so a choice list it stops sending fails the build, not the page. */
+type ConfigOut = components["schemas"]["ConfigOut"];
+type Choices = components["schemas"]["ConfigChoices"];
 
 /** Mirrors `MAX_LOCATIONS_PER_USER` in libs/contracts/config.py. */
 const MAX_LOCATIONS = 12;
@@ -25,9 +29,6 @@ type Config = {
   salary_currency: string;
   max_notifications_per_day: number;
 };
-
-/** Read from the schema the server exports, so a new location cannot exist on one side only. */
-type Schema = { $defs?: Record<string, { enum?: string[] }> };
 
 const BLANK: Config = {
   sections: [
@@ -62,51 +63,31 @@ const PLACE_GROUPS: { label: string; hint: string; values: string[] }[] = [
   },
 ];
 
-/** Plain names for the values that do not read well spelled out. */
-const PLACE_NAMES: Record<string, string> = {
-  united_kingdom: "United Kingdom",
-  // Named for what it admits.
-  europe: "European Union (27 countries)",
-};
-
-const WORKPLACE: { value: string; label: string; hint: string }[] = [
-  { value: "remote_only", label: "Remote only", hint: "Never asks you to come in" },
-  { value: "remote_or_hybrid", label: "Remote or hybrid", hint: "Some days at home is fine" },
-  { value: "any", label: "Anything", hint: "Including full-time on site" },
-];
-
-/** Plain names for the language codes the schema offers. */
-const LANGUAGE_NAMES: Record<string, string> = {
-  en: "English", de: "German", fr: "French", es: "Spanish", nl: "Dutch", hu: "Hungarian",
-  pl: "Polish", pt: "Portuguese", it: "Italian", sv: "Swedish", da: "Danish",
-};
-
-const title = (value: string) =>
-  PLACE_NAMES[value] ?? value.replaceAll("_", " ").replace(/^./, (c) => c.toUpperCase());
-
 export function ConfigStep({ onDone }: { onDone: () => void }) {
   const [config, setConfig] = useState<Config>(BLANK);
-  const [schema, setSchema] = useState<Schema | null>(null);
-  // The live match count is switched off (2026-07-31).
+  const [choices, setChoices] = useState<Choices | null>(null);
   const [keywords, setKeywords] = useState<string[]>([]);
   const [excluded, setExcluded] = useState<string[]>([]);
 
   useEffect(() => {
     void api
-      .get<{ config: Config | null; schema: Schema }>("/onboarding/config")
+      .get<ConfigOut>("/onboarding/config")
       .then((stored) => {
-        setSchema(stored.schema);
-        if (stored.config) {
-          setConfig(stored.config);
-          setKeywords(stored.config.sections[0]?.keywords ?? []);
-          setExcluded(stored.config.sections[0]?.exclude_keywords ?? []);
+        setChoices(stored.choices);
+        // Theirs, or filled in from their CV until they save their own.
+        const saved = stored.config as Config | null;
+        if (saved) {
+          setConfig(saved);
+          setKeywords(saved.sections[0]?.keywords ?? []);
+          setExcluded(saved.sections[0]?.exclude_keywords ?? []);
         }
       })
       .catch(() => undefined);
   }, []);
 
-  const known = (schema?.$defs?.Location?.enum ?? []) as string[];
-  const languages = (schema?.$defs?.Language?.enum ?? []) as string[];
+  const labels = new Map((choices?.locations ?? []).map((choice) => [choice.value, choice.label]));
+  const title = (value: string) => labels.get(value) ?? value;
+  const known = [...labels.keys()];
   const grouped = PLACE_GROUPS.map((group) => ({
     ...group,
     values: group.values.filter((value) => known.includes(value)),
@@ -125,8 +106,6 @@ export function ConfigStep({ onDone }: { onDone: () => void }) {
       ],
     };
   }, [config, keywords, excluded]);
-
-  // Debounced: it runs while somebody is still typing, and a request per keystroke is waste.
 
   const save = useAction(async () => {
     await api.put("/onboarding/config", draft);
@@ -173,8 +152,6 @@ export function ConfigStep({ onDone }: { onDone: () => void }) {
         onChange={setKeywords}
         max={25}
       />
-
-      {/* {preview ? */}
 
       <ChipInput
         label="Anything you never want to see?"
@@ -247,14 +224,14 @@ export function ConfigStep({ onDone }: { onDone: () => void }) {
           documents we write for you follow the same list. Pick nothing and we show you everything.
         </span>
         <div className="picker-grid" style={{ marginTop: "0.5rem" }}>
-          {languages.map((code) => (
-            <label key={code} className="pick">
+          {(choices?.languages ?? []).map((language) => (
+            <label key={language.value} className="pick">
               <input
                 type="checkbox"
-                checked={config.languages.includes(code)}
-                onChange={() => toggleLanguage(code)}
+                checked={config.languages.includes(language.value)}
+                onChange={() => toggleLanguage(language.value)}
               />
-              <span>{LANGUAGE_NAMES[code] ?? code.toUpperCase()}</span>
+              <span>{language.label}</span>
             </label>
           ))}
         </div>
@@ -263,7 +240,7 @@ export function ConfigStep({ onDone }: { onDone: () => void }) {
       <div className="field">
         <span className="label">How often would you go in?</span>
         <div className="picker-grid" style={{ marginTop: "0.5rem" }}>
-          {WORKPLACE.map((option) => (
+          {(choices?.remote_policies ?? []).map((option) => (
             <label key={option.value} className="pick">
               <input
                 type="radio"

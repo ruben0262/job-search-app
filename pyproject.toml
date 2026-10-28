@@ -57,6 +57,7 @@ source_modules = [
     "libs.db", "libs.documents", "libs.harvest", "libs.legal", "libs.limits", "libs.llm",
     "libs.mail", "libs.notify", "libs.obs", "libs.onboarding", "libs.ops", "libs.profiles",
     "libs.queue", "libs.secrets", "libs.settings", "libs.templates", "libs.tenant",
+    "libs.suggestions",
 ]
 forbidden_modules = [
     "services.trainer", "services.scorer", "services.labeller", "services.capture",

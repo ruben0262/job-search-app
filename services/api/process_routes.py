@@ -12,8 +12,8 @@ from sqlalchemy.orm import Session
 from libs.contracts.profile import ProfileSchema
 from libs.db.models import QueueJob, User, UserDocument, UserLabel
 from libs.labels import labelling_state
+from libs.llm import CLAUDE_KINDS
 from libs.obs import audit
-from libs.onboarding import CLAUDE_KINDS
 from libs.profiles.repository import ProfileFiles
 from libs.queue import enqueue
 from libs.tenant.repository import TenantRepository
