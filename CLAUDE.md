@@ -2,6 +2,21 @@
 
 Standing instructions, set by the owner. They apply to every change, not to a particular feature.
 
+## 0. Anyone can use it (added 2026-10-28)
+
+Built for someone who has never used a job tool, will not read instructions, and gives up at the
+first confusing screen.
+
+- **One screen, one job.** Every page has one main button and says what it does in words a child
+  can read. A page that needs a how-to is wrong.
+- **Rules before AI.** If code can decide it (filters, suggestions, ranking, reading a CV), code
+  decides it. AI only writes documents and answers chat.
+- **Fast or visible.** Every click answers within 1 s or shows progress. Jobs page < 300 ms; a CV
+  streams while it writes and is done < 20 s.
+- **Never leave the site to finish a step.** Telegram and notifications are optional, one tap.
+- **Fewer lines wins.** When two versions pass the same tests, keep the shorter. Added lines must
+  remove a moving part or fix a measured problem.
+
 ## 1. Simple beats clever, every time
 
 **The failure this prevents is the one this project keeps hitting.** Nearly every bug found in the
@@ -38,6 +53,23 @@ Not "later", and not a test of how the code is arranged.
   consumer or remove it. Several have now been found by accident rather than by looking.
 - Removing something is a decision that belongs in the commit message with its evidence, so it can
   be reversed by a person who was not there.
+
+### The one exception: the switched-off model (owner's decision, 2026-10-28)
+
+The learned scoring model is **switched off, not deleted**. It worked, and it may come back:
+training, scoring, labelling, the AI profile capture, the setup agents and the embedding step.
+Do not delete it, and do not count it as dead code.
+
+Kept code is only safe while nobody mistakes it for live code, so:
+
+- **Nothing live may import it.** The `switched-off model` contract in `pyproject.toml` is the one
+  list of what is switched off, and `lint-imports` fails the build if live code reaches it.
+- **Its services start in no default profile.** They sit in compose's `ml` profile.
+- **It is not maintained alongside live changes.** Its own tests keep running; if one breaks
+  because live code moved on, fix it if cheap, otherwise skip it with a note — never by bending live
+  code back towards it.
+
+Everything else still follows this section.
 
 ## 3a. Prompts are sacred. Never edit one without being asked
 

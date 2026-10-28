@@ -195,8 +195,7 @@ def gather_nofluffjobs(cfg: dict[str, Any], logger) -> list[JobLink]:
                 loc = j.get("location") or {}
                 places = loc.get("places", []) if isinstance(loc, dict) else []
                 city = places[0].get("city", "") if places and isinstance(places[0], dict) else ""
-                # e.g. ", Hungary" on the HU block — keeps explicit-onsite jobs in Debrecen/
-                # Szeged/etc. inside the ONSITE_LOCATIONS ("hungary") allowance.
+                # e.g. ", Hungary" on the HU block, so the country filter can place the job.
                 if city and cfg.get("location_suffix"):
                     city += cfg["location_suffix"]
                 out.append(JobLink(
@@ -677,8 +676,7 @@ def gather_profession(cfg: dict[str, Any], logger) -> list[JobLink]:
                     url=url, title=title, company="", location=location,
                     source="profession", date_posted=pub_date,
                     snippet=snippet or title,
-                    # Explicit remote word only; absence is unknown (most ads are on-site HU,
-                    # which the workplace filter allows via ONSITE_LOCATIONS).
+                    # Explicit remote word only; absence is unknown, and unknown is kept.
                     is_remote=(True if ("remote" in low or "távmunka" in low) else None),
                 ))
     return out

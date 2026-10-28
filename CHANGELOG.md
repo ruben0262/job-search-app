@@ -14,6 +14,55 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-10-28 — simple enough for anyone: the foundation (ROADMAP Phase 8)
+
+The owner's direction: the platform is for someone who finds technology hard, so jobs are chosen by
+rules a person can see, not by a model they cannot. This commit is the base every later branch of
+Phase 8 builds on.
+
+### CLAUDE.md §0, and the one exception to §3
+
+§0 "Anyone can use it" is the new first rule: one screen one job, rules before AI, fast or visible,
+never leave the site to finish a step, fewer lines wins. §3 gains its only exception, by the owner's
+decision: the learned model (training, scoring, labelling, capture, setup agents, embedding) is
+**switched off, not deleted**, because it worked and may return.
+
+### The fence that keeps switched-off code switched off (`pyproject.toml`)
+
+Kept code is only safe while nothing live reaches it. The `switched-off model` import contract is
+the one list of what is off; `lint-imports` fails the build if live code imports it. It starts with
+the 15 live imports that still do, as `ignore_imports`, and Phase 8 is not done until that list is
+empty — so the burn-down is visible in the contract rather than claimed in a message.
+
+### `libs.matching` — the one definition of which jobs a person sees
+
+Green words pick a job (title 75, text 25), red words veto it (title or company), and the existing
+`libs.tenant.filters` supply language, country and freshness. The jobs page and the alerts will both
+ask this one function, so they cannot disagree. Six tests, each shown to fail against a broken
+matcher: red words ignored, `since` ignored, the remote policy ignored, the points swapped.
+
+### Every platform user only ever saw on-site jobs in Hungary (`libs/corpus/workfilter.py`)
+
+Found by the mutation test above: switching the remote-only check off changed nothing, because
+something else was already dropping the on-site job. `UserFilters` read `onsite_locations` from a
+config that has no such field, so it always fell back to the environment and then to
+`"hungary,budapest"` — the reference instance owner's own setting, whose module docstring still
+read "Ruben wants FULLY REMOTE work … unless the job is in Hungary". An explicit on-site job in
+Dublin, Paris or Berlin was dropped for every account; one in Szeged was kept.
+
+Replaced by the question onboarding actually asks — remote only, remote or hybrid, anything — applied
+in `UserFilters.unwanted`: remote only keeps remote, remote or hybrid drops explicit on-site, anything
+keeps all, and unknown is always kept. Where a job is stays the country filter's question, answered
+from the structured `country` column rather than a substring of the location text. `is_allowed`,
+`onsite_locations` and the default are deleted (§3); `classify` stays. The three tests that pinned
+the Hungary rule are rewritten to the new one.
+
+Gates: lint-imports 3 kept, 0 broken (15 ignored, to burn down); ruff clean; pytest 1,525 passed,
+2 skipped (no reference checkout; a deliberately empty parameter list), with Chrome present; no
+migration, route or web change.
+
+---
+
 ## 2026-09-12 — a document read to 41%, a guess that replaced an answer, and a bench for the CVs
 
 Five changes, all from one investigation: why the account this platform onboarded itself gets worse

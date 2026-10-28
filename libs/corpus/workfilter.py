@@ -1,10 +1,12 @@
-"""Workplace-mode filter — Ruben wants FULLY REMOTE work; hybrid is acceptable; direct office (on-site) work is out of scope unless the job is in Hungary."""
+"""Whether a posting is remote, hybrid or on site, read from its own words.
+
+What a person *accepts* is their remote policy, applied in `libs.tenant.filters`; this module only
+classifies. It used to also hold an on-site allowance defaulting to "hungary,budapest" — the reference
+instance owner's own — which silently dropped every other on-site job for every platform user.
+"""
 from __future__ import annotations
 
-import os
 import re
-
-_ONSITE_DEFAULT = "hungary,budapest"
 
 # Title/location signals (short text, safe to match loosely).
 _REMOTE_RE = re.compile(r"\bremote\b|\bwork from home\b|\bwfh\b", re.I)
@@ -15,14 +17,6 @@ _DESC_HYBRID_RE = re.compile(r"\bhybrid[- ](work(ing)?|model|role|schedule|setup
 _DESC_REMOTE_RE = re.compile(r"fully remote|100% remote|remote[- ]first|work from anywhere", re.I)
 _DESC_ONSITE_RE = re.compile(r"on-?site only|fully on-?site|no remote|office-based|"
                              r"this (role|position) is on-?site", re.I)
-
-
-def onsite_locations(allowed: "list[str] | str | None" = None) -> list[str]:
-    """Where on-site is acceptable."""
-    if isinstance(allowed, list):
-        return [c.strip().lower() for c in allowed if c and c.strip()]
-    raw = allowed if isinstance(allowed, str) else os.environ.get("ONSITE_LOCATIONS", _ONSITE_DEFAULT)
-    return [c.strip().lower() for c in raw.split(",") if c.strip()]
 
 
 def classify(title: str, location: str, description: str | None,
@@ -48,15 +42,3 @@ def classify(title: str, location: str, description: str | None,
     if is_remote is False:                 # source explicitly said not-remote, no other signal
         return "onsite"
     return None
-
-
-def is_allowed(mode: str | None, location: str,
-               allowed_locations: "list[str] | None" = None) -> bool:
-    """True = keep. Only explicit on-site outside the allowed countries is dropped."""
-    if mode != "onsite":
-        return True
-    allowed = onsite_locations(allowed_locations)
-    if not allowed:
-        return True
-    loc = (location or "").lower()
-    return any(c in loc for c in allowed)

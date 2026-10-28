@@ -171,20 +171,24 @@ def test_an_account_that_never_stated_a_language_keeps_everything():
     assert drops(Item(language="de"), UserFilters.from_config({}, max_age_hours=24)) is None
 
 
-def test_an_explicit_onsite_posting_outside_the_allowed_countries_is_dropped():
-    item = Item(workplace="onsite", location="Paris, France")
-    assert drops(item, filters(onsite_locations=["hungary"])) == "workplace"
+def policy(name: str) -> UserFilters:
+    return filters(sections=[{"keywords": ["backend engineer"], "remote_policy": name}])
 
 
-def test_an_onsite_posting_where_the_user_will_go_is_kept():
-    item = Item(workplace="onsite", location="Budapest, Hungary")
-    assert drops(item, filters(onsite_locations=["hungary"])) is None
+def test_remote_or_hybrid_drops_an_explicit_onsite_job_wherever_it_is():
+    """Was: on-site allowed only in Hungary, the reference owner's default, for every account."""
+    for place in ("Budapest, Hungary", "Dublin, Ireland"):
+        assert drops(Item(workplace="onsite", location=place), policy("remote_or_hybrid")) == "workplace"
 
 
-def test_a_job_whose_workplace_is_unknown_is_never_dropped():
-    """The filter only ever drops an *explicit* on-site tag. Everything else fails open."""
-    assert drops(Item(workplace=None, location="Paris, France"),
-                 filters(onsite_locations=["hungary"])) is None
+def test_anything_keeps_an_onsite_job_anywhere_and_place_is_the_country_filter_s_job():
+    assert drops(Item(workplace="onsite", location="Dublin, Ireland"), policy("any")) is None
+
+
+def test_remote_only_drops_hybrid_but_never_a_job_whose_workplace_is_unknown():
+    """The filter only ever drops an *explicit* signal. Everything else fails open."""
+    assert drops(Item(workplace="hybrid"), policy("remote_only")) == "workplace"
+    assert drops(Item(workplace=None), policy("remote_only")) is None
 
 
 def test_a_linkedin_listing_at_the_display_cap_is_dropped_as_stale():

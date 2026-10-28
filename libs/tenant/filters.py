@@ -20,6 +20,17 @@ from libs.settings import DEFAULT_SOURCE_MIN_AGE_HOURS, SOURCE_MIN_AGE_HOURS
 CATALOGUE_APPLICANT_CAP = limit_default("applicant_cap")
 
 
+# What each answer to "how often would you go in" accepts. Where a posting is, is the country filter's job.
+_ACCEPTS = {"remote_only": {"remote"}, "remote_or_hybrid": {"remote", "hybrid"},
+            "any": {"remote", "hybrid", "onsite"}}
+
+
+def _widest_policy(sections: list[dict]) -> str:
+    """The most permissive policy across sections, so no section narrows another one's feed."""
+    asked = {section.get("remote_policy") or "remote_or_hybrid" for section in sections} or {"any"}
+    return next(policy for policy in ("any", "remote_or_hybrid", "remote_only") if policy in asked)
+
+
 @dataclass(frozen=True)
 class UserFilters:
     """One account's pre-score conditions, read from their config once per batch."""
@@ -33,7 +44,8 @@ class UserFilters:
     exclude: tuple[str, ...] = field(default_factory=tuple)
     # Everything below used to live in `services.notifier.eligibility` and run at send time.
     applicant_cap: int = 0
-    onsite_locations: tuple[str, ...] = field(default_factory=tuple)
+    # Their answer to "how often would you go in": remote_only, remote_or_hybrid or any.
+    remote_policy: str = "any"
     languages: frozenset[str] = field(default_factory=frozenset)
     # How long a posting from each source stays deliverable. The operator's, via platform
     # settings, with the measured map as the default — `filters_for` resolves it. Held here rather
@@ -68,7 +80,7 @@ class UserFilters:
                 if term and term.strip()),
             # An operator ceiling rather than a search preference, so it comes from `libs.limits`.
             applicant_cap=0 if applicant_cap is None else int(applicant_cap),
-            onsite_locations=tuple(workfilter.onsite_locations(config.get("onsite_locations"))),
+            remote_policy=_widest_policy(sections),
             # An empty set means no opinion and admits every language.
             languages=frozenset(str(code).lower() for code in config.get("languages") or []),
             source_min_ages=source_min_ages,
@@ -116,7 +128,8 @@ class UserFilters:
         mode = workfilter.classify(row.get("title") or "", row.get("location") or "",
                                    row.get("description"), row.get("is_remote"),
                                    explicit=row.get("workplace"))
-        if not workfilter.is_allowed(mode, row.get("location") or "", list(self.onsite_locations)):
+        # Unknown is kept under every policy: absence of a signal is not evidence of on-site.
+        if mode and mode not in _ACCEPTS[self.remote_policy]:
             return "workplace"
 
         # The stored code, detected once at describe time rather than per reader per pass.

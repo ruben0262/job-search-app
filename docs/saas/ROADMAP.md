@@ -2975,6 +2975,54 @@ limit, none is visible, and the first two are the ones that decide whether this 
    shared cycle's scales with distinct keywords alone. Worth stating because it is the term that
    grows, and no ceiling here changes it.
 
+## Phase 8 — simple enough for anyone (added 2026-10-28)
+
+**Why.** CLAUDE.md §0. A new user needed ~19 steps, four outside services (two paid) and one to two
+hours of chat before one job reached Telegram, and the 2026-10-27 browser audit found four bugs that
+broke the core loop for exactly that user (dead Telegram buttons, empty location picker, no way to
+resend a verification email, the setup chat skipping consent).
+
+**Decisions (owner, 2026-10-28)**
+
+- **No learned model.** Jobs are filtered and ranked by rules: green words pick (title 75, text 25),
+  red words veto (title or company), plus language, country, remote policy and freshness.
+  `libs.matching` is the one definition, behind the jobs page and the alerts. The model is switched
+  off, not deleted (CLAUDE.md §3 exception, the `switched-off model` contract).
+- **Uploads are read by rules, not AI**: CVs, cover letters and a context file the person can edit,
+  processed on save, with green and red word suggestions recomputed then.
+- **Onboarding is three screens**: upload → confirm what we found (words, places, languages, remote)
+  → done. Telegram, notifications and a proxy are optional settings.
+- **Alerts**: one-tap Telegram (one platform bot, a deep link) and browser notifications (Web Push).
+  Everything else, CV and cover downloads included, happens on the site.
+- **Proxy optional**: no proxy, no LinkedIn jobs — D3 as it was always meant.
+- **AI writes documents and answers the support chat, nothing else.** Free for everyone: an instant
+  CV and cover letter built by code from the person's own documents. AI-written versions on the
+  user's own key (Claude, Gemini, OpenAI) or Claude subscription, plus an optional platform allowance
+  (a setting, default 0). Rejected, with the reason: the Gemini free tier, because unpaid services
+  may not be offered to users in the EEA, Switzerland or the UK and personal data must not be sent to
+  them (Gemini API Additional Terms, effective 2026-03-23); and one Google project per user to
+  multiply free quota, which is circumvention under the Google APIs Terms §2(d).
+- **Prompts**: the CV and cover prompts written for the setup chat stay unchanged as the reference.
+  New shared prompts are written beside them and adopted only after a measured comparison (§3a).
+- **Support chat** stays, its backend ported from project-planner's portal: streamed replies with
+  steps, a guard on every tool call, a run journal, ask-and-wait, a scripted runner for tests.
+
+**Workstreams** — one branch each, merged into `simplify`:
+
+1. **Foundation ✅** — CLAUDE.md §0 and the §3 exception, the fence contract, `libs.matching`, and the
+   "hungary,budapest" on-site default removed (it dropped every other on-site job for every user).
+2. **Feed** — jobs page and dashboard on `libs.matching`; ML stats gone; the harvester stops
+   embedding; compose `ml` profile.
+3. **Profile** — rule-based extraction and suggestions; the three onboarding screens; the audit's
+   verification-resend and consent fixes.
+4. **Alerts** — Telegram platform bot, Web Push, the notifier on `libs.matching`, proxy optional.
+5. **Documents** — provider layer (own keys, allowance), instant CV and cover, faster rendering.
+6. **Frontend** — the three screens, jobs with word chips and suggestions, downloads, settings, phones.
+7. **AI documents and support chat** — the new prompts, measured; the chat port.
+
+**Done when** the `switched-off model` contract has no `ignore_imports`, the six gates pass, and a new
+account goes from sign-up to its first matching job in under five minutes without leaving the site.
+
 ## Deliberately deferred
 
 Do not build these before Phase 4, regardless of how appealing they look mid-build.
