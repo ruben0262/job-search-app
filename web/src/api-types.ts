@@ -545,6 +545,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/resend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resend
+         * @description Email a fresh verification link to an account still waiting for one. Answers the same anyway.
+         */
+        post: operations["resend_auth_resend_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/reset": {
         parameters: {
             query?: never;
@@ -596,7 +616,7 @@ export interface paths {
         put?: never;
         /**
          * Verify
-         * @description Redeem a verification link.
+         * @description Redeem a verification link and sign in: opening it proves the inbox, as a password would.
          */
         post: operations["verify_auth_verify_post"];
         delete?: never;
@@ -685,74 +705,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/credentials/telegram/channel": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Set Channel
-         * @description Point the job stream at a channel.
-         */
-        put: operations["set_channel_credentials_telegram_channel_put"];
-        post?: never;
-        /**
-         * Unset Channel
-         * @description Back to the private chat. Never a drop — the fallback chat is always valid.
-         */
-        delete: operations["unset_channel_credentials_telegram_channel_delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/credentials/telegram/chat": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Set Chat
-         * @description Set the chat id by hand, proven by messaging it.
-         */
-        put: operations["set_chat_credentials_telegram_chat_put"];
-        post?: never;
-        /**
-         * Unset Chat
-         * @description Forget the chat id. Unlike the channel there is no fallback, so delivery stops until one is set.
-         */
-        delete: operations["unset_chat_credentials_telegram_chat_delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/credentials/telegram/connect": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Telegram Connect
-         * @description Re-read the chat id after the user has pressed Start.
-         */
-        post: operations["telegram_connect_credentials_telegram_connect_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/credentials/{kind}": {
         parameters: {
             query?: never;
@@ -769,7 +721,7 @@ export interface paths {
         post?: never;
         /**
          * Delete Credential
-         * @description Revoke one credential.
+         * @description Revoke one credential. Telegram is not one any more: it is linked, under `/telegram/link`.
          */
         delete: operations["delete_credential_credentials__kind__delete"];
         options?: never;
@@ -1110,6 +1062,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/push/key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Key
+         * @description The public half of the platform's VAPID key pair: what a browser subscribes with.
+         */
+        get: operations["key_push_key_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/push/subscribe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Subscribe
+         * @description Remember this browser. Subscribing it again replaces its row, whichever account it was on.
+         */
+        post: operations["subscribe_push_subscribe_post"];
+        /**
+         * Unsubscribe
+         * @description Forget this browser.
+         */
+        delete: operations["unsubscribe_push_subscribe_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/setup": {
         parameters: {
             query?: never;
@@ -1355,7 +1351,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/telegram/webhook/{secret}": {
+    "/telegram/link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Link
+         * @description A one-time link that opens the platform's bot carrying a code for this account.
+         */
+        post: operations["link_telegram_link_post"];
+        /**
+         * Unlink
+         * @description Stop sending to Telegram. Connecting again is the same one tap.
+         */
+        delete: operations["unlink_telegram_link_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/telegram/webhook": {
         parameters: {
             query?: never;
             header?: never;
@@ -1366,9 +1386,9 @@ export interface paths {
         put?: never;
         /**
          * Webhook
-         * @description One button tap or one typed command, handled and then answered.
+         * @description Everything anybody sends the bot: `/start <code>` connects, anything else points at the site.
          */
-        post: operations["webhook_telegram_webhook__secret__post"];
+        post: operations["webhook_telegram_webhook_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1447,22 +1467,17 @@ export interface components {
             /** Missing */
             missing: string[];
         };
+        /** AuthStatus */
+        AuthStatus: {
+            /** Status */
+            status: string;
+        };
         /** Body_upload_documents_post */
         Body_upload_documents_post: {
             /** File */
             file: string;
             /** Kind */
             kind: string;
-        };
-        /** ChannelBody */
-        ChannelBody: {
-            /** Channel Id */
-            channel_id: string;
-        };
-        /** ChatBody */
-        ChatBody: {
-            /** Chat Id */
-            chat_id: string;
         };
         /** ConfigChoice */
         ConfigChoice: {
@@ -1512,6 +1527,12 @@ export interface components {
             allow_unvalidated: boolean;
             /** Value */
             value: string;
+        };
+        /** CredentialList */
+        CredentialList: {
+            /** Credentials */
+            credentials: components["schemas"]["StoredCredential"][];
+            requirements: components["schemas"]["Requirements"];
         };
         /**
          * Currency
@@ -1799,6 +1820,37 @@ export interface components {
             /** Url */
             url: string;
         };
+        /** PushEndpoint */
+        PushEndpoint: {
+            /** Endpoint */
+            endpoint: string;
+        };
+        /** PushKey */
+        PushKey: {
+            /** Key */
+            key: string;
+        };
+        /** PushKeys */
+        PushKeys: {
+            /** Auth */
+            auth: string;
+            /** P256Dh */
+            p256dh: string;
+        };
+        /** PushStatus */
+        PushStatus: {
+            /** Status */
+            status: string;
+        };
+        /**
+         * PushSubscriptionBody
+         * @description What the browser's `PushSubscription.toJSON()` returns, posted as it is.
+         */
+        PushSubscriptionBody: {
+            /** Endpoint */
+            endpoint: string;
+            keys: components["schemas"]["PushKeys"];
+        };
         /** ReadyDashboard */
         ReadyDashboard: {
             /** Applied */
@@ -1822,6 +1874,28 @@ export interface components {
          * @enum {string}
          */
         RemotePolicy: "remote_only" | "remote_or_hybrid" | "any";
+        /** Removed */
+        Removed: {
+            /** Status */
+            status: string;
+        };
+        /** Requirements */
+        Requirements: {
+            /** Claude */
+            claude: boolean;
+            /** Proxy */
+            proxy: boolean;
+            /** Telegram Bot */
+            telegram_bot: boolean;
+        };
+        /** ResendRequest */
+        ResendRequest: {
+            /**
+             * Email
+             * Format: email
+             */
+            email: string;
+        };
         /** ResetRequest */
         ResetRequest: {
             /** New Password */
@@ -1849,6 +1923,15 @@ export interface components {
         SaveResult: {
             /** Status */
             status: string;
+        };
+        /** Saved */
+        Saved: {
+            /** Detail */
+            detail: string;
+            /** Status */
+            status: string;
+            /** Validated */
+            validated: boolean;
         };
         /** SavedLink */
         SavedLink: {
@@ -1924,6 +2007,17 @@ export interface components {
             /** Components */
             components: components["schemas"]["StatusComponent"][];
         };
+        /** StoredCredential */
+        StoredCredential: {
+            /** Kind */
+            kind: string;
+            /** Last 4 */
+            last_4: string | null;
+            /** Updated At */
+            updated_at: string | null;
+            /** Validated */
+            validated: boolean;
+        };
         /** SuggestionDismissal */
         SuggestionDismissal: {
             /** Term */
@@ -1938,6 +2032,32 @@ export interface components {
             kind: "green" | "red";
             /** Term */
             term: string;
+        };
+        /** TelegramLink */
+        TelegramLink: {
+            /** Url */
+            url: string;
+        };
+        /**
+         * TelegramReply
+         * @description One message back to the chat, which Telegram sends for us.
+         */
+        TelegramReply: {
+            /** Chat Id */
+            chat_id: number;
+            /**
+             * Method
+             * @default sendMessage
+             * @constant
+             */
+            method: "sendMessage";
+            /** Text */
+            text: string;
+        };
+        /** TelegramStatus */
+        TelegramStatus: {
+            /** Status */
+            status: string;
         };
         /** Turn */
         Turn: {
@@ -2963,6 +3083,39 @@ export interface operations {
             };
         };
     };
+    resend_auth_resend_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResendRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     reset_auth_reset_post: {
         parameters: {
             query?: never;
@@ -3052,9 +3205,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["AuthStatus"];
                 };
             };
             /** @description Validation Error */
@@ -3083,9 +3234,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["CredentialList"];
                 };
             };
         };
@@ -3182,142 +3331,6 @@ export interface operations {
             };
         };
     };
-    set_channel_credentials_telegram_channel_put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ChannelBody"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    unset_channel_credentials_telegram_channel_delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-        };
-    };
-    set_chat_credentials_telegram_chat_put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ChatBody"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    unset_chat_credentials_telegram_chat_delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-        };
-    };
-    telegram_connect_credentials_telegram_connect_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-        };
-    };
     put_credential_credentials__kind__put: {
         parameters: {
             query?: never;
@@ -3339,9 +3352,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["Saved"];
                 };
             };
             /** @description Validation Error */
@@ -3372,9 +3383,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["Removed"];
                 };
             };
             /** @description Validation Error */
@@ -3944,6 +3953,92 @@ export interface operations {
             };
         };
     };
+    key_push_key_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PushKey"];
+                };
+            };
+        };
+    };
+    subscribe_push_subscribe_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PushSubscriptionBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PushStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unsubscribe_push_subscribe_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PushEndpoint"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PushStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     conversation_setup_get: {
         parameters: {
             query?: {
@@ -4357,15 +4452,11 @@ export interface operations {
             };
         };
     };
-    webhook_telegram_webhook__secret__post: {
+    link_telegram_link_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-telegram-bot-api-secret-token"?: string | null;
-            };
-            path: {
-                secret: string;
-            };
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;
@@ -4376,9 +4467,49 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["TelegramLink"];
+                };
+            };
+        };
+    };
+    unlink_telegram_link_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TelegramStatus"];
+                };
+            };
+        };
+    };
+    webhook_telegram_webhook_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-telegram-bot-api-secret-token"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TelegramReply"] | null;
                 };
             };
             /** @description Validation Error */

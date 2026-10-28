@@ -1,4 +1,8 @@
-"""Delivering one user's feed to their own Telegram bot."""
+"""Sending a person their new matches: to their Telegram chat, and to every browser they subscribed.
+
+What is new is `libs.notify.owed` — their `libs.matching` matches first seen after the newest one
+already sent — so the alerts ask the jobs page's own question and keep no list of their own.
+"""
 from __future__ import annotations
 
 import logging
@@ -9,77 +13,134 @@ from datetime import UTC, datetime
 from time import monotonic, sleep
 
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
-import libs.notify as notifylib
 from libs import limits
-from libs.db.models import CorpusJob, QueueJob, User, UserJobState
+from libs.db.models import PushSubscription, QueueJob, User, UserJobState
 from libs.db.models.queue import CLAIM_TIMEOUT_MIN
-from libs.notify.buttons import feed_keyboard
+from libs.matching import Match
+from libs.notify import TELEGRAM_BROKEN, notify, owed
 from libs.obs import audit
 from libs.queue import enqueue
-from libs.scoring.thresholds import DEFAULT_CUTOFF, cutoff_for
-from libs.secrets import SecretStore
-from libs.tenant.filters import pending_match_conditions
-from services.notifier.card import FeedItem
-from services.notifier.card import render as render_card
-from services.notifier.eligibility import CANDIDATE_MULTIPLIER, rank
-from services.notifier.routing import group_by_chat
+from services.notifier.card import keyboard, notification, render
 
 logger = logging.getLogger(__name__)
 
-# The whole claim is the send budget now that delivery fetches nothing: no page is read, no proxy is
-# opened, and the only work between claiming and sending is one indexed query.
+# The whole claim is the send budget: delivery fetches nothing, so the only work between claiming and
+# sending is the match itself.
 SEND_BUDGET_SECONDS = CLAIM_TIMEOUT_MIN["notify"] * 60 * 0.6
+
+# What Telegram says when it will never take a message for this chat again: any 403 ("bot was blocked
+# by the user", "bot can't initiate conversation with a user") or a chat that no longer exists.
+TERMINAL_ERRORS = ("forbidden", "chat not found")
 
 
 def unlimited_items(gap_seconds: float) -> int:
     """The most one run could send if nothing stopped it, plus one to prove there is more."""
     return int(SEND_BUDGET_SECONDS / max(gap_seconds, 0.1)) + 1
 
-# Re-exported, not redefined.
 
-# Telegram's answers when the bot is gone.
-TERMINAL_ERRORS = ("bot was blocked", "chat not found", "user is deactivated",
-                   "bot was kicked", "unauthorized")
+def deliver(session: Session, user_id: _uuid.UUID, *,
+            telegram: Callable[[str, str, dict], None] | None,
+            push: Callable[[PushSubscription, dict], bool] | None) -> int:
+    """Send what this person is owed through every channel they have; how many jobs went.
 
-
-class BotRevoked(RuntimeError):
-    """The user's bot is gone. Terminal — flag the account, do not retry."""
-
-
-def pending_feed(session: Session, user_id: _uuid.UUID, *, cutoff: float,
-                 limit: int) -> list[FeedItem]:
-    """This user's next digest: everything scored above their cutoff, best first, capped at `limit`.
-
-    No filter runs here. Whether a posting is worth this account's attention was decided once, in
-    `libs.tenant.filters` before scoring, and asking again at send time is how one question came to
-    have two answers — a health page counting jobs a filter it could not see was dropping.
+    `telegram(chat_id, text, keyboard)` and `push(subscription, payload)` are the transports, `None`
+    when the notifier holds no key for them. `push` answers False for a browser that has gone.
     """
-    rows = session.execute(
-        select(UserJobState.job_id, CorpusJob.url, CorpusJob.title, CorpusJob.company,
-               UserJobState.score, CorpusJob.source, CorpusJob.location, CorpusJob.is_remote,
-               CorpusJob.description, CorpusJob.posted_at, CorpusJob.applicants,
-               # Positional.
-               CorpusJob.applicants_caption,
-               CorpusJob.easy_apply, CorpusJob.reposted, CorpusJob.workplace,
-               CorpusJob.first_seen_at)
-        .join(CorpusJob, CorpusJob.id == UserJobState.job_id)
-        # Shared with the status page, so "waiting" means the same thing in both. It did not:
-        # the page omitted `retired_at` and reported 99 matches waiting when all 99 had been
-        # given up on, which read as a stalled lane and was an idle correct one.
-        .where(UserJobState.user_id == user_id, *pending_match_conditions(cutoff))
-        # Known-fresh first, then undated, and only then by score.
-        .order_by(CorpusJob.posted_at.is_(None), UserJobState.score.desc())
-        .limit(limit * CANDIDATE_MULTIPLIER)).all()
+    user = session.get(User, user_id)
+    if user is None:
+        return 0
+    browsers = list(session.scalars(
+        select(PushSubscription).where(PushSubscription.user_id == user_id)))
+    chat = user.telegram_status == "connected" and bool(user.telegram_chat_id)
+    if (chat and telegram is None) or (browsers and push is None):
+        logger.warning("notify: %s has a channel this notifier holds no key for — set "
+                       "TELEGRAM_BOT_TOKEN and the VAPID keys", user_id)
+    if push is None:
+        browsers = []
+    if not (chat and telegram) and not browsers:
+        return 0
 
-    items = [FeedItem(*row[:-1]) for row in rows]
-    first_seen = {row[0]: row[-1] for row in rows}
-    return rank(items, first_seen=first_seen)[:limit]
+    # The operator's ceilings for this account, and `None` means unlimited (`libs.limits`).
+    gap, limit = _run_budget(session, user)
+    if limit == 0:
+        return 0
+    # Oldest first: what is owed starts after the newest job sent, so a run stopped part-way leaves
+    # exactly the rest owed, and nothing is skipped.
+    batch = owed(session, user)[:limit]
+
+    sent = 0
+    deadline = monotonic() + SEND_BUDGET_SECONDS
+    for match in batch:
+        # Stop before the claim does, and go straight back into the queue rather than wait.
+        if monotonic() >= deadline:
+            _deliver_again(session, user_id)
+            logger.info("notify: %s sent %d and ran out of its send budget — continuing "
+                        "immediately", user_id, sent)
+            return sent
+        # Paced: Telegram takes about one message a second into a chat.
+        reached = _to_telegram(session, user, match, telegram, pause=gap if sent else 0)
+        if not (_to_browsers(session, user_id, browsers, match, push) or reached):
+            break
+        # Marked and committed the moment it has gone, one job at a time.
+        session.execute(
+            pg_insert(UserJobState)
+            .values(user_id=user_id, job_id=match.job.id, notified_at=func.now())
+            .on_conflict_do_update(index_elements=["user_id", "job_id"],
+                                   set_={"notified_at": func.now()}))
+        session.commit()
+        sent += 1
+
+    # A full batch means the limit bound rather than the supply, so there may be more behind it.
+    if sent == len(batch) >= limit:
+        _deliver_again(session, user_id)
+    if sent:
+        now = datetime.now(UTC)
+        audit(logger, "notify.sent", user=user_id, items=sent, median_wait_min=round(
+            statistics.median((now - m.job.first_seen_at).total_seconds() / 60
+                              for m in batch[:sent])))
+    return sent
+
+
+def _to_telegram(session: Session, user: User, match: Match,
+                 telegram: Callable[[str, str, dict], None] | None, *, pause: float) -> bool:
+    """The job to their Telegram chat, if it still takes messages; whether it went."""
+    if telegram is None or user.telegram_status != "connected" or not user.telegram_chat_id:
+        return False
+    sleep(pause)
+    try:
+        telegram(user.telegram_chat_id, render(match.job, match.words), keyboard(match.job))
+    except Exception as exc:
+        if not _is_terminal(exc):
+            raise
+        _telegram_gone(session, user, exc)
+        return False
+    return True
+
+
+def _to_browsers(session: Session, user_id: _uuid.UUID, browsers: list[PushSubscription],
+                 match: Match, push: Callable[[PushSubscription, dict], bool] | None) -> bool:
+    """The job to every browser still open this run; whether any took it. A gone one is deleted."""
+    reached = False
+    payload = notification(match.job)
+    for browser in list(browsers):
+        try:
+            if push(browser, payload):
+                reached = True
+                continue
+            # Its push service says it unsubscribed, and it will never accept again.
+            session.delete(browser)
+        except Exception as exc:  # noqa: BLE001 - one browser failing must not cost the others
+            logger.warning("push: a browser of %s refused job %s (%s); skipped for this run",
+                           user_id, match.job.id, type(exc).__name__)
+        browsers.remove(browser)
+    return reached
 
 
 def notifications_today(session: Session, user_id: _uuid.UUID) -> int:
-    """How many items have been delivered since the user's local midnight."""
+    """How many jobs have been sent since the user's local midnight."""
     timezone = session.scalar(select(User.timezone).where(User.id == user_id)) or "UTC"
     local_midnight = func.date_trunc("day", func.timezone(timezone, func.now()))
     return session.scalar(
@@ -90,76 +151,8 @@ def notifications_today(session: Session, user_id: _uuid.UUID) -> int:
                func.timezone(timezone, UserJobState.notified_at) >= local_midnight)) or 0
 
 
-def deliver(session: Session, user_id: _uuid.UUID, *,
-            store: SecretStore,
-            send: Callable[..., None],
-            cutoff: float = DEFAULT_CUTOFF) -> int:
-    """Send this user's pending feed."""
-    user = session.get(User, user_id)
-    if user is None or user.telegram_status != "connected" or not user.telegram_chat_id:
-        return 0
-
-    cutoff = _operating_point(session, user_id, cutoff)
-
-    # The operator's ceilings for this account, and `None` means unlimited (`libs.limits`).
-    gap, limit = _run_budget(session, user)
-    if limit == 0:
-        return 0
-
-    items = pending_feed(session, user_id, cutoff=cutoff, limit=limit)
-    if not items:
-        return 0
-
-    # One digest per channel.
-    batches = group_by_chat(items, user.telegram_routes, user.telegram_chat_id)
-
-    sent = 0
-    deadline = monotonic() + SEND_BUDGET_SECONDS
-    with store.use(user_id, "telegram_bot") as token:
-        if token is None:
-            raise BotRevoked(f"user {user_id} has no telegram token stored")
-        for chat_id, batch in batches.items():
-            try:
-                # Cards only, no header.
-                for item in batch:
-                    # Stop before the claim does.
-                    if monotonic() >= deadline:
-                        # Straight back into the queue, not "next cycle".
-                        _deliver_again(session, user_id)
-                        logger.info(
-                            "notify: %s sent %d and ran out of its send budget — continuing "
-                            "immediately", user_id, sent)
-                        return sent
-                    # Paced, because Telegram allows 20 messages a minute to a channel.
-                    if sent:
-                        sleep(gap)
-                    send(token.reveal(), chat_id, render_job(item, cutoff=cutoff),
-                         feed_keyboard(item.job_id))
-                    # Marked and committed the moment it has gone, one message at a time.
-                    session.get(UserJobState, (user_id, item.job_id)).notified_at = func.now()
-                    session.commit()
-                    sent += 1
-            except Exception as exc:
-                if _is_terminal(exc):
-                    # A revoked token is terminal for every channel, so stopping here is right.
-                    user.telegram_status = "broken"
-                    # The one failure Telegram itself cannot tell them about.
-                    notifylib.notify(session, user_id, notifylib.TELEGRAM_BROKEN,
-                                     "Your bot token stopped working, so jobs are not being "
-                                     "delivered. Save a fresh token under Your details.")
-                    raise BotRevoked(str(exc)[:200]) from exc
-                raise
-
-    # A full fetch means the limit bound rather than the supply, so there is more behind it.
-    if len(items) >= limit:
-        _deliver_again(session, user_id)
-
-    _log_freshness(session, user_id, items[:sent])
-    return sent
-
-
 def _run_budget(session: Session, user: User) -> tuple[float, int]:
-    """How fast this run may send, and how many rows are worth fetching for it."""
+    """How fast this run may send, and how many jobs it may send."""
     # Never None: `send_gap_seconds` is Telegram's rule rather than ours and forbids unlimited.
     gap = limits.resolve(user, "send_gap_seconds") or limits.DEFAULT_SEND_GAP_SECONDS
     per_run = limits.resolve(user, "items_per_run")
@@ -177,7 +170,7 @@ def _run_budget(session: Session, user: User) -> tuple[float, int]:
 
 
 def _deliver_again(session: Session, user_id: _uuid.UUID) -> None:
-    """Queue the rest of this account's feed now. There is nothing to wait for."""
+    """Queue the rest of this account's alerts now. There is nothing to wait for."""
     # This run's own job still holds the `due` slot, and the dedup index refuses a second one while
     # it does. Released through the mapped row, so the worker's later `complete` cannot write it back.
     running = session.scalar(
@@ -189,38 +182,15 @@ def _deliver_again(session: Session, user_id: _uuid.UUID) -> None:
     enqueue(session, "notify", user_id, dedup_key="due")
 
 
-def _operating_point(session: Session, user_id: _uuid.UUID, requested: float) -> float:
-    """The score this user's jobs are sent at."""
-    if requested != DEFAULT_CUTOFF:
-        return requested
-    return cutoff_for(session, user_id)
-
-
-def _log_freshness(session: Session, user_id: _uuid.UUID, items: list[FeedItem]) -> None:
-    """How stale the feed was, measured at the only point where the answer is real."""
-    job_ids = [item.job_id for item in items]
-    if not job_ids:
-        return
-
-    rows = session.execute(
-        select(CorpusJob.posted_at, CorpusJob.first_seen_at)
-        .where(CorpusJob.id.in_(job_ids))).all()
-    now = datetime.now(UTC)
-
-    def minutes(values) -> int | None:
-        ages = [(now - value).total_seconds() / 60 for value in values if value is not None]
-        return round(statistics.median(ages)) if ages else None
-
-    # Median, not mean: one job dated three weeks ago drags a mean into meaninglessness.
-    audit(logger, "notify.freshness", user=user_id, items=len(job_ids),
-          median_age_from_posted_min=minutes(row[0] for row in rows),
-          median_age_from_first_seen_min=minutes(row[1] for row in rows))
-
-
-def render_job(item: FeedItem, salary_bands: dict | None = None,
-               cutoff: float = DEFAULT_CUTOFF) -> str:
-    """One job, as its own message, so it can carry its own buttons."""
-    return render_card(item, salary_bands=salary_bands, high_fit=cutoff)
+def _telegram_gone(session: Session, user: User, exc: Exception) -> None:
+    """Telegram will not take messages for this chat again: stop trying, and say so on the site."""
+    user.telegram_status = "broken"
+    # The one failure Telegram itself cannot tell them about.
+    notify(session, user.id, TELEGRAM_BROKEN,
+           "Telegram stopped taking our messages, so jobs are not reaching you there. If you "
+           "blocked the bot, connect Telegram again under Your details.")
+    logger.warning("telegram: %s's chat refused delivery (%s); marked broken", user.id,
+                   str(exc)[:200])
 
 
 def _is_terminal(exc: Exception) -> bool:

@@ -40,10 +40,8 @@ export function SignIn({
           If <strong>{email}</strong> can be registered, a confirmation link is on its way. Open it
           on this device and you land back here, signed up and ready.
         </p>
-        <p className="facts">
-          Nothing arriving? Check spam, or sign up again for a fresh link, the newest one is the
-          one that counts.
-        </p>
+        <p className="facts">Nothing arriving? Check spam, or have a fresh link sent.</p>
+        <ResendLink email={email} />
       </AuthShell>
     );
   }
@@ -107,6 +105,43 @@ export function SignIn({
         ) : null}
       </p>
     </AuthShell>
+  );
+}
+
+/** A fresh confirmation email, for an account still waiting for one. Asks for the address if it is
+ * not known yet. */
+export function ResendLink({ email }: { email: string }) {
+  const [address, setAddress] = useState(email);
+  const [sent, setSent] = useState(false);
+  const resend = useAction(async () => {
+    await api.post("/auth/resend", { email: address });
+    setSent(true);
+  });
+
+  if (sent) return <p className="facts">Sent. The newest link is the one that works.</p>;
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        void resend.run();
+      }}
+    >
+      {email ? null : (
+        <Field label="Email">
+          <input
+            type="email"
+            value={address}
+            autoComplete="email"
+            required
+            onChange={(event) => setAddress(event.target.value)}
+          />
+        </Field>
+      )}
+      <Error>{resend.error}</Error>
+      <button type="submit" className="secondary" disabled={resend.busy || !address}>
+        {resend.busy ? "Sending…" : "Send me a new link"}
+      </button>
+    </form>
   );
 }
 

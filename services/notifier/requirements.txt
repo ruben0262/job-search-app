@@ -1,16 +1,17 @@
-# services/notifier — per-user bot tokens, per-user intervals, delivery dedup.
+# services/notifier — new matches to a person's Telegram chat and browsers, through the platform's
+# one bot and its VAPID keys.
 #
-# No numpy, no sklearn: the notifier reads scores, it does not compute them. Keeping it that light
+# No numpy, no sklearn: the notifier matches words, it does not compute scores. Keeping it that light
 # is what makes it fast to rebuild and safe to run at concurrency 8.
 httpx>=0.28
 SQLAlchemy>=2.0
 psycopg[binary]>=3.2
-cryptography>=44.0       # libs/secrets: the bot token is decrypted for the duration of one call
+cryptography>=44.0       # libs/secrets, imported for its log redaction; pywebpush encrypts with it too
+pywebpush>=2.0           # browser notifications: encrypts each alert to the browser's keys and signs it
 
-# `libs/contracts/config`, for `migrate_config`. Reached indirectly through
-# `eligibility.Eligibility.from_config`, which is exactly the shape of gap the `service-deps` CI
-# job exists for: a development environment that has everything installed cannot see it, and the
-# failure lands as a container that will not start.
+# `libs/contracts/config`, for `migrate_config`. Reached through `libs.matching`, which is exactly the
+# shape of gap the `service-deps` CI job exists for: a development environment that has everything
+# installed cannot see it, and the failure lands as a container that will not start.
 pydantic>=2.10
 
 # `langdetect` was here and is not any more: nothing in this service reaches `libs/corpus/langfilter`.

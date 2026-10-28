@@ -14,6 +14,48 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-10-28 — alerts: one Telegram bot, browser notifications, a sign-up with no dead ends (Phase 8, workstream 4)
+
+Getting a job alert used to mean creating your own bot with BotFather, pasting its token, and finding
+a chat id with @getidsbot and a channel id starting with -100. And since the model was switched off,
+the notifier only sent rows the scorer had written, which nothing writes any more. **Now one tap
+connects, and delivery asks the same question as the jobs page.**
+
+**Telegram, one platform bot.** "Connect Telegram" is a `t.me/<bot>?start=<code>` link; the code is a
+single-use `telegram_connect` token, and pressing Start ties the chat to the account. The webhook
+checks Telegram's secret header with `compare_digest` and replies inside its own HTTP answer, so the
+API never holds the bot token. Job cards carry two plain links — Open job, Make my CV — and say which
+of the person's words matched; there are no callback buttons left to go dead. The per-user bot's
+chat, channel, connect and webhook routes are deleted; their columns stay (no destructive migration).
+Accounts connected the old way must press Start in the platform bot once (deploy/README.md).
+
+**Browser notifications.** Web Push with one VAPID key pair: `push_subscriptions` (cascading with the
+account), typed `/push` endpoints, a service worker, a manifest so an iPhone can add the site to its
+home screen, and `web/src/push.ts` for the button.
+
+**Delivery on `libs.matching`.** `libs.notify.owed` is a person's matches first seen after the newest
+job already sent to them — a WHERE clause over `user_job_state`, no new column. They go out oldest
+first, capped by `notifications_per_day`, so a run stopped by its budget resumes exactly where it
+stopped. A 403 from Telegram marks it broken and rings the bell while browsers still get the job; a
+browser answering 404 or 410 is deleted. The status page's one stall signal uses the same `owed()`: a
+match waiting over an hour.
+
+**Sign-up.** `/auth/resend` sits behind a "Send me a new link" button — the old advice, "sign up again",
+sent nothing. Opening the verification link signs the person in, as login does (suspended accounts are
+refused).
+
+Deleted with their only callers: channel routing, `libs/notify/{buttons,telegram}.py`, the scored-row
+delivery, `cv_builds_per_day` and `libs.queue.jobs_today` (their reader was the Telegram build button;
+the documents workstream re-adds the cap at its own admission point), and `TenantRepository.
+record_feedback`, which removed another switched-off import. 30 deliberate breaks, all caught.
+
+Gates on the merged tree: one alembic head (`f49b1ca9b869`); lint-imports 3 kept, 0 broken (2 ignored,
+both the chat workstream's); ruff clean; pytest 1,471 passed, 5 skipped; contract 67 paths, no drift;
+web build passes. New: `pywebpush`; env `TELEGRAM_BOT_{TOKEN,USERNAME}`, `TELEGRAM_WEBHOOK_SECRET`,
+`VAPID_{PUBLIC,PRIVATE}_KEY`, `VAPID_SUBJECT`; run `deploy/scripts/set_telegram_webhook.py` once.
+
+---
+
 ## 2026-10-28 — LinkedIn back behind its own proxy, the jobs page three times faster (Phase 8, integration)
 
 Three faults the merge of workstreams 2 and 3 surfaced, fixed in `libs.matching` and `libs/obs`.

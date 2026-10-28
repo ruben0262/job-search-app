@@ -28,6 +28,9 @@ KNOWN_UNWRITTEN = {
     "daily_cap_mb": "intentional fallback; libs.limits.proxy_mb_per_day is the live value",
     # A second source of truth that disagrees with the first.
     "linkedin_interval_min": "superseded by libs.limits; column default 240 vs limit default 15",
+    # The per-user bot's, retired 2026-10-28 for one platform bot; kept with their data, read by nothing.
+    "telegram_routes": "retired with the per-user bot's channels; kept rather than dropped",
+    "telegram_webhook_secret": "retired with the per-user bot's webhook; kept rather than dropped",
     # `quota_overrides` and `profile_context` were here and are now dropped.
 }
 
@@ -95,10 +98,16 @@ def test_the_known_unwritten_columns_still_exist(bodies):
         f"these now have a producer, so the exemption is out of date: {sorted(now_written)}")
 
 
-def test_the_check_would_have_caught_the_webhook_secret(bodies):
-    """Proof the assertion above can fail, pinned to the defect that motivated it."""
-    assert re.search(r"\.telegram_webhook_secret\s*=[^=]", bodies), (
-        "the column that started this has lost its producer again")
+def test_the_check_can_tell_a_written_column_from_an_unwritten_one(bodies):
+    """Proof the assertion above can fail.
+
+    Pinned to `telegram_webhook_secret`, the defect that motivated it, until that column retired with
+    the per-user bot (2026-10-28) — it is in `KNOWN_UNWRITTEN` now, which the test above holds to
+    having no producer. The positive half is the chat id the Telegram link writes: lose that and
+    nobody can be reached on Telegram.
+    """
+    assert re.search(r"\.telegram_chat_id\s*=[^=]", bodies), (
+        "the Telegram link no longer records the chat it connected")
 
     # And the negative: a column name that exists nowhere must not appear written.
     assert not re.search(r"(\.nonexistent_column_xyz\s*=[^=]|\bnonexistent_column_xyz\s*=[^=])",

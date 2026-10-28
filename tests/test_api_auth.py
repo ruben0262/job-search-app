@@ -141,27 +141,89 @@ def test_signing_in_records_when_the_account_was_last_active(client):
     email = _email()
     _signup(http, email)
     session.flush()
+    user = session.scalar(select(User).where(User.email == email))
+    assert user.last_active_at is None, "signing up is not using the product"
+
+    # The link signs you in (2026-10-28), so it counts the way a sign-in does.
     assert http.post("/auth/verify", json={"token": _link_token(mailer)}).status_code == 200
     session.flush()
+    session.refresh(user)
+    assert user.last_active_at is not None
 
-    user = session.scalar(select(User).where(User.email == email))
-    assert user.last_active_at is None, "verifying an address is not using the product"
-
+    user.last_active_at = None
+    session.flush()
     assert http.post("/auth/login", json={"email": email, "password": PASSWORD}).status_code == 200
     session.flush()
     session.refresh(user)
     assert user.last_active_at is not None
 
 
-def test_verification_does_not_log_the_user_in(client):
-    """A verification link travels through email and can be forwarded."""
+def test_verifying_signs_you_in(client):
+    """The emailed link proves the inbox, as a password would, so it lands straight in the app.
+
+    The opposite was tested until 2026-10-28, because a link can be forwarded. It is single-use and
+    lives a day; making a new person sign in by hand straight after proving their address was the
+    second dead end the browser audit found.
+    """
     http, session, mailer = client
     _signup(http, _email())
     session.flush()
+    assert http.get("/account").status_code == 401, "the premise: not signed in yet"
 
     response = http.post("/auth/verify", json={"token": _link_token(mailer)})
-    assert "access_token" not in response.cookies
-    assert "refresh_token" not in response.cookies
+    session.flush()
+
+    assert response.status_code == 200
+    assert {"access_token", "refresh_token"} <= {c.name for c in http.cookies.jar}
+    assert http.get("/account").status_code == 200
+
+
+def test_a_suspended_account_is_not_signed_in_by_its_link(client):
+    """The same refusal login gives, or a link would be a way round a suspension."""
+    http, session, mailer = client
+    email = _email()
+    _signup(http, email)
+    session.flush()
+    session.scalar(select(User).where(User.email == email)).status = "suspended"
+    session.flush()
+
+    assert http.post("/auth/verify", json={"token": _link_token(mailer)}).status_code == 403
+    assert "access_token" not in {c.name for c in http.cookies.jar}
+
+
+def test_a_new_link_can_be_sent_and_only_the_newest_works(client):
+    """"Check your email" had no way to send another, and its advice — sign up again — sent nothing."""
+    http, session, mailer = client
+    email = _email()
+    _signup(http, email)
+    session.flush()
+    first = _link_token(mailer)
+
+    response = http.post("/auth/resend", json={"email": email})
+    session.flush()
+
+    assert response.status_code == 202
+    assert len(mailer.sent) == 2, "a second email went out"
+    assert http.post("/auth/verify", json={"token": first}).status_code == 400
+    assert http.post("/auth/verify", json={"token": _link_token(mailer)}).status_code == 200
+
+
+def test_resend_answers_the_same_whoever_asks(client):
+    """No address oracle, and nothing sent to an address that is not waiting for a link."""
+    http, session, mailer = client
+    verified = _email()
+    _signup(http, verified)
+    session.flush()
+    http.post("/auth/verify", json={"token": _link_token(mailer)})
+    session.flush()
+    sent = len(mailer.sent)
+
+    unknown = http.post("/auth/resend", json={"email": _email()})
+    known = http.post("/auth/resend", json={"email": verified})
+
+    assert unknown.status_code == known.status_code == 202
+    assert unknown.json() == known.json()
+    assert len(mailer.sent) == sent
 
 
 def test_the_emailed_token_is_not_what_is_stored(client):

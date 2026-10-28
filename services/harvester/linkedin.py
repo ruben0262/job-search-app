@@ -147,10 +147,8 @@ def _run_one(user: User, queries: list[dict], *, corpus: CorpusRepository,
     try:
         with store.use(user.id, "proxy") as secret:
             if secret is None:
-                # Not a transient skip and not the same as the others.
-                logger.warning(
-                    "linkedin: %s has no proxy credential — their LinkedIn tier cannot run at all "
-                    "and none of its jobs will ever reach them", user.id)
+                # Normal now the proxy is optional: no proxy, no LinkedIn. Counted in the pass's tally.
+                logger.debug("linkedin: %s has no proxy credential, so no LinkedIn run", user.id)
                 report.skipped_no_lease += 1
                 return False
 

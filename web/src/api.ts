@@ -144,7 +144,6 @@ export type Account = {
   links: { url: string; platform: string }[];
   timezone: string;
   active: boolean;
-  notify_interval_min: number;
   telegram_status: string;
   plan: string;
   consent_version: string | null;

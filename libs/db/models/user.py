@@ -28,11 +28,8 @@ from libs.db.base import Base, timestamptz
 # deletes the account if they want it gone; that needs no state of its own (ROADMAP 6c).
 USER_STATUSES = ("pending_verification", "active", "suspended", "deleted")
 
-# G6: the likeliest real-world delivery failure is the user blocking the bot or revoking the token.
+# G6: the likeliest real-world delivery failure is the user blocking the bot.
 TELEGRAM_STATUSES = ("unconfigured", "connected", "broken")
-
-# The keys `telegram_routes` may carry (`services/notifier/routing.py` is the reader).
-TELEGRAM_ROUTE_KEYS = ("hu", "linkedin", "other")
 
 
 class User(Base):
@@ -91,10 +88,11 @@ class User(Base):
     linkedin_next_run_at: Mapped[timestamptz | None]
 
     telegram_status: Mapped[str] = mapped_column(String(32), default="unconfigured")
+    # The chat the platform's bot sends to, tied to the account by its `/start` link.
     telegram_chat_id: Mapped[str | None] = mapped_column(String(64))
-    # Optional per-category channels (`services/notifier/routing.py`).
+    # The per-user bot's channels and webhook path, retired 2026-10-28 for one platform bot. Kept
+    # with their data rather than dropped; nothing reads or writes them.
     telegram_routes: Mapped[dict | None] = mapped_column(JSONB)
-    # The path Telegram posts this user's button taps to.
     telegram_webhook_secret: Mapped[str | None] = mapped_column(String(64))
 
     # --- the three counters that keep scoring honest ---

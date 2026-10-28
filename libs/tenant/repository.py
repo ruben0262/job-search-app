@@ -1,4 +1,4 @@
-"""Per-user repository: job state, applied log, labels, and feedback."""
+"""Per-user repository: job state, applied log, and labels."""
 from __future__ import annotations
 
 import uuid as _uuid
@@ -23,13 +23,9 @@ from libs.db.models import (
     UserModel,
     UserSecret,
 )
-from libs.feedback.actions import FEEDBACK_WEIGHT
 
 if TYPE_CHECKING:  # Runtime import lives inside the method, to avoid a cycle.
     from libs.tenant.filters import UserFilters
-
-# The reference maps its two verdicts onto these scores, so feedback blends with LLM labels.
-APPLIED_SCORE, SKIPPED_SCORE = 90, 10
 
 # Current plus one previous (GAPS_REVIEW G12).
 KEEP_MODEL_VERSIONS = 2
@@ -264,15 +260,13 @@ class TenantRepository:
             stmt.order_by(UserJobState.score.desc().nullslast(), CorpusJob.first_seen_at.desc())
             .limit(limit)))
 
-    # ── labels and feedback ──────────────────────────────────────────────────────────────────
+    # ── labels ───────────────────────────────────────────────────────────────────────────────
 
     def upsert_label(self, user_id: _uuid.UUID, job_id: int, *, label: int,
                      source: str = "llm", rationale: str | None = None,
-                     weight: float | None = None, profile_version: str | None = None,
+                     weight: float = 1.0, profile_version: str | None = None,
                      profile_generation: int = 0) -> None:
         """Write a training label, replacing any existing one for this `(user, job)`."""
-        if weight is None:
-            weight = FEEDBACK_WEIGHT if source == "feedback" else 1.0
         values = {
             "user_id": user_id, "job_id": job_id, "label": label, "source": source,
             "rationale": rationale, "weight": weight, "profile_version": profile_version,
@@ -283,16 +277,6 @@ class TenantRepository:
             .on_conflict_do_update(
                 index_elements=[UserLabel.user_id, UserLabel.job_id],
                 set_={k: v for k, v in values.items() if k not in ("user_id", "job_id")}))
-
-    def record_feedback(self, user_id: _uuid.UUID, job_id: int, *, applied: bool,
-                        profile_version: str | None = None,
-                        profile_generation: int = 0) -> None:
-        """An explicit user decision — the flywheel."""
-        self.upsert_label(
-            user_id, job_id,
-            label=APPLIED_SCORE if applied else SKIPPED_SCORE,
-            source="feedback", weight=FEEDBACK_WEIGHT,
-            profile_version=profile_version, profile_generation=profile_generation)
 
     def training_labels(self, user_id: _uuid.UUID, *, profile_generation: int,
                         min_description_chars: int = 100) -> Sequence[UserLabel]:

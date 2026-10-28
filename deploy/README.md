@@ -166,6 +166,35 @@ the loopback mapping exists for exactly this.
 | `cloudflared` | `full` | the only way in; no inbound port is open |
 | `harvester` | `tools` | one cycle, invoked by a systemd timer |
 
+## Telegram
+
+One bot for the whole platform (ROADMAP Phase 8). A person taps **Connect Telegram**, Telegram opens
+the bot carrying a one-time code, and pressing **Start** ties their chat to their account. Jobs then
+arrive as cards with two plain links, **Open job** and **Make my CV**, so no button in the chat
+depends on a webhook round trip.
+
+1. Create the bot with **@BotFather** (`/newbot`). Put `TELEGRAM_BOT_TOKEN`,
+   `TELEGRAM_BOT_USERNAME` and a random `TELEGRAM_WEBHOOK_SECRET` in `deploy/.env`.
+2. Recreate `api` and `notifier` so they read them.
+3. Register the webhook — once, and again whenever `PUBLIC_URL` or the secret changes:
+
+   ```bash
+   set -a && . deploy/.env && set +a
+   ./.venv/bin/python deploy/scripts/set_telegram_webhook.py   # 0 registered, 1 refused, 2 unset
+   ```
+
+Telegram posts every message the bot receives to `PUBLIC_URL/telegram/webhook`, with the secret in a
+header; a call without it gets a 404 and a `WARNING`. The API replies inside that same call, so only
+the notifier ever holds the token.
+
+Browser notifications need nothing beyond the `VAPID_*` keys in `.env.example`. Generate that pair
+once: a new one strands every browser that subscribed with the old.
+
+**Accounts connected before 2026-10-28** used bots of their own. Their stored chat id is their
+Telegram user id, which the platform bot can message only once they have pressed Start in it; until
+then their first delivery is refused, the account reads as broken, and their bell tells them to
+connect Telegram again. Their channels are no longer used.
+
 ## Scheduling the harvest
 
 The shared cycle is a **one-shot command**, not a daemon with a sleep:

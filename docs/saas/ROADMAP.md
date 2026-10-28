@@ -2997,8 +2997,10 @@ resend a verification email, the setup chat skipping consent).
 - **Proxy optional**: no proxy, no LinkedIn jobs — D3 as it was always meant.
 - **AI writes documents and answers the support chat, nothing else.** Free for everyone: an instant
   CV and cover letter built by code from the person's own documents. AI-written versions on the
-  user's own key (Claude, Gemini, OpenAI) or Claude subscription, plus an optional platform allowance
-  (a setting, default 0). Rejected, with the reason: the Gemini free tier, because unpaid services
+  user's own key (Claude, Gemini, OpenAI) or Claude subscription — unlimited — and, for everyone else,
+  a platform allowance: one paid key, 20 AI requests a day per person across the support chat and AI
+  documents (`ai_platform_requests_per_day`; owner, 2026-10-28 — roughly a tenth of a cent a chat
+  message on a cheap model). Rejected, with the reason: the Gemini free tier, because unpaid services
   may not be offered to users in the EEA, Switzerland or the UK and personal data must not be sent to
   them (Gemini API Additional Terms, effective 2026-03-23); and one Google project per user to
   multiply free quota, which is circumvention under the Google APIs Terms §2(d).
@@ -3015,7 +3017,7 @@ resend a verification email, the setup chat skipping consent).
    embedding; compose `ml` profile.
 3. **Profile ✅** — rule-based reading of uploads and suggestions; the three onboarding screens;
    the instant CV and cover letter.
-4. **Alerts** — Telegram platform bot, Web Push, the notifier on `libs.matching`, proxy optional,
+4. **Alerts ✅** — Telegram platform bot, Web Push, the notifier on `libs.matching`, proxy optional,
    and the audit's verification-resend fix.
 5. **Documents** — provider layer (own keys, allowance), instant documents wired into docgen,
    faster rendering, and consent checked wherever text leaves for a provider.

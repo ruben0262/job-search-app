@@ -141,14 +141,11 @@ def test_unlimited_still_fits_inside_one_claim():
     """Unlimited means "withhold nothing", not "clear the backlog in one transaction"."""
     from libs.limits import DEFAULT_SEND_GAP_SECONDS
     from services.notifier.deliver import SEND_BUDGET_SECONDS, unlimited_items
-    from services.notifier.eligibility import CANDIDATE_MULTIPLIER
 
     fetched = unlimited_items(DEFAULT_SEND_GAP_SECONDS)
 
     # Derived from the run's own budget rather than picked, so the two cannot drift.
     assert fetched == int(SEND_BUDGET_SECONDS / DEFAULT_SEND_GAP_SECONDS) + 1
-    assert fetched * CANDIDATE_MULTIPLIER <= 1_000, (
-        "the candidate pool this implies is too large to rank inside one claim")
     # Never withhold what the run had time for: fetching fewer than it can send is a cap by accident.
     assert fetched > SEND_BUDGET_SECONDS / DEFAULT_SEND_GAP_SECONDS
 
@@ -163,14 +160,3 @@ def test_the_card_says_what_linkedin_said_about_applicants():
     # A row stored before the caption was kept still renders from the number alone.
     assert applicant_label(68).startswith("68")
     assert applicant_label(None) == ""
-
-
-def test_the_feed_item_columns_line_up_with_the_query():
-    """`FeedItem(*row[:-1])` maps by position."""
-    import dataclasses as dc
-
-    from services.notifier.card import FeedItem
-
-    fields = [f.name for f in dc.fields(FeedItem)]
-    assert fields.index("applicants_caption") == fields.index("applicants") + 1
-    assert fields.index("easy_apply") == fields.index("applicants_caption") + 1
