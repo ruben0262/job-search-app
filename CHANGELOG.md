@@ -14,6 +14,32 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-10-28 — LinkedIn back behind its own proxy, the jobs page three times faster (Phase 8, integration)
+
+Three faults the merge of workstreams 2 and 3 surfaced, fixed in `libs.matching` and `libs/obs`.
+
+**Everyone saw LinkedIn jobs.** Decision D3 is that LinkedIn is fetched through a person's own proxy
+and only they see what it fetched. `TenantRepository.linkedin_visible` answers that, and since the
+model was unwired nothing asked it: the jobs page and the alerts showed every account the rows other
+people's proxies paid for. `matching_jobs` now applies it; a test shows the row hidden without a
+healthy proxy and shown with one, and fails with the gate removed.
+
+**The jobs page missed §0's 300 ms.** Measured over 2,000 fresh rows with the vectors every
+pre-Phase-8 row carries: 471 ms median at a realistic ~12% match rate, 578 ms at ~85%. Three changes,
+none of which alters a result: the switched-off model's ~3 KB vector per row is deferred rather than
+loaded; green words are scored before the filters run, because most candidates carry none and the
+workplace classifier was the costliest step in the loop; and that classifier is skipped when the
+person accepts any workplace. After: **151 ms** (p90 200) and **260 ms** (p90 324).
+
+**Every model call would have logged a line at INFO.** The Anthropic SDK moved to `httpx2` at 1.0 —
+2.3.0 is what a fresh image installs — and `NOISY_LIBRARIES` raised `httpx` but not `httpx2`, so
+each request to a provider would have narrated itself (§8). The logging test now covers both, and
+failed for `httpx2` before the fix.
+
+Gates: lint-imports 3 kept, 0 broken (5 ignored); ruff clean; pytest 1,533 passed, 3 skipped.
+
+---
+
 ## 2026-10-28 — the jobs page on rules, uploads read by rules, onboarding in three screens (ROADMAP Phase 8, workstreams 2–3)
 
 Two branches merged into `simplify`, each built by its own agent and checked again after merging.

@@ -124,10 +124,11 @@ class UserFilters:
                           cap=self.applicant_cap):
             return "applicant_glut"
 
+        # "Anything" accepts every mode, so the classifier — the costliest check here — is skipped.
         # `explicit=` is the tag parsed off the posting's own page, and it beats every heuristic.
-        mode = workfilter.classify(row.get("title") or "", row.get("location") or "",
-                                   row.get("description"), row.get("is_remote"),
-                                   explicit=row.get("workplace"))
+        mode = None if self.remote_policy == "any" else workfilter.classify(
+            row.get("title") or "", row.get("location") or "", row.get("description"),
+            row.get("is_remote"), explicit=row.get("workplace"))
         # Unknown is kept under every policy: absence of a signal is not evidence of on-site.
         if mode and mode not in _ACCEPTS[self.remote_policy]:
             return "workplace"

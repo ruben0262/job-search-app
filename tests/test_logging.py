@@ -93,12 +93,13 @@ def path_lines(path, needle: str) -> int:
     return sum(1 for line in path.read_text(encoding="utf-8").splitlines() if needle in line)
 
 
-def test_a_library_narrating_every_request_does_not_drown_our_own_lines(tmp_path):
-    """One line in ten was ours."""
+@pytest.mark.parametrize("library", ["httpx", "httpx2"])
+def test_a_library_narrating_every_request_does_not_drown_our_own_lines(tmp_path, library):
+    """One line in ten was ours. `httpx2` is the client the Anthropic SDK moved to at 1.0."""
     path = configure("notifier", log_dir=tmp_path, console=False)
 
-    logging.getLogger("httpx").info('HTTP Request: GET https://example.com "HTTP/1.1 200 OK"')
-    logging.getLogger("httpx").warning("could not reach the host")
+    logging.getLogger(library).info('HTTP Request: GET https://example.com "HTTP/1.1 200 OK"')
+    logging.getLogger(library).warning("could not reach the host")
     logging.getLogger("services.notifier.deliver").info("notified abc123 with 3 item(s)")
 
     assert path_lines(path, "200 OK") == 0

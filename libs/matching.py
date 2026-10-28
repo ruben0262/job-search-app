@@ -11,12 +11,13 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 
 from libs.contracts.config import migrate_config
 from libs.corpus import salary
 from libs.db.models import CorpusJob, User, UserConfig
 from libs.tenant.filters import candidate_conditions, filters_for
+from libs.tenant.repository import TenantRepository
 
 # A green word in the title says far more than one in the text.
 TITLE_POINTS, TEXT_POINTS = 75, 25
@@ -89,15 +90,21 @@ def matching_jobs(session: Session, user: User, *, since: datetime | None = None
     where = candidate_conditions(filters)
     if since is not None:
         where.append(CorpusJob.first_seen_at > since)
-    jobs = session.scalars(select(CorpusJob).where(*where)
+    # Decision D3: LinkedIn rows are fetched through someone's own proxy, so only a person with a
+    # healthy one of their own sees them. Without this, everyone saw rows others' proxies paid for.
+    if not TenantRepository(session).linkedin_visible(user.id):
+        where.append(CorpusJob.source != "linkedin")
+    # The vector is the switched-off model's, ~3 KB a row, and nothing here reads it.
+    jobs = session.scalars(select(CorpusJob).options(defer(CorpusJob.embedding)).where(*where)
                            .order_by(CorpusJob.first_seen_at.desc()).limit(scan)).all()
 
     found = []
     for job in jobs:
-        if filters.unwanted({name: getattr(job, name) for name in _ROW}):
-            continue
+        # The cheap question first: most candidates carry none of their words, and the filters'
+        # workplace classifier is the costliest step in the loop.
         points, words = score(regex, job.title, job.description)
-        if points and not underpaid(config, job.description):
+        if (points and not filters.unwanted({name: getattr(job, name) for name in _ROW})
+                and not underpaid(config, job.description)):
             found.append(Match(job, points, words))
     # A stable sort, so equal scores keep the query's newest-first order.
     return sorted(found, key=lambda match: match.score, reverse=True)

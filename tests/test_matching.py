@@ -156,3 +156,21 @@ def test_no_green_words_means_no_jobs_rather_than_every_job(db):
     _jobs(session, ("Backend Engineer", "", True, 1))
 
     assert matching_jobs(session, user) == []
+
+
+@needs_db
+def test_only_a_person_with_a_healthy_proxy_of_their_own_sees_linkedin_jobs(db):
+    """Decision D3: LinkedIn is fetched through someone's own proxy, never shared with the rest."""
+    from libs.db.models import ProxyCredential
+    from libs.matching import matching_jobs
+
+    session, user = db
+    linkedin, board = _jobs(session, ("Backend Engineer", "", True, 1), ("Backend Engineer", "", True, 2))
+    linkedin.source = "linkedin"
+    session.flush()
+
+    assert [m.job.id for m in matching_jobs(session, user)] == [board.id]
+
+    session.add(ProxyCredential(user_id=user.id, secret_ref=f"{user.id}:proxy", status="healthy"))
+    session.flush()
+    assert {m.job.id for m in matching_jobs(session, user)} == {linkedin.id, board.id}
