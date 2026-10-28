@@ -22,7 +22,7 @@ from libs.contracts.config import migrate_config
 from libs.corpus.geo import read_country
 from libs.db.models import CorpusJob, User, UserConfig, UserDocument
 from libs.documents.read import Facts, fold, read, stem, words
-from libs.matching import SCAN, _norm, matching_jobs, pattern, score
+from libs.matching import SCAN, matching_jobs, norm, pattern, score
 
 logger = logging.getLogger(__name__)
 
@@ -57,15 +57,15 @@ def compute(facts: Facts, *, config: dict | None, titles: list[str], matched: li
     find today; `text` is every document they have, which a red word must appear nowhere in.
     """
     sections = (migrate_config(config) if config else {}).get("sections") or []
-    have_green = {_norm(word) for section in sections for word in section.get("keywords") or []}
+    have_green = {norm(word) for section in sections for word in section.get("keywords") or []}
     taken = have_green | dismissed | {
-        _norm(word) for section in sections for word in section.get("exclude_keywords") or []}
+        norm(word) for section in sections for word in section.get("exclude_keywords") or []}
 
     def take(candidates, limit: int | None = None) -> list[dict]:
         """The first `limit` candidates nobody has yet: not in their search, dismissed or offered."""
         out: list[dict] = []
         for term, reason in candidates:
-            term = _norm(term)  # noqa: PLW2901 - compared in the form green words are matched in
+            term = norm(term)  # noqa: PLW2901 - compared in the form green words are matched in
             if (limit is None or len(out) < limit) and 2 <= len(term) <= 40 and term not in taken:
                 taken.add(term)
                 out.append({"term": term, "reason": reason})
@@ -87,7 +87,7 @@ def _held(facts: Facts):
 
 def _named(facts: Facts, titles: list[str]) -> list[tuple[str, str]]:
     """Their skills that job titles here also name, the most named first."""
-    regex = pattern([_norm(skill) for skill in facts.skills])
+    regex = pattern([norm(skill) for skill in facts.skills])
     named: Counter[str] = Counter()
     example: dict[str, str] = {}
     for title in titles if regex else ():
@@ -180,7 +180,7 @@ def current(session: Session, user_id: _uuid.UUID) -> dict:
 
 def dismiss(session: Session, user_id: _uuid.UUID, term: str) -> dict:
     """Never suggest this word again."""
-    stored, key = current(session, user_id), _norm(term)
+    stored, key = current(session, user_id), norm(term)
     user = session.get(User, user_id)
     user.suggestions = {
         **{kind: [each for each in stored.get(kind) or [] if each["term"] != key]

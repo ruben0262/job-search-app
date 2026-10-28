@@ -38,14 +38,15 @@ class Match:
     words: tuple[str, ...]
 
 
-def _norm(text: str) -> str:
+def norm(text: str) -> str:
+    """A word as green and red words are compared: lower case, spaces and hyphens alike."""
     return re.sub(r"[\s-]+", " ", text.strip().lower())
 
 
 def green_words(config: dict | None) -> list[str]:
     """Every green word across the config's sections, once each."""
     sections = (migrate_config(config) if config else {}).get("sections") or []
-    return sorted({_norm(word) for section in sections
+    return sorted({norm(word) for section in sections
                    for word in section.get("keywords") or [] if word.strip()})
 
 
@@ -58,8 +59,8 @@ def pattern(words: list[str]) -> re.Pattern | None:
 def score(regex: re.Pattern, title: str | None,
           description: str | None) -> tuple[int, tuple[str, ...]]:
     """Points for where the green words appear, and which ones; `(0, ())` for none."""
-    in_title = {_norm(found) for found in regex.findall(title or "")}
-    in_text = {_norm(found) for found in regex.findall((description or "")[:TEXT_CHARS])}
+    in_title = {norm(found) for found in regex.findall(title or "")}
+    in_text = {norm(found) for found in regex.findall((description or "")[:TEXT_CHARS])}
     points = TITLE_POINTS * bool(in_title) + TEXT_POINTS * bool(in_text)
     return points, tuple(sorted(in_title | in_text))
 

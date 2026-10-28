@@ -48,10 +48,12 @@ def _cv(facts: Facts, identity: dict, job, asked: set[str], *, mine: set[str]) -
               else f'<p class="profile">{escape(text)}</p>'
               for text, bold in ((headline, True), (summary, False)) if text]
 
-    jobs = sorted(enumerate(_once(facts.jobs)), key=lambda pair: (
-        -_shared(" ".join((pair[1].heading, *pair[1].bullets)), asked), pair[0]))
+    # Relevance decides which jobs make the cut; the ones kept stay newest first, as a recruiter and
+    # an ATS read a CV. Inside each job its most relevant bullets lead.
+    jobs = sorted(sorted(enumerate(_once(facts.jobs)), key=lambda pair: (
+        -_shared(" ".join((pair[1].heading, *pair[1].bullets)), asked), pair[0]))[:ENTRIES_SHOWN])
     parts.append(_section("Experience", [_entry(entry, _relevant(entry.bullets, asked)[:BULLETS_SHOWN])
-                                         for _, entry in jobs[:ENTRIES_SHOWN]]
+                                         for _, entry in jobs]
                           or _plain(facts, "experience")))
     parts.append(_section("Education", [_entry(entry, entry.bullets[:2]) for entry in _once(
         entry for section in facts.cv.of("education") for entry in section.entries)]

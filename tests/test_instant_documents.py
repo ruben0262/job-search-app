@@ -74,20 +74,29 @@ def _text(html: str) -> list[str]:
     return parser.nodes
 
 
-def test_the_cv_leads_with_the_jobs_and_bullets_the_posting_is_about():
+def test_the_cv_keeps_jobs_newest_first_and_leads_each_with_the_bullets_the_posting_is_about():
     nodes = _text(render("cv", documents=DOCUMENTS, identity=IDENTITY, job=JOB))
     lines = [node for node in nodes if node.startswith(("Built", "Migrated", "Designed", "Organised",
                                                         "Ran", "Wrote", "Cut", "Mentored"))]
 
-    # Globex is older, and it is where they built Python and Django APIs: it goes first.
-    assert nodes.index("Backend Engineer — Globex") < nodes.index("Senior Backend Engineer — Acme Payments")
-    assert lines[0] == "Built REST APIs in Python and Django for 40,000 merchants"
+    # A recruiter and an ATS read a CV newest first, however relevant the older job is.
+    assert nodes.index("Senior Backend Engineer — Acme Payments") < nodes.index("Backend Engineer — Globex")
     # Acme has six bullets and keeps four: the PostgreSQL one first, the two least relevant gone.
-    acme = lines[2:]
-    assert len(acme) == 4
+    acme = lines[:4]
     assert acme[0].startswith("Cut p99 latency")
     assert "Mentored two interns" not in nodes
     assert "Wrote the incident review template the whole company uses" not in nodes
+    assert lines[4] == "Built REST APIs in Python and Django for 40,000 merchants"
+
+
+def test_when_jobs_must_be_cut_the_one_the_posting_is_about_stays(monkeypatch):
+    """Globex is older, and it is where they built Python and Django APIs: with room for one, it wins."""
+    from libs.documents import instant
+
+    monkeypatch.setattr(instant, "ENTRIES_SHOWN", 1)
+    nodes = _text(render("cv", documents=DOCUMENTS, identity=IDENTITY, job=JOB))
+    assert "Backend Engineer — Globex" in nodes
+    assert "Senior Backend Engineer — Acme Payments" not in nodes
 
 
 def test_every_word_about_them_is_from_their_own_documents():

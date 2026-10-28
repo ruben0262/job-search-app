@@ -36,7 +36,14 @@ person accepts any workplace. After: **151 ms** (p90 200) and **260 ms** (p90 32
 each request to a provider would have narrated itself (§8). The logging test now covers both, and
 failed for `httpx2` before the fix.
 
-Gates: lint-imports 3 kept, 0 broken (5 ignored); ruff clean; pytest 1,533 passed, 3 skipped.
+**The instant CV put an older job above the current one.** Jobs were ordered by relevance to the
+posting, so a recruiter (and an ATS) met the person's 2019 role before their current one. Relevance
+now decides which jobs make the cut when there are more than five; the ones kept stay newest first,
+and inside each job its most relevant bullets still lead. Two tests, each failing against one half of
+the old rule. `libs.matching._norm` is public as `norm`, since `libs.suggestions` compares words the
+same way.
+
+Gates: lint-imports 3 kept, 0 broken (5 ignored); ruff clean; pytest 1,534 passed, 3 skipped.
 
 ---
 
