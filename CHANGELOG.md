@@ -14,6 +14,27 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-10-28 — what three merges left without a caller (Phase 8, integration)
+
+§3 for everything that is not the switched-off model: each of these lost its last live caller in the
+feed or alerts merge, and each was checked for callers in live AND switched-off code before going.
+
+- `libs/corpus/ondemand.py` — 70 lines, no caller, no test; only the deleted `/cv <link>` command used it.
+- `libs/corpus/ranking.py` — `opportunity_score`, `priority_key` and their buckets served only the
+  deleted notifier ranking. Its one live function, `applicant_glut`, moved to its only caller,
+  `libs.tenant.filters`, and the module is gone.
+- `TenantRepository.retire_stale_matches` and `filters.pending_match_conditions` — the scored-match
+  lifecycle, which nothing runs since delivery moved to `libs.notify.owed`.
+
+The producer guard (`test_columns_have_producers`) then failed, rightly: `user_job_state.retired_at`
+had lost its only writer. The column is the switched-off model's state, so its data and partial
+indexes stay, and it is recorded as such in the guard rather than dropped (§3's exception). The 22
+tests that exercised only the deleted code went with it; the others moved their import.
+
+Gates: lint-imports 3 kept, 0 broken (2 ignored); ruff clean; pytest 1,449 passed, 5 skipped.
+
+---
+
 ## 2026-10-28 — alerts: one Telegram bot, browser notifications, a sign-up with no dead ends (Phase 8, workstream 4)
 
 Getting a job alert used to mean creating your own bot with BotFather, pasting its token, and finding

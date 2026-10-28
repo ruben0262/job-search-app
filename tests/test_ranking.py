@@ -5,16 +5,7 @@ import dataclasses
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-import pytest
-
-from libs.corpus.ranking import (
-    applicant_bucket,
-    applicant_glut,
-    fresh_bucket,
-    opportunity_score,
-    priority_key,
-)
-from libs.tenant.filters import UserFilters
+from libs.tenant.filters import UserFilters, applicant_glut
 
 NOW = datetime(2026, 7, 29, 12, 0, tzinfo=UTC)
 
@@ -57,67 +48,9 @@ def drops(item, rules_=None) -> str | None:
 
 # ── the buckets ───────────────────────────────────────────────────────────────────────────────
 
-@pytest.mark.parametrize(("hours", "bucket"), [(1, 0), (12, 1), (48, 2), (200, 3)])
-def test_freshness_falls_into_the_reference_s_buckets(hours, bucket):
-    assert fresh_bucket(posted_at=NOW - timedelta(hours=hours), now=NOW) == bucket
-
-
-def test_a_posting_with_no_date_falls_back_to_when_we_found_it():
-    """LinkedIn frequently gives no posted date."""
-    assert fresh_bucket(posted_at=None, first_seen_at=NOW - timedelta(hours=12), now=NOW) == 1
-
-
-def test_a_posting_with_no_dates_at_all_is_treated_as_old():
-    assert fresh_bucket(posted_at=None, first_seen_at=None, now=NOW) == 3
-
-
-def test_a_repost_is_the_oldest_thing_there_is_whatever_its_timestamp_says():
-    """LinkedIn resurfaces stale listings with a fresh clock."""
-    assert fresh_bucket(posted_at=NOW - timedelta(minutes=5), reposted=True, now=NOW) == 3
-
-
-@pytest.mark.parametrize(("count", "bucket"), [(0, 0), (9, 0), (10, 1), (49, 1), (50, 2), (200, 3)])
-def test_applicant_counts_bucket_at_the_reference_s_edges(count, bucket):
-    assert applicant_bucket(count) == bucket
-
-
-def test_an_unknown_applicant_count_ranks_worst_rather_than_best():
-    """Conservative for *ranking*, where being wrong costs ordering."""
-    assert applicant_bucket(None) == 3
-
-
 # ── the score ─────────────────────────────────────────────────────────────────────────────────
 
-def test_the_best_possible_job_scores_a_hundred():
-    assert opportunity_score(posted_at=NOW, applicants=0, now=NOW) == 100
-
-
-def test_a_closed_listing_scores_zero_however_good_it_is():
-    """You cannot apply to it. Nothing else about the posting can outweigh that."""
-    assert opportunity_score(posted_at=NOW, applicants=0, accepting=False, now=NOW) == 0
-
-
-def test_youth_and_scarcity_are_weighted_equally():
-    """Fifty points each, which is the reference's judgement."""
-    young_and_crowded = opportunity_score(posted_at=NOW, applicants=500, now=NOW)
-    old_and_empty = opportunity_score(posted_at=NOW - timedelta(days=30), applicants=0, now=NOW)
-    assert young_and_crowded == old_and_empty
-
-
-def test_easy_apply_moves_nothing():
-    """It shows on the card as a tag."""
-    with_easy = opportunity_score(posted_at=NOW, applicants=1, now=NOW)
-    assert with_easy == opportunity_score(posted_at=NOW, applicants=1, now=NOW)
-
-
 # ── ordering, where score and opportunity disagree ────────────────────────────────────────────
-
-def test_an_unknown_workplace_ranks_with_hybrid_not_last():
-    """Unknown is the common case. Treating it as on-site would bury most of the feed."""
-    unknown = priority_key(posted_at=NOW, applicants=1, workplace=None, now=NOW)
-    hybrid = priority_key(posted_at=NOW, applicants=1, workplace="hybrid", now=NOW)
-    assert unknown == hybrid
-
 
 # ── the filters, and what they refuse to drop ─────────────────────────────────────────────────
 

@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -25,7 +25,7 @@ from libs.db.models import (
 )
 
 if TYPE_CHECKING:  # Runtime import lives inside the method, to avoid a cycle.
-    from libs.tenant.filters import UserFilters
+    pass
 
 # Current plus one previous (GAPS_REVIEW G12).
 KEEP_MODEL_VERSIONS = 2
@@ -77,41 +77,6 @@ class TenantRepository:
         row.score = score
         row.scored_at = func.now()
         row.scored_model_version = model_version
-
-    def retire_stale_matches(self, user_id: _uuid.UUID, *, cutoff: float,
-                             filters: UserFilters) -> int:
-        """Give up on matches the pre-score filter would no longer admit, and say how many.
-
-        Delivery does not filter — a posting is judged once, before scoring. This is the queue being
-        maintained rather than the send path being second-guessed: a match that has aged out while
-        waiting is one the lane failed to send in time, and sending it late is worse than not
-        sending it. The count is the honest version of "expired".
-
-        **Asked as the negation of the admission rule** (`too_old_to_send`), never as a window of its
-        own. It was a window of its own until 2026-08-11, and it destroyed 13 Adzuna matches an
-        average of two minutes after we first saw them — admitted by a 48-hour source floor, retired
-        against a flat 6-hour setting. `filters` rather than a number is the fix: there is no second
-        number here to disagree with the first.
-        """
-        from libs.db.models import CorpusJob  # noqa: PLC0415 - avoids a cycle at import time
-        from libs.tenant.filters import too_old_to_send  # noqa: PLC0415
-
-        stale = (
-            select(UserJobState.job_id)
-            .join(CorpusJob, CorpusJob.id == UserJobState.job_id)
-            .where(UserJobState.user_id == user_id,
-                   UserJobState.notified_at.is_(None),
-                   UserJobState.retired_at.is_(None),
-                   UserJobState.score >= cutoff,
-                   too_old_to_send(filters)))
-
-        return self._s.execute(
-            update(UserJobState)
-            .where(UserJobState.user_id == user_id,
-                   UserJobState.job_id.in_(stale))
-            .values(retired_at=func.now())).rowcount or 0
-
-    # ── applied log ──────────────────────────────────────────────────────────────────────────
 
     def record_applied(self, user_id: _uuid.UUID, job_id: int, *,
                        cover_built: bool = False) -> bool:

@@ -158,8 +158,7 @@ def test_the_applicant_ceiling_is_the_operators_and_unlimited_shows_everything()
 
 def test_unlimited_applicants_actually_lets_a_busy_posting_through():
     """The limit has to reach the decision, not just the dataclass."""
-    from libs.corpus.ranking import applicant_glut
-    from libs.tenant.filters import UserFilters
+    from libs.tenant.filters import UserFilters, applicant_glut
 
     capped = UserFilters.from_config({}, max_age_hours=24, applicant_cap=200)
     unlimited = UserFilters.from_config({}, max_age_hours=24, applicant_cap=None)

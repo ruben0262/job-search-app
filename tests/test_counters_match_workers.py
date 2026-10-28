@@ -129,22 +129,3 @@ def test_the_page_and_the_describer_count_the_same_rows(db):
 
 # ── delivery: the counter that showed a phantom backlog to a user ─────────────────────────────
 
-def test_the_status_page_and_the_notifier_count_the_same_matches(db):
-    """A retired match is one delivery gave up on. Counting it told a user 99 were waiting."""
-    from sqlalchemy import func, select
-
-    from libs.db.models import UserJobState
-    from libs.tenant.filters import pending_match_conditions
-
-    user = _account(db)
-    job = _job(db)
-    db.add(UserJobState(user_id=user.id, job_id=job.id, score=95.0,
-                        scored_at=datetime.now(UTC), notified_at=None,
-                        retired_at=datetime.now(UTC)))
-    db.flush()
-
-    still_owed = db.scalar(
-        select(func.count()).select_from(UserJobState)
-        .where(UserJobState.user_id == user.id, *pending_match_conditions(50.0)))
-
-    assert still_owed == 0, "a match the notifier abandoned is not one the user is waiting for"

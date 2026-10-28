@@ -10,7 +10,6 @@ from sqlalchemy import case, func, select, true
 from libs.contracts.config import migrate_config
 from libs.corpus import langfilter, workfilter
 from libs.corpus.geo import wanted_countries
-from libs.corpus.ranking import applicant_glut
 from libs.corpus.repository import DESCRIBE_MAX_FAILURES
 from libs.db.models import CorpusJob
 from libs.limits import limit_default
@@ -29,6 +28,13 @@ def _widest_policy(sections: list[dict]) -> str:
     """The most permissive policy across sections, so no section narrows another one's feed."""
     asked = {section.get("remote_policy") or "remote_or_hybrid" for section in sections} or {"any"}
     return next(policy for policy in ("any", "remote_or_hybrid", "remote_only") if policy in asked)
+
+
+def applicant_glut(*, source: str | None, applicants: int | None, cap: int) -> bool:
+    """Whether to drop a listing as over-subscribed. Only LinkedIn reports a count worth trusting."""
+    if cap <= 0 or not isinstance(applicants, int):
+        return False
+    return (source or "").lower() == "linkedin" and applicants >= cap
 
 
 @dataclass(frozen=True)
@@ -195,27 +201,6 @@ def too_old_to_send(filters: UserFilters, *, now: datetime | None = None):
     sweep ran first the same row was destroyed.
     """
     return ~_fresh_enough(filters, now=now)
-
-
-def pending_match_conditions(cutoff: float) -> list:
-    """Matches this account is actually still owed: scored above their cutoff and not given up on.
-
-    One definition, because there were two. The notifier requires `retired_at IS NULL` — a match
-    that aged past the window while waiting is one it deliberately abandoned, and sending it late
-    is worse than not sending it. The status page asked the same question without that clause, so
-    it counted work nobody would ever do: on 2026-08-08 an account showed "99 matches waiting" and
-    a delivery warning, and **all 99 were retired**. The notifier was right and idle; the page was
-    wrong and amber.
-    """
-    from libs.db.models import UserJobState  # noqa: PLC0415 - avoids a cycle at import time
-
-    return [
-        UserJobState.notified_at.is_(None),
-        # The clause whose absence produced the phantom.
-        UserJobState.retired_at.is_(None),
-        UserJobState.score.is_not(None),
-        UserJobState.score >= cutoff,
-    ]
 
 
 @dataclass(frozen=True)

@@ -178,52 +178,6 @@ def _scored(db, user, job, *, score, notified=False, scored_ago_min=5):
     db.flush()
 
 
-def test_a_match_inside_its_own_sources_window_is_never_retired(db):
-    """**The defect that destroyed 13 Adzuna matches two minutes after we first saw them.**
-
-    Measured on the live platform 2026-08-11. `retire_stale_matches` read a flat
-    `job_max_age_hours` — the operator had it at 6 — while the pre-score filter admits a posting
-    against its own source floor, which is 48 hours for Adzuna and 168 for hiringcafe. So the filter
-    let these in on purpose and the sweep destroyed them before the notifier could send them, with
-    the sweep's own comment claiming it read "the same clock the pre-score filter reads".
-
-    Every source except LinkedIn has a floor above six hours, so this reached every account.
-    """
-    from libs.tenant.filters import UserFilters
-    from libs.tenant.repository import TenantRepository
-
-    user = _account(db)
-    # Eight hours old: past the operator's six, well inside Adzuna's forty-eight.
-    admitted = _job(db, source="adzuna", description="x " * 200,
-                    posted_at=datetime.now(UTC) - timedelta(hours=8))
-    _scored(db, user, admitted, score=99.0)
-
-    filters = UserFilters.from_config(None, max_age_hours=6)
-    retired = TenantRepository(db).retire_stale_matches(user.id, cutoff=60.0, filters=filters)
-    db.flush()
-
-    assert retired == 0, (
-        "a posting the filter admitted under its source's own floor was retired against the "
-        "operator's global window — it can never be delivered, and nothing raises")
-
-
-def test_a_match_past_its_own_sources_window_is_still_retired(db):
-    """The other half: the sweep must still give up, or nothing ever expires."""
-    from libs.tenant.filters import UserFilters
-    from libs.tenant.repository import TenantRepository
-
-    user = _account(db)
-    # Adzuna's floor is 48 hours; this is past it however the operator's window is set.
-    gone = _job(db, source="adzuna", description="x " * 200,
-                posted_at=datetime.now(UTC) - timedelta(hours=60))
-    _scored(db, user, gone, score=99.0)
-
-    retired = TenantRepository(db).retire_stale_matches(
-        user.id, cutoff=60.0, filters=UserFilters.from_config(None, max_age_hours=6))
-
-    assert retired == 1
-
-
 def test_delivery_shows_no_queue_for_scores_nothing_will_send(db):
     """The scorer's rows outlive it, and nothing sends them, so they are not a queue at delivery."""
     from libs.ops.pipeline import pipeline

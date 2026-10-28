@@ -31,6 +31,9 @@ KNOWN_UNWRITTEN = {
     # The per-user bot's, retired 2026-10-28 for one platform bot; kept with their data, read by nothing.
     "telegram_routes": "retired with the per-user bot's channels; kept rather than dropped",
     "telegram_webhook_secret": "retired with the per-user bot's webhook; kept rather than dropped",
+    # The switched-off model's scored-match lifecycle (CLAUDE.md §3 exception): its one writer,
+    # `TenantRepository.retire_stale_matches`, was deleted with its last caller on 2026-10-28.
+    "retired_at": "switched off with the model; its data and partial indexes are kept",
     # `quota_overrides` and `profile_context` were here and are now dropped.
 }
 
