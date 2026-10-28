@@ -60,9 +60,10 @@ def _person(session, *, telegram=True, browsers=0, joined_minutes_ago=24 * 60):
     session.flush()
     session.add(UserConfig(user_id=user.id, schema_version=2,
                            config={"sections": [{"platform": "all", "keywords": [word]}]}))
+    # Subscribed since they joined: when a browser subscribed is when its alerts start.
     for _ in range(browsers):
         session.add(PushSubscription(user_id=user.id, endpoint=f"https://push.example.com/{uuid.uuid4()}",
-                                     p256dh="k", auth="a"))
+                                     p256dh="k", auth="a", created_at=user.created_at))
     session.flush()
     return user, word
 
@@ -157,6 +158,37 @@ def test_somebody_never_sent_anything_gets_what_was_found_since_they_joined(db):
     """Not the backlog the jobs page already shows them."""
     user, word = _person(db, joined_minutes_ago=30)
     _posting(db, word, minutes_ago=60)
+    new = _posting(db, word, minutes_ago=10)
+
+    run(db, user, Outbox())
+
+    assert _notified(db, user) == {new.id}
+
+
+@needs_db
+def test_alerts_start_when_telegram_is_connected_not_when_they_joined(db):
+    """Turning alerts on weeks after joining must not fire every match still in its window at once."""
+    from libs.db.models import AuthToken
+
+    user, word = _person(db, joined_minutes_ago=3 * 24 * 60)
+    _posting(db, word, minutes_ago=5 * 60)  # inside every freshness window, before they connected
+    db.add(AuthToken(token_hash=uuid.uuid4().hex, user_id=user.id, purpose="telegram_connect",
+                     expires_at=datetime.now(UTC), used_at=datetime.now(UTC) - timedelta(hours=1)))
+    new = _posting(db, word, minutes_ago=10)
+
+    run(db, user, Outbox())
+
+    assert _notified(db, user) == {new.id}
+
+
+@needs_db
+def test_alerts_start_when_the_browser_subscribed(db):
+    from libs.db.models import PushSubscription
+
+    user, word = _person(db, telegram=False, joined_minutes_ago=3 * 24 * 60)
+    _posting(db, word, minutes_ago=5 * 60)  # inside every freshness window, before they connected
+    db.add(PushSubscription(user_id=user.id, endpoint=f"https://push.example.com/{uuid.uuid4()}",
+                            p256dh="k", auth="a", created_at=datetime.now(UTC) - timedelta(hours=1)))
     new = _posting(db, word, minutes_ago=10)
 
     run(db, user, Outbox())

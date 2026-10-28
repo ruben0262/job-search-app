@@ -14,6 +14,22 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-10-28 — alerts start when you turn them on (Phase 8, integration)
+
+The alerts workstream left one question open: somebody switching alerts on weeks after joining was
+sent every match still inside its freshness window at once — up to seven days' worth, one message
+each. Alerts announce what is new; the jobs page already shows the rest. `libs.notify.sent_up_to` now
+starts from the later of the newest job already sent and the moment their current channels were
+turned on — the `used_at` of the code that linked their Telegram chat, and their oldest browser's
+subscription. Derived, not stored: no new column, and turning alerts off and on again starts fresh
+rather than replaying the gap. Accounts linked before this change have no code and keep the old
+rule. Two tests, both failing against the old rule; the shared fixture now states that its browsers
+were subscribed when the person joined, which the old rule never needed to know.
+
+Gates: lint-imports 3 kept, 0 broken (2 ignored); ruff clean; pytest 1,451 passed, 5 skipped.
+
+---
+
 ## 2026-10-28 — what three merges left without a caller (Phase 8, integration)
 
 §3 for everything that is not the switched-off model: each of these lost its last live caller in the

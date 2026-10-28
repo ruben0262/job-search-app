@@ -14,7 +14,14 @@ from datetime import datetime
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from libs.db.models import CorpusJob, PushSubscription, User, UserJobState, UserNotification
+from libs.db.models import (
+    AuthToken,
+    CorpusJob,
+    PushSubscription,
+    User,
+    UserJobState,
+    UserNotification,
+)
 from libs.matching import Match, matching_jobs
 
 logger = logging.getLogger(__name__)
@@ -68,18 +75,28 @@ def reachable():
 
 
 def sent_up_to(session: Session, user: User) -> datetime:
-    """When the newest job already sent to this person was first seen — or when they joined.
+    """When the newest job already sent to this person was first seen — or, if later, when the alert
+    channels they have now were turned on.
 
-    Every alert is a match first seen after this, so a run stopped part-way resumes where it stopped,
-    and somebody connecting Telegram is sent what was found since they joined rather than a backlog
-    the jobs page already shows. Strictly after: `first_seen_at` is `clock_timestamp()`, one value per
-    row, so no unsent job shares the newest sent one's timestamp.
+    Every alert is a match first seen after this, so a run stopped part-way resumes where it stopped.
+    Alerts announce what is new: somebody switching them on weeks after joining, or again after
+    turning them off, gets what is found from then on, not every match still inside its freshness
+    window at once — the jobs page already shows those. Strictly after: `first_seen_at` is
+    `clock_timestamp()`, one value per row, so no unsent job shares the newest sent one's timestamp.
     """
     newest = session.scalar(
         select(func.max(CorpusJob.first_seen_at))
         .join(UserJobState, UserJobState.job_id == CorpusJob.id)
         .where(UserJobState.user_id == user.id, UserJobState.notified_at.is_not(None)))
-    return newest or user.created_at
+    # Derived, not stored: the code that linked their current Telegram chat, and their oldest browser.
+    linked = session.scalar(
+        select(func.max(AuthToken.used_at))
+        .where(AuthToken.user_id == user.id, AuthToken.purpose == "telegram_connect")
+    ) if user.telegram_status == "connected" else None
+    subscribed = session.scalar(
+        select(func.min(PushSubscription.created_at)).where(PushSubscription.user_id == user.id))
+    turned_on = min(filter(None, (linked, subscribed)), default=None)
+    return max(filter(None, (newest or user.created_at, turned_on)))
 
 
 def owed(session: Session, user: User) -> list[Match]:
