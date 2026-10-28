@@ -17,7 +17,8 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from libs.db.base import Base, timestamptz
 
-TOKEN_PURPOSES = ("verify_email", "reset_password")
+# `telegram_connect` rides in a t.me link rather than an email: it ties a Telegram chat to the account.
+TOKEN_PURPOSES = ("verify_email", "reset_password", "telegram_connect")
 
 
 class UserSession(Base):
@@ -50,7 +51,7 @@ class UserSession(Base):
 
 
 class AuthToken(Base):
-    """A single-use email token. The plaintext exists in the email and nowhere else."""
+    """A single-use token. The plaintext exists in the link it travels in and nowhere else."""
 
     __tablename__ = "auth_tokens"
 

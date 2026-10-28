@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from libs import limits
 from libs.db.models import CorpusJob, QueueJob, User, UserJobState
+from libs.notify import owed, reachable
 from services.api.deps import current_user, get_db
 
 logger = logging.getLogger(__name__)
@@ -21,6 +22,11 @@ router = APIRouter(tags=["status"])
 # How stale the corpus may be before the harvester is presumed stuck.
 HARVEST_WARN = timedelta(hours=1)
 HARVEST_DOWN = timedelta(hours=4)
+
+# How long a match may wait unsent before delivery reads as stuck. The sweep queues a run within a
+# minute of a posting being stored, and a run sends a backlog a message every few seconds, so an hour
+# is many times what a working notifier takes.
+STALLED_AFTER = timedelta(hours=1)
 
 
 class StatusComponent(BaseModel):
@@ -48,7 +54,6 @@ def status(db: Session = Depends(get_db),
 
     return StatusReport(components=[
         _telegram_bot(user),
-        _telegram_channel(user),
         _harvester(db, now),
         _delivery(db, user, now),
         _docgen(db, user_id),
@@ -57,20 +62,14 @@ def status(db: Session = Depends(get_db),
 
 def _telegram_bot(user: User) -> StatusComponent:
     if user.telegram_status == "connected":
-        return _entry("telegram_bot", "Telegram bot", "ok", "Connected and able to message you.")
+        return _entry("telegram_bot", "Telegram", "ok",
+                      "Connected — new matches arrive in your Telegram chat.")
     if user.telegram_status == "broken":
-        return _entry("telegram_bot", "Telegram bot", "down",
-                      "The bot token stopped working. Save a fresh one under Your details.")
-    return _entry("telegram_bot", "Telegram bot", "warn",
-                  "Not connected yet — save a bot token and press Start in the bot.")
-
-
-def _telegram_channel(user: User) -> StatusComponent:
-    if user.telegram_routes and any(user.telegram_routes.values()):
-        return _entry("telegram_channel", "Telegram channel", "ok",
-                      "Jobs stream to your channel; the bot chat stays for commands.")
-    return _entry("telegram_channel", "Telegram channel", "off",
-                  "No channel set — jobs arrive in your bot chat. Add one under Your details.")
+        return _entry("telegram_bot", "Telegram", "down",
+                      "Telegram stopped taking our messages. Connect it again under Your details.")
+    # Optional, so not a warning.
+    return _entry("telegram_bot", "Telegram", "off",
+                  "Not connected. Connect it under Your details to get new matches on your phone.")
 
 
 def _harvester(db: Session, now: datetime) -> StatusComponent:
@@ -94,9 +93,9 @@ def _harvester(db: Session, now: datetime) -> StatusComponent:
 
 def _delivery(db: Session, user: User, now: datetime) -> StatusComponent:
     """Is anything actually arriving — the question every other check assumes and none of them ask."""
-    if user.telegram_status != "connected":
+    if db.scalar(select(User.id).where(User.id == user.id, reachable())) is None:
         return _entry("delivery", "Delivery", "off",
-                      "Connect Telegram and matches will start arriving.")
+                      "Connect Telegram or turn on notifications to get new matches off the site.")
 
     # A pause is a decision, not a fault.
     if not user.active and user.onboarding_completed_at is not None:
@@ -112,8 +111,17 @@ def _delivery(db: Session, user: User, now: datetime) -> StatusComponent:
                       f"Today's {cap} jobs have been sent — that is this account's daily limit. "
                       "More arrive tomorrow.")
 
-    # "How many matches are owed" was the scorer's rows above a cutoff, and nothing writes those now.
-    # It is the notifier's question to answer on `libs.matching`; this says only what was sent.
+    # What the notifier sends next, by its own definition, and how long the oldest has waited.
+    waiting = owed(db, user)
+    if waiting:
+        waited = now - waiting[0].job.first_seen_at
+        if waited > STALLED_AFTER:
+            return _entry("delivery", "Delivery", "down",
+                          f"{len(waiting)} matching job(s) waiting, the oldest for "
+                          f"{int(waited.total_seconds() // 3600)} hour(s) — delivery looks stuck.")
+        return _entry("delivery", "Delivery", "ok",
+                      f"Sending — {len(waiting)} new matching job(s) on the way.")
+
     last_sent = db.scalar(
         select(func.max(UserJobState.notified_at)).where(UserJobState.user_id == user.id))
     if last_sent is None:
@@ -135,7 +143,7 @@ def _docgen(db: Session, user_id: _uuid.UUID) -> StatusComponent:
         .order_by(QueueJob.id.desc()).limit(1))
     if last is None:
         return _entry("docgen", "CV & cover letters", "off",
-                      "Nothing built yet. Tap Build CV under a job in Telegram to try it.")
+                      "Nothing built yet. Tap Make my CV under a job to try it.")
     if last.state == "dead":
         detail = (last.last_error or "the last build failed")[:160]
         return _entry("docgen", "CV & cover letters", "down", f"The last build failed: {detail}")

@@ -280,7 +280,13 @@ services:
     profiles: ["full"]
     environment:
       DATABASE_URL: postgresql+psycopg://jobsearch:${POSTGRES_PASSWORD:?}@postgres:5432/jobsearch
-      SECRETS_KEK: ${SECRETS_KEK:?the notifier decrypts each user's bot token}
+      # The platform's one bot and its push keys. No SECRETS_KEK: nothing here decrypts a user's
+      # credential any more. Each channel is optional — unset, it is skipped and the log says so.
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-}
+      # Every "Make my CV" button and notification tap links back here.
+      PUBLIC_URL: ${PUBLIC_URL:?the alerts link back to the site}
       LOG_DIR: /var/log/jobsearch
       WORKER_NAME: notifier-1
     volumes:
@@ -329,6 +335,10 @@ services:
       # `.env.example` and in nothing that reads it. Required, because a silently wrong link is
       # worse than a container that refuses to start.
       PUBLIC_URL: ${PUBLIC_URL:?the verification and reset emails are built from it}
+      # The one-tap Telegram link, the secret Telegram's webhook calls carry, and the public push key.
+      TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
+      TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:-}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
       LOG_DIR: /var/log/jobsearch
     volumes:
       - ../logs:/var/log/jobsearch

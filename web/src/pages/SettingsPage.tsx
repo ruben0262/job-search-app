@@ -70,11 +70,7 @@ export function SettingsPage({ onSignedOut }: { onSignedOut: () => void }) {
         </table>
       </Card>
 
-      <DeliveryCard
-        interval={account.notify_interval_min}
-        active={account.active}
-        onChanged={() => void reload()}
-      />
+      <DeliveryCard active={account.active} onChanged={() => void reload()} />
 
       <PasswordCard onChanged={onSignedOut} />
 
@@ -159,15 +155,7 @@ export function SettingsPage({ onSignedOut }: { onSignedOut: () => void }) {
 }
 
 /** The delivery knobs, side by side because people confuse them and the fix is words. */
-function DeliveryCard({
-  interval,
-  active,
-  onChanged,
-}: {
-  interval: number;
-  active: boolean;
-  onChanged: () => void;
-}) {
+function DeliveryCard({ active, onChanged }: { active: boolean; onChanged: () => void }) {
   const toggle = useAction(async () => {
     await api.patch("/account", { active: !active });
     onChanged();
@@ -195,12 +183,6 @@ function DeliveryCard({
         </button>
       </div>
       <Error>{toggle.error}</Error>
-
-      {/* The cadence and the freshness window are the platform's (2026-08-01). */}
-      <p className="facts">
-        Jobs are sent as soon as they are found, every {interval} minutes, when there is something
-        new that matches you. How recent a posting has to be is set per job board by the platform.
-      </p>
     </Card>
   );
 }

@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from libs.corpus.repository import CorpusRepository
 from libs.db.models import User, UserJobState, UserLabel
-from libs.tenant.repository import APPLIED_SCORE, FEEDBACK_WEIGHT, SKIPPED_SCORE, TenantRepository
+from libs.tenant.repository import TenantRepository
 
 pytestmark = pytest.mark.skipif(
     not os.environ.get("DATABASE_URL"),
@@ -101,25 +101,6 @@ def test_relabelling_supersedes_rather_than_accumulating(ctx):
     labels = list(s.scalars(select(UserLabel).where(UserLabel.user_id == u.id)))
     assert len(labels) == 1
     assert labels[0].label == 80
-
-
-def test_feedback_is_a_label_with_higher_weight(ctx):
-    """A user's explicit decision outweighs the LLM's guess at their taste."""
-    t, c, s = ctx
-    u = _user(s)
-    applied_job, skipped_job = _job(c, s), _job(c, s)
-
-    t.record_feedback(u.id, applied_job, applied=True)
-    t.record_feedback(u.id, skipped_job, applied=False)
-    s.flush()
-
-    rows = {r.job_id: r for r in s.scalars(
-        select(UserLabel).where(UserLabel.user_id == u.id))}
-    assert rows[applied_job].label == APPLIED_SCORE
-    assert rows[skipped_job].label == SKIPPED_SCORE
-    assert rows[applied_job].source == "feedback"
-    assert rows[applied_job].weight == FEEDBACK_WEIGHT
-    assert rows[skipped_job].weight == FEEDBACK_WEIGHT
 
 
 def test_training_set_excludes_other_generations_and_thin_descriptions(ctx):

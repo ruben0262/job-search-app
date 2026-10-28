@@ -12,7 +12,7 @@ from libs.db.models.auth import (
 )
 from libs.db.models.corpus import CorpusJob
 from libs.db.models.document import DOCUMENT_KINDS, UserDocument
-from libs.db.models.notification import UserNotification
+from libs.db.models.notification import PushSubscription, UserNotification
 from libs.db.models.operator import OperatorKeyword
 from libs.db.models.plan import FREE_PLAN, Plan
 from libs.db.models.profile_file import (
@@ -68,6 +68,7 @@ __all__ = [
     "Plan",
     "PlatformSetting",
     "ProxyCredential",
+    "PushSubscription",
     "QueueJob",
     "SetupConversation",
     "SetupMessage",

@@ -67,11 +67,8 @@ forbidden_modules = [
     "libs.scoring", "libs.labels", "libs.feedback", "libs.agents",
 ]
 ignore_imports = [
-    "libs.tenant.repository -> libs.feedback.actions",
     "services.api.setup_routes -> libs.agents",
     "services.api.setup_routes -> libs.agents.loop",
-    "services.api.telegram_routes -> libs.feedback",
-    "services.notifier.deliver -> libs.scoring.thresholds",
 ]
 
 [tool.pytest.ini_options]

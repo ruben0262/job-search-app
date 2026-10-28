@@ -73,10 +73,6 @@ LIMITS: tuple[Limit, ...] = (
           "Every turn replays its whole chat on the user's own credential, so more chats is more "
           "spend re-reading them.",
           choices=(1, 3, 5, 10)),
-    # Not unlimited-able: the ceiling protects the user's money rather than expressing a preference.
-    Limit("cv_builds_per_day", "CV and cover letters per day", 10, "documents",
-          "Each one is a Claude call on this account's own credential.", allow_unlimited=False,
-          choices=(5, 10, 20, 50, 100)),
     Limit("label_pool", "Jobs bought per labelling run", 300, "jobs",
           "Labelling runs on the user's own Claude credential, so this is their money.",
           allow_unlimited=False,

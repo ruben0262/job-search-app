@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from libs.db.models import CorpusJob, QueueJob, User
 from libs.db.models.queue import CLAIM_TIMEOUT_MIN, LANES, MAX_ATTEMPTS
+from libs.notify import reachable
 
 logger = logging.getLogger(__name__)
 
@@ -115,10 +116,10 @@ def sweep_expired(session: Session, lane: str | None = None) -> int:
 
 
 def dispatch_due_notifications(session: Session) -> int:
-    """Enqueue a `notify` job for every account the corpus has grown for since its last one.
+    """Enqueue a `notify` job for every reachable account the corpus has grown for since its last one.
 
     **Nothing scores any more** (ROADMAP Phase 8), so there is no "match waiting" row to look for:
-    what is new for a person is the notify job's own question, answered by `libs.matching`. This
+    what is new for a person is the notify job's own question, answered by `libs.notify.owed`. This
     pass only decides whether asking is worth a claim — a posting stored after the account's last
     finished notify run — so a quiet corpus enqueues nothing, and a busy one enqueues one run per
     account per harvest rather than one a minute.
@@ -131,23 +132,11 @@ def dispatch_due_notifications(session: Session) -> int:
 
     enqueued = 0
     for user_id in session.scalars(
-            select(User.id).where(User.active.is_(True), User.status == "active",
-                                  User.telegram_status == "connected",
+            select(User.id).where(User.active.is_(True), User.status == "active", reachable(),
                                   last_run.is_(None) | (newest > last_run))):
         if enqueue(session, "notify", user_id, dedup_key="due") is not None:
             enqueued += 1
     return enqueued
-
-
-def jobs_today(session: Session, lane: str, user_id: _uuid.UUID) -> int:
-    """How many jobs this user has enqueued on `lane` since their own local midnight."""
-    _check_lane(lane)
-    timezone = session.scalar(select(User.timezone).where(User.id == user_id)) or "UTC"
-    local_midnight = func.date_trunc("day", func.timezone(timezone, func.now()))
-    return session.scalar(
-        select(func.count()).select_from(QueueJob)
-        .where(QueueJob.lane == lane, QueueJob.user_id == user_id,
-               func.timezone(timezone, QueueJob.created_at) >= local_midnight)) or 0
 
 
 def _now_plus(minutes: int):

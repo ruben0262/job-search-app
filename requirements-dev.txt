@@ -70,3 +70,4 @@ python-multipart>=0.0.20
 beautifulsoup4>=4.12
 langdetect>=1.0.9
 pyte>=0.8            # libs/claudeauth renders the CLI terminal; the oauth tests import it
+pywebpush>=2.0       # services/notifier's browser notifications; the alert tests import it

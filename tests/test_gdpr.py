@@ -127,6 +127,7 @@ def test_deleting_an_account_leaves_no_row_anywhere(api):
     from libs.db.base import Base
     from libs.db.models import (
         CorpusJob,
+        PushSubscription,
         QueueJob,
         UserConfig,
         UserDocument,
@@ -148,6 +149,8 @@ def test_deleting_an_account_leaves_no_row_anywhere(api):
     session.add(UserLabel(user_id=user.id, job_id=job.id, label=70))
     session.add(UserJobState(user_id=user.id, job_id=job.id, score=70.0))
     session.add(QueueJob(lane="label", user_id=user.id, payload={}))
+    session.add(PushSubscription(user_id=user.id, endpoint=f"https://push.example.com/{uuid.uuid4()}",
+                                 p256dh="k", auth="a"))
     session.flush()
 
     assert http.request("DELETE", "/account", json={"password": PASSWORD}).status_code == 200

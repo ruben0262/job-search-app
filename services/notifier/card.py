@@ -1,45 +1,19 @@
-"""One job as a Telegram card."""
+"""One job as a Telegram card, and as a browser notification."""
 from __future__ import annotations
 
 import html
-from dataclasses import dataclass
 
 from libs.corpus import salary as salarylib
 from libs.corpus.filters import age_label
 from libs.corpus.workfilter import classify
+from libs.db.models import CorpusJob
+from libs.notify import site_url
 
 # The reference's own thresholds for the applicant dot: how contested a posting is, in four steps.
 APPLICANT_BUCKETS = (10, 50, 200)
 APPLICANT_DOTS = ("🟢", "🟡", "🟠", "🔴")
 
-# The score at or above which a match is a 🟢 rather than a 🟡.
-HIGH_FIT = 60.0
-
 WORKPLACE_LABELS = {"remote": "🌍 Remote", "hybrid": "🏠 Hybrid", "onsite": "🏢 On-site"}
-
-
-@dataclass(frozen=True)
-class FeedItem:
-    """One scored posting, with everything the card renders."""
-
-    job_id: int
-    url: str
-    title: str
-    company: str | None
-    score: float
-    source: str | None = None
-    location: str | None = None
-    is_remote: bool | None = None
-    description: str | None = None
-    posted_at: object | None = None
-    applicants: int | None = None
-    # LinkedIn's own words.
-    applicants_caption: str | None = None
-    easy_apply: bool | None = None
-    reposted: bool | None = None
-    workplace: str | None = None
-    # Set when a pre-send refresh found the posting closed.
-    closed: bool = False
 
 
 def applicant_bucket(count: int) -> int:
@@ -63,44 +37,58 @@ def applicant_label(count: int | None, caption: str | None = None) -> str:
     return f"{count} {dot}"
 
 
-def render(item: FeedItem, *, salary_bands: dict | None = None,
-           high_fit: float = HIGH_FIT) -> str:
-    """The card, in Telegram HTML."""
-    esc = html.escape
-    icon = "🟢" if item.score >= high_fit else "🟡"
+def job_page(job: CorpusJob) -> str:
+    """The job on our site, where the CV for it is made."""
+    return site_url(f"/#/feed?job={job.id}")
 
-    applicants = applicant_label(item.applicants, item.applicants_caption)
+
+def render(job: CorpusJob, words: tuple[str, ...]) -> str:
+    """The card, in Telegram HTML: the job, where it is, what it pays, and which of your words it has."""
+    esc = html.escape
+
+    applicants = applicant_label(job.applicants, job.applicants_caption)
     applicants = f" · 👥{esc(applicants)}" if applicants else ""
     # `age_label` can return "<1h", and a raw `<` breaks Telegram's HTML parse.
-    age = age_label(_iso(item.posted_at))
+    age = age_label(_iso(job.posted_at))
     age = f" · {esc(age)}" if age else ""
 
-    easy = " ⚡" if item.easy_apply is True else ""
-    repost = " ♻️" if item.reposted is True else ""
-
-    title = esc((item.title or "")[:120])
-    company = esc((item.company or "")[:60])
-    source = esc(item.source or "")
+    easy = " ⚡" if job.easy_apply is True else ""
+    repost = " ♻️" if job.reposted is True else ""
 
     workplace = WORKPLACE_LABELS.get(
-        item.workplace or classify(item.title or "", item.location or "", item.description,
-                                   item.is_remote) or "")
-    location = esc((item.location or "").strip()[:70])
+        job.workplace or classify(job.title or "", job.location or "", job.description,
+                                  job.is_remote) or "")
+    location = esc((job.location or "").strip()[:70])
     place = " · ".join(part for part in [f"📍 {location}" if location else "", workplace] if part)
     place = f"{place}\n" if place else ""
 
-    return (f"{icon} <b>{int(item.score)}</b> · {title}{easy}{repost}\n"
-            f"{company} · {source}{applicants}{age}\n"
-            f"{place}{salary_line(item, salary_bands)}\n"
-            f"{esc(item.url or '')}")
+    return (f"<b>{esc((job.title or '')[:120])}</b>{easy}{repost}\n"
+            f"{esc((job.company or '')[:60])} · {esc(job.source or '')}{applicants}{age}\n"
+            f"{place}{salary_line(job)}\n"
+            f"Matches: {esc(', '.join(words))}")
 
 
-def salary_line(item: FeedItem, bands: dict | None = None) -> str:
+def keyboard(job: CorpusJob) -> dict:
+    """Two links and no callbacks: the posting itself, and the job on our site to make a CV for it."""
+    buttons = [{"text": "Make my CV", "url": job_page(job)}]
+    if job.url:
+        buttons.insert(0, {"text": "Open job", "url": job.url})
+    return {"inline_keyboard": [buttons]}
+
+
+def notification(job: CorpusJob) -> dict:
+    """The job as a browser notification: what the service worker shows, and where a tap goes."""
+    return {"title": job.title or "A new job for you",
+            "body": " · ".join(part for part in (job.company, job.location) if part),
+            "url": job_page(job)}
+
+
+def salary_line(job: CorpusJob) -> str:
     """`'💰 55k–75k EUR/yr · 🎯 ask 60k–80k EUR/yr'`, with `⚠️ below target` when it applies."""
-    job = {"title": item.title or "", "location": item.location or "",
-           "description": item.description or "", "source": item.source or ""}
-    posted = salarylib.extract(item.description or "")
-    ask = salarylib.suggest(job, posted, bands)
+    fields = {"title": job.title or "", "location": job.location or "",
+              "description": job.description or "", "source": job.source or ""}
+    posted = salarylib.extract(job.description or "")
+    ask = salarylib.suggest(fields, posted, None)
 
     parts = [f"💰 {html.escape(salarylib.fmt(posted))}" if posted else "💰 not listed"]
     if ask:

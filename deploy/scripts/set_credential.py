@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from sqlalchemy import select
 
-from libs.credentials import telegram_chat_id, validate_credential
+from libs.credentials import validate_credential
 from libs.db.models import ProxyCredential, User
 from libs.db.models.user import SECRET_KINDS
 from libs.db.session import session_scope
@@ -28,11 +28,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--no-validate", action="store_true",
                         help="store without calling the provider — for when they are down, not for "
                              "when you are unsure")
-    parser.add_argument("--chat-id",
-                        help="telegram_bot only: set the chat id explicitly instead of reading it. "
-                             "Needed when the bot already posts to several chats — getUpdates "
-                             "returns whichever spoke last, which may be a channel rather than the "
-                             "person")
     args = parser.parse_args(argv)
 
     configure("tools")
@@ -72,17 +67,6 @@ def main(argv: list[str] | None = None) -> int:
                 credential.last_error = None
                 print("credential was quarantined — reset to healthy for the new URL")
             print(f"proxy credential ready: {credential.daily_cap_mb} MB/day cap")
-
-        if args.kind == "telegram_bot":
-            # The step that confuses people more than the rest of setup put together.
-            chat_id = args.chat_id or telegram_chat_id(value)
-            if chat_id:
-                user.telegram_chat_id = chat_id
-                user.telegram_status = "connected"
-                print(f"chat id captured: {chat_id} — telegram is connected")
-            else:
-                user.telegram_status = "unconfigured"
-                print("no chat id yet: open the bot, press Start, then re-run this command")
 
     print(f"stored {args.kind} for {args.email}")
     return 0

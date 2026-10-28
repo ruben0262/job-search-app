@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import uuid as _uuid
 from datetime import UTC, datetime
 
@@ -30,6 +29,7 @@ from libs.auth.access import issue_access_token
 from libs.auth.sessions import ACCESS_TTL, REFRESH_TTL, session_owner
 from libs.db.models import User, UserSession
 from libs.mail import EmailSender, MailError, reset_email, send_within_cap, verification_email
+from libs.notify import site_url
 from libs.secrets import redacting
 from services.api.deps import get_db, get_mailer, rate_limit
 
@@ -53,10 +53,6 @@ class SignupRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str = Field(max_length=256)
-
-
-def _base_url() -> str:
-    return os.environ.get("PUBLIC_URL", "http://localhost:8000").rstrip("/")
 
 
 def _set_session_cookies(response: Response, access: str, refresh: str) -> None:
@@ -103,13 +99,38 @@ def signup(body: SignupRequest, request: Request,
     return OPAQUE_SIGNUP
 
 
+class AuthStatus(BaseModel):
+    status: str
+
+
+class ResendRequest(BaseModel):
+    email: EmailStr
+
+
+@router.post("/resend", status_code=status.HTTP_202_ACCEPTED)
+def resend(body: ResendRequest, request: Request, db: Session = Depends(get_db),
+           mailer: EmailSender = Depends(get_mailer)) -> AuthStatus:
+    """Email a fresh verification link to an account still waiting for one. Answers the same anyway."""
+    email = body.email.lower()
+    rate_limit(request, f"resend:{email}", limit=3, per_seconds=3600)
+
+    user = db.scalar(select(User).where(User.email == email))
+    if user is not None and user.status == "pending_verification":
+        # Issuing revokes the older links, so the newest one in the inbox is the one that works.
+        _send_verification(db, mailer, email, issue_token(db, user.id, "verify_email"))
+    else:
+        logger.info("verification resend for an unknown or verified address; answering opaquely")
+    return AuthStatus(**OPAQUE_SIGNUP)
+
+
 class VerifyRequest(BaseModel):
     token: str = Field(min_length=1, max_length=256)
 
 
 @router.post("/verify")
-def verify(body: VerifyRequest, db: Session = Depends(get_db)) -> dict:
-    """Redeem a verification link."""
+def verify(body: VerifyRequest, request: Request, response: Response,
+           db: Session = Depends(get_db)) -> AuthStatus:
+    """Redeem a verification link and sign in: opening it proves the inbox, as a password would."""
     user_id = consume_token(db, body.token, "verify_email")
     if user_id is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
@@ -118,11 +139,15 @@ def verify(body: VerifyRequest, db: Session = Depends(get_db)) -> dict:
     user = db.get(User, user_id)
     if user is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="account no longer exists")
+    # The same refusal login gives: a link must not become a way round a suspension.
+    if user.status in ("suspended", "deleted"):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="this account is not active")
     if user.email_verified_at is None:
         user.email_verified_at = _now()
     user.status = "active"
     user.active = True
-    return {"status": "verified"}
+    _sign_in(request, response, db, user)
+    return AuthStatus(status="verified")
 
 
 class ForgotRequest(BaseModel):
@@ -138,7 +163,7 @@ def forgot(body: ForgotRequest, request: Request, db: Session = Depends(get_db),
     user = db.scalar(select(User).where(User.email == body.email.lower()))
     if user is not None and user.status not in ("suspended", "deleted"):
         token = issue_token(db, user.id, "reset_password")
-        url = f"{_base_url()}/#/reset?token={token}"
+        url = site_url(f"/#/reset?token={token}")
         subject, mail_body = reset_email(url)
         with redacting(token):
             try:
@@ -205,13 +230,18 @@ def login(body: LoginRequest, request: Request, response: Response,
         # The parameters moved since this hash was written.
         user.password_hash = hash_password(body.password)
 
+    _sign_in(request, response, db, user)
+    return {"status": "ok"}
+
+
+def _sign_in(request: Request, response: Response, db: Session, user: User) -> None:
+    """A session and both cookies: what a correct password earns, and what a verification link does."""
     session = issue_session(db, user.id,
                             user_agent=request.headers.get("user-agent"),
                             ip=_client_ip(request))
     _set_session_cookies(response, issue_access_token(user.id, session.session_id),
                          session.refresh_token)
     user.last_active_at = _now()
-    return {"status": "ok"}
 
 
 # `response_model=None`: the handler returns either a dict or a Response.
@@ -268,7 +298,7 @@ def logout_everywhere(request: Request, response: Response,
 def _send_verification(db: Session, mailer: EmailSender, email: str, token: str) -> None:
     """Send the link, and treat any delivery failure as recoverable."""
     # The SPA's hash route, not the API's path.
-    url = f"{_base_url()}/#/verify?token={token}"
+    url = site_url(f"/#/verify?token={token}")
     subject, body = verification_email(url)
     # The token grants access to the account, so it is scrubbed from anything logged in flight.
     with redacting(token):

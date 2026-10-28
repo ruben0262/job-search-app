@@ -58,9 +58,9 @@ def test_every_component_answers_with_a_state_and_a_sentence(api):
     body = http.get("/status").json()
     components = {c["key"]: c for c in body["components"]}
 
-    # No "Scoring": nothing scores, and a component that can only ever say "off" is not news.
-    assert set(components) == {"telegram_bot", "telegram_channel", "harvester", "delivery",
-                               "docgen"}
+    # No "Scoring": nothing scores, and a component that can only ever say "off" is not news. No
+    # "Telegram channel" either: one platform bot sends to the person's own chat.
+    assert set(components) == {"telegram_bot", "harvester", "delivery", "docgen"}
     for component in components.values():
         assert component["state"] in ("ok", "warn", "down", "off")
         assert component["detail"], "a dot with no words is a support request"
@@ -105,7 +105,49 @@ def test_a_broken_bot_is_red_with_the_fix_in_words(api):
 
     bot = next(c for c in http.get("/status").json()["components"] if c["key"] == "telegram_bot")
     assert bot["state"] == "down"
-    assert "token" in bot["detail"]
+    assert "Connect it again" in bot["detail"]
+
+
+def _green(session, user) -> None:
+    from libs.db.models import UserConfig
+
+    session.add(UserConfig(user_id=user.id, schema_version=2, config={"sections": [
+        {"platform": "all", "keywords": ["backend engineer"]}]}))
+    session.flush()
+
+
+def test_a_match_left_unsent_for_over_an_hour_reads_as_stuck(api):
+    """The stall signal, on the notifier's own definition of owed: matches since the newest one sent."""
+    from datetime import timedelta
+
+    from libs.db.models import CorpusJob
+
+    http, session, user = api
+    _green(session, user)
+    user.created_at = datetime.now(UTC) - timedelta(hours=3)
+    session.add(CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
+                          title="Backend Engineer", first_seen_at=datetime.now(UTC) - timedelta(hours=2)))
+    session.flush()
+
+    delivery = next(c for c in http.get("/status").json()["components"] if c["key"] == "delivery")
+    assert delivery["state"] == "down", delivery
+    # The fixture's fresh posting matches too: two owed, the oldest two hours old.
+    assert "2 matching job(s) waiting, the oldest for 2 hour(s)" in delivery["detail"]
+
+
+def test_a_match_found_minutes_ago_is_on_its_way_not_stuck(api):
+    """The notifier picks a posting up within a minute of its being stored, so a fresh one is not a stall."""
+    from datetime import timedelta
+
+    http, session, user = api
+    _green(session, user)
+    # Before the fixture's posting: a database `now()` is the transaction's first statement, after it.
+    user.created_at = datetime.now(UTC) - timedelta(hours=1)
+    session.flush()
+
+    delivery = next(c for c in http.get("/status").json()["components"] if c["key"] == "delivery")
+    assert delivery["state"] == "ok", delivery
+    assert "1 new matching job(s) on the way" in delivery["detail"]
 
 
 def test_pausing_delivery_is_reported_as_paused_not_broken(api):

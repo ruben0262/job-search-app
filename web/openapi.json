@@ -210,6 +210,19 @@
         "title": "AdminSetup",
         "type": "object"
       },
+      "AuthStatus": {
+        "properties": {
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "AuthStatus",
+        "type": "object"
+      },
       "Body_upload_documents_post": {
         "properties": {
           "file": {
@@ -227,38 +240,6 @@
           "file"
         ],
         "title": "Body_upload_documents_post",
-        "type": "object"
-      },
-      "ChannelBody": {
-        "properties": {
-          "channel_id": {
-            "maxLength": 64,
-            "minLength": 2,
-            "pattern": "^(-100\\d{4,}|@[A-Za-z0-9_]{4,})$",
-            "title": "Channel Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "channel_id"
-        ],
-        "title": "ChannelBody",
-        "type": "object"
-      },
-      "ChatBody": {
-        "properties": {
-          "chat_id": {
-            "maxLength": 32,
-            "minLength": 4,
-            "pattern": "^\\d{4,}$",
-            "title": "Chat Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "chat_id"
-        ],
-        "title": "ChatBody",
         "type": "object"
       },
       "ConfigChoice": {
@@ -396,6 +377,26 @@
           "value"
         ],
         "title": "CredentialBody",
+        "type": "object"
+      },
+      "CredentialList": {
+        "properties": {
+          "credentials": {
+            "items": {
+              "$ref": "#/components/schemas/StoredCredential"
+            },
+            "title": "Credentials",
+            "type": "array"
+          },
+          "requirements": {
+            "$ref": "#/components/schemas/Requirements"
+          }
+        },
+        "required": [
+          "credentials",
+          "requirements"
+        ],
+        "title": "CredentialList",
         "type": "object"
       },
       "Currency": {
@@ -1286,6 +1287,90 @@
         "title": "ProfileLink",
         "type": "object"
       },
+      "PushEndpoint": {
+        "properties": {
+          "endpoint": {
+            "maxLength": 2048,
+            "minLength": 12,
+            "title": "Endpoint",
+            "type": "string"
+          }
+        },
+        "required": [
+          "endpoint"
+        ],
+        "title": "PushEndpoint",
+        "type": "object"
+      },
+      "PushKey": {
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key"
+        ],
+        "title": "PushKey",
+        "type": "object"
+      },
+      "PushKeys": {
+        "properties": {
+          "auth": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Auth",
+            "type": "string"
+          },
+          "p256dh": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "P256Dh",
+            "type": "string"
+          }
+        },
+        "required": [
+          "p256dh",
+          "auth"
+        ],
+        "title": "PushKeys",
+        "type": "object"
+      },
+      "PushStatus": {
+        "properties": {
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "PushStatus",
+        "type": "object"
+      },
+      "PushSubscriptionBody": {
+        "description": "What the browser's `PushSubscription.toJSON()` returns, posted as it is.",
+        "properties": {
+          "endpoint": {
+            "maxLength": 2048,
+            "minLength": 12,
+            "pattern": "^https://",
+            "title": "Endpoint",
+            "type": "string"
+          },
+          "keys": {
+            "$ref": "#/components/schemas/PushKeys"
+          }
+        },
+        "required": [
+          "endpoint",
+          "keys"
+        ],
+        "title": "PushSubscriptionBody",
+        "type": "object"
+      },
       "ReadyDashboard": {
         "properties": {
           "applied": {
@@ -1336,6 +1421,56 @@
         ],
         "title": "RemotePolicy",
         "type": "string"
+      },
+      "Removed": {
+        "properties": {
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "Removed",
+        "type": "object"
+      },
+      "Requirements": {
+        "properties": {
+          "claude": {
+            "title": "Claude",
+            "type": "boolean"
+          },
+          "proxy": {
+            "title": "Proxy",
+            "type": "boolean"
+          },
+          "telegram_bot": {
+            "title": "Telegram Bot",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "claude",
+          "telegram_bot",
+          "proxy"
+        ],
+        "title": "Requirements",
+        "type": "object"
+      },
+      "ResendRequest": {
+        "properties": {
+          "email": {
+            "format": "email",
+            "title": "Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "ResendRequest",
+        "type": "object"
       },
       "ResetRequest": {
         "properties": {
@@ -1415,6 +1550,29 @@
           "status"
         ],
         "title": "SaveResult",
+        "type": "object"
+      },
+      "Saved": {
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "validated": {
+            "title": "Validated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "status",
+          "validated",
+          "detail"
+        ],
+        "title": "Saved",
         "type": "object"
       },
       "SavedLink": {
@@ -1611,6 +1769,48 @@
         "title": "StatusReport",
         "type": "object"
       },
+      "StoredCredential": {
+        "properties": {
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "last_4": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last 4"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "validated": {
+            "title": "Validated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "kind",
+          "last_4",
+          "validated",
+          "updated_at"
+        ],
+        "title": "StoredCredential",
+        "type": "object"
+      },
       "SuggestionDismissal": {
         "properties": {
           "term": {
@@ -1648,6 +1848,57 @@
           "kind"
         ],
         "title": "SuggestionPick",
+        "type": "object"
+      },
+      "TelegramLink": {
+        "properties": {
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "title": "TelegramLink",
+        "type": "object"
+      },
+      "TelegramReply": {
+        "description": "One message back to the chat, which Telegram sends for us.",
+        "properties": {
+          "chat_id": {
+            "title": "Chat Id",
+            "type": "integer"
+          },
+          "method": {
+            "const": "sendMessage",
+            "default": "sendMessage",
+            "title": "Method",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "chat_id",
+          "text"
+        ],
+        "title": "TelegramReply",
+        "type": "object"
+      },
+      "TelegramStatus": {
+        "properties": {
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "TelegramStatus",
         "type": "object"
       },
       "Turn": {
@@ -3117,6 +3368,48 @@
         ]
       }
     },
+    "/auth/resend": {
+      "post": {
+        "description": "Email a fresh verification link to an account still waiting for one. Answers the same anyway.",
+        "operationId": "resend_auth_resend_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResendRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resend",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/auth/reset": {
       "post": {
         "description": "Redeem a reset link and set the new password.",
@@ -3207,7 +3500,7 @@
     },
     "/auth/verify": {
       "post": {
-        "description": "Redeem a verification link.",
+        "description": "Redeem a verification link and sign in: opening it proves the inbox, as a password would.",
         "operationId": "verify_auth_verify_post",
         "requestBody": {
           "content": {
@@ -3224,9 +3517,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Verify Auth Verify Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/AuthStatus"
                 }
               }
             },
@@ -3258,9 +3549,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response List Credentials Credentials Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/CredentialList"
                 }
               }
             },
@@ -3385,165 +3674,9 @@
         ]
       }
     },
-    "/credentials/telegram/channel": {
-      "delete": {
-        "description": "Back to the private chat. Never a drop \u2014 the fallback chat is always valid.",
-        "operationId": "unset_channel_credentials_telegram_channel_delete",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Unset Channel Credentials Telegram Channel Delete",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Unset Channel",
-        "tags": [
-          "credentials"
-        ]
-      },
-      "put": {
-        "description": "Point the job stream at a channel.",
-        "operationId": "set_channel_credentials_telegram_channel_put",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ChannelBody"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Set Channel Credentials Telegram Channel Put",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Set Channel",
-        "tags": [
-          "credentials"
-        ]
-      }
-    },
-    "/credentials/telegram/chat": {
-      "delete": {
-        "description": "Forget the chat id. Unlike the channel there is no fallback, so delivery stops until one is set.",
-        "operationId": "unset_chat_credentials_telegram_chat_delete",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Unset Chat Credentials Telegram Chat Delete",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Unset Chat",
-        "tags": [
-          "credentials"
-        ]
-      },
-      "put": {
-        "description": "Set the chat id by hand, proven by messaging it.",
-        "operationId": "set_chat_credentials_telegram_chat_put",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ChatBody"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Set Chat Credentials Telegram Chat Put",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Set Chat",
-        "tags": [
-          "credentials"
-        ]
-      }
-    },
-    "/credentials/telegram/connect": {
-      "post": {
-        "description": "Re-read the chat id after the user has pressed Start.",
-        "operationId": "telegram_connect_credentials_telegram_connect_post",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Telegram Connect Credentials Telegram Connect Post",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Telegram Connect",
-        "tags": [
-          "credentials"
-        ]
-      }
-    },
     "/credentials/{kind}": {
       "delete": {
-        "description": "Revoke one credential.",
+        "description": "Revoke one credential. Telegram is not one any more: it is linked, under `/telegram/link`.",
         "operationId": "delete_credential_credentials__kind__delete",
         "parameters": [
           {
@@ -3561,9 +3694,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Delete Credential Credentials  Kind  Delete",
-                  "type": "object"
+                  "$ref": "#/components/schemas/Removed"
                 }
               }
             },
@@ -3614,9 +3745,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Put Credential Credentials  Kind  Put",
-                  "type": "object"
+                  "$ref": "#/components/schemas/Saved"
                 }
               }
             },
@@ -4442,6 +4571,110 @@
         ]
       }
     },
+    "/push/key": {
+      "get": {
+        "description": "The public half of the platform's VAPID key pair: what a browser subscribes with.",
+        "operationId": "key_push_key_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PushKey"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Key",
+        "tags": [
+          "push"
+        ]
+      }
+    },
+    "/push/subscribe": {
+      "delete": {
+        "description": "Forget this browser.",
+        "operationId": "unsubscribe_push_subscribe_delete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PushEndpoint"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PushStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Unsubscribe",
+        "tags": [
+          "push"
+        ]
+      },
+      "post": {
+        "description": "Remember this browser. Subscribing it again replaces its row, whichever account it was on.",
+        "operationId": "subscribe_push_subscribe_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PushSubscriptionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PushStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Subscribe",
+        "tags": [
+          "push"
+        ]
+      }
+    },
     "/setup": {
       "get": {
         "description": "One chat's transcript, the list of chats, the files, and whether documents can be built.",
@@ -4981,20 +5214,53 @@
         ]
       }
     },
-    "/telegram/webhook/{secret}": {
+    "/telegram/link": {
+      "delete": {
+        "description": "Stop sending to Telegram. Connecting again is the same one tap.",
+        "operationId": "unlink_telegram_link_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TelegramStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Unlink",
+        "tags": [
+          "telegram"
+        ]
+      },
       "post": {
-        "description": "One button tap or one typed command, handled and then answered.",
-        "operationId": "webhook_telegram_webhook__secret__post",
+        "description": "A one-time link that opens the platform's bot carrying a code for this account.",
+        "operationId": "link_telegram_link_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TelegramLink"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Link",
+        "tags": [
+          "telegram"
+        ]
+      }
+    },
+    "/telegram/webhook": {
+      "post": {
+        "description": "Everything anybody sends the bot: `/start <code>` connects, anything else points at the site.",
+        "operationId": "webhook_telegram_webhook_post",
         "parameters": [
-          {
-            "in": "path",
-            "name": "secret",
-            "required": true,
-            "schema": {
-              "title": "Secret",
-              "type": "string"
-            }
-          },
           {
             "in": "header",
             "name": "x-telegram-bot-api-secret-token",
@@ -5017,9 +5283,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Webhook Telegram Webhook  Secret  Post",
-                  "type": "object"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/TelegramReply"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Webhook Telegram Webhook Post"
                 }
               }
             },

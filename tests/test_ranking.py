@@ -15,14 +15,13 @@ from libs.corpus.ranking import (
     priority_key,
 )
 from libs.tenant.filters import UserFilters
-from services.notifier.eligibility import rank
 
 NOW = datetime(2026, 7, 29, 12, 0, tzinfo=UTC)
 
 
 @dataclass
 class Item:
-    """The shape `eligibility` reads — the fields of a `FeedItem` it actually touches."""
+    """A corpus row, as the filters read it."""
 
     job_id: int = 1
     title: str = "Backend Engineer"
@@ -113,27 +112,6 @@ def test_easy_apply_moves_nothing():
 
 # ── ordering, where score and opportunity disagree ────────────────────────────────────────────
 
-def test_a_fresh_good_job_outranks_a_stale_perfect_one():
-    """The reason this module exists."""
-    fresh = Item(job_id=1, score=70, posted_at=NOW - timedelta(minutes=30), applicants=3)
-    stale = Item(job_id=2, score=99, posted_at=NOW - timedelta(days=21), applicants=250)
-    assert [item.job_id for item in rank([stale, fresh])] == [1, 2]
-
-
-def test_fit_still_breaks_a_tie():
-    """It gates entry and orders equals. It just does not dominate."""
-    better = Item(job_id=1, score=95)
-    worse = Item(job_id=2, score=61)
-    assert [item.job_id for item in rank([worse, better])] == [1, 2]
-
-
-def test_remote_leads_hybrid_leads_onsite_at_equal_freshness():
-    remote = Item(job_id=1, workplace="remote")
-    hybrid = Item(job_id=2, workplace="hybrid")
-    onsite = Item(job_id=3, workplace="onsite", location="Budapest, Hungary")
-    assert [item.job_id for item in rank([onsite, hybrid, remote])] == [1, 2, 3]
-
-
 def test_an_unknown_workplace_ranks_with_hybrid_not_last():
     """Unknown is the common case. Treating it as on-site would bury most of the feed."""
     unknown = priority_key(posted_at=NOW, applicants=1, workplace=None, now=NOW)
@@ -206,29 +184,6 @@ def test_a_user_who_disabled_the_cap_sees_them():
 
 def test_applicant_glut_needs_a_count_to_act_on():
     assert applicant_glut(source="linkedin", applicants=None, cap=200) is False
-
-
-# ── selection ─────────────────────────────────────────────────────────────────────────────────
-
-def test_selection_ranks_and_caps_and_does_not_filter():
-    """Delivery stopped judging on 2026-08-07: what is scored above the cutoff is sent."""
-    items = [
-        Item(job_id=1, score=99, posted_at=NOW - timedelta(hours=100), applicants=180),
-        Item(job_id=2, score=70, posted_at=NOW - timedelta(minutes=10), applicants=2),
-        Item(job_id=3, score=95, posted_at=NOW - timedelta(hours=200), applicants=190),
-    ]
-    kept = rank(items, now=NOW)[:2]
-
-    assert [item.job_id for item in kept] == [2, 1], "freshest and least crowded first"
-
-
-def test_a_closed_posting_is_ranked_last_rather_than_dropped_at_send_time():
-    """`closed_at` is a pre-score condition. Delivery ranks what scoring already admitted."""
-    items = [Item(job_id=1, applicants=190, posted_at=NOW - timedelta(hours=200)),
-             Item(job_id=2, applicants=2, posted_at=NOW - timedelta(minutes=10))]
-    kept = rank(items, now=NOW)
-
-    assert [item.job_id for item in kept] == [2, 1]
 
 
 # ── the age window the user asked for ─────────────────────────────────────────────────────────

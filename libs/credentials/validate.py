@@ -1,7 +1,6 @@
 """One cheap call per credential kind, proving it works."""
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 
 import httpx
@@ -14,8 +13,6 @@ TELEGRAM_URL = "https://api.telegram.org/bot{token}/{method}"
 
 TIMEOUT = 15.0
 
-logger = logging.getLogger(__name__)
-
 
 @dataclass(frozen=True)
 class ValidationResult:
@@ -23,7 +20,7 @@ class ValidationResult:
 
     ok: bool
     detail: str = ""
-    # Anything the check learned that the platform needs — the Telegram chat id, for instance.
+    # Anything else the check learned — the bot's name, the address a proxy sends from.
     extra: dict[str, str] | None = None
 
 
@@ -117,88 +114,3 @@ def _validate_proxy(value: str, http: httpx.Client) -> ValidationResult:
     if response.status_code != 200:
         return ValidationResult(False, f"the proxy answered {response.status_code}")
     return ValidationResult(True, extra={"egress_ip": response.text.strip()[:64]})
-
-
-def telegram_channel_check(token: str, channel_id: str, *,
-                           client: httpx.Client | None = None) -> ValidationResult:
-    """Prove the bot can post to this channel — by posting to it."""
-    owned = client is None
-    http = client or httpx.Client(timeout=TIMEOUT, trust_env=False)
-    try:
-        response = http.post(
-            TELEGRAM_URL.format(token=token, method="sendMessage"),
-            json={"chat_id": channel_id,
-                  "text": "Mahoraga connected — your jobs will stream here. 🛞"})
-    except httpx.HTTPError as exc:
-        return ValidationResult(False, redact(f"could not reach Telegram: {exc!s}")[:200])
-    finally:
-        if owned:
-            http.close()
-
-    payload = response.json() if response.headers.get("content-type", "").startswith(
-        "application/json") else {}
-    if response.status_code == 200 and payload.get("ok"):
-        return ValidationResult(True)
-    description = str(payload.get("description", f"Telegram answered {response.status_code}"))
-    if "not found" in description.lower():
-        return ValidationResult(False, "Telegram cannot find that channel — check the ID starts "
-                                       "with -100, and that the bot has been added to the channel")
-    if "rights" in description.lower() or "forbidden" in description.lower():
-        return ValidationResult(False, "the bot is in the channel but cannot post — make it an "
-                                       "administrator with permission to post messages")
-    return ValidationResult(False, redact(description)[:200])
-
-
-def telegram_chat_check(token: str, chat_id: str, *,
-                        client: httpx.Client | None = None) -> ValidationResult:
-    """Prove the bot can message this private chat — by messaging it."""
-    owned = client is None
-    http = client or httpx.Client(timeout=TIMEOUT, trust_env=False)
-    try:
-        response = http.post(
-            TELEGRAM_URL.format(token=token, method="sendMessage"),
-            json={"chat_id": chat_id,
-                  "text": "Mahoraga connected — commands and your finished CVs arrive here. 🛞"})
-    except httpx.HTTPError as exc:
-        return ValidationResult(False, redact(f"could not reach Telegram: {exc!s}")[:200])
-    finally:
-        if owned:
-            http.close()
-
-    payload = response.json() if response.headers.get("content-type", "").startswith(
-        "application/json") else {}
-    if response.status_code == 200 and payload.get("ok"):
-        return ValidationResult(True)
-    description = str(payload.get("description", f"Telegram answered {response.status_code}"))
-    lowered = description.lower()
-    if "not found" in lowered:
-        return ValidationResult(False, "Telegram cannot find that chat — check the number, and "
-                                       "that it is your own chat id rather than the channel's")
-    if "blocked" in lowered or "forbidden" in lowered:
-        return ValidationResult(False, "the bot cannot message you — open the bot in Telegram and "
-                                       "press Start, then try again")
-    return ValidationResult(False, redact(description)[:200])
-
-
-def telegram_chat_id(token: str, *, client: httpx.Client | None = None) -> str | None:
-    """The chat id of whoever last messaged this bot, or `None` if nobody has yet."""
-    owned = client is None
-    http = client or httpx.Client(timeout=TIMEOUT, trust_env=False)
-    try:
-        response = http.get(TELEGRAM_URL.format(token=token, method="getUpdates"))
-        if response.status_code != 200:
-            logger.warning("Telegram answered %s to getUpdates; treating the chat id as not "
-                           "yet available", response.status_code)
-            return None
-        for update in reversed((response.json() or {}).get("result") or []):
-            chat = (update.get("message") or update.get("channel_post") or {}).get("chat") or {}
-            if chat.get("id") is not None:
-                return str(chat["id"])
-        return None
-    except httpx.HTTPError as exc:
-        # Otherwise the user is told to press Start when in fact Telegram was unreachable.
-        logger.warning("could not reach Telegram to read the chat id: %s", exc)
-        return None
-    finally:
-        if owned:
-            http.close()

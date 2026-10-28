@@ -271,6 +271,20 @@ def test_the_sweep_does_not_queue_a_second_run_while_one_is_pending(ctx):
     assert dispatch_due_notifications(ctx) == 0
 
 
+def test_an_account_reachable_only_by_its_browser_is_queued(ctx):
+    """Telegram is optional: a browser that asked for notifications is a channel on its own."""
+    from libs.db.models import PushSubscription
+
+    user = _user(ctx, active=True, status="active", telegram_status="unconfigured")
+    _posting(ctx)
+    assert dispatch_due_notifications(ctx) == 0, "the premise: no channel, no run"
+
+    ctx.add(PushSubscription(user_id=user.id, endpoint=f"https://push.example.test/{uuid.uuid4()}",
+                             p256dh="k", auth="a"))
+    ctx.flush()
+    assert dispatch_due_notifications(ctx) == 1
+
+
 def test_a_user_whose_bot_is_broken_is_not_enqueued(ctx):
     """Retrying a revoked token cannot succeed. The fix is a reconnect email, not a queue entry."""
     _user(ctx, active=True, status="active", telegram_status="broken")

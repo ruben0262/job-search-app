@@ -1,22 +1,29 @@
-"""The `notify` lane worker, and the dispatcher tick that feeds it."""
+"""The `notify` lane worker, its two transports (Telegram and Web Push), and the sweep that feeds it."""
 from __future__ import annotations
 
+import json
 import logging
 import os
 import sys
 import time
 
 import httpx
+from pywebpush import WebPushException, webpush
 
-from libs.db.models import QueueJob
+from libs.db.models import PushSubscription, QueueJob
 from libs.db.session import session_scope
 from libs.obs import configure
 from libs.queue.queue import dispatch_due_notifications
-from libs.queue.worker import Terminal, run_worker
-from libs.secrets import SecretStore, install
-from services.notifier.deliver import BotRevoked, deliver
+from libs.queue.worker import run_worker
+from libs.secrets import install
+from services.notifier.deliver import deliver
 
-TELEGRAM_TIMEOUT_SEC = 20.0
+# One bound for either transport's request, so a slow one cannot outlast the run's send budget alone.
+SEND_TIMEOUT_SEC = 20.0
+
+# How long a push service holds an alert for a phone that is asleep or offline: a day, because a job
+# alert is still worth reading the next morning.
+PUSH_TTL_SEC = 24 * 3600
 
 # How many times one message may be re-offered after a 429 before it waits for the next cycle.
 RATE_LIMIT_RETRIES = 3
@@ -28,8 +35,8 @@ MAX_RATE_LIMIT_WAIT_SEC = 60.0
 SERVER_ERROR_RETRIES = 3
 SERVER_ERROR_BACKOFF_SEC = 2.0
 
-# How often the sweep asks "is anybody holding a match nobody queued". Not the delivery cadence —
-# there is none: the score lane enqueues a run the moment it records a match (`libs.queue.queue`).
+# How often the sweep asks "has the corpus grown for anybody since their last run"
+# (`libs.queue.queue`). A posting stored now reaches a person within about this long.
 DISPATCH_EVERY_SEC = 60.0
 
 logger = logging.getLogger(__name__)
@@ -49,7 +56,7 @@ def send(token: str, chat_id: str, message: str, keyboard: dict | None = None) -
         response = httpx.post(
             f"https://api.telegram.org/bot{token}/sendMessage",
             json=payload,
-            timeout=TELEGRAM_TIMEOUT_SEC)
+            timeout=SEND_TIMEOUT_SEC)
 
         # 429 is Telegram telling us how long to wait, not a failure.
         if response.status_code == 429:
@@ -80,20 +87,38 @@ def send(token: str, chat_id: str, message: str, keyboard: dict | None = None) -
     raise RuntimeError("Telegram kept rate limiting this bot; the rest will go out next cycle")
 
 
+def push(subscription: PushSubscription, payload: dict) -> bool:
+    """One alert to one browser. False when its push service says the subscription is gone."""
+    try:
+        webpush({"endpoint": subscription.endpoint,
+                 "keys": {"p256dh": subscription.p256dh, "auth": subscription.auth}},
+                json.dumps(payload),
+                vapid_private_key=os.environ["VAPID_PRIVATE_KEY"],
+                # A fresh dict every call: `webpush` writes the audience and expiry into it.
+                vapid_claims={"sub": os.environ["VAPID_SUBJECT"]},
+                timeout=SEND_TIMEOUT_SEC, ttl=PUSH_TTL_SEC)
+    except WebPushException as exc:
+        # 404 and 410 are an unsubscribed or expired browser. Anything else is a fault, and raised.
+        if exc.status_code in (404, 410):
+            return False
+        raise
+    return True
+
+
 def _dispatch(session) -> None:
-    """The sweep: anything scored and unsent that nothing has queued. Silent when it finds none."""
+    """The sweep: anybody the corpus has grown for since their last run. Silent when it finds none."""
     enqueued = dispatch_due_notifications(session)
     if enqueued:
-        logger.info("sweep: enqueued %d notify job(s) nothing else had queued", enqueued)
+        logger.info("sweep: enqueued %d notify job(s)", enqueued)
 
 
 def handle(session, job: QueueJob) -> None:
-    try:
-        sent = deliver(session, job.user_id, store=SecretStore(session), send=send)
-    except BotRevoked as exc:
-        # `deliver` already flagged the account.
-        raise Terminal(str(exc)) from exc
-    logger.info("notified %s with %d item(s)", job.user_id, sent)
+    """One person's run, through whichever transports the platform has keys for."""
+    token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    vapid = os.environ.get("VAPID_PRIVATE_KEY") and os.environ.get("VAPID_SUBJECT")
+    deliver(session, job.user_id,
+            telegram=(lambda chat, text, buttons: send(token, chat, text, buttons)) if token else None,
+            push=push if vapid else None)
 
 
 def main(argv: list[str] | None = None) -> int:

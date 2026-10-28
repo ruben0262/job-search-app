@@ -18,6 +18,7 @@ from services.api.dashboard_routes import router as dashboard_router
 from services.api.document_routes import router as document_router
 from services.api.notification_routes import router as notification_router
 from services.api.onboarding_routes import router as onboarding_router
+from services.api.push_routes import router as push_router
 from services.api.setup_routes import router as setup_router
 from services.api.status_routes import router as status_router
 from services.api.suggestion_routes import router as suggestion_router
@@ -34,6 +35,7 @@ app.include_router(admin_router)
 app.include_router(credential_router)
 app.include_router(document_router)
 app.include_router(onboarding_router)
+app.include_router(push_router)
 app.include_router(setup_router)
 app.include_router(dashboard_router)
 app.include_router(notification_router)

@@ -1,4 +1,4 @@
-"""In-app notifications: what happened to this account while nobody was looking at it."""
+"""Notifications: what happened to this account while nobody was looking, and where else to say so."""
 from __future__ import annotations
 
 import uuid
@@ -35,3 +35,18 @@ class UserNotification(Base):
         Index("ix_user_notifications_recent", "user_id", "id"),
         CheckConstraint("level IN ('info', 'warning', 'error')", name="user_notifications_level"),
     )
+
+
+class PushSubscription(Base):
+    """One browser that asked for job alerts (Web Push). Deleted when its push service says it is gone."""
+
+    __tablename__ = "push_subscriptions"
+
+    # The push service's address for this browser, which is what identifies it.
+    endpoint: Mapped[str] = mapped_column(Text, primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"),
+                                               index=True)
+    # The browser's keys: what is sent is encrypted to them, so only that browser can read it.
+    p256dh: Mapped[str] = mapped_column(String(256))
+    auth: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[timestamptz] = mapped_column(server_default=func.now())

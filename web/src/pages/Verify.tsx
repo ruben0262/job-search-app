@@ -1,12 +1,11 @@
-/** The email confirmation link lands here: `#/verify?token=…`. */
+/** The email confirmation link lands here: `#/verify?token=…`. A working link signs you in. */
 import { useEffect, useRef, useState } from "react";
 
 import { ApiError, api } from "../api";
-import { AuthShell } from "./SignIn";
+import { AuthShell, ResendLink } from "./SignIn";
 
-export function Verify({ onDone }: { onDone: () => void }) {
-  const [state, setState] = useState<"pending" | "done" | "failed">("pending");
-  const [detail, setDetail] = useState("");
+export function Verify({ onDone }: { onDone: () => void | Promise<void> }) {
+  const [failed, setFailed] = useState<string | null>(null);
   // The token works exactly once, and StrictMode runs effects twice in development.
   const requested = useRef(false);
 
@@ -16,25 +15,22 @@ export function Verify({ onDone }: { onDone: () => void }) {
     const query = window.location.hash.split("?")[1] ?? "";
     const token = new URLSearchParams(query).get("token");
     if (!token) {
-      setState("failed");
-      setDetail("That link is missing its token. Try the one in your email again.");
+      setFailed("That link is missing its token. Try the one in your email again.");
       return;
     }
     void api
       .post("/auth/verify", { token })
-      .then(() => {
-        setState("done");
-        onDone();
+      // The session first, then the route, exactly as signing in does: straight into the app.
+      .then(async () => {
+        await onDone();
+        window.location.hash = "/";
       })
       .catch((error: unknown) => {
-        setState("failed");
-        setDetail(
-          error instanceof ApiError ? error.detail : "That link did not work. Request another.",
-        );
+        setFailed(error instanceof ApiError ? error.detail : "That link did not work.");
       });
   }, [onDone]);
 
-  if (state === "pending") {
+  if (failed === null) {
     return (
       <AuthShell kicker="Almost there" title="Confirming…">
         <p className="muted">Checking your link.</p>
@@ -42,27 +38,12 @@ export function Verify({ onDone }: { onDone: () => void }) {
     );
   }
 
-  if (state === "done") {
-    return (
-      <AuthShell kicker="You're in" title="Email confirmed">
-        <p className="muted" style={{ marginBottom: "1.75rem" }}>
-          Your address is verified. Sign in and the setup takes it from there.
-        </p>
-        <a href="#/signin">
-          <button>Sign in</button>
-        </a>
-      </AuthShell>
-    );
-  }
-
   return (
     <AuthShell kicker="Verification" title="That link did not work">
       <p className="muted" style={{ marginBottom: "1.75rem" }}>
-        {detail}
+        {failed}
       </p>
-      <a href="#/signup">
-        <button className="secondary">Request a new link</button>
-      </a>
+      <ResendLink email="" />
     </AuthShell>
   );
 }

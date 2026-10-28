@@ -13,7 +13,7 @@ pytest.importorskip("cryptography")
 
 import httpx
 
-from libs.credentials import CLAUDE_OAUTH_BETA, telegram_chat_id, validate_credential
+from libs.credentials import CLAUDE_OAUTH_BETA, validate_credential
 from libs.secrets import install_on_handler
 
 API_KEY = "sk-ant-api03-" + "Zx9" * 20
@@ -93,25 +93,6 @@ def test_a_telegram_token_returns_the_bot_it_belongs_to():
 
 def test_an_unknown_credential_kind_is_refused():
     assert validate_credential("aws_secret", "whatever-value").ok is False
-
-
-# ── the chat id the user never has to find ────────────────────────────────────────────────────
-
-def test_the_chat_id_is_read_from_the_most_recent_message():
-    """`TENANT_SAFETY.md` §2 — this is the step that confuses people more than the rest of the setup put."""
-    updates = {"ok": True, "result": [
-        {"message": {"chat": {"id": 111}}},
-        {"message": {"chat": {"id": 222}}},
-    ]}
-    assert telegram_chat_id(
-        BOT_TOKEN, client=_client(lambda r: httpx.Response(200, json=updates))) == "222"
-
-
-def test_no_messages_yet_is_not_an_error():
-    """They saved a valid token and have not pressed Start. Normal, and the flow says so."""
-    assert telegram_chat_id(
-        BOT_TOKEN,
-        client=_client(lambda r: httpx.Response(200, json={"ok": True, "result": []}))) is None
 
 
 # ── the credential never escapes ──────────────────────────────────────────────────────────────
@@ -255,25 +236,20 @@ def test_either_claude_credential_satisfies_the_requirement(api, monkeypatch):
 
 
 @pytestmark_db
-def test_removing_the_telegram_token_disconnects_delivery(api, monkeypatch):
-    """Leaving the account `connected` with no token would queue notify jobs that can only fail."""
+def test_a_stored_bot_token_no_longer_decides_where_jobs_go(api, monkeypatch):
+    """Telegram is linked to the platform's bot now, so a per-user token neither connects nor disconnects."""
     from libs.credentials import ValidationResult
 
     http, session, user, _ = api
     monkeypatch.setattr("services.api.credential_routes.validate_credential",
                         lambda kind, value, **kw: ValidationResult(True))
-    monkeypatch.setattr("services.api.credential_routes.telegram_chat_id",
-                        lambda token, **kw: "12345")
-
-    http.put("/credentials/telegram_bot", json={"value": BOT_TOKEN})
+    user.telegram_status, user.telegram_chat_id = "connected", "4242"
     session.flush()
-    assert user.telegram_status == "connected"
-    assert user.telegram_chat_id == "12345"
 
-    http.delete("/credentials/telegram_bot")
+    assert http.put("/credentials/telegram_bot", json={"value": BOT_TOKEN}).status_code == 200
+    assert http.delete("/credentials/telegram_bot").json()["status"] == "deleted"
     session.flush()
-    assert user.telegram_status == "unconfigured"
-    assert user.telegram_chat_id is None
+    assert (user.telegram_status, user.telegram_chat_id) == ("connected", "4242")
 
 
 @pytestmark_db
@@ -282,51 +258,6 @@ def test_signing_in_is_required(api):
     http, _, _, _ = api
     http.cookies.clear()
     assert http.get("/credentials").status_code == 401
-
-
-@pytestmark_db
-def test_the_channel_is_proven_by_posting_not_trusted(api, monkeypatch):
-    """The one check that matches what delivery needs: a bot must be an admin to post to a channel."""
-    from libs.credentials import ValidationResult
-
-    http, session, user, _ = api
-    monkeypatch.setattr("services.api.credential_routes.validate_credential",
-                        lambda kind, value, **kw: ValidationResult(True))
-    monkeypatch.setattr("services.api.credential_routes.telegram_chat_id",
-                        lambda token, **kw: "12345")
-    http.put("/credentials/telegram_bot", json={"value": BOT_TOKEN})
-
-    monkeypatch.setattr("services.api.credential_routes.telegram_channel_check",
-                        lambda token, channel, **kw: ValidationResult(True))
-    response = http.put("/credentials/telegram/channel", json={"channel_id": "-1001234567890"})
-    assert response.status_code == 200
-    session.flush()
-    session.refresh(user)
-    assert user.telegram_routes == {"hu": "-1001234567890", "linkedin": "-1001234567890",
-                                    "other": "-1001234567890"}
-
-    # A failed post surfaces Telegram's reason, and stores nothing.
-    monkeypatch.setattr(
-        "services.api.credential_routes.telegram_channel_check",
-        lambda token, channel, **kw: ValidationResult(False, "the bot is in the channel but "
-                                                            "cannot post"))
-    refused = http.put("/credentials/telegram/channel", json={"channel_id": "-1009999999999"})
-    assert refused.status_code == 400
-    session.refresh(user)
-    assert user.telegram_routes["other"] == "-1001234567890"
-
-    # And removing it falls delivery back to the private chat rather than dropping anything.
-    assert http.delete("/credentials/telegram/channel").status_code == 200
-    session.flush()
-    session.refresh(user)
-    assert user.telegram_routes is None
-
-
-@pytestmark_db
-def test_a_channel_id_that_is_not_one_is_refused_by_shape(api):
-    http, _, _, _ = api
-    assert http.put("/credentials/telegram/channel",
-                    json={"channel_id": "1234567890"}).status_code == 422
 
 
 @pytestmark_db
@@ -398,187 +329,3 @@ def test_a_failed_reconnect_leaves_the_working_token_alone(api, monkeypatch):
     stored = [row for row in TenantRepository(session).secret_metadata(user.id)
               if row.kind == "claude_oauth"]
     assert stored and stored[0].validated_at is not None, "the working credential must survive"
-
-
-@pytestmark_db
-def test_the_chat_id_can_be_set_by_hand_when_reading_it_fails(api, monkeypatch):
-    """The way through when auto-capture cannot work."""
-    from libs.credentials import ValidationResult
-
-    http, session, user, _ = api
-    monkeypatch.setattr("services.api.credential_routes.validate_credential",
-                        lambda kind, value, **kw: ValidationResult(True))
-    monkeypatch.setattr("services.api.credential_routes.telegram_chat_id", lambda token, **kw: None)
-    http.put("/credentials/telegram_bot", json={"value": "123456:AAturtles"})
-    session.flush()
-    assert user.telegram_chat_id is None, "auto-capture found nothing, which is the premise"
-
-    monkeypatch.setattr("services.api.credential_routes.telegram_chat_check",
-                        lambda token, chat_id, **kw: ValidationResult(True))
-    saved = http.put("/credentials/telegram/chat", json={"chat_id": "123456789"})
-    assert saved.status_code == 200
-    session.flush()
-    assert user.telegram_chat_id == "123456789"
-    assert user.telegram_status == "connected"
-
-
-@pytestmark_db
-def test_a_chat_id_the_bot_cannot_reach_is_refused(api, monkeypatch):
-    """Proven by sending, like the channel."""
-    from libs.credentials import ValidationResult
-
-    http, session, user, _ = api
-    monkeypatch.setattr("services.api.credential_routes.validate_credential",
-                        lambda kind, value, **kw: ValidationResult(True))
-    monkeypatch.setattr("services.api.credential_routes.telegram_chat_id", lambda token, **kw: None)
-    http.put("/credentials/telegram_bot", json={"value": "123456:AAturtles"})
-    monkeypatch.setattr("services.api.credential_routes.telegram_chat_check",
-                        lambda token, chat_id, **kw: ValidationResult(False, "bot was blocked"))
-
-    refused = http.put("/credentials/telegram/chat", json={"chat_id": "123456789"})
-    assert refused.status_code == 400
-    session.flush()
-    assert user.telegram_chat_id is None
-    assert user.telegram_status != "connected"
-
-
-@pytestmark_db
-def test_the_chat_id_can_be_removed_and_the_account_stops_claiming_it_is_connected(api, monkeypatch):
-    """The cross beside the stored chat id. A row left saying "connected" with no chat is the silent
-    kind of wrong: nothing errors, and the CVs simply never arrive."""
-    from libs.credentials import ValidationResult
-
-    http, session, user, _ = api
-    monkeypatch.setattr("services.api.credential_routes.validate_credential",
-                        lambda kind, value, **kw: ValidationResult(True))
-    monkeypatch.setattr("services.api.credential_routes.telegram_chat_id", lambda token, **kw: None)
-    http.put("/credentials/telegram_bot", json={"value": "123456:AAturtles"})
-    monkeypatch.setattr("services.api.credential_routes.telegram_chat_check",
-                        lambda token, chat_id, **kw: ValidationResult(True))
-    http.put("/credentials/telegram/chat", json={"chat_id": "123456789"})
-    session.flush()
-    assert user.telegram_chat_id == "123456789", "the premise: a chat id is attached"
-
-    assert http.delete("/credentials/telegram/chat").status_code == 200
-    session.flush()
-    session.refresh(user)
-    assert user.telegram_chat_id is None
-    assert user.telegram_status == "unconfigured"
-
-    # And the page that draws the row sees it gone, rather than only the database.
-    telegram = http.get("/credentials").json()["telegram"]
-    assert telegram["chat_id"] is None
-    assert telegram["destination"] is None
-
-
-@pytestmark_db
-def test_a_channel_id_pasted_into_the_chat_field_is_caught_by_shape(api):
-    """The two numbers sit on the same page and the mistake is easy."""
-    http, _session, _user, _ = api
-    assert http.put("/credentials/telegram/chat",
-                    json={"chat_id": "-1004454061394"}).status_code == 422
-
-
-# ── the webhook that nothing registered (ROADMAP 6af) ─────────────────────────────────────────
-
-
-@pytestmark_db
-def test_connecting_a_bot_registers_its_webhook_and_stores_the_secret(api, monkeypatch):
-    """The button that did nothing, for every account but one."""
-    import httpx as _httpx
-
-    from services.api import credential_routes
-
-    http, session, user, store = api
-    monkeypatch.setenv("PUBLIC_URL", "https://app.example.com")
-    store.put(user.id, "telegram_bot", "123:ABC")
-    session.flush()
-
-    called = {}
-
-    def post(url, **kwargs):
-        called["url"] = url
-        called["json"] = kwargs.get("json")
-        return _httpx.Response(200, json={"ok": True, "result": True})
-
-    monkeypatch.setattr(credential_routes.httpx, "post", post)
-    monkeypatch.setattr(credential_routes, "telegram_chat_id", lambda _token: "4242")
-
-    body = http.post("/credentials/telegram/connect").json()
-
-    assert body["status"] == "connected"
-    assert body["webhook"] == "registered"
-    session.refresh(user)
-    secret = user.telegram_webhook_secret
-    assert secret, "the row must carry the secret, or no tap can be matched to this account"
-    # Telegram is told the same secret twice: once as the path it posts to, once as the header it sends.
-    assert called["json"]["url"].endswith(f"/telegram/webhook/{secret}")
-    assert called["json"]["secret_token"] == secret
-    assert "callback_query" in called["json"]["allowed_updates"]
-
-
-@pytestmark_db
-def test_reconnecting_repairs_an_account_that_has_no_secret_yet(api, monkeypatch):
-    """Every account created before this existed has a live bot and a null secret."""
-    import httpx as _httpx
-
-    from services.api import credential_routes
-
-    http, session, user, store = api
-    monkeypatch.setenv("PUBLIC_URL", "https://app.example.com")
-    store.put(user.id, "telegram_bot", "123:ABC")
-    user.telegram_status = "connected"
-    user.telegram_chat_id = "4242"
-    session.flush()
-    assert user.telegram_webhook_secret is None
-
-    monkeypatch.setattr(credential_routes.httpx, "post",
-                        lambda url, **kw: _httpx.Response(200, json={"ok": True}))
-    monkeypatch.setattr(credential_routes, "telegram_chat_id", lambda _token: "4242")
-
-    http.post("/credentials/telegram/connect")
-
-    session.refresh(user)
-    assert user.telegram_webhook_secret
-
-
-@pytestmark_db
-def test_a_telegram_outage_does_not_block_connecting(api, monkeypatch):
-    """Registering is best-effort: the secret is stored either way and pressing Connect again retries."""
-    import httpx as _httpx
-
-    from services.api import credential_routes
-
-    http, session, user, store = api
-    monkeypatch.setenv("PUBLIC_URL", "https://app.example.com")
-    store.put(user.id, "telegram_bot", "123:ABC")
-    session.flush()
-
-    def boom(url, **kwargs):
-        raise _httpx.ConnectError("no route to host")
-
-    monkeypatch.setattr(credential_routes.httpx, "post", boom)
-    monkeypatch.setattr(credential_routes, "telegram_chat_id", lambda _token: "4242")
-
-    body = http.post("/credentials/telegram/connect").json()
-
-    assert body["status"] == "connected"
-    assert body["webhook"] == "unreachable"
-    session.refresh(user)
-    assert user.telegram_webhook_secret
-
-
-@pytestmark_db
-def test_a_tap_that_matches_no_account_is_logged_rather_than_dropped(api, caplog):
-    """The 404 was silent, which is how a dead feature stayed dead."""
-    import logging as _logging
-
-    http, _session, _user, _store = api
-
-    with caplog.at_level(_logging.WARNING):
-        response = http.post("/telegram/webhook/nosuchsecretatall",
-                             json={"callback_query": {}},
-                             headers={"X-Telegram-Bot-Api-Secret-Token": "nosuchsecretatall"})
-
-    assert response.status_code == 404
-    assert any("matched no account" in record.message for record in caplog.records)
