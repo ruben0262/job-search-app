@@ -14,14 +14,12 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from libs.contracts.embedder import EmbedderClient, EmbedderError, EmbedderVersion
 from libs.corpus.archive import archive_expired
 from libs.corpus.ats import AtsRepository
 from libs.corpus.ats_urls import tokens_from_urls
 from libs.corpus.repository import CorpusRepository
 from libs.db.models import CorpusJob, User
 from libs.obs import Timings, audit, report_timings, timed
-from libs.queue import enqueue
 from libs.settings import (
     ATS_DISCOVERY_LOOKBACK_HOURS,
     ATS_DISCOVERY_MAX_ROWS,
@@ -31,7 +29,6 @@ from libs.settings import (
 from libs.tenant.repository import TenantRepository
 from services.harvester.describe import SHARED_LIMIT as DESCRIBE_PER_CYCLE_DEFAULT
 from services.harvester.describe import describe_pending
-from services.harvester.embedding import embed_all_pending
 from services.harvester.fetch import make_shared_client
 from services.harvester.query_set import (
     PlannedQuery,
@@ -60,21 +57,15 @@ class CycleReport:
     # Rows whose thin snippet was replaced by the posting's own text.
     described: int = 0
     describe_outcomes: dict[str, int] = field(default_factory=dict)
-    embedded: int = 0
-    # Set when the embedder refused or timed out.
-    embed_error: str | None = None
     # Rows whose language was read from text that was already stored.
     languages_read: int = 0
     # Per source, so "the cycle found 200 links" cannot hide "and four of six sources found none".
     links_by_source: dict[str, int] = field(default_factory=dict)
     source_failures: dict[str, str] = field(default_factory=dict)
-    # How many accounts were asked to catch up their scores.
-    scoring_enqueued: int = 0
     # Company boards learned from posting URLs this cycle, not polled for.
     ats_tokens_found: int = 0
     # Postings written to the archive file and deleted from the corpus.
     archived: int = 0
-    labelling_enqueued: int = 0
     skipped_locked: bool = False
     # How long each stage took.
     timings: Timings = field(default_factory=Timings)
@@ -133,8 +124,6 @@ def _operator_demand(session) -> dict:
 def run_cycle(
     session: Session,
     *,
-    embedder: EmbedderClient | None = None,
-    expected_embedder: EmbedderVersion | None = None,
     source_configs: dict[str, dict] | None = None,
     carried_over: Iterable[QueryKey] = (),
     limits: dict[str, int] | None = None,
@@ -142,10 +131,8 @@ def run_cycle(
     run_source: Callable[[Source, dict, AtsRepository], list[JobLink]] = _run_source,
     describe: bool = True,
 ) -> tuple[CycleReport, list[QueryKey]]:
-    """Run one shared harvest cycle."""
-    # The cycle's own clock, so a slow stage stops rather than taking the stages behind it with it.
+    """Run one shared harvest cycle. Nothing is embedded or scored: matching happens when it is read."""
     started = monotonic()
-    deadline = started + HARVEST_CYCLE_BUDGET_SECONDS
     report = CycleReport()
     corpus = CorpusRepository(session)
     tenant = TenantRepository(session)
@@ -206,55 +193,26 @@ def run_cycle(
         with timed("ats_discovery", report.timings):
             report.ats_tokens_found = _discover_ats_tokens(session, ats)
 
-        # 6. Embed the new rows. Once, for everyone.
-        _embed_new_rows(corpus, embedder, expected_embedder, deadline, report)
-
-        # 7. Ask the per-account lanes to catch up.
-        _enqueue_follow_up(session, report)
-
-        # 8. Retire what has aged out. On this tick rather than a timer of its own: the corpus is
+        # 6. Retire what has aged out. On this tick rather than a timer of its own: the corpus is
         # the thing that grows and this is the pass that already touches it, and a second clock is
         # a second outage (CLAUDE.md §6). Bounded per pass, so it cannot become the slow stage.
         _archive_expired(session, report)
 
     logger.info(
-        "harvest: %d queries (%d deferred), %d links, %d duplicates, %d new, %d described, "
-        "%d embedded",
+        "harvest: %d queries (%d deferred), %d links, %d duplicates, %d new, %d described",
         report.queries_planned, report.queries_deferred, report.links_found,
-        report.duplicates_total, report.new_jobs, report.described, report.embedded)
+        report.duplicates_total, report.new_jobs, report.described)
     report_timings(report.timings, event="harvest.timing", log=logger,
                    links=report.links_found, new=report.new_jobs)
 
     _warn_if_near_budget(monotonic() - started, report)
     audit(logger, "harvest.cycle",
           queries=report.queries_planned, links=report.links_found,
-          new=report.new_jobs, described=report.described, embedded=report.embedded,
-          scoring_enqueued=report.scoring_enqueued,
+          new=report.new_jobs, described=report.described,
           ats_tokens_found=report.ats_tokens_found, archived=report.archived,
-          labelling_enqueued=report.labelling_enqueued,
           failed_sources=len(report.source_failures),
           empty_sources=sum(1 for n in report.links_by_source.values() if n == 0))
     return report, [q.key for q in deferred]
-
-
-def _embed_new_rows(corpus: CorpusRepository, embedder: EmbedderClient | None,
-                    expected: EmbedderVersion | None, deadline: float,
-                    report: CycleReport) -> None:
-    """Vectorise what arrived this cycle. One embed serves every account on the platform.
-
-    An embedder failure is recorded and survived: the rows stay unembedded and the next cycle picks
-    them up, which is better than losing the intake that has already been stored.
-    """
-    if embedder is None:
-        return
-    try:
-        with timed("embed", report.timings):
-            result = embed_all_pending(corpus, embedder, expected=expected, deadline=deadline)
-        report.embedded = result.embedded
-    except EmbedderError as exc:
-        report.embed_error = str(exc)
-        logger.error("harvest: embedding failed — those rows stay unembedded and are "
-                     "retried next cycle: %s", exc)
 
 
 def _archive_expired(session: Session, report: CycleReport) -> None:
@@ -432,50 +390,3 @@ def _discover_ats_tokens(session, ats: AtsRepository) -> int:
         logger.info("harvest: %d new company board(s) from %d posting URLs %s",
                     added, len(urls), by_ats)
     return added
-
-
-def _enqueue_follow_up(session, report: CycleReport) -> None:
-    """Hand the cycle's work on to the per-account lanes.
-
-    Both lanes are re-entered from this tick rather than from clocks of their own — a second clock
-    is a second outage — and both are dedup-keyed, so a still-pending job is not duplicated.
-    """
-    with timed("enqueue_scoring", report.timings):
-        report.scoring_enqueued = _enqueue_scoring(session)
-    with timed("enqueue_labelling", report.timings):
-        report.labelling_enqueued = _enqueue_labelling(session)
-
-
-def _enqueue_scoring(session) -> int:
-    """One `score` job per active user."""
-    queued = 0
-    for user_id in session.scalars(select(User.id).where(User.active)):
-        if enqueue(session, "score", user_id, dedup_key="score") is not None:
-            queued += 1
-    return queued
-
-
-def _enqueue_labelling(session) -> int:
-    """One `label` job per active account that still owes itself labels.
-
-    **The label lane had no way back in.** It was a chain that armed itself and nothing else: finish
-    setup, and it ran until a batch reported nothing left. Any interruption — an empty pool, a
-    rate limit, a `Terminal` error, a restart — ended it permanently, with no error raised and a
-    model that looked trained. One account sat six days at 243 of its 300 labels that way, and the
-    only reason it was found was somebody reading the queue table by hand.
-
-    So the lane gets its work the way `score` does: off the harvest tick, dedup-keyed, idempotent.
-    No new timer — a second clock is a second outage — and no cost when there is nothing to do,
-    because a batch that writes nothing does not re-arm and `labelling_paused` is honoured here as
-    well as at re-arm time.
-    """
-    from libs.labels import labelling_state  # noqa: PLC0415 - one caller, kept local
-
-    queued = 0
-    for user_id, paused in session.execute(
-            select(User.id, User.labelling_paused).where(User.active)):
-        if paused or labelling_state(session, user_id)["action"] == "train":
-            continue
-        if enqueue(session, "label", user_id, dedup_key="label") is not None:
-            queued += 1
-    return queued

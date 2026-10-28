@@ -22,15 +22,13 @@ def lane(name="notify", *, ready=0, claimed=0, dead=0, oldest=None, expected=5) 
 
 def user(**kwargs) -> UserHealth:
     base = {"user_id": str(uuid.uuid4()), "email": "a@example.com",
-            "telegram_status": "connected", "model_version": 1,
-            "pending_matches": 0, "hours_since_delivery": 1.0, "proxy_status": "healthy",
-}
+            "telegram_status": "connected", "proxy_status": "healthy"}
     return UserHealth(**{**base, **kwargs})
 
 
 def health(**kwargs) -> PlatformHealth:
     base = {"checked_at": datetime.now(UTC).isoformat(), "lanes": [lane()], "users_total": 1,
-            "users_active": 1, "corpus_rows": 1000, "corpus_embedded": 1000,
+            "users_active": 1, "corpus_rows": 1000,
             "corpus_projection_rows": CORPUS_PROJECTION_ROWS, "postgres_bytes": 1024**3,
             "connections": 5, "users": []}
     return PlatformHealth(**{**base, **kwargs})
@@ -55,31 +53,6 @@ def test_an_idle_queue_is_not_a_problem():
 def test_a_deep_but_moving_queue_is_not_an_alert():
     """A relabel is eighty queued jobs by design. Depth alone says nothing."""
     assert evaluate(health(lanes=[lane("label", ready=80, oldest=10, expected=60)])) == []
-
-
-# ── the silent feed ───────────────────────────────────────────────────────────────────────────
-
-def test_matches_waiting_and_nothing_delivered_pages():
-    """The failure this module exists for: the feed runs, the scoring works, and nothing arrives."""
-    alerts = evaluate(health(users=[user(pending_matches=12, hours_since_delivery=30.0)]))
-    assert keys(alerts) == {"silent_feed"}
-    assert alerts[0].pages
-
-
-def test_a_narrow_config_with_nothing_to_send_is_silent():
-    """The qualifier that makes the alert usable."""
-    assert evaluate(health(users=[user(pending_matches=0, hours_since_delivery=None)])) == []
-
-
-def test_a_brand_new_account_with_matches_pages_rather_than_waiting_a_day():
-    """`hours_since_delivery` is None because nothing has ever been sent."""
-    alerts = evaluate(health(users=[user(pending_matches=5, hours_since_delivery=None)]))
-    assert keys(alerts) == {"silent_feed"}
-
-
-def test_a_recent_delivery_with_matches_pending_is_normal():
-    """Matches accumulate between digests. That is the digest working, not failing."""
-    assert evaluate(health(users=[user(pending_matches=9, hours_since_delivery=0.5)])) == []
 
 
 # ── the queue ─────────────────────────────────────────────────────────────────────────────────
@@ -140,10 +113,10 @@ def test_pages_sort_above_warnings():
 def test_every_alert_says_what_to_do():
     """"Look into it" is not an action. Each alert names the likely cause."""
     alerts = evaluate(health(lanes=[lane("train", dead=1)],
-                             users=[user(pending_matches=3, hours_since_delivery=99.0)],
+                             users=[user(telegram_status="broken", proxy_status="quarantined")],
                              postgres_bytes=(55 * 1024**3),
                              corpus_rows=CORPUS_PROJECTION_ROWS * 2))
-    assert len(alerts) == 4
+    assert len(alerts) == 5
     assert all(len(alert.action) > 20 for alert in alerts)
 
 
@@ -230,28 +203,21 @@ def test_no_embedder_url_is_skipped_rather_than_failed(monkeypatch):
     assert embedder_down() is None
 
 
-def test_a_stopped_feed_is_an_incident_within_the_hour_not_the_day():
-    """The alarm that did not ring."""
-    from libs.ops.alerts import SILENT_FEED_HOURS
-    from libs.settings import PLATFORM_TICK_MIN
-
-    # Delivery is event-driven, so the only thing that produces a gap this long is the lane not
-    # running. Still more than one harvest tick, or a quiet cycle would page somebody.
-    assert SILENT_FEED_HOURS * 60 > PLATFORM_TICK_MIN
-    assert SILENT_FEED_HOURS <= 2
-
-
-# ── what "waiting" means (ROADMAP 6ad) ────────────────────────────────────────────────────────
+# ── what the switched-off model left behind (ROADMAP Phase 8) ─────────────────────────────────
 
 
 @pytestmark_db
-def test_a_posting_too_old_to_send_is_not_a_job_waiting():
-    """The page nobody could clear."""
+def test_scores_the_switched_off_model_left_behind_page_nobody():
+    """Every account holds scored, unsent rows from the scorer, and nothing will ever send them.
+
+    The silent-feed page counted exactly those rows, so on the day the scorer stopped it would
+    have paged for every account with a backlog, at every health check, about work nobody owes.
+    """
     from sqlalchemy import create_engine
     from sqlalchemy.orm import Session
 
-    from libs.db.models import CorpusJob, User, UserConfig, UserJobState
-    from libs.ops.health import pending_matches
+    from libs.db.models import CorpusJob, User, UserJobState
+    from libs.ops import platform_health
 
     engine = create_engine(os.environ["DATABASE_URL"])
     conn = engine.connect()
@@ -259,67 +225,20 @@ def test_a_posting_too_old_to_send_is_not_a_job_waiting():
     session = Session(bind=conn, join_transaction_mode="create_savepoint")
     try:
         account = User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active",
-                       active=True)
+                       active=True, telegram_status="connected")
         session.add(account)
         session.flush()
-        session.add(UserConfig(user_id=account.id,
-                               config={"sections": [{"posted_within_hours": 24}]}))
-
-        def posting(**kwargs) -> CorpusJob:
-            row = CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
-                            title="Engineer", **kwargs)
-            session.add(row)
-            session.flush()
-            return row
-
-        now = datetime.now(UTC)
-        stale = posting(posted_at=now - timedelta(hours=48))
-        closed = posting(posted_at=now - timedelta(hours=1), closed_at=now)
-        fresh = posting(posted_at=now - timedelta(hours=1))
-        undated = posting()
-        for row in (stale, closed, fresh, undated):
-            session.add(UserJobState(user_id=account.id, job_id=row.id, score=99.0))
+        job = CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
+                        title="Engineer", posted_at=datetime.now(UTC) - timedelta(hours=1))
+        session.add(job)
+        session.flush()
+        session.add(UserJobState(user_id=account.id, job_id=job.id, score=99.0,
+                                 scored_at=datetime.now(UTC)))
         session.flush()
 
-        # The fresh one and the undated one.
-        assert pending_matches(session, account) == 2
-    finally:
-        session.close()
-        trans.rollback()
-        conn.close()
-
-
-@pytestmark_db
-def test_the_count_uses_the_users_own_cutoff_not_a_constant():
-    """60 is the label threshold used while *training*, not the score anybody delivers at."""
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import Session
-
-    from libs.db.models import CorpusJob, User, UserJobState, UserModel
-    from libs.ops.health import pending_matches
-
-    engine = create_engine(os.environ["DATABASE_URL"])
-    conn = engine.connect()
-    trans = conn.begin()
-    session = Session(bind=conn, join_transaction_mode="create_savepoint")
-    try:
-        account = User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active",
-                       active=True)
-        session.add(account)
-        session.flush()
-        session.add(UserModel(user_id=account.id, is_active=True, version=1, path="model.pkl",
-                              feature_schema_version=1, profile_generation=1,
-                              embedder_model="test", embedder_dim=8, embedder_version="test",
-                              metrics={"decision_cutoff": 29}))
-        row = CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test", title="Engineer",
-                        posted_at=datetime.now(UTC) - timedelta(hours=1))
-        session.add(row)
-        session.flush()
-        # Over this account's tuned cutoff of 29, under the old hardcoded 60.
-        session.add(UserJobState(user_id=account.id, job_id=row.id, score=35.0))
-        session.flush()
-
-        assert pending_matches(session, account) == 1
+        state = platform_health(session)
+        assert any(row.email == account.email for row in state.users)
+        assert not [alert for alert in evaluate(state) if alert.user_email == account.email]
     finally:
         session.close()
         trans.rollback()

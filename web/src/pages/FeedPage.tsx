@@ -5,7 +5,7 @@ import { api, type Feed, type FeedJob, type Salary } from "../api";
 
 const PAGE = 25;
 
-type Sort = "score" | "posted" | "fetched" | "title" | "company";
+type Sort = "score" | "fetched" | "title" | "company";
 type AppliedFilter = "any" | "applied" | "not";
 
 // The last answer, kept across mounts.
@@ -28,7 +28,7 @@ function age(iso: string | null): string | null {
 
 /** "€60–80k / yr". Compact, because a salary column that wraps is a column nobody can scan. */
 function money(salary: Salary): string {
-  if (!salary || salary.min == null) return "—";
+  if (!salary) return "—";
   const symbol = { EUR: "€", USD: "$", GBP: "£" }[salary.currency] ?? `${salary.currency} `;
   const compact = (value: number) =>
     value >= 1_000_000
@@ -37,7 +37,7 @@ function money(salary: Salary): string {
         ? `${Math.round(value / 1000)}k`
         : `${value}`;
   const range =
-    salary.max != null && salary.max !== salary.min
+    salary.max !== salary.min
       ? `${compact(salary.min)}–${compact(salary.max)}`
       : compact(salary.min);
   const period = { year: "yr", month: "mo", day: "day", hour: "hr" }[salary.period];
@@ -116,11 +116,8 @@ export function FeedPage() {
       <p className="kicker">The feed</p>
       <div className="spread">
         <h1>Jobs</h1>
-        <span className="small muted">
-          {feed.stage === "personal" ? "Ranked by your model" : "Ranked by your keywords"}
-        </span>
+        <span className="small muted">Ranked by your words</span>
       </div>
-      {feed.detail ? <p className="muted small">{feed.detail}</p> : null}
 
       <div className="toolbar">
         <input
@@ -212,7 +209,9 @@ function Row({ job }: { job: FeedJob }) {
   const posted = age(job.posted_at);
   return (
     <tr>
-      <td className="num">{job.score === null ? "—" : <span className="score">{Math.round(job.score)}</span>}</td>
+      <td className="num">
+        <span className="score">{job.score}</span>
+      </td>
       <td>
         <a className="job-title" href={job.url} target="_blank" rel="noreferrer">
           {job.title}

@@ -58,66 +58,44 @@ def test_every_component_answers_with_a_state_and_a_sentence(api):
     body = http.get("/status").json()
     components = {c["key"]: c for c in body["components"]}
 
-    assert set(components) == {"telegram_bot", "telegram_channel", "harvester", "scorer",
-                               "delivery", "docgen"}
+    # No "Scoring": nothing scores, and a component that can only ever say "off" is not news.
+    assert set(components) == {"telegram_bot", "telegram_channel", "harvester", "delivery",
+                               "docgen"}
     for component in components.values():
         assert component["state"] in ("ok", "warn", "down", "off")
         assert component["detail"], "a dot with no words is a support request"
 
     assert components["telegram_bot"]["state"] == "ok"
     assert components["harvester"]["state"] == "ok"
-    # No model yet is off, not broken — the honest state for a new account.
-    assert components["scorer"]["state"] == "off"
 
 
-def test_matches_waiting_and_nothing_sent_is_reported_as_broken(api):
-    """The shape of the outage this page slept through (2026-07-31)."""
+def test_delivery_says_when_it_last_sent_in_words_a_person_has(api):
+    """There is no score cutoff to explain any more, so the sentence must not mention one."""
     from datetime import timedelta
 
     from libs.db.models import CorpusJob, UserJobState
-    from services.api.status_routes import DELIVERY_DOWN_HOURS
 
     http, session, user = api
 
-    # Nothing to deliver: quiet is honest, not alarming.
-    assert next(c for c in http.get("/status").json()["components"]
-                if c["key"] == "delivery")["state"] == "off"
+    def delivery() -> dict:
+        return next(c for c in http.get("/status").json()["components"] if c["key"] == "delivery")
+
+    never = delivery()
+    assert never["state"] == "off"
+    assert "Nothing sent yet" in never["detail"]
+    assert "score" not in never["detail"].lower()
 
     job = CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test", title="Backend Engineer",
                     first_seen_at=datetime.now(UTC))
     session.add(job)
     session.flush()
-    session.add(UserJobState(user_id=user.id, job_id=job.id, score=95.0,
-                             scored_at=datetime.now(UTC), notified_at=None))
+    session.add(UserJobState(user_id=user.id, job_id=job.id,
+                             notified_at=datetime.now(UTC) - timedelta(hours=2, minutes=5)))
     session.flush()
 
-    # A match is waiting and nothing has ever been sent.
-    delivery = next(c for c in http.get("/status").json()["components"] if c["key"] == "delivery")
-    assert delivery["state"] == "down"
-    assert "waiting" in delivery["detail"]
-
-    # Delivered recently, with the backlog behind it: working, not stalled.
-    session.query(UserJobState).filter(UserJobState.user_id == user.id).update(
-        {"notified_at": datetime.now(UTC)}, synchronize_session=False)
-    session.flush()
-    assert next(c for c in http.get("/status").json()["components"]
-                if c["key"] == "delivery")["state"] == "ok"
-
-    # A second match arrives, and the last delivery recedes past the threshold.
-    second = CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
-                       title="Platform Engineer", first_seen_at=datetime.now(UTC))
-    session.add(second)
-    session.flush()
-    session.add(UserJobState(user_id=user.id, job_id=second.id, score=95.0,
-                             scored_at=datetime.now(UTC), notified_at=None))
-    session.query(UserJobState).filter(UserJobState.job_id == job.id).update(
-        {"notified_at": datetime.now(UTC) - timedelta(hours=DELIVERY_DOWN_HOURS + 1)},
-        synchronize_session=False)
-    session.flush()
-
-    delivery = next(c for c in http.get("/status").json()["components"] if c["key"] == "delivery")
-    assert delivery["state"] == "down"
-    assert "nothing sent" in delivery["detail"]
+    sent = delivery()
+    assert sent["state"] == "ok"
+    assert "2 hours ago" in sent["detail"]
 
 
 def test_a_broken_bot_is_red_with_the_fix_in_words(api):
@@ -137,28 +115,18 @@ def test_pausing_delivery_is_reported_as_paused_not_broken(api):
     from libs.db.models import CorpusJob, UserJobState
 
     http, session, user = api
-    # A finished account with messages on.
+    # A finished account that has had deliveries.
     user.active = True
     user.onboarding_completed_at = datetime.now(UTC)
     job = CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test", title="Backend Engineer",
                     first_seen_at=datetime.now(UTC))
     session.add(job)
     session.flush()
-    session.add(UserJobState(user_id=user.id, job_id=job.id, score=95.0,
-                             scored_at=datetime.now(UTC),
+    session.add(UserJobState(user_id=user.id, job_id=job.id,
                              notified_at=datetime.now(UTC) - timedelta(hours=48)))
-    # A match still waiting behind it — without one.
-    waiting = CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
-                        title="Platform Engineer", first_seen_at=datetime.now(UTC))
-    session.add(waiting)
     session.flush()
-    session.add(UserJobState(user_id=user.id, job_id=waiting.id, score=95.0,
-                             scored_at=datetime.now(UTC), notified_at=None))
-    session.flush()
-
-    # Running: a backlog with nothing sent for two days is a stall, and says so.
     assert next(c for c in http.get("/status").json()["components"]
-                if c["key"] == "delivery")["state"] == "down"
+                if c["key"] == "delivery")["state"] == "ok"
 
     user.active = False
     session.flush()
@@ -204,81 +172,3 @@ def test_spending_the_daily_allowance_is_not_a_stall(api):
     delivery = next(c for c in http.get("/status").json()["components"] if c["key"] == "delivery")
     assert delivery["state"] == "ok", delivery
     assert "Today's" in delivery["detail"]
-
-
-def test_a_retired_match_is_not_reported_as_waiting(api):
-    """The user is told what will happen, not what a query happened to count.
-
-    A match that aged past the window while waiting is retired: the notifier has deliberately
-    given up on it, because sending a two-day-old posting is worse than sending nothing. The
-    status page asked the same question without that clause, so it counted those rows as a
-    backlog. In production on 2026-08-08 an account saw "99 matches waiting" and an amber delivery
-    warning while **all 99 were retired** — the lane was idle and correct, and the page said it
-    was behind.
-
-    Asserted through what the page tells the user, so it holds whatever the query is rewritten to.
-    """
-    from datetime import timedelta
-
-    from libs.db.models import CorpusJob, UserJobState
-
-    http, session, user = api
-    user.active = True
-    user.onboarding_completed_at = datetime.now(UTC)
-    # Something was delivered a while back, so the page has a "last sent" to reason about.
-    sent_job = CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
-                         title="Backend Engineer", first_seen_at=datetime.now(UTC))
-    session.add(sent_job)
-    session.flush()
-    session.add(UserJobState(user_id=user.id, job_id=sent_job.id, score=95.0,
-                             scored_at=datetime.now(UTC),
-                             notified_at=datetime.now(UTC) - timedelta(hours=48)))
-
-    # And a high-scoring match the notifier has already given up on.
-    retired_job = CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
-                            title="Platform Engineer", first_seen_at=datetime.now(UTC))
-    session.add(retired_job)
-    session.flush()
-    session.add(UserJobState(user_id=user.id, job_id=retired_job.id, score=95.0,
-                             scored_at=datetime.now(UTC), notified_at=None,
-                             retired_at=datetime.now(UTC) - timedelta(hours=1)))
-    session.flush()
-
-    delivery = next(c for c in http.get("/status").json()["components"]
-                    if c["key"] == "delivery")
-
-    assert "1 match" not in delivery["detail"], delivery["detail"]
-    assert "waiting" not in delivery["detail"], (
-        f"a retired match is not waiting for anything: {delivery['detail']!r}")
-
-
-def test_a_genuinely_waiting_match_is_still_reported(api):
-    """The rule is about retired rows, not about hiding a real backlog."""
-    from datetime import timedelta
-
-    from libs.db.models import CorpusJob, UserJobState
-
-    http, session, user = api
-    user.active = True
-    user.onboarding_completed_at = datetime.now(UTC)
-    sent_job = CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
-                         title="Backend Engineer", first_seen_at=datetime.now(UTC))
-    session.add(sent_job)
-    session.flush()
-    session.add(UserJobState(user_id=user.id, job_id=sent_job.id, score=95.0,
-                             scored_at=datetime.now(UTC),
-                             notified_at=datetime.now(UTC) - timedelta(hours=48)))
-
-    waiting_job = CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
-                            title="Platform Engineer", first_seen_at=datetime.now(UTC))
-    session.add(waiting_job)
-    session.flush()
-    session.add(UserJobState(user_id=user.id, job_id=waiting_job.id, score=95.0,
-                             scored_at=datetime.now(UTC), notified_at=None, retired_at=None))
-    session.flush()
-
-    delivery = next(c for c in http.get("/status").json()["components"]
-                    if c["key"] == "delivery")
-
-    assert delivery["state"] != "ok", "two days with a real match waiting is a stall"
-    assert "waiting" in delivery["detail"]

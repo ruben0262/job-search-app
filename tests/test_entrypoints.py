@@ -37,8 +37,7 @@ def test_the_api_registers_its_routers():
         paths = http.get("/openapi.json").json()["paths"]
 
     for prefix in ("/account", "/admin", "/auth", "/credentials", "/dashboard",
-                   "/documents", "/feed", "/legal", "/onboarding", "/process",
-                   "/telegram"):
+                   "/documents", "/feed", "/legal", "/onboarding", "/telegram"):
         assert any(path.startswith(prefix) for path in paths), f"{prefix} is not registered"
 
 

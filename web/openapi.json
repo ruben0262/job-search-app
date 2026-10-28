@@ -18,6 +18,138 @@
         "title": "AccountPatch",
         "type": "object"
       },
+      "AdminAccount": {
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "last_active_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Active At"
+          },
+          "onboarded": {
+            "title": "Onboarded",
+            "type": "boolean"
+          },
+          "plan": {
+            "title": "Plan",
+            "type": "string"
+          },
+          "profile_files_visible": {
+            "title": "Profile Files Visible",
+            "type": "boolean"
+          },
+          "profile_generation": {
+            "title": "Profile Generation",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "telegram": {
+            "title": "Telegram",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "status",
+          "active",
+          "plan",
+          "telegram",
+          "profile_generation",
+          "profile_files_visible",
+          "onboarded",
+          "created_at",
+          "last_active_at"
+        ],
+        "title": "AdminAccount",
+        "type": "object"
+      },
+      "AdminAccountDetail": {
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/AdminCounts"
+          },
+          "limits": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Limits",
+            "type": "object"
+          },
+          "setup": {
+            "$ref": "#/components/schemas/AdminSetup"
+          },
+          "user": {
+            "$ref": "#/components/schemas/AdminAccount"
+          }
+        },
+        "required": [
+          "user",
+          "setup",
+          "limits",
+          "counts"
+        ],
+        "title": "AdminAccountDetail",
+        "type": "object"
+      },
+      "AdminCounts": {
+        "properties": {
+          "applied": {
+            "title": "Applied",
+            "type": "integer"
+          },
+          "notified": {
+            "title": "Notified",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "applied",
+          "notified"
+        ],
+        "title": "AdminCounts",
+        "type": "object"
+      },
       "AdminFlag": {
         "properties": {
           "is_admin": {
@@ -29,6 +161,53 @@
           "is_admin"
         ],
         "title": "AdminFlag",
+        "type": "object"
+      },
+      "AdminProfileFile": {
+        "properties": {
+          "filled": {
+            "title": "Filled",
+            "type": "boolean"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "filled"
+        ],
+        "title": "AdminProfileFile",
+        "type": "object"
+      },
+      "AdminSetup": {
+        "properties": {
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/AdminProfileFile"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "missing": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing",
+            "type": "array"
+          }
+        },
+        "required": [
+          "missing",
+          "files"
+        ],
+        "title": "AdminSetup",
         "type": "object"
       },
       "Body_upload_documents_post": {
@@ -48,46 +227,6 @@
           "file"
         ],
         "title": "Body_upload_documents_post",
-        "type": "object"
-      },
-      "Certification": {
-        "additionalProperties": false,
-        "description": "A course, licence or accreditation.",
-        "properties": {
-          "issuer": {
-            "anyOf": [
-              {
-                "maxLength": 120,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Issuer"
-          },
-          "name": {
-            "maxLength": 160,
-            "title": "Name",
-            "type": "string"
-          },
-          "year": {
-            "anyOf": [
-              {
-                "maxLength": 32,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Year"
-          }
-        },
-        "required": [
-          "name"
-        ],
-        "title": "Certification",
         "type": "object"
       },
       "ChannelBody": {
@@ -122,46 +261,6 @@
         "title": "ChatBody",
         "type": "object"
       },
-      "Conflict": {
-        "additionalProperties": false,
-        "description": "Something the interview could not resolve. Surfaces in the form as an explicit either/or.",
-        "properties": {
-          "field": {
-            "maxLength": 80,
-            "title": "Field",
-            "type": "string"
-          },
-          "source_a": {
-            "default": "",
-            "maxLength": 200,
-            "title": "Source A",
-            "type": "string"
-          },
-          "source_b": {
-            "default": "",
-            "maxLength": 200,
-            "title": "Source B",
-            "type": "string"
-          },
-          "value_a": {
-            "maxLength": 400,
-            "title": "Value A",
-            "type": "string"
-          },
-          "value_b": {
-            "maxLength": 400,
-            "title": "Value B",
-            "type": "string"
-          }
-        },
-        "required": [
-          "field",
-          "value_a",
-          "value_b"
-        ],
-        "title": "Conflict",
-        "type": "object"
-      },
       "ConsentBody": {
         "properties": {
           "version": {
@@ -175,54 +274,6 @@
           "version"
         ],
         "title": "ConsentBody",
-        "type": "object"
-      },
-      "Constraints": {
-        "additionalProperties": false,
-        "properties": {
-          "languages": {
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 10,
-            "title": "Languages",
-            "type": "array"
-          },
-          "min_salary": {
-            "anyOf": [
-              {
-                "maximum": 500000.0,
-                "minimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Min Salary"
-          },
-          "onsite_locations": {
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 10,
-            "title": "Onsite Locations",
-            "type": "array"
-          },
-          "remote_policy": {
-            "anyOf": [
-              {
-                "maxLength": 40,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Remote Policy"
-          }
-        },
-        "title": "Constraints",
         "type": "object"
       },
       "ConversationTitle": {
@@ -273,6 +324,34 @@
         ],
         "title": "Currency",
         "type": "string"
+      },
+      "DashboardBanner": {
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "level": {
+            "enum": [
+              "error",
+              "warning",
+              "info"
+            ],
+            "title": "Level",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "level",
+          "key",
+          "text"
+        ],
+        "title": "DashboardBanner",
+        "type": "object"
       },
       "DeleteBody": {
         "properties": {
@@ -327,123 +406,193 @@
         "title": "Discard",
         "type": "object"
       },
-      "Education": {
-        "additionalProperties": false,
+      "Feed": {
         "properties": {
-          "degree": {
-            "description": "e.g. 'BEng Software Engineering'",
-            "maxLength": 120,
-            "title": "Degree",
-            "type": "string"
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/FeedJob"
+            },
+            "title": "Jobs",
+            "type": "array"
           },
-          "field": {
-            "anyOf": [
-              {
-                "maxLength": 120,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Field"
+          "sources": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Sources",
+            "type": "array"
           },
-          "institution": {
-            "description": "The university, school or awarding body",
-            "maxLength": 160,
-            "title": "Institution",
-            "type": "string"
-          },
-          "thesis": {
-            "anyOf": [
-              {
-                "maxLength": 400,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Thesis"
+          "total": {
+            "title": "Total",
+            "type": "integer"
           }
         },
         "required": [
-          "degree",
-          "institution"
+          "total",
+          "sources",
+          "jobs"
         ],
-        "title": "Education",
+        "title": "Feed",
         "type": "object"
       },
-      "Experience": {
-        "additionalProperties": false,
+      "FeedJob": {
         "properties": {
-          "bullets": {
-            "description": "What they did in this role, in their own words, one achievement per bullet. Copy the substance of every bullet the documents give for this role \u2014 these become the CV, so a role summarised in one line loses the work.",
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 20,
-            "title": "Bullets",
-            "type": "array"
-          },
-          "end": {
+          "applied_at": {
             "anyOf": [
               {
-                "maxLength": 32,
+                "format": "date-time",
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "End"
+            "title": "Applied At"
           },
-          "metrics": {
-            "description": "Numbers this role achieved, exactly as stated (e.g. 'AUC 0.82', '10k records')",
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 20,
-            "title": "Metrics",
-            "type": "array"
-          },
-          "org": {
-            "maxLength": 160,
-            "title": "Org",
-            "type": "string"
-          },
-          "role": {
-            "maxLength": 160,
-            "title": "Role",
-            "type": "string"
-          },
-          "stack": {
-            "description": "Technologies used in THIS role",
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 40,
-            "title": "Stack",
-            "type": "array"
-          },
-          "start": {
+          "company": {
             "anyOf": [
               {
-                "maxLength": 32,
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Start"
+            "title": "Company"
+          },
+          "first_seen_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Seen At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_remote": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Remote"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "posted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Posted At"
+          },
+          "salary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FeedSalary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "score": {
+            "title": "Score",
+            "type": "integer"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "words": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Words",
+            "type": "array"
           }
         },
         "required": [
-          "role",
-          "org"
+          "id",
+          "title",
+          "company",
+          "location",
+          "is_remote",
+          "url",
+          "source",
+          "score",
+          "words",
+          "posted_at",
+          "first_seen_at",
+          "salary",
+          "applied_at"
         ],
-        "title": "Experience",
+        "title": "FeedJob",
+        "type": "object"
+      },
+      "FeedSalary": {
+        "properties": {
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "max": {
+            "title": "Max",
+            "type": "number"
+          },
+          "min": {
+            "title": "Min",
+            "type": "number"
+          },
+          "period": {
+            "title": "Period",
+            "type": "string"
+          },
+          "raw": {
+            "title": "Raw",
+            "type": "string"
+          }
+        },
+        "required": [
+          "min",
+          "max",
+          "currency",
+          "period",
+          "raw"
+        ],
+        "title": "FeedSalary",
         "type": "object"
       },
       "FileEdit": {
@@ -513,50 +662,6 @@
           "text"
         ],
         "title": "HistoryBody",
-        "type": "object"
-      },
-      "Identity": {
-        "additionalProperties": false,
-        "properties": {
-          "links": {
-            "additionalProperties": {
-              "type": "string"
-            },
-            "maxProperties": 10,
-            "title": "Links",
-            "type": "object"
-          },
-          "location": {
-            "anyOf": [
-              {
-                "maxLength": 120,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Location"
-          },
-          "name": {
-            "maxLength": 120,
-            "minLength": 1,
-            "title": "Name",
-            "type": "string"
-          },
-          "work_eligibility": {
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 10,
-            "title": "Work Eligibility",
-            "type": "array"
-          }
-        },
-        "required": [
-          "name"
-        ],
-        "title": "Identity",
         "type": "object"
       },
       "IdentitySchema": {
@@ -777,6 +882,31 @@
         "title": "OAuthFinishBody",
         "type": "object"
       },
+      "OnboardingDashboard": {
+        "properties": {
+          "is_admin": {
+            "title": "Is Admin",
+            "type": "boolean"
+          },
+          "onboarding": {
+            "additionalProperties": true,
+            "title": "Onboarding",
+            "type": "object"
+          },
+          "stage": {
+            "const": "onboarding",
+            "title": "Stage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stage",
+          "onboarding",
+          "is_admin"
+        ],
+        "title": "OnboardingDashboard",
+        "type": "object"
+      },
       "PasswordChange": {
         "properties": {
           "current_password": {
@@ -836,128 +966,46 @@
         "title": "ProfileLink",
         "type": "object"
       },
-      "ProfileSchema": {
-        "additionalProperties": false,
+      "ReadyDashboard": {
         "properties": {
-          "certifications": {
-            "description": "Courses, licences and accreditations, with the issuer and year where stated",
+          "applied": {
+            "title": "Applied",
+            "type": "integer"
+          },
+          "banners": {
             "items": {
-              "$ref": "#/components/schemas/Certification"
+              "$ref": "#/components/schemas/DashboardBanner"
             },
-            "maxItems": 20,
-            "title": "Certifications",
+            "title": "Banners",
             "type": "array"
           },
-          "confirmed": {
-            "default": false,
-            "title": "Confirmed",
+          "is_admin": {
+            "title": "Is Admin",
             "type": "boolean"
           },
-          "conflicts": {
-            "items": {
-              "$ref": "#/components/schemas/Conflict"
-            },
-            "maxItems": 20,
-            "title": "Conflicts",
-            "type": "array"
+          "matching": {
+            "title": "Matching",
+            "type": "integer"
           },
-          "constraints": {
-            "$ref": "#/components/schemas/Constraints"
-          },
-          "education": {
-            "description": "Every qualification, most recent first",
-            "items": {
-              "$ref": "#/components/schemas/Education"
-            },
-            "maxItems": 10,
-            "title": "Education",
-            "type": "array"
-          },
-          "exclusions": {
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 20,
-            "title": "Exclusions",
-            "type": "array"
-          },
-          "experience": {
-            "description": "EVERY role, position and engagement in the documents, most recent first \u2014 employment, contract, freelance and substantial independent work. This is what the candidate's CV is built from, so a missing role cannot appear on any application. Never summarise several roles into one entry.",
-            "items": {
-              "$ref": "#/components/schemas/Experience"
-            },
-            "maxItems": 30,
-            "title": "Experience",
-            "type": "array"
-          },
-          "identity": {
-            "$ref": "#/components/schemas/Identity"
-          },
-          "not_list": {
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 30,
-            "title": "Not List",
-            "type": "array"
-          },
-          "projects": {
-            "description": "Substantial things they built that are not a job: side projects, research systems, published work.",
-            "items": {
-              "$ref": "#/components/schemas/Project"
-            },
-            "maxItems": 30,
-            "title": "Projects",
-            "type": "array"
-          },
-          "skills": {
-            "$ref": "#/components/schemas/Skills"
-          },
-          "targets": {
-            "$ref": "#/components/schemas/Targets"
-          }
-        },
-        "required": [
-          "identity"
-        ],
-        "title": "ProfileSchema",
-        "type": "object"
-      },
-      "Project": {
-        "additionalProperties": false,
-        "properties": {
-          "metrics": {
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 20,
-            "title": "Metrics",
-            "type": "array"
-          },
-          "name": {
-            "maxLength": 160,
-            "title": "Name",
+          "stage": {
+            "const": "ready",
+            "title": "Stage",
             "type": "string"
           },
-          "stack": {
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 40,
-            "title": "Stack",
-            "type": "array"
-          },
-          "what_built": {
-            "default": "",
-            "maxLength": 1000,
-            "title": "What Built",
+          "telegram": {
+            "title": "Telegram",
             "type": "string"
           }
         },
         "required": [
-          "name"
+          "stage",
+          "is_admin",
+          "telegram",
+          "matching",
+          "applied",
+          "banners"
         ],
-        "title": "Project",
+        "title": "ReadyDashboard",
         "type": "object"
       },
       "RemotePolicy": {
@@ -1014,7 +1062,7 @@
             "items": {
               "type": "string"
             },
-            "maxItems": 10,
+            "maxItems": 25,
             "title": "Exclude Keywords",
             "type": "array"
           },
@@ -1120,70 +1168,60 @@
         "title": "SignupRequest",
         "type": "object"
       },
-      "Skills": {
-        "additionalProperties": false,
+      "StatusComponent": {
         "properties": {
-          "domains": {
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 40,
-            "title": "Domains",
-            "type": "array"
+          "detail": {
+            "title": "Detail",
+            "type": "string"
           },
-          "frameworks": {
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 60,
-            "title": "Frameworks",
-            "type": "array"
+          "key": {
+            "title": "Key",
+            "type": "string"
           },
-          "languages": {
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 40,
-            "title": "Languages",
-            "type": "array"
+          "label": {
+            "title": "Label",
+            "type": "string"
           },
-          "tools": {
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 60,
-            "title": "Tools",
-            "type": "array"
+          "state": {
+            "enum": [
+              "ok",
+              "warn",
+              "down",
+              "off"
+            ],
+            "title": "State",
+            "type": "string"
           }
         },
-        "title": "Skills",
+        "required": [
+          "key",
+          "label",
+          "state",
+          "detail"
+        ],
+        "title": "StatusComponent",
         "type": "object"
       },
-      "Targets": {
-        "additionalProperties": false,
+      "StatusReport": {
         "properties": {
-          "role_types": {
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 10,
-            "title": "Role Types",
-            "type": "array"
+          "checked_at": {
+            "format": "date-time",
+            "title": "Checked At",
+            "type": "string"
           },
-          "seniority": {
-            "anyOf": [
-              {
-                "maxLength": 40,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Seniority"
+          "components": {
+            "items": {
+              "$ref": "#/components/schemas/StatusComponent"
+            },
+            "title": "Components",
+            "type": "array"
           }
         },
-        "title": "Targets",
+        "required": [
+          "components",
+          "checked_at"
+        ],
+        "title": "StatusReport",
         "type": "object"
       },
       "Turn": {
@@ -1234,13 +1272,6 @@
             },
             "title": "Languages",
             "type": "array"
-          },
-          "max_notifications_per_day": {
-            "default": 20,
-            "maximum": 100.0,
-            "minimum": 1.0,
-            "title": "Max Notifications Per Day",
-            "type": "integer"
           },
           "min_salary": {
             "anyOf": [
@@ -2262,9 +2293,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response User Detail Admin Users  User Id  Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/AdminAccountDetail"
                 }
               }
             },
@@ -3206,9 +3235,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Dashboard Dashboard Get",
-                  "type": "object"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/OnboardingDashboard"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ReadyDashboard"
+                    }
+                  ],
+                  "title": "Response Dashboard Dashboard Get"
                 }
               }
             },
@@ -3334,7 +3369,7 @@
     },
     "/feed": {
       "get": {
-        "description": "The ranked jobs \u2014 a page of them, with the filters the table offers.",
+        "description": "This person's matches, a page at a time, with the filters the table offers.",
         "operationId": "feed_feed_get",
         "parameters": [
           {
@@ -3446,29 +3481,16 @@
           },
           {
             "in": "query",
-            "name": "min_score",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "maximum": 100,
-                  "minimum": 0,
-                  "type": "number"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Min Score"
-            }
-          },
-          {
-            "in": "query",
             "name": "sort",
             "required": false,
             "schema": {
               "default": "score",
-              "pattern": "^(score|posted|fetched|title|company)$",
+              "enum": [
+                "score",
+                "fetched",
+                "title",
+                "company"
+              ],
               "title": "Sort",
               "type": "string"
             }
@@ -3479,7 +3501,10 @@
             "required": false,
             "schema": {
               "default": "desc",
-              "pattern": "^(asc|desc)$",
+              "enum": [
+                "asc",
+                "desc"
+              ],
               "title": "Direction",
               "type": "string"
             }
@@ -3490,9 +3515,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Feed Feed Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/Feed"
                 }
               }
             },
@@ -3984,192 +4007,6 @@
         ]
       }
     },
-    "/process": {
-      "post": {
-        "description": "Queue a processing run.",
-        "operationId": "start_process_post",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Start Process Post",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Start",
-        "tags": [
-          "process"
-        ]
-      }
-    },
-    "/process/confirm": {
-      "post": {
-        "description": "Apply the profile the user has read and edited.",
-        "operationId": "confirm_process_confirm_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ProfileSchema"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Confirm Process Confirm Post",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Confirm",
-        "tags": [
-          "process"
-        ]
-      }
-    },
-    "/process/draft": {
-      "delete": {
-        "description": "Throw the proposal away. The live profile, if there is one, is untouched.",
-        "operationId": "discard_process_draft_delete",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Discard Process Draft Delete",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Discard",
-        "tags": [
-          "process"
-        ]
-      },
-      "get": {
-        "description": "The proposal the user is being asked to confirm.",
-        "operationId": "draft_process_draft_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Draft Process Draft Get",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Draft",
-        "tags": [
-          "process"
-        ]
-      }
-    },
-    "/process/state": {
-      "get": {
-        "description": "What the account needs next, and what it will cost.",
-        "operationId": "state_process_state_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response State Process State Get",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "State",
-        "tags": [
-          "process"
-        ]
-      }
-    },
-    "/process/training": {
-      "get": {
-        "description": "What training is doing right now, for a page that polls.",
-        "operationId": "training_state_process_training_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Training State Process Training Get",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Training State",
-        "tags": [
-          "process"
-        ]
-      }
-    },
-    "/process/training/stop": {
-      "post": {
-        "description": "Cancel queued training work for this account.",
-        "operationId": "stop_training_process_training_stop_post",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Stop Training Process Training Stop Post",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Stop Training",
-        "tags": [
-          "process"
-        ]
-      }
-    },
     "/setup": {
       "get": {
         "description": "One chat's transcript, the list of chats, the files, and whether documents can be built.",
@@ -4590,9 +4427,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Status Status Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/StatusReport"
                 }
               }
             },

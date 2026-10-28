@@ -83,26 +83,6 @@ def test_the_consent_screen_and_the_policy_come_from_one_source():
 
 # ── consent, at the moment it is owed ─────────────────────────────────────────────────────────
 
-def test_processing_is_refused_before_consent(api):
-    """The only place document text crosses a processor boundary, so the only place it is checked."""
-    from libs.db.models import UserDocument, UserSecret
-
-    http, session, user = api
-    session.add(UserDocument(user_id=user.id, kind="cv", filename="cv.txt", text="x",
-                             text_sha256=uuid.uuid4().hex * 2, chars=1))
-    session.add(UserSecret(user_id=user.id, kind="claude_api", ciphertext=b"x", nonce=b"n"))
-    session.flush()
-
-    response = http.post("/process")
-    assert response.status_code == 403
-    assert "Anthropic" in response.json()["detail"]
-
-    http.post("/account/consent", json={"version": http.get("/account/consent").json()[
-        "current_version"]})
-    session.flush()
-    assert http.post("/process").status_code == 200
-
-
 def test_consent_to_a_superseded_disclosure_is_refused(api):
     """A policy naming a new processor is a new disclosure, and an old agreement is not an answer to it."""
     http, _, _ = api

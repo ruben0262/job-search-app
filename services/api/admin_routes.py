@@ -22,7 +22,6 @@ from libs.db.models import (
     User,
     UserConfig,
     UserJobState,
-    UserLabel,
 )
 from libs.harvest import distinct_keywords
 from libs.limits import all_for, describe, set_limit
@@ -38,7 +37,6 @@ from libs.ops.latency import (
 )
 from libs.ops.pipeline import pipeline
 from libs.profiles.repository import ProfileFiles
-from libs.scoring.history import model_history
 from libs.settings import (
     DEFAULT_SOURCE_MIN_AGE_HOURS,
     DEFAULTS,
@@ -129,9 +127,47 @@ def users(db: Session = Depends(get_db), admin: User = Depends(require_admin)) -
     }
 
 
+class AdminAccount(BaseModel):
+    id: str
+    email: str
+    status: str
+    active: bool
+    plan: str
+    telegram: str
+    profile_generation: int
+    profile_files_visible: bool
+    onboarded: bool
+    created_at: datetime | None
+    last_active_at: datetime | None
+
+
+class AdminProfileFile(BaseModel):
+    name: str
+    kind: str
+    filled: bool
+
+
+class AdminSetup(BaseModel):
+    missing: list[str]
+    files: list[AdminProfileFile]
+
+
+class AdminCounts(BaseModel):
+    applied: int
+    notified: int
+
+
+class AdminAccountDetail(BaseModel):
+    user: AdminAccount
+    setup: AdminSetup
+    # `None` is unlimited and is a real value, not a missing one.
+    limits: dict[str, int | None]
+    counts: AdminCounts
+
+
 @router.get("/users/{user_id}")
 def user_detail(user_id: _uuid.UUID, db: Session = Depends(get_db),
-                admin: User = Depends(require_admin)) -> dict:
+                admin: User = Depends(require_admin)) -> AdminAccountDetail:
     """One account, for the two questions an operator actually has."""
     user = db.get(User, user_id)
     if user is None:
@@ -139,41 +175,26 @@ def user_detail(user_id: _uuid.UUID, db: Session = Depends(get_db),
 
     files = ProfileFiles(db, user_id)
     audit(logger, "admin.user_detail", user=admin.id, subject=user_id)
-    return {
-        "user": {
-            "id": str(user.id),
-            "email": user.email,
-            "status": user.status,
-            "active": user.active,
-            "plan": user.plan_id,
-            "telegram": user.telegram_status,
-            "profile_generation": user.profile_generation,
-            "model_version": user.model_version,
-            "profile_files_visible": bool(user.profile_files_visible),
-            "onboarded": user.onboarding_completed_at is not None,
-            "created_at": user.created_at.isoformat() if user.created_at else None,
-            "last_active_at": user.last_active_at.isoformat() if user.last_active_at else None,
-        },
-        # Setup completeness, by the same predicate the trainer refuses on.
-        "setup": {"missing": files.missing_setup(),
-                  "files": [{"name": row["name"], "kind": row["kind"], "filled": row["filled"]}
-                            for row in files.listing()]},
-        "limits": all_for(user),
-        "models": model_history(db, user_id),
-        "counts": {
-            "labels": db.scalar(select(func.count()).select_from(UserLabel)
-                                .where(UserLabel.user_id == user_id)) or 0,
-            "scored": db.scalar(select(func.count()).select_from(UserJobState)
-                                .where(UserJobState.user_id == user_id,
-                                       UserJobState.score.isnot(None))) or 0,
-            "applied": db.scalar(select(func.count()).select_from(UserJobState)
-                                 .where(UserJobState.user_id == user_id,
-                                        UserJobState.applied_at.isnot(None))) or 0,
-            "notified": db.scalar(select(func.count()).select_from(UserJobState)
-                                  .where(UserJobState.user_id == user_id,
-                                         UserJobState.notified_at.isnot(None))) or 0,
-        },
-    }
+    return AdminAccountDetail(
+        user=AdminAccount(
+            id=str(user.id), email=user.email, status=user.status, active=user.active,
+            plan=user.plan_id, telegram=user.telegram_status,
+            profile_generation=user.profile_generation,
+            profile_files_visible=bool(user.profile_files_visible),
+            onboarded=user.onboarding_completed_at is not None,
+            created_at=user.created_at, last_active_at=user.last_active_at),
+        setup=AdminSetup(
+            missing=files.missing_setup(),
+            files=[AdminProfileFile(name=row["name"], kind=row["kind"], filled=row["filled"])
+                   for row in files.listing()]),
+        limits=all_for(user),
+        counts=AdminCounts(
+            applied=db.scalar(select(func.count()).select_from(UserJobState)
+                              .where(UserJobState.user_id == user_id,
+                                     UserJobState.applied_at.isnot(None))) or 0,
+            notified=db.scalar(select(func.count()).select_from(UserJobState)
+                               .where(UserJobState.user_id == user_id,
+                                      UserJobState.notified_at.isnot(None))) or 0))
 
 
 class SettingPatch(BaseModel):

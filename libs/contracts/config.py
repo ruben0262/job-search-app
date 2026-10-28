@@ -142,7 +142,8 @@ class SearchSection(BaseModel):
 
     platform: Platform = Platform.ALL
     keywords: list[str] = Field(min_length=1, max_length=MAX_KEYWORDS_PER_USER)
-    exclude_keywords: list[str] = Field(default_factory=list, max_length=10)
+    # As many red words as green: the form offers 25 of each, and the 11th used to be refused.
+    exclude_keywords: list[str] = Field(default_factory=list, max_length=MAX_KEYWORDS_PER_USER)
     locations: list[Location] = Field(default_factory=list,
                                   max_length=MAX_LOCATIONS_PER_USER)
     remote_policy: RemotePolicy = RemotePolicy.REMOTE_OR_HYBRID
@@ -170,10 +171,9 @@ class UserConfigSchema(BaseModel):
     # Person-level, not search-level: a candidate is not more senior on one job board than another.
     seniority: list[Seniority] = Field(default_factory=list)
     languages: list[Language] = Field(default_factory=list)
+    # A year's pay in `salary_currency`. `libs.matching` drops a posting whose stated top is below it.
     min_salary: int | None = Field(default=None, ge=0, le=500_000)
     salary_currency: Currency = Currency.EUR
-    # Not asked at onboarding (removed from the form 2026-07-28).
-    max_notifications_per_day: int = Field(default=20, ge=1, le=100)
 
     @field_validator("seniority", "languages")
     @classmethod
@@ -199,6 +199,8 @@ class UserConfigSchema(BaseModel):
 
 def migrate_config(raw: dict) -> dict:
     """Read a config of any stored version as the current shape."""
+    # Deleted 2026-10-28: nothing read it — the daily cap is `libs.limits`' `notifications_per_day`.
+    raw = {key: value for key, value in raw.items() if key != "max_notifications_per_day"}
     if "sections" in raw:
         return {**raw, "sections": [_migrate_locations(s) for s in raw.get("sections") or []]}
 

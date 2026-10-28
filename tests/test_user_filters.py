@@ -129,8 +129,8 @@ def test_every_caller_that_still_asks_uses_the_shared_conditions():
         "services/notifier/deliver.py").read_text(encoding="utf-8"), (
         "delivery must not filter — the pre-score filter is the one place that decides")
 
-    for name in ("libs/ops/health.py",
-                 "libs/ops/pipeline.py",
+    # The ops pages ask no candidate question any more: they counted scored matches (Phase 8).
+    for name in ("libs/matching.py",
                  "services/scorer/score_lane.py"):
         body = Path(name).read_text(encoding="utf-8")
         assert "candidate_conditions" in body, (

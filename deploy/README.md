@@ -39,11 +39,9 @@ sudo systemctl enable --now backup.timer
 systemctl list-timers backup.timer
 ```
 
-**Do not enable `health.timer` until the notifier is deployed.** The silent-feed alert is currently
-a true positive — both accounts have matches waiting and have never had a delivery, because nothing
-is running to deliver them. Enabling it now emails every 15 minutes about a condition we created on
-purpose, and an alert that cries wolf is worse than no alert. Enable it in the same change that
-starts delivery.
+**`health.timer` was held back** because its silent-feed alert was a true positive while nothing
+delivered. That alert counted matches the scorer had written, and went with the scorer (ROADMAP
+Phase 8), so the reason no longer holds. Enable it in the same change that starts delivery.
 
 ### Accepted risk: backups are on the box, 2026-07-28
 
@@ -99,9 +97,10 @@ Fill in `POSTGRES_PASSWORD`, `SECRETS_KEK`, `ACCESS_TOKEN_SECRET`, `TUNNEL_TOKEN
 block. **`SECRETS_KEK` is the one that cannot be regenerated** — every stored credential is sealed
 with it, and losing it means every user re-enters every secret.
 
-### 2. The embedder, first
+### 2. The embedder — not needed
 
-Nothing can be scored without it, and it owns the network the other stack joins.
+Nothing live embeds any more (ROADMAP Phase 8): jobs are matched on their words, and the harvester
+neither calls the embedder nor joins its network. It stays deployable for the switched-off model:
 
 ```bash
 docker compose -f deploy/compose.embedder.yml up -d --build
@@ -111,13 +110,13 @@ curl -s localhost:8080/health          # expect verified: true
 ### 3. The platform
 
 ```bash
-# Postgres and the two credential workers — the default, and safe to run any time.
+# Postgres — the default, and safe to run any time.
 docker compose -f deploy/compose.yml up -d
 
 # Schema. Host-side, so it needs DATABASE_URL in the environment (see below).
 ./.venv/bin/alembic upgrade head
 
-# Everything else: the API, the site, the tunnel, and the scoring/training/delivery workers.
+# Everything else: the API, the site, the tunnel, CV building and delivery.
 docker compose -f deploy/compose.yml --profile full up -d --build
 ```
 
@@ -156,10 +155,11 @@ the loopback mapping exists for exactly this.
 | Service | Profile | What it does |
 |---|---|---|
 | `postgres` | default | everything: corpus, per-user tail, credentials, queue |
-| `capture` | default | `process` lane — documents to a draft profile |
-| `labeller` | default | `label` lane — relabel and cold start |
-| `scorer` | `full` | `score` lane — corpus rows to per-user scores |
-| `trainer` | `full` | `train` lane — fits a user's model |
+| `capture` | `ml` | switched off — `process` lane, documents to a draft profile |
+| `setupagent` | `ml` | switched off — `setup` lane, the setup chat's agents |
+| `labeller` | `ml` | switched off — `label` lane, relabel and cold start |
+| `scorer` | `ml` | switched off — `score` lane, corpus rows to per-user scores |
+| `trainer` | `ml` | switched off — `train` lane, fits a user's model |
 | `notifier` | `full` | `notify` lane — **messages real people** |
 | `docgen` | `full` | `docgen` lane — tailors a CV and uploads the PDF; **the only image with Chrome** |
 | `api` | `full` | the JSON API **and the site**, on one origin |
@@ -180,8 +180,9 @@ Driven by [`harvester.timer`](harvester.timer) every 15 minutes. Exit codes are 
 | Code | Meaning |
 |---|---|
 | 0 | A cycle ran — or another cycle held the lock and this tick skipped |
-| 1 | The cycle raised |
-| 2 | Configuration missing (no `EMBEDDER_URL`, no `DATABASE_URL`) |
+| 1 | The cycle raised — a missing `DATABASE_URL` included |
+
+There is no 2 any more: it meant "no `EMBEDDER_URL`", and nothing embeds (ROADMAP Phase 8).
 
 **A skipped tick is not a failure.** With a 15-minute timer and an occasionally slow cycle,
 treating overlap as an error would page somebody about the system working correctly. Overlap is
@@ -216,7 +217,8 @@ it is personal.
   Two services racing to migrate on restart is a real outage (`CODE_STRUCTURE.md` §5).
 - **Compose profiles**, carried over from the reference instance: always-on services start with a
   bare `up`; one-shot tools sit behind `profiles: ["tools"]`. That split exists because a no-arg
-  `up` once launched a trainer beside the scorer and loaded a second model into RAM.
+  `up` once launched a trainer beside the scorer and loaded a second model into RAM. The
+  switched-off model (CLAUDE.md §3) sits behind `profiles: ["ml"]`, which nothing starts.
 - **Per-service dependencies stay per-service.** `docgen` is the only image with Chrome;
   `trainer`/`scorer` the only ones with scikit-learn and numpy; `harvester` the only one with
   jobspy. `api` and `notifier` stay small, because they are what gets restarted most.

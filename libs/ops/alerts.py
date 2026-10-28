@@ -3,15 +3,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from libs.ops.health import PENDING_MATCH_CEILING, PlatformHealth
+from libs.ops.health import PlatformHealth
 
 # Disk headroom before a full disk stops being hypothetical.
 POSTGRES_DISK_BUDGET_BYTES = 60 * 1024**3
 POSTGRES_DISK_ALERT_FRACTION = 0.80
-
-# No delivery in this long, *with matches waiting*, is the silent-feed failure. Delivery is
-# event-driven, so any gap this size means the notify lane is not running rather than not due.
-SILENT_FEED_HOURS = 1
 
 # Corpus growth past this multiple of projection means the retention trim is not running.
 CORPUS_GROWTH_ALERT_FACTOR = 1.5
@@ -84,29 +80,6 @@ def _capacity_alerts(health: PlatformHealth) -> list[Alert]:
 def _user_alerts(health: PlatformHealth) -> list[Alert]:
     alerts = []
     for user in health.users:
-        # The qualifier is the alert.
-        silent = (user.pending_matches > 0
-                  and (user.hours_since_delivery is None
-                       or user.hours_since_delivery > SILENT_FEED_HOURS))
-        if silent:
-            waited = ("never" if user.hours_since_delivery is None
-                      else f"{user.hours_since_delivery:.0f}h ago")
-            # `pending_matches` stops counting at its ceiling so the health check cannot be made slow
-            # by the outage it is reporting. Said as "200+" rather than "200", because a number that
-            # is really a floor and does not say so is the kind of thing an operator plans against.
-            waiting = (f"{PENDING_MATCH_CEILING}+" if user.pending_matches >= PENDING_MATCH_CEILING
-                       else str(user.pending_matches))
-            alerts.append(Alert(
-                "page", "silent_feed",
-                f"{waiting} matching job(s) waiting and last delivery was {waited}",
-                # Where the answer actually is, in the order it is usually in.
-                # Where the answer actually is. This used to name a `dropped {...}` log line that
-                # does not exist anywhere in the notifier, so the first step of the remedy was a
-                # dead end — which is most of why this alert went unactioned.
-                "Grep the notifier log for this account's id: `notified <id> with N item(s)` is a "
-                "delivery, and `sweep: retired` means matches were given up on. If neither appears, "
-                "check the notify lane's depth and this account's Telegram status.", user.email))
-
         if user.telegram_status == "broken":
             alerts.append(Alert(
                 "warn", "telegram_broken",

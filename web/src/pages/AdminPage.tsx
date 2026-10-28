@@ -26,7 +26,6 @@ type Health = {
   users_total: number;
   users_active: number;
   corpus_rows: number;
-  corpus_embedded: number;
   postgres_bytes: number;
   connections: number;
   alerts: Alert[];
@@ -140,8 +139,6 @@ type PipelineStage = {
   // `null`, not 0, where the stage has no queue at all.
   waiting: number | null;
   oldest_min: number | null;
-  // Matched, never sent, now too old to send — work the platform did and threw away.
-  expired: number | null;
   verdict: "ok" | "warn" | "down";
 };
 
@@ -399,10 +396,6 @@ export function AdminPage() {
   if (failed) return <p className="error">Could not read the platform state.</p>;
   if (!health || !users) return <p className="muted">Loading…</p>;
 
-  const embedded = health.corpus_rows
-    ? Math.round((health.corpus_embedded / health.corpus_rows) * 100)
-    : 0;
-
   return (
     <>
       <p className="kicker">Operator</p>
@@ -462,7 +455,6 @@ export function AdminPage() {
 
       <dl className="stats">
         <Stat value={health.corpus_rows.toLocaleString()} label="corpus rows" />
-        <Stat value={`${embedded}%`} label="embedded" />
         <Stat value={`${health.users_active}/${health.users_total}`} label="active users" />
         <Stat value={`${(health.postgres_bytes / 1024 ** 3).toFixed(1)} GB`} label="postgres" />
       </dl>
@@ -1123,15 +1115,6 @@ function PipelineTab() {
                   {stage.oldest_min === null ? "—" : `oldest ${minutes(stage.oldest_min)}`}
                 </span>
               </div>
-              {/* The one thing on this page that is lost work rather than queued work. */}
-              {stage.expired ? (
-                <p className="pipeline-expired">
-                  {stage.expired.toLocaleString()} matched and expired unsent in the last{" "}
-                  {report.window_hours}h — matched, ranked, and never shown to anybody. Sending is
-                  uncapped and re-arms itself, so this should fall to zero; if it does not, delivery
-                  is genuinely stuck rather than busy.
-                </p>
-              ) : null}
             </div>
           );
         })}

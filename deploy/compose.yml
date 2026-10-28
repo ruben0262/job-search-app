@@ -57,14 +57,6 @@ services:
     profiles: ["tools"]
     environment:
       DATABASE_URL: postgresql+psycopg://jobsearch:${POSTGRES_PASSWORD:?}@postgres:5432/jobsearch
-      # Reached by service name over embedder-net. Not a host port: the loopback mapping exists for
-      # host-side tooling, and depending on it here would couple the harvester to the embedder
-      # happening to publish one.
-      EMBEDDER_URL: http://embedder-gateway:8080
-      # Pinned so a vector-space change is a refusal rather than a silently different space. Must
-      # match what services/embedder actually serves.
-      EMBEDDER_MODEL: ${EMBEDDER_MODEL:-BAAI/bge-base-en-v1.5}
-      EMBEDDER_DIM: ${EMBEDDER_DIM:-768}
       # Needed once the per-user LinkedIn loop decrypts proxy credentials (D3). Passed through
       # rather than `:?`-required, so the shared tiers keep harvesting on a box where the key is not
       # set yet — but `libs.secrets` refuses to construct without it, so the LinkedIn loop fails
@@ -99,13 +91,16 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    networks: [default, embedder-net]
     # A cycle is network-bound and short. The ceiling is a guard against a runaway source, not a
     # target - and the box has 4 GB of swap now, so exceeding it degrades rather than OOM-killing.
     mem_limit: 1g
     cpus: 2
 
-  # ── the two lanes that spend a user's Claude credential ─────────────────────────────────────
+  # ── the switched-off model (CLAUDE.md §3): the `ml` profile, which nothing starts ────────────
+  #
+  # Kept, not deleted: training, scoring, labelling, the AI profile capture and the setup agents.
+  # Nothing live reads what they write any more (`libs.matching` decides which jobs a person sees),
+  # so they belong to no default profile; `--profile ml` is the deliberate way back.
   #
   # Long-running workers, not one-shots: they claim from their lane, drain the current job on
   # SIGTERM, and are restarted rather than scheduled. Both are `restart: always` precisely because
@@ -122,6 +117,7 @@ services:
     build:
       context: ..
       dockerfile: deploy/docker/Dockerfile.capture
+    profiles: ["ml"]
     environment:
       DATABASE_URL: postgresql+psycopg://jobsearch:${POSTGRES_PASSWORD:?}@postgres:5432/jobsearch
       SECRETS_KEK: ${SECRETS_KEK:?set it in deploy/.env — the workers cannot decrypt without it}
@@ -144,6 +140,7 @@ services:
     build:
       context: ..
       dockerfile: deploy/docker/Dockerfile.setupagent
+    profiles: ["ml"]
     environment:
       DATABASE_URL: postgresql+psycopg://jobsearch:${POSTGRES_PASSWORD:?}@postgres:5432/jobsearch
       SECRETS_KEK: ${SECRETS_KEK:?set it in deploy/.env — the workers cannot decrypt without it}
@@ -165,6 +162,7 @@ services:
     build:
       context: ..
       dockerfile: deploy/docker/Dockerfile.labeller
+    profiles: ["ml"]
     environment:
       DATABASE_URL: postgresql+psycopg://jobsearch:${POSTGRES_PASSWORD:?}@postgres:5432/jobsearch
       SECRETS_KEK: ${SECRETS_KEK:?set it in deploy/.env — the workers cannot decrypt without it}
@@ -179,21 +177,13 @@ services:
     mem_limit: 512m
     cpus: 1
 
-  # ── the rest of the platform ────────────────────────────────────────────────────────────────
-  #
-  # All under the `full` profile, so a bare `docker compose up -d` still brings up only Postgres
-  # and the two credential workers. Starting delivery is a decision — it messages real people —
-  # rather than something that happens because somebody typed `up`.
-  #
-  #     docker compose -f deploy/compose.yml --profile full up -d
-
   # `score` lane. Free to run: CPU only, no credential, no provider. Turns a harvested row into a
   # score, which nothing else does — without it every feed is frozen at its last manual run.
   scorer:
     build:
       context: ..
       dockerfile: deploy/docker/Dockerfile.scorer
-    profiles: ["full"]
+    profiles: ["ml"]
     environment:
       DATABASE_URL: postgresql+psycopg://jobsearch:${POSTGRES_PASSWORD:?}@postgres:5432/jobsearch
       MODEL_DIR: /var/lib/jobsearch/models
@@ -221,7 +211,7 @@ services:
     build:
       context: ..
       dockerfile: deploy/docker/Dockerfile.trainer
-    profiles: ["full"]
+    profiles: ["ml"]
     environment:
       DATABASE_URL: postgresql+psycopg://jobsearch:${POSTGRES_PASSWORD:?}@postgres:5432/jobsearch
       MODEL_DIR: /var/lib/jobsearch/models
@@ -242,6 +232,14 @@ services:
     restart: always
     mem_limit: 3g
     cpus: 2
+
+  # ── the rest of the platform ────────────────────────────────────────────────────────────────
+  #
+  # All under the `full` profile, so a bare `docker compose up -d` brings up only Postgres.
+  # Starting delivery is a decision — it messages real people — rather than something that happens
+  # because somebody typed `up`.
+  #
+  #     docker compose -f deploy/compose.yml --profile full up -d
 
   # `docgen` lane. **The only container with a browser in it** (CODE_STRUCTURE.md §5): a build is
   # two Claude calls and two Chrome compiles, ~90–130 s, on the user's own credential.
@@ -390,12 +388,6 @@ services:
       - api
     restart: unless-stopped
     mem_limit: 256m
-
-networks:
-  # The embedder has its own compose project and owns this network. External, so this stack joins it
-  # rather than trying to create it - which would fail, and rightly.
-  embedder-net:
-    external: true
 
 volumes:
   pgdata:

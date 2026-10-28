@@ -115,6 +115,9 @@ def test_a_retrain_makes_every_score_stale_at_once(db):
     assert unscored_count(session, user.id) == len(jobs)
 
 
+@pytest.mark.skip(reason="switched off (CLAUDE.md §3): the harvest cycle stopped feeding the score "
+                         "lane on 2026-10-28 (ROADMAP Phase 8); a model that comes back brings its "
+                         "own trigger and its own test")
 def test_the_harvest_cycle_asks_every_active_account_to_catch_up(db):
     """A corpus row is shared, so a job harvested for one user is one the others have not scored either."""
     from sqlalchemy import func, select

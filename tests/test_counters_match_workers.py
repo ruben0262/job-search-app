@@ -110,21 +110,6 @@ def test_a_lane_with_nothing_reachable_reports_nothing_remaining(db):
 
 # ── the pipeline page: counters that drove an operator, not a loop ────────────────────────────
 
-def test_the_page_and_the_embedder_count_the_same_rows(db):
-    """A backlog on the page that no worker will clear reads as a stall and is not one."""
-    from libs.corpus.repository import CorpusRepository
-    from libs.ops.pipeline import pipeline
-
-    _job(db, description="x" * 400, embedding=None, text_sha256=None, embedding_dim=None,
-         closed_at=datetime.now(UTC))
-    db.flush()
-
-    page = {s["key"]: s for s in pipeline(db, hours=24)["stages"]}["embed"]["waiting"]
-    worker = len(CorpusRepository(db).awaiting_embedding(limit=1000))
-
-    assert page == worker
-
-
 def test_the_page_and_the_describer_count_the_same_rows(db):
     """Same shape, same guard: a closed row is never fetched and must not read as waiting."""
     from libs import settings
