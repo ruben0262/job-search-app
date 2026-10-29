@@ -78,6 +78,30 @@ deploy/
 └── scripts/               operational one-shots run on the VPS
 ```
 
+## Upgrading the live box to Phase 8 — once
+
+The box still runs the pre-Phase-8 services. `docker compose up` cannot infer the steps below: it
+does not stop containers whose service moved to another profile, and it does not empty a queue lane
+nothing drains any more. In this order:
+
+1. **Back up first**: `./.venv/bin/python deploy/scripts/backup.py`.
+2. **New settings in `deploy/.env`**: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`,
+   `TELEGRAM_WEBHOOK_SECRET` (see Telegram below), the `VAPID_*` trio (`.env.example` has the one-line
+   generator), and — for the AI allowance and the support chat — `PLATFORM_AI_PROVIDER` and
+   `PLATFORM_AI_KEY` (a **paid** key; leave both empty and only people's own keys write AI documents).
+   The notifier now requires `PUBLIC_URL` and no longer receives `SECRETS_KEK`; the harvester no
+   longer needs `EMBEDDER_URL`.
+3. **Schema**: `./.venv/bin/alembic upgrade head` (to `ee2add9ee95f` or later).
+4. **Stop what is switched off**: the five services moved to the `ml` profile keep running until
+   removed — `docker compose -f deploy/compose.yml rm -sf capture setupagent labeller scorer trainer`.
+5. **Empty the lanes nothing drains**: rows queued for them would raise `stalled:<lane>` warnings for
+   ever. `DELETE FROM jobs WHERE lane IN ('score','label','train','process','setup') AND state = 'ready';`
+6. **Bring the rest up**: `docker compose -f deploy/compose.yml --profile full up -d --build`.
+7. **Register the Telegram webhook** (below), then check: `/health`, `deploy/scripts/check_health.py`.
+8. **Tell the existing accounts** two things: press **Start** in the platform bot once (their own
+   bots no longer deliver), and agree once more before an AI document — the disclosure now names
+   Google and OpenAI, so its version moved.
+
 ## Running the platform
 
 Everything is in this directory now, including the embedder's compose file and every Dockerfile.
@@ -161,7 +185,7 @@ the loopback mapping exists for exactly this.
 | `scorer` | `ml` | switched off — `score` lane, corpus rows to per-user scores |
 | `trainer` | `ml` | switched off — `train` lane, fits a user's model |
 | `notifier` | `full` | `notify` lane — **messages real people** |
-| `docgen` | `full` | `docgen` lane — tailors a CV and uploads the PDF; **the only image with Chrome** |
+| `docgen` | `full` | `docgen` lane — builds CVs and cover letters for download; **the only image with Chrome** |
 | `api` | `full` | the JSON API **and the site**, on one origin |
 | `cloudflared` | `full` | the only way in; no inbound port is open |
 | `harvester` | `tools` | one cycle, invoked by a systemd timer |
