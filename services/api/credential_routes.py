@@ -125,14 +125,20 @@ def _broker(path: str, payload: dict) -> dict:
     return response.json()
 
 
+class OAuthStarted(BaseModel):
+    session_id: str
+    # Where the person signs in to Claude.
+    url: str
+
+
 @router.post("/claude/oauth/start")
 def claude_oauth_start(request: Request, *,
-                       user_id: _uuid.UUID = Depends(current_user)) -> dict:
+                       user_id: _uuid.UUID = Depends(current_user)) -> OAuthStarted:
     """Begin a sign-in and hand back the URL to open."""
     rate_limit(request, f"oauth:{user_id}", limit=10, per_seconds=3600)
     body = _broker("/start", {"user_id": str(user_id)})
     audit(logger, "credentials.oauth_started", user=user_id)
-    return {"session_id": body["session_id"], "url": body["url"]}
+    return OAuthStarted(session_id=body["session_id"], url=body["url"])
 
 
 class OAuthFinishBody(BaseModel):

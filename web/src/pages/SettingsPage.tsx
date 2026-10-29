@@ -1,8 +1,13 @@
-/** Everything onboarding collected, plus the two things only this page can do: withdraw consent. */
+/** Settings: alerts on your phone, AI writing, your account, and the proxy only LinkedIn needs. */
 import { useEffect, useState } from "react";
 
-import { api, type Account } from "../api";
+import { Alerts } from "../alerts";
+import { api, type Ready, type Schema } from "../api";
+import { ClaudeConnect } from "../components/ClaudeConnect";
 import { Card, Error, Field, useAction } from "../ui";
+
+type Account = Schema<"AccountOut">;
+type Stored = Schema<"StoredCredential">;
 
 // The last answer, kept across mounts to kill the split-second "Loading…" on every visit.
 let cachedAccount: Account | null = null;
@@ -12,207 +17,219 @@ export function clearAccountCache(): void {
   cachedAccount = null;
 }
 
-export function SettingsPage({ onSignedOut }: { onSignedOut: () => void }) {
+/** Your own key for AI-written documents: what each box is called and where the key comes from. */
+const KEYS = {
+  claude_api: ["Claude key", "From console.anthropic.com, with credit on it.", "sk-ant-…"],
+  claude_oauth: ["Claude subscription", "Connect with the button, or paste a token from claude setup-token.",
+                 "sk-ant-oat…"],
+  gemini_api: ["Gemini key", "From aistudio.google.com, on a project with billing turned on.", "AIza…"],
+  openai_api: ["OpenAI key", "From platform.openai.com.", "sk-…"],
+} as const;
+
+export function SettingsPage({ dashboard, onChanged, onSignedOut }: {
+  dashboard: Ready;
+  onChanged: () => void;
+  onSignedOut: () => void;
+}) {
   const [account, setAccount] = useState<Account | null>(cachedAccount);
-  const [password, setPassword] = useState("");
-  const [confirming, setConfirming] = useState(false);
+  const [stored, setStored] = useState<Stored[]>([]);
+  const [provider, setProvider] = useState<keyof typeof KEYS>("claude_api");
 
-  const reload = () =>
-    api
-      .get<Account>("/account")
-      .then((fresh) => {
-        cachedAccount = fresh;
-        setAccount(fresh);
-      })
+  const reload = () => {
+    api.get<Account>("/account").then((fresh) => {
+      cachedAccount = fresh;
+      setAccount(fresh);
+    }).catch(() => undefined);
+    api.get<Schema<"CredentialList">>("/credentials").then((body) => setStored(body.credentials))
       .catch(() => undefined);
-  useEffect(() => {
-    void reload();
-  }, []);
+  };
+  useEffect(reload, []);
+  // A key changes who pays for AI and a pause changes the jobs page's banner: both are the dashboard's.
+  const dashboardChanged = () => {
+    reload();
+    onChanged();
+  };
 
+  const pause = useAction(async () => {
+    await api.patch("/account", { active: !account?.active });
+    dashboardChanged();
+  });
+  const withdraw = useAction(async () => {
+    await api.del("/account/consent");
+    reload();
+  });
   const signOut = useAction(async () => {
     await api.post("/auth/logout");
     onSignedOut();
   });
 
-  const withdraw = useAction(async () => {
-    await api.del("/account/consent");
-    await reload();
-  });
-
-  const remove = useAction(async () => {
-    await api.del("/account", { password });
-    onSignedOut();
-  });
-
-  if (!account) return <p className="muted">Loading…</p>;
+  if (!account) return <p className="muted">Loading your settings…</p>;
+  const [label, hint, placeholder] = KEYS[provider];
+  const { ai } = dashboard;
 
   return (
     <>
-      <p className="kicker">Your account</p>
+      <p className="kicker">Settings</p>
       <h1>Settings</h1>
 
-      <Card title="Account">
-        <table className="kv">
-          <tbody>
-            <tr>
-              <td>Email</td>
-              <td>{account.email}</td>
-            </tr>
-            <tr>
-              <td>Name</td>
-              <td>{account.full_name ?? "—"}</td>
-            </tr>
-            <tr>
-              <td>Plan</td>
-              <td>{account.plan}</td>
-            </tr>
-          </tbody>
-        </table>
-      </Card>
-
-      <DeliveryCard active={account.active} onChanged={() => void reload()} />
-
-      <PasswordCard onChanged={onSignedOut} />
-
-      <Card title="Your data">
-        <p className="small muted">
-          We send your document text to Anthropic on your own credential when you process it, and
-          nowhere else. <a href="#/privacy">The full list of who sees what</a>.
-        </p>
-        {account.consent_version ? (
-          <>
-            <Error>{withdraw.error}</Error>
-            <button className="secondary" disabled={withdraw.busy} onClick={() => void withdraw.run()}>
-              Withdraw my agreement
-            </button>
-            <p className="small muted">
-              Processing becomes unavailable. Your existing profile is unchanged, deleting your
-              account is what removes everything.
-            </p>
-          </>
-        ) : (
-          <p className="small muted">You have not agreed to processing yet.</p>
-        )}
-      </Card>
-
-      <Card title="Delete everything">
-        <p className="small muted">
-          Your profile, documents, labels, model and credentials, permanently. Your encryption key is
-          destroyed in the same request, so anything in a backup taken minutes ago is unreadable
-          rather than merely deleted. This cannot be undone.
-        </p>
-        <button className="danger" onClick={() => setConfirming(true)}>
-          Delete my account
-        </button>
-      </Card>
-
-      {/* A modal, not an inline panel. */}
-      {confirming ? (
-        <div className="modal-backdrop" onClick={() => setConfirming(false)}>
-          <div className="modal" onClick={(event) => event.stopPropagation()}>
-            <h2>Delete your account?</h2>
-            <p className="small muted">
-              This erases your profile, documents, labels, model and credentials, and destroys your
-              encryption key. It cannot be undone.
-            </p>
-            <Field label="Type your password to confirm">
-              <input
-                type="password"
-                value={password}
-                autoFocus
-                autoComplete="current-password"
-                onChange={(event) => setPassword(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Escape") setConfirming(false);
-                  if (event.key === "Enter" && password && !remove.busy) void remove.run();
-                }}
-              />
-            </Field>
-            <Error>{remove.error}</Error>
-            <div className="row">
-              <button className="secondary" onClick={() => setConfirming(false)}>
-                Keep it
-              </button>
-              <button
-                className="danger"
-                disabled={remove.busy || !password}
-                onClick={() => void remove.run()}
-              >
-                {remove.busy ? "Deleting…" : "Delete my account permanently"}
-              </button>
-            </div>
-          </div>
+      <Card title="Alerts on your phone">
+        <p className="small muted">Optional. New jobs that match your words come to your phone as they are found.</p>
+        <Alerts />
+        <div className="channel">
+          <span>
+            <span className="label">{account.active ? "Alerts are on" : "Alerts are paused"}</span>
+            <span className="hint">
+              {account.active
+                ? "Pausing stops alerts to Telegram and to this browser. Your jobs page keeps filling up."
+                : "Nothing is sent to your phone. Your jobs page keeps filling up as usual."}
+            </span>
+          </span>
+          <button type="button" className="secondary" disabled={pause.busy} onClick={() => void pause.run()}>
+            {account.active ? "Pause alerts" : "Turn alerts back on"}
+          </button>
         </div>
-      ) : null}
+        <Error>{pause.error}</Error>
+      </Card>
 
-      <p>
-        <button className="secondary" disabled={signOut.busy} onClick={() => void signOut.run()}>
-          Sign out
-        </button>
+      <Card title="AI writing">
+        <p className="small muted">Instant CVs and cover letters are free and made right here.</p>
+        <p>
+          {!ai.profile ? "AI-written CVs and cover letters are not ready for new accounts yet."
+            : ai.payer === "own" ? "Your own key is saved: AI writing is unlimited."
+              : ai.payer === "platform" ? `AI requests left today: ${ai.left} of ${ai.per_day}`
+                : ai.per_day > 0 && ai.left === 0
+                  ? `You have used today's ${ai.per_day} AI requests. More tomorrow, or use your own key.`
+                  : "Save your own key below to have AI write them."}
+        </p>
+        <Field label="Use your own key — unlimited">
+          <select value={provider} onChange={(event) => setProvider(event.target.value as typeof provider)}>
+            {Object.entries(KEYS).map(([kind, [name]]) => (
+              <option key={kind} value={kind}>{name}</option>
+            ))}
+          </select>
+        </Field>
+        {provider === "claude_oauth" ? <ClaudeConnect onConnected={dashboardChanged} /> : null}
+        <Credential key={provider} kind={provider} label={label} hint={hint} placeholder={placeholder}
+                    stored={stored} onChanged={dashboardChanged} />
+        {account.consent_version ? (
+          <p className="small muted">
+            You agreed that AI-written documents may use your profile.{" "}
+            <button type="button" className="linklike" disabled={withdraw.busy} onClick={() => void withdraw.run()}>
+              Withdraw
+            </button>
+          </p>
+        ) : null}
+        <Error>{withdraw.error}</Error>
+      </Card>
+
+      <Card title="Your account">
+        <p>{account.email}</p>
+        <Password onChanged={onSignedOut} />
+        <div className="row">
+          <button type="button" className="secondary" disabled={signOut.busy} onClick={() => void signOut.run()}>
+            Sign out
+          </button>
+          <DeleteAccount onDeleted={onSignedOut} />
+        </div>
+        <Error>{signOut.error}</Error>
+      </Card>
+
+      <details className="card fold-plain">
+        <summary>Advanced — only needed for LinkedIn jobs</summary>
+        <p className="small muted">
+          LinkedIn jobs are collected through your own proxy, never a shared one. Without one you get
+          jobs from every other source.
+        </p>
+        <Credential kind="proxy" label="Proxy address" hint="With its username and password, e.g. http://user:pass@host:port."
+                    placeholder="http://user:pass@host:port" stored={stored} onChanged={reload} />
+      </details>
+
+      <p className="small">
+        <a href="#/privacy">Who sees your data</a>
+        {dashboard.is_admin ? <> · <a href="#/admin">Platform</a></> : null}
       </p>
     </>
   );
 }
 
-/** The delivery knobs, side by side because people confuse them and the fix is words. */
-function DeliveryCard({ active, onChanged }: { active: boolean; onChanged: () => void }) {
-  const toggle = useAction(async () => {
-    await api.patch("/account", { active: !active });
+/** One credential: a box to save it, and what is saved, which can be removed. */
+function Credential({ kind, label, hint, placeholder, stored, onChanged }: {
+  kind: string;
+  label: string;
+  hint: string;
+  placeholder: string;
+  stored: Stored[];
+  onChanged: () => void;
+}) {
+  const [value, setValue] = useState("");
+  const [unchecked, setUnchecked] = useState<string | null>(null);
+  const save = useAction(async (anyway: boolean) => {
+    const result = await api.put<Schema<"Saved">>(`/credentials/${kind}`, { value, allow_unvalidated: anyway });
+    setValue("");
+    // Stored but unchecked: the provider could not be reached to try it.
+    setUnchecked(result.validated ? null : result.detail);
     onChanged();
   });
+  const remove = useAction(async () => {
+    await api.del(`/credentials/${kind}`);
+    onChanged();
+  });
+  const saved = stored.find((each) => each.kind === kind);
 
   return (
-    <Card title="Delivery">
-      <div style={{ marginBottom: "1.25rem" }}>
-        <span>
-          <span className="label" style={{ marginBottom: 0 }}>
-            Job messages are {active ? "on" : "off"}
-          </span>
-          <span className="hint" style={{ marginBottom: 0 }}>
-            {active
-              ? "Pausing stops Telegram messages. Collection and scoring keep running, and the bot stays on, resuming picks up where you left off."
-              : "Nothing is being sent. Everything else keeps running, so turning it back on delivers a warm feed."}
-          </span>
-        </span>
-        <button style={{ marginTop: "1.15rem" }}
-          className={active ? "secondary" : ""}
-          disabled={toggle.busy}
-          onClick={() => void toggle.run()}
-        >
-          {toggle.busy ? "…" : active ? "Pause messages" : "Start messages"}
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        void save.run(false);
+      }}
+    >
+      <Field label={label} hint={hint}>
+        <input type="password" value={value} placeholder={placeholder} autoComplete="off"
+               onChange={(event) => setValue(event.target.value)} />
+      </Field>
+      <Error>{save.error}</Error>
+      {save.error ? (
+        <button type="button" className="secondary small" onClick={() => void save.run(true)}>
+          Save it anyway, I know it is right
         </button>
+      ) : null}
+      {unchecked ? <p className="small muted">Saved, but we could not check it: {unchecked}</p> : null}
+      <div className="row">
+        <button type="submit" className="secondary" disabled={save.busy || !value}>
+          {save.busy ? "Checking…" : "Save"}
+        </button>
+        {saved ? (
+          <span className="saved-key">
+            Saved: ••••{saved.last_4 ?? ""}
+            <button type="button" className="linklike" disabled={remove.busy}
+                    onClick={() => {
+                      if (window.confirm(`Remove your ${label.toLowerCase()}?`)) void remove.run();
+                    }}>
+              Remove
+            </button>
+          </span>
+        ) : null}
       </div>
-      <Error>{toggle.error}</Error>
-    </Card>
+      <Error>{remove.error}</Error>
+    </form>
   );
 }
 
-/** Change the password. */
-function PasswordCard({ onChanged }: { onChanged: () => void }) {
+function Password({ onChanged }: { onChanged: () => void }) {
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [done, setDone] = useState(false);
-
   const change = useAction(async () => {
     await api.put("/account/password", { current_password: current, new_password: next });
     setDone(true);
-    // Give the sentence a beat to be read before the reload lands on the sign-in page.
+    // A beat to read the sentence before the reload lands on the sign-in page.
     window.setTimeout(onChanged, 1500);
   });
 
-  if (done) {
-    return (
-      <Card title="Password">
-        <p className="small muted">
-          Changed. Every session is signed out, including this one, sign back in with the new
-          password.
-        </p>
-      </Card>
-    );
-  }
-
+  if (done) return <p className="small muted">Changed. Sign back in with your new password.</p>;
   return (
-    <Card title="Password">
+    <details className="fold-plain">
+      <summary>Change your password</summary>
       <form
         onSubmit={(event) => {
           event.preventDefault();
@@ -220,29 +237,65 @@ function PasswordCard({ onChanged }: { onChanged: () => void }) {
         }}
       >
         <Field label="Current password">
-          <input
-            type="password"
-            value={current}
-            autoComplete="current-password"
-            required
-            onChange={(event) => setCurrent(event.target.value)}
-          />
+          <input type="password" value={current} autoComplete="current-password"
+                 onChange={(event) => setCurrent(event.target.value)} />
         </Field>
         <Field label="New password" hint="At least 9 characters. Longer beats complicated.">
-          <input
-            type="password"
-            value={next}
-            autoComplete="new-password"
-            required
-            onChange={(event) => setNext(event.target.value)}
-          />
+          <input type="password" value={next} autoComplete="new-password"
+                 onChange={(event) => setNext(event.target.value)} />
         </Field>
         <Error>{change.error}</Error>
-        <p className="small muted">Changing it signs you out on every device, this one included.</p>
-        <button type="submit" disabled={change.busy || !current || !next}>
+        <p className="small muted">This signs you out everywhere, here too.</p>
+        <button type="submit" className="secondary" disabled={change.busy || !current || !next}>
           {change.busy ? "Changing…" : "Change password"}
         </button>
       </form>
-    </Card>
+    </details>
+  );
+}
+
+function DeleteAccount({ onDeleted }: { onDeleted: () => void }) {
+  const [asking, setAsking] = useState(false);
+  const [password, setPassword] = useState("");
+  const remove = useAction(async () => {
+    await api.del("/account", { password });
+    onDeleted();
+  });
+
+  return (
+    <>
+      <button type="button" className="danger" onClick={() => setAsking(true)}>
+        Delete my account
+      </button>
+      {asking ? (
+        <div className="modal-backdrop" onClick={() => setAsking(false)}>
+          <div className="modal" onClick={(event) => event.stopPropagation()}>
+            <h2>Delete your account?</h2>
+            <p className="small muted">
+              Your documents, words and keys are erased and your encryption key destroyed. This cannot
+              be undone.
+            </p>
+            <Field label="Type your password to confirm">
+              <input type="password" value={password} autoFocus autoComplete="current-password"
+                     onChange={(event) => setPassword(event.target.value)}
+                     onKeyDown={(event) => {
+                       if (event.key === "Escape") setAsking(false);
+                       if (event.key === "Enter" && password && !remove.busy) void remove.run();
+                     }} />
+            </Field>
+            <Error>{remove.error}</Error>
+            <div className="row">
+              <button type="button" className="secondary" onClick={() => setAsking(false)}>
+                Keep it
+              </button>
+              <button type="button" className="danger" disabled={remove.busy || !password}
+                      onClick={() => void remove.run()}>
+                {remove.busy ? "Deleting…" : "Delete it for good"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
   );
 }

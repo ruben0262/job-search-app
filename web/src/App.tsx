@@ -1,23 +1,19 @@
 /** Routing, and the one decision the whole app hangs off: where a signed-in user belongs. */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 
-import { ApiError, api, type Dashboard, type OnboardingState } from "./api";
+import { ApiError, api, type Dashboard } from "./api";
 import { Landing } from "./landing/Landing";
 import { AdminPage } from "./pages/AdminPage";
 import { AdminUserPage } from "./pages/AdminUserPage";
-import { DashboardPage } from "./pages/DashboardPage";
-import { DataPage } from "./pages/DataPage";
-import { clearFeedCache } from "./pages/FeedPage";
-import { clearAccountCache } from "./pages/SettingsPage";
-import { clearConversationCache } from "./pages/SetupPage";
-import { FeedPage } from "./pages/FeedPage";
+import { DocumentsPage } from "./pages/DocumentsPage";
+import { JobsPage, clearJobsCache } from "./pages/JobsPage";
 import { Onboarding } from "./pages/Onboarding";
 import { PrivacyPage } from "./pages/PrivacyPage";
 import { ForgotPassword, ResetPassword } from "./pages/ResetPassword";
-import { SetupPage } from "./pages/SetupPage";
-import { SettingsPage } from "./pages/SettingsPage";
+import { SettingsPage, clearAccountCache } from "./pages/SettingsPage";
 import { SignIn } from "./pages/SignIn";
 import { Verify } from "./pages/Verify";
+import { WordsPage } from "./pages/WordsPage";
 import { NotificationBell } from "./notifications";
 import { ThemeToggle } from "./theme";
 
@@ -31,11 +27,16 @@ function useHash(): string {
   return hash;
 }
 
-export function navigate(path: string): void {
-  window.location.hash = path;
-}
-
 type Session = { state: "loading" } | { state: "out" } | { state: "in"; dashboard: Dashboard };
+
+/** The five places, in tab-bar order. `#/feed` is Jobs too: every alert links there. */
+const PLACES: [string, string, ReactNode][] = [
+  ["jobs", "Jobs", <path key="i" d="M4 8h16v11H4zM9 8V5h6v3" />],
+  ["words", "My words", <path key="i" d="M4 12l8-8h7v7l-8 8zM15.5 8.5h.01" />],
+  ["documents", "My documents", <path key="i" d="M6 3h8l4 4v14H6zM14 3v4h4M9 13h6M9 17h6" />],
+  ["settings", "Settings", <path key="i" d="M12 9a3 3 0 100 6 3 3 0 000-6zM4 12h2m12 0h2M12 4v2m0 12v2M6.3 6.3l1.4 1.4m8.6 8.6l1.4 1.4m0-11.4l-1.4 1.4m-8.6 8.6l-1.4 1.4" />],
+  ["help", "Help", <path key="i" d="M12 21a9 9 0 100-18 9 9 0 000 18zM9.5 9.5a2.5 2.5 0 114 2c-1 .7-1.5 1.2-1.5 2.5M12 17h.01" />],
+];
 
 export function App() {
   const hash = useHash();
@@ -48,8 +49,7 @@ export function App() {
       // 401 is the ordinary signed-out case — `request` has already tried a refresh.
       if (error instanceof ApiError && error.status === 401) {
         // The page caches die with the session.
-        clearFeedCache();
-        clearConversationCache();
+        clearJobsCache();
         clearAccountCache();
         setSession({ state: "out" });
       } else throw error;
@@ -59,6 +59,15 @@ export function App() {
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  // Telegram's Start is pressed outside this tab, so coming back is when the banners change.
+  const signedIn = session.state === "in";
+  useEffect(() => {
+    if (!signedIn) return;
+    const again = () => void reload();
+    window.addEventListener("focus", again);
+    return () => window.removeEventListener("focus", again);
+  }, [signedIn, reload]);
 
   // Public, and reachable signed out: signup links it before anybody has an account.
   if (hash.startsWith("/privacy")) return <PrivacyPage />;
@@ -79,35 +88,45 @@ export function App() {
   const { dashboard } = session;
   if (dashboard.stage === "onboarding") {
     // Deliberately not routable past: a half-configured account produces a bad feed and the user concludes.
-    // Passed through untyped by `/dashboard`: what onboarding returns is onboarding's to define.
-    return <Onboarding state={dashboard.onboarding as OnboardingState} onChanged={reload} />;
+    return <Onboarding state={dashboard.onboarding} onChanged={reload} />;
   }
 
-  // Keyed on the route so the fade-up replays on navigation, not only on first load.
-  const section = hash.startsWith("/feed")
-    ? "feed"
-    : hash.startsWith("/profile")
-      ? "profile"
-      : hash.startsWith("/data")
-        ? "data"
-        : hash.startsWith("/settings")
-          ? "settings"
-          : hash.startsWith("/admin")
-            ? "admin"
-            : "overview";
+  const [path, query = ""] = hash.split("?");
+  const section = ["words", "documents", "settings", "help", "admin"]
+    .find((name) => path?.startsWith(`/${name}`)) ?? "jobs";
+  const focus = Number(new URLSearchParams(query).get("job")) || null;
 
   return (
     <>
       <div className="backdrop" aria-hidden="true" />
       <div className="app">
-        <Nav current={hash} isAdmin={dashboard.is_admin} />
-        <div className="page-in" key={section}>
-          {section === "feed" ? (
-            <FeedPage />
-          ) : section === "profile" ? (
-            <SetupPage onChanged={reload} />
-          ) : section === "data" ? (
-            <DataPage onChanged={reload} />
+        <nav>
+          <a className="brand" href="#/">
+            Mahoraga
+          </a>
+          {/* A row of links up top on a laptop; a tab bar along the bottom on a phone. */}
+          <div className="places">
+            {PLACES.map(([key, label, icon]) => (
+              <a key={key} href={key === "jobs" ? "#/" : `#/${key}`} className={section === key ? "on" : ""}
+                 aria-current={section === key ? "page" : undefined}>
+                <svg viewBox="0 0 24 24" aria-hidden="true">{icon}</svg>
+                {label}
+              </a>
+            ))}
+          </div>
+          <NotificationBell />
+          <ThemeToggle />
+        </nav>
+        {/* Keyed on the place so the fade-up replays on navigation, not only on first load. */}
+        <main className={section === "admin" ? "page-in admin" : "page-in"} key={section}>
+          {section === "words" ? (
+            <WordsPage />
+          ) : section === "documents" ? (
+            <DocumentsPage />
+          ) : section === "settings" ? (
+            <SettingsPage dashboard={dashboard} onChanged={reload} onSignedOut={reload} />
+          ) : section === "help" ? (
+            <HelpForNow />
           ) : section === "admin" ? (
             // `#/admin/users/<id>` is its own page, not a panel that unfolds inside the list.
             hash.startsWith("/admin/users/") ? (
@@ -115,43 +134,27 @@ export function App() {
             ) : (
               <AdminPage />
             )
-          ) : section === "settings" ? (
-            <SettingsPage onSignedOut={reload} />
           ) : (
-            <DashboardPage dashboard={dashboard} onChanged={reload} />
+            <JobsPage dashboard={dashboard} focus={focus} onChanged={reload} />
           )}
-        </div>
+        </main>
       </div>
     </>
   );
 }
 
-function Nav({ current, isAdmin }: { current: string; isAdmin: boolean }) {
-  const links = [
-    ["/", "Overview"],
-    ["/feed", "Jobs"],
-    ["/profile", "Profile"],
-    ["/data", "Your details"],
-    ["/settings", "Settings"],
-    // Only for whoever `ADMIN_EMAILS` names.
-    ...(isAdmin ? ([["/admin", "Platform"]] as const) : []),
-  ] as const;
+/** TEMPORARY until the support chat merges: its `pages/HelpPage.tsx` takes this route. */
+function HelpForNow() {
   return (
-    <nav>
-      <a className="brand" href="#/">
-        Mahoraga
-      </a>
-      {links.map(([path, label]) => (
-        <a
-          key={path}
-          href={`#${path}`}
-          className={path === "/" ? (current === "/" ? "on" : "") : current.startsWith(path) ? "on" : ""}
-        >
-          {label}
-        </a>
-      ))}
-      <NotificationBell />
-      <ThemeToggle />
-    </nav>
+    <>
+      <p className="kicker">Help</p>
+      <h1>How it works</h1>
+      <ol className="how">
+        <li>Your words find your jobs: green words show jobs, red words hide them. Change them in{" "}
+          <a href="#/words">My words</a>.</li>
+        <li>Tap <strong>Make my CV</strong> on any job, then download it.</li>
+        <li>New jobs on your phone are optional: turn them on in <a href="#/settings">Settings</a>.</li>
+      </ol>
+    </>
   );
 }

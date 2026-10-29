@@ -1,7 +1,7 @@
 /** Connecting a Claude subscription with a button instead of a terminal. */
 import { useEffect, useState } from "react";
 
-import { api } from "../api";
+import { api, type Schema } from "../api";
 
 type Phase = "idle" | "starting" | "waiting" | "finishing" | "done";
 
@@ -31,7 +31,7 @@ export function ClaudeConnect({ onConnected }: { onConnected: () => void }) {
     if (tab) tab.opener = null;
 
     try {
-      const body = await api.post<{ session_id: string; url: string }>(
+      const body = await api.post<Schema<"OAuthStarted">>(
         "/credentials/claude/oauth/start",
         {},
       );

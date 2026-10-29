@@ -88,63 +88,12 @@ export const api = {
 
 /* ── the shapes this app reads ────────────────────────────────────────────────────────────────── */
 
-export type OnboardingPage = {
-  key: string;
-  title: string;
-  complete: boolean;
-  detail: string;
-};
+/** Every response is the server's own model, generated (`npm run types`): a field it stops sending
+ * fails the build, not the page. `Schema<"FeedJob">` is `components["schemas"]["FeedJob"]`. */
+export type Schema<K extends keyof components["schemas"]> = components["schemas"][K];
 
-export type OnboardingState = {
-  complete: boolean;
-  next_page: string | null;
-  completed_at: string | null;
-  pages: OnboardingPage[];
-};
-
-export type CredentialList = {
-  credentials: { kind: string; last_4: string | null; validated: boolean }[];
-  requirements: { claude: boolean; telegram_bot: boolean; proxy: boolean };
-};
-
-export type DocumentList = {
-  documents: { id: number; kind: string; filename: string; chars: number; preview: string }[];
-  supported: string[];
-  limit: number;
-};
-
-/** `GET /dashboard` and `GET /feed`, generated from the server's own models (`npm run types`). */
-export type Dashboard =
-  | components["schemas"]["OnboardingDashboard"]
-  | components["schemas"]["ReadyDashboard"];
-export type Salary = components["schemas"]["FeedSalary"] | null;
-export type FeedJob = components["schemas"]["FeedJob"];
-export type Feed = components["schemas"]["Feed"];
-
-export type Consent = {
-  granted: boolean;
-  current_version: string;
-  disclosure: {
-    version: string;
-    headline: string;
-    body: string;
-    processors: {
-      name: string;
-      purpose: string;
-      data: string;
-      on_your_credential: boolean;
-      location: string;
-    }[];
-  };
-};
-
-export type Account = {
-  email: string;
-  full_name: string | null;
-  links: { url: string; platform: string }[];
-  timezone: string;
-  active: boolean;
-  telegram_status: string;
-  plan: string;
-  consent_version: string | null;
-};
+export type Dashboard = Schema<"OnboardingDashboard"> | Schema<"ReadyDashboard">;
+export type Ready = Schema<"ReadyDashboard">;
+/** What the word screens edit. The review sends it as a plain object, so it is read as the very
+ * model the save is checked against. */
+export type Config = Schema<"UserConfigSchema">;

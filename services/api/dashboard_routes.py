@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import uuid as _uuid
-from datetime import UTC, datetime, timedelta
+from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -10,12 +10,17 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from libs import limits
 from libs.corpus import salary
 from libs.db.models import CorpusJob, User, UserJobState
+from libs.llm import PLATFORM, ai_requests_today, resolve
 from libs.matching import Match, matching_jobs
+from libs.notify import reachable
 from libs.onboarding import onboarding_state
+from libs.profiles.repository import ProfileFiles
 from services.api.admin_routes import admin_emails
 from services.api.deps import current_user, get_db
+from services.api.onboarding_routes import OnboardingSteps
 
 router = APIRouter(tags=["dashboard"])
 
@@ -30,19 +35,33 @@ class DashboardBanner(BaseModel):
 
 class OnboardingDashboard(BaseModel):
     stage: Literal["onboarding"]
-    # `onboarding_state(...).as_dict()`, passed through: its pages are onboarding's to define.
-    onboarding: dict
+    # `onboarding_state(...).as_dict()`, in onboarding's own model: its pages are onboarding's to define.
+    onboarding: OnboardingSteps
     is_admin: bool
+
+
+class AiWriting(BaseModel):
+    """Whether an AI can write this person a document now, and on whose key — `libs.llm.resolve`'s
+    answer, so the buttons offer exactly what a build would be allowed to do."""
+    # "own": their own key, unlimited. "platform": the daily allowance. None: nobody can pay now.
+    payer: Literal["own", "platform"] | None
+    # The platform's daily allowance, and what is left of it today.
+    per_day: int
+    left: int
+    # The writing profile an AI document is written from. Without it, only instant ones.
+    profile: bool
 
 
 class ReadyDashboard(BaseModel):
+    """What every signed-in page needs before it draws. No count of matches: the jobs page is the
+    front page and counts its own list, and asking here as well was a second full match run on every
+    load — /dashboard went from 150 ms to 13 ms (median, 2,000 rows) without it."""
     stage: Literal["ready"]
     is_admin: bool
-    telegram: str
-    # The jobs page's unfiltered total, so the two pages cannot show different numbers.
-    matching: int
+    # How many jobs they said they applied to — moved only by "I applied".
     applied: int
     banners: list[DashboardBanner]
+    ai: AiWriting
 
 
 class FeedSalary(BaseModel):
@@ -73,8 +92,6 @@ class FeedJob(BaseModel):
 
 class Feed(BaseModel):
     total: int
-    # Every source among this person's matches, so the dropdown offers only what can be picked.
-    sources: list[str]
     jobs: list[FeedJob]
 
 
@@ -106,33 +123,36 @@ def dashboard(db: Session = Depends(get_db), user_id: _uuid.UUID = Depends(curre
     if user.onboarding_completed_at is None:
         # Nothing below is meaningful yet, and empty panels read as a broken product.
         return OnboardingDashboard(stage="onboarding", is_admin=_is_admin(user),
-                                   onboarding=onboarding_state(db, user_id).as_dict())
+                                   onboarding=OnboardingSteps(**onboarding_state(db, user_id).as_dict()))
 
-    dismissed, applied = _marks(db, user_id)
-    return ReadyDashboard(stage="ready", is_admin=_is_admin(user), telegram=user.telegram_status,
-                          matching=len(_visible(db, user, dismissed)), applied=len(applied),
-                          banners=_banners(user))
+    _, applied = _marks(db, user_id)
+    return ReadyDashboard(stage="ready", is_admin=_is_admin(user), applied=len(applied),
+                          banners=_banners(db, user), ai=_ai(db, user))
 
 
-def _banners(user: User) -> list[DashboardBanner]:
-    """The health warnings of `OPERATIONS_PLAN.md` §4b — failures the user can fix, said plainly."""
-    banners = []
+def _ai(db: Session, user: User) -> AiWriting:
+    payer = resolve(db, user)
+    allowance = limits.resolve(user, "ai_platform_requests_per_day")
+    # Never Unlimited (`allow_unlimited=False`): a `None` written by hand is no allowance, as
+    # `libs.llm.resolve` reads it too.
+    per_day = 0 if allowance is None else allowance
+    return AiWriting(payer=None if payer is None else "platform" if payer.kind == PLATFORM else "own",
+                     per_day=per_day, left=max(per_day - ai_requests_today(db, user.id), 0),
+                     profile=ProfileFiles(db, user.id).build_blocker() is None)
+
+
+def _banners(db: Session, user: User) -> list[DashboardBanner]:
+    """What the jobs page says above the list, one thing at a time. Alerts are optional, so having
+    none is a quiet offer rather than a warning — and a Telegram that stopped is a button to press."""
     if user.telegram_status == "broken":
-        banners.append(DashboardBanner(level="error", key="telegram_broken",
-                              text="Your bot can no longer message you — reconnect it in settings."))
-    elif user.telegram_status != "connected":
-        banners.append(DashboardBanner(level="warning", key="telegram_unconfigured",
-                              text="Telegram is not connected, so nothing is being delivered."))
+        return [DashboardBanner(level="warning", key="telegram_broken",
+                                text="Telegram stopped taking our messages.")]
+    if db.scalar(select(User.id).where(User.id == user.id, reachable())) is None:
+        return [DashboardBanner(level="info", key="no_alerts",
+                                text="Get alerts on your phone when a new job matches your words.")]
     if not user.active:
-        banners.append(DashboardBanner(level="info", key="paused",
-                              text="Your feed is paused. Turn it on to start receiving jobs."))
-    return banners
-
-
-# What each column sorts by. A missing value sorts last whichever way the column is turned.
-_COLUMNS = {"fetched": lambda job: job.first_seen_at,
-            "title": lambda job: job.title.lower(),
-            "company": lambda job: job.company.lower() if job.company else None}
+        return [DashboardBanner(level="info", key="paused", text="Your alerts are paused.")]
+    return []
 
 
 @router.get("/feed")
@@ -140,39 +160,18 @@ def feed(*, db: Session = Depends(get_db), user_id: _uuid.UUID = Depends(current
          limit: int = Query(FEED_PAGE, ge=1, le=100),
          offset: int = Query(0, ge=0),
          q: str | None = Query(None, max_length=200),
-         source: str | None = Query(None, max_length=64),
          remote: bool | None = None,
-         applied: bool | None = None,
-         max_age_days: int | None = Query(None, ge=1, le=365),
-         sort: Literal["score", "fetched", "title", "company"] = "score",
-         direction: Literal["asc", "desc"] = "desc") -> Feed:
-    """This person's matches, a page at a time, with the filters the table offers."""
+         job: int | None = None) -> Feed:
+    """This person's matches, best first, a page at a time: searched, remote only, or one job — the
+    one an alert's link names, which is either still in their list or not."""
     dismissed, applied_at = _marks(db, user_id)
-    matches = _visible(db, db.get(User, user_id), dismissed)
-    sources = sorted({match.job.source for match in matches})
-
     needle = (q or "").lower()
-    oldest = datetime.now(UTC) - timedelta(days=max_age_days) if max_age_days else None
     # `None` is a filter that is off, so `x in (None, value)` reads "off, or equal".
-    matches = [match for match in matches
+    matches = [match for match in _visible(db, db.get(User, user_id), dismissed)
                if needle in f"{match.job.title} {match.job.company or ''} {match.job.url}".lower()
-               and source in (None, match.job.source)
                and remote in (None, bool(match.job.is_remote))
-               and applied in (None, match.job.id in applied_at)
-               # An undated posting is kept: no date is not evidence of an old one.
-               and not (oldest and match.job.posted_at and match.job.posted_at < oldest)]
-
-    if sort == "score":
-        # Already best first, then newest first: `matching_jobs`' own order, not a second one.
-        if direction == "asc":
-            matches.reverse()
-    else:
-        value = _COLUMNS[sort]
-        known = sorted((match for match in matches if value(match.job) is not None),
-                       key=lambda match: value(match.job), reverse=direction == "desc")
-        matches = known + [match for match in matches if value(match.job) is None]
-
-    return Feed(total=len(matches), sources=sources,
+               and job in (None, match.job.id)]
+    return Feed(total=len(matches),
                 jobs=[_row(match, applied_at.get(match.job.id))
                       for match in matches[offset:offset + limit]])
 

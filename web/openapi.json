@@ -1,6 +1,41 @@
 {
   "components": {
     "schemas": {
+      "AccountOut": {
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "consent_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Consent Version"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "telegram_status": {
+            "title": "Telegram Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "active",
+          "telegram_status",
+          "consent_version"
+        ],
+        "title": "AccountOut",
+        "type": "object"
+      },
       "AccountPatch": {
         "properties": {
           "active": {
@@ -210,6 +245,46 @@
         "title": "AdminSetup",
         "type": "object"
       },
+      "AiWriting": {
+        "description": "Whether an AI can write this person a document now, and on whose key \u2014 `libs.llm.resolve`'s\nanswer, so the buttons offer exactly what a build would be allowed to do.",
+        "properties": {
+          "left": {
+            "title": "Left",
+            "type": "integer"
+          },
+          "payer": {
+            "anyOf": [
+              {
+                "enum": [
+                  "own",
+                  "platform"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payer"
+          },
+          "per_day": {
+            "title": "Per Day",
+            "type": "integer"
+          },
+          "profile": {
+            "title": "Profile",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "payer",
+          "per_day",
+          "left",
+          "profile"
+        ],
+        "title": "AiWriting",
+        "type": "object"
+      },
       "AuthStatus": {
         "properties": {
           "status": {
@@ -366,6 +441,10 @@
             "title": "Locations",
             "type": "array"
           },
+          "max_locations": {
+            "title": "Max Locations",
+            "type": "integer"
+          },
           "remote_policies": {
             "items": {
               "$ref": "#/components/schemas/ConfigChoice"
@@ -376,6 +455,7 @@
         },
         "required": [
           "locations",
+          "max_locations",
           "languages",
           "remote_policies"
         ],
@@ -420,6 +500,52 @@
           "version"
         ],
         "title": "ConsentBody",
+        "type": "object"
+      },
+      "ConsentState": {
+        "properties": {
+          "current_version": {
+            "title": "Current Version",
+            "type": "string"
+          },
+          "disclosure": {
+            "$ref": "#/components/schemas/Disclosure"
+          },
+          "granted": {
+            "title": "Granted",
+            "type": "boolean"
+          },
+          "granted_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Granted At"
+          },
+          "granted_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Granted Version"
+          }
+        },
+        "required": [
+          "granted",
+          "granted_at",
+          "granted_version",
+          "current_version",
+          "disclosure"
+        ],
+        "title": "ConsentState",
         "type": "object"
       },
       "ConversationTitle": {
@@ -572,6 +698,139 @@
         "title": "Discard",
         "type": "object"
       },
+      "DisclosedProcessor": {
+        "properties": {
+          "data": {
+            "title": "Data",
+            "type": "string"
+          },
+          "location": {
+            "title": "Location",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "on_your_credential": {
+            "title": "On Your Credential",
+            "type": "boolean"
+          },
+          "purpose": {
+            "title": "Purpose",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "purpose",
+          "data",
+          "on_your_credential",
+          "location"
+        ],
+        "title": "DisclosedProcessor",
+        "type": "object"
+      },
+      "Disclosure": {
+        "properties": {
+          "body": {
+            "title": "Body",
+            "type": "string"
+          },
+          "headline": {
+            "title": "Headline",
+            "type": "string"
+          },
+          "processors": {
+            "items": {
+              "$ref": "#/components/schemas/DisclosedProcessor"
+            },
+            "title": "Processors",
+            "type": "array"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "headline",
+          "body",
+          "processors"
+        ],
+        "title": "Disclosure",
+        "type": "object"
+      },
+      "DocumentList": {
+        "properties": {
+          "documents": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentRow"
+            },
+            "title": "Documents",
+            "type": "array"
+          },
+          "supported": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Supported",
+            "type": "array"
+          }
+        },
+        "required": [
+          "documents",
+          "supported"
+        ],
+        "title": "DocumentList",
+        "type": "object"
+      },
+      "DocumentRow": {
+        "properties": {
+          "chars": {
+            "title": "Chars",
+            "type": "integer"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "preview": {
+            "title": "Preview",
+            "type": "string"
+          },
+          "uploaded_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Uploaded At"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "filename",
+          "chars",
+          "preview",
+          "uploaded_at"
+        ],
+        "title": "DocumentRow",
+        "type": "object"
+      },
       "Feed": {
         "properties": {
           "jobs": {
@@ -581,13 +840,6 @@
             "title": "Jobs",
             "type": "array"
           },
-          "sources": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Sources",
-            "type": "array"
-          },
           "total": {
             "title": "Total",
             "type": "integer"
@@ -595,7 +847,6 @@
         },
         "required": [
           "total",
-          "sources",
           "jobs"
         ],
         "title": "Feed",
@@ -962,6 +1213,24 @@
         "title": "HistorySaved",
         "type": "object"
       },
+      "HistoryText": {
+        "properties": {
+          "chars": {
+            "title": "Chars",
+            "type": "integer"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "chars"
+        ],
+        "title": "HistoryText",
+        "type": "object"
+      },
       "IdentitySchema": {
         "additionalProperties": false,
         "description": "Full name and links.",
@@ -1194,6 +1463,89 @@
         "title": "NameAndLinks",
         "type": "object"
       },
+      "NotificationList": {
+        "properties": {
+          "notifications": {
+            "items": {
+              "$ref": "#/components/schemas/NotificationRow"
+            },
+            "title": "Notifications",
+            "type": "array"
+          },
+          "unread": {
+            "title": "Unread",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "unread",
+          "notifications"
+        ],
+        "title": "NotificationList",
+        "type": "object"
+      },
+      "NotificationRow": {
+        "properties": {
+          "body": {
+            "title": "Body",
+            "type": "string"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "event": {
+            "title": "Event",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "level": {
+            "title": "Level",
+            "type": "string"
+          },
+          "read": {
+            "title": "Read",
+            "type": "boolean"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "id",
+          "event",
+          "level",
+          "title",
+          "body",
+          "url",
+          "created_at",
+          "read"
+        ],
+        "title": "NotificationRow",
+        "type": "object"
+      },
       "OAuthCancelBody": {
         "properties": {
           "session_id": {
@@ -1231,6 +1583,24 @@
         "title": "OAuthFinishBody",
         "type": "object"
       },
+      "OAuthStarted": {
+        "properties": {
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "url"
+        ],
+        "title": "OAuthStarted",
+        "type": "object"
+      },
       "OnboardingDashboard": {
         "properties": {
           "is_admin": {
@@ -1238,9 +1608,7 @@
             "type": "boolean"
           },
           "onboarding": {
-            "additionalProperties": true,
-            "title": "Onboarding",
-            "type": "object"
+            "$ref": "#/components/schemas/OnboardingSteps"
           },
           "stage": {
             "const": "onboarding",
@@ -1473,7 +1841,11 @@
         "type": "object"
       },
       "ReadyDashboard": {
+        "description": "What every signed-in page needs before it draws. No count of matches: the jobs page is the\nfront page and counts its own list, and asking here as well was a second full match run on every\nload \u2014 /dashboard went from 150 ms to 13 ms (median, 2,000 rows) without it.",
         "properties": {
+          "ai": {
+            "$ref": "#/components/schemas/AiWriting"
+          },
           "applied": {
             "title": "Applied",
             "type": "integer"
@@ -1489,27 +1861,18 @@
             "title": "Is Admin",
             "type": "boolean"
           },
-          "matching": {
-            "title": "Matching",
-            "type": "integer"
-          },
           "stage": {
             "const": "ready",
             "title": "Stage",
-            "type": "string"
-          },
-          "telegram": {
-            "title": "Telegram",
             "type": "string"
           }
         },
         "required": [
           "stage",
           "is_admin",
-          "telegram",
-          "matching",
           "applied",
-          "banners"
+          "banners",
+          "ai"
         ],
         "title": "ReadyDashboard",
         "type": "object"
@@ -1912,6 +2275,46 @@
         "title": "StoredCredential",
         "type": "object"
       },
+      "StoredDocument": {
+        "properties": {
+          "chars": {
+            "title": "Chars",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "status",
+          "id",
+          "chars",
+          "truncated",
+          "note"
+        ],
+        "title": "StoredDocument",
+        "type": "object"
+      },
       "SuggestionDismissal": {
         "properties": {
           "term": {
@@ -2240,16 +2643,14 @@
         ]
       },
       "get": {
-        "description": "What the settings page shows. Everything onboarding collected, minus anything secret.",
+        "description": "What the settings page shows, minus anything secret. Their name and links are on\n`/onboarding/identity`, their words on `/onboarding/review`.",
         "operationId": "account_account_get",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Account Account Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/AccountOut"
                 }
               }
             },
@@ -2335,9 +2736,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Consent State Account Consent Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/ConsentState"
                 }
               }
             },
@@ -3760,9 +4159,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Claude Oauth Start Credentials Claude Oauth Start Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/OAuthStarted"
                 }
               }
             },
@@ -3963,9 +4360,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response List Documents Documents Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/DocumentList"
                 }
               }
             },
@@ -3995,9 +4390,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Upload Documents Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/StoredDocument"
                 }
               }
             },
@@ -4191,7 +4584,7 @@
     },
     "/feed": {
       "get": {
-        "description": "This person's matches, a page at a time, with the filters the table offers.",
+        "description": "This person's matches, best first, a page at a time: searched, remote only, or one job \u2014 the\none an alert's link names, which is either still in their list or not.",
         "operationId": "feed_feed_get",
         "parameters": [
           {
@@ -4236,23 +4629,6 @@
           },
           {
             "in": "query",
-            "name": "source",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "maxLength": 64,
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Source"
-            }
-          },
-          {
-            "in": "query",
             "name": "remote",
             "required": false,
             "schema": {
@@ -4269,66 +4645,18 @@
           },
           {
             "in": "query",
-            "name": "applied",
+            "name": "job",
             "required": false,
             "schema": {
               "anyOf": [
                 {
-                  "type": "boolean"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Applied"
-            }
-          },
-          {
-            "in": "query",
-            "name": "max_age_days",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "maximum": 365,
-                  "minimum": 1,
                   "type": "integer"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "title": "Max Age Days"
-            }
-          },
-          {
-            "in": "query",
-            "name": "sort",
-            "required": false,
-            "schema": {
-              "default": "score",
-              "enum": [
-                "score",
-                "fetched",
-                "title",
-                "company"
-              ],
-              "title": "Sort",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "direction",
-            "required": false,
-            "schema": {
-              "default": "desc",
-              "enum": [
-                "asc",
-                "desc"
-              ],
-              "title": "Direction",
-              "type": "string"
+              "title": "Job"
             }
           }
         ],
@@ -4500,9 +4828,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Privacy Legal Privacy Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/Disclosure"
                 }
               }
             },
@@ -4538,9 +4864,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response List Notifications Notifications Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/NotificationList"
                 }
               }
             },
@@ -4743,9 +5067,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Get History Onboarding History Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/HistoryText"
                 }
               }
             },

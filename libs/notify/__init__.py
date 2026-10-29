@@ -37,12 +37,12 @@ class Event:
 
 
 # The catalogue. Adding one here is the whole registration.
-TELEGRAM_BROKEN = Event("telegram.broken", "error", "Telegram delivery stopped", "#/data")
+TELEGRAM_BROKEN = Event("telegram.broken", "error", "Telegram delivery stopped", "#/settings")
 MODEL_TRAINED = Event("model.trained", "info", "Your model was retrained")
 PASSWORD_CHANGED = Event("account.password_changed", "warning", "Your password was changed")
 # A build was asked for and cannot happen yet.
 DOCUMENT_NOT_READY = Event("document.not_ready", "warning", "A document could not be built",
-                           "#/setup")
+                           "#/documents")
 def notify(session: Session, user_id: _uuid.UUID, event: Event, body: str = "") -> None:
     """Record one."""
     try:
