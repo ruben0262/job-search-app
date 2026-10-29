@@ -14,7 +14,6 @@ type Tap = { run: (messageId: number, index: number) => Promise<void>; busy: boo
 
 const EXAMPLES = ["Why is a job on my list?", "Add a word to my search", "How do I get job alerts on my phone?"];
 
-const tall: CSSProperties = { minHeight: 44 };
 const said: CSSProperties = { whiteSpace: "pre-wrap", overflowWrap: "anywhere", lineHeight: 1.55, margin: 0 };
 const bubble: CSSProperties = {
   ...said,
@@ -101,7 +100,7 @@ export function HelpPage() {
     <div style={{ maxWidth: "44rem" }}>
       <p className="kicker">Help</p>
       <h1>Ask us anything</h1>
-      <p className="muted">
+      <p className="lede">
         How the site works, why a job is on your list, or which words to use. Answers are written by AI and can be
         wrong.
       </p>
@@ -140,7 +139,6 @@ export function HelpPage() {
                   key={example}
                   type="button"
                   className="chip"
-                  style={tall}
                   disabled={busy}
                   onClick={() => void ask.run(example)}
                 >
@@ -163,7 +161,8 @@ export function HelpPage() {
               aria-label="Your question"
               placeholder={writing ? "Writing your answer…" : "Type your question"}
               disabled={busy}
-              style={{ flex: "1 1 16rem", minHeight: 44 }}
+              // A chat box, not the site's tall writing box.
+              style={{ flex: "1 1 16rem", minHeight: "4.5rem" }}
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => {
                 // Enter asks, Shift+Enter starts a new line.
@@ -173,7 +172,7 @@ export function HelpPage() {
                 }
               }}
             />
-            <button type="submit" style={tall} disabled={busy || !draft.trim()}>
+            <button type="submit" disabled={busy || !draft.trim()}>
               {ask.busy ? "Sending…" : "Ask"}
             </button>
           </form>
@@ -211,7 +210,7 @@ function Reply({ message, tap }: { message: Message; tap: Tap }) {
               key={index}
               type="button"
               className="secondary"
-              style={{ ...tall, display: "block", marginTop: "0.5rem", textAlign: "left" }}
+              style={{ display: "block", marginTop: "0.5rem", textAlign: "left" }}
               disabled={tap.busy || waiting}
               onClick={() => void tap.run(message.id, index)}
             >
@@ -240,14 +239,16 @@ function Reply({ message, tap }: { message: Message; tap: Tap }) {
 /** What anyone can read, whether or not the chat can answer today. */
 function HowItWorks() {
   return (
-    <ol style={{ lineHeight: 1.6, paddingLeft: "1.25rem" }}>
+    <ol className="how">
       <li>
         Your words find your jobs: green words show jobs, red words hide them. Change them in{" "}
         <a href="#/words">My words</a>.
       </li>
-      <li>On any job, tap Make my CV or Make my cover letter, then download it.</li>
       <li>
-        Alerts on your phone are optional. Turn them on in <a href="#/settings">Settings</a>, where you can also add
+        Tap <strong>Make my CV</strong> on any job, then download it.
+      </li>
+      <li>
+        Alerts on your phone are optional: turn them on in <a href="#/settings">Settings</a>, where you can also add
         your own AI key.
       </li>
     </ol>
