@@ -283,27 +283,3 @@ def test_migrating_a_config_twice_changes_nothing():
     assert migrate_config(once) == once
 
 
-def test_the_frontends_copy_of_the_location_cap_still_agrees_with_python():
-    """`ConfigStep.tsx` hand-copies `MAX_LOCATIONS_PER_USER` and says so in a comment.
-
-    A comment is not enforcement. The form uses its copy to disable the "add a place" control and to
-    render "N of 12 places picked", so if Python's number moves the user is told the wrong limit or
-    stopped early — and the server then rejects a config the form said was fine.
-
-    There is no shared module to put it in: one side is Python, the other TypeScript. So the number
-    stays copied and the copy is checked, which is what `test_schedules.py` does for the systemd
-    units. This is not §5's "two constants and a test asserting they are equal" — that warns about a
-    value that *could* have one definition. Across a language boundary it cannot.
-    """
-    import re
-    from pathlib import Path
-
-    from libs.contracts.config import MAX_LOCATIONS_PER_USER
-
-    source = (Path(__file__).resolve().parents[1]
-              / "web" / "src" / "pages" / "onboarding" / "ConfigStep.tsx").read_text(
-                  encoding="utf-8")
-    found = re.search(r"const MAX_LOCATIONS\s*=\s*(\d+)", source)
-    assert found, "ConfigStep.tsx no longer declares MAX_LOCATIONS — update or delete this guard"
-    assert int(found.group(1)) == MAX_LOCATIONS_PER_USER, (
-        f"the form allows {found.group(1)} places and the server allows {MAX_LOCATIONS_PER_USER}")

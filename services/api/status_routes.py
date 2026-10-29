@@ -66,10 +66,10 @@ def _telegram_bot(user: User) -> StatusComponent:
                       "Connected — new matches arrive in your Telegram chat.")
     if user.telegram_status == "broken":
         return _entry("telegram_bot", "Telegram", "down",
-                      "Telegram stopped taking our messages. Connect it again under Your details.")
+                      "Telegram stopped taking our messages. Connect it again in Settings.")
     # Optional, so not a warning.
     return _entry("telegram_bot", "Telegram", "off",
-                  "Not connected. Connect it under Your details to get new matches on your phone.")
+                  "Not connected. Connect it in Settings to get new matches on your phone.")
 
 
 def _harvester(db: Session, now: datetime) -> StatusComponent:

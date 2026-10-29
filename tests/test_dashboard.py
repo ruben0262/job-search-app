@@ -80,8 +80,9 @@ def test_an_unfinished_signup_gets_the_onboarding_state_and_nothing_else(api):
     assert "matching" not in body
 
 
-def test_the_front_page_counts_what_the_jobs_page_lists(api):
-    """One number in two places is one answer, or a person finds the two pages disagreeing."""
+def test_the_front_page_counts_applications_and_never_runs_the_match(api, monkeypatch):
+    """The jobs page counts its own list, so the dashboard every page waits for must not run a second
+    match: that was 150 ms of a 13 ms answer (median, 2,000 rows)."""
     from sqlalchemy import func
 
     from libs.db.models import UserJobState
@@ -90,35 +91,77 @@ def test_the_front_page_counts_what_the_jobs_page_lists(api):
     session.add(UserJobState(user_id=user.id, job_id=jobs[0].id, applied_at=func.now()))
     session.flush()
 
+    def no_match(*_args, **_kwargs):
+        raise AssertionError("the dashboard ran the match")
+
+    monkeypatch.setattr("services.api.dashboard_routes.matching_jobs", no_match)
     front = http.get("/dashboard").json()
     assert front["stage"] == "ready"
-    assert front["matching"] == 2, "both backend roles match, the nurse does not"
     assert front["applied"] == 1
 
-    # A dismissed job leaves both counts, or the front page promises a job the list does not have.
-    session.add(UserJobState(user_id=user.id, job_id=jobs[1].id, dismissed_at=func.now()))
-    session.flush()
-    assert http.get("/dashboard").json()["matching"] == http.get("/feed").json()["total"] == 1
 
-
-def test_a_broken_telegram_token_is_an_error_banner_not_a_trip_back_to_signup(api):
-    """It stops delivery while everything else keeps working."""
+def test_a_stopped_telegram_is_a_reconnect_offer_not_an_error(api):
+    """Their old per-user bot, or they blocked the platform's: the page offers to reconnect."""
     http, session, user, _ = api
     user.telegram_status = "broken"
     session.flush()
 
-    banners = {banner["key"]: banner for banner in http.get("/dashboard").json()["banners"]}
-    assert banners["telegram_broken"]["level"] == "error"
+    banners = http.get("/dashboard").json()["banners"]
+    assert [banner["key"] for banner in banners] == ["telegram_broken"]
+    assert banners[0]["level"] != "error", "nothing is broken that the person cannot mend in one tap"
+
+
+def test_with_no_alerts_at_all_the_page_offers_them_quietly(api):
+    """Alerts are optional, and a browser is a channel: "nothing is being delivered" was wrong twice."""
+    from libs.db.models import PushSubscription
+
+    http, session, user, _ = api
+    user.telegram_status, user.telegram_chat_id = "unconfigured", None
+    session.flush()
+    banners = http.get("/dashboard").json()["banners"]
+    assert [(banner["key"], banner["level"]) for banner in banners] == [("no_alerts", "info")]
+
+    session.add(PushSubscription(user_id=user.id, endpoint=f"https://push.example/{uuid.uuid4()}",
+                                 p256dh="key", auth="auth"))
+    session.flush()
+    assert http.get("/dashboard").json()["banners"] == [], "notifications on in a browser are enough"
 
 
 def test_a_paused_account_is_told_it_is_paused(api):
     """It used to be said only to accounts with a trained model, which after Phase 8 is nobody."""
     http, session, user, _ = api
+    assert http.get("/dashboard").json()["banners"] == [], "alerts on and working: nothing to say"
     user.active = False
     session.flush()
 
     keys = {banner["key"] for banner in http.get("/dashboard").json()["banners"]}
-    assert "paused" in keys
+    assert keys == {"paused"}
+
+
+def test_the_front_page_says_whether_ai_can_write_for_them_and_on_whose_key(api, monkeypatch):
+    """The AI buttons and "AI requests left today" are `libs.llm.resolve`'s own answer, not a guess."""
+    from libs.db.models import AiRequest
+    from libs.secrets import KeyRing, SecretStore, generate_key
+
+    http, session, user, _ = api
+    monkeypatch.delenv("PLATFORM_AI_PROVIDER", raising=False)
+    monkeypatch.delenv("PLATFORM_AI_KEY", raising=False)
+    ai = http.get("/dashboard").json()["ai"]
+    assert (ai["payer"], ai["left"], ai["per_day"]) == (None, 20, 20), "no key anywhere: no AI"
+    assert ai["profile"] is False, "a new account has no writing profile, so only instant documents"
+
+    monkeypatch.setenv("PLATFORM_AI_PROVIDER", "gemini")
+    monkeypatch.setenv("PLATFORM_AI_KEY", "AIza" + "k" * 30)
+    session.add_all([AiRequest(user_id=user.id) for _ in range(3)])
+    session.flush()
+    ai = http.get("/dashboard").json()["ai"]
+    assert (ai["payer"], ai["left"]) == ("platform", 17)
+
+    kek = f"k1:{generate_key()}"
+    SecretStore(session, KeyRing.from_env({"SECRETS_KEK": kek})).put(
+        user.id, "openai_api", "sk-proj-" + "o" * 30, validated=True)
+    session.flush()
+    assert http.get("/dashboard").json()["ai"]["payer"] == "own", "their own key first, unlimited"
 
 
 def test_the_dashboard_requires_signing_in(api):
@@ -187,39 +230,17 @@ def test_the_search_box_reaches_titles_and_links(api):
     assert _ids(http.get(f"/feed?q={jobs[0].url.rsplit('/', 1)[1][:12]}").json()) == [jobs[0].id]
 
 
-def test_the_applied_filter_splits_the_feed_both_ways(api):
-    from sqlalchemy import func
-
-    from libs.db.models import UserJobState
-
-    http, session, user, jobs = api
-    session.add(UserJobState(user_id=user.id, job_id=jobs[0].id, applied_at=func.now()))
-    session.flush()
-
-    assert _ids(http.get("/feed?applied=true").json()) == [jobs[0].id]
-    assert _ids(http.get("/feed?applied=false").json()) == [jobs[1].id]
-    # The applied state travels with the row either way, so the table can tag it.
-    assert http.get("/feed?applied=true").json()["jobs"][0]["applied_at"] is not None
-
-
-def test_remote_and_age_filters_narrow_the_matches(api):
-    """Both are kept by matching when unknown, and both narrow only when asked to."""
+def test_remote_only_narrows_the_matches_and_unknown_is_not_remote(api):
     from libs.db.models import CorpusJob
-    from libs.settings import SOURCE_MIN_AGE_HOURS
 
     http, session, _, jobs = api
-    # A source whose own window is a week, so a three-day-old posting is still a match.
-    assert SOURCE_MIN_AGE_HOURS["hiringcafe"] >= 96
-    older = CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="hiringcafe",
-                      title="Backend Engineer II", description="x", is_remote=None,
-                      posted_at=datetime.now(UTC) - timedelta(days=3, hours=1))
-    session.add(older)
+    unknown = CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
+                        title="Backend Engineer II", description="x", is_remote=None)
+    session.add(unknown)
     session.flush()
 
-    assert older.id in _ids(http.get("/feed").json())
-    assert older.id not in _ids(http.get("/feed?remote=true").json()), "unknown is not remote"
-    assert older.id not in _ids(http.get("/feed?max_age_days=1").json())
-    assert set(_ids(http.get("/feed?max_age_days=7").json())) == {older.id, jobs[0].id, jobs[1].id}
+    assert unknown.id in _ids(http.get("/feed").json())
+    assert set(_ids(http.get("/feed?remote=true").json())) == {jobs[0].id, jobs[1].id}
 
 
 def test_a_salary_in_the_description_reaches_the_row_without_the_description(api):
@@ -235,24 +256,7 @@ def test_a_salary_in_the_description_reaches_the_row_without_the_description(api
     assert "description" not in row
 
 
-def test_the_source_dropdown_offers_what_the_matches_came_from(api):
-    """Not every board in the corpus: a source with nothing for this person is a dead option."""
-    from libs.db.models import CorpusJob
-
-    http, session, _, _ = api
-    session.add_all([
-        CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="greenhouse",
-                  title="Backend Engineer III", description="x", is_remote=True),
-        CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="nhs",
-                  title="Staff Nurse", description="x", is_remote=True)])
-    session.flush()
-
-    assert http.get("/feed").json()["sources"] == ["greenhouse", "test"]
-    assert [job["source"] for job in http.get("/feed?source=greenhouse").json()["jobs"]] == [
-        "greenhouse"]
-
-
-def test_equal_scores_are_newest_first_and_the_order_turns_around(api):
+def test_equal_scores_are_newest_first(api):
     """Freshness breaks a tie: the order `libs.matching` gives, not a second one made up here."""
     from libs.db.models import CorpusJob
 
@@ -266,21 +270,20 @@ def test_equal_scores_are_newest_first_and_the_order_turns_around(api):
     session.add_all(rows.values())
     session.flush()
 
-    order = [i for i in _ids(http.get("/feed?sort=score").json()) if i in {r.id for r in rows.values()}]
+    order = [i for i in _ids(http.get("/feed").json()) if i in {r.id for r in rows.values()}]
     assert order == [rows[1].id, rows[5].id]
-    turned = [i for i in _ids(http.get("/feed?sort=score&direction=asc").json())
-              if i in {r.id for r in rows.values()}]
-    assert turned == [rows[5].id, rows[1].id]
 
 
-def test_a_missing_company_sorts_last_whichever_way_the_column_turns(api):
-    http, session, _, jobs = api
-    jobs[0].company, jobs[1].company = None, "Acme"
-    session.flush()
+# ── one job, hidden, applied ──────────────────────────────────────────────────────────────────
 
-    for direction in ("asc", "desc"):
-        body = http.get(f"/feed?sort=company&direction={direction}").json()
-        assert _ids(body) == [jobs[1].id, jobs[0].id], direction
+def test_an_alerts_link_finds_its_job_while_it_is_still_theirs(api):
+    """`#/feed?job=<id>` is where every alert lands: the job while it matches, nothing once it does not."""
+    http, _, _, jobs = api
+    assert _ids(http.get(f"/feed?job={jobs[1].id}").json()) == [jobs[1].id]
+    assert http.get(f"/feed?job={jobs[2].id}").json()["total"] == 0, "the nurse never matched"
+
+    http.put(f"/jobs/{jobs[1].id}/hidden")
+    assert http.get(f"/feed?job={jobs[1].id}").json()["total"] == 0, "hidden is not in their list"
 
 
 def test_i_applied_counts_on_the_front_page_and_can_be_taken_back(api):
@@ -314,4 +317,3 @@ def test_only_a_real_job_and_the_two_marks_are_accepted(api):
     http, _session, _user, jobs = api
     assert http.put("/jobs/999999999/applied").status_code == 404
     assert http.put(f"/jobs/{jobs[0].id}/sent").status_code == 422
-

@@ -1,19 +1,28 @@
-/** The privacy page. */
+/** Who sees your data — and, signed in, the one place to agree to AI-written documents, which are
+ * the only thing that sends your text anywhere. */
 import { useEffect, useState } from "react";
 
-import { api, type Consent } from "../api";
-import { Card } from "../ui";
+import { api, type Schema } from "../api";
 import { ThemeToggle } from "../theme";
+import { Card, Error, useAction } from "../ui";
 
 export function PrivacyPage() {
-  const [disclosure, setDisclosure] = useState<Consent["disclosure"] | null>(null);
+  const [disclosure, setDisclosure] = useState<Schema<"Disclosure"> | null>(null);
+  const [consent, setConsent] = useState<Schema<"ConsentState"> | null>(null);
 
+  // Signed in, the consent carries the policy; signed out, the policy alone is public.
+  const load = () =>
+    api.get<Schema<"ConsentState">>("/account/consent").then((body) => {
+      setConsent(body);
+      setDisclosure(body.disclosure);
+    }).catch(() => api.get<Schema<"Disclosure">>("/legal/privacy").then(setDisclosure).catch(() => undefined));
   useEffect(() => {
-    void api
-      .get<Consent["disclosure"]>("/legal/privacy")
-      .then(setDisclosure)
-      .catch(() => undefined);
+    void load();
   }, []);
+  const agree = useAction(async () => {
+    await api.post("/account/consent", { version: disclosure?.version });
+    await load();
+  });
 
   if (!disclosure) return <main className="centered">Loading…</main>;
 
@@ -32,24 +41,34 @@ export function PrivacyPage() {
         </p>
         <h1>Who sees your data</h1>
 
-      <Card title={disclosure.headline}>
-        {disclosure.body.split("\n\n").map((paragraph, index) => (
-          <p key={index}>{paragraph.replaceAll("**", "")}</p>
-        ))}
-      </Card>
-
-      {disclosure.processors.map((processor) => (
-        <Card key={processor.name} title={processor.name}>
-          <p>{processor.purpose}</p>
-          <p className="small muted">
-            <strong>What they receive:</strong> {processor.data}
-          </p>
-          <p className="small muted">
-            <strong>Where:</strong> {processor.location}
-            {processor.on_your_credential ? " · paid for by your own credential, not ours" : ""}
-          </p>
+        <Card title={disclosure.headline}>
+          {disclosure.body.split("\n\n").map((paragraph, index) => (
+            <p key={index}>{paragraph.replaceAll("**", "")}</p>
+          ))}
+          {consent && !consent.granted ? (
+            <>
+              <Error>{agree.error}</Error>
+              <button type="button" disabled={agree.busy} onClick={() => void agree.run()}>
+                {agree.busy ? "Saving…" : "I agree"}
+              </button>
+            </>
+          ) : consent?.granted ? (
+            <p className="saved-flash">You agreed. AI-written documents are open to you.</p>
+          ) : null}
         </Card>
-      ))}
+
+        {disclosure.processors.map((processor) => (
+          <Card key={processor.name} title={processor.name}>
+            <p>{processor.purpose}</p>
+            <p className="small muted">
+              <strong>What they receive:</strong> {processor.data}
+            </p>
+            <p className="small muted">
+              <strong>Where:</strong> {processor.location}
+              {processor.on_your_credential ? " · paid for by your own credential, not ours" : ""}
+            </p>
+          </Card>
+        ))}
 
         <p>
           <a href="#/">Back</a>

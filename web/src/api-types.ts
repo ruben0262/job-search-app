@@ -13,7 +13,8 @@ export interface paths {
         };
         /**
          * Account
-         * @description What the settings page shows. Everything onboarding collected, minus anything secret.
+         * @description What the settings page shows, minus anything secret. Their name and links are on
+         *     `/onboarding/identity`, their words on `/onboarding/review`.
          */
         get: operations["account_account_get"];
         put?: never;
@@ -885,7 +886,8 @@ export interface paths {
         };
         /**
          * Feed
-         * @description This person's matches, a page at a time, with the filters the table offers.
+         * @description This person's matches, best first, a page at a time: searched, remote only, or one job — the
+         *     one an alert's link names, which is either still in their list or not.
          */
         get: operations["feed_feed_get"];
         put?: never;
@@ -1402,6 +1404,17 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AccountOut */
+        AccountOut: {
+            /** Active */
+            active: boolean;
+            /** Consent Version */
+            consent_version: string | null;
+            /** Email */
+            email: string;
+            /** Telegram Status */
+            telegram_status: string;
+        };
         /** AccountPatch */
         AccountPatch: {
             /** Active */
@@ -1470,6 +1483,21 @@ export interface components {
             /** Missing */
             missing: string[];
         };
+        /**
+         * AiWriting
+         * @description Whether an AI can write this person a document now, and on whose key — `libs.llm.resolve`'s
+         *     answer, so the buttons offer exactly what a build would be allowed to do.
+         */
+        AiWriting: {
+            /** Left */
+            left: number;
+            /** Payer */
+            payer: ("own" | "platform") | null;
+            /** Per Day */
+            per_day: number;
+            /** Profile */
+            profile: boolean;
+        };
         /** Asked */
         Asked: {
             /** Reply Id */
@@ -1534,6 +1562,8 @@ export interface components {
             languages: components["schemas"]["ConfigChoice"][];
             /** Locations */
             locations: components["schemas"]["ConfigChoice"][];
+            /** Max Locations */
+            max_locations: number;
             /** Remote Policies */
             remote_policies: components["schemas"]["ConfigChoice"][];
         };
@@ -1549,6 +1579,18 @@ export interface components {
         ConsentBody: {
             /** Version */
             version: string;
+        };
+        /** ConsentState */
+        ConsentState: {
+            /** Current Version */
+            current_version: string;
+            disclosure: components["schemas"]["Disclosure"];
+            /** Granted */
+            granted: boolean;
+            /** Granted At */
+            granted_at: string | null;
+            /** Granted Version */
+            granted_version: string | null;
         };
         /** CredentialBody */
         CredentialBody: {
@@ -1603,12 +1645,56 @@ export interface components {
             /** Ids */
             ids?: number[] | null;
         };
+        /** DisclosedProcessor */
+        DisclosedProcessor: {
+            /** Data */
+            data: string;
+            /** Location */
+            location: string;
+            /** Name */
+            name: string;
+            /** On Your Credential */
+            on_your_credential: boolean;
+            /** Purpose */
+            purpose: string;
+        };
+        /** Disclosure */
+        Disclosure: {
+            /** Body */
+            body: string;
+            /** Headline */
+            headline: string;
+            /** Processors */
+            processors: components["schemas"]["DisclosedProcessor"][];
+            /** Version */
+            version: string;
+        };
+        /** DocumentList */
+        DocumentList: {
+            /** Documents */
+            documents: components["schemas"]["DocumentRow"][];
+            /** Supported */
+            supported: string[];
+        };
+        /** DocumentRow */
+        DocumentRow: {
+            /** Chars */
+            chars: number;
+            /** Filename */
+            filename: string;
+            /** Id */
+            id: number;
+            /** Kind */
+            kind: string;
+            /** Preview */
+            preview: string;
+            /** Uploaded At */
+            uploaded_at: string | null;
+        };
         /** Feed */
         Feed: {
             /** Jobs */
             jobs: components["schemas"]["FeedJob"][];
-            /** Sources */
-            sources: string[];
             /** Total */
             total: number;
         };
@@ -1711,6 +1797,13 @@ export interface components {
             /** Truncated */
             truncated: boolean;
         };
+        /** HistoryText */
+        HistoryText: {
+            /** Chars */
+            chars: number;
+            /** Text */
+            text: string;
+        };
         /**
          * IdentitySchema
          * @description Full name and links.
@@ -1789,6 +1882,32 @@ export interface components {
             /** Links */
             links: components["schemas"]["SavedLink"][];
         };
+        /** NotificationList */
+        NotificationList: {
+            /** Notifications */
+            notifications: components["schemas"]["NotificationRow"][];
+            /** Unread */
+            unread: number;
+        };
+        /** NotificationRow */
+        NotificationRow: {
+            /** Body */
+            body: string;
+            /** Created At */
+            created_at: string | null;
+            /** Event */
+            event: string;
+            /** Id */
+            id: number;
+            /** Level */
+            level: string;
+            /** Read */
+            read: boolean;
+            /** Title */
+            title: string;
+            /** Url */
+            url: string | null;
+        };
         /** OAuthCancelBody */
         OAuthCancelBody: {
             /** Session Id */
@@ -1801,14 +1920,18 @@ export interface components {
             /** Session Id */
             session_id: string;
         };
+        /** OAuthStarted */
+        OAuthStarted: {
+            /** Session Id */
+            session_id: string;
+            /** Url */
+            url: string;
+        };
         /** OnboardingDashboard */
         OnboardingDashboard: {
             /** Is Admin */
             is_admin: boolean;
-            /** Onboarding */
-            onboarding: {
-                [key: string]: unknown;
-            };
+            onboarding: components["schemas"]["OnboardingSteps"];
             /**
              * Stage
              * @constant
@@ -1892,23 +2015,25 @@ export interface components {
             /** Text */
             text: string;
         };
-        /** ReadyDashboard */
+        /**
+         * ReadyDashboard
+         * @description What every signed-in page needs before it draws. No count of matches: the jobs page is the
+         *     front page and counts its own list, and asking here as well was a second full match run on every
+         *     load — /dashboard went from 150 ms to 13 ms (median, 2,000 rows) without it.
+         */
         ReadyDashboard: {
+            ai: components["schemas"]["AiWriting"];
             /** Applied */
             applied: number;
             /** Banners */
             banners: components["schemas"]["DashboardBanner"][];
             /** Is Admin */
             is_admin: boolean;
-            /** Matching */
-            matching: number;
             /**
              * Stage
              * @constant
              */
             stage: "ready";
-            /** Telegram */
-            telegram: string;
         };
         /**
          * RemotePolicy
@@ -2058,6 +2183,19 @@ export interface components {
             updated_at: string | null;
             /** Validated */
             validated: boolean;
+        };
+        /** StoredDocument */
+        StoredDocument: {
+            /** Chars */
+            chars: number;
+            /** Id */
+            id: number;
+            /** Note */
+            note: string | null;
+            /** Status */
+            status: string;
+            /** Truncated */
+            truncated: boolean;
         };
         /** SuggestionDismissal */
         SuggestionDismissal: {
@@ -2248,9 +2386,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["AccountOut"];
                 };
             };
         };
@@ -2340,9 +2476,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ConsentState"];
                 };
             };
         };
@@ -3432,9 +3566,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["OAuthStarted"];
                 };
             };
         };
@@ -3577,9 +3709,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["DocumentList"];
                 };
             };
         };
@@ -3603,9 +3733,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["StoredDocument"];
                 };
             };
             /** @description Validation Error */
@@ -3753,12 +3881,8 @@ export interface operations {
                 limit?: number;
                 offset?: number;
                 q?: string | null;
-                source?: string | null;
                 remote?: boolean | null;
-                applied?: boolean | null;
-                max_age_days?: number | null;
-                sort?: "score" | "fetched" | "title" | "company";
-                direction?: "asc" | "desc";
+                job?: number | null;
             };
             header?: never;
             path?: never;
@@ -3887,9 +4011,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["Disclosure"];
                 };
             };
         };
@@ -3911,9 +4033,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["NotificationList"];
                 };
             };
             /** @description Validation Error */
@@ -4085,9 +4205,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["HistoryText"];
                 };
             };
         };
