@@ -1,22 +1,39 @@
-"""Compiling HTML to PDF with headless Chrome, and checking what came out."""
+"""Turning HTML into a PDF with headless Chrome, and checking what came out.
+
+**One Chrome per worker, kept.** A browser launched for every document was the largest cost in a
+build that was not the model: 0.74 s a launch on a developer machine and ~6 s on the box (measured
+2026-08-07), against 0.12 s for a new tab in a browser that is already running. The document goes to
+the tab over Chrome's DevTools pipe and the PDF comes back the same way, so nothing touches disk
+(D9). The output was compared with `--print-to-pdf` before the switch: same pages, same A4 size,
+same extracted text, and byte-identical page rasters for a one-page and a three-page document.
+"""
 from __future__ import annotations
 
+import base64
+import io
+import json
 import logging
 import os
 import pathlib
-import re
+import select
 import shutil
 import subprocess
+import time
 from dataclasses import dataclass, field
+
+from libs.documents.read import EMAIL
 
 logger = logging.getLogger(__name__)
 
 # Chrome's own flags.
-CHROME_FLAGS = ("--headless=old", "--no-sandbox",
-                "--print-to-pdf-no-header", "--no-pdf-header-footer", "--disable-gpu",
+CHROME_FLAGS = ("--headless=old", "--no-sandbox", "--disable-gpu",
                 "--disable-extensions", "--disable-background-networking",
                 "--disable-component-update", "--disable-default-apps", "--metrics-recording-only",
                 "--mute-audio", "--hide-scrollbars")
+
+# The page size and margins from the document's own `@page` rule, its backgrounds, and no header or
+# footer: what `--print-to-pdf` produced.
+PRINT = {"printBackground": True, "preferCSSPageSize": True, "displayHeaderFooter": False}
 
 # A build that has not produced a PDF in two minutes is not going to.
 COMPILE_TIMEOUT_SEC = 120
@@ -26,8 +43,6 @@ MIN_EXTRACTED_CHARS = 300
 
 # A single-column CV extracts as normal prose lines.
 MIN_AVG_LINE_CHARS = 8
-
-_EMAIL = re.compile(r"[\w.+-]+@[\w-]+\.\w+")
 
 
 class CompileFailed(RuntimeError):
@@ -64,32 +79,124 @@ def chrome_binary() -> str:
     return "google-chrome"
 
 
-def compile_pdf(source: pathlib.Path, output: pathlib.Path) -> pathlib.Path:
-    """Render one local HTML file to a PDF."""
-    url = "file://" + str(source.resolve()).replace("\\", "/")
+class Chrome:
+    """One headless Chrome on `--remote-debugging-pipe`: commands in on its fd 3, answers out on 4.
+
+    It exits by itself when the pipe closes, so a worker that dies leaves no browser behind.
+    """
+
+    def __init__(self) -> None:
+        to_chrome, self._send = os.pipe()
+        self._receive, from_chrome = os.pipe()
+
+        def wire() -> None:
+            os.dup2(to_chrome, 3)
+            os.dup2(from_chrome, 4)
+
+        self.process = subprocess.Popen(  # noqa: S603 - the binary is ours, the arguments literals
+            [chrome_binary(), *CHROME_FLAGS, "--remote-debugging-pipe", "about:blank"],
+            # Safe here: the docgen worker has one thread, and `wire` only moves two descriptors.
+            pass_fds=(3, 4), preexec_fn=wire,  # noqa: PLW1509
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        os.close(to_chrome)
+        os.close(from_chrome)
+        self._buffer, self._last = b"", 0
+
+    def print(self, html: str) -> bytes:
+        """A blank tab, the document, its fonts, the PDF, and the tab closed again."""
+        deadline = time.monotonic() + COMPILE_TIMEOUT_SEC
+        tab = self._call("Target.createTarget", {"url": "about:blank"}, deadline)["targetId"]
+        try:
+            session = self._call("Target.attachToTarget", {"targetId": tab, "flatten": True},
+                                 deadline)["sessionId"]
+            self._call("Page.setDocumentContent", {"frameId": tab, "html": html}, deadline, session)
+            # Measured into pages only once its fonts are in, or a fallback font sets the length.
+            self._call("Runtime.evaluate", {"expression": "document.fonts.ready.then(() => true)",
+                                            "awaitPromise": True}, deadline, session)
+            return base64.b64decode(self._call("Page.printToPDF", PRINT, deadline, session)["data"])
+        finally:
+            self._call("Target.closeTarget", {"targetId": tab}, deadline)
+
+    def close(self) -> None:
+        self.process.kill()
+        self.process.wait()
+        os.close(self._send)
+        os.close(self._receive)
+
+    def _call(self, method: str, params: dict, deadline: float, session: str | None = None) -> dict:
+        """One command and its answer. Events arrive in between, and nothing here needs them."""
+        self._last += 1
+        command = {"id": self._last, "method": method, "params": params,
+                   **({"sessionId": session} if session else {})}
+        pending = memoryview(json.dumps(command).encode() + b"\0")
+        while pending:
+            pending = pending[os.write(self._send, pending):]
+        while True:
+            answer = self._read(deadline)
+            if answer.get("id") == self._last:
+                if "error" in answer:
+                    raise CompileFailed(f"chrome refused {method}: {answer['error'].get('message')}")
+                return answer["result"]
+
+    def _read(self, deadline: float) -> dict:
+        while b"\0" not in self._buffer:
+            left = deadline - time.monotonic()
+            if left <= 0 or not select.select([self._receive], [], [], left)[0]:
+                raise CompileFailed(f"chrome did not answer within {COMPILE_TIMEOUT_SEC}s")
+            chunk = os.read(self._receive, 1 << 16)
+            if not chunk:
+                raise CompileFailed(f"chrome exited mid-document (code {self.process.poll()})")
+            self._buffer += chunk
+        message, self._buffer = self._buffer.split(b"\0", 1)
+        return json.loads(message)
+
+
+_chrome: Chrome | None = None
+
+
+def browser() -> Chrome:
+    """This worker's browser: launched on first use, and again after one dies."""
+    global _chrome  # noqa: PLW0603 - one per process, replaced only when it fails
+    if _chrome is not None and _chrome.process.poll() is not None:
+        logger.warning("docgen: chrome exited (code %s); starting another",
+                       _chrome.process.returncode)
+        _discard()
+    if _chrome is None:
+        _chrome = Chrome()
+    return _chrome
+
+
+def render(html: str) -> bytes:
+    """One HTML document to the bytes of its PDF.
+
+    A browser that failed in any way is thrown away, and the next render starts a new one: a
+    retried build then gets a fresh Chrome rather than the one that was out of memory.
+    """
     try:
-        result = subprocess.run(  # noqa: S603 - the binary is ours and the URL is a local path
-            [chrome_binary(), *CHROME_FLAGS, f"--print-to-pdf={output}", url],
-            capture_output=True, timeout=COMPILE_TIMEOUT_SEC, check=False)
-    except (OSError, subprocess.SubprocessError) as exc:
-        raise CompileFailed(f"chrome did not run: {type(exc).__name__}") from exc
-
-    if not output.exists() or output.stat().st_size == 0:
-        # Chrome's stderr is noisy and mostly irrelevant, but on a real failure the last line is the reason.
-        tail = (result.stderr or b"").decode("utf-8", "replace").strip().splitlines()[-1:]
-        raise CompileFailed(f"chrome produced no PDF: {' '.join(tail)[:200]}")
-    return output
+        return browser().print(html)
+    except (CompileFailed, OSError, ValueError) as exc:
+        _discard()
+        if isinstance(exc, CompileFailed):
+            raise
+        raise CompileFailed(f"chrome did not run: {type(exc).__name__}: {exc}") from exc
 
 
-def inspect_pdf(pdf: pathlib.Path, *, kind: str = "cv") -> PdfReport:
-    """Page count and the ATS readability check, from one read of the file."""
+def _discard() -> None:
+    global _chrome  # noqa: PLW0603
+    if _chrome is not None:
+        _chrome.close()
+        _chrome = None
+
+
+def inspect_pdf(pdf: bytes, *, kind: str = "cv") -> PdfReport:
+    """Page count and the ATS readability check, from one read of the document."""
     try:
         from pypdf import PdfReader  # noqa: PLC0415 - only this path needs it
     except ImportError:
         return PdfReport(pages=None, chars=0, issues=["pypdf is not installed — checks skipped"])
 
     try:
-        reader = PdfReader(str(pdf))
+        reader = PdfReader(io.BytesIO(pdf))
         texts = [(page.extract_text() or "") for page in reader.pages]
     except Exception as exc:  # noqa: BLE001 - any parse failure is one outcome: unreadable
         return PdfReport(pages=None, chars=0, issues=[f"text extraction failed: {type(exc).__name__}"])
@@ -119,7 +226,7 @@ def inspect_pdf_text(text: str, *, kind: str = "cv") -> PdfReport:
             if section not in lowered:
                 issues.append(f"section {section!r} not found in the extracted text")
 
-        if not _EMAIL.search(text):
+        if not EMAIL.search(text):
             # Not fatal and not always wrong: a profile with no email link renders a header without one.
             issues.append("no email address in the extracted text — contact details may be "
                           "unreadable")

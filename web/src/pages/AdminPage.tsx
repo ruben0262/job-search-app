@@ -186,6 +186,9 @@ type Settings = {
   ats_companies_per_cycle: number;
   describe_per_cycle: number;
   linkedin_concurrent_users: number;
+  /** Per provider: `anthropic`, `gemini`, `openai`. */
+  document_models: Record<string, string>;
+  document_keep_hours: number;
 };
 
 type Source = {
@@ -363,6 +366,15 @@ export function AdminPage() {
     setUsers(fresh.users);
     setDoomed(null);
     setTyped("");
+  });
+
+  // One provider's model, saved when the field is left.
+  const saveModel = useAction(async (provider: string, model: string) => {
+    if (!model || model === settings?.document_models[provider]) return;
+    const next = { ...(settings?.document_models ?? {}), [provider]: model };
+    const body = await api.put<{ settings: Settings }>(
+      "/admin/settings/document_models", { value: next });
+    setSettings(body.settings);
   });
 
   const saveMaxAge = useAction(async (hours: number) => {
@@ -678,7 +690,44 @@ export function AdminPage() {
               <option key={n} value={n}>{n}</option>
             ))}
           </select>
+
+          <p className="label" style={{ marginTop: "1.5rem" }}>Built documents kept for</p>
+          <span className="hint">
+            How long a CV or cover letter waits to be downloaded before it is deleted (D9). Longer
+            lets a person come back for it; shorter keeps less of anybody&apos;s CV on this server.
+          </span>
+          <select
+            value={settings.document_keep_hours}
+            disabled={savePlatform.busy}
+            aria-label="Built documents kept for"
+            onChange={(event) =>
+              void savePlatform.run("document_keep_hours", Number(event.target.value))}
+            style={{ maxWidth: "10rem", marginTop: "0.5rem" }}
+          >
+            {[1, 6, 24].map((n) => (
+              <option key={n} value={n}>{n === 1 ? "1 hour" : `${n} hours`}</option>
+            ))}
+          </select>
           <Error>{savePlatform.error}</Error>
+
+          <p className="label" style={{ marginTop: "1.5rem" }}>AI document models</p>
+          <span className="hint">
+            The model each provider writes AI documents with. The CV prompts were measured on
+            Claude Haiku; the others run them unmeasured. A name the provider does not know fails
+            every AI document on it.
+          </span>
+          {["anthropic", "gemini", "openai"].map((provider) => (
+            <label key={provider} className="small" style={{ display: "block", marginTop: "0.5rem" }}>
+              {provider}{" "}
+              <input
+                defaultValue={settings.document_models[provider]}
+                disabled={saveModel.busy}
+                onBlur={(event) => void saveModel.run(provider, event.target.value.trim())}
+                style={{ maxWidth: "16rem" }}
+              />
+            </label>
+          ))}
+          <Error>{saveModel.error}</Error>
         </div>
       ) : null}</> : null}
 

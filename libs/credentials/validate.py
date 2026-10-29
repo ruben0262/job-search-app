@@ -10,6 +10,8 @@ from libs.llm.client import CLAUDE_OAUTH_BETA
 from libs.secrets import redact
 
 ANTHROPIC_URL = "https://api.anthropic.com/v1/models"
+GEMINI_MODELS_URL = "https://generativelanguage.googleapis.com/v1beta/models"
+OPENAI_MODELS_URL = "https://api.openai.com/v1/models"
 TELEGRAM_URL = "https://api.telegram.org/bot{token}/{method}"
 
 TIMEOUT = 15.0
@@ -33,6 +35,8 @@ def validate_credential(kind: str, value: str, *,
     validators = {
         "claude_api": _validate_claude_api,
         "claude_oauth": _validate_claude_oauth,
+        "gemini_api": _validate_gemini,
+        "openai_api": _validate_openai,
         "telegram_bot": _validate_telegram,
         "proxy": _validate_proxy,
     }
@@ -53,35 +57,48 @@ def validate_credential(kind: str, value: str, *,
             http.close()
 
 
-def _claude_result(response: httpx.Response) -> ValidationResult:
-    """Shared reading of Anthropic's answer, so both auth styles fail identically."""
+def _key_result(response: httpx.Response, provider: str, *,
+                rejected: tuple[int, ...] = (401, 403)) -> ValidationResult:
+    """One reading of a provider's answer to "list your models", so every key fails alike."""
     if response.status_code == 200:
         return ValidationResult(True)
-    if response.status_code in (401, 403):
-        return ValidationResult(False, "Anthropic rejected this credential — check it was copied "
+    if response.status_code in rejected:
+        return ValidationResult(False, f"{provider} rejected this credential — check it was copied "
                                        "in full and has not been revoked")
     if response.status_code == 429:
         # Rate limited is not invalid.
         return ValidationResult(True, "rate limited while checking; the credential itself is valid")
     if response.status_code == 402:
         return ValidationResult(False, "this account has no credit — top it up and try again")
-    return ValidationResult(False, f"Anthropic answered {response.status_code} while checking")
+    return ValidationResult(False, f"{provider} answered {response.status_code} while checking")
 
 
 def _validate_claude_api(value: str, http: httpx.Client) -> ValidationResult:
     """`GET /v1/models` — the cheapest authenticated call there is, and it costs no tokens."""
-    return _claude_result(http.get(
+    return _key_result(http.get(
         ANTHROPIC_URL,
-        headers={"x-api-key": value, "anthropic-version": "2023-06-01"}))
+        headers={"x-api-key": value, "anthropic-version": "2023-06-01"}), "Anthropic")
 
 
 def _validate_claude_oauth(value: str, http: httpx.Client) -> ValidationResult:
     """The same call on the other auth channel."""
-    return _claude_result(http.get(
+    return _key_result(http.get(
         ANTHROPIC_URL,
         headers={"Authorization": f"Bearer {value}",
                  "anthropic-version": "2023-06-01",
-                 "anthropic-beta": CLAUDE_OAUTH_BETA}))
+                 "anthropic-beta": CLAUDE_OAUTH_BETA}), "Anthropic")
+
+
+def _validate_gemini(value: str, http: httpx.Client) -> ValidationResult:
+    """Listing the models, which costs nothing. Google answers a wrong key with 400, not 401."""
+    return _key_result(http.get(GEMINI_MODELS_URL, headers={"x-goog-api-key": value}),
+                       "Google", rejected=(400, 401, 403))
+
+
+def _validate_openai(value: str, http: httpx.Client) -> ValidationResult:
+    """Listing the models, which costs nothing."""
+    return _key_result(http.get(OPENAI_MODELS_URL, headers={"Authorization": f"Bearer {value}"}),
+                       "OpenAI")
 
 
 def _validate_telegram(value: str, http: httpx.Client) -> ValidationResult:

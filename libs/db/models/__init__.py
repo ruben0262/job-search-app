@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from libs.db.base import Base
+from libs.db.models.ai import AiRequest
 from libs.db.models.ats import AtsEtag, AtsToken
 from libs.db.models.auth import (
     MAIL_PURPOSES,
@@ -10,6 +11,7 @@ from libs.db.models.auth import (
     MailSend,
     UserSession,
 )
+from libs.db.models.built import BuiltDocument
 from libs.db.models.corpus import CorpusJob
 from libs.db.models.document import DOCUMENT_KINDS, UserDocument
 from libs.db.models.notification import UserNotification
@@ -58,10 +60,12 @@ __all__ = [
     "TELEGRAM_STATUSES",
     "TOKEN_PURPOSES",
     "USER_STATUSES",
+    "AiRequest",
     "AtsEtag",
     "AtsToken",
     "AuthToken",
     "Base",
+    "BuiltDocument",
     "CorpusJob",
     "MailSend",
     "OperatorKeyword",

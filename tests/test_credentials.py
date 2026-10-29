@@ -71,6 +71,42 @@ def test_a_rejected_key_says_something_the_user_can_act_on(status, phrase):
     assert phrase in result.detail
 
 
+GEMINI_KEY = "AIzaSy" + "Gm7" * 11
+OPENAI_KEY = "sk-proj-" + "Op4" * 15
+
+
+def test_a_gemini_key_is_checked_on_its_own_header_and_a_wrong_one_is_refused():
+    """Google answers a wrong key with 400, not 401 — read as "rejected", not as an outage."""
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.update(request.headers, url=str(request.url))
+        return httpx.Response(200, json={"models": []})
+
+    assert validate_credential("gemini_api", GEMINI_KEY, client=_client(handler)).ok
+    assert seen["x-goog-api-key"] == GEMINI_KEY
+    assert GEMINI_KEY not in seen["url"], "a key in the URL ends up in every error message"
+
+    wrong = validate_credential("gemini_api", GEMINI_KEY, client=_client(
+        lambda r: httpx.Response(400, json={"error": {"message": "API key not valid."}})))
+    assert wrong.ok is False and "rejected" in wrong.detail
+
+
+def test_an_openai_key_is_checked_with_bearer_and_a_wrong_one_is_refused():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.update(request.headers)
+        return httpx.Response(200, json={"data": []})
+
+    assert validate_credential("openai_api", OPENAI_KEY, client=_client(handler)).ok
+    assert seen["authorization"] == f"Bearer {OPENAI_KEY}"
+
+    wrong = validate_credential("openai_api", OPENAI_KEY,
+                                client=_client(lambda r: httpx.Response(401, json={})))
+    assert wrong.ok is False and "rejected" in wrong.detail
+
+
 def test_an_unreachable_provider_is_not_a_bad_credential():
     """A user with a working key must not be told to replace it because Anthropic was down."""
     def handler(request: httpx.Request) -> httpx.Response:
@@ -220,6 +256,23 @@ def test_an_unreachable_provider_can_be_overridden(api, monkeypatch):
 
     listed = http.get("/credentials").json()
     assert listed["credentials"][0]["validated"] is False
+
+
+@pytestmark_db
+def test_a_gemini_or_an_openai_key_can_be_saved(api, monkeypatch):
+    """The two kinds AI documents run on, through the same form as the Claude ones."""
+    from libs.credentials import ValidationResult
+
+    http, session, _, _ = api
+    monkeypatch.setattr("services.api.credential_routes.validate_credential",
+                        lambda kind, value, **kw: ValidationResult(True))
+
+    for kind, value in (("gemini_api", GEMINI_KEY), ("openai_api", OPENAI_KEY)):
+        assert http.put(f"/credentials/{kind}", json={"value": value}).status_code == 200
+    session.flush()
+
+    kinds = {row["kind"] for row in http.get("/credentials").json()["credentials"]}
+    assert {"gemini_api", "openai_api"} <= kinds
 
 
 @pytestmark_db

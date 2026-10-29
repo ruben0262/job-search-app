@@ -284,7 +284,7 @@ def test_a_cv_build_over_the_daily_limit_is_refused_at_the_tap(api):
     # The per-account override is what the test drove.
     from libs.limits import BY_KEY
 
-    assert BY_KEY["cv_builds_per_day"].default == 10
+    assert BY_KEY["cv_builds_per_day"].default == 50
 
 
 def test_every_callback_stays_inside_telegrams_sixty_four_bytes(api):
@@ -561,13 +561,14 @@ def test_the_admission_check_and_the_worker_ask_the_same_question(api):
 
     _http, session, user, job = api
     session.execute(delete(UserProfileFile).where(UserProfileFile.user_id == user.id))
+    # A posting it could tailor to, so the missing files are the only reason left to refuse.
+    job.description = "Backend engineer. Python, Postgres."
     session.flush()
 
     assert ProfileFiles(session, user.id).build_blocker() is not None
-    # The worker's own refusal path must agree with what the handler told the user.
+    # The worker's own refusal path must agree with what the admission check told the user.
     with pytest.raises(run.NotBuildable):
-        run.run_build(session, user.id, job.id, kind="cv", client=None,
-                      send_document=lambda *a, **k: None, token="x")
+        run.run_ai(session, user.id, job.id, kind="cv", client=None, model="any")
 
 
 def test_building_records_the_label_but_does_not_start_a_fit(api):

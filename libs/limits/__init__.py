@@ -4,6 +4,7 @@ from __future__ import annotations
 import uuid as _uuid
 from dataclasses import dataclass
 
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from libs.db.models import User
@@ -25,6 +26,8 @@ class Limit:
     # in `AdminUserPage.tsx`, so adding a limit here produced a row with an empty dropdown and no
     # error anywhere. One definition, served through `describe()`, with nothing to drift.
     choices: tuple[int, ...] = ()
+    # The smallest value an operator may set. 0 only where 0 means something: none of it.
+    minimum: int = 1
 
 
 # Telegram's Bot FAQ: 1/second to a chat, 20/minute to a channel, ~30/second across chats.
@@ -73,10 +76,6 @@ LIMITS: tuple[Limit, ...] = (
           "Every turn replays its whole chat on the user's own credential, so more chats is more "
           "spend re-reading them.",
           choices=(1, 3, 5, 10)),
-    # Not unlimited-able: the ceiling protects the user's money rather than expressing a preference.
-    Limit("cv_builds_per_day", "CV and cover letters per day", 10, "documents",
-          "Each one is a Claude call on this account's own credential.", allow_unlimited=False,
-          choices=(5, 10, 20, 50, 100)),
     Limit("label_pool", "Jobs bought per labelling run", 300, "jobs",
           "Labelling runs on the user's own Claude credential, so this is their money.",
           allow_unlimited=False,
@@ -85,6 +84,21 @@ LIMITS: tuple[Limit, ...] = (
           # so this number is the entire automatic training set the account will ever have. The
           # first account to be labelled by the platform rather than migrated stopped at 338.
           choices=(100, 300, 500, 1000, 1500, 2000)),
+    # Every CV and cover letter asked for, instant or AI, counted at the one place they are asked
+    # for (`POST /documents/build`). Generous, because an instant one is a render: fifty is
+    # twenty-five applications a day, and still a ceiling on a script or a loop. Never unlimited.
+    Limit("cv_builds_per_day", "CV and cover letters per day", 50, "documents",
+          "Instant ones cost a render. AI ones are a model call on this account's own key, or on "
+          "the platform's within the allowance below.", allow_unlimited=False,
+          choices=(10, 20, 50, 100, 200)),
+    # Never unlimited: every one is the platform's money. A small allowance for everybody (owner,
+    # 2026-10-28), spent only when a platform key is configured (`libs.llm.providers`).
+    Limit("ai_platform_requests_per_day", "AI requests on the platform's key per day", 20,
+          "requests",
+          "AI-written documents and support-chat replies for an account with no key of its own, "
+          "on the platform's paid key. An account with its own Claude, Gemini or OpenAI key is "
+          "not counted. 0 turns it off; instant documents are free either way.",
+          allow_unlimited=False, minimum=0, choices=(0, 5, 10, 20, 50)),
 )
 
 BY_KEY = {limit.key: limit for limit in LIMITS}
@@ -120,14 +134,23 @@ def set_limit(session: Session, user_id: _uuid.UUID, key: str, value: int | None
         raise KeyError(f"unknown limit {key!r}; known: {sorted(BY_KEY)}")
     if value is None and not limit.allow_unlimited:
         raise ValueError(f"{key} cannot be unlimited: {limit.detail}")
-    if value is not None and value < 1:
-        raise ValueError(f"{key} must be at least 1, or unlimited")
+    if value is not None and value < limit.minimum:
+        raise ValueError(f"{key} must be at least {limit.minimum}"
+                         + (", or unlimited" if limit.allow_unlimited else ""))
 
     user = session.get(User, user_id)
     if user is None:
         raise KeyError(f"no such user: {user_id}")
     # Replaced rather than mutated: SQLAlchemy does not track in-place changes to a JSONB dict.
     user.limits = {**(user.limits or {}), key: value}
+
+
+def since_their_midnight(session: Session, user_id: _uuid.UUID, column):
+    """`column` falls on this person's today, in their own timezone: the one boundary every daily
+    ceiling here counts from, so they all reset at the same moment."""
+    timezone = session.scalar(select(User.timezone).where(User.id == user_id)) or "UTC"
+    return (func.timezone(timezone, column)
+            >= func.date_trunc("day", func.timezone(timezone, func.now())))
 
 
 def describe() -> list[dict]:
