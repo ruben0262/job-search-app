@@ -16,6 +16,7 @@ and it is what `tests/test_cv_template.py` uses to read the scaffold the same wa
 """
 from __future__ import annotations
 
+import re
 from functools import lru_cache
 from pathlib import Path
 
@@ -27,3 +28,19 @@ SCAFFOLD_CV = Path(__file__).resolve().parents[1] / "scaffolds" / "base_cv.html"
 def load(path: Path | str) -> str:
     """Read a template file, with newlines normalised."""
     return Path(path).read_text(encoding="utf-8").replace("\r\n", "\n")
+
+
+STYLE = re.compile(r"(?is)<style\b.*?</style>")
+
+
+def split_style(html: str) -> tuple[str, str]:
+    """The document without its comments and its first `<style>` block, and that block ("" if none).
+
+    Comments go first. The scaffold's own says "Keep the <style> block intact", and a search starting
+    there took the comment's end, `<head>` and the placeholder `<title>` along with the CSS — the model
+    never saw `<body>`, and every AI CV came back carrying `[YOUR NAME]`. One definition for the instant
+    documents and docgen, which had each found the block their own way.
+    """
+    html = re.sub(r"(?s)<!--.*?-->", "", html)
+    match = STYLE.search(html)
+    return (html[:match.start()] + html[match.end():], match.group(0)) if match else (html, "")

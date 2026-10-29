@@ -6,6 +6,8 @@ import re
 from datetime import UTC, datetime
 
 from libs.profiles import PLACEHOLDER_MARKERS
+from libs.templates import STYLE as _STYLE
+from libs.templates import split_style
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +21,6 @@ THINKING_TOKENS = 4_096
 JD_MAX_CHARS = 6_000
 
 _HTML = re.compile(r"(?is)(<!doctype html.*?</html>|<html\b.*?</html>)")
-_STYLE = re.compile(r"(?is)<style\b.*?</style>")
 _EMDASH = re.compile(r"\s*(?:—|&mdash;|&#8212;)\s*")
 
 # Invisible characters and the inline styles that hide text.
@@ -156,11 +157,7 @@ def tailor(client, base_html: str, context: str, *, model: str,
            facts_md: str | None = None, feedback: str | None = None, template: str | None = None,
            role_angles: str | None = None) -> str:
     """One call, on the model of whichever provider pays for it (`libs.settings.document_model`)."""
-    # Comments out before the stylesheet is lifted. The scaffold's own comment says "Keep the
-    # <style> block intact", and a search starting there took the comment's end, `<head>` and the
-    # placeholder `<title>` along with the CSS: the model never saw `<body>`, and every CV came back
-    # carrying `[YOUR NAME]`, which the placeholder check then refused to deliver.
-    stripped, style = strip_style(strip_comments(base_html))
+    stripped, style = split_style(base_html)
     prompt = build_prompt(stripped, context, template=template, role_angles=role_angles,
                           feedback=feedback)
 
@@ -256,19 +253,6 @@ def _clean_body(fragment: str) -> str:
     return re.sub(r'(?i)\s*style="[^"]*"',
                   lambda match: "" if _HIDE_STYLE.search(match.group(0)) else match.group(0),
                   fragment)
-
-
-def strip_style(html: str) -> tuple[str, str]:
-    """Remove the `<style>` block before sending, and hand it back for restoration."""
-    match = _STYLE.search(html)
-    if not match:
-        return html, ""
-    return html[:match.start()] + html[match.end():], match.group(0)
-
-
-def strip_comments(html: str) -> str:
-    """Drop the template's HTML comments before sending."""
-    return re.sub(r"(?s)<!--.*?-->", "", html)
 
 
 def restore_style(tailored: str, style: str) -> str:

@@ -11,7 +11,7 @@ import re
 from html import escape
 
 from libs.documents.read import Entry, Facts, fold, read, words
-from libs.templates import SCAFFOLD_CV, load
+from libs.templates import SCAFFOLD_CV, load, split_style
 
 # How much the CV keeps: the most relevant jobs, the most relevant bullets of each.
 ENTRIES_SHOWN, BULLETS_SHOWN = 5, 4
@@ -106,11 +106,8 @@ def _header(facts: Facts, identity: dict) -> tuple[str, str]:
 
 
 def _page(title: str, body: str, style: str = "") -> str:
-    # Comments out first: the scaffold's own says "Keep the <style> block intact", and a search that
-    # starts there carries its `<title>[YOUR NAME] – CV</title>` into every document.
-    scaffold = re.search(r"(?is)<style\b[^>]*>.*?</style>", re.sub(r"(?s)<!--.*?-->", "", load(SCAFFOLD_CV)))
     return ('<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="UTF-8">\n'
-            f"<title>{escape(title)}</title>\n{scaffold.group(0) if scaffold else ''}\n{style}\n"
+            f"<title>{escape(title)}</title>\n{split_style(load(SCAFFOLD_CV))[1]}\n{style}\n"
             f"</head>\n<body>\n{body}\n</body>\n</html>\n")
 
 

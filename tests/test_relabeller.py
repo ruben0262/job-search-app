@@ -318,10 +318,3 @@ def test_transport_retry_is_bounded_the_way_the_reference_bounds_it():
     from libs.llm.client import MAX_RETRIES
 
     assert MAX_RETRIES <= 3, "transport retries have become a spend multiplier"
-
-
-def test_a_cv_gets_one_second_attempt_and_no_more():
-    """The logic-level retry, which is a different thing from the transport one."""
-    from services.docgen.run import MAX_TAILOR_CALLS
-
-    assert MAX_TAILOR_CALLS == 2

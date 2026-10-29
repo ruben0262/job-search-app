@@ -14,6 +14,23 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-10-29 — one definition of where a CV's stylesheet is, and a constant that governed nothing (Phase 8, integration)
+
+The scaffold's `<style>` block was found by two hand-written copies of the same search — strip the
+comments, take the first block — in `libs.documents.instant` and in docgen's `strip_comments` +
+`strip_style`, each written after the same bug (the scaffold's comment says "Keep the <style> block
+intact", and a search starting there carried `[YOUR NAME]` into documents). `libs.templates.split_style`
+is the one now; docgen's two helpers are deleted. Breaking it fails eight tests across both callers.
+
+`MAX_TAILOR_CALLS = 2` claimed "one retry, and only for length", but the retry loop hard-codes its one
+retry and nothing read the constant except a test asserting it equalled 2 — a test of a number, which
+would pass whatever the loop did (§2). Both are deleted; `test_a_three_page_cv_is_revised_once` tests
+the behaviour itself.
+
+Gates: lint-imports 3 kept, 0 broken (2 ignored); ruff clean; pytest 1,498 passed, 5 skipped.
+
+---
+
 ## 2026-10-29 — "I applied" and "Hide" exist again, and making a document is not applying (Phase 8, integration)
 
 Nothing on the site could record either. `applied_at` was written only by a document build, and

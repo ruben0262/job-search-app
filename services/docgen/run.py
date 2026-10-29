@@ -28,9 +28,6 @@ logger = logging.getLogger(__name__)
 # What the file is called when it is downloaded.
 FILENAME_SUFFIX = "CV"
 
-# One retry, and only for length.
-MAX_TAILOR_CALLS = 2
-
 
 class NotBuildable(RuntimeError):
     """This account or this job cannot produce the document, and retrying will not change that."""
