@@ -1,6 +1,7 @@
 """The front page and the jobs page. Both ask `libs.matching`, the one answer to "which jobs"."""
 from __future__ import annotations
 
+import logging
 import uuid as _uuid
 from datetime import datetime
 from typing import Literal
@@ -16,12 +17,14 @@ from libs.db.models import CorpusJob, User, UserJobState
 from libs.llm import PLATFORM, ai_requests_today, resolve
 from libs.matching import Match, matching_jobs
 from libs.notify import reachable
+from libs.obs import audit
 from libs.onboarding import onboarding_state
 from libs.profiles.repository import ProfileFiles
 from services.api.admin_routes import admin_emails
 from services.api.deps import current_user, get_db
 from services.api.onboarding_routes import OnboardingSteps
 
+logger = logging.getLogger(__name__)
 router = APIRouter(tags=["dashboard"])
 
 FEED_PAGE = 25
@@ -209,5 +212,6 @@ def mark_job(job_id: int, mark: Literal["applied", "hidden"], request: Request,
     db.add(state)
     setattr(state, _MARKS[mark], func.now() if request.method == "PUT" else None)
     db.flush()
+    audit(logger, "job.marked", user=user_id, job=job_id, mark=mark, on=request.method == "PUT")
     return JobMarks(job_id=job_id, applied=state.applied_at is not None,
                     hidden=state.dismissed_at is not None)

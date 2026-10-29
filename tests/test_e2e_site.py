@@ -78,6 +78,13 @@ def site(monkeypatch):
 
 
 def test_a_new_person_goes_from_sign_up_to_a_downloaded_cv(site, capsys, tmp_path):
+    # A walk of an old build tests code that is not there, and CLAUDE.md §7 runs pytest before the
+    # build: so a build older than its sources fails here, loudly, rather than passing on stale code.
+    web, built = DIST.parent, (DIST / "index.html").stat().st_mtime
+    newer = [path for path in (*(web / "src").rglob("*"), *(web / "public").rglob("*"), web / "index.html")
+             if path.is_file() and path.stat().st_mtime > built]
+    assert not newer, f"web/dist is older than {newer[0]} — run `npm --prefix web run build` first"
+
     base, email, ids = site
     with sync_api.sync_playwright() as playwright:
         browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
