@@ -8,7 +8,7 @@ export const SECTIONS: Section[] = [
   { id: "top", label: "Mahoraga" },
   { id: "what", label: "What it is" },
   { id: "how", label: "How it works" },
-  { id: "live", label: "Live feed" },
+  { id: "live", label: "Your jobs" },
   { id: "start", label: "Get started" },
 ];
 

@@ -14,6 +14,21 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-10-29 — the landing page describes the product that exists (Phase 8, integration)
+
+The first page a person reads still sold the platform before Phase 8: a model that learns your taste,
+a Telegram bot to set up with seven slash commands (`/top`, `/stats`, `/outreach`, `/interview`,
+`/rate`…, none of which exist now), PDFs delivered into a chat, your own Claude key, a cold start of
+"a day or two", and "fifteen minutes of setup". Each section is rewritten in plain words for what a
+person gets now — words they choose, jobs that say why they are there, a CV in one tap, alerts if they
+want them — keeping the layout. The source count is the registry's (25, not "~30"); the meta
+description that link previews show is rewritten too. The CSS, the icon and the command list only the
+old copy used are deleted. Checked by screenshot at 390 and 1280 px, neither scrolling sideways.
+
+Gates: ruff clean; web build passes; pytest 1,497 passed, 5 skipped, the walk run on this build.
+
+---
+
 ## 2026-10-29 — the site for someone who has never used a job tool (Phase 8, workstream 6)
 
 A new account used to go through seven onboarding pages and an hour of setup chat; the home page

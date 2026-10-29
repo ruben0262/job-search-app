@@ -33,7 +33,7 @@ export default function Hero({ onExplore }: HeroProps) {
         {...rise}
         transition={{ duration: 0.8, delay: 0.3 }}
       >
-        The job-search radar that adapts to you.
+        The job search that runs itself.
       </m.p>
 
       <m.p
@@ -41,10 +41,10 @@ export default function Hero({ onExplore }: HeroProps) {
         {...rise}
         transition={{ duration: 0.8, delay: 0.4 }}
       >
-        It watches ~30 job sources around the clock, scores every new posting
-        against your profile with a model that learns your taste, and streams
-        the good ones to your Telegram. Each one is a tap away from a
-        tailored, ATS-ready CV.
+        Choose the words you want and the words you don't. It checks job boards
+        and company career pages every 15 minutes, shows every match with the
+        reason it matched, and makes your CV and cover letter for any job in
+        one tap.
       </m.p>
 
       <m.div
@@ -69,8 +69,8 @@ export default function Hero({ onExplore }: HeroProps) {
         transition={{ duration: 0.8, delay: 0.65 }}
       >
         <div className="stat">
-          <div className="stat-v">~30</div>
-          <div className="stat-k">Sources watched</div>
+          <div className="stat-v">25</div>
+          <div className="stat-k">Job sources</div>
         </div>
         <div className="stat">
           <div className="stat-v">15 min</div>

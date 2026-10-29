@@ -1,5 +1,4 @@
 import Reveal from "../components/Reveal";
-import { ClaudeIcon, TelegramIcon } from "../components/Icons";
 
 export default function GetStarted() {
   return (
@@ -8,26 +7,22 @@ export default function GetStarted() {
         <p className="kicker">
           <span className="num">04</span> Get started
         </p>
-        <h2>Fifteen minutes of setup. Then it hunts while you sleep.</h2>
+        <h2>A few minutes to set up. Then it searches while you sleep.</h2>
       </Reveal>
 
       <div className="paths">
         <Reveal delay={0.05}>
           <div className="path">
-            <div className="path-tag">Step 1 · ~15 minutes</div>
+            <div className="path-tag">Step 1 · a few minutes</div>
             <h3>Set it up once</h3>
             <p className="path-sub">
-              Create an account and a short guided setup walks you through everything: your CV and
-              history, a free Telegram bot, your own{" "}
-              <ClaudeIcon size={14} className="inline-icon" /> Claude key, and what to search for.
-              Nothing technical; every fiddly step has a two-minute walkthrough.
+              Create an account and upload your CV. We read it and suggest the words to search
+              with; you check them and tap Looks good. That is all.
             </p>
             <ul>
-              <li>Your CV and a written history</li>
-              <li>
-                A free <TelegramIcon size={13} className="inline-icon" /> Telegram bot for delivery
-              </li>
-              <li>Keywords, locations, and how fresh is fresh</li>
+              <li>Your CV (a cover letter and an "about you" note are optional)</li>
+              <li>Words to find jobs with, and words to hide</li>
+              <li>Where you can work, and in which languages</li>
             </ul>
           </div>
         </Reveal>
@@ -35,17 +30,15 @@ export default function GetStarted() {
         <Reveal delay={0.12}>
           <div className="path">
             <div className="path-tag">Step 2 · It runs itself</div>
-            <h3>The radar takes over</h3>
+            <h3>Then it works for you</h3>
             <p className="path-sub">
-              A conversation with Claude turns your documents into a profile, your first jobs are
-              scored against it, and a model of your taste is trained. From then on every new
-              posting is ranked the moment it is found, and the good ones land in your Telegram
-              with a tailored CV one tap away.
+              New jobs are matched to your words the moment they are found. Each one is a tap
+              away from a CV and a cover letter made for it.
             </p>
             <ul>
-              <li>Jobs stream to your channel as they appear</li>
-              <li>One tap builds an ATS-ready, two-page CV</li>
-              <li>Every decision you make sharpens the model</li>
+              <li>Every match says why it is there</li>
+              <li>One tap makes a CV or a cover letter</li>
+              <li>Alerts on your phone, if you want them</li>
             </ul>
           </div>
         </Reveal>
@@ -53,18 +46,16 @@ export default function GetStarted() {
 
       <Reveal delay={0.15}>
         <p className="lore">
-          Cold start included: the model does not exist on day one. It needs a few hundred labelled
-          jobs, collected in cheap batches over a day or two, and <em>the radar comes alive the
-          moment the first model is trained</em>. From then on, scoring is free and instant.
+          No waiting: your first matches are there as soon as you finish, from jobs already
+          collected.
         </p>
       </Reveal>
 
       <Reveal delay={0.18}>
         <p className="honest">
-          Fair warning: this is honest software, not magic. It runs on your own Claude key so you
-          can see exactly what it costs, delivery needs a free Telegram account, and LinkedIn
-          coverage wants a small residential proxy of your own. What you get back is a radar that
-          never sleeps.
+          Honest by design: there is no hidden score. Every job is shown because of words you
+          chose, and every line of your CV comes from what you wrote. Phone alerts need Telegram
+          or a browser that allows notifications, and LinkedIn jobs need a small proxy of your own.
         </p>
         <div className="hero-ctas">
           <a className="btn btn-solid" href="#/signup">

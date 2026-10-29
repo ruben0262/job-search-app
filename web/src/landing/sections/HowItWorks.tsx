@@ -1,47 +1,42 @@
 import { useRef, type ReactNode } from "react";
 import { m, useInView, useScroll, useSpring } from "framer-motion";
 import Reveal from "../components/Reveal";
-import { ClaudeIcon } from "../components/Icons";
 
 const STAGES = [
   {
-    name: "Scrape",
+    name: "Collect",
     body: (
       <>
-        LinkedIn, Indeed and Google via JobSpy (through a residential proxy),
-        ~940 company ATS boards on a self-growing company list, hiring.cafe,
-        VC portfolio boards, RSS boards and optional country-specific sources.
-        Around 30 in total, scanned every 15 minutes.
+        Every 15 minutes, new jobs from job boards and company career pages.
+        LinkedIn too, if you add a proxy of your own.
       </>
     ),
   },
   {
-    name: "Filter",
+    name: "Clean",
     body: (
       <>
-        Three-layer deduplication means you never see the same job twice.
-        Seniority, language, workplace-mode and applicant-glut filters cut the
-        noise before anything is scored.
+        Duplicates are removed, so you never see the same job twice. Jobs in
+        languages you do not work in, or in places you cannot work, are left out.
       </>
     ),
   },
   {
-    name: "Score",
+    name: "Match",
     body: (
       <>
-        Your own free local model scores every survivor against your profile:
-        sentence embeddings, engineered features and a classifier. Scoring
-        costs nothing per job and runs entirely on your machine.
+        Your green words find jobs and your red words hide them. A word in the
+        title counts more than one in the text, and every job shows which of
+        your words found it.
       </>
     ),
   },
   {
-    name: "Notify",
+    name: "Tell",
     body: (
       <>
-        Good ones stream into your Telegram channel: score, location,
-        remote/hybrid/on-site mode, and the posted salary next to the salary
-        you should ask for.
+        Matches wait on your Jobs page. If you want them on your phone too,
+        connect Telegram in one tap or turn on browser notifications.
       </>
     ),
   },
@@ -49,20 +44,18 @@ const STAGES = [
     name: "Build",
     body: (
       <>
-        Tap <code>📄 Build CV</code> or <code>✉️ Build Cover</code> and one{" "}
-        <ClaudeIcon size={14} className="inline-icon" /> Claude call tailors
-        the document (ATS keywords, the 6-second test, the bullet formula)
-        into a verified two-page PDF delivered straight to your chat.
+        Tap <code>Make my CV</code> or <code>Make my cover letter</code>. It is
+        built from your own CV with what fits the job first, and ready to
+        download in seconds.
       </>
     ),
   },
   {
-    name: "Adapt",
+    name: "Refine",
     body: (
       <>
-        Every CV you build becomes a positive training label at 5× weight;
-        every skip a negative. The model retrains on your real decisions, so
-        the feed keeps sharpening the more you use it.
+        Change your words any time. Save a new CV and we suggest new words to
+        find jobs with, and new words to hide.
       </>
     ),
   },
@@ -83,11 +76,10 @@ export default function HowItWorks() {
         <p className="kicker">
           <span className="num">02</span> How it works
         </p>
-        <h2>Six stages, one loop, always on.</h2>
+        <h2>Six steps, always on.</h2>
         <p className="lede">
-          <strong>the radar</strong> (collection, every 15 minutes) ·{" "}
-          <strong>the scorer</strong> (your model, always current) ·{" "}
-          <strong>the bot</strong> (delivery and one-tap documents).
+          It <strong>collects</strong> jobs every 15 minutes, <strong>matches</strong> them to
+          your words, and <strong>makes</strong> your documents when you ask.
         </p>
       </Reveal>
 

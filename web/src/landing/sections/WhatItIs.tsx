@@ -7,32 +7,25 @@ export default function WhatItIs() {
         <p className="kicker">
           <span className="num">01</span> What it is
         </p>
-        <h2>A 24/7 radar for the freshest slice of the job market.</h2>
+        <h2>Your job search, on autopilot.</h2>
       </Reveal>
       <Reveal delay={0.1}>
         <p className="lede">
-          Mahoraga is a <strong>job-hunting radar that works for you alone</strong>. It scans
-          LinkedIn, Indeed, Google, ~940 company career boards (Greenhouse, Ashby, Lever, Workday,
-          Personio, Workable and more), hiring.cafe, VC portfolio boards and RSS feeds every 15
-          minutes, all day, every day.
+          Mahoraga collects new jobs <strong>every 15 minutes, all day, every day</strong>: from
+          job boards, from company career pages, and from LinkedIn too if you add a proxy of your
+          own.
         </p>
         <p className="lede">
-          Every new posting is deduplicated three ways, filtered for
-          seniority, language and workplace mode, then scored by{" "}
-          <strong>a model that belongs to you</strong>: sentence embeddings,
-          engineered features and a classifier trained on your own decisions.
-          Scoring costs nothing per job, and nobody else's model ever ranks
-          your search.
+          <strong>You decide what you see.</strong> Green words find jobs, like "nurse" or
+          "backend engineer". Red words hide them, like "senior" or "unpaid". We suggest both
+          from your CV, and you tap to keep the ones you like. Nothing is hidden: every job
+          says which of your words it matched.
         </p>
         <p className="lede">
-          The result: jobs land on your phone{" "}
-          <strong>minutes after they are posted</strong>, while a posting has
-          5 applicants instead of 500. Each arrives scored against your
-          profile, with the posted salary next to the salary you should ask
-          for, and a tailored two-page CV one tap away. Nothing is fabricated;
-          every claim traces back to your real profile. The name comes from
-          the wheel that adapts to whatever it faces: the longer it runs, the
-          more precisely it is shaped to you.
+          When a job looks right, <strong>one tap makes a CV and a cover letter</strong> for
+          it: built from your own CV, with the parts that fit that job first, ready to download
+          in seconds. Nothing is made up; every line comes from what you wrote. The name comes
+          from the wheel that adapts to whatever it faces. Here, it is shaped by your words.
         </p>
       </Reveal>
     </section>

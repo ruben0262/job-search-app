@@ -36,30 +36,3 @@ export function GitHubIcon({ size = 18, className }: IconProps) {
 }
 
 /** Claude spark: a 12-ray burst, drawn in-house, monochrome. */
-export function ClaudeIcon({ size = 18, className }: IconProps) {
-  const rays = Array.from({ length: 12 }, (_, i) => (360 / 12) * i);
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      className={className}
-      aria-hidden="true"
-    >
-      {rays.map((a) => (
-        <line
-          key={a}
-          x1="12"
-          y1="7.6"
-          x2="12"
-          y2="2.6"
-          stroke="currentColor"
-          strokeWidth="2.1"
-          strokeLinecap="round"
-          transform={`rotate(${a} 12 12)`}
-        />
-      ))}
-    </svg>
-  );
-}

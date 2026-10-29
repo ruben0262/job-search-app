@@ -434,42 +434,8 @@ body:has(.landing) {
   line-height: 1.7;
 }
 
-.landing .tg-msg .tg-chan {
-  font-family: var(--font-mono);
-  font-size: 0.76rem;
-  color: var(--accent);
-  letter-spacing: 0.08em;
-  margin-bottom: 0.25rem;
-}
-
-.landing .tg-msg .tg-link {
-  color: var(--dim);
-  font-size: 0.82rem;
-  margin-top: 0.35rem;
-  text-decoration: underline;
-  text-decoration-color: var(--faint);
-  text-underline-offset: 3px;
-  overflow-wrap: anywhere;
-}
-
 .landing .tg-phone-bot {
   margin-top: 1.8rem;
-}
-
-.landing .tg-doc {
-  display: flex;
-  align-items: center;
-  gap: 0.9rem;
-}
-
-.landing .tg-doc .tg-doc-icon {
-  font-size: 1.5rem;
-  line-height: 1;
-}
-
-.landing .tg-doc .tg-title,
-.landing .tg-doc .tg-meta {
-  display: block;
 }
 
 .landing .tg-buttons {
@@ -495,32 +461,6 @@ body:has(.landing) {
 .landing .tg-msg:hover .tg-btn {
   color: var(--ink);
   border-color: var(--dim);
-}
-
-.landing .cmd-list {
-  margin-top: 1.8rem;
-  display: grid;
-  gap: 0.55rem;
-}
-
-.landing .cmd {
-  display: flex;
-  gap: 1.1rem;
-  align-items: baseline;
-  padding: 0.45rem 0;
-  border-bottom: 1px solid var(--hairline);
-}
-
-.landing .cmd code {
-  font-family: var(--font-mono);
-  font-size: 0.84rem;
-  color: var(--ink);
-  min-width: 8.5rem;
-}
-
-.landing .cmd span {
-  color: var(--muted);
-  font-size: 0.9rem;
 }
 
 /* ── get started ──────────────────────────────────────────────────── */
@@ -596,27 +536,6 @@ body:has(.landing) {
 .landing .path li::before {
   content: "→";
   color: var(--dim);
-}
-
-.landing .terminal {
-  margin-top: 1.6rem;
-  background: var(--bg);
-  border: 1px solid var(--hairline);
-  border-radius: 10px;
-  padding: 1rem 1.2rem;
-  font-family: var(--font-mono);
-  font-size: 0.86rem;
-  color: var(--muted);
-  overflow-x: auto;
-}
-
-.landing .terminal .prompt {
-  color: var(--dim);
-  user-select: none;
-}
-
-.landing .terminal .cmd-line {
-  color: var(--ink);
 }
 
 .landing .lore {
@@ -929,15 +848,6 @@ body:has(.landing) {
 
   .landing .tg-buttons {
     flex-wrap: wrap;
-  }
-
-  .landing .cmd {
-    flex-direction: column;
-    gap: 0.15rem;
-  }
-
-  .landing .cmd code {
-    min-width: 0;
   }
 
   .landing .paths {
