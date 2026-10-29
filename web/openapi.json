@@ -987,6 +987,29 @@
         "title": "IdentitySchema",
         "type": "object"
       },
+      "JobMarks": {
+        "properties": {
+          "applied": {
+            "title": "Applied",
+            "type": "boolean"
+          },
+          "hidden": {
+            "title": "Hidden",
+            "type": "boolean"
+          },
+          "job_id": {
+            "title": "Job Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "job_id",
+          "applied",
+          "hidden"
+        ],
+        "title": "JobMarks",
+        "type": "object"
+      },
       "KeywordBody": {
         "properties": {
           "keyword": {
@@ -4356,6 +4379,116 @@
           }
         },
         "summary": "Health"
+      }
+    },
+    "/jobs/{job_id}/{mark}": {
+      "delete": {
+        "description": "PUT records the mark, DELETE takes it back. Only ever this person's own row.",
+        "operationId": "mark_job_jobs__job_id___mark__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "mark",
+            "required": true,
+            "schema": {
+              "enum": [
+                "applied",
+                "hidden"
+              ],
+              "title": "Mark",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobMarks"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mark Job",
+        "tags": [
+          "dashboard"
+        ]
+      },
+      "put": {
+        "description": "PUT records the mark, DELETE takes it back. Only ever this person's own row.",
+        "operationId": "mark_job_jobs__job_id___mark__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "mark",
+            "required": true,
+            "schema": {
+              "enum": [
+                "applied",
+                "hidden"
+              ],
+              "title": "Mark",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobMarks"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mark Job",
+        "tags": [
+          "dashboard"
+        ]
       }
     },
     "/legal/privacy": {

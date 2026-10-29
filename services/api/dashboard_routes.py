@@ -5,13 +5,13 @@ import uuid as _uuid
 from datetime import UTC, datetime, timedelta
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from libs.corpus import salary
-from libs.db.models import User, UserJobState
+from libs.db.models import CorpusJob, User, UserJobState
 from libs.matching import Match, matching_jobs
 from libs.onboarding import onboarding_state
 from services.api.admin_routes import admin_emails
@@ -185,3 +185,30 @@ def _row(match: Match, applied_at: datetime | None) -> FeedJob:
                    words=list(match.words), posted_at=job.posted_at,
                    first_seen_at=job.first_seen_at, salary=salary.extract(job.description),
                    applied_at=applied_at)
+
+
+class JobMarks(BaseModel):
+    job_id: int
+    applied: bool
+    hidden: bool
+
+
+# "I applied" and "Hide" — the only two things a person records about a job, and nothing else does:
+# making a document is not applying, and the model that read builds as applications is switched off.
+_MARKS = {"applied": "applied_at", "hidden": "dismissed_at"}
+
+
+@router.put("/jobs/{job_id}/{mark}", response_model=JobMarks)
+@router.delete("/jobs/{job_id}/{mark}", response_model=JobMarks)
+def mark_job(job_id: int, mark: Literal["applied", "hidden"], request: Request,
+             db: Session = Depends(get_db),
+             user_id: _uuid.UUID = Depends(current_user)) -> JobMarks:
+    """PUT records the mark, DELETE takes it back. Only ever this person's own row."""
+    if db.get(CorpusJob, job_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="no such job")
+    state = db.get(UserJobState, (user_id, job_id)) or UserJobState(user_id=user_id, job_id=job_id)
+    db.add(state)
+    setattr(state, _MARKS[mark], func.now() if request.method == "PUT" else None)
+    db.flush()
+    return JobMarks(job_id=job_id, applied=state.applied_at is not None,
+                    hidden=state.dismissed_at is not None)

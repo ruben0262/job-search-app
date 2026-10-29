@@ -916,6 +916,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/jobs/{job_id}/{mark}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Mark Job
+         * @description PUT records the mark, DELETE takes it back. Only ever this person's own row.
+         */
+        put: operations["mark_job_jobs__job_id___mark__put"];
+        post?: never;
+        /**
+         * Mark Job
+         * @description PUT records the mark, DELETE takes it back. Only ever this person's own row.
+         */
+        delete: operations["mark_job_jobs__job_id___mark__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/legal/privacy": {
         parameters: {
             query?: never;
@@ -1785,6 +1809,15 @@ export interface components {
             full_name: string;
             /** Links */
             links?: components["schemas"]["ProfileLink"][];
+        };
+        /** JobMarks */
+        JobMarks: {
+            /** Applied */
+            applied: boolean;
+            /** Hidden */
+            hidden: boolean;
+            /** Job Id */
+            job_id: number;
         };
         /** KeywordBody */
         KeywordBody: {
@@ -3788,6 +3821,70 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    mark_job_jobs__job_id___mark__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+                mark: "applied" | "hidden";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobMarks"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mark_job_jobs__job_id___mark__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+                mark: "applied" | "hidden";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobMarks"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

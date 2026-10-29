@@ -12,7 +12,7 @@ import re
 import uuid as _uuid
 from dataclasses import dataclass
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 
 from libs.db.models import CorpusJob, User, UserJobState, UserLabel
 from libs.documents import instant
@@ -106,8 +106,7 @@ def run_ai(session, user_id: _uuid.UUID, job_id: int, *, client, model: str, kin
 
 def _done(session, user: User, job: CorpusJob, *, kind: str, mode: str, document: bytes,
           report: pdf.PdfReport, calls: int) -> Built:
-    """Record the build and say so, once."""
-    _record(session, user.id, job)
+    """Say the build happened, once. It is not an application: "I applied" on the jobs page is."""
     if not report.ats_ok:
         # A warning rather than a refusal: the layout is single-column and known good.
         logger.warning("docgen: ATS check flagged %s for user %s: %s",
@@ -205,20 +204,6 @@ def _salary_bands(user: User) -> dict | None:
     """This user's target ask bands, from their config."""
     config = getattr(user, "config", None)
     return (getattr(config, "config", None) or {}).get("salary_bands") if config else None
-
-
-def _record(session, user_id: _uuid.UUID, job: CorpusJob) -> None:
-    """The durable half of an ephemeral document."""
-    state = session.get(UserJobState, (user_id, job.id))
-    if state is None:
-        state = UserJobState(user_id=user_id, job_id=job.id)
-        session.add(state)
-    if state.applied_at is None:
-        state.applied_at = func.now()
-
-    # No `pin()` any more: `applied_at` above IS the record that keeps this posting out of the
-    # archive, asked directly by `libs.corpus.archive` rather than copied to a flag.
-    session.flush()
 
 
 def _filename(full_name: str | None, kind: str = "cv") -> str:

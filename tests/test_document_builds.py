@@ -181,6 +181,16 @@ def test_an_instant_cv_is_asked_for_built_and_downloaded(api):
     assert "Built the billing service in Python and Postgres" in api.rendered[0]
 
 
+def test_making_a_document_is_not_applying(api):
+    """Instant documents are free previews; only "I applied" on the jobs page records an application."""
+    from libs.db.models import UserJobState
+
+    _ask(api)
+    assert _work(api)
+    state = api.session.get(UserJobState, (api.user.id, api.job.id))
+    assert state is None or state.applied_at is None
+
+
 def test_the_document_built_is_the_kind_asked_for(api):
     """A cover letter asked for must not come back as a CV."""
     build_id = _ask(api, kind="cover").json()["id"]

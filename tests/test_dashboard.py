@@ -281,3 +281,37 @@ def test_a_missing_company_sorts_last_whichever_way_the_column_turns(api):
     for direction in ("asc", "desc"):
         body = http.get(f"/feed?sort=company&direction={direction}").json()
         assert _ids(body) == [jobs[1].id, jobs[0].id], direction
+
+
+def test_i_applied_counts_on_the_front_page_and_can_be_taken_back(api):
+    http, _session, _user, jobs = api
+    job = jobs[0]
+
+    assert http.put(f"/jobs/{job.id}/applied").json() == {
+        "job_id": job.id, "applied": True, "hidden": False}
+    assert http.get("/dashboard").json()["applied"] == 1
+    assert next(row for row in http.get("/feed").json()["jobs"] if row["id"] == job.id)["applied_at"]
+
+    assert http.delete(f"/jobs/{job.id}/applied").json()["applied"] is False
+    assert http.get("/dashboard").json()["applied"] == 0
+
+
+def test_a_hidden_job_leaves_the_jobs_page_until_it_is_shown_again(api):
+    http, _session, _user, jobs = api
+    job = jobs[0]
+
+    def listed():
+        return {row["id"] for row in http.get("/feed").json()["jobs"]}
+
+    assert job.id in listed()
+    assert http.put(f"/jobs/{job.id}/hidden").json()["hidden"] is True
+    assert job.id not in listed()
+    http.delete(f"/jobs/{job.id}/hidden")
+    assert job.id in listed()
+
+
+def test_only_a_real_job_and_the_two_marks_are_accepted(api):
+    http, _session, _user, jobs = api
+    assert http.put("/jobs/999999999/applied").status_code == 404
+    assert http.put(f"/jobs/{jobs[0].id}/sent").status_code == 422
+

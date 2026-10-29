@@ -437,20 +437,6 @@ def test_the_model_writes_on_the_model_its_payer_resolved_to(monkeypatch, fake_c
     assert [call["model"] for call in client.calls] == ["gemini-3.8-flash"]
 
 
-def test_the_build_records_that_the_user_applied(monkeypatch, fake_chrome):
-    """An ephemeral document needs a durable record.
-
-    `applied_at` is the whole of it now. It used to also set a `pinned` flag on the corpus row to
-    keep retention off it; retention reads `applied_at` itself, so the flag was a copy that could
-    disagree with the thing it copied (ROADMAP 6bd).
-    """
-    session, user, _job, state = _session(monkeypatch)
-
-    _ai(session, user)
-
-    assert state.applied_at is not None
-
-
 def test_a_three_page_cv_is_revised_once(monkeypatch, fake_chrome):
     session, user, _job, _state = _session(monkeypatch)
     fake_chrome["pages"] = 3
@@ -527,7 +513,8 @@ def test_an_instant_cv_is_their_own_lines_and_spends_no_model_call(monkeypatch, 
     assert "Built the billing service in Python and Postgres" in fake_chrome["html"]
     assert result.pdf.startswith(b"%PDF") and result.filename == "Alice_Example_CV.pdf"
     assert result.calls == 0
-    assert state.applied_at is not None
+    # A free preview, not an application: only "I applied" on the jobs page records one.
+    assert state.applied_at is None
 
 
 def test_an_instant_cover_letter_is_a_letter(monkeypatch, fake_chrome):

@@ -14,6 +14,24 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-10-29 — "I applied" and "Hide" exist again, and making a document is not applying (Phase 8, integration)
+
+Nothing on the site could record either. `applied_at` was written only by a document build, and
+`dismissed_at` only by the Telegram taps the alerts workstream removed — so the jobs page offered no
+way to hide a job, and "applications recorded" would have counted every free instant preview as an
+application. Building a CV set `applied_at` because a build was the model's strongest positive label;
+the model is switched off and the instant CV is free, so that reason is gone.
+
+`PUT /jobs/{id}/applied` and `PUT /jobs/{id}/hidden` record the mark, `DELETE` takes it back — one typed
+handler. docgen no longer touches `applied_at`; its `_record` is deleted, and so is the docgen test
+that pinned the old behaviour. Retention still reads `applied_at`, so a job the person marks as applied
+is still kept out of the archive. Four tests, each shown failing against the code before.
+
+Gates: lint-imports 3 kept, 0 broken (2 ignored); ruff clean; pytest 1,498 passed, 5 skipped; contract
+71 paths; web build passes.
+
+---
+
 ## 2026-10-29 — CVs and cover letters on the site: instant for everyone, AI on the key that pays (Phase 8, workstream 5)
 
 A document is downloaded from the site now, not sent to Telegram. **The instant one is free for
