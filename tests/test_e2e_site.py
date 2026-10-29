@@ -110,6 +110,7 @@ def test_a_new_person_goes_from_sign_up_to_a_downloaded_cv(site, capsys, tmp_pat
         _marks(page)
         _alert_links(page, base, ids)
         _settings(browser, page, base)
+        _more(page, base)
         browser.close()
 
 
@@ -191,17 +192,33 @@ def _settings(browser, page, base: str) -> None:
     expect(settings.get_by_text("Add this site to your home screen first")).to_be_visible()
 
 
+def _more(page, base: str) -> None:
+    """More than a page of matches: the first page, then the rest on "Show more jobs", none twice."""
+    _jobs("more", [f"Backend Engineer {n}" for n in range(30)])
+    page.goto(f"{base}/#/")
+    cards = page.locator("article.job-card")
+    expect(page.get_by_role("heading", name="32 jobs match your words")).to_be_visible()
+    expect(cards).to_have_count(25)
+    page.get_by_role("button", name="Show more jobs").click()
+    expect(cards).to_have_count(32)
+    expect(page.get_by_role("button", name="Show more jobs")).to_have_count(0)
+
+
 def _seed(run: str) -> dict[str, int]:
+    _forget()
+    return _jobs(run, TITLES)
+
+
+def _jobs(run: str, titles) -> dict[str, int]:
     from libs.db.models import CorpusJob
     from libs.db.session import session_scope
 
-    _forget()
     with session_scope() as session:
         jobs = [CorpusJob(url=f"https://jobs.example.com/{run}/{n}", source="test", title=title,
                           company="Acme", location="Berlin, Germany", is_remote=True, language="en",
                           first_seen_at=datetime.now(UTC),
                           description=f"{title}. Python, Postgres, on call one week in six.")
-                for n, title in enumerate(TITLES)]
+                for n, title in enumerate(titles)]
         session.add_all(jobs)
         session.flush()
         return {job.title: job.id for job in jobs}

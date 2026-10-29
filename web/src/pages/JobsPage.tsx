@@ -12,7 +12,6 @@ type Feed = Schema<"Feed">;
 type Job = Schema<"FeedJob">;
 type Suggestions = Schema<"WordSuggestions">;
 
-const PAGE = 25;
 /** How long a hidden job keeps its Undo before it leaves the page. */
 const UNDO_MS = 6000;
 
@@ -42,8 +41,9 @@ export function JobsPage({ dashboard, focus, onChanged }: {
   const shown = (id: number) => !(hidden.has(id) && gone.has(id));
   const filtered = query.trim() !== "" || remote;
 
+  // A page is as long as the server's own page (`FEED_PAGE`): the next one starts where this one ends.
   const read = useCallback(async (offset: number): Promise<Feed> => {
-    const params = new URLSearchParams({ limit: `${PAGE}`, offset: `${offset}` });
+    const params = new URLSearchParams({ offset: `${offset}` });
     if (query.trim()) params.set("q", query.trim());
     if (remote) params.set("remote", "true");
     return api.get<Feed>(`/feed?${params}`);
