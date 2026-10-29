@@ -211,3 +211,21 @@ def test_freshness_is_per_source_and_falls_back(session):
         settings.DEFAULT_SOURCE_FRESHNESS_HOURS["workday"]
     assert settings.freshness_hours(session, "workday") > settings.DEFAULT_FRESHNESS_HOURS
     assert settings.freshness_hours(session, "some-new-board") == settings.DEFAULT_FRESHNESS_HOURS
+
+
+def test_the_models_and_the_migrations_describe_the_same_schema():
+    """CI's drift gate, run where the gates now run (CLAUDE.md §7).
+
+    It lived only in `.github/workflows/ci.yml`, and CI has answered nothing since 2026-08-06, so the
+    comparison ran nowhere — `ix_corpus_describe_failures` sat in a migration and not in the model,
+    and every autogenerate proposed dropping it. `alembic check` reads `env.py` exactly as CI did; the
+    database must be at head, as every DB test here already assumes.
+    """
+    import pathlib
+    import subprocess
+    import sys
+
+    result = subprocess.run([sys.executable, "-m", "alembic", "check"], capture_output=True, text=True,
+                            cwd=pathlib.Path(__file__).resolve().parents[1], env=dict(os.environ),
+                            check=False)
+    assert result.returncode == 0, (result.stdout + result.stderr)[-1500:]

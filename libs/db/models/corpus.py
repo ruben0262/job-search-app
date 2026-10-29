@@ -122,6 +122,9 @@ class CorpusJob(Base):
               postgresql_where=text("closed_at IS NULL AND embedding IS NOT NULL")),
         # Finds rows still awaiting an embedding, without scanning the whole corpus.
         Index("ix_corpus_open", "id", postgresql_where=text("closed_at IS NULL")),
+        # Created by 20260808_1930 and missing here, so every autogenerate proposed dropping it.
+        Index("ix_corpus_describe_failures", "describe_failures",
+              postgresql_where=text("describe_failures > 0")),
         Index("ix_corpus_unembedded", "id",
               postgresql_where=text("embedding IS NULL AND description IS NOT NULL")),
         # Drives retention: the archive pass reads oldest-first, so it needs `first_seen_at` ordered
