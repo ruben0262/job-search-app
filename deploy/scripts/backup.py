@@ -31,7 +31,10 @@ def _pg_dump_args(url: str) -> list[str]:
     """`pg_dump` speaks libpq URLs, but not SQLAlchemy's `+psycopg` dialect suffix."""
     return ["pg_dump", url.replace("postgresql+psycopg://", "postgresql://"),
             # Plain SQL rather than the custom format: it is greppable, diffable.
-            "--format=plain", "--no-owner", "--no-privileges"]
+            "--format=plain", "--no-owner", "--no-privileges",
+            # Unlogged is how a table says its rows are ephemeral: `built_documents` holds a CV
+            # for an hour, and a dump must not keep it for thirty days (D9).
+            "--no-unlogged-table-data"]
 
 
 def verify(path: Path) -> bool:

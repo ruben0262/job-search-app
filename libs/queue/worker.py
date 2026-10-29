@@ -21,7 +21,11 @@ IDLE_SLEEP_SEC = 5.0
 # The same, for the lanes a person is watching. A tap on Build my CV, or a message in a setup chat,
 # waits this long before the job is even claimed — five seconds of it is the largest single delay
 # between the tap and anything happening, and it is spent doing nothing.
-INTERACTIVE_IDLE_SLEEP_SEC = 1.0
+#
+# A quarter of a second since documents render in a browser that is already running (2026-10-28):
+# at 1 s the wait was 0.62 s of a 0.89 s instant CV, median, and up to 1.0 s of it. Four claims a
+# second on an empty lane is an index lookup each.
+INTERACTIVE_IDLE_SLEEP_SEC = 0.25
 
 # Expired claims are swept from inside the loop rather than by a separate cron.
 SWEEP_EVERY_SEC = 60.0

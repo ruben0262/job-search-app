@@ -1,10 +1,10 @@
 """The CV builder: what reaches the model, what comes back, and what is never delivered."""
 from __future__ import annotations
 
+import io
 import pathlib
 import shutil
 import uuid
-from typing import ClassVar
 
 import pytest
 
@@ -74,6 +74,10 @@ COVER_PROMPT = """Write a one-page cover letter for Alice Example, based in Berl
 """
 
 
+# Whatever the payer resolved to; the fake client answers the same either way.
+MODEL = "test-model"
+
+
 class FakeJob:
     """The corpus row a build reads, without a database."""
 
@@ -112,7 +116,8 @@ def test_the_call_is_grounded_on_the_user_s_own_facts():
     """The reference instance measured what happens without grounding."""
     client = FakeClient()
     build.tailor(client, base_document(),
-                 build.job_context(FakeJob()), facts_md="# Facts about Alice Example", template=TAILOR_PROMPT)
+                 build.job_context(FakeJob()), facts_md="# Facts about Alice Example",
+                 template=TAILOR_PROMPT, model=MODEL)
 
     assert client.calls[0]["system"].startswith("# Facts about Alice Example")
 
@@ -120,7 +125,7 @@ def test_the_call_is_grounded_on_the_user_s_own_facts():
 def test_a_profile_with_no_facts_block_still_gets_a_grounding_instruction():
     """Nobody should reach this — a confirmed profile always renders one."""
     client = FakeClient()
-    build.tailor(client, base_document(), build.job_context(FakeJob()), template=TAILOR_PROMPT)
+    build.tailor(client, base_document(), build.job_context(FakeJob()), template=TAILOR_PROMPT, model=MODEL)
 
     assert "Never invent" in client.calls[0]["system"]
 
@@ -138,7 +143,7 @@ def test_the_prompt_carries_the_candidate_the_posting_and_the_base_document():
 def test_the_model_never_sees_the_stylesheet():
     """It is told CSS is managed externally."""
     client = FakeClient()
-    build.tailor(client, base_document(), build.job_context(FakeJob()), template=TAILOR_PROMPT)
+    build.tailor(client, base_document(), build.job_context(FakeJob()), template=TAILOR_PROMPT, model=MODEL)
 
     assert "@page" not in client.calls[0]["messages"][0]["content"]
 
@@ -161,7 +166,7 @@ def test_the_layout_is_restored_from_the_template_whatever_came_back():
     """The one guarantee that makes 'the model only changes text' true rather than requested."""
     client = FakeClient(TAILORED.replace("<head>", "<head><style>body{font-size:4pt}</style>"))
     html = build.tailor(client, base_document(),
-                        build.job_context(FakeJob()), template=TAILOR_PROMPT)
+                        build.job_context(FakeJob()), template=TAILOR_PROMPT, model=MODEL)
 
     assert "@page" in html and "size: A4" in html
     assert "font-size:4pt" not in html
@@ -170,7 +175,7 @@ def test_the_layout_is_restored_from_the_template_whatever_came_back():
 def test_commentary_around_the_document_is_discarded():
     client = FakeClient(f"Here is the tailored CV:\n\n{TAILORED}\n\nLet me know if…")
     html = build.tailor(client, base_document(),
-                        build.job_context(FakeJob()), template=TAILOR_PROMPT)
+                        build.job_context(FakeJob()), template=TAILOR_PROMPT, model=MODEL)
 
     assert html.lstrip().startswith("<!DOCTYPE html")
     assert "Let me know" not in html
@@ -180,7 +185,8 @@ def test_a_reply_with_no_document_is_a_build_failure():
     client = FakeClient("I cannot help with that.")
 
     with pytest.raises(build.BuildFailed):
-        build.tailor(client, base_document(), build.job_context(FakeJob()), template=TAILOR_PROMPT)
+        build.tailor(client, base_document(), build.job_context(FakeJob()), template=TAILOR_PROMPT,
+                     model=MODEL)
 
 
 def test_em_dashes_are_stripped_from_prose_and_kept_in_entry_titles():
@@ -214,6 +220,23 @@ def test_the_stylesheet_is_not_scanned_as_hidden_content():
     assert build.scan_hidden(base_document()) == []
 
 
+def test_a_base_cv_that_kept_the_scaffold_comment_reaches_the_model_whole_and_comes_back_clean():
+    """The scaffold's comment says "Keep the <style> block intact", before the real `<head>`.
+
+    The stylesheet was lifted with a search that started at those words, so it took the end of the
+    comment, `<head>` and `<title>[YOUR NAME] – CV</title>` along with the CSS. The model was sent a
+    base CV with no `<body>`, and the CV it wrote came back with the placeholder title restored into
+    it — which the placeholder check refuses to deliver, for every account that kept the comment.
+    """
+    client = FakeClient()
+    html = build.tailor(client, base_document(), build.job_context(FakeJob()),
+                        template=TAILOR_PROMPT, model=MODEL)
+
+    assert "<body" in client.calls[0]["messages"][0]["content"], "the model never saw the body"
+    assert "[YOUR NAME]" not in html
+    assert html.count("<title>") == 1
+
+
 # ── the length rule ───────────────────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize(("pages", "wanted"), [(1, False), (2, False), (3, True), (None, False)])
@@ -232,37 +255,65 @@ def test_the_revision_says_cut_never_shrink():
 
 # ── the PDF checks ────────────────────────────────────────────────────────────────────────────
 
-def test_a_missing_pdf_is_a_compile_failure_not_a_silent_empty_file(tmp_path, monkeypatch):
+needs_chrome = pytest.mark.skipif(
+    not pathlib.Path(pdf.chrome_binary()).exists() and shutil.which(pdf.chrome_binary()) is None,
+    reason="no Chrome on this machine (set CHROME_BIN to run it)")
+
+
+def test_a_browser_that_cannot_start_is_a_compile_failure_not_a_silent_empty_file(monkeypatch):
+    monkeypatch.setattr(pdf, "_chrome", None)
     monkeypatch.setattr(pdf, "chrome_binary", lambda: "definitely-not-a-browser")
-    source = tmp_path / "cv.html"
-    source.write_text(TAILORED, encoding="utf-8")
 
     with pytest.raises(pdf.CompileFailed):
-        pdf.compile_pdf(source, tmp_path / "cv.pdf")
+        pdf.render(TAILORED)
 
 
-@pytest.mark.skipif(not pathlib.Path(pdf.chrome_binary()).exists()
-                    and shutil.which(pdf.chrome_binary()) is None,
-                    reason="no Chrome on this machine (set CHROME_BIN to run it)")
-def test_a_real_chrome_turns_the_rendered_cv_into_a_readable_pdf(tmp_path):
-    """The one test that exercises the actual browser."""
-    source = tmp_path / "cv.html"
-    source.write_text(build.tailor(FakeClient(), base_document(),
-                                   build.job_context(FakeJob()), template=TAILOR_PROMPT), encoding="utf-8")
+@needs_chrome
+def test_a_real_chrome_turns_the_rendered_cv_into_a_readable_pdf():
+    """The one test that exercises the actual browser, over the pipe a worker keeps it on."""
+    html = build.tailor(FakeClient(), base_document(), build.job_context(FakeJob()),
+                        template=TAILOR_PROMPT, model=MODEL)
 
-    report = pdf.inspect_pdf(pdf.compile_pdf(source, tmp_path / "cv.pdf"))
+    report = pdf.inspect_pdf(pdf.render(html))
 
     assert report.pages == 1
     # Extractable text is the whole question: a PDF Chrome rasterised without fonts.
     assert report.chars > 100, f"no extractable text: {report.issues}"
 
 
-def test_an_unparseable_pdf_reports_no_page_count_rather_than_raising(tmp_path):
-    """`pages=None` is what stops a length retry firing on a file nobody could read."""
-    broken = tmp_path / "broken.pdf"
-    broken.write_bytes(b"not a pdf")
+@needs_chrome
+def test_the_pdf_carries_no_browser_header_or_footer():
+    """Chrome stamps the date, the address and "1/1" on every page unless told not to."""
+    from pypdf import PdfReader
 
-    report = pdf.inspect_pdf(broken)
+    pages = PdfReader(io.BytesIO(pdf.render(TAILORED))).pages
+    text = "".join(page.extract_text() for page in pages)
+
+    assert "Alice Example" in text
+    assert "about:blank" not in text
+    assert "1/1" not in text
+
+
+@needs_chrome
+def test_one_browser_serves_every_document_and_a_dead_one_is_replaced(monkeypatch):
+    """A browser launched per document was the cost this removes. One that died must not cost the
+    next person their document."""
+    monkeypatch.setattr(pdf, "_chrome", None)
+    pdf.render(TAILORED)
+    first = pdf.browser().process.pid
+    pdf.render(TAILORED)
+    assert pdf.browser().process.pid == first, "the second document launched a second browser"
+
+    pdf.browser().process.kill()
+    pdf.browser().process.wait()
+
+    assert pdf.render(TAILORED).startswith(b"%PDF")
+    assert pdf.browser().process.pid != first
+
+
+def test_an_unparseable_pdf_reports_no_page_count_rather_than_raising():
+    """`pages=None` is what stops a length retry firing on a file nobody could read."""
+    report = pdf.inspect_pdf(b"not a pdf")
 
     assert report.pages is None
     assert not report.ats_ok
@@ -270,28 +321,20 @@ def test_an_unparseable_pdf_reports_no_page_count_rather_than_raising(tmp_path):
 
 # ── one build, end to end ─────────────────────────────────────────────────────────────────────
 
-class Recorder:
-    def __init__(self):
-        self.sent: list[tuple] = []
-
-    def __call__(self, token, chat_id, content, filename, caption=""):
-        self.sent.append((token, chat_id, content, filename, caption))
-
-
 @pytest.fixture
 def fake_chrome(monkeypatch):
-    """Chrome, as a function that writes a file. `pages` is what the fake PDF claims to have."""
-    state = {"pages": 1, "calls": 0}
+    """Chrome, as a function: what it was handed, how often, and the pages the PDF claims."""
+    state = {"pages": 1, "calls": 0, "html": ""}
 
-    def compile_pdf(source: pathlib.Path, output: pathlib.Path):
+    def render(html: str) -> bytes:
         state["calls"] += 1
-        output.write_bytes(b"%PDF-1.4 fake")
-        return output
+        state["html"] = html
+        return b"%PDF-1.4 fake"
 
-    def inspect_pdf(path, *, kind="cv"):
+    def inspect_pdf(document: bytes, *, kind="cv"):
         return pdf.PdfReport(pages=state["pages"], chars=1_200, issues=[])
 
-    monkeypatch.setattr(run.pdf, "compile_pdf", compile_pdf)
+    monkeypatch.setattr(run.pdf, "render", render)
     monkeypatch.setattr(run.pdf, "inspect_pdf", inspect_pdf)
     return state
 
@@ -303,18 +346,30 @@ def fake_chrome(monkeypatch):
 DEFAULT_FILES = {"grounding": "# Facts about Alice Example", "base_cv.html": TAILORED,
                  "tailor_cv.md": TAILOR_PROMPT, "tailor_cover.md": COVER_PROMPT}
 
+# An uploaded CV as text, the way `libs.documents.extract` leaves one.
+CV_TEXT = """Alice Example
+alice@example.com | Berlin, Germany
 
-def _session(monkeypatch, *, profile=PROFILE, chat_id="4242", description="Backend role. Python.",
-             profile_files=DEFAULT_FILES):
+EXPERIENCE
+Backend Engineer, Northwind    2021 - Present
+- Built the billing service in Python and Postgres
+- Cut checkout latency to 40ms at p99
+
+EDUCATION
+BSc Computer Science, TU Berlin    2017
+"""
+
+
+def _session(monkeypatch, *, profile=PROFILE, description="Backend role. Python.",
+             profile_files=DEFAULT_FILES, documents=None):
     """A stand-in for the two `session.get` calls and the pin, with no database."""
     # `full_name` is where the document's filename comes from — the name the user typed at signup,
     # not `profile.identity.name`. The schema was a second copy of the same fact and it was the last
     # thing in a build still reading `user.profile`.
     user = type("U", (), {"id": uuid.uuid4(), "profile": profile.model_dump(),
-                          "full_name": profile.identity.name,
+                          "full_name": profile.identity.name, "links": [],
                           "facts_md": "# Facts about Alice Example",
-                          "config": None,
-                          "telegram_chat_id": chat_id})()
+                          "config": None})()
     job = FakeJob(description=description)
     state = type("S", (), {"score": 88.0, "applied_at": None})()
 
@@ -351,27 +406,38 @@ def _session(monkeypatch, *, profile=PROFILE, chat_id="4242", description="Backe
             return (profile_files or {}).get(name)
 
     monkeypatch.setattr(run, "ProfileFiles", Files)
+    # Their uploads by kind, as `libs.suggestions.documents_of` reads them.
+    monkeypatch.setattr(run, "documents_of", lambda _session, _user_id: documents or {})
     # `func.now()` is a SQL expression, not a value; nothing here evaluates it.
     return Session(), user, job, state
 
 
-def test_a_build_delivers_the_pdf_to_the_personal_chat(monkeypatch, fake_chrome, tmp_path):
-    """Never a feed channel."""
+def _ai(session, user, client=None, **kwargs):
+    return run.run_ai(session, user.id, 7, client=client or FakeClient(), model=MODEL,
+                      kind=kwargs.pop("kind", "cv"), **kwargs)
+
+
+def test_an_ai_cv_comes_back_as_a_pdf_named_for_the_person(monkeypatch, fake_chrome):
     session, user, _job, _state = _session(monkeypatch)
-    send = Recorder()
 
-    result = run.run_build(session, user.id, 7, client=FakeClient(),
-                           send_document=send, token="bot-token", workdir=tmp_path)
+    result = _ai(session, user)
 
-    (_token, chat_id, content, filename, caption) = send.sent[0]
-    assert chat_id == "4242"
-    assert content.startswith(b"%PDF")
-    assert filename == "Alice_Example_CV.pdf"
-    assert "Northwind" in caption
+    assert result.pdf.startswith(b"%PDF")
+    assert result.filename == "Alice_Example_CV.pdf"
     assert result.pages == 1 and result.calls == 1
 
 
-def test_the_build_records_that_the_user_applied(monkeypatch, fake_chrome, tmp_path):
+def test_the_model_writes_on_the_model_its_payer_resolved_to(monkeypatch, fake_chrome):
+    """A Gemini key must not be sent a Claude model's name, nor the other way round."""
+    session, user, _job, _state = _session(monkeypatch)
+    client = FakeClient()
+
+    run.run_ai(session, user.id, 7, client=client, model="gemini-3.8-flash", kind="cover")
+
+    assert [call["model"] for call in client.calls] == ["gemini-3.8-flash"]
+
+
+def test_the_build_records_that_the_user_applied(monkeypatch, fake_chrome):
     """An ephemeral document needs a durable record.
 
     `applied_at` is the whole of it now. It used to also set a `pinned` flag on the corpus row to
@@ -380,118 +446,108 @@ def test_the_build_records_that_the_user_applied(monkeypatch, fake_chrome, tmp_p
     """
     session, user, _job, state = _session(monkeypatch)
 
-    run.run_build(session, user.id, 7, client=FakeClient(), send_document=Recorder(),
-                  token="t", workdir=tmp_path)
+    _ai(session, user)
 
     assert state.applied_at is not None
 
 
-def test_a_three_page_cv_is_revised_once(monkeypatch, fake_chrome, tmp_path):
+def test_a_three_page_cv_is_revised_once(monkeypatch, fake_chrome):
     session, user, _job, _state = _session(monkeypatch)
     fake_chrome["pages"] = 3
     client = FakeClient(TAILORED, TAILORED)
 
-    result = run.run_build(session, user.id, 7, client=client, send_document=Recorder(),
-                           token="t", workdir=tmp_path)
+    result = _ai(session, user, client)
 
     assert result.calls == 2
     assert "REVISION NEEDED" in client.calls[1]["messages"][0]["content"]
 
 
-def test_a_cv_that_already_fits_is_not_revised(monkeypatch, fake_chrome, tmp_path):
+def test_a_cv_that_already_fits_is_not_revised(monkeypatch, fake_chrome):
     """A second call is the user's money."""
     session, user, _job, _state = _session(monkeypatch)
     client = FakeClient()
 
-    result = run.run_build(session, user.id, 7, client=client, send_document=Recorder(),
-                           token="t", workdir=tmp_path)
+    result = _ai(session, user, client)
 
     assert result.calls == 1 and len(client.calls) == 1
 
 
-def test_a_cv_with_hidden_content_is_never_delivered(monkeypatch, fake_chrome, tmp_path):
+def test_a_cv_with_hidden_content_is_never_delivered(monkeypatch, fake_chrome):
     """Fail closed."""
     session, user, _job, state = _session(monkeypatch)
     # Zero-width characters inside a *tag name* survive the sanitiser's attribute-level cleanup.
     sneaky = TAILORED.replace('<p class="profile">',
                               f'<p class="profile" data-x="{ZERO_WIDTH}">')
     monkeypatch.setattr(build, "strip_hidden", lambda html: html)
-    send = Recorder()
 
     with pytest.raises(run.NotBuildable):
-        run.run_build(session, user.id, 7, client=FakeClient(sneaky), send_document=send,
-                      token="t", workdir=tmp_path)
+        _ai(session, user, FakeClient(sneaky))
 
-    assert send.sent == []
+    assert fake_chrome["calls"] == 0
     assert state.applied_at is None
 
 
 def test_an_account_with_no_completed_profile_refuses_before_spending_a_call(monkeypatch,
-                                                                            fake_chrome, tmp_path):
+                                                                            fake_chrome):
     """Setup was never finished."""
     session, user, _job, _state = _session(monkeypatch, profile_files=None)
     client = FakeClient()
 
     with pytest.raises(run.NotBuildable):
-        run.run_build(session, user.id, 7, client=client, send_document=Recorder(),
-                      token="t", workdir=tmp_path)
+        _ai(session, user, client)
 
     assert client.calls == [], "a call was spent on an account that could never receive a CV"
 
 
-def test_an_account_with_no_base_cv_refuses(monkeypatch, fake_chrome, tmp_path):
+def test_an_account_with_no_base_cv_refuses(monkeypatch, fake_chrome):
     """The base CV is the document the tailoring prompt edits."""
     session, user, _job, _state = _session(
         monkeypatch, profile_files={"grounding": "# Facts", "base_cv.html": ""})
 
     with pytest.raises(run.NotBuildable):
-        run.run_build(session, user.id, 7, client=FakeClient(), send_document=Recorder(),
-                      token="t", workdir=tmp_path)
+        _ai(session, user)
 
 
-def test_an_account_with_no_telegram_chat_refuses(monkeypatch, fake_chrome, tmp_path):
-    session, user, _job, _state = _session(monkeypatch, chat_id=None)
-
-    with pytest.raises(run.NotBuildable):
-        run.run_build(session, user.id, 7, client=FakeClient(), send_document=Recorder(),
-                      token="t", workdir=tmp_path)
-
-
-def test_a_posting_with_no_description_is_refused(monkeypatch, fake_chrome, tmp_path):
+def test_a_posting_with_no_description_is_refused(monkeypatch, fake_chrome):
     """A CV tailored to a job title is the generic CV the user already has."""
     session, user, _job, _state = _session(monkeypatch, description="")
 
     with pytest.raises(run.NotBuildable):
-        run.run_build(session, user.id, 7, client=FakeClient(), send_document=Recorder(),
-                      token="t", workdir=tmp_path)
+        _ai(session, user)
 
 
-def test_the_documents_do_not_outlive_the_build(monkeypatch, fake_chrome, tmp_path):
-    """D9, and the reason this service needs no volume: a scratch directory for the length of one upload."""
-    session, user, _job, _state = _session(monkeypatch)
-    scratch = tmp_path / "build"
-    scratch.mkdir()
+# ── the instant document ──────────────────────────────────────────────────────────────────────
 
-    run.run_build(session, user.id, 7, client=FakeClient(), send_document=Recorder(),
-                  token="t", workdir=scratch)
+def test_an_instant_cv_is_their_own_lines_and_spends_no_model_call(monkeypatch, fake_chrome):
+    """Free for everyone: built by `libs.documents.instant` from the CV they uploaded."""
+    session, user, _job, state = _session(monkeypatch, documents={"cv": CV_TEXT})
 
-    assert not scratch.exists()
+    result = run.run_instant(session, user.id, 7, kind="cv")
+
+    assert "Built the billing service in Python and Postgres" in fake_chrome["html"]
+    assert result.pdf.startswith(b"%PDF") and result.filename == "Alice_Example_CV.pdf"
+    assert result.calls == 0
+    assert state.applied_at is not None
 
 
-def test_the_documents_do_not_survive_a_failure_either(monkeypatch, fake_chrome, tmp_path):
-    """The half-written CV of a crashed build is exactly the file that must not stay on disk."""
-    session, user, _job, _state = _session(monkeypatch)
-    scratch = tmp_path / "build"
-    scratch.mkdir()
+def test_an_instant_cover_letter_is_a_letter(monkeypatch, fake_chrome):
+    """The kind asked for is the kind built."""
+    session, user, _job, _state = _session(monkeypatch, documents={"cv": CV_TEXT})
 
-    def explode(*_args, **_kwargs):
-        raise RuntimeError("telegram is down")
+    result = run.run_instant(session, user.id, 7, kind="cover")
 
-    with pytest.raises(RuntimeError):
-        run.run_build(session, user.id, 7, client=FakeClient(), send_document=explode,
-                      token="t", workdir=scratch)
+    assert "Dear Hiring Manager" in fake_chrome["html"]
+    assert result.filename == "Alice_Example_Cover.pdf"
 
-    assert not scratch.exists()
+
+def test_an_instant_document_without_their_cv_says_what_to_do(monkeypatch, fake_chrome):
+    """A CV built from nothing is a page with a name on it, delivered as if it were a CV."""
+    session, user, _job, _state = _session(monkeypatch, documents={"diploma": "BSc, 2017"})
+
+    with pytest.raises(run.NotBuildable, match="upload your CV"):
+        run.run_instant(session, user.id, 7, kind="cv")
+
+    assert fake_chrome["calls"] == 0
 
 
 # ── what the model is told about the posting ──────────────────────────────────────────────────
@@ -534,14 +590,6 @@ def test_the_token_ceiling_leaves_room_for_the_document_after_thinking():
     assert document_tokens * 2 <= MAX_TOKENS - THINKING_TOKENS
 
 
-def test_chrome_is_told_to_suppress_its_header_under_both_flag_names():
-    """An unrecognised Chrome flag is not an error, so the only symptom of using the old name is a date."""
-    from services.docgen.pdf import CHROME_FLAGS
-
-    assert "--no-pdf-header-footer" in CHROME_FLAGS
-    assert "--print-to-pdf-no-header" in CHROME_FLAGS
-
-
 def test_a_cover_letter_is_not_judged_by_the_cvs_checklist(tmp_path):
     """An always-wrong signal is worse than no signal."""
     letter = ("Dear hiring team,\n\nI am writing about the Fullstack Engineer role. "
@@ -559,49 +607,39 @@ def test_a_cover_letter_is_not_judged_by_the_cvs_checklist(tmp_path):
 
 # ── one render per document (2026-08-07) ──────────────────────────────────────────────────────
 
-def test_a_cv_that_fits_is_rendered_once(monkeypatch, fake_chrome, tmp_path):
-    """Chrome is ~6s a launch on the box, and the old final compile re-rendered the probe's bytes."""
+def test_a_cv_that_fits_is_rendered_once(monkeypatch, fake_chrome):
+    """The delivered PDF is the one that was measured: there is no separate probe render."""
     session, user, _job, _state = _session(monkeypatch)
 
-    result = run.run_build(session, user.id, 7, client=FakeClient(),
-                           send_document=Recorder(), token="t", workdir=tmp_path)
+    result = _ai(session, user)
 
     assert fake_chrome["calls"] == 1, "the delivered PDF is the one that was measured"
     assert result.calls == 1
     assert result.revised is False
 
 
-def test_a_cv_that_came_back_too_long_is_rendered_twice_and_says_so(monkeypatch, fake_chrome,
-                                                                    tmp_path):
+def test_a_cv_that_came_back_too_long_is_rendered_twice_and_says_so(monkeypatch, fake_chrome):
     """The revision loop is unchanged — but each one costs a second call and a second render."""
     session, user, _job, _state = _session(monkeypatch)
     fake_chrome["pages"] = 4
 
-    result = run.run_build(session, user.id, 7, client=FakeClient(),
-                           send_document=Recorder(), token="t", workdir=tmp_path)
+    result = _ai(session, user)
 
     assert fake_chrome["calls"] == 2, "one render per attempt, and no separate probe"
     assert result.calls == 2
     assert result.revised is True, "the rate of this is what says whether the prompt needs work"
 
 
-def test_the_delivered_file_is_never_named_after_the_retry(monkeypatch, fake_chrome, tmp_path):
-    """Telegram shows the filename to the user."""
+def test_the_downloaded_file_is_named_for_the_person_after_a_revision_too(monkeypatch, fake_chrome):
+    """The browser shows the filename, and "retry-Alice_CV.pdf" is not a CV."""
     session, user, _job, _state = _session(monkeypatch)
     fake_chrome["pages"] = 4
-    send = Recorder()
 
-    run.run_build(session, user.id, 7, client=FakeClient(), send_document=send, token="t",
-                  workdir=tmp_path)
-
-    filename = send.sent[0][3]
-    assert not filename.startswith("retry-"), filename
-    assert filename == "Alice_Example_CV.pdf"
+    assert _ai(session, user).filename == "Alice_Example_CV.pdf"
 
 
-def test_a_document_that_fails_its_checks_never_reaches_chrome(monkeypatch, fake_chrome,
-                                                               tmp_path):
-    """A check answerable from the markup must not cost a browser launch.
+def test_a_document_that_fails_its_checks_never_reaches_chrome(monkeypatch, fake_chrome):
+    """A check answerable from the markup must not cost a render.
 
     `sanitise` strips hidden content on the way out of the model and `scan_hidden` verifies the
     strip worked, so the two agreeing is the normal case — this forces the disagreement to assert
@@ -611,52 +649,9 @@ def test_a_document_that_fails_its_checks_never_reaches_chrome(monkeypatch, fake
     monkeypatch.setattr(run.build, "scan_hidden", lambda _html: ["display:none in the header"])
 
     with pytest.raises(run.NotBuildable, match="hidden content"):
-        run.run_build(session, user.id, 7, client=FakeClient(), send_document=Recorder(),
-                      token="t", workdir=tmp_path)
+        _ai(session, user)
 
     assert fake_chrome["calls"] == 0
-
-
-# ── the worker's handling of a deliberate refusal ─────────────────────────────────────────────
-
-def test_a_refusal_is_not_a_crash_and_is_not_retried(monkeypatch):
-    """`NotBuildable` means the account was told why. The worker must finish, not raise.
-
-    `_build` catches `NotBuildable`, notifies the user and returns `None` — its own comment says
-    "Not a failure, and it must not be recorded as one". The caller then read `result.calls`
-    regardless, raising `AttributeError`, which the queue saw as a crash and retried. In
-    production this ran every sixty seconds against an account with no confirmed profile,
-    re-notifying its owner on every attempt, until somebody noticed.
-    """
-    from services.docgen import __main__ as worker
-
-    monkeypatch.setattr(worker, "_build", lambda *args, **kwargs: None)
-
-    class Secret:
-        @staticmethod
-        def reveal():
-            return "sk-ant-api03-" + "x" * 40
-
-    class Store:
-        def __init__(self, _session):
-            pass
-
-        def use(self, _user_id, kind):
-            from contextlib import nullcontext
-            # No proxy for this account: `_http_for` would otherwise be handed the Claude key as
-            # a proxy URL, which is a different failure than the one under test.
-            return nullcontext(None if kind == "proxy" else Secret())
-
-    monkeypatch.setattr(worker, "SecretStore", Store)
-    monkeypatch.setattr(worker, "client_for", lambda _value, _kind: object())
-
-    class Job:
-        id = uuid.uuid4()
-        user_id = uuid.uuid4()
-        payload: ClassVar[dict] = {"job_id": 7, "kind": "cover"}
-
-    # The assertion is that this returns at all: before the fix it raised AttributeError.
-    assert worker.handle(object(), Job()) is None
 
 
 def test_the_prompt_is_told_what_day_it_is():
@@ -678,7 +673,8 @@ def test_the_date_reaches_the_cover_prompt_itself():
     from datetime import UTC, datetime
 
     client = FakeClient(TAILORED)
-    build.tailor_cover(client, base_document(), build.job_context(FakeJob()), template=COVER_PROMPT)
+    build.tailor_cover(client, base_document(), build.job_context(FakeJob()),
+                       template=COVER_PROMPT, model=MODEL)
 
     sent = client.calls[0]["messages"][0]["content"]
     assert datetime.now(UTC).strftime("%d %B %Y") in sent
@@ -709,7 +705,7 @@ def test_the_cover_prompt_is_not_handed_a_text_dump_of_the_cv():
 
     client = FakeClient(TAILORED)
     build.tailor_cover(client, cv, build.job_context(FakeJob()),
-                       facts_md="the candidate's grounding block", template=COVER_PROMPT)
+                       facts_md="the candidate's grounding block", template=COVER_PROMPT, model=MODEL)
 
     sent = client.calls[0]["messages"][0]["content"]
     assert sentinel not in sent, "a text extract of the CV reached the cover prompt"
@@ -720,7 +716,7 @@ def test_the_cover_prompt_still_carries_the_page_rules():
     """The other half: dropping the extract must not drop the styling the letter is laid out with."""
     client = FakeClient(TAILORED)
     cv = base_document()
-    build.tailor_cover(client, cv, build.job_context(FakeJob()), template=COVER_PROMPT)
+    build.tailor_cover(client, cv, build.job_context(FakeJob()), template=COVER_PROMPT, model=MODEL)
 
     sent = client.calls[0]["messages"][0]["content"]
     assert build.head_block(cv) in sent
@@ -729,7 +725,7 @@ def test_the_cover_prompt_still_carries_the_page_rules():
 # ── what must never reach a person ────────────────────────────────────────────────────────────
 
 def test_a_document_that_came_back_carrying_a_placeholder_is_never_delivered(monkeypatch,
-                                                                            fake_chrome, tmp_path):
+                                                                            fake_chrome):
     """The prompt is checked before the call; this checks what came back.
 
     `build._require_personalised` refuses a writing prompt that still carries a marker, so a model
@@ -740,68 +736,9 @@ def test_a_document_that_came_back_carrying_a_placeholder_is_never_delivered(mon
     only as quality.
     """
     session, user, _job, _state = _session(monkeypatch)
-    send = Recorder()
     leaked = TAILORED.replace("Alice Example", "<<NAME>>")
 
     with pytest.raises(run.NotBuildable, match="placeholder"):
-        run.run_build(session, user.id, 7, client=FakeClient(leaked, leaked),
-                      send_document=send, token="t", workdir=tmp_path)
+        _ai(session, user, FakeClient(leaked, leaked))
 
-    assert send.sent == [], "nothing was delivered"
-
-
-def test_the_worker_builds_the_document_the_tap_asked_for(monkeypatch):
-    """A Build Cover tap must not produce a CV.
-
-    The queue payload is the only thing carrying which document was asked for, and the worker test
-    that drives this path asserted only that it returned. A `kind` dropped or defaulted between the
-    tap and the build would have delivered the wrong document, to the right person, with no error
-    anywhere — and the suite would have stayed green.
-
-    Old rows carry no `kind` at all (the first `docgen` payload in production is `{"job_id": 1396}`),
-    so the default is part of the contract and is asserted here too.
-    """
-    from contextlib import nullcontext
-
-    from services.docgen import __main__ as worker
-
-    class Secret:
-        @staticmethod
-        def reveal():
-            return "sk-ant-api03-" + "x" * 40
-
-    class Store:
-        def __init__(self, _session):
-            pass
-
-        def use(self, _user_id, kind):
-            return nullcontext(None if kind == "proxy" else Secret())
-
-    monkeypatch.setattr(worker, "SecretStore", Store)
-    monkeypatch.setattr(worker, "client_for", lambda _value, _kind: object())
-
-    seen: list[str] = []
-
-    class Result:
-        calls = 1
-        pages = 1
-
-    def spy(_session, _job, _client, _token, *, job_id, kind, http):
-        seen.append(kind)
-        return Result()
-
-    monkeypatch.setattr(worker, "_build", spy)
-
-    for payload, expected in (({"job_id": 7, "kind": "cover"}, "cover"),
-                              ({"job_id": 7, "kind": "cv"}, "cv"),
-                              ({"job_id": 7}, "cv")):
-        seen.clear()
-
-        class Job:
-            id = uuid.uuid4()
-            user_id = uuid.uuid4()
-
-        Job.payload = payload
-        worker.handle(object(), Job())
-
-        assert seen == [expected], f"{payload} built {seen} instead of a {expected}"
+    assert fake_chrome["calls"] == 0, "nothing was rendered, so nothing could be downloaded"

@@ -13,7 +13,7 @@ import libs.notify as notifylib
 from libs.auth.passwords import hash_password, password_problems, verify_password
 from libs.auth.sessions import revoke_all
 from libs.db.models import User
-from libs.legal import DISCLOSURE_VERSION, disclosure
+from libs.legal import DISCLOSURE_VERSION, disclosure, has_consented
 from libs.obs import audit
 from libs.secrets import SecretStore
 from services.api.auth_routes import _clear_session_cookies
@@ -34,10 +34,8 @@ def consent_state(db: Session = Depends(get_db),
                   user_id: _uuid.UUID = Depends(current_user)) -> dict:
     """Whether this account has agreed to the current disclosure."""
     user = db.get(User, user_id)
-    given = (user.processing_consent_at is not None
-             and user.processing_consent_version == DISCLOSURE_VERSION)
     return {
-        "granted": given,
+        "granted": has_consented(db, user_id),
         "granted_at": user.processing_consent_at.isoformat() if user.processing_consent_at else None,
         "granted_version": user.processing_consent_version,
         "current_version": DISCLOSURE_VERSION,
@@ -162,10 +160,3 @@ def account(db: Session = Depends(get_db), user_id: _uuid.UUID = Depends(current
         "created_at": user.created_at.isoformat() if user.created_at else None,
         "consent_version": user.processing_consent_version,
     }
-
-
-def has_consented(db: Session, user_id: _uuid.UUID) -> bool:
-    """Used by `/process` to refuse before a single character reaches Anthropic."""
-    user = db.get(User, user_id)
-    return bool(user and user.processing_consent_at is not None
-                and user.processing_consent_version == DISCLOSURE_VERSION)

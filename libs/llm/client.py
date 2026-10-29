@@ -1,4 +1,4 @@
-"""The Anthropic adapter: build a client from a user credential, make one call."""
+"""The Anthropic adapter, and the shape every provider's adapter shares (`LlmClient`)."""
 from __future__ import annotations
 
 import json
@@ -91,7 +91,7 @@ class AnthropicClient:
                 max_tokens=max_tokens,
                 **_thinking(thinking_tokens)) as stream:
             message = stream.get_final_message()
-        _warn_if_truncated(message, model, max_tokens)
+        warn_if_truncated(getattr(message, "stop_reason", None) == "max_tokens", model, max_tokens)
         return _text_of(message)
 
 
@@ -130,9 +130,9 @@ def _thinking(budget: int | None) -> dict:
     return {"thinking": {"type": "enabled", "budget_tokens": budget}} if budget else {}
 
 
-def _warn_if_truncated(message, model: str, max_tokens: int) -> None:
-    """Say so when the model ran out of room rather than finishing."""
-    if getattr(message, "stop_reason", None) == "max_tokens":
+def warn_if_truncated(cut: bool, model: str, max_tokens: int) -> None:
+    """Say so when the model ran out of room rather than finishing. Every provider's adapter asks."""
+    if cut:
         logger.error("%s hit the %d-token ceiling mid-response — the output is truncated, "
                      "not refused", model, max_tokens)
 
@@ -141,8 +141,3 @@ def _text_of(message) -> str:
     """Concatenate the text blocks of a response, dropping thinking and tool blocks."""
     return "".join(block.text for block in message.content
                    if getattr(block, "type", "") == "text")
-
-
-def client_for(value: str, kind: str) -> LlmClient:
-    """Build a client for whichever Claude credential the user has. Either satisfies D2."""
-    return AnthropicClient(value, kind)

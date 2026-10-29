@@ -1,75 +1,76 @@
-"""The `docgen` lane worker."""
+"""The `docgen` lane worker: one CV or cover letter per job, kept for download, then deleted."""
 from __future__ import annotations
 
 import logging
 import os
 from contextlib import contextmanager
+from datetime import timedelta
 
 import httpx
+from sqlalchemy import delete, func
 
 import libs.notify as notifylib
-from libs.db.models import QueueJob
+from libs import settings
+from libs.db.models import BuiltDocument, QueueJob
 from libs.db.session import session_scope
-from libs.llm import CLAUDE_KINDS, LlmError, client_for
+from libs.legal import has_consented
+from libs.llm import LlmError, paying_client
 from libs.obs import configure
 from libs.queue.worker import INTERACTIVE_IDLE_SLEEP_SEC, Terminal, run_worker
 from libs.secrets import SecretStore, install, redacting
-from services.docgen.pdf import CompileFailed
-from services.docgen.run import NotBuildable, run_build
+from services.docgen import pdf, run
+from services.docgen.run import NotBuildable
 
 logger = logging.getLogger(__name__)
 
-# Longer than the notifier's 20s: this is a multi-megabyte upload rather than a text message.
-UPLOAD_TIMEOUT_SEC = 120.0
-
-
-def send_document(token: str, chat_id: str, content: bytes, filename: str,
-                  caption: str = "") -> None:
-    """Upload one PDF to one chat."""
-    response = httpx.post(
-        f"https://api.telegram.org/bot{token}/sendDocument",
-        data={"chat_id": chat_id, "caption": caption[:1024]},
-        files={"document": (filename, content, "application/pdf")},
-        timeout=UPLOAD_TIMEOUT_SEC)
-    if response.status_code >= 400:
-        raise RuntimeError(response.json().get("description", response.text)[:300])
-
 
 def handle(session, job: QueueJob) -> None:
-    """Build the CV this job asks for, on the account's own Claude credential."""
+    """Build the document this job asks for, and keep it for the person to download."""
     payload = job.payload or {}
     job_id = payload.get("job_id")
     if not isinstance(job_id, int):
         raise Terminal(f"docgen job {job.id} carries no corpus job id")
-    # `cv` unless the tap said otherwise.
-    kind = payload.get("kind") or "cv"
+    kind, mode = payload.get("kind") or "cv", payload.get("mode")
 
+    try:
+        if kind not in ("cv", "cover"):
+            raise NotBuildable(f"unknown document kind {kind!r}")
+        if mode == "instant":
+            built = run.run_instant(session, job.user_id, job_id, kind=kind)
+        elif mode == "ai":
+            built = _with_ai(session, job, job_id=job_id, kind=kind, payer=payload.get("payer"))
+        else:
+            # A Telegram tap from before documents moved onto the site: no way to hand it over.
+            raise NotBuildable("documents are built on the site now — open the job there")
+    except NotBuildable as exc:
+        # Not a failure, and it must not be recorded as one: the reason is the page's answer.
+        job.payload = {**payload, "refused": str(exc)}
+        notifylib.notify(session, job.user_id, notifylib.DOCUMENT_NOT_READY, str(exc))
+        logger.info("docgen: %s cannot build yet — %s", job.user_id, exc)
+        return
+    session.add(BuiltDocument(build_id=job.id, filename=built.filename, content=built.pdf))
+
+
+def _with_ai(session, job: QueueJob, *, job_id: int, kind: str, payer: str | None):
+    """The model's version, and only with consent: this is where their text leaves the server."""
+    if not has_consented(session, job.user_id):
+        raise NotBuildable("agree to how AI-written documents use your profile first — it is on "
+                           "the privacy page")
     store = SecretStore(session)
-    with store.use(job.user_id, "telegram_bot") as bot:
-        if bot is None:
-            raise Terminal("no Telegram bot token stored — the CV would have nowhere to go")
-        bot_token = bot.reveal()
-
-        for credential in CLAUDE_KINDS:
-            with store.use(job.user_id, credential) as secret:
-                if secret is None:
-                    continue
-                value = secret.reveal()
-                with redacting(value, bot_token), _http_for(store, job.user_id) as http:
-                    result = _build(session, job, client_for(value, credential), bot_token,
-                                    job_id=job_id, kind=kind, http=http)
-            # `None` is `NotBuildable`: the account was told why and there is nothing to retry.
-            # Reading `result.calls` regardless raised `AttributeError`, which the worker saw as a
-            # crash rather than as the deliberate non-failure `_build` had already handled — so a
-            # user with no confirmed profile got a job that retried every sixty seconds and told
-            # him again every time, for as long as anybody left it alone.
-            if result is None:
-                return
-            logger.info("docgen: built the %s for %s in %d call(s), %s page(s)",
-                        kind, job.user_id, result.calls, result.pages)
-            return
-
-    raise Terminal("no Claude credential stored — a CV build needs the user's own key or token")
+    with paying_client(store, job.user_id, payer or "") as paid, \
+            _http_for(store, job.user_id) as http:
+        if paid is None:
+            raise NotBuildable("the key that was to pay for this has been removed — add one, or "
+                               "use the instant version")
+        client, provider = paid
+        try:
+            return run.run_ai(session, job.user_id, job_id, client=client, kind=kind, http=http,
+                              model=settings.document_model(session, provider))
+        except LlmError as exc:
+            # Their key, and the operator should see a run of these.
+            notifylib.notify(session, job.user_id, notifylib.DOCUMENT_NOT_READY,
+                             "The AI key could not write this document.")
+            raise Terminal(str(exc)) from exc
 
 
 @contextmanager
@@ -86,32 +87,22 @@ def _http_for(store: SecretStore, user_id):
             yield client
 
 
-def _build(session, job: QueueJob, client, bot_token: str, *, job_id: int, kind: str,
-           http=None):
-    """The failure taxonomy, in one place."""
-    try:
-        return run_build(session, job.user_id, job_id, client=client,
-                         send_document=send_document, token=bot_token, kind=kind, http=http)
-    except NotBuildable as exc:
-        # Not a failure, and it must not be recorded as one.
-        notifylib.notify(session, job.user_id, notifylib.DOCUMENT_NOT_READY, str(exc))
-        logger.info("docgen: %s cannot build yet — %s", job.user_id, exc)
-        return None
-    except LlmError as exc:
-        # Their credential, and the operator should see a run of these.
-        notifylib.notify(session, job.user_id, notifylib.DOCUMENT_NOT_READY,
-                         "Your Claude credential could not build this document.")
-        raise Terminal(str(exc)) from exc
-    except CompileFailed as exc:
-        logger.warning("docgen: compile failed for user %s, will retry: %s", job.user_id, exc)
-        raise
+def purge(session) -> None:
+    """D9: a built document is deleted once it is `document_keep_hours` old, downloaded or not."""
+    hours = settings.document_keep_hours(session)
+    gone = session.execute(delete(BuiltDocument).where(
+        BuiltDocument.created_at < func.now() - timedelta(hours=hours))).rowcount
+    if gone:
+        logger.info("docgen: deleted %d built document(s) older than %d hour(s)", gone, hours)
 
 
 def main() -> int:
     configure("docgen")
     install()
+    # Launched now, so the first person after a restart does not wait for it.
+    pdf.browser()
     run_worker(session_scope, "docgen", os.environ.get("WORKER_NAME", "docgen-1"), handle,
-               idle_sleep=INTERACTIVE_IDLE_SLEEP_SEC)
+               idle_sleep=INTERACTIVE_IDLE_SLEEP_SEC, periodic=purge)
     return 0
 
 

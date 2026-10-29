@@ -173,8 +173,9 @@ class UserConfig(Base):
     user: Mapped[User] = relationship(back_populates="config")
 
 
-# One row per credential kind.
-SECRET_KINDS = ("claude_api", "claude_oauth", "telegram_bot", "proxy")
+# One row per credential kind. `gemini_api` and `openai_api` are the person's own keys for AI-written
+# documents, beside the two Claude ones (`libs.llm.payer`).
+SECRET_KINDS = ("claude_api", "claude_oauth", "telegram_bot", "proxy", "gemini_api", "openai_api")
 
 
 class UserSecret(Base):

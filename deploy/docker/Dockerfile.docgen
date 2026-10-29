@@ -35,6 +35,6 @@ COPY services/docgen /app/services/docgen
 
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 
-# Generated documents live in a scratch directory for the length of one upload and are removed in a
-# `finally` (D9). Nothing is written to a volume, so a restart cannot leave somebody's CV behind.
+# A generated document never touches this container's disk (D9): Chrome is handed the HTML and hands
+# back the PDF over its DevTools pipe, and the bytes wait in Postgres for their download.
 ENTRYPOINT ["python", "-m", "services.docgen"]

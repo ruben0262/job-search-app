@@ -3019,7 +3019,7 @@ resend a verification email, the setup chat skipping consent).
    the instant CV and cover letter.
 4. **Alerts ✅** — Telegram platform bot, Web Push, the notifier on `libs.matching`, proxy optional,
    and the audit's verification-resend fix.
-5. **Documents** — provider layer (own keys, allowance), instant documents wired into docgen,
+5. **Documents ✅** — provider layer (own keys, allowance), instant documents wired into docgen,
    faster rendering, and consent checked wherever text leaves for a provider.
 6. **Frontend** — the three screens, jobs with word chips and suggestions, downloads, settings, phones.
 7. **AI documents and support chat** — the new prompts, measured; the chat port.

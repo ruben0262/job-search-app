@@ -9,9 +9,6 @@ from libs.profiles import PLACEHOLDER_MARKERS
 
 logger = logging.getLogger(__name__)
 
-# Haiku, deliberately.
-CV_MODEL = "claude-haiku-4-5"
-
 # Enough for a two-page CV with room to spare.
 MAX_TOKENS = 32_000
 
@@ -155,13 +152,16 @@ def build_prompt(base_html: str, context: str, *,
     return prompt
 
 
-def tailor(client, base_html: str, context: str, *,
+def tailor(client, base_html: str, context: str, *, model: str,
            facts_md: str | None = None, feedback: str | None = None, template: str | None = None,
-           role_angles: str | None = None, model: str = CV_MODEL) -> str:
-    """One call."""
-    stripped, style = strip_style(base_html)
-    prompt = build_prompt(strip_comments(stripped), context, template=template,
-                          role_angles=role_angles,
+           role_angles: str | None = None) -> str:
+    """One call, on the model of whichever provider pays for it (`libs.settings.document_model`)."""
+    # Comments out before the stylesheet is lifted. The scaffold's own comment says "Keep the
+    # <style> block intact", and a search starting there took the comment's end, `<head>` and the
+    # placeholder `<title>` along with the CSS: the model never saw `<body>`, and every CV came back
+    # carrying `[YOUR NAME]`, which the placeholder check then refused to deliver.
+    stripped, style = strip_style(strip_comments(base_html))
+    prompt = build_prompt(stripped, context, template=template, role_angles=role_angles,
                           feedback=feedback)
 
     reply = client.complete_text(
@@ -191,9 +191,8 @@ _MINIMAL_SYSTEM = ("Write only what the base template below already states about
 # ── the cover letter ──────────────────────────────────────────────────────────────────────────
 
 
-def tailor_cover(client, cv_html: str, context: str, *,
-                 facts_md: str | None = None, template: str | None = None,
-                 model: str = CV_MODEL) -> str:
+def tailor_cover(client, cv_html: str, context: str, *, model: str,
+                 facts_md: str | None = None, template: str | None = None) -> str:
     """The cover letter for one job.
 
     `cv_html` is here for its `<head>`, which carries the fonts and page rules the letter is laid

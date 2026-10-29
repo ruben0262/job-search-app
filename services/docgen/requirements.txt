@@ -1,13 +1,13 @@
-# services/docgen — one Claude call, two Chrome compiles, one Telegram upload.
+# services/docgen — instant documents by code, AI ones on the key that pays, one Chrome kept.
 #
 # The heaviest image on the platform and the only one with a browser in it, which is the whole
 # reason it is a separate service (CODE_STRUCTURE.md §5). Chrome comes from the Dockerfile's apt
 # layer, not from here — there is no pip package for it, and pulling one of the wrappers that
 # downloads its own copy would put a second ~400MB browser in the image.
 anthropic>=0.92
-httpx>=0.28                # the Telegram upload
+httpx>=0.28                # the Gemini and OpenAI calls, and the posting's freshness check
 pypdf>=5.1                 # page count and the ATS text-extraction check
-pydantic>=2.10             # libs/contracts: the profile the CV is rendered from
+pydantic>=2.10             # libs/contracts, which libs/documents reads a CV with
 SQLAlchemy>=2.0
 psycopg[binary]>=3.2
 cryptography>=44.0         # libs/secrets: the user's own credential, decrypted for one build

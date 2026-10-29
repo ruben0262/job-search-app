@@ -194,11 +194,10 @@ def test_only_a_cv_or_a_cover_letter_can_be_asked_for():
 @pytest.mark.skipif(not pathlib.Path(pdf.chrome_binary()).exists()
                     and shutil.which(pdf.chrome_binary()) is None,
                     reason="no Chrome on this machine (set CHROME_BIN to run it)")
-def test_the_instant_cv_passes_the_ats_check_docgen_applies(tmp_path):
+def test_the_instant_cv_passes_the_ats_check_docgen_applies():
     """The check that reads "Experience", "Education" and an email out of the compiled PDF."""
-    source = tmp_path / "cv.html"
-    source.write_text(render("cv", documents=DOCUMENTS, identity=IDENTITY, job=JOB), encoding="utf-8")
-    report = pdf.inspect_pdf(pdf.compile_pdf(source, tmp_path / "cv.pdf"))
+    html = render("cv", documents=DOCUMENTS, identity=IDENTITY, job=JOB)
+    report = pdf.inspect_pdf(pdf.render(html))
 
     assert report.ats_ok, report.issues
     assert report.pages == 1

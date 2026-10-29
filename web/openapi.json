@@ -242,6 +242,84 @@
         "title": "Body_upload_documents_post",
         "type": "object"
       },
+      "BuildRequest": {
+        "properties": {
+          "job_id": {
+            "title": "Job Id",
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "cv",
+              "cover"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "instant",
+              "ai"
+            ],
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "kind",
+          "mode"
+        ],
+        "title": "BuildRequest",
+        "type": "object"
+      },
+      "BuildStatus": {
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "download_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Download Url"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "state": {
+            "enum": [
+              "queued",
+              "building",
+              "ready",
+              "failed",
+              "expired"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "state"
+        ],
+        "title": "BuildStatus",
+        "type": "object"
+      },
       "ConfigChoice": {
         "properties": {
           "hint": {
@@ -3914,6 +3992,130 @@
           }
         },
         "summary": "Upload",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/documents/build": {
+      "post": {
+        "description": "Queue one CV or cover letter for one job.\n\nAsked again while it waits, it is the same build, answered before any check: a second click must\nnot be refused for the allowance its own first click used.",
+        "operationId": "build_document_documents_build_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BuildRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuildStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Build Document",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/documents/build/{build_id}": {
+      "get": {
+        "description": "Where one build is. The page asks until it is ready or has failed.",
+        "operationId": "build_status_documents_build__build_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "build_id",
+            "required": true,
+            "schema": {
+              "title": "Build Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuildStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Build Status",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/documents/build/{build_id}/file": {
+      "get": {
+        "description": "The finished PDF, while it is kept. Scoped to the caller, like everything here.",
+        "operationId": "build_file_documents_build__build_id__file_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "build_id",
+            "required": true,
+            "schema": {
+              "title": "Build Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/pdf": {}
+            },
+            "description": "The PDF."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Build File",
         "tags": [
           "documents"
         ]

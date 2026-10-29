@@ -487,7 +487,7 @@ def test_an_unknown_kind_is_refused(store_ctx):
     store, s = store_ctx
     user = _user(s)
     with pytest.raises(UnknownSecretKind):
-        store.put(user.id, "openai_api", "sk-whatever-1234")
+        store.put(user.id, "aws_secret", "sk-whatever-1234")
 
 
 @pytestmark_db

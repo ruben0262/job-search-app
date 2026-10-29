@@ -226,13 +226,14 @@ def test_the_admission_check_and_the_worker_ask_the_same_question(db):
 
     session, user, job = db
     session.execute(delete(UserProfileFile).where(UserProfileFile.user_id == user.id))
+    # A description, so the worker cannot refuse for that reason instead and pass this test by luck.
+    job.description = "Backend engineer. Python, Postgres."
     session.flush()
 
     assert ProfileFiles(session, user.id).build_blocker() is not None
     # The worker's own refusal path must agree with what an admission check tells the user.
-    with pytest.raises(run.NotBuildable):
-        run.run_build(session, user.id, job.id, kind="cv", client=None,
-                      send_document=lambda *a, **k: None, token="x")
+    with pytest.raises(run.NotBuildable, match="setup"):
+        run.run_ai(session, user.id, job.id, kind="cv", client=None, model="any")
 
 
 def test_the_document_is_named_from_the_name_the_user_typed():

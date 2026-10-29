@@ -39,6 +39,7 @@ if str(REPO) not in sys.path:
 
 from libs.llm import client_for  # noqa: E402
 from libs.profiles import GENERATION_FILES, PLATFORM_FILES, platform_file  # noqa: E402
+from libs.settings import CV_MODEL  # noqa: E402
 from scripts.cvlab import cvchecks  # noqa: E402
 from services.docgen import build  # noqa: E402
 
@@ -487,7 +488,7 @@ def main() -> int:
     parser.add_argument("--concurrency", type=int, default=4,
                         help="cells in flight at once. Higher finishes sooner and trips the "
                              "account's rate limit sooner; a 429 is waited out, not fatal")
-    parser.add_argument("--model", default=build.CV_MODEL)
+    parser.add_argument("--model", default=CV_MODEL)
     parser.add_argument("--judge", action="store_true", help="also run the recruiter verdict")
     parser.add_argument("--dry-run", action="store_true",
                         help="score CVs already in --out, no API calls")

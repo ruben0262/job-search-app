@@ -1,15 +1,27 @@
-"""Uploading the documents that "process data" will read."""
+"""A person's own documents: uploading them, and the CVs and cover letters built from them."""
 from __future__ import annotations
 
 import logging
 import uuid as _uuid
+from typing import Literal
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Request,
+    Response,
+    UploadFile,
+    status,
+)
+from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from libs import limits, suggestions
-from libs.db.models import User, UserDocument
+from libs.db.models import BuiltDocument, CorpusJob, QueueJob, User, UserDocument
 from libs.db.models.document import DOCUMENT_KINDS
 from libs.documents import (
     MAX_FILE_BYTES,
@@ -18,7 +30,11 @@ from libs.documents import (
     UnsupportedDocument,
     extract_text,
 )
+from libs.legal import has_consented
+from libs.llm import PLATFORM, record_ai_request, resolve
 from libs.obs import audit
+from libs.profiles.repository import ProfileFiles
+from libs.queue import enqueue
 from services.api.deps import current_user, get_db, rate_limit
 
 logger = logging.getLogger(__name__)
@@ -148,3 +164,137 @@ def delete_document(document_id: int, db: Session = Depends(get_db),
     _documents_changed(db, user_id)
     audit(logger, "document.deleted", user=user_id, kind=document.kind)
     return {"status": "deleted"}
+
+
+# ── a CV or cover letter for one job ──────────────────────────────────────────────────────────
+#
+# Downloaded here, rather than sent to Telegram. **The build is the docgen queue row**: its id is the
+# build's id and its state is the build's state, so there is no second record to disagree with the
+# first. The PDF waits in `built_documents` until the worker deletes it (`document_keep_hours`, D9).
+
+
+class BuildRequest(BaseModel):
+    job_id: int
+    kind: Literal["cv", "cover"]
+    # "instant" is built by code, free for everyone; "ai" is written by a model on a key that pays.
+    mode: Literal["instant", "ai"]
+
+
+class BuildStatus(BaseModel):
+    id: int
+    state: Literal["queued", "building", "ready", "failed", "expired"]
+    # Why it failed or was refused, written for the person.
+    detail: str | None = None
+    # Set once `state` is "ready".
+    download_url: str | None = None
+
+
+@router.post("/build", status_code=status.HTTP_202_ACCEPTED, response_model=BuildStatus)
+def build_document(body: BuildRequest, db: Session = Depends(get_db),
+                   user_id: _uuid.UUID = Depends(current_user)) -> BuildStatus:
+    """Queue one CV or cover letter for one job.
+
+    Asked again while it waits, it is the same build, answered before any check: a second click must
+    not be refused for the allowance its own first click used.
+    """
+    if db.get(CorpusJob, body.job_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="that job is no longer here")
+    key = f"{body.mode}:{body.kind}:{body.job_id}"
+    build_id = _waiting(db, user_id, key)
+    if build_id is None:
+        user = db.get(User, user_id)
+        allowed = limits.resolve(user, "cv_builds_per_day")
+        if allowed is not None and _documents_today(db, user_id) >= allowed:
+            raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS,
+                                detail=f"you have had your {allowed} documents for today — the "
+                                       "count starts again at midnight")
+        payload = {"job_id": body.job_id, "kind": body.kind, "mode": body.mode}
+        if body.mode == "ai":
+            payload["payer"] = _ai_payer(db, user)
+        queued = enqueue(db, "docgen", user_id, payload=payload, dedup_key=key)
+        if queued is not None and payload.get("payer") == PLATFORM:
+            record_ai_request(db, user_id)
+        # `None` from `enqueue` is a twin request that won the race, or an operator's pause.
+        build_id = queued or _waiting(db, user_id, key)
+        if build_id is None:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
+                                detail="building documents is paused for a moment — try again soon")
+        audit(logger, "documents.build_requested", user=user_id, job=body.job_id,
+              kind=body.kind, mode=body.mode, payer=payload.get("payer"))
+    return _status(db, db.get(QueueJob, build_id))
+
+
+@router.get("/build/{build_id}", response_model=BuildStatus)
+def build_status(build_id: int, db: Session = Depends(get_db),
+                 user_id: _uuid.UUID = Depends(current_user)) -> BuildStatus:
+    """Where one build is. The page asks until it is ready or has failed."""
+    build = db.scalar(select(QueueJob).where(QueueJob.id == build_id, QueueJob.user_id == user_id,
+                                             QueueJob.lane == "docgen"))
+    if build is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="no such build")
+    return _status(db, build)
+
+
+@router.get("/build/{build_id}/file", response_class=Response,
+            responses={200: {"content": {"application/pdf": {}}, "description": "The PDF."}})
+def build_file(build_id: int, db: Session = Depends(get_db),
+               user_id: _uuid.UUID = Depends(current_user)) -> Response:
+    """The finished PDF, while it is kept. Scoped to the caller, like everything here."""
+    built = db.scalar(select(BuiltDocument)
+                      .join(QueueJob, QueueJob.id == BuiltDocument.build_id)
+                      .where(BuiltDocument.build_id == build_id, QueueJob.user_id == user_id))
+    if built is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND,
+                            detail="this document is not ready, or was deleted — build it again")
+    return Response(built.content, media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="{built.filename}"'})
+
+
+def _documents_today(db: Session, user_id: _uuid.UUID) -> int:
+    """Every document asked for since their midnight, instant or AI, whatever became of it."""
+    return db.scalar(select(func.count()).select_from(QueueJob).where(
+        QueueJob.lane == "docgen", QueueJob.user_id == user_id,
+        limits.since_their_midnight(db, user_id, QueueJob.created_at))) or 0
+
+
+def _waiting(db: Session, user_id: _uuid.UUID, key: str) -> int | None:
+    """The same build, asked for before and not yet finished."""
+    return db.scalar(select(QueueJob.id).where(
+        QueueJob.lane == "docgen", QueueJob.user_id == user_id, QueueJob.dedup_key == key,
+        QueueJob.state.in_(("ready", "claimed"))))
+
+
+def _ai_payer(db: Session, user: User) -> str:
+    """Who pays for an AI-written document, once this person may have one at all.
+
+    Refused here rather than queued and refused there: the worker asks again before any text leaves
+    the server, but the person should not wait for a queue to hear "no".
+    """
+    if not has_consented(db, user.id):
+        raise HTTPException(status.HTTP_403_FORBIDDEN,
+                            detail="agree to how AI-written documents use your profile first — "
+                                   "it is on the privacy page")
+    if ProfileFiles(db, user.id).build_blocker() is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            detail="AI-written documents need a writing profile this account does "
+                                   "not have yet — the instant version is ready now")
+    payer = resolve(db, user)
+    if payer is None:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            detail="AI writing needs your own Claude, Gemini or OpenAI key — add "
+                                   "one in settings, or use the instant version, which is free")
+    return payer.kind
+
+
+def _status(db: Session, build: QueueJob) -> BuildStatus:
+    """The queue row, said the way the page shows it."""
+    refused = (build.payload or {}).get("refused")
+    if build.state == "dead" or refused:
+        return BuildStatus(id=build.id, state="failed", detail=refused or build.last_error)
+    if build.state != "done":
+        return BuildStatus(id=build.id, state="building" if build.state == "claimed" else "queued")
+    if db.scalar(select(BuiltDocument.build_id).where(BuiltDocument.build_id == build.id)) is None:
+        return BuildStatus(id=build.id, state="expired",
+                           detail="this document has been deleted, as they all are after a while "
+                                  "— build it again")
+    return BuildStatus(id=build.id, state="ready", download_url=f"/documents/build/{build.id}/file")

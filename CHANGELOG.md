@@ -14,6 +14,45 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-10-29 — CVs and cover letters on the site: instant for everyone, AI on the key that pays (Phase 8, workstream 5)
+
+A document is downloaded from the site now, not sent to Telegram. **The instant one is free for
+everyone**: `libs.documents.instant` over the person's own uploads, one render, no model, no key.
+**An AI-written one** runs the existing tailoring prompts, unchanged (§3a), on the person's own Claude,
+Gemini or OpenAI key or Claude subscription, or on the platform's one paid key within
+`ai_platform_requests_per_day` (20, never unlimited). Who pays is one function, `libs.llm.resolve`,
+asked when a build is requested and recorded on its queue row; what the platform pays for is counted
+in one table, `ai_requests`, which the support chat will feed too. The default models for own keys —
+`gemini-3.8-flash` and `gpt-6-luna` — are platform settings, checked against each provider's model
+page on 2026-10-29; the prompts were tuned on Claude Haiku and are unmeasured on them.
+
+The build is the docgen queue row, so nothing can disagree about its state; its PDF waits in the
+UNLOGGED `built_documents` for `document_keep_hours` (1) and the nightly dump leaves those rows out, so
+decision D9 holds for backups too. One daily cap counts every document at its one admission point
+(`cv_builds_per_day`, now 50 of either kind). Consent had been checked nowhere since `/process` went;
+it moved to `libs.legal`, is asked at the request and again where text leaves the server, and the
+disclosure — now naming Google and OpenAI — is version 2026-10-28, so everyone is asked once more.
+
+Found on the way: the style block was lifted with a search that began inside the scaffold's HTML
+comment, so every AI CV for an account that kept the comment came back carrying `[YOUR NAME]` and was
+refused; and `.gitignore`'s `models/` silently ignored every new file under `libs/db/models/`.
+
+Faster, measured with a fake model (n=12, alternating, same load): a render 0.96 s → 0.20 s on one
+Chrome kept per worker over its DevTools pipe (PDFs checked byte-identical to `--print-to-pdf`), the
+interactive poll 1 s → 0.25 s, ask-to-done 1.70 s → 0.40 s. The full test suite went from ~115 s to
+35 s with it. 38 deliberate mutations, 38 caught.
+
+Merged onto the alerts work with three conflicts: the OpenAPI contract and its types regenerated (70
+paths); `test_feedback`'s admission-versus-worker test moved to `run_ai` and now gives the job a
+description and asserts the refusal is about setup, so it cannot pass for the wrong reason; and the
+two migration heads joined by a no-op revision, `ee2add9ee95f`.
+
+Gates on the merged tree: alembic from empty to the single head `ee2add9ee95f`; lint-imports 3 kept,
+0 broken (2 ignored); ruff clean; pytest 1,495 passed, 5 skipped; contract no drift; web build passes.
+New env (optional): `PLATFORM_AI_PROVIDER`, `PLATFORM_AI_KEY`.
+
+---
+
 ## 2026-10-28 — alerts start when you turn them on (Phase 8, integration)
 
 The alerts workstream left one question open: somebody switching alerts on weeks after joining was

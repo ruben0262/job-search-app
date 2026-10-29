@@ -227,6 +227,28 @@ def source_min_ages(session: Session) -> dict[str, int]:
     return merged
 
 
+# The model each provider writes a CV or cover letter with, until the operator says otherwise.
+#
+# **Haiku, deliberately, and not changed here**: the tailoring prompts were measured on it, and a
+# model change is a measured change (CLAUDE.md §3a, §4). The Gemini and OpenAI entries run the same
+# prompts unmeasured — they exist because the owner chose own-key providers, and they are settings
+# so a better or cheaper model is a panel change rather than a deploy. Both were each provider's
+# documented recommendation on 2026-10-28: "For any new projects, use our latest models: 3.5
+# Flash-Lite or 3.8 Flash" (ai.google.dev), and GPT-6 Luna "for cost-sensitive, high-volume
+# workloads" (developers.openai.com), whose `gpt-5-mini` is deprecated.
+CV_MODEL = "claude-haiku-4-5"
+DEFAULT_DOCUMENT_MODELS: dict[str, str] = {
+    "anthropic": CV_MODEL,
+    "gemini": "gemini-3.8-flash",
+    "openai": "gpt-6-luna",
+}
+
+# How long a built document waits to be downloaded before the docgen worker deletes it (D9:
+# generated documents are ephemeral). An hour covers "build, then download" with room to spare; a
+# person who comes back later builds it again.
+DEFAULT_DOCUMENT_KEEP_HOURS = 1
+
+
 DEFAULTS: dict[str, object] = {
     "job_max_age_hours": DEFAULT_JOB_MAX_AGE_HOURS,
     "source_freshness_hours": DEFAULT_SOURCE_FRESHNESS_HOURS,
@@ -241,6 +263,8 @@ DEFAULTS: dict[str, object] = {
     "ats_companies_per_cycle": DEFAULT_ATS_COMPANIES_PER_CYCLE,
     "describe_per_cycle": DEFAULT_DESCRIBE_PER_CYCLE,
     "linkedin_concurrent_users": DEFAULT_LINKEDIN_CONCURRENT_USERS,
+    "document_models": DEFAULT_DOCUMENT_MODELS,
+    "document_keep_hours": DEFAULT_DOCUMENT_KEEP_HOURS,
 }
 
 
@@ -321,6 +345,17 @@ def describe_per_cycle(session: Session) -> int:
 def linkedin_concurrent_users(session: Session) -> int:
     """How many users' LinkedIn passes run in one tick."""
     return int(get(session, "linkedin_concurrent_users") or DEFAULT_LINKEDIN_CONCURRENT_USERS)
+
+
+def document_model(session: Session, provider: str) -> str:
+    """The model this provider writes documents with: the operator's choice, else the default."""
+    chosen = (get(session, "document_models") or {}).get(provider)
+    return str(chosen) if chosen else DEFAULT_DOCUMENT_MODELS[provider]
+
+
+def document_keep_hours(session: Session) -> int:
+    """How many hours a built document is kept for download."""
+    return int(get(session, "document_keep_hours"))
 
 
 def freshness_hours(session: Session, source: str) -> int:
