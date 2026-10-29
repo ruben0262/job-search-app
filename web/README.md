@@ -14,12 +14,13 @@ npm run build    # tsc --noEmit, then vite build
 
 | File | What it owns |
 |---|---|
-| `src/api.ts` | every request, and the single-flight refresh |
-| `src/App.tsx` | routing, and where a signed-in user belongs |
-| `src/pages/Onboarding.tsx` | the wizard shell — the server says which page |
-| `src/pages/onboarding/` | the seven pages |
-| `src/pages/{Dashboard,Feed,Process,Settings,Privacy,Verify}Page.tsx` | after signup |
-| `src/ui.tsx` | the ten components a library would have given us |
+| `src/api.ts` | every request, the single-flight refresh, and `Schema<"Name">` for the generated types |
+| `src/App.tsx` | routing, the five places (a tab bar on a phone), and where a signed-in user belongs |
+| `src/pages/Onboarding.tsx` | the three screens: your CV, what we found, done |
+| `src/pages/{Jobs,Words,Documents,Settings}Page.tsx` | the places after signup; Help is the support chat's |
+| `src/documents.ts` | a CV or cover letter for a job: start it, show it being made, hand over the PDF |
+| `src/alerts.tsx`, `src/push.ts` | Telegram and this browser's notifications, one tap each |
+| `src/ui.tsx` | the pieces every page needs: word chips, the upload button, errors |
 
 ## Look
 
@@ -58,8 +59,8 @@ rewrite rule for anybody to forget.
 
 ## Two rules worth keeping
 
-**Nothing here re-derives a server rule.** Which onboarding page you are on comes from
-`GET /onboarding/state`; what your account needs next comes from `GET /dashboard`. Those rules exist
+**Nothing here re-derives a server rule.** Which onboarding screen you are on, what your account
+needs next and whether an AI can write for you all come from `GET /dashboard`. Those rules exist
 once, in `libs/onboarding` and `services/api`, and a second copy here would be the one that goes
 stale — the first symptom being a user stuck on a page they have already finished.
 
@@ -85,12 +86,11 @@ refresh token as theft and kills the whole session family. `src/api.ts` shares o
 - Wire the generator at **Phase 3**, when the API surface first stabilises. Generating against a
   churning API means regenerating constantly for no benefit.
 
-**All of the above shipped as decided.** `openapi.json` and `src/api-types.ts` are committed, and CI
-regenerates and diffs them — an unexpected diff fails the build with the command to fix it. One
-caveat worth writing down: FastAPI types most handlers as a bare `dict`, so the generated types
-describe paths and request bodies but not response *contents*. The response shapes the components
-read are narrow hand-written views at the bottom of `src/api.ts`. Annotating every handler with a
-response model would close that gap and is the right fix if the drift ever bites; it has not yet,
-and doing it pre-emptively would put presentation concerns into the API.
+**All of the above shipped as decided.** `openapi.json` and `src/api-types.ts` are committed, and the
+contract gate regenerates and diffs them. **Every response the site reads is generated, too**
+(2026-10-29). A handler returning a bare `dict` is an untyped object to the generator, and that is
+how the place pickers rendered empty for two months: a hand-written view of a field the server had
+stopped sending. So every endpoint a page reads declares a `response_model`, and the page reads
+`Schema<"Name">`: a field the server drops fails `tsc`, not the page.
 
 Restart blast radius: none (static).

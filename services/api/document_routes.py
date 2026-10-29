@@ -40,8 +40,28 @@ from services.api.deps import current_user, get_db, rate_limit
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/documents", tags=["documents"])
 
-# Enough for a CV, a couple of covers, references, diplomas and a history file, with room to spare.
-MAX_DOCUMENTS_PER_USER = 25
+
+class StoredDocument(BaseModel):
+    status: str
+    id: int
+    chars: int
+    truncated: bool
+    # Set when the file was longer than we keep, written for the person who uploaded it.
+    note: str | None
+
+
+class DocumentRow(BaseModel):
+    id: int
+    kind: str
+    filename: str
+    chars: int
+    preview: str
+    uploaded_at: str | None
+
+
+class DocumentList(BaseModel):
+    documents: list[DocumentRow]
+    supported: list[str]
 
 
 def _stored(status_word: str, document_id: int, extracted) -> dict:
@@ -67,7 +87,7 @@ def _documents_changed(db: Session, user_id: _uuid.UUID) -> None:
     suggestions.refresh(db, user_id)
 
 
-@router.post("", status_code=status.HTTP_201_CREATED)
+@router.post("", status_code=status.HTTP_201_CREATED, response_model=StoredDocument)
 async def upload(request: Request, kind: str = Form(...), file: UploadFile = File(...),
                  db: Session = Depends(get_db),
                  user_id: _uuid.UUID = Depends(current_user)) -> dict:
@@ -133,7 +153,7 @@ async def upload(request: Request, kind: str = Form(...), file: UploadFile = Fil
     return _stored("stored", document.id, extracted)
 
 
-@router.get("")
+@router.get("", response_model=DocumentList)
 def list_documents(db: Session = Depends(get_db),
                    user_id: _uuid.UUID = Depends(current_user)) -> dict:
     """What the user has uploaded."""
@@ -147,7 +167,6 @@ def list_documents(db: Session = Depends(get_db),
              "uploaded_at": row.uploaded_at.isoformat() if row.uploaded_at else None}
             for row in rows],
         "supported": list(SUPPORTED),
-        "limit": MAX_DOCUMENTS_PER_USER,
     }
 
 

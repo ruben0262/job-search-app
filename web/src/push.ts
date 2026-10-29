@@ -10,6 +10,15 @@ export function pushSupported(): boolean {
   return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
 }
 
+/** Whether this browser is on. "home-screen" is an iPhone or iPad, which can only once the site is
+ * added to its home screen and opened from there. */
+export async function pushState(): Promise<"on" | "off" | "home-screen" | "unsupported"> {
+  if (!pushSupported()) return /iPhone|iPad|iPod/.test(navigator.userAgent) ? "home-screen" : "unsupported";
+  const subscription = await (await navigator.serviceWorker.getRegistration())?.pushManager
+    .getSubscription();
+  return subscription && Notification.permission === "granted" ? "on" : "off";
+}
+
 /** Ask, subscribe and register this browser. False when it cannot, or the person said no. */
 export async function enablePush(): Promise<boolean> {
   if (!pushSupported()) return false;

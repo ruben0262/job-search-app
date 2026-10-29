@@ -71,6 +71,8 @@ class ConfigChoice(BaseModel):
 class ConfigChoices(BaseModel):
     """What the pickers offer, labelled. Served, so a place cannot exist on one side only."""
     locations: list[ConfigChoice]
+    # How many places may be picked: the schema's bound, served so the page cannot hold a copy.
+    max_locations: int
     languages: list[ConfigChoice]
     remote_policies: list[ConfigChoice]
 
@@ -122,6 +124,11 @@ class HistorySaved(SaveResult):
     truncated: bool
 
 
+class HistoryText(BaseModel):
+    text: str
+    chars: int
+
+
 @router.get("/state", response_model=OnboardingSteps)
 def state(db: Session = Depends(get_db), user_id: _uuid.UUID = Depends(current_user)) -> dict:
     """What is done, what is left, and where to send the user next."""
@@ -166,7 +173,7 @@ def put_history(body: HistoryBody, request: Request, db: Session = Depends(get_d
     return {"status": "saved", "chars": extracted.chars, "truncated": extracted.truncated}
 
 
-@router.get("/history")
+@router.get("/history", response_model=HistoryText)
 def get_history(db: Session = Depends(get_db),
                 user_id: _uuid.UUID = Depends(current_user)) -> dict:
     """Returned in full, unlike `/documents`, because this is an edit box the user types into."""
@@ -287,6 +294,7 @@ def _choices() -> dict:
     return {
         "locations": [{"value": place.value, "label": location_search_name(place.value)}
                       for place in Location],
+        "max_locations": MAX_LOCATIONS_PER_USER,
         "languages": [{"value": code.value, "label": LANGUAGE_NAMES[code.value][0]}
                       for code in Language],
         "remote_policies": [{"value": policy.value, "label": _POLICIES[policy.value][0],

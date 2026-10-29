@@ -23,13 +23,36 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["account"])
 
 
-@router.get("/legal/privacy")
+class DisclosedProcessor(BaseModel):
+    name: str
+    purpose: str
+    data: str
+    on_your_credential: bool
+    location: str
+
+
+class Disclosure(BaseModel):
+    version: str
+    headline: str
+    body: str
+    processors: list[DisclosedProcessor]
+
+
+@router.get("/legal/privacy", response_model=Disclosure)
 def privacy() -> dict:
     """Every processor, named."""
     return disclosure()
 
 
-@router.get("/account/consent")
+class ConsentState(BaseModel):
+    granted: bool
+    granted_at: str | None
+    granted_version: str | None
+    current_version: str
+    disclosure: Disclosure
+
+
+@router.get("/account/consent", response_model=ConsentState)
 def consent_state(db: Session = Depends(get_db),
                   user_id: _uuid.UUID = Depends(current_user)) -> dict:
     """Whether this account has agreed to the current disclosure."""
@@ -145,18 +168,19 @@ def patch_account(body: AccountPatch, db: Session = Depends(get_db),
     return {"status": "ok", "active": user.active}
 
 
+class AccountOut(BaseModel):
+    email: str
+    # Whether alerts are sent at all: the person's pause.
+    active: bool
+    telegram_status: str
+    consent_version: str | None
+
+
 @router.get("/account")
-def account(db: Session = Depends(get_db), user_id: _uuid.UUID = Depends(current_user)) -> dict:
-    """What the settings page shows. Everything onboarding collected, minus anything secret."""
+def account(db: Session = Depends(get_db),
+            user_id: _uuid.UUID = Depends(current_user)) -> AccountOut:
+    """What the settings page shows, minus anything secret. Their name and links are on
+    `/onboarding/identity`, their words on `/onboarding/review`."""
     user = db.get(User, user_id)
-    return {
-        "email": user.email,
-        "full_name": user.full_name,
-        "links": user.links or [],
-        "timezone": user.timezone,
-        "active": user.active,
-        "telegram_status": user.telegram_status,
-        "plan": user.plan_id,
-        "created_at": user.created_at.isoformat() if user.created_at else None,
-        "consent_version": user.processing_consent_version,
-    }
+    return AccountOut(email=user.email, active=user.active, telegram_status=user.telegram_status,
+                      consent_version=user.processing_consent_version)

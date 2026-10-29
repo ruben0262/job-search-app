@@ -64,11 +64,10 @@ button,
 nav,
 nav a,
 .banner,
-.job,
+.job-card,
 td,
 th,
-.chip,
-.bubble {
+.chip {
   transition:
     background-color var(--fade) var(--ease),
     border-color var(--fade) var(--ease),
@@ -126,7 +125,6 @@ body {
 
 /* Anything that can be wider than its column scrolls itself rather than the page. */
 .table-scroll,
-.overview,
 .card {
   max-width: 100%;
   min-width: 0;
@@ -360,8 +358,10 @@ textarea {
   line-height: 1.55;
 }
 
-/* The landing's pill buttons: solid inverts on hover, ghost sharpens its border. */
-button {
+/* The landing's pill buttons: solid inverts on hover, ghost sharpens its border. `.button` is a link
+   that looks like one: a download or a job page is an address, not an action. */
+button,
+.button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -382,17 +382,24 @@ button {
     transform var(--fade) var(--ease);
 }
 
-button:hover:not([disabled]) {
+button:hover:not([disabled]),
+.button:hover {
   transform: translateY(-2px);
 }
 
-button.secondary {
+.button {
+  text-decoration: none;
+}
+
+button.secondary,
+.button.secondary {
   background: transparent;
   color: var(--ink);
   border-color: var(--faint);
 }
 
-button.secondary:hover:not([disabled]) {
+button.secondary:hover:not([disabled]),
+.button.secondary:hover {
   border-color: var(--ink);
 }
 
@@ -430,7 +437,13 @@ button[disabled] {
 
 /* Banners are told apart by a left rule and their words, not by a fill. Three coloured blocks on
    one page is a traffic light nobody reads. */
+/* A row, because a banner here carries the button that fixes what it says. */
 .banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.9rem;
+  margin-bottom: 1rem;
   padding: 0.75rem 1rem;
   border-radius: var(--radius);
   border: 1px solid var(--hairline);
@@ -502,41 +515,6 @@ button[disabled] {
   margin: -1.25rem 0 1.75rem;
 }
 
-/* Plain text, not a button. It is a way back, not a thing to do. */
-.back {
-  display: inline-block;
-  color: var(--muted);
-  text-decoration: none;
-  font-size: 0.9375rem;
-  margin-bottom: 2.5rem;
-}
-
-.back:hover { color: var(--ink); }
-
-/* **Appears when the page is satisfied.** Not disabled-and-greyed: a control that is present but
-   refuses to work invites clicking it to find out why. Fading it in is the answer to "what now". */
-.advance {
-  margin-top: 2rem;
-  opacity: 0;
-  transform: translateY(4px);
-  pointer-events: none;
-  transition: opacity var(--fade) var(--ease), transform var(--fade) var(--ease);
-}
-
-.advance.ready {
-  opacity: 1;
-  transform: none;
-  pointer-events: auto;
-}
-
-/* A row that can be removed, for links and anything else the user adds more of. */
-.repeat-row {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.5rem;
-}
-
 .icon-btn {
   flex: 0 0 auto;
   width: 1.75rem;
@@ -574,201 +552,6 @@ button[disabled] {
   transform: none;
 }
 
-/* An icon button that only differs by its glyph is a guess. These two say which way they go before
-   they are pressed: red removes, green adds. */
-.icon-btn.remove {
-  color: var(--danger);
-  border-color: color-mix(in srgb, var(--danger) 40%, transparent);
-}
-
-.icon-btn.remove:hover:not([disabled]) {
-  color: var(--danger);
-  border-color: var(--danger);
-  background: color-mix(in srgb, var(--danger) 12%, transparent);
-}
-
-.icon-btn.add {
-  color: var(--score);
-  border-color: color-mix(in srgb, var(--score) 40%, transparent);
-}
-
-.icon-btn.add:hover:not([disabled]) {
-  color: var(--score);
-  border-color: var(--score);
-  background: color-mix(in srgb, var(--score) 12%, transparent);
-}
-
-/* The tick after a copy. Green because it is a confirmation, not a third icon in the same row. */
-.icon-btn.copied,
-.icon-btn.copied:hover:not([disabled]) {
-  color: var(--score);
-  border-color: var(--score);
-}
-
-/* The add button sits above the first row, on the right, where it reads as "more of these". */
-.repeat-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0.45rem;
-}
-
-/* Either-or, for a field that accepts typing or a file. */
-.either {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  color: var(--muted);
-  font-size: 0.875rem;
-  margin: 1rem 0;
-}
-
-.either::before,
-.either::after {
-  content: "";
-  flex: 1;
-  height: 1px;
-  background: var(--hairline);
-}
-
-/* ── the wizard's step circles ───────────────────────────────────────────────────────────────
- *
- * Numbered circles joined by a rule: done is filled and carries a check, current is ringed in
- * ink, the future is a dim number. Labels sit under the circles and only the current one is ink,
- * so the row reads as "you are here" rather than as seven competing words.
- */
-
-.dots {
-  list-style: none;
-  padding: 0;
-  margin: 2.5rem 0 0;
-  display: flex;
-  justify-content: center;
-}
-
-.dot-wrap {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  position: relative;
-  flex: 1;
-  max-width: 6.5rem;
-}
-
-.dot-rule {
-  position: absolute;
-  top: 1rem;
-  right: 50%;
-  width: 100%;
-  height: 1px;
-  background: var(--faint);
-  z-index: 0;
-}
-
-.dot {
-  position: relative;
-  z-index: 1;
-  width: 2rem;
-  height: 2rem;
-  padding: 0;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  background: var(--bg);
-  border: 1px solid var(--faint);
-  color: var(--dim);
-  cursor: default;
-  transition:
-    background var(--fade) var(--ease),
-    border-color var(--fade) var(--ease),
-    color var(--fade) var(--ease),
-    transform var(--fade) var(--ease);
-}
-
-.dot.done {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-ink);
-  cursor: pointer;
-}
-
-.dot.done:hover:not(.on) {
-  transform: scale(1.12);
-}
-
-.dot.on {
-  background: var(--bg);
-  border-color: var(--ink);
-  color: var(--ink);
-  box-shadow: 0 0 0 4px var(--hairline);
-}
-
-.dot[disabled] {
-  opacity: 1;
-  cursor: default;
-}
-
-.dot-label {
-  margin-top: 0.55rem;
-  font-family: var(--font-mono);
-  font-size: 0.6rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--dim);
-  text-align: center;
-  line-height: 1.4;
-  transition: color var(--fade) var(--ease);
-}
-
-.dot-label.on {
-  color: var(--ink);
-}
-
-@media (max-width: 560px) {
-  .dot-label {
-    display: none;
-  }
-
-  .dot {
-    width: 1.6rem;
-    height: 1.6rem;
-    font-size: 0.64rem;
-  }
-
-  .dot-rule {
-    top: 0.8rem;
-  }
-}
-
-/* ── the wizard's step list ──────────────────────────────────────────────────────────────── */
-
-.steps {
-  list-style: none;
-  padding: 0;
-  margin: 0 0 1.5rem;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-}
-
-.steps li {
-  width: 1.75rem;
-  height: 2px;
-  border-radius: 2px;
-  background: var(--faint);
-  font-size: 0;
-  transition: background var(--fade) var(--ease);
-}
-
-.steps li.done {
-  background: var(--dim);
-  cursor: pointer;
-}
-
-.steps li.on { background: var(--ink); }
-
 /* ── the jobs table ──────────────────────────────────────────────────────────────────────── */
 
 /* Filter chips and the search box sit in one row above the table. */
@@ -781,7 +564,7 @@ button[disabled] {
 }
 
 .toolbar input[type="search"] {
-  flex: 1 1 14rem;
+  flex: 1 1 10rem;
   min-width: 10rem;
 }
 
@@ -844,32 +627,8 @@ th {
   user-select: none;
 }
 
-/* A sortable heading is a control and says so on hover; the active one is ink. */
-th.sortable {
-  cursor: pointer;
-}
-
-th.sortable:hover {
-  color: var(--muted);
-}
-
-th.sorted {
-  color: var(--ink);
-}
-
 tr:last-child td {
   border-bottom: 0;
-}
-
-/* A key-value readout, not a data table: the keys are labels and read like them. */
-.kv td:first-child {
-  width: 32%;
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--dim);
-  padding-top: 0.8rem;
 }
 
 tbody tr {
@@ -885,128 +644,10 @@ td.num {
   white-space: nowrap;
 }
 
-.job-title {
-  color: var(--ink);
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.job-title:hover {
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
 /* The word under the title: company, quiet. */
 .job-sub {
   color: var(--muted);
   font-size: 0.85rem;
-}
-
-/* Pagination reads like the nav: mono, spaced, quiet. */
-.pager {
-  display: flex;
-  align-items: center;
-  gap: 1.2rem;
-  margin-top: 1.25rem;
-  font-family: var(--font-mono);
-  font-size: 0.74rem;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--dim);
-}
-
-.pager button {
-  background: transparent;
-  color: var(--muted);
-  border-color: var(--faint);
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  padding: 0.45rem 1.1rem;
-}
-
-.pager button:hover:not([disabled]) {
-  color: var(--ink);
-  border-color: var(--ink);
-  transform: none;
-}
-
-/* ── the feed card (kept for anything still rendering list-style jobs) ───────────────────── */
-
-.job {
-  border-top: 1px solid var(--hairline);
-  padding: 0.9rem 0;
-}
-
-.job:first-child {
-  border-top: 0;
-  padding-top: 0;
-}
-
-.job a {
-  color: var(--ink);
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.job a:hover {
-  text-decoration: underline;
-}
-
-/* The second of the two colours. A number that means "how good" earns one. */
-.score {
-  color: var(--score);
-  font-variant-numeric: tabular-nums;
-  font-weight: 600;
-}
-
-/* Applied is a fact, not a colour: a small mono tag. */
-.tag {
-  display: inline-block;
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--muted);
-  border: 1px solid var(--faint);
-  border-radius: 999px;
-  padding: 0.1rem 0.55rem;
-  white-space: nowrap;
-}
-
-/* ── the overview ────────────────────────────────────────────────────────────────────────────
- *
- * **The same rules as onboarding: no card, one idea per screen.** The state is the headline, the
- * one action is the only control, and the rest is quiet text underneath.
- */
-
-/* **The column is the page's, the measure is the prose's.** A single 34rem cap on the whole
-   section made Model and Profile visibly narrower than every other page and cut the version-history
-   table off at its right edge. Reading width is a property of paragraphs, so it is applied to
-   paragraphs — tables and grids get the full column. */
-.overview {
-  max-width: 100%;
-  padding-top: 4vh;
-}
-
-.overview > p,
-.overview > h1,
-.overview > .kicker,
-.overview > .lede {
-  max-width: 34rem;
-}
-
-.overview h1 {
-  font-size: 1.9rem;
-  font-weight: 650;
-  letter-spacing: -0.02em;
-  margin: 0 0 0.6rem;
-}
-
-.overview .lede {
-  color: var(--muted);
-  margin: 0 0 1.5rem;
 }
 
 /* Figures, not a table: a table implies rows worth comparing, and these are three unrelated facts.
@@ -1043,175 +684,6 @@ td.num {
   margin: 0 0 0.4rem;
 }
 
-/* ── the setup conversation ──────────────────────────────────────────────────────────────────
- *
- * A chat, not a chat product: no avatars, no timestamps. Two bubble styles that differ by
- * alignment and one border, because the only thing a reader needs to know is who said which line.
- */
-
-.chat {
-  display: flex;
-  flex-direction: column;
-  gap: 1.1rem;
-  margin: 1.5rem 0 1rem;
-  min-height: 16rem;
-  max-height: 58vh;
-  overflow-y: auto;
-  padding-right: 0.25rem;
-}
-
-/* The grammar every LLM app converged on: the user speaks in a bubble on the right, the
-   assistant answers as plain prose on the page. Who said what is carried by shape, not labels. */
-.turn {
-  display: flex;
-  animation: page-in 0.3s var(--ease) both;
-}
-
-.turn.user {
-  justify-content: flex-end;
-}
-
-.turn-bubble {
-  max-width: 80%;
-  padding: 0.7rem 1rem;
-  border-radius: 16px;
-  border-bottom-right-radius: 4px;
-  background: var(--bg-raised);
-  border: 1px solid var(--faint);
-  font-size: 0.9375rem;
-  line-height: 1.55;
-  white-space: pre-wrap;
-}
-
-/* **The rail is the turn; the cards are the steps.** `.turn-body` carries the line and holds no
-   border of its own — one card wrapping several bordered cards reads as a box in a box. Each step
-   is its own container to the right of the line, with its dot sitting on it. */
-.turn-body {
-  position: relative;
-  max-width: 90%;
-  padding-left: 1.4rem;
-  font-size: 0.9375rem;
-  line-height: 1.65;
-}
-
-/* The line runs the height of the turn, behind the dots. */
-.turn-body::before {
-  content: "";
-  position: absolute;
-  left: 3px;
-  top: 0.5rem;
-  bottom: 0.5rem;
-  width: 1px;
-  background: var(--hairline);
-}
-
-/* What the turn did, one step per line, on a rail. The line is drawn on the list and the dots sit
-   on top of it, so the steps read as a sequence rather than as three unrelated notes. */
-.activity {
-  position: relative;
-  margin: 0.9rem 0 0;
-  padding: 0 0 0 0.9rem;
-  list-style: none;
-  border-left: 1px solid var(--hairline);
-}
-
-.activity li {
-  position: relative;
-  padding: 0.15rem 0;
-  color: var(--muted);
-  font-size: 0.8125rem;
-}
-
-.activity li strong {
-  color: var(--ink);
-  font-weight: 500;
-}
-
-.activity-dot {
-  position: absolute;
-  left: -1.19rem;
-  top: 0.55rem;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--score);
-  /* Sits on the rail rather than beside it: the ring hides the line behind the dot, so the
-     sequence reads as beads on a thread instead of a column of dots next to a stripe. */
-  box-shadow: 0 0 0 3px var(--bg-raised);
-}
-
-.turn-body p {
-  margin: 0 0 0.75rem;
-}
-
-.turn-body p:last-child {
-  margin-bottom: 0;
-}
-
-.md-heading {
-  font-weight: 650;
-  color: var(--ink);
-}
-
-.md-list {
-  margin: 0 0 0.75rem;
-  padding-left: 1.2rem;
-}
-
-.md-list li {
-  margin-bottom: 0.3rem;
-  color: inherit;
-}
-
-.md-code {
-  background: var(--bg-raised);
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius);
-  padding: 0.8rem 1rem;
-  margin: 0 0 0.75rem;
-  overflow-x: auto;
-  font-family: var(--font-mono);
-  font-size: 0.82rem;
-  line-height: 1.55;
-}
-
-.turn-body code {
-  font-family: var(--font-mono);
-  font-size: 0.85em;
-  background: var(--bg-raised);
-  border: 1px solid var(--hairline);
-  border-radius: 5px;
-  padding: 0.1em 0.4em;
-}
-
-/* When, said twice and at two scales: the day once per day, the clock on every message. Neither
-   is relative, so nothing on screen goes stale while the page sits open and no timer is needed to
-   keep it true. The exact moment is on the tooltip. */
-.chat-day {
-  align-self: center;
-  padding: 0.15rem 0.7rem;
-  border-radius: 999px;
-  background: var(--bg-raised);
-  border: 1px solid var(--faint);
-  color: var(--muted);
-  font-size: 0.75rem;
-  letter-spacing: 0.02em;
-}
-
-.turn-when {
-  display: block;
-  margin-top: 0.35rem;
-  color: var(--muted);
-  font-size: 0.7rem;
-  font-variant-numeric: tabular-nums;
-}
-
-/* Under the bubble it belongs to, on the same side the bubble sits on. */
-.turn-bubble .turn-when {
-  text-align: right;
-  opacity: 0.75;
-}
-
 /* An upload that was kept but cut short. Not an error — the file is stored and usable — so it does
    not borrow the error colour, and it stays on screen rather than flashing, because the action it
    asks for (shorten the file, upload again) takes longer than a toast. */
@@ -1226,149 +698,6 @@ td.num {
   line-height: 1.5;
 }
 
-/* What the first-time visitor sees instead of an empty void: three things worth saying. */
-.chat-empty {
-  border: 1px dashed var(--faint);
-  border-radius: var(--radius-lg);
-  padding: 1.4rem 1.6rem;
-  color: var(--muted);
-  font-size: 0.9375rem;
-}
-
-/* A turn on a frontier model can run for minutes. The dots say "working"; the sentence says how
-   long — an animation that implies seconds would be dishonest on its own. */
-.turn-body .pending {
-  color: var(--muted);
-  font-style: italic;
-}
-
-/* A block caret while text is still arriving — the difference between "writing" and "stopped
-   mid-sentence", which a poll every 1.5s otherwise leaves ambiguous. */
-.caret {
-  display: inline-block;
-  width: 0.5rem;
-  height: 1em;
-  margin-left: 0.15rem;
-  vertical-align: text-bottom;
-  background: var(--dim);
-  animation: caret-blink 1.1s steps(1) infinite;
-}
-
-@keyframes caret-blink {
-  0%,
-  50% {
-    opacity: 1;
-  }
-  50.01%,
-  100% {
-    opacity: 0;
-  }
-}
-
-.turn-failed {
-  border-left: 2px solid var(--danger);
-  padding-left: 0.9rem;
-}
-
-.turn-error {
-  display: block;
-  margin-top: 0.4rem;
-  color: var(--danger);
-  font-size: 0.85rem;
-}
-
-/* ── a stored credential's row ───────────────────────────────────────────────────────────── */
-
-.stored {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.6rem;
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius);
-  background: var(--bg-raised);
-  padding: 0.55rem 0.55rem 0.55rem 1rem;
-  /* Sits under the field it belongs to, so it needs air above as well as below. */
-  margin: 0.85rem 0 1rem;
-}
-
-.stored-value {
-  flex: 1;
-  font-family: var(--font-mono);
-  font-size: 0.85rem;
-  letter-spacing: 0.08em;
-  color: var(--muted);
-  user-select: none;
-}
-
-.stored-note {
-  color: var(--dim);
-  letter-spacing: 0.02em;
-}
-
-.stored-ask {
-  display: flex;
-  gap: 0.5rem;
-  width: 100%;
-}
-
-.stored-ask input {
-  flex: 1;
-}
-
-/* ── how-to folds for the fiddly setup steps ─────────────────────────────────────────────── */
-
-.howto {
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius);
-  background: var(--bg-raised);
-  margin: 0 0 1.15rem;
-}
-
-.howto summary {
-  padding: 0.7rem 1rem;
-  cursor: pointer;
-  font-size: 0.9rem;
-  color: var(--muted);
-  list-style: none;
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-}
-
-.howto summary::before {
-  content: "›";
-  color: var(--dim);
-  transition: transform var(--fade) var(--ease);
-}
-
-.howto[open] summary::before {
-  transform: rotate(90deg);
-}
-
-.howto summary:hover {
-  color: var(--ink);
-}
-
-.howto ol {
-  margin: 0;
-  padding: 0 1.25rem 1rem 2.4rem;
-}
-
-.howto li {
-  margin-bottom: 0.45rem;
-  line-height: 1.55;
-}
-
-.howto code {
-  font-family: var(--font-mono);
-  font-size: 0.85em;
-  background: var(--bg);
-  border: 1px solid var(--hairline);
-  border-radius: 5px;
-  padding: 0.1em 0.4em;
-}
-
 /* ── building a list one item at a time ──────────────────────────────────────────────────── */
 
 .chips {
@@ -1380,32 +709,6 @@ td.num {
 
 .chips:empty {
   margin-bottom: 0;
-}
-
-.chip-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.3rem 0.4rem 0.3rem 0.8rem;
-  border: 1px solid var(--faint);
-  border-radius: 999px;
-  background: var(--bg-raised);
-  font-size: 0.85rem;
-}
-
-.chip-tag button {
-  background: none;
-  border: none;
-  padding: 0 0.25rem;
-  color: var(--dim);
-  font-size: 0.95rem;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.chip-tag button:hover:not([disabled]) {
-  color: var(--danger);
-  transform: none;
 }
 
 /* ── picking from a fixed list ───────────────────────────────────────────────────────────────
@@ -1441,9 +744,11 @@ td.num {
 
 .pick {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 0.55rem;
-  padding: 0.35rem 0;
+  /* A whole row to tap, not a 13px box. */
+  min-height: 2.75rem;
+  padding: 0.25rem 0;
   font-size: 0.9rem;
   cursor: pointer;
   color: var(--muted);
@@ -1456,7 +761,7 @@ td.num {
 
 .pick input {
   width: auto;
-  margin: 0.15rem 0 0;
+  margin: 0;
   accent-color: var(--ink);
   flex-shrink: 0;
 }
@@ -1469,361 +774,6 @@ td.num {
   display: block;
   font-size: 0.8rem;
   color: var(--dim);
-}
-
-/* ── the chat switcher ───────────────────────────────────────────────────────────────────── */
-
-.chat-tabs {
-  flex-wrap: wrap;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-  margin: 1.1rem 0 1.25rem;
-}
-
-.chat-tab {
-  display: inline-flex;
-  align-items: center;
-  border: 1px solid var(--hairline);
-  border-radius: 999px;
-  background: var(--bg-raised);
-  max-width: 15rem;
-  min-width: 0;
-  /* The pill clips what the title cannot fit. Without it the text ran under the rounded border
-     and lost its first character as well as its last. */
-  overflow: hidden;
-  transition:
-    border-color var(--fade) var(--ease),
-    background var(--fade) var(--ease);
-}
-
-.chat-tab:hover {
-  border-color: var(--faint);
-}
-
-.chat-tab.on {
-  border-color: var(--dim);
-  background: var(--bg);
-}
-
-.chat-tab > button:first-child {
-  background: none;
-  border: none;
-  border-radius: 999px;
-  padding: 0.4rem 0.35rem 0.4rem 0.95rem;
-  color: var(--muted);
-  font-size: 0.85rem;
-  font-weight: 400;
-  min-width: 0;
-  overflow: hidden;
-  cursor: pointer;
-}
-
-/* The truncation lives on the text, not the button: a flex item with padding keeps its full text
-   width, so the ellipsis never appeared and the pill clipped the word at its border instead. */
-.chat-tab-title {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.chat-tab.on > button:first-child {
-  color: var(--ink);
-  font-weight: 550;
-}
-
-.chat-tab > button:hover:not([disabled]) {
-  transform: none;
-}
-
-/* The close affordance stays quiet until the tab is hovered — deleting a chat is destructive and
-   should not be the most visible thing about it. */
-.chat-tab-x {
-  background: none;
-  border: none;
-  padding: 0.4rem 0.7rem 0.4rem 0.25rem;
-  color: transparent;
-  font-size: 1rem;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.chat-tab:hover .chat-tab-x,
-.chat-tab.on .chat-tab-x {
-  color: var(--dim);
-}
-
-.chat-tab-x:hover:not([disabled]) {
-  color: var(--danger);
-  transform: none;
-}
-
-.chat-tab-new {
-  background: none;
-  border: 1px dashed var(--faint);
-  border-radius: 999px;
-  padding: 0.4rem 0.95rem;
-  color: var(--muted);
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  cursor: pointer;
-}
-
-.chat-tab-new:hover:not([disabled]) {
-  color: var(--ink);
-  border-color: var(--dim);
-  transform: none;
-}
-
-/* Not an error, and not a button: a fact about how many chats there are. */
-.chat-tab-full {
-  font-family: var(--font-mono);
-  font-size: 0.66rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--dim);
-}
-
-/* ── the composer ────────────────────────────────────────────────────────────────────────── */
-
-.composer {
-  display: flex;
-  align-items: flex-end;
-  gap: 0.5rem;
-  border: 1px solid var(--faint);
-  border-radius: 22px;
-  background: var(--bg-raised);
-  padding: 0.5rem 0.5rem 0.5rem 1.1rem;
-  transition: border-color var(--fade) var(--ease);
-}
-
-.composer:focus-within {
-  border-color: var(--dim);
-}
-
-.composer textarea {
-  flex: 1;
-  min-height: 1.6rem;
-  max-height: 200px;
-  resize: none;
-  border: none;
-  background: transparent;
-  padding: 0.3rem 0;
-  line-height: 1.5;
-  overflow-y: auto;
-}
-
-.composer textarea:focus {
-  border: none;
-  outline: none;
-}
-
-.composer-send {
-  flex-shrink: 0;
-  width: 2.1rem;
-  height: 2.1rem;
-  padding: 0;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-}
-
-.composer-send:hover:not([disabled]) {
-  transform: none;
-}
-
-.typing {
-  display: inline-flex;
-  gap: 0.3rem;
-  align-items: center;
-  margin-right: 0.6rem;
-  vertical-align: middle;
-}
-
-.typing i {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--dim);
-  animation: typing-dot 1.2s ease-in-out infinite;
-}
-
-.typing i:nth-child(2) { animation-delay: 0.15s; }
-.typing i:nth-child(3) { animation-delay: 0.3s; }
-
-@keyframes typing-dot {
-  0%, 60%, 100% { opacity: 0.35; transform: translateY(0); }
-  30% { opacity: 1; transform: translateY(-3px); }
-}
-
-/* What the assistant wrote down, under the message that wrote it. Quiet on purpose: the user is
-   having a conversation, and the filing is incidental to them. */
-
-/* ── the profile file list ───────────────────────────────────────────────────────────────── */
-
-.files {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(15rem, 100%), 1fr));
-  gap: 0.75rem;
-  margin-top: 1rem;
-}
-
-.file {
-  display: flex;
-  /* **Both axes stated.** `button` is centred globally, and this never unset it — so the icon and
-     label sat in the middle of the tile with the empty space on the left, which is what made the
-     grid look ragged. `center` on the cross axis puts the icon against the two-line block rather
-     than against its first line, which is what the `margin-top` nudge underneath was faking. */
-  justify-content: flex-start;
-  align-items: center;
-  gap: 0.8rem;
-  padding: 0.9rem 1rem;
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius);
-  background: var(--bg-raised);
-  color: inherit;
-  text-decoration: none;
-  cursor: pointer;
-  text-align: left;
-  font-weight: 400;
-  transition:
-    border-color var(--fade) var(--ease),
-    transform var(--fade) var(--ease);
-}
-
-.file:hover {
-  border-color: var(--dim);
-  transform: translateY(-2px);
-}
-
-.file svg {
-  flex-shrink: 0;
-  color: var(--dim);
-}
-
-.file .file-name {
-  font-weight: 600;
-  font-size: 0.9rem;
-  line-height: 1.35;
-}
-
-.file .file-state {
-  display: block;
-  margin-top: 0.2rem;
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--dim);
-}
-
-.file.filled .file-state {
-  color: var(--muted);
-}
-
-/* ── the model page's loop ───────────────────────────────────────────────────────────────── */
-
-.loop {
-  list-style: none;
-  padding: 0;
-  margin: 1rem 0 1.25rem;
-  counter-reset: loop;
-}
-
-.loop li {
-  position: relative;
-  padding: 0.75rem 0 0.75rem 2.6rem;
-  border-bottom: 1px solid var(--hairline);
-  color: var(--muted);
-  font-size: 0.9375rem;
-  counter-increment: loop;
-}
-
-.loop li:last-child {
-  border-bottom: none;
-}
-
-.loop li::before {
-  content: "0" counter(loop);
-  position: absolute;
-  left: 0;
-  top: 0.85rem;
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  letter-spacing: 0.14em;
-  color: var(--dim);
-}
-
-.loop li strong {
-  color: var(--ink);
-}
-
-/* ── the status list ─────────────────────────────────────────────────────────────────────────
- *
- * A dot and a sentence per component. The dot uses the palette's two meaningful colours plus the
- * greys: green is working, red is broken, an ink ring is "needs attention", a dim ring is "not in
- * play yet" — four states without inventing a third colour.
- */
-
-.status-list {
-  list-style: none;
-  padding: 0;
-  margin: 0.75rem 0 0;
-}
-
-.status-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.8rem;
-  padding: 0.7rem 0;
-  border-bottom: 1px solid var(--hairline);
-}
-
-.status-row:last-child {
-  border-bottom: none;
-}
-
-.status-dot {
-  flex-shrink: 0;
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  margin-top: 0.45rem;
-}
-
-.status-row.ok .status-dot {
-  background: var(--score);
-}
-
-.status-row.down .status-dot {
-  background: var(--danger);
-}
-
-.status-row.warn .status-dot {
-  background: transparent;
-  border: 2px solid var(--ink);
-}
-
-.status-row.off .status-dot {
-  background: transparent;
-  border: 1px solid var(--dim);
-}
-
-.status-label {
-  display: block;
-  font-weight: 600;
-  font-size: 0.9375rem;
-}
-
-.status-detail {
-  display: block;
-  color: var(--muted);
-  font-size: 0.85rem;
-  line-height: 1.45;
 }
 
 /* ── the bell ────────────────────────────────────────────────────────────────────────────── */
@@ -2030,54 +980,6 @@ td.num {
   color: var(--dim);
 }
 
-/* ── the details page's folds ────────────────────────────────────────────────────────────── */
-
-.fold {
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-lg);
-  background: var(--bg-raised);
-  margin-bottom: 0.75rem;
-  transition: border-color var(--fade) var(--ease);
-}
-
-.fold:hover,
-.fold.open {
-  border-color: var(--faint);
-}
-
-.fold-head {
-  width: 100%;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 1rem;
-  padding: 1.1rem 1.4rem;
-  background: transparent;
-  border: none;
-  border-radius: var(--radius-lg);
-  color: inherit;
-  font-weight: 400;
-  text-align: left;
-  cursor: pointer;
-}
-
-.fold-head:hover:not([disabled]) {
-  transform: none;
-}
-
-.fold-title {
-  display: block;
-  font-weight: 600;
-  font-size: 0.9875rem;
-}
-
-.fold-hint {
-  display: block;
-  margin-top: 0.15rem;
-  color: var(--muted);
-  font-size: 0.85rem;
-}
-
 /* The save confirmation, under the button that earned it. It was in the fold head, above a section
    long enough that nobody who had just pressed Save was still looking there. */
 .saved-flash {
@@ -2089,19 +991,445 @@ td.num {
   font-size: 0.875rem;
 }
 
-.fold-chevron {
+/* ── the five places: jobs, words, documents, settings, help ─────────────────────────────────
+ *
+ * Built for a phone first and a person who does not read instructions: every control a thumb can
+ * hit (44px, Apple's and Google's floor), one main button a page, and words over icons.
+ */
+
+/* Taps, not clicks. Admin is a laptop tool and keeps its dense controls. */
+.app main:not(.admin) :is(button, .button),
+.wizard :is(button, .button) {
+  min-height: 2.75rem;
+}
+
+button.small,
+.button.small {
+  padding: 0.4rem 1rem;
+  font-size: 0.875rem;
+}
+
+/* On: "I applied" once it is true. */
+button.secondary.on {
+  border-color: var(--score);
+  color: var(--score);
+}
+
+/* The one thing to do on a page. */
+button.main {
+  margin-top: 1.5rem;
+  padding: 0.75rem 2rem;
+  font-size: 1rem;
+}
+
+.lede {
+  color: var(--muted);
+  max-width: 40rem;
+  margin: 0 0 1.5rem;
+}
+
+.places {
+  display: flex;
+  gap: 1.6rem;
+}
+
+.places svg {
+  display: none;
+}
+
+/* A job, as a card: what, where, how fresh, why it is here, and what to do with it. */
+.jobs {
+  display: grid;
+  gap: 0.9rem;
+  margin-top: 1rem;
+}
+
+.job-card {
+  background: var(--bg-raised);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  padding: 1.1rem 1.25rem;
+  overflow-wrap: anywhere;
+}
+
+.job-card h3 {
+  margin: 0 0 0.25rem;
+  font-size: 1.05rem;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.job-card h3 a {
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.job-card h3 a:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* Where an alert landed: the one job they came for, marked in the colour that means "a match". */
+.job-card.focus {
+  border-color: var(--score);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--score) 18%, transparent);
+}
+
+.job-card.gone {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.5rem 1.25rem;
+}
+
+.job-meta {
+  margin: 0 0 0.15rem;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.why {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0.6rem 0 0.4rem;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.job-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+
+/* A document's button, and under it the other way to make it or why it could not be made. */
+.make {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+}
+
+.make .error {
+  margin: 0;
+  font-size: 0.85rem;
+  max-width: 22rem;
+}
+
+/* Being made: the words say what, the bar says it has not stopped. */
+button.making {
+  position: relative;
+  overflow: hidden;
+}
+
+button.making[disabled] {
+  opacity: 1;
+  cursor: progress;
+}
+
+button.making::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 40%;
+  height: 3px;
+  background: var(--score);
+  animation: making 1.2s ease-in-out infinite;
+}
+
+@keyframes making {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(250%); }
+}
+
+.more {
+  margin-top: 1.25rem;
+}
+
+/* A word: green ones show jobs, red ones hide them, plain ones are anything else in a list. */
+.word {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.8rem;
+  border: 1px solid var(--faint);
+  border-radius: 999px;
+  background: var(--bg-raised);
+  color: var(--ink);
+  font-size: 0.875rem;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.word.green {
+  border-color: color-mix(in srgb, var(--score) 55%, transparent);
+  background: color-mix(in srgb, var(--score) 12%, transparent);
+}
+
+.word.red {
+  border-color: color-mix(in srgb, var(--danger) 55%, transparent);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
+.why .word {
+  padding: 0.1rem 0.6rem;
+  font-size: 0.8rem;
+}
+
+/* The ×: small to look at, a full tap to hit. */
+.word button {
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  margin: -0.6rem -0.75rem -0.6rem -0.5rem;
+  padding: 0;
+  border: none;
+  background: none;
   color: var(--dim);
-  font-size: 1.3rem;
-  line-height: 1;
+  font-size: 1.05rem;
+}
+
+.word button:hover:not([disabled]) {
+  color: var(--ink);
+  transform: none;
+}
+
+/* A suggestion is offered, not yet taken: dashed until tapped. */
+.word.offer {
+  border-style: dashed;
+  padding: 0.35rem 0.9rem;
+}
+
+.suggestions {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.75rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1rem;
+}
+
+/* The word and its × on one line, the reason under them: a × that wraps away from its word is a
+   × nobody knows the meaning of. */
+.suggestion {
+  display: grid;
+  grid-template-columns: auto auto;
+  justify-content: start;
+  align-items: center;
+}
+
+.reason {
+  grid-column: 1 / -1;
+  padding-left: 0.9rem;
+  color: var(--dim);
+  font-size: 0.8rem;
+}
+
+.dismiss {
+  grid-area: 1 / 2;
+  min-width: 2.75rem;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--dim);
+  font-size: 1.1rem;
+}
+
+.dismiss:hover:not([disabled]) {
+  color: var(--ink);
+  transform: none;
+}
+
+.new-words {
+  margin: 0.25rem 0 1.25rem;
+}
+
+.add-word {
+  flex-wrap: nowrap;
+}
+
+.add-word input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* One big target for a file: tap it, or drop the file on it. */
+.drop {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.5rem 0 1rem;
+  padding: 1.5rem 1rem;
+  border: 1.5px dashed var(--faint);
+  border-radius: var(--radius-lg);
+  text-align: center;
+  cursor: pointer;
+}
+
+.drop:hover,
+.drop.over {
+  border-color: var(--ink);
+}
+
+.drop:focus-within {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+/* Hidden but still the control: the label is what is tapped, the input is what the keyboard reaches. */
+.drop input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.drop-button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  padding: 0.6rem 1.6rem;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+.drop-hint {
+  color: var(--dim);
+  font-size: 0.8rem;
+}
+
+.drop.quiet {
+  padding: 0.9rem 1rem;
+}
+
+.drop.quiet .drop-button {
+  background: transparent;
+  border: 1px solid var(--faint);
+  color: var(--ink);
+}
+
+.files {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.5rem;
+}
+
+.files li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.file-name {
+  overflow-wrap: anywhere;
+}
+
+/* What a save found, said where it cannot be scrolled past. */
+.toast {
+  position: fixed;
+  z-index: 40;
+  left: 50%;
+  bottom: 1.5rem;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100vw - 2rem);
+  margin: 0;
+  padding: 0.75rem 1.1rem;
+  border: 1px solid var(--faint);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  box-shadow: 0 12px 40px rgb(0 0 0 / 40%);
+  font-size: 0.9375rem;
+}
+
+/* Telegram, this browser, the pause: one row each, saying where it stands. */
+.channels {
+  margin: 0.5rem 0 0;
+}
+
+.channel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 0.9rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.channel .label {
+  margin: 0;
+}
+
+.channel .error,
+.channel p {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.optional {
+  margin-top: 3rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--hairline);
+}
+
+.saved-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+/* "Add more", "Change your password", "Advanced": there when wanted, out of the way when not. */
+.fold-plain > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+  list-style: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.fold-plain > summary::-webkit-details-marker {
+  display: none;
+}
+
+.fold-plain > summary::before {
+  content: "›";
   transition: transform var(--fade) var(--ease);
 }
 
-.fold.open .fold-chevron {
+.fold-plain[open] > summary::before {
   transform: rotate(90deg);
 }
 
-.fold-body {
-  padding: 0.25rem 1.4rem 1.4rem;
+.fold-plain > summary:hover {
+  color: var(--ink);
+}
+
+.how {
+  padding-left: 1.25rem;
+  line-height: 1.7;
+}
+
+.how li {
+  margin-bottom: 0.6rem;
 }
 
 /* ── small screens ───────────────────────────────────────────────────────────────────────── */
@@ -2113,13 +1441,73 @@ td.num {
     padding: 1rem 1rem 4rem;
   }
 
+  /* Clear of the tab bar, whatever the phone puts under it. */
+  .app {
+    padding-bottom: calc(6rem + env(safe-area-inset-bottom));
+  }
+
   nav {
     gap: 1rem;
   }
 
-  nav a:not(.brand) {
-    font-size: 0.68rem;
-    letter-spacing: 0.16em;
+  /* The five places become a tab bar along the bottom: where every phone app keeps them, in reach
+     of the thumb, with a picture and a word each. */
+  .places {
+    position: fixed;
+    z-index: 30;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 0;
+    padding-bottom: env(safe-area-inset-bottom);
+    border-top: 1px solid var(--hairline);
+    background: var(--bg);
+  }
+
+  nav .places a {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.2rem;
+    min-height: 3.5rem;
+    margin: 0;
+    padding: 0.45rem 0.15rem;
+    border-bottom: none;
+    font-family: var(--font-body);
+    font-size: 0.7rem;
+    letter-spacing: 0;
+    text-transform: none;
+    text-align: center;
+    line-height: 1.2;
+  }
+
+  /* Two short names a row, not seventeen rows of one. */
+  .picker-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .places svg {
+    display: block;
+    width: 22px;
+    height: 22px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.7;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .bell,
+  .theme-toggle {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+
+  .toast {
+    bottom: calc(5rem + env(safe-area-inset-bottom));
   }
 }
 
@@ -2165,78 +1553,6 @@ td.num {
 
 .history tr:last-child td {
   border-bottom: none;
-}
-
-.history .pill {
-  margin-left: 0.5rem;
-  padding: 0.1rem 0.45rem;
-  border: 1px solid var(--faint);
-  border-radius: 999px;
-  color: var(--score);
-  font-family: var(--font-mono);
-  font-size: 0.6rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-/* ── chat: steps, working state ──────────────────────────────────────────────────────────────── */
-
-/* One container per step of a reply, on a rail. A turn that does three things reads as three
-   things rather than one paragraph that happens to be long. */
-/* One step of a reply, one container. **Named `turn-step`, not `step`** — the sign-in and signup
-   wizards already own `.step`, and taking it put a bordered card around the login form. */
-.turn-step {
-  position: relative;
-  padding: 0.7rem 1rem;
-  border: 1px solid var(--hairline);
-  border-radius: 12px;
-  background: var(--bg-raised);
-}
-
-.turn-step + .turn-step {
-  margin-top: 0.5rem;
-}
-
-/* Outside the card, on the line. The ring in the page colour is what makes it read as a bead on a
-   thread rather than a dot floating beside a stripe. */
-.turn-step-dot {
-  position: absolute;
-  /* Centred *on* the line, not beside it. The offset carries the card's 1px border because an
-     absolutely positioned child is placed against the padding box, which that border shifts —
-     which is exactly the one pixel that had every dot sitting off the rail. */
-  left: calc(-1.4rem - 1px);
-  top: 1.1rem;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--dim);
-  box-shadow: 0 0 0 3px var(--bg);
-}
-
-/* A step is a block, so the paragraph inside it should not add a trailing gap. */
-.turn-step > :last-child {
-  margin-bottom: 0;
-}
-
-/* Bottom-left, beside the composer: the one place that says something is running, and the one
-   place to end it. */
-.working {
-  display: flex;
-  align-items: center;
-  gap: 0.7rem;
-  margin: 0 0 0.6rem;
-}
-
-.small-btn {
-  padding: 0.25rem 0.8rem;
-  font-size: 0.75rem;
-}
-
-.turn-stopped {
-  display: block;
-  margin-top: 0.6rem;
-  color: var(--muted);
-  font-size: 0.8125rem;
 }
 
 /* A table cell that opens a detail view. A button for the semantics, a link for the look. */
@@ -2295,20 +1611,6 @@ td.num {
 /* The corner where two bars meet, which otherwise renders as a light square in dark mode. */
 *::-webkit-scrollbar-corner {
   background: transparent;
-}
-
-/* Name over state, and a long name truncates rather than widening the tile — the grid tracks are
-   equal, so one long label would otherwise set the width for all of them. */
-.file > span:last-child {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.file .file-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* ── admin: sources, rows, deletion ──────────────────────────────────────────────────────────── */
@@ -2544,20 +1846,6 @@ td.num {
   font-size: 0.85rem;
 }
 
-/* The wizard's forward control. It sits below the step's own form rather than inside it, because
-   it is navigation and not a submit: several steps save more than once before they are complete. */
-.wizard-nav {
-  display: flex;
-  align-items: center;
-  gap: 0.9rem;
-  margin-top: 1.75rem;
-}
-.wizard-nav .advance {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-}
-
 /* Back was a bare link, which read as "leave this page" rather than "the step before". Now a quiet
    button naming where it goes, and the arrow slides on hover so the direction is felt. */
 .back {
@@ -2574,11 +1862,9 @@ td.num {
   cursor: pointer;
   transition: color 0.15s ease;
 }
-.back:hover { color: var(--fg); }
+.back:hover { color: var(--ink); }
 .back svg { transition: transform 0.15s ease; }
 .back:hover svg { transform: translateX(-3px); }
-.wizard-nav .advance:not(:disabled):hover svg { transform: translateX(3px); }
-.wizard-nav .advance svg { transition: transform 0.15s ease; }
 
 /* **Radios drawn rather than accented.** `accent-color: var(--ink)` paints the selected dot in the
    foreground colour, which in dark mode is near-white on a near-white control: the filled state was
@@ -2589,9 +1875,9 @@ td.num {
   -webkit-appearance: none;
   width: 1.05rem;
   height: 1.05rem;
-  border: 1.5px solid var(--hairline);
+  border: 1.5px solid var(--dim);
   border-radius: 50%;
-  background: var(--surface);
+  background: var(--bg-raised);
   display: grid;
   place-content: center;
   transition: border-color var(--fade) var(--ease), background var(--fade) var(--ease);
@@ -2623,46 +1909,6 @@ td.num {
 
 /* A ticked option should look ticked from across the room, not only by its label shade. */
 .pick:has(input:checked) { font-weight: 500; }
-
-/* How many of a bounded list are spent. Sits with the group it counts, so the limit is visible
-   before it is hit rather than as a validation error afterwards. */
-.pick-count {
-  font-size: 0.78rem;
-  color: var(--dim);
-  margin: 0.5rem 0 0;
-}
-.pick-count.full { color: var(--warn, #d08a34); }
-
-/* The composer button while a turn is running. Same footprint as send so the control does not move
-   under the cursor when it changes job — only what it does changes. */
-.composer-send.stop {
-  background: var(--ink);
-  color: var(--bg);
-}
-.composer-send.stop:hover:not(:disabled) { opacity: 0.85; }
-
-/* A file tile that exists but cannot be opened. Dimmed rather than hidden: knowing the file is
-   there is different from reading what it says, and an empty section would read as a broken setup
-   rather than a closed one. */
-.file:disabled {
-  cursor: default;
-  opacity: 0.5;
-}
-.file:disabled:hover { border-color: var(--hairline); transform: none; }
-
-/* Renaming a chat happens in the tab itself. Sized to the pill it replaces so the switcher does not
-   jump when an edit starts — a row of tabs that reflows on click is one people click twice. */
-.chat-tab-rename {
-  width: 9rem;
-  padding: 0.1rem 0.35rem;
-  border: 1px solid var(--ink);
-  border-radius: 5px;
-  background: var(--bg);
-  color: var(--ink);
-  font: inherit;
-  font-size: 0.82rem;
-}
-.chat-tab-rename:focus { outline: none; }
 
 /* Search terms, two columns. The three-column source grid put twenty-odd short strings on screen
    with no order anybody could follow — it read as a wall rather than a list, and a term you were

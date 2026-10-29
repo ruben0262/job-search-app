@@ -1,21 +1,11 @@
 /** The bell. */
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { api } from "./api";
+import { api, type Schema } from "./api";
 import { ago } from "./time";
 
-type Notification = {
-  id: number;
-  event: string;
-  level: "info" | "warning" | "error";
-  title: string;
-  body: string;
-  url: string | null;
-  created_at: string | null;
-  read: boolean;
-};
-
-type Feed = { unread: number; notifications: Notification[] };
+type Feed = Schema<"NotificationList">;
+type Notification = Feed["notifications"][number];
 
 const POLL_MS = 60_000;
 

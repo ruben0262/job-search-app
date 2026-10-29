@@ -71,3 +71,10 @@ beautifulsoup4>=4.12
 langdetect>=1.0.9
 pyte>=0.8            # libs/claudeauth renders the CLI terminal; the oauth tests import it
 pywebpush>=2.0       # services/notifier's browser notifications; the alert tests import it
+
+# tests/test_e2e_site.py: headless Chromium walks the built site, served by uvicorn on a thread.
+# **Capped**, because it decides pass or fail (CLAUDE.md §7): a Playwright release changes the
+# browser protocol it speaks, and CHROME_BIN is a pinned build. Raise it with the walk run against
+# the new version first.
+playwright>=1.64,<1.65
+uvicorn>=0.32

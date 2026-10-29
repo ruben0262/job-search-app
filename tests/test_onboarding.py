@@ -174,6 +174,25 @@ def test_the_pickers_are_served_every_place_language_and_policy_with_a_label(api
 
 
 @pytestmark_db
+def test_the_place_limit_the_page_is_served_is_the_one_a_save_enforces(api):
+    """The picker stops at the served number, so it must be the number that refuses a save — a copy
+    of it in the page would agree today and drift tomorrow (CLAUDE.md §5)."""
+    from libs.contracts.config import Location
+
+    http, _, _ = api
+    most = http.get("/onboarding/review").json()["choices"]["max_locations"]
+    places = [place.value for place in Location]
+    assert len(places) > most, "the limit can be reached, or it would not need serving"
+
+    def save(count: int) -> int:
+        return http.put("/onboarding/config", json={"sections": [{
+            "platform": "all", "keywords": ["nurse"], "locations": places[:count]}]}).status_code
+
+    assert save(most) == 200
+    assert save(most + 1) == 422
+
+
+@pytestmark_db
 def test_finishing_needs_a_cv_a_name_and_one_green_word_and_nothing_else(api):
     """No Telegram, no Claude key, no proxy: none of them is needed to see a matching job."""
     from libs.db.models import UserSecret

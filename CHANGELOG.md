@@ -14,6 +14,35 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-10-29 — the site for someone who has never used a job tool (Phase 8, workstream 6)
+
+A new account used to go through seven onboarding pages and an hour of setup chat; the home page
+counted jobs it did not show; and a banner told people who had simply not chosen Telegram that
+nothing was being delivered. Now there are **three screens** — your CV; what we found (words, places,
+languages, how often you go in) with one "Looks good"; and done, with optional alerts — and **Jobs is
+the home page**. Each card says why it is there, makes a CV or cover letter in one tap with visible
+progress ending in a download, and carries "I applied" and "Hide" with an Undo. My words, My
+documents and Settings replace "Your details"; on a phone the five places sit in a bottom tab bar,
+and no screen scrolls sideways at 390 px. An alert's link (`#/feed?job=`) puts that job first, or says
+plainly that it is no longer in the list and still offers its documents. Every refusal (no consent, no
+AI available, today's limit, paused) is a plain sentence; a failed build never shows its operator text.
+
+Every response the site reads is a generated type now — a hand-written one is how the place pickers
+went blank for two months. `/dashboard` stopped running a second full match that nothing displayed:
+150 → 13 ms median over 2,000 rows. `web/src` without generated types went from 10,693 to 8,612 lines
+(`styles.css` 2,986 → 2,232); the setup-chat page, "Your details", the overview and the jobs table
+are deleted with their only consumers.
+
+`tests/test_e2e_site.py` walks a new person in headless Chromium through the real built site, the
+real API and the real docgen worker: sign up → the emailed link → three screens → "2 jobs match your
+words", each saying why → Make my CV → a real PDF. Each of seven deliberate breaks fails it.
+
+Gates on the merged tree (build first, then the suite): lint-imports 3 kept, 0 broken (2 ignored);
+ruff clean; one alembic head; contract 71 paths, no drift; web build passes; pytest 1,497 passed,
+5 skipped — the walk ran. New dev dependencies: `playwright` (capped), `uvicorn`.
+
+---
+
 ## 2026-10-29 — one definition of where a CV's stylesheet is, and a constant that governed nothing (Phase 8, integration)
 
 The scaffold's `<style>` block was found by two hand-written copies of the same search — strip the

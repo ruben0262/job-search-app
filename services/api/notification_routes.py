@@ -16,7 +16,24 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
 
-@router.get("")
+class NotificationRow(BaseModel):
+    id: int
+    event: str
+    level: str
+    title: str
+    body: str
+    # An in-app route, like "#/settings": where opening it takes them.
+    url: str | None
+    created_at: str | None
+    read: bool
+
+
+class NotificationList(BaseModel):
+    unread: int
+    notifications: list[NotificationRow]
+
+
+@router.get("", response_model=NotificationList)
 def list_notifications(db: Session = Depends(get_db),
                        user_id: _uuid.UUID = Depends(current_user),
                        limit: int = Query(20, ge=1, le=100)) -> dict:

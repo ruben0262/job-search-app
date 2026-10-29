@@ -3021,7 +3021,7 @@ resend a verification email, the setup chat skipping consent).
    and the audit's verification-resend fix.
 5. **Documents ✅** — provider layer (own keys, allowance), instant documents wired into docgen,
    faster rendering, and consent checked wherever text leaves for a provider.
-6. **Frontend** — the three screens, jobs with word chips and suggestions, downloads, settings, phones.
+6. **Frontend ✅** — the three screens, jobs with word chips and suggestions, downloads, settings, phones.
 7. **AI documents and support chat** — the new prompts, measured; the chat port.
 
 **Done when** the `switched-off model` contract has no `ignore_imports`, the six gates pass, and a new
