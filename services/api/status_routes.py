@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from libs import limits
 from libs.db.models import CorpusJob, QueueJob, User, UserJobState
-from libs.notify import owed, reachable
+from libs.notify import owed, reachable, sent_today
 from services.api.deps import current_user, get_db
 
 logger = logging.getLogger(__name__)
@@ -103,10 +103,10 @@ def _delivery(db: Session, user: User, now: datetime) -> StatusComponent:
                       "Paused by you — nothing is being sent. Turn messages back on in Settings.")
 
     # Today's allowance, spent, is not a fault.
-    sent_today = _sent_today(db, user)
+    today = sent_today(db, user.id)
     cap = daily_cap(user)
     # Only when a cap exists.
-    if cap is not None and sent_today >= cap:
+    if cap is not None and today >= cap:
         return _entry("delivery", "Delivery", "ok",
                       f"Today's {cap} jobs have been sent — that is this account's daily limit. "
                       "More arrive tomorrow.")
@@ -157,13 +157,3 @@ def daily_cap(user: User) -> int | None:
     cap = limits.resolve(user, "notifications_per_day")
     # None travels out as None.
     return cap
-
-
-def _sent_today(db: Session, user: User) -> int:
-    """Deliveries since this user's local midnight, counted the way the notifier counts them."""
-    local_midnight = func.date_trunc("day", func.timezone(user.timezone or "UTC", func.now()))
-    return db.scalar(
-        select(func.count()).select_from(UserJobState)
-        .where(UserJobState.user_id == user.id,
-               UserJobState.notified_at.is_not(None),
-               func.timezone(user.timezone or "UTC", UserJobState.notified_at) >= local_midnight)) or 0

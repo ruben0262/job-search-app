@@ -10,6 +10,7 @@ with the text handed to `on_text` as it arrives.
 from __future__ import annotations
 
 import json
+import uuid
 from collections.abc import Callable, Iterable
 
 from libs.llm.client import LlmError, warn_if_truncated
@@ -55,7 +56,8 @@ def gemini_answer(events: Iterable[dict], on_text: Callable[[str], None] | None,
         for part in (candidate.get("content") or {}).get("parts") or []:
             if "functionCall" in part:
                 call = part["functionCall"]
-                uses.append({"type": "tool_use", "id": call.get("id") or f"call_{len(uses)}",
+                # Unique across the conversation, not per answer: a counter restarts at call_0 every round.
+                uses.append({"type": "tool_use", "id": call.get("id") or f"call_{uuid.uuid4().hex[:12]}",
                              "name": call["name"], "input": call.get("args") or {},
                              "signature": part.get("thoughtSignature")})
             elif part.get("text") and not part.get("thought"):

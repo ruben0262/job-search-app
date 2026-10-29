@@ -28,7 +28,8 @@ function useHash(): string {
   return hash;
 }
 
-type Session = { state: "loading" } | { state: "out" } | { state: "in"; dashboard: Dashboard };
+type Session =
+  | { state: "loading" } | { state: "down"; why: string } | { state: "out" } | { state: "in"; dashboard: Dashboard };
 
 /** The five places, in tab-bar order. `#/feed` is Jobs too: every alert links there. */
 const PLACES: [string, string, ReactNode][] = [
@@ -53,7 +54,12 @@ export function App() {
         clearJobsCache();
         clearAccountCache();
         setSession({ state: "out" });
-      } else throw error;
+        return;
+      }
+      // Before the first answer there is nothing else to show, so say so rather than "Loading…" forever.
+      const why = error instanceof ApiError ? `The server answered ${error.status}.` : "No connection to the server.";
+      setSession((now) => (now.state === "loading" ? { state: "down", why } : now));
+      throw error;
     }
   }, []);
 
@@ -77,6 +83,17 @@ export function App() {
   if (hash.startsWith("/reset")) return <ResetPassword onDone={reload} />;
 
   if (session.state === "loading") return <main className="centered">Loading…</main>;
+  if (session.state === "down") {
+    return (
+      <main className="centered">
+        <p>Mahoraga can't be reached right now.</p>
+        <p>{session.why}</p>
+        <button type="button" onClick={() => { setSession({ state: "loading" }); void reload(); }}>
+          Try again
+        </button>
+      </main>
+    );
+  }
 
   if (session.state === "out") {
     // The landing page is the ported `mahoraga-jobs-web` (decision reversed 2026-07-30: one deployment.

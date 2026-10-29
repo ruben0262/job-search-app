@@ -121,6 +121,10 @@ class AnthropicClient:
                 blocks.append({"type": "tool_use", "id": block.id, "name": block.name,
                                "input": block.input})
 
+        # The same two checks the other providers' adapters make in `toolcalls._answer`.
+        warn_if_truncated(message.stop_reason == "max_tokens", model, max_tokens)
+        if not text_parts and not tool_uses:
+            raise LlmError(f"Claude wrote nothing ({message.stop_reason or 'no reason given'})")
         return {"text": "".join(text_parts), "tool_uses": tool_uses, "content": blocks,
                 "stop_reason": message.stop_reason}
 

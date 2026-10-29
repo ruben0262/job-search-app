@@ -197,6 +197,25 @@ def test_alerts_start_when_the_browser_subscribed(db):
 
 
 @needs_db
+def test_a_backlog_bigger_than_the_scan_is_skipped_out_loud_not_silently(db, monkeypatch, caplog):
+    """`owed` sends oldest first from what one scan saw, then the watermark passes it; anything older
+    the scan never reached is never alerted. After a long outage that is the right trade — the jobs
+    page still lists them — but it must be said, with the account and the count, not happen quietly."""
+    from libs import notify
+
+    monkeypatch.setattr(notify, "NOTIFY_SCAN", 2)
+    user, word = _person(db, joined_minutes_ago=60)
+    for minutes in (30, 20, 10):
+        _posting(db, word, minutes_ago=minutes)
+
+    with caplog.at_level("WARNING"):
+        assert len(notify.owed(db, user)) == 2
+
+    assert any(str(user.id) in record.getMessage() and record.levelname == "WARNING"
+               for record in caplog.records), "a backlog the scan cut off must be logged"
+
+
+@needs_db
 def test_the_daily_cap_holds_the_rest_for_tomorrow(db):
     from libs import limits
     from libs.notify import owed
@@ -551,3 +570,34 @@ def test_the_webhook_script_points_telegram_at_the_route_the_api_serves(monkeypa
     assert script.main() == 0
     assert sent == {"url": "https://jobs.example.com/telegram/webhook", "secret_token": SECRET,
                     "allowed_updates": ["message"]}
+
+
+@needs_db
+def test_old_bot_accounts_are_offered_one_tap_and_platform_linked_ones_stay_connected(db):
+    """Runs the 2026-10-29 migration's own statement: an account linked through a bot of its own is
+    moved to unconfigured (one tap to connect), never left to be marked broken on its first delivery."""
+    import importlib.util
+    import pathlib
+
+    from sqlalchemy import text
+
+    from libs.db.models import AuthToken, User
+
+    path = next((pathlib.Path(__file__).resolve().parents[1] / "libs/db/migrations/versions")
+                .glob("*telegram_connected_through_the_platform_bot_only.py"))
+    spec = importlib.util.spec_from_file_location("legacy_telegram", path)
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+
+    old_bot, _ = _person(db)
+    linked, _ = _person(db)
+    db.add(AuthToken(token_hash=uuid.uuid4().hex, user_id=linked.id, purpose="telegram_connect",
+                     expires_at=datetime.now(UTC), used_at=datetime.now(UTC)))
+    db.flush()
+
+    db.execute(text(migration.LEGACY_TELEGRAM))
+    db.expire_all()
+
+    assert db.get(User, old_bot.id).telegram_status == "unconfigured"
+    assert db.get(User, old_bot.id).telegram_chat_id == "555", "kept; Start in the platform bot replaces it"
+    assert db.get(User, linked.id).telegram_status == "connected"

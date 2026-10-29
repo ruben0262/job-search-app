@@ -4,6 +4,8 @@ onboarding screens, their jobs with why each one is there, and a CV that downloa
 Headless Chromium drives `web/dist`, served by the real API on a real Postgres, with the real docgen
 worker beside it rendering through the real Chrome. Only the outside world is faked: the email is
 printed instead of sent, and nothing here can reach Telegram or an AI — an instant CV needs neither.
+
+And the same build with no API behind it, which needs no database: the first screen anybody sees.
 """
 from __future__ import annotations
 
@@ -15,6 +17,7 @@ import threading
 import time
 import uuid
 from datetime import UTC, datetime
+from urllib.parse import urlparse
 
 import pytest
 
@@ -22,8 +25,8 @@ DIST = pathlib.Path(__file__).resolve().parents[1] / "web" / "dist"
 CHROME = os.environ.get("CHROME_BIN", "")
 
 pytestmark = pytest.mark.skipif(
-    not (os.environ.get("DATABASE_URL") and os.path.exists(CHROME) and (DIST / "index.html").exists()),
-    reason="needs DATABASE_URL, CHROME_BIN and the built site (npm --prefix web run build)")
+    not (os.path.exists(CHROME) and (DIST / "index.html").exists()),
+    reason="needs CHROME_BIN and the built site (npm --prefix web run build)")
 sync_api = pytest.importorskip("playwright.sync_api")
 expect = sync_api.expect
 
@@ -48,8 +51,21 @@ IPHONE = ("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/60
 
 
 @pytest.fixture()
-def site(monkeypatch):
+def built() -> pathlib.Path:
+    """`web/dist`, refused when older than its sources. A walk of an old build tests code that is not
+    there, and CLAUDE.md §7 runs pytest before the build: so that fails here, loudly."""
+    web, built_at = DIST.parent, (DIST / "index.html").stat().st_mtime
+    newer = [path for path in (*(web / "src").rglob("*"), *(web / "public").rglob("*"), web / "index.html")
+             if path.is_file() and path.stat().st_mtime > built_at]
+    assert not newer, f"web/dist is older than {newer[0]} — run `npm --prefix web run build` first"
+    return DIST
+
+
+@pytest.fixture()
+def site(monkeypatch, built):
     """The API and the site on a free port, the docgen worker on a thread, and the three jobs."""
+    if not os.environ.get("DATABASE_URL"):
+        pytest.skip("needs DATABASE_URL")
     os.environ.setdefault("ACCESS_TOKEN_SECRET", "test-" + "x" * 40)
     from fastapi.staticfiles import StaticFiles
     from sqlalchemy import create_engine
@@ -65,7 +81,7 @@ def site(monkeypatch):
     run, started = uuid.uuid4().hex[:8], datetime.now(UTC)
     ids = _seed(run)
     app.dependency_overrides[deps.get_mailer] = ConsoleSender
-    app.mount("/", StaticFiles(directory=DIST, html=True), name="e2e-site")
+    app.mount("/", StaticFiles(directory=built, html=True), name="e2e-site")
     base, stop = _serve(app, monkeypatch)
     try:
         yield base, f"jordan.{run}@example.com", ids
@@ -78,13 +94,6 @@ def site(monkeypatch):
 
 
 def test_a_new_person_goes_from_sign_up_to_a_downloaded_cv(site, capsys, tmp_path):
-    # A walk of an old build tests code that is not there, and CLAUDE.md §7 runs pytest before the
-    # build: so a build older than its sources fails here, loudly, rather than passing on stale code.
-    web, built = DIST.parent, (DIST / "index.html").stat().st_mtime
-    newer = [path for path in (*(web / "src").rglob("*"), *(web / "public").rglob("*"), web / "index.html")
-             if path.is_file() and path.stat().st_mtime > built]
-    assert not newer, f"web/dist is older than {newer[0]} — run `npm --prefix web run build` first"
-
     base, email, ids = site
     with sync_api.sync_playwright() as playwright:
         browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
@@ -118,6 +127,34 @@ def test_a_new_person_goes_from_sign_up_to_a_downloaded_cv(site, capsys, tmp_pat
         _alert_links(page, base, ids)
         _settings(browser, page, base)
         _more(page, base)
+        browser.close()
+
+
+def test_a_server_that_does_not_answer_is_said_out_loud_and_tried_again(built):
+    """The site's first question is `/dashboard`. Any answer but a 401 used to be dropped, so the page
+    said "Loading…" forever: what running the site with no API behind it looked like (2026-10-29)."""
+    status = {"/dashboard": 500}
+
+    def answer(route) -> None:
+        path = urlparse(route.request.url).path
+        if path in ("/dashboard", "/auth/refresh"):
+            route.fulfill(status=status.get(path, 401), json={"detail": "no"})
+        elif (file := built / (path.lstrip("/") or "index.html")).is_file():
+            route.fulfill(path=file)
+        else:
+            route.fulfill(status=404)
+
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = browser.new_page()
+        page.route("http://site.test/**", answer)
+        page.goto("http://site.test/")
+        expect(page.get_by_text("Mahoraga can't be reached right now.")).to_be_visible()
+        expect(page.get_by_text("The server answered 500.")).to_be_visible()
+
+        status["/dashboard"] = 401  # back, and signed out
+        page.get_by_role("button", name="Try again").click()
+        expect(page.get_by_text("The job search that runs itself.")).to_be_visible()
         browser.close()
 
 

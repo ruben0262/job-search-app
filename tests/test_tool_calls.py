@@ -59,7 +59,8 @@ def test_gemini_streams_its_text_reads_its_call_and_is_sent_the_round_before():
 
     assert chunks == ["The Acme job ", "matched python."]
     assert answer["text"] == "The Acme job matched python."
-    assert answer["tool_uses"] == [{"id": "call_0", "name": "my_words", "input": {}}]
+    assert [(use["name"], use["input"]) for use in answer["tool_uses"]] == [("my_words", {})]
+    assert answer["tool_uses"][0]["id"].startswith("call_")
     assert answer["content"][-1]["signature"] == "bmV4dA", "kept, to go back with the next round"
     body = json.loads(seen[0].content)
     assert str(seen[0].url).endswith("/models/the-model:streamGenerateContent?alt=sse")
@@ -74,6 +75,29 @@ def test_gemini_streams_its_text_reads_its_call_and_is_sent_the_round_before():
                                      "thoughtSignature": "c2ln"}]},
         {"role": "user", "parts": [{"functionResponse": {
             "name": "why_job", "response": {"result": "Found by python."}}}]}]
+
+
+def test_gemini_calls_without_an_id_stay_distinct_across_rounds():
+    """Gemini usually sends no id. A per-answer counter gave every round a `call_0`, so a later round's
+    name overwrote an earlier one's and the answer went back under the wrong tool."""
+    from libs.llm.toolcalls import gemini_body
+
+    def ask(name):
+        client, _ = _client(GeminiClient, _sse({"candidates": [{"content": {"parts": [
+            {"functionCall": {"name": name, "args": {}}}]}, "finishReason": "STOP"}]}))
+        return client.complete_tools(model="m", system="Help.", messages=ROUND[:1], tools=TOOLS,
+                                     max_tokens=300)
+
+    first, second = ask("my_words"), ask("why_job")
+    history = [ROUND[0]]
+    for answer, said in ((first, "green: python"), (second, "found by python")):
+        history += [{"role": "assistant", "content": answer["content"]},
+                    {"role": "user", "content": [{"type": "tool_result", "content": said,
+                                                  "tool_use_id": answer["tool_uses"][0]["id"]}]}]
+
+    body = gemini_body("Help.", history, TOOLS, 300)
+    assert [part["functionResponse"]["name"] for content in body["contents"]
+            for part in content["parts"] if "functionResponse" in part] == ["my_words", "why_job"]
 
 
 def test_openai_streams_its_text_and_puts_a_call_together_from_its_pieces():
@@ -119,3 +143,31 @@ def test_an_answer_with_nothing_in_it_is_a_refusal_not_an_empty_reply():
 
     with pytest.raises(LlmError, match="SAFETY"):
         _turn(client)
+
+
+def test_claude_answering_nothing_at_the_ceiling_is_said_out_loud_and_refused(caplog):
+    """Gemini's and OpenAI's paths log a cut-off answer and refuse an empty one; Claude's must too, or
+    a help-chat reply is saved as done with blank text and no line in the log."""
+    from types import SimpleNamespace
+
+    from libs.llm.client import AnthropicClient
+
+    class Stream:
+        text_stream = ()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def get_final_message(self):
+            return SimpleNamespace(content=[], stop_reason="max_tokens")
+
+    claude = AnthropicClient.__new__(AnthropicClient)
+    claude._oauth = False
+    claude._client = SimpleNamespace(messages=SimpleNamespace(stream=lambda **_: Stream()))
+
+    with pytest.raises(LlmError):
+        claude.complete_tools(model="m", system="Help.", messages=ROUND[:1], tools=TOOLS, max_tokens=300)
+    assert any("300" in record.getMessage() for record in caplog.records if record.levelname == "ERROR")

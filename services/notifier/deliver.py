@@ -20,7 +20,7 @@ from libs import limits
 from libs.db.models import PushSubscription, QueueJob, User, UserJobState
 from libs.db.models.queue import CLAIM_TIMEOUT_MIN
 from libs.matching import Match
-from libs.notify import TELEGRAM_BROKEN, notify, owed
+from libs.notify import TELEGRAM_BROKEN, notify, owed, sent_today
 from libs.obs import audit
 from libs.queue import enqueue
 from services.notifier.card import keyboard, notification, render
@@ -139,18 +139,6 @@ def _to_browsers(session: Session, user_id: _uuid.UUID, browsers: list[PushSubsc
     return reached
 
 
-def notifications_today(session: Session, user_id: _uuid.UUID) -> int:
-    """How many jobs have been sent since the user's local midnight."""
-    timezone = session.scalar(select(User.timezone).where(User.id == user_id)) or "UTC"
-    local_midnight = func.date_trunc("day", func.timezone(timezone, func.now()))
-    return session.scalar(
-        select(func.count())
-        .select_from(UserJobState)
-        .where(UserJobState.user_id == user_id,
-               UserJobState.notified_at.is_not(None),
-               func.timezone(timezone, UserJobState.notified_at) >= local_midnight)) or 0
-
-
 def _run_budget(session: Session, user: User) -> tuple[float, int]:
     """How fast this run may send, and how many jobs it may send."""
     # Never None: `send_gap_seconds` is Telegram's rule rather than ours and forbids unlimited.
@@ -159,7 +147,7 @@ def _run_budget(session: Session, user: User) -> tuple[float, int]:
     per_day = limits.resolve(user, "notifications_per_day")
 
     if per_day is not None:
-        remaining = per_day - notifications_today(session, user.id)
+        remaining = per_day - sent_today(session, user.id)
         if remaining <= 0:
             logger.info("notify: %s is at their daily cap, deferring", user.id)
             return gap, 0

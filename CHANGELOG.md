@@ -14,6 +14,55 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-10-29 — a site that says when it cannot reach its API, and the review's fixes (Phase 8)
+
+**"It just says Loading."** The site opens on "Loading…" and asks `/dashboard`. Only a 401 was handled;
+anything else (no API behind the dev server, whose proxy answers 500; a server error; no connection) was
+rethrown into nothing, so the page said "Loading…" forever and never said why. Reported by the owner,
+reproduced with the dev server and no API. It now says "Mahoraga can't be reached right now", with the
+status, and a Try again button. `test_a_server_that_does_not_answer_is_said_out_loud_and_tried_again`
+fails on the old build and passes on this one. It needs only Chrome and the build, so the database
+requirement moved from the whole of `tests/test_e2e_site.py` onto the walk that uses one, and the
+stale-build guard became a fixture both tests share.
+
+**The dev server proxied a hand-written list of API paths**, which missed `/support` (in development the
+help chat got the site's HTML back and also said "Loading…" forever) and still named `/setup`, deleted.
+`web/vite.config.ts` now reads the paths from `web/openapi.json`, which the contract gate keeps current.
+Checked by hand: `/support` went from `200 text/html` to `401 application/json`. No test, because there is
+no second list left to drift.
+
+From the code review of this branch:
+
+- **Gemini tool calls without an id** were numbered per answer, so every round's first call was
+  `call_0`, a later round's name overwrote an earlier one's, and an answer went back under the wrong
+  tool. Each call now gets its own random id.
+- **Claude answering nothing at its ceiling** was saved as a finished, blank help-chat reply with no
+  log line. Like the Gemini and OpenAI paths, it now logs the cut-off and is refused.
+- **Alerts scanned 2,000 candidates** (the jobs page's scan) while the watermark moves past everything
+  it does not reach, so the older matches in a bigger backlog were never sent, silently. Alerts now
+  scan 10,000 (`NOTIFY_SCAN`), and a backlog past that is logged at WARNING. The jobs page still lists
+  them.
+- **Migration `3c7d1e9a5b20`.** Accounts connected through their own bot before 2026-10-28 kept
+  `telegram_status = 'connected'`. The platform bot has never been started in their chats, so their
+  first alert would have marked them broken and told them they had blocked a bot they never saw. They
+  now see the one-tap Connect. The test runs the migration's own statement.
+- **"Sent today" was counted twice**, by the notifier and by the status page, each with its own
+  midnight arithmetic. There is now one `libs.notify.sent_today`, built on `limits.since_their_midnight`,
+  the boundary every other daily ceiling counts from (CLAUDE.md §5).
+
+Each fix above has a test that fails without it, except the last, which changes no behaviour and is
+covered by both consumers' existing cap tests. Two findings stay open, both in the help chat, which
+ships closed: a stream whose writer died is never ended, and reply threads have no ceiling. Both must be
+fixed before `support_chat_enabled` is turned on.
+
+Gates, run locally, in this order: lint-imports 3 kept, 0 broken; ruff clean; `alembic upgrade head` from
+empty and `alembic check` clean, one head; contract 67 paths, no drift; web build; pytest 1,491 passed,
+5 skipped (reference instance absent; three switched-off-model tests, §3; one empty parametrised guard).
+The contract step runs before the build: it rewrites `api-types.ts`, and the stale-build guard reads the
+new mtime as a newer source.
+
+---
+
 ## 2026-10-29 — a help chat that changes nothing without a tap (Phase 8, workstream 7, the chat)
 
 The setup chat's agents are switched off; its page and API were the last live code reaching them.

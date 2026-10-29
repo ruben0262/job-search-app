@@ -14,6 +14,7 @@ from datetime import datetime
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
+from libs import limits
 from libs.db.models import (
     AuthToken,
     CorpusJob,
@@ -99,7 +100,20 @@ def sent_up_to(session: Session, user: User) -> datetime:
     return max(filter(None, (newest or user.created_at, turned_on)))
 
 
+def sent_today(session: Session, user_id: _uuid.UUID) -> int:
+    """Jobs sent to this person since their own midnight. One count, read by the notifier's daily cap
+    and by the status page, so the page cannot say "limit reached" while the notifier disagrees."""
+    return session.scalar(select(func.count()).select_from(UserJobState).where(
+        UserJobState.user_id == user_id, UserJobState.notified_at.is_not(None),
+        limits.since_their_midnight(session, user_id, UserJobState.notified_at))) or 0
+
+
+# How many new candidates one delivery examines — five times the jobs page's scan, because the
+# watermark moves past whatever it does not reach. A backlog beyond it is logged, not lost quietly.
+NOTIFY_SCAN = 10_000
+
+
 def owed(session: Session, user: User) -> list[Match]:
     """The matches not yet sent to this person, oldest first — the order they are sent in."""
-    return sorted(matching_jobs(session, user, since=sent_up_to(session, user)),
+    return sorted(matching_jobs(session, user, since=sent_up_to(session, user), scan=NOTIFY_SCAN),
                   key=lambda match: match.job.first_seen_at)

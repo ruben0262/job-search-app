@@ -6,6 +6,7 @@ the green words, the minimum salary and the order.
 """
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime
@@ -18,6 +19,8 @@ from libs.corpus import salary
 from libs.db.models import CorpusJob, User, UserConfig
 from libs.tenant.filters import candidate_conditions, filters_for
 from libs.tenant.repository import TenantRepository
+
+logger = logging.getLogger(__name__)
 
 # A green word in the title says far more than one in the text.
 TITLE_POINTS, TEXT_POINTS = 75, 25
@@ -98,6 +101,11 @@ def matching_jobs(session: Session, user: User, *, since: datetime | None = None
     # The vector is the switched-off model's, ~3 KB a row, and nothing here reads it.
     jobs = session.scalars(select(CorpusJob).options(defer(CorpusJob.embedding)).where(*where)
                            .order_by(CorpusJob.first_seen_at.desc()).limit(scan)).all()
+    if since is not None and len(jobs) == scan:
+        # The caller's watermark will pass every older candidate this scan never reached.
+        logger.warning("matching: %s has at least %d new candidates since %s; only the newest %d were "
+                       "examined, so older matches will not be alerted (the jobs page still lists them)",
+                       user.id, scan, since.isoformat(), scan)
 
     found = []
     for job in jobs:
