@@ -3022,10 +3022,12 @@ resend a verification email, the setup chat skipping consent).
 5. **Documents ✅** — provider layer (own keys, allowance), instant documents wired into docgen,
    faster rendering, and consent checked wherever text leaves for a provider.
 6. **Frontend ✅** — the three screens, jobs with word chips and suggestions, downloads, settings, phones.
-7. **AI documents and support chat** — the new prompts, measured; the chat port.
+7. **AI documents and support chat** — the chat port ✅ (its prompt awaits approval, shipped
+   switched off); the new shared document prompts, measured — waiting on an API key for the bench.
 
-**Done when** the `switched-off model` contract has no `ignore_imports`, the six gates pass, and a new
-account goes from sign-up to its first matching job in under five minutes without leaving the site.
+**Done when** the `switched-off model` contract has no `ignore_imports` ✅ (2026-10-29), the six gates
+pass ✅, and a new account goes from sign-up to its first matching job in under five minutes without
+leaving the site — `tests/test_e2e_site.py` walks exactly that, to a downloaded CV, in about ten seconds.
 
 ## Deliberately deferred
 

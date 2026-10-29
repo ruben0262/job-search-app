@@ -189,6 +189,8 @@ type Settings = {
   /** Per provider: `anthropic`, `gemini`, `openai`. */
   document_models: Record<string, string>;
   document_keep_hours: number;
+  /** The help chat: 0 off, 1 on. Off until the owner approves its prompt. */
+  support_chat_enabled: number;
 };
 
 type Source = {
@@ -728,6 +730,23 @@ export function AdminPage() {
             </label>
           ))}
           <Error>{saveModel.error}</Error>
+
+          <p className="label" style={{ marginTop: "1.5rem" }}>Help chat</p>
+          <span className="hint">
+            Answers questions on the Help page, with the AI document models above. Off until its
+            prompt is approved.
+          </span>
+          <select
+            value={settings.support_chat_enabled}
+            disabled={savePlatform.busy}
+            aria-label="Help chat"
+            onChange={(event) =>
+              void savePlatform.run("support_chat_enabled", Number(event.target.value))}
+            style={{ maxWidth: "10rem", marginTop: "0.5rem" }}
+          >
+            <option value={0}>Off</option>
+            <option value={1}>On</option>
+          </select>
         </div>
       ) : null}</> : null}
 

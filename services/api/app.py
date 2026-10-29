@@ -3,11 +3,15 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from libs import assistant
 from libs.obs import configure
 from libs.secrets import install
 from services.api.account_routes import router as account_router
@@ -19,16 +23,24 @@ from services.api.document_routes import router as document_router
 from services.api.notification_routes import router as notification_router
 from services.api.onboarding_routes import router as onboarding_router
 from services.api.push_routes import router as push_router
-from services.api.setup_routes import router as setup_router
 from services.api.status_routes import router as status_router
 from services.api.suggestion_routes import router as suggestion_router
+from services.api.support_routes import router as support_router
 from services.api.telegram_routes import router as telegram_router
 
 configure("api")
 # Before any route can hold a plaintext credential.
 install()
 
-app = FastAPI(title="job-search platform", docs_url=None, redoc_url=None)
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    """Help-chat replies the last stop cut off are written again — off the start-up path."""
+    threading.Thread(target=assistant.resume, daemon=True, name="support-resume").start()
+    yield
+
+
+app = FastAPI(title="job-search platform", docs_url=None, redoc_url=None, lifespan=lifespan)
 app.include_router(auth_router)
 app.include_router(account_router)
 app.include_router(admin_router)
@@ -36,11 +48,11 @@ app.include_router(credential_router)
 app.include_router(document_router)
 app.include_router(onboarding_router)
 app.include_router(push_router)
-app.include_router(setup_router)
 app.include_router(dashboard_router)
 app.include_router(notification_router)
 app.include_router(status_router)
 app.include_router(suggestion_router)
+app.include_router(support_router)
 app.include_router(telegram_router)
 
 

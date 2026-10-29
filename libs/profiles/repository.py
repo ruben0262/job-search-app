@@ -120,7 +120,7 @@ class ProfileFiles:
         on after tapping Build, to compute one boolean.
 
         Deliberately not the `filled` column: it is derived, it has drifted in production before
-        (`services/api/setup_routes.py` repairs it on page load), and a stale flag here would refuse
+        (`repair_filled_flags` exists because of it), and a stale flag here would refuse
         a build for somebody whose profile is complete.
         """
         context = self._s.scalar(

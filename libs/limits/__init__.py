@@ -72,10 +72,6 @@ LIMITS: tuple[Limit, ...] = (
     Limit("documents", "Uploaded documents", 25, "files",
           "CVs, references, diplomas — what the setup agent reads from.",
           choices=(10, 25, 50, 100)),
-    Limit("conversations", "Setup chats", 3, "chats",
-          "Every turn replays its whole chat on the user's own credential, so more chats is more "
-          "spend re-reading them.",
-          choices=(1, 3, 5, 10)),
     Limit("label_pool", "Jobs bought per labelling run", 300, "jobs",
           "Labelling runs on the user's own Claude credential, so this is their money.",
           allow_unlimited=False,

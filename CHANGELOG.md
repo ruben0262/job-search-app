@@ -14,6 +14,39 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-10-29 — a help chat that changes nothing without a tap (Phase 8, workstream 7, the chat)
+
+The setup chat's agents are switched off; its page and API were the last live code reaching them.
+The help chat replaces both, with its backend ported from the owner's project-planner portal — the
+ideas, not the code (that is TypeScript on the Claude Agent SDK; this is Python on plain provider APIs):
+
+- **Streamed, not polled.** The reply is written into its row as it arrives and read back as
+  Server-Sent Events (snapshot, delta, step, done), so any API worker can serve the page, and a person
+  who leaves and comes back finds the answer there. First words in 149 ms median with a scripted model.
+- **Restart-proof without a journal file.** A reply still pending or streaming when the API starts is
+  written again; a Postgres advisory lock held by the writer means four workers starting at once write
+  it once, and a worker that dies lets go.
+- **One runner interface**, `complete_tools`, for Anthropic, Gemini and OpenAI, the tool-call
+  translation in one module; tests run on a scripted model — free, instant, offline.
+- **A guard on every tool call.** Lookups run (their words, why a job is on their list, AI requests
+  left). A change — add or remove a word, stop suggesting one — is offered as a button under the reply
+  and runs only when the person taps it, through the same code the site uses. The model has no path to
+  an account: `libs.assistant` cannot import that code at all.
+- **Allowance and consent.** One reply is one request, counted only when the platform pays; without
+  consent, the lookups that read their documents are not offered.
+
+**The support prompt is new and not approved** (`libs/prompts/support.md`, CLAUDE.md §3a): the platform
+setting `support_chat_enabled` keeps the chat closed until the owner approves it. Deleted with no
+consumer left: `services/api/setup_routes.py` and its tests, the `conversations` limit, and the last
+two lines of the switched-off contract's `ignore_imports` — **which is now empty**, Phase 8's first
+condition for done. No live code queues work for a lane nothing drains any more.
+
+Gates on the merged tree (web build first): lint-imports 3 kept, 0 broken, 0 ignored; ruff clean; one
+alembic head (ee2add9ee95f); contract 67 paths, no drift; web build passes; pytest 1,486 passed,
+5 skipped; no file lost its CRLF.
+
+---
+
 ## 2026-10-29 — the landing page describes the product that exists (Phase 8, integration)
 
 The first page a person reads still sold the platform before Phase 8: a model that learns your taste,

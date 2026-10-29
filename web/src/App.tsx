@@ -6,6 +6,7 @@ import { Landing } from "./landing/Landing";
 import { AdminPage } from "./pages/AdminPage";
 import { AdminUserPage } from "./pages/AdminUserPage";
 import { DocumentsPage } from "./pages/DocumentsPage";
+import { HelpPage } from "./pages/HelpPage";
 import { JobsPage, clearJobsCache } from "./pages/JobsPage";
 import { Onboarding } from "./pages/Onboarding";
 import { PrivacyPage } from "./pages/PrivacyPage";
@@ -126,7 +127,7 @@ export function App() {
           ) : section === "settings" ? (
             <SettingsPage dashboard={dashboard} onChanged={reload} onSignedOut={reload} />
           ) : section === "help" ? (
-            <HelpForNow />
+            <HelpPage />
           ) : section === "admin" ? (
             // `#/admin/users/<id>` is its own page, not a panel that unfolds inside the list.
             hash.startsWith("/admin/users/") ? (
@@ -139,22 +140,6 @@ export function App() {
           )}
         </main>
       </div>
-    </>
-  );
-}
-
-/** TEMPORARY until the support chat merges: its `pages/HelpPage.tsx` takes this route. */
-function HelpForNow() {
-  return (
-    <>
-      <p className="kicker">Help</p>
-      <h1>How it works</h1>
-      <ol className="how">
-        <li>Your words find your jobs: green words show jobs, red words hide them. Change them in{" "}
-          <a href="#/words">My words</a>.</li>
-        <li>Tap <strong>Make my CV</strong> on any job, then download it.</li>
-        <li>New jobs on your phone are optional: turn them on in <a href="#/settings">Settings</a>.</li>
-      </ol>
     </>
   );
 }

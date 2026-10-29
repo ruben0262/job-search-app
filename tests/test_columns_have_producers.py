@@ -34,6 +34,9 @@ KNOWN_UNWRITTEN = {
     # The switched-off model's scored-match lifecycle (CLAUDE.md §3 exception): its one writer,
     # `TenantRepository.retire_stale_matches`, was deleted with its last caller on 2026-10-28.
     "retired_at": "switched off with the model; its data and partial indexes are kept",
+    # Read only by the switched-off labeller. Its one writer, the setup page's Start button
+    # (`POST /setup/start`), was deleted with the setup chat on 2026-10-29.
+    "labelling_paused": "switched off with the model; the labeller that reads it comes back with a control",
     # `quota_overrides` and `profile_context` were here and are now dropped.
 }
 

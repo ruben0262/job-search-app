@@ -59,17 +59,14 @@ source_modules = [
     "libs.db", "libs.documents", "libs.harvest", "libs.legal", "libs.limits", "libs.llm",
     "libs.mail", "libs.notify", "libs.obs", "libs.onboarding", "libs.ops", "libs.profiles",
     "libs.queue", "libs.secrets", "libs.settings", "libs.templates", "libs.tenant",
-    "libs.matching", "libs.suggestions",
+    "libs.matching", "libs.suggestions", "libs.assistant",
 ]
 forbidden_modules = [
     "services.trainer", "services.scorer", "services.labeller", "services.capture",
     "services.setupagent", "services.harvester.embedding",
     "libs.scoring", "libs.labels", "libs.feedback", "libs.agents",
 ]
-ignore_imports = [
-    "services.api.setup_routes -> libs.agents",
-    "services.api.setup_routes -> libs.agents.loop",
-]
+ignore_imports = []
 
 [tool.pytest.ini_options]
 # Left permissive on purpose: each component's tests are runnable from its own directory (the
