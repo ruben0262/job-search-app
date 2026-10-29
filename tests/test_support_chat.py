@@ -1,0 +1,391 @@
+"""The help chat: asked on the site, answered by a scripted model through the real loop, streamed
+back as Server-Sent Events, and able to change an account only through a button the person taps.
+
+The model is the one stand-in. The guard, the allowance, the consent gate, the stream and the
+restart are the code that runs in production, against a real Postgres.
+"""
+from __future__ import annotations
+
+import copy
+import json
+import os
+import re
+import threading
+import time
+import uuid
+from contextlib import contextmanager
+from types import SimpleNamespace
+
+import pytest
+
+pytest.importorskip("fastapi")
+
+pytestmark = pytest.mark.skipif(not os.environ.get("DATABASE_URL"),
+                                reason="DATABASE_URL not set (no live Postgres)")
+
+PLATFORM_KEY = "AIzaPlatformKey-" + "p" * 24
+CONFIG = {"sections": [{"platform": "all", "keywords": ["data engineer"],
+                        "exclude_keywords": ["senior"]}]}
+
+
+class Scripted:
+    """The runner the tests use: `complete_tools` as every provider has it, free, instant, offline.
+    Each turn is `(text, [(tool, input), ...])`; its text streams a word at a time, `delay` apart."""
+
+    def __init__(self, *turns, delay: float = 0.0):
+        self.turns, self.delay, self.seen = list(turns), delay, []
+
+    def complete_tools(self, *, model, system, messages, tools, max_tokens, on_text=None):
+        self.seen.append({"model": model, "system": system, "messages": copy.deepcopy(messages),
+                          "tools": [tool["name"] for tool in tools]})
+        said, calls = self.turns.pop(0)
+        for word in re.findall(r"\S+\s*", said):
+            time.sleep(self.delay)
+            on_text(word)
+        uses = [{"type": "tool_use", "id": f"call-{len(self.seen)}-{n}", "name": name, "input": args}
+                for n, (name, args) in enumerate(calls)]
+        return {"text": said, "tool_uses": [{key: use[key] for key in ("id", "name", "input")}
+                                            for use in uses],
+                "content": [{"type": "text", "text": said}] * bool(said) + uses,
+                "stop_reason": "tool_use" if uses else "end_turn"}
+
+
+def _answers(monkeypatch, model: Scripted) -> None:
+    """Whoever pays, the scripted model writes the reply."""
+    from libs import assistant
+
+    @contextmanager
+    def paying_client(_store, _user_id, _payer):
+        yield model, "anthropic"
+
+    monkeypatch.setattr(assistant, "paying_client", paying_client)
+
+
+def _env(monkeypatch) -> None:
+    from libs.secrets import generate_key
+
+    os.environ.setdefault("ACCESS_TOKEN_SECRET", "test-" + "x" * 40)
+    monkeypatch.setenv("SECRETS_KEK", f"k1:{generate_key()}")
+    monkeypatch.setenv("PLATFORM_AI_PROVIDER", "gemini")
+    monkeypatch.setenv("PLATFORM_AI_KEY", PLATFORM_KEY)
+
+
+@pytest.fixture()
+def api(monkeypatch):
+    """The app on one rolled-back transaction, the reply written inside the request that asked."""
+    from fastapi.testclient import TestClient
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from libs import assistant, settings
+    from libs.auth.access import issue_access_token
+    from libs.db.models import User, UserConfig
+    from services.api import deps
+    from services.api.app import app
+
+    _env(monkeypatch)
+    engine = create_engine(os.environ["DATABASE_URL"])
+    conn = engine.connect()
+    trans = conn.begin()
+    session = Session(bind=conn, join_transaction_mode="create_savepoint")
+    user = User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active")
+    session.add(user)
+    session.flush()
+    session.add(UserConfig(user_id=user.id, schema_version=2, config=copy.deepcopy(CONFIG)))
+    settings.put(session, "support_chat_enabled", 1)
+    session.flush()
+    monkeypatch.setattr(assistant, "start", lambda reply_id: assistant.run(session, reply_id))
+
+    app.dependency_overrides[deps.get_db] = lambda: session
+    try:
+        with TestClient(app, base_url="https://testserver") as http:
+            http.cookies.set("access_token", issue_access_token(user.id, uuid.uuid4()), path="/")
+            yield SimpleNamespace(http=http, session=session, user=user)
+    finally:
+        app.dependency_overrides.clear()
+        session.close()
+        trans.rollback()
+        conn.close()
+
+
+def _ask(api, question: str = "hello") -> dict:
+    asked = api.http.post("/support/messages", json={"text": question})
+    assert asked.status_code == 202, asked.text
+    return api.http.get("/support").json()["messages"][-1]
+
+
+def _words(api) -> tuple[list[str], list[str]]:
+    from libs.db.models import UserConfig
+    from libs.matching import green_words
+
+    api.session.expire_all()
+    config = api.session.get(UserConfig, api.user.id).config
+    return green_words(config), config["sections"][0].get("exclude_keywords") or []
+
+
+# ── the guard ─────────────────────────────────────────────────────────────────────────────────
+
+def test_the_ai_can_only_offer_a_change_and_the_persons_tap_makes_it(api, monkeypatch):
+    model = Scripted(("Let me add that.", [("add_word", {"word": "Python", "kind": "green"})]),
+                     ("Tap the button to add python.", []))
+    _answers(monkeypatch, model)
+
+    reply = _ask(api, "please add python to my words")
+
+    assert reply["steps"] == [{"label": "Add “python” to the words that find jobs", "output": None,
+                               "error": False, "state": "proposed"}]
+    assert "python" not in _words(api)[0], "the AI asked; nothing changes until the person taps"
+    told = model.seen[1]["messages"][-1]["content"][0]["content"]
+    assert "Nothing changes until they tap it" in told
+
+    tapped = api.http.post(f"/support/replies/{reply['id']}/steps/0").json()
+    assert (tapped["state"], tapped["output"]) == ("done", "Added.")
+    assert "python" in _words(api)[0]
+    again = api.http.post(f"/support/replies/{reply['id']}/steps/0").json()
+    assert again["state"] == "done" and _words(api)[0].count("python") == 1, "one tap, one change"
+
+
+def test_a_button_is_only_what_was_offered_and_only_for_whoever_asked(api, monkeypatch):
+    from libs.auth.access import issue_access_token
+    from libs.db.models import User
+
+    _answers(monkeypatch, Scripted(("", [("my_words", {}), ("remove_word", {"word": "Senior"})]),
+                                   ("Tap the button to remove it.", [])))
+    reply = _ask(api, "stop hiding senior jobs")
+    assert [step["state"] for step in reply["steps"]] == [None, "proposed"]
+    assert "senior" in reply["steps"][0]["output"], "the lookup read their real words"
+
+    button = f"/support/replies/{reply['id']}/steps"
+    assert api.http.post(f"{button}/0").status_code == 404, "a lookup is not a button"
+    assert api.http.post(f"{button}/7").status_code == 404
+    stranger = User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active")
+    api.session.add(stranger)
+    api.session.flush()
+    mine = api.http.cookies.get("access_token")
+    api.http.cookies.set("access_token", issue_access_token(stranger.id, uuid.uuid4()), path="/")
+    assert api.http.post(f"{button}/1").status_code == 404, "somebody else's button"
+    assert api.http.get(f"/support/replies/{reply['id']}/stream").status_code == 404
+    api.http.cookies.set("access_token", mine, path="/")
+    assert "senior" in _words(api)[1]
+
+    assert api.http.post(f"{button}/1").json()["state"] == "done"
+    assert "senior" not in _words(api)[1]
+
+
+# ── who pays ──────────────────────────────────────────────────────────────────────────────────
+
+def test_a_platform_paid_answer_uses_one_request_and_an_own_key_none(api, monkeypatch):
+    from libs.llm import ai_requests_today
+    from libs.secrets import SecretStore
+
+    model = Scripted(("Hello.", []), ("Hello again.", []))
+    _answers(monkeypatch, model)
+
+    _ask(api)
+    assert ai_requests_today(api.session, api.user.id) == 1
+    assert api.http.get("/support").json()["ai"] == {"payer": "platform", "provider": "Gemini",
+                                                    "left": 19, "per_day": 20}
+    assert model.seen[0]["model"] == "claude-haiku-4-5", "the operator's model for that provider"
+
+    SecretStore(api.session).put(api.user.id, "openai_api", "sk-proj-" + "o" * 40)
+    api.session.flush()
+    _ask(api)
+    assert ai_requests_today(api.session, api.user.id) == 1, "their own key is not the allowance"
+    assert api.http.get("/support").json()["ai"] == {"payer": "own", "provider": "OpenAI",
+                                                    "left": None, "per_day": 20}
+
+
+def test_with_no_ai_left_the_page_says_why_and_what_to_do(api, monkeypatch):
+    from libs.limits import set_limit
+
+    _answers(monkeypatch, Scripted(("Hello.", [])))
+    monkeypatch.delenv("PLATFORM_AI_KEY")
+    assert api.http.get("/support").json()["closed"] == (
+        "This site cannot pay for AI answers on your account. Add your own Claude, Gemini or "
+        "OpenAI key in Settings, and you can ask as much as you like.")
+
+    monkeypatch.setenv("PLATFORM_AI_KEY", PLATFORM_KEY)
+    set_limit(api.session, api.user.id, "ai_platform_requests_per_day", 1)
+    _ask(api)
+
+    page = api.http.get("/support").json()
+    assert page["closed"] == ("You have used today's 1 AI requests. They come back at midnight. To "
+                              "ask more now, add your own Claude, Gemini or OpenAI key in Settings.")
+    assert page["ai"]["left"] == 0
+    refused = api.http.post("/support/messages", json={"text": "one more"})
+    assert (refused.status_code, refused.json()["detail"]) == (409, page["closed"])
+    assert len(api.http.get("/support").json()["messages"]) == 2, "a refused question is not kept"
+
+
+def test_the_help_chat_is_closed_until_the_operator_opens_it(api, monkeypatch):
+    from libs import settings
+
+    _answers(monkeypatch, Scripted(("Hello.", [])))
+    settings.put(api.session, "support_chat_enabled", 0)
+
+    assert api.http.get("/support").json()["closed"] == "The help chat is not open yet."
+    assert api.http.post("/support/messages", json={"text": "hi"}).status_code == 409
+    assert api.http.get("/support").json()["messages"] == []
+
+    settings.put(api.session, "support_chat_enabled", 1)
+    assert _ask(api)["text"] == "Hello."
+
+
+# ── consent ───────────────────────────────────────────────────────────────────────────────────
+
+def test_without_consent_what_their_documents_say_never_reaches_the_ai(api, monkeypatch):
+    api.user.suggestions = {"green": [{"term": "kotlin", "reason": "Your job title at Zanzibar Widgets"}],
+                            "red": [], "dismissed": []}
+    api.session.flush()
+    model = Scripted(("", [("suggested_words", {})]), ("I cannot see those.", []),
+                     ("", [("suggested_words", {})]), ("We suggest kotlin.", []))
+    _answers(monkeypatch, model)
+
+    _ask(api, "which words do you suggest?")
+    assert {"suggested_words", "stop_suggesting"}.isdisjoint(model.seen[0]["tools"])
+    assert "Zanzibar" not in json.dumps(model.seen), "nothing their documents say reached the AI"
+    assert "my_words" in model.seen[0]["tools"], "their words and the site's help still answer"
+
+    version = api.http.get("/account/consent").json()["current_version"]
+    assert api.http.post("/account/consent", json={"version": version}).status_code == 200
+    _ask(api, "and now?")
+    assert "suggested_words" in model.seen[2]["tools"]
+    assert "Zanzibar" in json.dumps(model.seen[3]["messages"]), "with consent, it may"
+
+
+# ── streamed, and restart-proof: committed rows, real threads, the app's own sessions ─────────
+
+@pytest.fixture()
+def live(monkeypatch):
+    from fastapi.testclient import TestClient
+    from sqlalchemy import create_engine, delete
+
+    from libs import settings
+    from libs.auth.access import issue_access_token
+    from libs.db import session as database
+    from libs.db.models import PlatformSetting, User, UserConfig
+    from libs.db.session import session_scope
+    from services.api.app import app
+
+    _env(monkeypatch)
+    # The app's own engine, unpooled as every engine in this suite is (conftest.py).
+    monkeypatch.setattr(database, "_engine", create_engine(os.environ["DATABASE_URL"]))
+    monkeypatch.setattr(database, "_Session", None)
+    with session_scope() as session:
+        user = User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active")
+        session.add(user)
+        session.flush()
+        session.add(UserConfig(user_id=user.id, schema_version=2, config=copy.deepcopy(CONFIG)))
+        settings.put(session, "support_chat_enabled", 1)
+        user_id = user.id
+
+    @contextmanager
+    def started():
+        """The API starting: its start-up runs, as it does after a deploy or a crash."""
+        with TestClient(app, base_url="https://testserver") as http:
+            http.cookies.set("access_token", issue_access_token(user_id, uuid.uuid4()), path="/")
+            yield http
+
+    try:
+        yield SimpleNamespace(user_id=user_id, started=started)
+    finally:
+        with session_scope() as session:
+            session.execute(delete(User).where(User.id == user_id))
+            session.execute(delete(PlatformSetting).where(PlatformSetting.key == "support_chat_enabled"))
+
+
+def _stream(http, reply_id: int, since: float) -> list[tuple[str, dict, float]]:
+    """Every event of a reply's stream: its name, its data, and when it arrived."""
+    events, name = [], ""
+    with http.stream("GET", f"/support/replies/{reply_id}/stream") as response:
+        assert response.headers["content-type"].startswith("text/event-stream")
+        for line in response.iter_lines():
+            if line.startswith("event: "):
+                name = line[len("event: "):]
+            elif line.startswith("data: "):
+                events.append((name, json.loads(line[len("data: "):]), time.monotonic() - since))
+    return events
+
+
+def test_a_reply_streams_as_a_snapshot_then_deltas_and_steps_then_done(live, monkeypatch):
+    answer = "Your green word is data engineer, and senior hides the jobs you do not want."
+    _answers(monkeypatch, Scripted(("Let me look at your words.", [("my_words", {})]), (answer, []),
+                                   delay=0.04))
+
+    with live.started() as http:
+        asked = time.monotonic()
+        reply_id = http.post("/support/messages", json={"text": "what are my words?"}).json()["reply_id"]
+        events = _stream(http, reply_id, asked)
+        kept = http.get("/support").json()["messages"][-1]
+
+    names = [name for name, _, _ in events]
+    assert names[0] == "snapshot" and names[-1] == "done" and names.count("done") == 1, names
+    assert names.count("delta") >= 3, f"the text arrives as it is written: {names}"
+    step = next(data["step"] for name, data, _ in events if name == "step")
+    assert step["label"] == "Looked at your words" and "data engineer" in step["output"]
+
+    done = events[-1][1]
+    whole = "Let me look at your words.\n\n" + answer
+    assert done["status"] == "done" and done["text"] == whole
+    assert events[0][1].get("text", "") + "".join(data["text"] for name, data, _ in events
+                                                  if name == "delta") == whole
+    first = next(at for name, data, at in events if data.get("text") and name != "done")
+    assert first < events[-1][2] - 0.3, "the first words are on screen well before the last"
+    assert (kept["status"], kept["text"], kept["steps"][0]["label"]) == ("done", whole,
+                                                                       "Looked at your words")
+
+
+def test_a_reply_cut_off_by_a_restart_is_written_once_when_the_api_starts_again(live, monkeypatch):
+    from libs import assistant
+    from libs.db.models import SetupConversation, SetupMessage
+    from libs.db.session import session_scope
+
+    gate = threading.Event()
+
+    class Waits(Scripted):
+        """Answers everything, counting each call as it starts; the first writer of a question
+        with "wait" in it is held until the test lets it go."""
+        writing, calls = threading.Event(), 0
+
+        def complete_tools(self, **kwargs):
+            self.calls += 1
+            if "wait" in json.dumps(kwargs["messages"][-1]) and not self.writing.is_set():
+                self.writing.set()
+                assert gate.wait(10)
+            return super().complete_tools(**kwargs)
+
+    model = Waits(*[("Your words are fine.", [])] * 3)
+    _answers(monkeypatch, model)
+    with session_scope() as session:
+        chat = SetupConversation(user_id=live.user_id, title="Help")
+        session.add(chat)
+        session.flush()
+        session.add(SetupMessage(user_id=live.user_id, conversation_id=chat.id, role="user",
+                                 content="are my words ok?", agent="support"))
+        # Half written when the API stopped.
+        cut_off = SetupMessage(user_id=live.user_id, conversation_id=chat.id, role="assistant",
+                               content="Your wor", agent="support", status="streaming",
+                               tool_calls={"payer": "platform", "steps": []})
+        session.add(cut_off)
+        session.flush()
+        cut_off_id = cut_off.id
+
+    def reply(http, reply_id: int) -> dict:
+        for _ in range(100):
+            found = next(m for m in http.get("/support").json()["messages"] if m["id"] == reply_id)
+            if found["status"] not in ("pending", "streaming"):
+                return found
+            time.sleep(0.05)
+        raise AssertionError(f"reply {reply_id} was never finished")
+
+    with live.started() as http:
+        assert reply(http, cut_off_id)["text"] == "Your words are fine.", "started again, from the top"
+        assert model.seen[0]["messages"] == [{"role": "user", "content": "are my words ok?"}]
+
+        # A reply a live worker is writing is not written again by a worker starting up now.
+        held = http.post("/support/messages", json={"text": "wait for it"}).json()["reply_id"]
+        assert model.writing.wait(5)
+        assistant.start(held).join(5)
+        gate.set()
+        assert reply(http, held)["status"] == "done"
+    assert model.calls == 2, "each reply was written once"

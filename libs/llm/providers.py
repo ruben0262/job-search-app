@@ -56,12 +56,19 @@ def resolve(session: Session, user: User) -> Payer | None:
         if kind in held:
             return Payer(kind, PROVIDERS[kind])
 
-    provider = os.environ.get(PLATFORM_PROVIDER_ENV, "")
-    allowance = limits.resolve(user, "ai_platform_requests_per_day")
-    if (provider in _PLATFORM_KIND and os.environ.get(PLATFORM_KEY_ENV) and allowance is not None
-            and ai_requests_today(session, user.id) < allowance):
-        return Payer(PLATFORM, provider)
+    if platform_left(session, user) > 0:
+        return Payer(PLATFORM, os.environ[PLATFORM_PROVIDER_ENV])
     return None
+
+
+def platform_left(session: Session, user: User) -> int:
+    """How many more requests the platform's key will pay for, for this person, today: 0 when the
+    platform has no key configured. What `resolve` decides on, and what a page shows as left."""
+    allowance = limits.resolve(user, "ai_platform_requests_per_day")
+    configured = os.environ.get(PLATFORM_PROVIDER_ENV) in _PLATFORM_KIND and os.environ.get(PLATFORM_KEY_ENV)
+    if not configured or allowance is None:
+        return 0
+    return max(0, allowance - ai_requests_today(session, user.id))
 
 
 def ai_requests_today(session: Session, user_id: _uuid.UUID) -> int:

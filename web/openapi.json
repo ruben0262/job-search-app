@@ -210,6 +210,19 @@
         "title": "AdminSetup",
         "type": "object"
       },
+      "Asked": {
+        "properties": {
+          "reply_id": {
+            "title": "Reply Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "reply_id"
+        ],
+        "title": "Asked",
+        "type": "object"
+      },
       "AuthStatus": {
         "properties": {
           "status": {
@@ -420,21 +433,6 @@
           "version"
         ],
         "title": "ConsentBody",
-        "type": "object"
-      },
-      "ConversationTitle": {
-        "properties": {
-          "title": {
-            "maxLength": 80,
-            "minLength": 1,
-            "title": "Title",
-            "type": "string"
-          }
-        },
-        "required": [
-          "title"
-        ],
-        "title": "ConversationTitle",
         "type": "object"
       },
       "CredentialBody": {
@@ -759,20 +757,6 @@
           "raw"
         ],
         "title": "FeedSalary",
-        "type": "object"
-      },
-      "FileEdit": {
-        "properties": {
-          "content": {
-            "maxLength": 200000,
-            "title": "Content",
-            "type": "string"
-          }
-        },
-        "required": [
-          "content"
-        ],
-        "title": "FileEdit",
         "type": "object"
       },
       "FilesFlag": {
@@ -1472,6 +1456,21 @@
         "title": "PushSubscriptionBody",
         "type": "object"
       },
+      "Question": {
+        "properties": {
+          "text": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "Question",
+        "type": "object"
+      },
       "ReadyDashboard": {
         "properties": {
           "applied": {
@@ -1951,6 +1950,287 @@
         "title": "SuggestionPick",
         "type": "object"
       },
+      "SupportAi": {
+        "properties": {
+          "left": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Left"
+          },
+          "payer": {
+            "anyOf": [
+              {
+                "enum": [
+                  "own",
+                  "platform"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payer"
+          },
+          "per_day": {
+            "title": "Per Day",
+            "type": "integer"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          }
+        },
+        "required": [
+          "payer",
+          "provider",
+          "left",
+          "per_day"
+        ],
+        "title": "SupportAi",
+        "type": "object"
+      },
+      "SupportEvent": {
+        "description": "One event of a reply's stream. `snapshot` and `done` carry the reply so far, `delta` the text\nsince, `step` one step at its place.",
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Index"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "step": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SupportStep"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "steps": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/SupportStep"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Steps"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          }
+        },
+        "title": "SupportEvent",
+        "type": "object"
+      },
+      "SupportMessage": {
+        "properties": {
+          "at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "At"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "role": {
+            "enum": [
+              "user",
+              "assistant"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "streaming",
+              "done",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/SupportStep"
+            },
+            "title": "Steps",
+            "type": "array"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "role",
+          "text",
+          "status",
+          "error",
+          "steps",
+          "at"
+        ],
+        "title": "SupportMessage",
+        "type": "object"
+      },
+      "SupportPage": {
+        "properties": {
+          "ai": {
+            "$ref": "#/components/schemas/SupportAi"
+          },
+          "closed": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closed"
+          },
+          "consent": {
+            "title": "Consent",
+            "type": "boolean"
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/SupportMessage"
+            },
+            "title": "Messages",
+            "type": "array"
+          }
+        },
+        "required": [
+          "closed",
+          "ai",
+          "consent",
+          "messages"
+        ],
+        "title": "SupportPage",
+        "type": "object"
+      },
+      "SupportStep": {
+        "properties": {
+          "error": {
+            "default": false,
+            "title": "Error",
+            "type": "boolean"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "output": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "enum": [
+                  "proposed",
+                  "done",
+                  "failed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State"
+          }
+        },
+        "required": [
+          "label"
+        ],
+        "title": "SupportStep",
+        "type": "object"
+      },
       "TelegramLink": {
         "properties": {
           "url": {
@@ -2000,44 +2280,6 @@
           "status"
         ],
         "title": "TelegramStatus",
-        "type": "object"
-      },
-      "Turn": {
-        "properties": {
-          "agent": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Agent"
-          },
-          "conversation_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Conversation Id"
-          },
-          "message": {
-            "maxLength": 8000,
-            "minLength": 1,
-            "title": "Message",
-            "type": "string"
-          }
-        },
-        "required": [
-          "message"
-        ],
-        "title": "Turn",
         "type": "object"
       },
       "UserConfigSchema": {
@@ -5010,417 +5252,6 @@
         ]
       }
     },
-    "/setup": {
-      "get": {
-        "description": "One chat's transcript, the list of chats, the files, and whether documents can be built.",
-        "operationId": "conversation_setup_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "conversation_id",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Conversation Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Conversation Setup Get",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Conversation",
-        "tags": [
-          "setup"
-        ]
-      }
-    },
-    "/setup/conversations": {
-      "post": {
-        "description": "Start a fresh chat, with an empty transcript and the same profile underneath.",
-        "operationId": "new_conversation_setup_conversations_post",
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response New Conversation Setup Conversations Post",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "New Conversation",
-        "tags": [
-          "setup"
-        ]
-      }
-    },
-    "/setup/conversations/{conversation_id}": {
-      "delete": {
-        "description": "Delete a chat and everything said in it.",
-        "operationId": "delete_conversation_setup_conversations__conversation_id__delete",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "conversation_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Conversation Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Delete Conversation Setup Conversations  Conversation Id  Delete",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Delete Conversation",
-        "tags": [
-          "setup"
-        ]
-      },
-      "patch": {
-        "description": "Rename a chat.",
-        "operationId": "rename_conversation_setup_conversations__conversation_id__patch",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "conversation_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Conversation Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ConversationTitle"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Rename Conversation Setup Conversations  Conversation Id  Patch",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Rename Conversation",
-        "tags": [
-          "setup"
-        ]
-      }
-    },
-    "/setup/files/{name}": {
-      "get": {
-        "operationId": "read_file_setup_files__name__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "name",
-            "required": true,
-            "schema": {
-              "title": "Name",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Read File Setup Files  Name  Get",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Read File",
-        "tags": [
-          "setup"
-        ]
-      },
-      "put": {
-        "description": "Edit a file by hand.",
-        "operationId": "write_file_setup_files__name__put",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "name",
-            "required": true,
-            "schema": {
-              "title": "Name",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/FileEdit"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Write File Setup Files  Name  Put",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Write File",
-        "tags": [
-          "setup"
-        ]
-      }
-    },
-    "/setup/message": {
-      "post": {
-        "description": "Accept one turn and queue it.",
-        "operationId": "send_setup_message_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/Turn"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "202": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Send Setup Message Post",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Send",
-        "tags": [
-          "setup"
-        ]
-      }
-    },
-    "/setup/message/{message_id}/stop": {
-      "post": {
-        "description": "Ask the running turn to stop.",
-        "operationId": "stop_turn_setup_message__message_id__stop_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "message_id",
-            "required": true,
-            "schema": {
-              "title": "Message Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Stop Turn Setup Message  Message Id  Stop Post",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Stop Turn",
-        "tags": [
-          "setup"
-        ]
-      }
-    },
-    "/setup/progress": {
-      "get": {
-        "description": "Is setup finished, what is left, and which command produces each missing piece.",
-        "operationId": "setup_progress_setup_progress_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Setup Progress Setup Progress Get",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Setup Progress",
-        "tags": [
-          "setup"
-        ]
-      }
-    },
-    "/setup/start": {
-      "post": {
-        "description": "Begin the first labelling run \u2014 the step after setup, pressed rather than assumed.",
-        "operationId": "start_search_setup_start_post",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Start Search Setup Start Post",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Start Search",
-        "tags": [
-          "setup"
-        ]
-      }
-    },
     "/status": {
       "get": {
         "description": "Every component, one call \u2014 the page shows them together or not at all.",
@@ -5546,6 +5377,166 @@
         "summary": "Dismiss",
         "tags": [
           "suggestions"
+        ]
+      }
+    },
+    "/support": {
+      "get": {
+        "description": "The conversation so far, whether a question can be asked now, and what is left today.",
+        "operationId": "page_support_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupportPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Page",
+        "tags": [
+          "support"
+        ]
+      }
+    },
+    "/support/messages": {
+      "post": {
+        "description": "Ask. The answer is written on its own; `/support/replies/{id}/stream` follows it.",
+        "operationId": "ask_support_messages_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Question"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Asked"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ask",
+        "tags": [
+          "support"
+        ]
+      }
+    },
+    "/support/replies/{reply_id}/steps/{index}": {
+      "post": {
+        "description": "Make the change a reply offered, because the person tapped its button. Once: a second tap\nis told how the first went.",
+        "operationId": "tap_support_replies__reply_id__steps__index__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reply_id",
+            "required": true,
+            "schema": {
+              "title": "Reply Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "index",
+            "required": true,
+            "schema": {
+              "title": "Index",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupportStep"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Tap",
+        "tags": [
+          "support"
+        ]
+      }
+    },
+    "/support/replies/{reply_id}/stream": {
+      "get": {
+        "description": "A reply as it is written: `snapshot`, then `delta` and `step` as they come, then `done`.",
+        "operationId": "stream_support_replies__reply_id__stream_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reply_id",
+            "required": true,
+            "schema": {
+              "title": "Reply Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupportEvent"
+                }
+              },
+              "text/event-stream": {}
+            },
+            "description": "Server-Sent Events, each one's data a SupportEvent."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stream",
+        "tags": [
+          "support"
         ]
       }
     },

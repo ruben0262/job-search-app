@@ -1193,171 +1193,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/setup": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Conversation
-         * @description One chat's transcript, the list of chats, the files, and whether documents can be built.
-         */
-        get: operations["conversation_setup_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/setup/conversations": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * New Conversation
-         * @description Start a fresh chat, with an empty transcript and the same profile underneath.
-         */
-        post: operations["new_conversation_setup_conversations_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/setup/conversations/{conversation_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /**
-         * Delete Conversation
-         * @description Delete a chat and everything said in it.
-         */
-        delete: operations["delete_conversation_setup_conversations__conversation_id__delete"];
-        options?: never;
-        head?: never;
-        /**
-         * Rename Conversation
-         * @description Rename a chat.
-         */
-        patch: operations["rename_conversation_setup_conversations__conversation_id__patch"];
-        trace?: never;
-    };
-    "/setup/files/{name}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Read File */
-        get: operations["read_file_setup_files__name__get"];
-        /**
-         * Write File
-         * @description Edit a file by hand.
-         */
-        put: operations["write_file_setup_files__name__put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/setup/message": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Send
-         * @description Accept one turn and queue it.
-         */
-        post: operations["send_setup_message_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/setup/message/{message_id}/stop": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Stop Turn
-         * @description Ask the running turn to stop.
-         */
-        post: operations["stop_turn_setup_message__message_id__stop_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/setup/progress": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Setup Progress
-         * @description Is setup finished, what is left, and which command produces each missing piece.
-         */
-        get: operations["setup_progress_setup_progress_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/setup/start": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Start Search
-         * @description Begin the first labelling run — the step after setup, pressed rather than assumed.
-         */
-        post: operations["start_search_setup_start_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/status": {
         parameters: {
             query?: never;
@@ -1432,6 +1267,87 @@ export interface paths {
          * @description Never suggest this word again.
          */
         post: operations["dismiss_suggestions_dismiss_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/support": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Page
+         * @description The conversation so far, whether a question can be asked now, and what is left today.
+         */
+        get: operations["page_support_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/support/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ask
+         * @description Ask. The answer is written on its own; `/support/replies/{id}/stream` follows it.
+         */
+        post: operations["ask_support_messages_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/support/replies/{reply_id}/steps/{index}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Tap
+         * @description Make the change a reply offered, because the person tapped its button. Once: a second tap
+         *     is told how the first went.
+         */
+        post: operations["tap_support_replies__reply_id__steps__index__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/support/replies/{reply_id}/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream
+         * @description A reply as it is written: `snapshot`, then `delta` and `step` as they come, then `done`.
+         */
+        get: operations["stream_support_replies__reply_id__stream_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1554,6 +1470,11 @@ export interface components {
             /** Missing */
             missing: string[];
         };
+        /** Asked */
+        Asked: {
+            /** Reply Id */
+            reply_id: number;
+        };
         /** AuthStatus */
         AuthStatus: {
             /** Status */
@@ -1628,11 +1549,6 @@ export interface components {
         ConsentBody: {
             /** Version */
             version: string;
-        };
-        /** ConversationTitle */
-        ConversationTitle: {
-            /** Title */
-            title: string;
         };
         /** CredentialBody */
         CredentialBody: {
@@ -1736,11 +1652,6 @@ export interface components {
             period: string;
             /** Raw */
             raw: string;
-        };
-        /** FileEdit */
-        FileEdit: {
-            /** Content */
-            content: string;
         };
         /** FilesFlag */
         FilesFlag: {
@@ -1976,6 +1887,11 @@ export interface components {
             endpoint: string;
             keys: components["schemas"]["PushKeys"];
         };
+        /** Question */
+        Question: {
+            /** Text */
+            text: string;
+        };
         /** ReadyDashboard */
         ReadyDashboard: {
             /** Applied */
@@ -2158,6 +2074,82 @@ export interface components {
             /** Term */
             term: string;
         };
+        /** SupportAi */
+        SupportAi: {
+            /** Left */
+            left: number | null;
+            /** Payer */
+            payer: ("own" | "platform") | null;
+            /** Per Day */
+            per_day: number;
+            /** Provider */
+            provider: string | null;
+        };
+        /**
+         * SupportEvent
+         * @description One event of a reply's stream. `snapshot` and `done` carry the reply so far, `delta` the text
+         *     since, `step` one step at its place.
+         */
+        SupportEvent: {
+            /** Error */
+            error?: string | null;
+            /** Index */
+            index?: number | null;
+            /** Status */
+            status?: string | null;
+            step?: components["schemas"]["SupportStep"] | null;
+            /** Steps */
+            steps?: components["schemas"]["SupportStep"][] | null;
+            /** Text */
+            text?: string | null;
+        };
+        /** SupportMessage */
+        SupportMessage: {
+            /** At */
+            at: string | null;
+            /** Error */
+            error: string | null;
+            /** Id */
+            id: number;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "user" | "assistant";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "streaming" | "done" | "failed";
+            /** Steps */
+            steps: components["schemas"]["SupportStep"][];
+            /** Text */
+            text: string;
+        };
+        /** SupportPage */
+        SupportPage: {
+            ai: components["schemas"]["SupportAi"];
+            /** Closed */
+            closed: string | null;
+            /** Consent */
+            consent: boolean;
+            /** Messages */
+            messages: components["schemas"]["SupportMessage"][];
+        };
+        /** SupportStep */
+        SupportStep: {
+            /**
+             * Error
+             * @default false
+             */
+            error: boolean;
+            /** Label */
+            label: string;
+            /** Output */
+            output?: string | null;
+            /** State */
+            state?: ("proposed" | "done" | "failed") | null;
+        };
         /** TelegramLink */
         TelegramLink: {
             /** Url */
@@ -2183,15 +2175,6 @@ export interface components {
         TelegramStatus: {
             /** Status */
             status: string;
-        };
-        /** Turn */
-        Turn: {
-            /** Agent */
-            agent?: string | null;
-            /** Conversation Id */
-            conversation_id?: string | null;
-            /** Message */
-            message: string;
         };
         /**
          * UserConfigSchema
@@ -4323,313 +4306,6 @@ export interface operations {
             };
         };
     };
-    conversation_setup_get: {
-        parameters: {
-            query?: {
-                conversation_id?: string | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    new_conversation_setup_conversations_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-        };
-    };
-    delete_conversation_setup_conversations__conversation_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                conversation_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    rename_conversation_setup_conversations__conversation_id__patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                conversation_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ConversationTitle"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    read_file_setup_files__name__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                name: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    write_file_setup_files__name__put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                name: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["FileEdit"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    send_setup_message_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["Turn"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    stop_turn_setup_message__message_id__stop_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                message_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    setup_progress_setup_progress_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-        };
-    };
-    start_search_setup_start_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-        };
-    };
     status_status_get: {
         parameters: {
             query?: never;
@@ -4723,6 +4399,123 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WordSuggestions"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    page_support_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupportPage"];
+                };
+            };
+        };
+    };
+    ask_support_messages_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Question"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Asked"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    tap_support_replies__reply_id__steps__index__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                reply_id: number;
+                index: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupportStep"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stream_support_replies__reply_id__stream_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                reply_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Server-Sent Events, each one's data a SupportEvent. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupportEvent"];
+                    "text/event-stream": unknown;
                 };
             };
             /** @description Validation Error */

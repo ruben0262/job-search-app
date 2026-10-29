@@ -382,7 +382,7 @@ def test_the_role_angles_command_is_loadable_and_names_nobody():
 
 def test_the_role_angles_file_is_writeable_by_the_agent():
     """A command that cannot write the file it exists to write would fail at the last step."""
-    from services.api.setup_routes import WRITEABLE
+    from libs.profiles import WRITEABLE
 
     assert "08-role-angles.md" in WRITEABLE
 

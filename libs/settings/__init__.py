@@ -248,6 +248,10 @@ DEFAULT_DOCUMENT_MODELS: dict[str, str] = {
 # person who comes back later builds it again.
 DEFAULT_DOCUMENT_KEEP_HOURS = 1
 
+# Whether the help chat answers (`services/api/support_routes.py`). Off until the owner approves its
+# prompt, `libs/prompts/support.md` (CLAUDE.md §3a): 1 is on. It answers with `document_models`.
+DEFAULT_SUPPORT_CHAT_ENABLED = 0
+
 
 DEFAULTS: dict[str, object] = {
     "job_max_age_hours": DEFAULT_JOB_MAX_AGE_HOURS,
@@ -265,6 +269,7 @@ DEFAULTS: dict[str, object] = {
     "linkedin_concurrent_users": DEFAULT_LINKEDIN_CONCURRENT_USERS,
     "document_models": DEFAULT_DOCUMENT_MODELS,
     "document_keep_hours": DEFAULT_DOCUMENT_KEEP_HOURS,
+    "support_chat_enabled": DEFAULT_SUPPORT_CHAT_ENABLED,
 }
 
 
