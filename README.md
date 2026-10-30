@@ -71,21 +71,18 @@ kept current against the running service.
 
 ## Run it on your computer
 
-Once: `.venv/bin/pip install -r requirements-dev.txt`, `npm --prefix web install`, MongoDB 8.0
-unpacked into `~/.local/opt/mongodb`, and `certificates/dev.env` (local keys, never the server's).
-Then each in its own terminal, from the repo root:
-
 ```bash
-~/.local/opt/mongodb/bin/mongod --dbpath ~/.local/share/job-search-app/mongo --port 27017 \
-    --bind_ip 127.0.0.1 --fork --logpath ~/.local/share/job-search-app/mongod.log   # once per boot
-set -a; . certificates/dev.env; set +a; .venv/bin/uvicorn services.api.app:app --port 8000 --reload
-set -a; . certificates/dev.env; set +a; .venv/bin/python -m services.docgen       # makes the CVs
-npm --prefix web run dev                                                           # the site
+scripts/dev.sh
 ```
 
-Open http://localhost:5173. No email is sent from here: the sign-up link prints in the API's
-terminal. Jobs arrive when a harvest runs, after an account has finished the setup screens:
-`set -a; . certificates/dev.env; set +a; .venv/bin/python -m services.harvester`.
+Then open **http://localhost:5180**: its own port, because another project's site on Vite's usual
+5173 answered there instead. One terminal runs everything: the database, the API, the CV maker, a job
+fetch every 15 minutes, and the site. Ctrl-C stops it all. No email is sent from your computer, so a
+sign-up link prints in that terminal. Open it to sign in.
+
+Once, before the first run: `.venv/bin/pip install -r requirements-dev.txt`,
+`npm --prefix web install`, and MongoDB 8.0 unpacked into `~/.local/opt/mongodb`. The script makes
+`certificates/dev.env` (keys for your computer only) the first time.
 
 The checks to run before a push are in [`CLAUDE.md`](CLAUDE.md) §7.
 
