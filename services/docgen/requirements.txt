@@ -8,6 +8,5 @@ anthropic>=0.92
 httpx>=0.28                # the Gemini and OpenAI calls, and the posting's freshness check
 pypdf>=5.1                 # page count and the ATS text-extraction check
 pydantic>=2.10             # libs/contracts, which libs/documents reads a CV with
-SQLAlchemy>=2.0
-psycopg[binary]>=3.2
+pymongo>=4.19,<5
 cryptography>=44.0         # libs/secrets: the user's own credential, decrypted for one build

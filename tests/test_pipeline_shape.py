@@ -1,46 +1,20 @@
 """Where the jobs are — and whether the page telling you can be trusted."""
 from __future__ import annotations
 
-import os
 import uuid
 from datetime import UTC, datetime, timedelta
 
-import pytest
-
-pytest.importorskip("sqlalchemy")
-
-pytestmark = pytest.mark.skipif(
-    not os.environ.get("DATABASE_URL"), reason="DATABASE_URL not set (no live Postgres)")
+from libs.db import insert
 
 
-@pytest.fixture()
-def db():
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import Session
-
-    engine = create_engine(os.environ["DATABASE_URL"])
-    conn = engine.connect()
-    trans = conn.begin()
-    session = Session(bind=conn, join_transaction_mode="create_savepoint")
-    try:
-        yield session
-    finally:
-        session.close()
-        trans.rollback()
-        conn.close()
-
-
-def _job(session, **kwargs):
+def _job(db, **kwargs):
     from libs.db.models import CorpusJob
 
     # `source` is overridable: the per-source freshness floors are keyed on it, so a test about
     # retention has to be able to say which board a posting came from.
-    row = CorpusJob(url=f"https://example.com/{uuid.uuid4()}",
-                    source=kwargs.pop("source", "test"),
-                    title="Backend Engineer", **kwargs)
-    session.add(row)
-    session.flush()
-    return row
+    return insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}",
+                                source=kwargs.pop("source", "test"),
+                                title="Backend Engineer", **kwargs))
 
 
 def stage(report: dict, key: str) -> dict:
@@ -63,7 +37,6 @@ def test_a_described_posting_is_waiting_for_nothing(db):
     from libs.ops.pipeline import pipeline
 
     _job(db, description="We build things. " * 40, description_fetched_at=datetime.now(UTC))
-    db.flush()
 
     assert all(not entry["waiting"] for entry in pipeline(db)["stages"])
 
@@ -73,7 +46,6 @@ def test_a_row_with_no_description_waits_at_describe(db):
     from libs.ops.pipeline import pipeline
 
     _job(db)
-    db.flush()
 
     assert stage(pipeline(db), "describe")["waiting"] == 1
 
@@ -90,7 +62,6 @@ def test_the_verdict_is_about_age_not_size(db):
 
     for _ in range(50):
         _job(db)
-    db.flush()
 
     assert stage(pipeline(db), "describe")["verdict"] == "ok", "fresh, however many"
 
@@ -104,9 +75,7 @@ def test_a_stage_holding_something_old_turns_red(db):
     """
     from libs.ops.pipeline import pipeline
 
-    old = _job(db)
-    old.first_seen_at = datetime.now(UTC) - timedelta(hours=3)
-    db.flush()
+    _job(db, first_seen_at=datetime.now(UTC) - timedelta(hours=3))
 
     entry = stage(pipeline(db), "describe")
     assert entry["verdict"] == "down"
@@ -123,9 +92,7 @@ def test_a_posting_too_old_to_deliver_is_not_reported_as_waiting(db):
     from libs.corpus.repository import CorpusRepository
     from libs.ops.pipeline import pipeline
 
-    stale = _job(db, description=None)
-    stale.first_seen_at = datetime.now(UTC) - timedelta(days=3)
-    db.flush()
+    stale = _job(db, description=None, first_seen_at=datetime.now(UTC) - timedelta(days=3))
 
     assert stage(pipeline(db), "describe")["waiting"] == 0
     assert not [row for row in CorpusRepository(db).awaiting_description(max_age_hours=24)
@@ -155,42 +122,32 @@ def test_the_thresholds_come_from_the_tick_that_clears_them(db):
 # ── the three ways the first version lied ───────────────────────────────────────────────────────
 
 
-def _account(db, **config):
-    from libs.db.models import User, UserConfig
+def _account(db):
+    from libs.db.models import User
 
-    user = User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active",
-                active=True, model_version=1)
-    db.add(user)
-    db.flush()
-    if config:
-        db.add(UserConfig(user_id=user.id, config=config))
-        db.flush()
-    return user
+    return insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active",
+                           active=True))
 
 
-def _scored(db, user, job, *, score, notified=False, scored_ago_min=5):
+def _state(db, user, job, *, notified=False):
     from libs.db.models import UserJobState
 
-    db.add(UserJobState(
-        user_id=user.id, job_id=job.id, score=score, scored_model_version=user.model_version,
-        scored_at=datetime.now(UTC) - timedelta(minutes=scored_ago_min),
-        notified_at=datetime.now(UTC) if notified else None))
-    db.flush()
+    insert(db, UserJobState(user_id=user.id, job_id=job.id,
+                            notified_at=datetime.now(UTC) if notified else None))
 
 
-def test_delivery_shows_no_queue_for_scores_nothing_will_send(db):
-    """The scorer's rows outlive it, and nothing sends them, so they are not a queue at delivery."""
+def test_delivery_shows_no_queue_and_counts_what_was_sent(db):
+    """What is matched is decided when it is read, so a row nobody has sent is not a queue at delivery."""
     from libs.ops.pipeline import pipeline
 
     user = _account(db)
-    _scored(db, user, _job(db, description="x " * 200,
-                           posted_at=datetime.now(UTC) - timedelta(minutes=10)), score=99.0)
-    _scored(db, user, _job(db, description="x " * 200), score=99.0, notified=True)
+    _state(db, user, _job(db, description="x " * 200, posted_at=datetime.now(UTC) - timedelta(minutes=10)))
+    _state(db, user, _job(db, description="x " * 200), notified=True)
 
     entry = stage(pipeline(db), "deliver")
     assert entry["waiting"] is None
     assert entry["verdict"] == "ok"
-    assert entry["entered"] >= 1, "what was sent in the window is still counted"
+    assert entry["entered"] == 1, "what was sent in the window is counted, and only that"
 
 
 def test_a_stage_with_no_queue_says_so_rather_than_claiming_zero(db):
@@ -208,9 +165,8 @@ def test_a_job_a_worker_is_running_is_counted_as_running(db):
     from libs.ops.pipeline import pipeline
 
     user = _account(db)
-    db.add(QueueJob(lane="notify", user_id=user.id, state="claimed",
-                    claimed_at=datetime.now(UTC), claimed_by="worker-1"))
-    db.flush()
+    insert(db, QueueJob(lane="notify", user_id=user.id, state="claimed",
+                        claimed_at=datetime.now(UTC), claimed_by="worker-1"))
 
     notify = next(lane for lane in pipeline(db)["lanes"] if lane["lane"] == "notify")
     assert notify["running"] == 1
@@ -222,11 +178,12 @@ def test_the_page_and_the_describer_count_the_same_rows(db):
     from libs.ops.pipeline import pipeline
 
     _job(db, description=None, closed_at=datetime.now(UTC))
-    db.flush()
+    waiting = _job(db, description=None)
 
     stages = {stage["key"]: stage for stage in pipeline(db, hours=24)["stages"]}
     pending = CorpusRepository(db).awaiting_description(limit=1000)
 
+    assert [row.id for row in pending] == [waiting.id], "the closed one is never fetched"
     assert stages["describe"]["waiting"] == len(pending)
 
 
@@ -242,16 +199,11 @@ def test_the_queue_says_which_account_each_lane_is_working_for(db):
     from libs.db.models import QueueJob, User
     from libs.ops.pipeline import pipeline
 
-    first = User(email=f"{_uuid.uuid4()}@example.com", password_hash="x", status="active")
-    second = User(email=f"{_uuid.uuid4()}@example.com", password_hash="x", status="active")
-    db.add_all([first, second])
-    db.flush()
-    db.add_all([
-        QueueJob(lane="docgen", user_id=first.id, state="dead",
-                 last_error="AttributeError: 'NoneType' object has no attribute 'calls'"),
-        QueueJob(lane="docgen", user_id=second.id, state="ready"),
-    ])
-    db.flush()
+    first, second = (insert(db, User(email=f"{_uuid.uuid4()}@example.com", password_hash="x",
+                                     status="active")) for _ in range(2))
+    insert(db, QueueJob(lane="docgen", user_id=first.id, state="dead",
+                        last_error="AttributeError: 'NoneType' object has no attribute 'calls'"))
+    insert(db, QueueJob(lane="docgen", user_id=second.id, state="ready"))
 
     rows = {(row["lane"], row["email"]): row for row in pipeline(db, hours=24)["lane_accounts"]}
 
@@ -259,3 +211,18 @@ def test_the_queue_says_which_account_each_lane_is_working_for(db):
     assert "AttributeError" in rows[("docgen", first.email)]["last_error"]
     assert rows[("docgen", second.email)]["ready"] == 1
     assert rows[("docgen", second.email)]["dead"] == 0, "the two accounts are not conflated"
+
+
+def test_an_account_shows_its_newest_failure_not_the_alphabetically_last(db, user):
+    """`$max` of the error text alone picked "Zebra…" over a newer "Apple…"."""
+    from libs.db import insert, now
+    from libs.db.models import QueueJob
+    from libs.ops.pipeline import lane_accounts
+
+    insert(db, QueueJob(lane="docgen", user_id=user.id, state="dead", last_error="Zebra: the older failure"))
+    insert(db, QueueJob(lane="docgen", user_id=user.id, state="dead", last_error="Apple: the newest failure"))
+    insert(db, QueueJob(lane="docgen", user_id=user.id, state="done", finished_at=now()))
+
+    [row] = lane_accounts(db, now() - timedelta(hours=24))
+    assert row["last_error"] == "Apple: the newest failure"
+    assert (row["dead"], row["done"]) == (2, 1)

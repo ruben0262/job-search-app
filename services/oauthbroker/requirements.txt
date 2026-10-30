@@ -8,7 +8,7 @@ uvicorn==0.34.0
 # credential in plaintext.
 cryptography>=44.0
 # Reached the same way: libs/secrets imports its store at module level. The broker opens no database
-# connection and is given no DATABASE_URL -- this is an import-time dependency of the logging setup,
-# not a sign that this service talks to Postgres.
-SQLAlchemy>=2.0
+# connection and is given no MONGODB_URI -- this is an import-time dependency of the logging setup,
+# not a sign that this service talks to the database.
+pymongo>=4.19,<5
 pyte>=0.8

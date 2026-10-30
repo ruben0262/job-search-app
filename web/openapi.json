@@ -95,17 +95,9 @@
             "title": "Onboarded",
             "type": "boolean"
           },
-          "plan": {
-            "title": "Plan",
-            "type": "string"
-          },
           "profile_files_visible": {
             "title": "Profile Files Visible",
             "type": "boolean"
-          },
-          "profile_generation": {
-            "title": "Profile Generation",
-            "type": "integer"
           },
           "status": {
             "title": "Status",
@@ -121,9 +113,7 @@
           "email",
           "status",
           "active",
-          "plan",
           "telegram",
-          "profile_generation",
           "profile_files_visible",
           "onboarded",
           "created_at",
@@ -589,14 +579,10 @@
             },
             "title": "Credentials",
             "type": "array"
-          },
-          "requirements": {
-            "$ref": "#/components/schemas/Requirements"
           }
         },
         "required": [
-          "credentials",
-          "requirements"
+          "credentials"
         ],
         "title": "CredentialList",
         "type": "object"
@@ -1896,29 +1882,6 @@
           "status"
         ],
         "title": "Removed",
-        "type": "object"
-      },
-      "Requirements": {
-        "properties": {
-          "claude": {
-            "title": "Claude",
-            "type": "boolean"
-          },
-          "proxy": {
-            "title": "Proxy",
-            "type": "boolean"
-          },
-          "telegram_bot": {
-            "title": "Telegram Bot",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "claude",
-          "telegram_bot",
-          "proxy"
-        ],
-        "title": "Requirements",
         "type": "object"
       },
       "ResendRequest": {

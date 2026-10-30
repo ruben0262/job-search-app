@@ -5,15 +5,13 @@ from __future__ import annotations
 import logging
 import os
 import uuid
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, timedelta
 
 import pytest
 
 from libs.documents.read import read
 from libs.suggestions import compute
-
-needs_db = pytest.mark.skipif(not os.environ.get("DATABASE_URL"),
-                              reason="DATABASE_URL not set (no live Postgres)")
+from tests.conftest import needs_db
 
 ENGINEER = """JANE DOE
 Budapest, Hungary | jane.doe@example.com
@@ -110,46 +108,29 @@ def test_a_red_word_inside_one_of_their_green_words_is_never_offered():
 # ── worked out again when what they are made from changes ─────────────────────────────────────
 
 @pytest.fixture()
-def api():
+def api(db, monkeypatch):
     pytest.importorskip("fastapi")
     os.environ.setdefault("ACCESS_TOKEN_SECRET", "test-" + "x" * 40)
-    os.environ["DISABLE_RATE_LIMIT"] = "1"
+    monkeypatch.setenv("DISABLE_RATE_LIMIT", "1")
 
     from fastapi.testclient import TestClient
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import Session
 
     from libs.auth.access import issue_access_token
+    from libs.db import insert, now
     from libs.db.models import CorpusJob, User
-    from services.api import deps
     from services.api.app import app
 
-    engine = create_engine(os.environ["DATABASE_URL"])
-    conn = engine.connect()
-    trans = conn.begin()
-    session = Session(bind=conn, join_transaction_mode="create_savepoint")
-    user = User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active")
-    session.add(user)
-    now = datetime.now(UTC)
-    session.add_all([
-        CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test", title=title,
-                  description="", is_remote=True, posted_at=now,
-                  first_seen_at=now - timedelta(minutes=minute))
-        for minute, title in enumerate(["Sales Engineer", "Sales Engineer EMEA", "Field Sales Engineer",
-                                        "Python Developer", "Backend Engineer"])])
-    session.flush()
+    user = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active"))
+    moment = now()
+    for minute, title in enumerate(["Sales Engineer", "Sales Engineer EMEA", "Field Sales Engineer",
+                                    "Python Developer", "Backend Engineer"]):
+        insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test", title=title,
+                             description="", is_remote=True, posted_at=moment,
+                             first_seen_at=moment - timedelta(minutes=minute)))
 
-    app.dependency_overrides[deps.get_db] = lambda: session
-    try:
-        with TestClient(app, base_url="https://testserver") as http:
-            http.cookies.set("access_token", issue_access_token(user.id, uuid.uuid4()), path="/")
-            yield http, session, user
-    finally:
-        app.dependency_overrides.clear()
-        session.close()
-        trans.rollback()
-        conn.close()
-        os.environ.pop("DISABLE_RATE_LIMIT", None)
+    with TestClient(app, base_url="https://testserver") as http:
+        http.cookies.set("access_token", issue_access_token(user.id, uuid.uuid4()), path="/")
+        yield http, db, user
 
 
 def _upload(http, text: str, kind: str = "cv", name: str = "cv.txt"):
@@ -187,9 +168,10 @@ def test_saving_their_search_and_editing_their_about_you_text_work_them_out_agai
 
 @needs_db
 def test_accepting_puts_the_word_in_their_search_and_it_stops_being_suggested(api):
+    from libs.db import find_one
     from libs.db.models import UserConfig
 
-    http, session, user = api
+    http, db, user = api
     _upload(http, ENGINEER.format(start="Jan 2021"))
 
     assert http.post("/suggestions/accept", json={"term": "unpaid", "kind": "red"}).status_code == 409
@@ -198,7 +180,7 @@ def test_accepting_puts_the_word_in_their_search_and_it_stops_being_suggested(ap
     assert "python" not in _terms(found, "green")
     http.post("/suggestions/accept", json={"term": "unpaid", "kind": "red"})
 
-    section = session.get(UserConfig, user.id).config["sections"][0]
+    section = find_one(db, UserConfig, {"user_id": user.id}).config["sections"][0]
     assert section["keywords"] == ["python"]
     assert section["exclude_keywords"] == ["unpaid"]
 

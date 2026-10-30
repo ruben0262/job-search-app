@@ -195,14 +195,13 @@ def filters_for(session, user, *, windows: PlatformWindows | None = None) -> Use
     account stays a one-liner.
     """
     from libs import limits  # noqa: PLC0415 - avoids a cycle at import time
+    from libs.tenant.repository import TenantRepository  # noqa: PLC0415 - avoids a cycle at import time
 
     windows = windows or platform_windows(session)
     # Kept next to the `None` that honours Unlimited: `test_unlimited_is_honoured_wherever_it_is
     # _offered` reads the few lines after a `resolve(...)` looking for it, and putting anything
     # between the two hides the check from the guard as well as from a reader.
     cap = limits.resolve(user, "applicant_cap")
-    from libs.tenant.repository import TenantRepository  # noqa: PLC0415 - avoids a cycle at import time
-
     return UserFilters.from_config(
         TenantRepository(session).get_config(user.id),
         max_age_hours=windows.max_age_hours,

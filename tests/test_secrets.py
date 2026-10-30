@@ -5,13 +5,12 @@ import base64
 import dataclasses
 import io
 import logging
-import os
 import uuid
 
 import pytest
 
 pytest.importorskip("cryptography")
-pytest.importorskip("sqlalchemy")
+from libs.db import find_one, get, insert
 from libs.db.models import User, UserSecret
 from libs.secrets import (
     MASK,
@@ -29,6 +28,7 @@ from libs.secrets import (
 )
 from libs.secrets.keyring import open_sealed, seal
 from libs.tenant.repository import TenantRepository
+from tests.conftest import needs_db
 
 # Shaped like the real thing, because the pattern-based half of the redaction filter recognises credential.
 CLAUDE_KEY = "sk-ant-api03-" + "Zx9" * 20
@@ -272,121 +272,82 @@ def test_short_values_are_never_registered():
 
 # ══ 5. the storage layer, against a real database ══════════════════════════════════════════════
 
-pytestmark_db = pytest.mark.skipif(
-    not os.environ.get("DATABASE_URL"),
-    reason="DATABASE_URL not set (no live Postgres)")
-
-
 @pytest.fixture()
-def store_ctx():
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import Session
-
-    engine = create_engine(os.environ["DATABASE_URL"])
-    conn = engine.connect()
-    trans = conn.begin()
-    s = Session(bind=conn, join_transaction_mode="create_savepoint")
-    try:
-        yield SecretStore(s, _ring()), s
-    finally:
-        s.close()
-        trans.rollback()
-        conn.close()
+def store(db) -> SecretStore:
+    return SecretStore(db, _ring())
 
 
-def _user(s) -> User:
-    u = User(email=f"{uuid.uuid4()}@example.test", password_hash="x")
-    s.add(u)
-    s.flush()
-    return u
+def _user(db) -> User:
+    return insert(db, User(email=f"{uuid.uuid4()}@example.test", password_hash="x"))
 
 
-def _secret_row(s, user_id, kind: str = "claude_api") -> UserSecret:
-    return s.get(UserSecret, {"user_id": user_id, "kind": kind})
+def _secret_row(db, user_id, kind: str = "claude_api") -> UserSecret | None:
+    return find_one(db, UserSecret, {"user_id": user_id, "kind": kind})
 
 
-@pytestmark_db
-def test_a_stored_credential_comes_back(store_ctx):
-    store, s = store_ctx
-    user = _user(s)
+@needs_db
+def test_a_stored_credential_comes_back(store, db):
+    user = _user(db)
     store.put(user.id, "claude_api", CLAUDE_KEY)
-    s.flush()
 
     with store.use(user.id, "claude_api") as key:
         assert key.reveal() == CLAUDE_KEY
 
 
-@pytestmark_db
-def test_nothing_the_database_holds_contains_the_plaintext(store_ctx):
-    """T4's headline assertion, made the way an attacker would."""
-    from sqlalchemy import text
-
-    store, s = store_ctx
-    user = _user(s)
+@needs_db
+def test_nothing_the_database_holds_contains_the_plaintext(store, db):
+    """T4's headline assertion, made the way an attacker would: every document in every collection."""
+    user = _user(db)
     store.put(user.id, "claude_api", CLAUDE_KEY)
     store.put(user.id, "proxy", PROXY_URL)
-    s.flush()
 
-    dumped = ""
-    for table in ("users", "user_secrets"):
-        rows = s.execute(text(f"SELECT * FROM {table} WHERE "  # noqa: S608 - literal table names
-                              f"{'id' if table == 'users' else 'user_id'} = :uid"),
-                         {"uid": user.id}).mappings().all()
-        dumped += repr([dict(r) for r in rows])
+    dumped = repr([list(db[name].find()) for name in db.list_collection_names()])
+    assert repr(_secret_row(db, user.id).ciphertext) in dumped, "the premise: the dump holds the secret"
 
     assert CLAUDE_KEY not in dumped
     assert "s3cr3t-p4ssw0rd" not in dumped
     assert base64.b64encode(CLAUDE_KEY.encode()).decode() not in dumped
 
 
-@pytestmark_db
-def test_the_key_that_would_decrypt_it_is_not_in_the_database(store_ctx):
+@needs_db
+def test_the_key_that_would_decrypt_it_is_not_in_the_database(store, db):
     """The other half."""
-    from sqlalchemy import text
-
-    store, s = store_ctx
-    user = _user(s)
+    user = _user(db)
     store.put(user.id, "claude_api", CLAUDE_KEY)
-    s.flush()
 
-    stranger = SecretStore(s, _ring())
+    stranger = SecretStore(db, _ring())
     with pytest.raises((DecryptionFailed, KeyUnavailable)):
         stranger.reveal(user.id, "claude_api")
 
-    assert s.execute(text("SELECT wrapped_dek FROM users WHERE id = :uid"),
-                     {"uid": user.id}).scalar() is not None, \
+    assert get(db, User, user.id).wrapped_dek is not None, \
         "the wrapped DEK is in the database; the key that opens it is not"
 
 
-@pytestmark_db
-def test_one_user_cannot_read_another_users_credential(store_ctx):
+@needs_db
+def test_one_user_cannot_read_another_users_credential(store, db):
     """T1's isolation claim, at the layer where getting it wrong is worst."""
-    store, s = store_ctx
-    alice, mallory = _user(s), _user(s)
+    alice, mallory = _user(db), _user(db)
     store.put(alice.id, "claude_api", CLAUDE_KEY)
     store.put(mallory.id, "claude_api", "sk-ant-api03-" + "Qq4" * 20)
-    s.flush()
 
     assert store.reveal(mallory.id, "claude_api").reveal() != CLAUDE_KEY
 
-    stolen = _secret_row(s, alice.id)
-    victim = _secret_row(s, mallory.id)
-    victim.ciphertext, victim.nonce = stolen.ciphertext, stolen.nonce
-    s.flush()
+    stolen = _secret_row(db, alice.id)
+    db[UserSecret.COLLECTION].update_one(
+        {"user_id": mallory.id, "kind": "claude_api"},
+        {"$set": {"ciphertext": stolen.ciphertext, "nonce": stolen.nonce}})
 
     with pytest.raises(DecryptionFailed):
         store.reveal(mallory.id, "claude_api")
 
 
-@pytestmark_db
-def test_the_api_read_path_returns_metadata_and_never_a_value(store_ctx):
+@needs_db
+def test_the_api_read_path_returns_metadata_and_never_a_value(store, db):
     """"Write-only through the API" made concrete: what the dashboard calls, and what it gets."""
-    store, s = store_ctx
-    user = _user(s)
+    user = _user(db)
     store.put(user.id, "claude_api", CLAUDE_KEY)
-    s.flush()
 
-    (row,) = TenantRepository(s).secret_metadata(user.id)
+    (row,) = TenantRepository(db).secret_metadata(user.id)
     assert row.kind == "claude_api"
     assert row.last_4 == CLAUDE_KEY[-4:]
     assert CLAUDE_KEY not in repr(row)
@@ -396,128 +357,117 @@ def test_the_api_read_path_returns_metadata_and_never_a_value(store_ctx):
         "the metadata object must have no field that could ever carry the secret"
 
 
-@pytestmark_db
-def test_rotation_replaces_and_the_old_credential_is_gone(store_ctx):
+@needs_db
+def test_rotation_replaces_and_the_old_credential_is_gone(store, db):
     """"`PUT` replaces; old ciphertext deleted."""
-    from sqlalchemy import text
-
-    store, s = store_ctx
-    user = _user(s)
+    user = _user(db)
     store.put(user.id, "claude_api", CLAUDE_KEY)
-    s.flush()
 
     replacement = "sk-ant-api03-" + "Nn7" * 20
     store.put(user.id, "claude_api", replacement)
-    s.flush()
 
     assert store.reveal(user.id, "claude_api").reveal() == replacement
-    assert s.execute(text("SELECT count(*) FROM user_secrets WHERE user_id = :uid"),
-                     {"uid": user.id}).scalar() == 1
+    assert db[UserSecret.COLLECTION].count_documents({"user_id": user.id}) == 1
 
 
-@pytestmark_db
-def test_validation_state_is_recorded_not_assumed(store_ctx):
+@needs_db
+def test_validation_state_is_recorded_not_assumed(store, db):
     """A credential is unvalidated until something proved it works."""
-    store, s = store_ctx
-    user = _user(s)
+    user = _user(db)
     store.put(user.id, "claude_api", CLAUDE_KEY)
-    s.flush()
-    assert _secret_row(s, user.id).validated_at is None
+    assert _secret_row(db, user.id).validated_at is None
 
     assert store.mark_validated(user.id, "claude_api") is True
-    s.flush()
-    assert _secret_row(s, user.id).validated_at is not None
+    assert _secret_row(db, user.id).validated_at is not None
 
 
-@pytestmark_db
-def test_rotating_a_credential_clears_its_validation(store_ctx):
+@needs_db
+def test_rotating_a_credential_clears_its_validation(store, db):
     """A new key has not been proven; carrying the old verdict forward would say it had."""
-    store, s = store_ctx
-    user = _user(s)
+    user = _user(db)
     store.put(user.id, "claude_api", CLAUDE_KEY, validated=True)
-    s.flush()
+    assert _secret_row(db, user.id).validated_at is not None, "the premise"
     store.put(user.id, "claude_api", "sk-ant-api03-" + "Bb2" * 20)
-    s.flush()
-    assert _secret_row(s, user.id).validated_at is None
+    assert _secret_row(db, user.id).validated_at is None
 
 
-@pytestmark_db
-def test_purge_destroys_the_key_as_well_as_the_rows(store_ctx):
+@needs_db
+def test_purge_destroys_the_key_as_well_as_the_rows(store, db):
     """Deleting rows is undone by restoring a backup."""
-    store, s = store_ctx
-    user = _user(s)
+    user = _user(db)
     store.put(user.id, "claude_api", CLAUDE_KEY)
-    store.put(user.id, "telegram_bot", TELEGRAM_TOKEN)
-    s.flush()
+    store.put(user.id, "proxy", PROXY_URL)
 
     assert store.purge(user.id) == 2
-    s.flush()
 
     assert store.reveal(user.id, "claude_api") is None
-    assert user.wrapped_dek is None
+    assert db[UserSecret.COLLECTION].count_documents({"user_id": user.id}) == 0
+    assert get(db, User, user.id).wrapped_dek is None
 
 
-@pytestmark_db
-def test_a_kek_rotation_rewraps_without_touching_the_secrets(store_ctx):
+@needs_db
+def test_a_kek_rotation_rewraps_without_touching_the_secrets(db):
     """The point of the envelope."""
-    _, s = store_ctx
-    user = _user(s)
+    user = _user(db)
 
     old_entry = f"k1:{generate_key()}"
-    before_rotation = SecretStore(s, KeyRing.from_env({"SECRETS_KEK": old_entry}))
+    before_rotation = SecretStore(db, KeyRing.from_env({"SECRETS_KEK": old_entry}))
     before_rotation.put(user.id, "claude_api", CLAUDE_KEY)
-    s.flush()
-    sealed = _secret_row(s, user.id).ciphertext
+    sealed = _secret_row(db, user.id).ciphertext
 
     rotated = SecretStore(
-        s, KeyRing.from_env({"SECRETS_KEK": f"k2:{generate_key()},{old_entry}"}))
+        db, KeyRing.from_env({"SECRETS_KEK": f"k2:{generate_key()},{old_entry}"}))
     assert user.id in rotated.users_needing_rewrap()
     assert rotated.rewrap(user.id) is True
-    s.flush()
 
-    assert _secret_row(s, user.id).ciphertext == sealed, "secrets are not re-encrypted"
+    assert _secret_row(db, user.id).ciphertext == sealed, "secrets are not re-encrypted"
     assert rotated.reveal(user.id, "claude_api").reveal() == CLAUDE_KEY
     assert rotated.rewrap(user.id) is False, "rewrap is idempotent"
     assert user.id not in rotated.users_needing_rewrap()
 
 
-@pytestmark_db
-def test_an_unknown_kind_is_refused(store_ctx):
-    """The database has a CHECK constraint; this fails earlier and says which values are legal."""
-    store, s = store_ctx
-    user = _user(s)
+@needs_db
+def test_an_unknown_kind_is_refused(store, db):
+    """The collection's rule refuses it too; this fails earlier and says which values are legal."""
+    user = _user(db)
     with pytest.raises(UnknownSecretKind):
         store.put(user.id, "aws_secret", "sk-whatever-1234")
+    assert db[UserSecret.COLLECTION].count_documents({"user_id": user.id}) == 0
 
 
-@pytestmark_db
-def test_an_empty_credential_is_refused(store_ctx):
+@needs_db
+def test_the_database_refuses_an_unknown_kind_written_round_the_store(db):
+    """The old CHECK constraint, now the collection's validator: a row nothing could ever read."""
+    from pymongo.errors import WriteError
+
+    user = _user(db)
+    with pytest.raises(WriteError):
+        insert(db, UserSecret(user_id=user.id, kind="aws_secret", ciphertext=b"x", nonce=b"y"))
+
+
+@needs_db
+def test_an_empty_credential_is_refused(store, db):
     """Stores fine, fails later as an auth error nobody traces back to the form."""
-    store, s = store_ctx
-    user = _user(s)
+    user = _user(db)
     with pytest.raises(ValueError):
         store.put(user.id, "claude_api", "   ")
 
 
-@pytestmark_db
-def test_asking_for_a_credential_that_was_never_set_is_not_an_error(store_ctx):
-    """A user who has not connected Telegram yet is the normal case, not an exception."""
-    store, s = store_ctx
-    user = _user(s)
-    assert store.reveal(user.id, "telegram_bot") is None
-    with store.use(user.id, "telegram_bot") as key:
+@needs_db
+def test_asking_for_a_credential_that_was_never_set_is_not_an_error(store, db):
+    """A user who has not added a proxy yet is the normal case, not an exception."""
+    user = _user(db)
+    assert store.reveal(user.id, "proxy") is None
+    with store.use(user.id, "proxy") as key:
         assert key is None
 
 
-@pytestmark_db
-def test_a_secret_row_without_its_key_fails_loudly(store_ctx):
+@needs_db
+def test_a_secret_row_without_its_key_fails_loudly(store, db):
     """Only reachable through a partial restore."""
-    store, s = store_ctx
-    user = _user(s)
+    user = _user(db)
     store.put(user.id, "claude_api", CLAUDE_KEY)
-    s.flush()
-    user.wrapped_dek = None
-    s.flush()
+    db[User.COLLECTION].update_one({"_id": user.id}, {"$set": {"wrapped_dek": None}})
 
     with pytest.raises(SecretsError):
         store.reveal(user.id, "claude_api")

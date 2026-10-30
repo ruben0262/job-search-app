@@ -7,16 +7,9 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-pytest.importorskip("sqlalchemy")
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
-
+from libs.db import get, insert
 from libs.db.models import User, UserConfig
 from services.harvester import linkedin
-
-pytestmark = pytest.mark.skipif(
-    not os.environ.get("DATABASE_URL"),
-    reason="DATABASE_URL not set (no live Postgres)")
 
 NOW = datetime(2026, 7, 31, 12, 0, tzinfo=UTC)
 
@@ -32,28 +25,15 @@ def _kek():
     os.environ.setdefault("SECRETS_KEK", f"k1:{generate_key()}")
 
 
-@pytest.fixture()
-def db():
-    engine = create_engine(os.environ["DATABASE_URL"])
-    conn = engine.connect()
-    trans = conn.begin()
-    session = Session(bind=conn, join_transaction_mode="create_savepoint")
-    try:
-        yield session
-    finally:
-        session.close()
-        trans.rollback()
-        conn.close()
-
-
-def _user(session, **kwargs) -> User:
-    user = User(email=f"{uuid.uuid4()}@example.test", password_hash="x", status="active",
-                active=True, **kwargs)
-    session.add(user)
-    session.flush()
-    session.add(UserConfig(user_id=user.id, config=CONFIG))
-    session.flush()
+def _user(db, **kwargs) -> User:
+    kwargs = {"status": "active", "active": True, **kwargs}
+    user = insert(db, User(email=f"{uuid.uuid4()}@example.test", password_hash="x", **kwargs))
+    insert(db, UserConfig(user_id=user.id, config=CONFIG))
     return user
+
+
+def _configure(db, user, config: dict) -> None:
+    db[UserConfig.COLLECTION].update_one({"user_id": user.id}, {"$set": {"config": config}})
 
 
 # ── who is due ────────────────────────────────────────────────────────────────────────────────
@@ -71,9 +51,7 @@ def test_a_user_scheduled_for_later_is_not_due(db):
 
 def test_an_inactive_user_is_never_due(db):
     """A paused account must not spend its own proxy bandwidth."""
-    user = _user(db, linkedin_next_run_at=None)
-    user.active = False
-    db.flush()
+    user = _user(db, linkedin_next_run_at=None, active=False)
     assert user.id not in [u.id for u in linkedin.due_users(db, now=NOW, limit=10)]
 
 
@@ -90,22 +68,17 @@ def test_the_queries_are_this_users_own(db):
     """The shared cycle folds everyone's terms because the corpus is shared."""
     mine = _user(db)
     other = _user(db)
-    db.execute(UserConfig.__table__.update()
-               .where(UserConfig.user_id == other.id)
-               .values(config={"sections": [{"keywords": ["welder"], "locations": ["oslo"],
+    _configure(db, other, {"sections": [{"keywords": ["welder"], "locations": ["oslo"],
                                              "platform": "all", "remote_policy": "any",
-                                             "posted_within_hours": 24}]}))
-    db.flush()
+                                             "posted_within_hours": 24}]})
 
     terms = {q["search_term"] for q in linkedin.queries_for(db, mine)}
     assert terms and not any("welder" in term for term in terms)
 
 
 def test_a_user_with_no_config_contributes_no_queries(db):
-    user = User(email=f"{uuid.uuid4()}@example.test", password_hash="x", status="active",
-                active=True)
-    db.add(user)
-    db.flush()
+    user = insert(db, User(email=f"{uuid.uuid4()}@example.test", password_hash="x", status="active",
+                           active=True))
     assert linkedin.queries_for(db, user) == []
 
 
@@ -116,11 +89,11 @@ def test_a_user_with_no_proxy_is_skipped_and_still_rescheduled(db):
     user = _user(db, linkedin_next_run_at=None)
 
     report = linkedin.run_for_due_users(db, now=NOW, gather=lambda *a, **k: [])
-    db.flush()
 
-    assert report.skipped_no_lease >= 1
-    assert user.linkedin_next_run_at is not None
-    assert user.linkedin_next_run_at > NOW
+    assert report.skipped_no_lease == 1
+    next_run = get(db, User, user.id).linkedin_next_run_at
+    assert next_run is not None
+    assert next_run > NOW
 
 
 def test_the_next_run_respects_the_interval_floor(db):
@@ -129,23 +102,29 @@ def test_the_next_run_respects_the_interval_floor(db):
 
     user = _user(db, linkedin_next_run_at=None, linkedin_interval_min=15)
     linkedin.run_for_due_users(db, now=NOW, gather=lambda *a, **k: [])
-    db.flush()
 
-    gap = (user.linkedin_next_run_at - NOW).total_seconds() / 60
+    gap = (get(db, User, user.id).linkedin_next_run_at - NOW).total_seconds() / 60
     # Jitter is ±10%, so the floor is what the lower bound has to clear.
     assert gap >= LINKEDIN_MIN_INTERVAL_MIN * 0.85
 
 
 def test_one_users_failure_does_not_stop_the_pass(db):
     """One account's LinkedIn breaking is not the tier breaking."""
-    _user(db, linkedin_next_run_at=None)
-    _user(db, linkedin_next_run_at=None)
+    from libs.db.models import ProxyCredential
+    from libs.secrets import SecretStore
+
+    for _ in range(2):
+        user = _user(db, linkedin_next_run_at=None)
+        # A usable proxy each, so the fetch is actually reached rather than skipped for want of one.
+        SecretStore(db).put(user.id, "proxy", "http://user:pass@proxy.example:8080")
+        insert(db, ProxyCredential(user_id=user.id, secret_ref=f"{user.id}:proxy"))
 
     def explode(*_args, **_kwargs):
         raise RuntimeError("linkedin said no")
 
     report = linkedin.run_for_due_users(db, now=NOW, gather=explode)
     assert report.considered == 2
+    assert len(report.failures) == 2, "the second account ran after the first one failed"
 
 
 def test_the_tier_can_be_killed_globally(db, monkeypatch):
@@ -161,14 +140,11 @@ def test_every_keyword_a_user_has_is_searched(db):
     """The location axis was costing this account twenty of its twenty-three searches."""
     user = _user(db)
     wanted = [f"term {i}" for i in range(20)]
-    db.execute(UserConfig.__table__.update()
-               .where(UserConfig.user_id == user.id)
-               .values(config={"sections": [{"keywords": wanted,
+    _configure(db, user, {"sections": [{"keywords": wanted,
                                              "locations": ["europe", "budapest",
                                                            "united_kingdom", "berlin"],
                                              "platform": "all", "remote_policy": "any",
-                                             "posted_within_hours": 6}]}))
-    db.flush()
+                                             "posted_within_hours": 6}]})
 
     queries = linkedin.queries_for(db, user)
     # Every term is searched, in every place the user asked for.
@@ -179,12 +155,9 @@ def test_every_keyword_a_user_has_is_searched(db):
 def test_a_board_gets_the_phrase_the_user_typed(db):
     """`keyword_norm` sorts tokens and strips accents so two users asking the same thing fold into one."""
     user = _user(db)
-    db.execute(UserConfig.__table__.update()
-               .where(UserConfig.user_id == user.id)
-               .values(config={"sections": [{"keywords": ["stress engineer", "szoftverfejlesztő"],
+    _configure(db, user, {"sections": [{"keywords": ["stress engineer", "szoftverfejlesztő"],
                                              "locations": ["europe"], "platform": "all",
-                                             "remote_policy": "any", "posted_within_hours": 6}]}))
-    db.flush()
+                                             "remote_policy": "any", "posted_within_hours": 6}]})
 
     terms = {q["search_term"] for q in linkedin.queries_for(db, user)}
     assert terms == {"stress engineer", "szoftverfejlesztő"}
@@ -193,13 +166,10 @@ def test_a_board_gets_the_phrase_the_user_typed(db):
 def test_a_users_locations_reach_the_board_as_place_names(db):
     """Per user, on their own proxy, and LinkedIn can genuinely filter by place."""
     user = _user(db)
-    db.execute(UserConfig.__table__.update()
-               .where(UserConfig.user_id == user.id)
-               .values(config={"sections": [{"keywords": ["python developer"],
+    _configure(db, user, {"sections": [{"keywords": ["python developer"],
                                              "locations": ["europe", "budapest"],
                                              "platform": "all", "remote_policy": "any",
-                                             "posted_within_hours": 6}]}))
-    db.flush()
+                                             "posted_within_hours": 6}]})
 
     queries = linkedin.queries_for(db, user)
     locations = {q["location"] for q in queries}
@@ -210,7 +180,7 @@ def test_a_users_locations_reach_the_board_as_place_names(db):
     assert len(queries) == 2
 
 
-def test_the_linkedin_ceiling_covers_the_cross_product(db):
+def test_the_linkedin_ceiling_covers_the_cross_product():
     """A ceiling below keyword × location does not trim evenly — queries are taken in key order."""
     from libs.settings import DEFAULT_SOURCE_QUERIES_PER_CYCLE
 
@@ -224,12 +194,9 @@ def test_choosing_the_eu_and_a_country_searches_both_without_repeating_one(db):
 
     user = _user(db)
     chosen = ["europe", "united_kingdom", "switzerland"]
-    db.execute(UserConfig.__table__.update()
-               .where(UserConfig.user_id == user.id)
-               .values(config={"sections": [{"keywords": ["ai engineer"], "locations": chosen,
+    _configure(db, user, {"sections": [{"keywords": ["ai engineer"], "locations": chosen,
                                              "platform": "all", "remote_policy": "any",
-                                             "posted_within_hours": 6}]}))
-    db.flush()
+                                             "posted_within_hours": 6}]})
 
     # One query per place, none repeated.
     places = [q["location"] for q in linkedin.queries_for(db, user)]
@@ -253,12 +220,9 @@ def test_a_country_inside_europe_does_not_widen_or_narrow_the_set(db):
     assert wanted_countries(["europe"]) == wanted_countries(["europe", "ireland"])
 
     user = _user(db)
-    db.execute(UserConfig.__table__.update()
-               .where(UserConfig.user_id == user.id)
-               .values(config={"sections": [{"keywords": ["ai engineer"],
+    _configure(db, user, {"sections": [{"keywords": ["ai engineer"],
                                              "locations": ["europe", "ireland"],
                                              "platform": "all", "remote_policy": "any",
-                                             "posted_within_hours": 6}]}))
-    db.flush()
+                                             "posted_within_hours": 6}]})
     # Both are still asked for: LinkedIn's "European Union" geo and its "Ireland" geo differ.
     assert len(linkedin.queries_for(db, user)) == 2

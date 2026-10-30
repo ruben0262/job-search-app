@@ -80,13 +80,11 @@ def describe_pending(corpus: CorpusRepository, client, *, linkedin: bool | None 
             continue
 
         # Metadata is worth keeping even when the description came back thin: the card and filter read it.
-        before = (job.applicants, job.easy_apply, job.reposted, job.workplace)
-        corpus.set_posting_metadata(
-            job.id, applicants=posting["applicants"],
-            applicants_caption=posting.get("applicants_caption"),
-            reposted=posting["reposted"],
-            workplace=posting["workplace"], posted_at=posting["posted_at"])
-        if (job.applicants, job.easy_apply, job.reposted, job.workplace) != before:
+        if corpus.set_posting_metadata(
+                job.id, applicants=posting["applicants"],
+                applicants_caption=posting.get("applicants_caption"),
+                reposted=posting["reposted"],
+                workplace=posting["workplace"], posted_at=posting["posted_at"]):
             report.metadata_written += 1
 
         if posting["application_url"] and not job.application_url:
@@ -135,12 +133,9 @@ def refresh_metadata(corpus: CorpusRepository, client, *, limit: int) -> Describ
             corpus.mark_closed(job.id)
             report.closed += 1
 
-        before = (job.applicants, job.easy_apply, job.reposted, job.workplace, job.posted_at)
-        corpus.set_posting_metadata(
-            job.id, applicants=meta["applicants"], easy_apply=meta["easy_apply"],
-            reposted=meta["reposted"], workplace=meta["workplace"], posted_at=meta["posted_at"])
-        if (job.applicants, job.easy_apply, job.reposted, job.workplace,
-                job.posted_at) != before:
+        if corpus.set_posting_metadata(
+                job.id, applicants=meta["applicants"], easy_apply=meta["easy_apply"],
+                reposted=meta["reposted"], workplace=meta["workplace"], posted_at=meta["posted_at"]):
             report.metadata_written += 1
         if meta["application_url"] and not job.application_url:
             corpus.set_application_url(job.id, meta["application_url"])

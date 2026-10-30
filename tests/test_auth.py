@@ -1,16 +1,11 @@
 """Auth: the policy decisions from `AUTH_REUSE.md` §3, and the two that must not be got wrong."""
 from __future__ import annotations
 
-import os
 import uuid
 
 import pytest
 
-pytest.importorskip("sqlalchemy")
 pytest.importorskip("argon2")
-
-from sqlalchemy import create_engine, select
-from sqlalchemy.orm import Session
 
 from libs.auth import (
     MIN_PASSWORD_LENGTH,
@@ -24,9 +19,12 @@ from libs.auth import (
     revoke_all,
     revoke_session,
     rotate_session,
+    token_owner,
     verify_password,
 )
+from libs.db import get, insert
 from libs.db.models import AuthToken, User, UserSession
+from tests.conftest import needs_db
 
 # ── password policy ───────────────────────────────────────────────────────────────────────────
 
@@ -69,145 +67,120 @@ def test_the_minimum_is_nine_and_the_boundary_holds():
 
 # ── the database-backed halves ────────────────────────────────────────────────────────────────
 
-pytestmark_db = pytest.mark.skipif(
-    not os.environ.get("DATABASE_URL"), reason="DATABASE_URL not set (no live Postgres)")
+def _user(db) -> User:
+    return insert(db, User(email=f"{uuid.uuid4()}@example.test", password_hash="x"))
 
 
-@pytest.fixture()
-def ctx():
-    engine = create_engine(os.environ["DATABASE_URL"])
-    conn = engine.connect()
-    trans = conn.begin()
-    s = Session(bind=conn, join_transaction_mode="create_savepoint")
-    try:
-        yield s
-    finally:
-        s.close()
-        trans.rollback()
-        conn.close()
-
-
-def _user(s) -> User:
-    user = User(email=f"{uuid.uuid4()}@example.test", password_hash="x")
-    s.add(user)
-    s.flush()
-    return user
-
-
-@pytestmark_db
-def test_only_the_token_hash_is_stored(ctx):
+@needs_db
+def test_only_the_token_hash_is_stored(db):
     """The plaintext exists in the email and nowhere else."""
-    user = _user(ctx)
-    token = issue_token(ctx, user.id, "verify_email")
-    ctx.flush()
+    user = _user(db)
+    token = issue_token(db, user.id, "verify_email")
 
-    rows = ctx.execute(select(AuthToken.token_hash).where(AuthToken.user_id == user.id)).all()
+    rows = list(db[AuthToken.COLLECTION].find({"user_id": user.id}))
     assert len(rows) == 1
-    assert rows[0][0] == hash_token(token) != token
+    assert rows[0]["_id"] == hash_token(token) != token
+    assert token not in str(rows[0])
 
 
-@pytestmark_db
-def test_a_token_works_once(ctx):
-    user = _user(ctx)
-    token = issue_token(ctx, user.id, "verify_email")
-    ctx.flush()
+@needs_db
+def test_a_token_works_once(db):
+    user = _user(db)
+    token = issue_token(db, user.id, "verify_email")
 
-    assert consume_token(ctx, token, "verify_email") == user.id
-    ctx.flush()
-    assert consume_token(ctx, token, "verify_email") is None
+    assert consume_token(db, token, "verify_email") == user.id
+    assert consume_token(db, token, "verify_email") is None
 
 
-@pytestmark_db
-def test_a_token_cannot_be_used_for_a_different_purpose(ctx):
+@needs_db
+def test_a_token_cannot_be_used_for_a_different_purpose(db):
     """A verification link must not double as a password reset."""
-    user = _user(ctx)
-    token = issue_token(ctx, user.id, "verify_email")
-    ctx.flush()
-    assert consume_token(ctx, token, "reset_password") is None
+    user = _user(db)
+    token = issue_token(db, user.id, "verify_email")
+    assert consume_token(db, token, "reset_password") is None
 
 
-@pytestmark_db
-def test_reissuing_revokes_the_previous_link(ctx):
+@needs_db
+def test_reissuing_revokes_the_previous_link(db):
     """A user who clicks "resend" twice should not leave two live links."""
-    user = _user(ctx)
-    first = issue_token(ctx, user.id, "verify_email")
-    ctx.flush()
-    second = issue_token(ctx, user.id, "verify_email")
-    ctx.flush()
+    user = _user(db)
+    first = issue_token(db, user.id, "verify_email")
+    second = issue_token(db, user.id, "verify_email")
 
-    assert consume_token(ctx, first, "verify_email") is None
-    assert consume_token(ctx, second, "verify_email") == user.id
+    assert consume_token(db, first, "verify_email") is None
+    assert consume_token(db, second, "verify_email") == user.id
 
 
-@pytestmark_db
-def test_a_refresh_token_is_stored_hashed_and_rotates_on_use(ctx):
-    user = _user(ctx)
-    first = issue_session(ctx, user.id)
-    ctx.flush()
+@needs_db
+def test_looking_up_a_token_does_not_spend_it(db):
+    """A password reset checks the new password before it spends the link, so a refused password
+    leaves the link usable: the lookup must not count as a use."""
+    user = _user(db)
+    token = issue_token(db, user.id, "reset_password")
 
-    stored = ctx.scalar(select(UserSession.refresh_hash).where(UserSession.id == first.session_id))
-    assert stored != first.refresh_token
+    assert token_owner(db, token, "reset_password") == user.id
+    assert token_owner(db, token, "verify_email") is None
+    assert consume_token(db, token, "reset_password") == user.id
+    assert token_owner(db, token, "reset_password") is None
 
-    second = rotate_session(ctx, first.refresh_token)
-    ctx.flush()
+
+@needs_db
+def test_a_refresh_token_is_stored_hashed_and_rotates_on_use(db):
+    user = _user(db)
+    first = issue_session(db, user.id)
+
+    stored = get(db, UserSession, first.session_id)
+    assert stored is not None and stored.refresh_hash != first.refresh_token
+
+    second = rotate_session(db, first.refresh_token)
     assert second.refresh_token != first.refresh_token
 
 
-@pytestmark_db
-def test_replaying_a_rotated_refresh_token_revokes_every_session(ctx):
+@needs_db
+def test_replaying_a_rotated_refresh_token_revokes_every_session(db):
     """Either the client is buggy or the token was stolen."""
-    user = _user(ctx)
-    first = issue_session(ctx, user.id)
-    ctx.flush()
-    second = rotate_session(ctx, first.refresh_token)
-    ctx.flush()
+    user = _user(db)
+    first = issue_session(db, user.id)
+    second = rotate_session(db, first.refresh_token)
 
     with pytest.raises(SessionExpired, match="replayed"):
-        rotate_session(ctx, first.refresh_token)
-    ctx.flush()
+        rotate_session(db, first.refresh_token)
 
     with pytest.raises(SessionExpired):
-        rotate_session(ctx, second.refresh_token)
+        rotate_session(db, second.refresh_token)
 
 
-@pytestmark_db
-def test_logging_out_one_device_leaves_the_others(ctx):
-    user = _user(ctx)
-    laptop = issue_session(ctx, user.id)
-    phone = issue_session(ctx, user.id)
-    ctx.flush()
+@needs_db
+def test_logging_out_one_device_leaves_the_others(db):
+    user = _user(db)
+    laptop = issue_session(db, user.id)
+    phone = issue_session(db, user.id)
 
-    assert revoke_session(ctx, laptop.refresh_token) is True
-    ctx.flush()
+    assert revoke_session(db, laptop.refresh_token) is True
 
     # "logged out", not "replayed": a stale cookie after an ordinary logout is not evidence of theft.
     with pytest.raises(SessionExpired, match="logged out"):
-        rotate_session(ctx, laptop.refresh_token)
-    assert rotate_session(ctx, phone.refresh_token) is not None
+        rotate_session(db, laptop.refresh_token)
+    assert rotate_session(db, phone.refresh_token) is not None
 
 
-@pytestmark_db
-def test_revoking_everything_ends_every_live_session(ctx):
+@needs_db
+def test_revoking_everything_ends_every_live_session(db):
     """What a password change must do."""
-    user = _user(ctx)
-    sessions = [issue_session(ctx, user.id) for _ in range(3)]
-    ctx.flush()
+    user = _user(db)
+    sessions = [issue_session(db, user.id) for _ in range(3)]
 
-    assert revoke_all(ctx, user.id) == 3
-    ctx.flush()
+    assert revoke_all(db, user.id) == 3
     for issued in sessions:
         with pytest.raises(SessionExpired):
-            rotate_session(ctx, issued.refresh_token)
+            rotate_session(db, issued.refresh_token)
 
 
-@pytestmark_db
-def test_one_users_session_is_never_another_users(ctx):
+@needs_db
+def test_one_users_session_is_never_another_users(db):
     """T1 at the auth layer."""
-    alice, mallory = _user(ctx), _user(ctx)
-    alice_session = issue_session(ctx, alice.id)
-    ctx.flush()
+    alice, mallory = _user(db), _user(db)
+    alice_session = issue_session(db, alice.id)
 
-    rotated = rotate_session(ctx, alice_session.refresh_token)
-    ctx.flush()
-    owner = ctx.scalar(select(UserSession.user_id).where(UserSession.id == rotated.session_id))
-    assert owner == alice.id != mallory.id
+    rotated = rotate_session(db, alice_session.refresh_token)
+    assert get(db, UserSession, rotated.session_id).user_id == alice.id != mallory.id

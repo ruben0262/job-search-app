@@ -46,4 +46,6 @@ class SetupMessage(Document):
     tool_calls: list | None = None
     # Who is writing this reply, and until when: a worker that dies lets go when its lease runs out.
     lease_until: datetime | None = None
+    # Which writer holds it: a writer that outlived its lease cannot write over the one that took over.
+    lease_holder: str | None = None
     created_at: datetime = field(default_factory=now)

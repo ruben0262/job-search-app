@@ -31,8 +31,6 @@ type Health = {
   alerts: Alert[];
   latency: {
     window_hours: number;
-    found_to_scored: Span;
-    scored_to_delivered: Span;
     found_to_delivered: Span;
   };
 };
@@ -42,9 +40,7 @@ type AdminUser = {
   email: string;
   status: string;
   active: boolean;
-  plan: string;
   telegram: string;
-  model_version: number | null;
   onboarded: boolean;
   is_admin: boolean;
   /** Last sign-in or Telegram tap. Null for an account that has never done either. */
@@ -109,26 +105,7 @@ type StageDetail = {
   red_after_min: number | null;
 };
 
-/** What the pre-score filter removed, per account. */
-type FilterEffect = {
-  window_hours: number;
-  users: {
-    user_id: string;
-    email: string;
-    considered: number;
-    removed: number;
-    scored: number;
-    removed_pct: number | null;
-    verdict: string;
-  }[];
-  considered: number;
-  removed: number;
-  removed_pct: number | null;
-  caveat: string;
-  verdict: string;
-};
-
-type LatencyReport = { window_hours: number; stages: StageRow[]; filter: FilterEffect };
+type LatencyReport = { window_hours: number; stages: StageRow[] };
 
 /** One stage as it stands right now. */
 type PipelineStage = {
@@ -231,7 +208,6 @@ type CorpusJob = {
   location: string | null;
   source: string | null;
   is_remote: boolean;
-  embedded: boolean;
   described: boolean;
   url: string;
   first_seen_at: string | null;
@@ -656,7 +632,7 @@ export function AdminPage() {
 
           <p className="label" style={{ marginTop: "1.5rem" }}>Descriptions fetched per cycle</p>
           <span className="hint">
-            A posting with no description cannot be embedded, so it cannot be scored or delivered.
+            A posting with no description has no words to match, so it reaches nobody.
             This is what decides how fast a backlog of thin rows clears.
           </span>
           <select
@@ -764,7 +740,6 @@ export function AdminPage() {
             <th>Email</th>
             <th>Status</th>
             <th>Telegram</th>
-            <th>Model</th>
             <th>Onboarded</th>
             <th>Last active</th>
             <th>Access</th>
@@ -781,7 +756,6 @@ export function AdminPage() {
                 {user.active ? "" : " · paused"}
               </td>
               <td className="job-sub">{user.telegram}</td>
-              <td className="num job-sub">{user.model_version ? `v${user.model_version}` : "—"}</td>
               <td className="job-sub">{user.onboarded ? "yes" : "no"}</td>
               <td className="job-sub">{lastActive(user.last_active_at)}</td>
               {/* Both controls stop the click reaching the row, or granting access would also navigate. */}
@@ -958,7 +932,7 @@ function CorpusTab() {
                   <th>Where</th>
                   <th>Source</th>
                   <th>Seen</th>
-                  {/* An unembedded row is invisible to every user. */}
+                  {/* A posting with no description has no words to match, so it reaches nobody. */}
                   <th>Usable</th>
                 </tr>
               </thead>
@@ -974,8 +948,8 @@ function CorpusTab() {
                         ? new Date(job.first_seen_at).toLocaleDateString()
                         : "—"}
                     </td>
-                    <td style={{ color: job.embedded ? "var(--score)" : "var(--dim)" }}>
-                      {job.embedded ? (job.described ? "yes" : "thin") : "not embedded"}
+                    <td style={{ color: job.described ? "var(--score)" : "var(--dim)" }}>
+                      {job.described ? "yes" : "thin"}
                     </td>
                   </tr>
                 ))}
@@ -1363,7 +1337,6 @@ function LatencyTab() {
         </div>
       ) : null}
 
-      {report ? <FilterEffectTable effect={report.filter} /> : null}
 
       {/* "Not enough data" is a real answer, not a failure. */}
       <p className="hint" style={{ marginTop: "0.9rem" }}>
@@ -1371,57 +1344,6 @@ function LatencyTab() {
         claim this product makes, and a median hides exactly the tail somebody loses a role in. A
         row with too few completed examples says so rather than showing a colour.
       </p>
-    </>
-  );
-}
-
-/** How much of each account's candidate pool the filter removed. */
-function FilterEffectTable({ effect }: { effect: FilterEffect }) {
-  if (!effect.users.length) return null;
-
-  return (
-    <>
-      <h3 style={{ marginTop: "1.6rem" }}>What the filter removed</h3>
-      <p className="hint" style={{ maxWidth: "62ch" }}>
-        Before any model runs, each account's candidates are cut by country, freshness, their own
-        excluded words and the centroid. This is how much that removed in the last{" "}
-        {effect.window_hours} hours — {effect.removed.toLocaleString()} of{" "}
-        {effect.considered.toLocaleString()} across the platform.
-      </p>
-      <div className="table-scroll">
-        <table className="history">
-          <thead>
-            <tr>
-              <th>Account</th>
-              <th className="num">Considered</th>
-              <th className="num">Removed</th>
-              <th className="num">Scored</th>
-              <th className="num">Removed %</th>
-              <th>Verdict</th>
-            </tr>
-          </thead>
-          <tbody>
-            {effect.users.map((row) => (
-              <tr key={row.user_id}>
-                <td>{row.email}</td>
-                <td className="num">{row.considered.toLocaleString()}</td>
-                <td className="num">{row.removed.toLocaleString()}</td>
-                <td className="num">{row.scored.toLocaleString()}</td>
-                <td className="num">
-                  {row.removed_pct === null ? "—" : `${row.removed_pct}%`}
-                </td>
-                <td>
-                  <span className={`verdict ${row.verdict}`}>
-                    {row.verdict === "down" ? "nothing survives"
-                      : row.verdict === "unknown" ? "too few" : "ok"}
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <p className="hint">{effect.caveat}</p>
     </>
   );
 }

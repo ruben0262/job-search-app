@@ -1,47 +1,28 @@
 """One harvest cycle, end to end, with fake sources."""
 from __future__ import annotations
 
-import os
 import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
 
-pytest.importorskip("sqlalchemy")
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
-
+from libs.db import insert
 from libs.db.models import CorpusJob, User
 from libs.tenant.repository import TenantRepository
 from services.harvester import cycle
 from services.harvester.cycle import harvest_lock, run_cycle
 from services.harvester.sources import JobLink
 
-pytestmark = pytest.mark.skipif(
-    not os.environ.get("DATABASE_URL"),
-    reason="DATABASE_URL not set (no live Postgres)")
 
 @pytest.fixture()
-def ctx():
-    engine = create_engine(os.environ["DATABASE_URL"])
-    conn = engine.connect()
-    trans = conn.begin()
-    s = Session(bind=conn, join_transaction_mode="create_savepoint")
-    try:
-        yield s
-    finally:
-        s.close()
-        trans.rollback()
-        conn.close()
+def ctx(db):
+    return db
 
 
-def _active_user(s, keywords=("python",)) -> User:
-    u = User(email=f"{uuid.uuid4()}@example.test", password_hash="x", timezone="UTC",
-             status="active", active=True)
-    s.add(u)
-    s.flush()
+def _active_user(s, keywords=("python",), **fields) -> User:
+    fields = {"status": "active", "active": True, **fields}
+    u = insert(s, User(email=f"{uuid.uuid4()}@example.test", password_hash="x", timezone="UTC", **fields))
     TenantRepository(s).save_config(u.id, {"keywords": list(keywords), "locations": ["london"]})
-    s.flush()
     return u
 
 
@@ -67,12 +48,10 @@ def test_a_cycle_ingests_and_dedups(ctx):
 
     report, _ = run_cycle(s, source_configs=_sources(himalayas={}),
                           run_source=lambda source, cfg, repo: list(found))
-    s.flush()
 
     assert report.links_found == 2
     assert report.new_jobs == 2
-    stored = list(s.scalars(CorpusJob.__table__.select().with_only_columns(CorpusJob.id)))
-    assert len(stored) >= 2
+    assert s[CorpusJob.COLLECTION].distinct("url") == sorted(link.url for link in found)
 
 
 def test_the_same_job_twice_is_ingested_once(ctx):
@@ -82,9 +61,7 @@ def test_the_same_job_twice_is_ingested_once(ctx):
     link = _link()
 
     first, _ = run_cycle(s, source_configs=_sources(himalayas={}), run_source=lambda *a: [link])
-    s.flush()
     second, _ = run_cycle(s, source_configs=_sources(himalayas={}), run_source=lambda *a: [link])
-    s.flush()
 
     assert first.new_jobs == 1
     assert second.new_jobs == 0
@@ -97,10 +74,10 @@ def test_a_snippet_saves_the_description_fetch(ctx):
     _active_user(s)
     run_cycle(s, source_configs=_sources(himalayas={}),
               run_source=lambda *a: [_link(snippet="A real description. " * 30)])
-    s.flush()
 
-    job = s.scalars(CorpusJob.__table__.select().order_by(CorpusJob.id.desc()).limit(1)).first()
+    job = s[CorpusJob.COLLECTION].find_one({})
     assert job is not None
+    assert job["description"] == "A real description. " * 30, "the snippet is stored as the text"
 
 
 # ── the budget ────────────────────────────────────────────────────────────────────────────────
@@ -170,22 +147,23 @@ def test_a_source_the_operator_has_not_tuned_still_gets_a_ceiling(ctx):
 def test_a_switched_off_user_costs_nothing(ctx):
     """An account an operator has stopped must stop consuming harvest budget."""
     s = ctx
-    active = _active_user(s, keywords=["activeterm"])
-    stopped = _active_user(s, keywords=["stoppedterm"])
-    stopped.status, stopped.active = "suspended", False
-    s.flush()
+    _active_user(s, keywords=["activeterm"])
+    _active_user(s, keywords=["stoppedterm"], status="suspended", active=False)
+    asked: list[str] = []
 
-    report, _ = run_cycle(s, source_configs=_sources(himalayas={}), run_source=lambda *a: [])
-    assert report.queries_planned >= 1
-    assert active.id and stopped.id
+    def board(source, cfg, repo):
+        asked.append(str(cfg.get("queries")))
+        return []
+
+    report, _ = run_cycle(s, source_configs=_sources(himalayas={}), run_source=board)
+    assert report.queries_planned == 1
+    assert "activeterm" in asked[0] and "stoppedterm" not in asked[0]
 
 
 def test_an_unverified_signup_consumes_no_harvest_budget(ctx):
     """TENANT_SAFETY §5: a signup flood must cost nothing."""
     s = ctx
-    pending = _active_user(s)
-    pending.status, pending.active = "pending_verification", False
-    s.flush()
+    _active_user(s, status="pending_verification", active=False)
 
     report, _ = run_cycle(s, source_configs=_sources(himalayas={}), run_source=lambda *a: [])
     assert report.queries_planned == 0
@@ -206,7 +184,6 @@ def test_one_dead_source_cannot_sink_the_cycle(ctx):
 
     report, _ = run_cycle(s, source_configs=_sources(himalayas={}, nofluffjobs={}),
                           run_source=flaky)
-    s.flush()
 
     assert "himalayas" in report.source_failures
     assert report.new_jobs == 1, "the healthy source still delivered"
@@ -262,13 +239,9 @@ def test_two_cycles_cannot_run_at_once(ctx):
     s = ctx
     _active_user(s)
 
-    engine = create_engine(os.environ["DATABASE_URL"])
-    with engine.connect() as other_conn:
-        other = Session(bind=other_conn)
-        with harvest_lock(other) as held:
-            assert held, "the fixture failed to take the lock"
-            report, _ = run_cycle(s, source_configs={}, run_source=lambda *a: [])
-        other.close()
+    with harvest_lock(s) as held:
+        assert held, "the fixture failed to take the lease"
+        report, _ = run_cycle(s, source_configs={}, run_source=lambda *a: [])
 
     assert report.skipped_locked is True
     assert report.queries_planned == 0
@@ -279,12 +252,28 @@ def test_the_lock_is_released_after_a_cycle(ctx):
     s = ctx
     run_cycle(s, source_configs={}, run_source=lambda *a: [])
 
-    engine = create_engine(os.environ["DATABASE_URL"])
-    with engine.connect() as conn:
-        other = Session(bind=conn)
-        with harvest_lock(other) as held:
-            assert held, "the lock was not released"
-        other.close()
+    with harvest_lock(s) as held:
+        assert held, "the lease was not released"
+
+
+def test_a_cycle_that_died_holding_the_lock_does_not_stop_the_next_one(ctx):
+    """A killed cycle cannot let go, so its lease runs out instead — after one cycle's budget."""
+    from libs.db import now
+    from libs.settings import HARVEST_CYCLE_BUDGET_SECONDS
+
+    s = ctx
+    with harvest_lock(s) as held:
+        assert held
+        lease = s.locks.find_one({"_id": "harvest"})
+        assert lease["until"] - now() > timedelta(seconds=HARVEST_CYCLE_BUDGET_SECONDS - 5), \
+            "held for as long as a cycle may run, so a slow live cycle is never overtaken"
+    # What a killed holder leaves behind: a lease that was never ended, now past its time.
+    s.locks.update_one({"_id": "harvest"}, {"$set": {"until": now() - timedelta(seconds=1),
+                                                    "holder": "a cycle that was killed"}})
+
+    report, _ = run_cycle(s, source_configs={}, run_source=lambda *a: [])
+
+    assert report.skipped_locked is False
 
 
 # ── de-personalised source config ─────────────────────────────────────────────────────────────
@@ -296,7 +285,6 @@ def test_source_filters_come_from_the_union_of_users_not_one_person(ctx):
     s = ctx
     _active_user(s, keywords=["golang"])
     _active_user(s, keywords=["rust", "Golang"])
-    s.flush()
 
     configs = TenantRepository(s).active_configs()
     assert union_keywords(configs) == ["golang", "rust"], "deduplicated, lowercased, sorted"
@@ -306,7 +294,7 @@ def test_source_filters_come_from_the_union_of_users_not_one_person(ctx):
     assert built["himalayas"]["queries"] == [{"query": "golang"}, {"query": "rust"}]
 
 
-def test_the_filter_reads_the_sections_a_real_config_actually_stores(ctx):
+def test_the_filter_reads_the_sections_a_real_config_actually_stores():
     """Every test here wrote a flat config and every real one stores sections."""
     from services.harvester.source_config import union_keywords, union_locations
 
@@ -321,7 +309,7 @@ def test_the_filter_reads_the_sections_a_real_config_actually_stores(ctx):
     assert union_keywords(both) == ["flat", "nested"], "neither shape may shadow the other"
 
 
-def test_each_board_is_asked_in_the_shape_it_reads(ctx):
+def test_each_board_is_asked_in_the_shape_it_reads():
     """A query in the wrong shape is silent: the board answers its unfiltered feed and reports success."""
     from services.harvester.source_config import build_source_configs
 
@@ -336,7 +324,7 @@ def test_each_board_is_asked_in_the_shape_it_reads(ctx):
     assert built["nofluffjobs"]["queries"] == [{"keyword": "golang"}]
 
 
-def test_a_board_with_no_geography_is_asked_once_per_keyword(ctx):
+def test_a_board_with_no_geography_is_asked_once_per_keyword():
     """This is the redundancy, stated exactly."""
     from services.harvester.query_set import build_query_set
 
@@ -355,7 +343,7 @@ def test_a_board_with_no_geography_is_asked_once_per_keyword(ctx):
     assert per_source["hiringcafe"] == 3, "a source that can filter by place still gets all three"
 
 
-def test_a_job_a_board_returned_survives_every_enabled_source_s_own_filtering(ctx):
+def test_a_job_a_board_returned_survives_every_enabled_source_s_own_filtering():
     """The hole the ATS incident went through, closed for every source at once."""
     from services.harvester.source_config import build_source_configs
     from services.harvester.sources.ats import JobFilter
@@ -384,7 +372,7 @@ def test_a_job_a_board_returned_survives_every_enabled_source_s_own_filtering(ct
         "the incident that zeroed eleven sources")
 
 
-def test_a_keyword_filtered_source_keeps_what_matches_and_judges_nothing_else(ctx):
+def test_a_keyword_filtered_source_keeps_what_matches_and_judges_nothing_else():
     """The six sources that filter on keywords do it over the whole posting."""
     from services.harvester.source_config import (
         KEYWORD_FILTER_SOURCES,
@@ -403,7 +391,7 @@ def test_a_keyword_filtered_source_keeps_what_matches_and_judges_nothing_else(ct
         assert "location_keywords" not in cfg, f"{name} would also judge a posting on its location"
 
 
-def test_a_source_whose_window_an_operator_narrowed_actually_narrows(ctx):
+def test_a_source_whose_window_an_operator_narrowed_actually_narrows():
     """A setting that reaches nothing is worse than no setting, because it looks answered."""
     from services.harvester.source_config import build_source_configs
 
@@ -417,7 +405,7 @@ def test_a_source_whose_window_an_operator_narrowed_actually_narrows(ctx):
     assert narrowed["ashby"]["max_age_hours"] == default["ashby"]["max_age_hours"]
 
 
-def test_an_operators_window_reaches_a_source_under_every_key_it_reads(ctx):
+def test_an_operators_window_reaches_a_source_under_every_key_it_reads():
     """Setting the window in three places was not enough, because a fourth exists."""
     from services.harvester.source_config import build_source_configs
 
@@ -435,7 +423,7 @@ def test_an_operators_window_reaches_a_source_under_every_key_it_reads(ctx):
         {}, env={}, freshness={"hiringcafe": 1})["hiringcafe"]["posted_within_days"] == 1
 
 
-def test_the_union_is_asked_for_not_used_to_throw_away_what_a_board_sent(ctx):
+def test_the_union_is_asked_for_not_used_to_throw_away_what_a_board_sent():
     """Six hours of zero ingestion from eleven sources."""
     from services.harvester.source_config import PREFILTER_SOURCES, build_source_configs
 
@@ -452,7 +440,7 @@ def test_the_union_is_asked_for_not_used_to_throw_away_what_a_board_sent(ctx):
     assert built["himalayas"]["queries"] == [{"query": "golang"}]
 
 
-def test_a_board_is_asked_for_the_phrase_the_user_wrote(ctx):
+def test_a_board_is_asked_for_the_phrase_the_user_wrote():
     """The fold key is not a search term, and sending it cost real quality on the first live cycle."""
     from services.harvester.query_set import normalise_keyword, original_terms
 
@@ -467,7 +455,7 @@ def test_a_board_is_asked_for_the_phrase_the_user_wrote(ctx):
     assert normalise_keyword("stress engineer") == normalise_keyword("Engineer, Stress")
 
 
-def test_one_folded_key_emits_the_same_term_however_users_phrased_it(ctx):
+def test_one_folded_key_emits_the_same_term_however_users_phrased_it():
     """Several users writing one search differently must not make the emitted term depend on which of."""
     from services.harvester.query_set import normalise_keyword, original_terms
 
@@ -480,7 +468,7 @@ def test_one_folded_key_emits_the_same_term_however_users_phrased_it(ctx):
     assert original_terms(a)[key] == original_terms(b)[key]
 
 
-def test_no_locating_sources_is_not_the_same_as_not_saying(ctx):
+def test_no_locating_sources_is_not_the_same_as_not_saying():
     """An empty iterable means "nothing locates"; `None` means "everything does"."""
     from services.harvester.query_set import build_query_set
 
@@ -497,15 +485,13 @@ def test_a_switched_off_users_keywords_leave_the_filter(ctx):
 
     s = ctx
     _active_user(s, keywords=["stillhere"])
-    leaving = _active_user(s, keywords=["goneaway"])
-    leaving.status, leaving.active = "suspended", False
-    s.flush()
+    _active_user(s, keywords=["goneaway"], status="suspended", active=False)
 
     built = build_source_configs(TenantRepository(s).active_configs(), env={})
     assert built["himalayas"]["queries"] == [{"query": "stillhere"}]
 
 
-def test_with_no_users_at_all_sources_stay_enabled_and_unfiltered(ctx):
+def test_with_no_users_at_all_sources_stay_enabled_and_unfiltered():
     """Cold start."""
     from services.harvester.source_config import build_source_configs
 
@@ -514,7 +500,7 @@ def test_with_no_users_at_all_sources_stay_enabled_and_unfiltered(ctx):
     assert "keywords" not in built["greenhouse"], "unfiltered rather than filtered to nothing"
 
 
-def test_key_gated_sources_stay_off_without_their_credential(ctx):
+def test_key_gated_sources_stay_off_without_their_credential():
     """A source that 401s every cycle is a failure count that means nothing and drowns real ones."""
     from services.harvester.source_config import build_source_configs
 
@@ -523,7 +509,7 @@ def test_key_gated_sources_stay_off_without_their_credential(ctx):
         {}, env={"ADZUNA_APP_ID": "x", "ADZUNA_APP_KEY": "y"})
 
 
-def test_a_source_blocked_at_the_network_stays_off_even_holding_its_key(ctx):
+def test_a_source_blocked_at_the_network_stays_off_even_holding_its_key():
     """Holding a valid credential is not the same as being able to reach the board.
 
     Jooble answers every request from the VPS with an HTML 403 block page — probed 2026-08-10 with
@@ -537,7 +523,7 @@ def test_a_source_blocked_at_the_network_stays_off_even_holding_its_key(ctx):
     assert "jooble" not in build_source_configs({}, env={"JOOBLE_API_KEY": "x"})
 
 
-def test_query_taking_sources_always_get_a_query(ctx):
+def test_query_taking_sources_always_get_a_query():
     """Found on the first real cycle against live sources."""
     from services.harvester.source_config import QUERY_TAKING_SOURCES, build_source_configs
 
@@ -546,7 +532,7 @@ def test_query_taking_sources_always_get_a_query(ctx):
         assert built[key].get("queries"), f"{key} would make no request at all"
 
 
-def test_with_no_users_the_query_is_a_broad_feed_read(ctx):
+def test_with_no_users_the_query_is_a_broad_feed_read():
     """Not a placeholder: an empty search fetches the board's unfiltered recent feed."""
     from services.harvester.source_config import build_source_configs
 
@@ -559,7 +545,6 @@ def test_users_keywords_become_the_queries(ctx):
     s = ctx
     _active_user(s, keywords=["golang"])
     _active_user(s, keywords=["rust"])
-    s.flush()
 
     built = build_source_configs(TenantRepository(s).active_configs(), env={})
     assert built["himalayas"]["queries"] == [{"query": "golang"}, {"query": "rust"}]
@@ -581,7 +566,6 @@ def test_the_recency_window_is_the_widest_any_user_asked_for(ctx):
     t = TenantRepository(s)
     t.save_config(a.id, {"keywords": ["x"], "posted_within_hours": 24})
     t.save_config(b.id, {"keywords": ["y"], "posted_within_hours": 168})
-    s.flush()
 
     built = build_source_configs(t.active_configs(), env={})
     assert built["himalayas"]["max_age_hours"] == 168
@@ -623,7 +607,7 @@ def test_an_account_may_ask_for_a_window_as_tight_as_the_reference_watcher():
     assert SearchSection(keywords=["python"], posted_within_hours=2).posted_within_hours == 2
 
 
-def test_the_operators_result_and_company_ceilings_reach_the_adapters(ctx):
+def test_the_operators_result_and_company_ceilings_reach_the_adapters():
     """Every adapter spells "how many" differently, and a value under the wrong key is silent."""
     from services.harvester.source_config import RESULT_KEYS, build_source_configs
 
@@ -645,7 +629,7 @@ def test_the_operators_result_and_company_ceilings_reach_the_adapters(ctx):
     assert "workingnomads" not in RESULT_KEYS
 
 
-def test_an_unset_ceiling_leaves_the_platform_default_alone(ctx):
+def test_an_unset_ceiling_leaves_the_platform_default_alone():
     """An operator who has tuned nothing must get exactly the behaviour the code ships with."""
     from services.harvester.source_config import PLATFORM_DEFAULTS, build_source_configs
 
@@ -654,7 +638,7 @@ def test_an_unset_ceiling_leaves_the_platform_default_alone(ctx):
     assert "limit" not in built["himalayas"], "no result key until somebody sets one"
 
 
-def test_a_removed_source_cannot_be_quietly_switched_back_on(ctx):
+def test_a_removed_source_cannot_be_quietly_switched_back_on():
     """`DEFERRED_SOURCES` records what was removed and why."""
     from libs.settings import HARVEST_SOURCES, QUERY_TAKING_SOURCES
     from services.harvester.source_config import (
@@ -735,16 +719,15 @@ def test_workday_walks_the_number_of_pages_it_was_given():
 
 def test_a_harvest_runs_without_an_embedder(ctx, monkeypatch):
     """Nothing embeds any more. A missing `EMBEDDER_URL` used to refuse the whole cycle with exit 2."""
-    from contextlib import contextmanager
-
     from services.harvester import __main__ as entry
 
     monkeypatch.delenv("EMBEDDER_URL", raising=False)
-    monkeypatch.setattr(entry, "session_scope", contextmanager(lambda: (yield ctx)))
+    monkeypatch.setattr(entry, "database", lambda: ctx)
+    monkeypatch.setattr(entry, "ensure_schema", lambda *a: None)
     monkeypatch.setattr(entry, "_configure_logging", lambda verbose: None)
     monkeypatch.setattr(entry, "_run_linkedin_pass", lambda: None)
     ran = []
-    monkeypatch.setattr(entry, "run_cycle", lambda session, **kwargs: (
+    monkeypatch.setattr(entry, "run_cycle", lambda db, **kwargs: (
         ran.append(kwargs) or (cycle.CycleReport(), [])))
 
     assert entry.main([]) == 0
@@ -769,7 +752,6 @@ def test_an_account_with_no_proxy_is_harvested_everywhere_but_linkedin(ctx, monk
 
     report, _ = run_cycle(s, source_configs=_sources(**{key: {} for key in shared}),
                           run_source=board, describe=False)
-    s.flush()
 
     assert set(asked) == shared, "every shared board was asked"
     assert all("welder" in asked[key] for key in ("himalayas", "hiringcafe", "jooble", "nofluffjobs"))

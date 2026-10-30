@@ -1,8 +1,9 @@
 # The platform stack. Deployed on the VPS; `docker compose up -d` from this directory.
 #
-# Postgres only, for now. Services join as they are built (PLATFORM_ARCHITECTURE.md §3), and each
-# one gets its own Dockerfile under docker/ rather than sharing a base image — that split is what
-# lets docgen carry Chrome without making api slow to rebuild (CODE_STRUCTURE.md §5).
+# The database is MongoDB Atlas, outside this stack (ROADMAP Phase 9): every service reads
+# `MONGODB_URI` from deploy/.env and nothing here stores data of its own. Each service gets its own
+# Dockerfile under docker/ rather than sharing a base image — that split is what lets docgen carry
+# Chrome without making api slow to rebuild (CODE_STRUCTURE.md §5).
 #
 # services/embedder/ keeps its OWN compose file and is not folded in here. It predates the
 # platform, is deployed, and serves the two single-tenant stacks; disturbing it to tidy the tree
@@ -11,42 +12,6 @@
 name: job-search-platform          # pinned — never let the dir name own the volume
 
 services:
-  # The single point of failure, deliberately (PLATFORM_ARCHITECTURE.md §10.3): one datastore for
-  # the shared corpus, per-user tail, credentials, and the four-lane job queue. That is what makes
-  # account deletion one cascading statement instead of cleanup code someone has to remember to
-  # write. The price is that backups and restore drills are not optional — OPERATIONS_PLAN.md §7.
-  postgres:
-    image: postgres:17
-    environment:
-      POSTGRES_DB: jobsearch
-      POSTGRES_USER: jobsearch
-      # `:?` so compose REFUSES to start without it. A default password here would work fine right
-      # up until it was still there in front of real user credentials.
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set it in deploy/.env — see .env.example}
-      # WAL level is already 'replica' by default, which is what PITR needs. archive_command gets
-      # wired in only when the RPO tightens; nightly dumps alone meet the stated RPO of 24h.
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    # Loopback only. Platform services reach Postgres over the compose network by service name and
-    # need no mapping at all; this exists for host-side psql and pg_dump. Do NOT change it to
-    # 0.0.0.0 — an internet-facing 5432 behind a password is a credential-stuffing target, and the
-    # Cloudflare Tunnel (D7) is what remote access goes through instead.
-    ports: ["127.0.0.1:5432:5432"]
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U jobsearch -d jobsearch"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: always
-    # A ceiling, not a target. The box has 22GB available (PLATFORM_ARCHITECTURE.md §11) but runs
-    # NO SWAP, so an unbounded process does not degrade under pressure — the OOM killer picks a
-    # victim by size, and Postgres would be the largest thing here. Per-service limits make that
-    # choice a decision rather than a coincidence.
-    mem_limit: 4g
-    # Default is 64m and parallel query workers fail against it with errors that read like disk
-    # problems rather than shared-memory exhaustion.
-    shm_size: 1g
-
   # One shared harvest cycle, then exit. Behind the `tools` profile so a bare `up` never starts it:
   # this is a one-shot invoked by a timer, and a `restart: always` one-shot would spin forever.
   # The reference instance's profile split exists for exactly this class of mistake.
@@ -56,7 +21,8 @@ services:
       dockerfile: deploy/docker/Dockerfile.harvester
     profiles: ["tools"]
     environment:
-      DATABASE_URL: postgresql+psycopg://jobsearch:${POSTGRES_PASSWORD:?}@postgres:5432/jobsearch
+      MONGODB_URI: ${MONGODB_URI:?set it in deploy/.env — see .env.example}
+      MONGODB_DB: ${MONGODB_DB:-mahoraga}
       # Needed once the per-user LinkedIn loop decrypts proxy credentials (D3). Passed through
       # rather than `:?`-required, so the shared tiers keep harvesting on a box where the key is not
       # set yet — but `libs.secrets` refuses to construct without it, so the LinkedIn loop fails
@@ -82,15 +48,12 @@ services:
       # Where retention writes postings before deleting them (`libs.corpus.archive`). Mounted for
       # the same reason as LOG_DIR and with a sharper consequence: this is a `compose run --rm`, so
       # an unmounted archive is written into a filesystem that is destroyed when the cycle exits —
-      # and the rows have already been deleted from Postgres by then. **This mount is the only copy
+      # and the postings have already been deleted from MongoDB by then. **This mount is the only copy
       # of an archived posting**, so it belongs in whatever gets backed up off the box.
       ARCHIVE_DIR: /var/lib/jobsearch/archive
     volumes:
       - ../logs:/var/log/jobsearch
       - ../archive:/var/lib/jobsearch/archive
-    depends_on:
-      postgres:
-        condition: service_healthy
     # A cycle is network-bound and short. The ceiling is a guard against a runaway source, not a
     # target - and the box has 4 GB of swap now, so exceeding it degrades rather than OOM-killing.
     mem_limit: 1g
@@ -98,7 +61,7 @@ services:
 
   # ── the rest of the platform ────────────────────────────────────────────────────────────────
   #
-  # All under the `full` profile, so a bare `docker compose up -d` brings up only Postgres.
+  # All under the `full` profile, so a bare `docker compose up -d` brings up nothing at all.
   # Starting delivery is a decision — it messages real people — rather than something that happens
   # because somebody typed `up`.
   #
@@ -114,15 +77,16 @@ services:
   # a busy box, and the next attempt succeeds.
   #
   # No volumes. Generated documents are ephemeral (D9): a PDF never touches this container's disk.
-  # It waits for its download in Postgres's UNLOGGED `built_documents`, which the worker empties
-  # after `document_keep_hours` and the nightly dump leaves out.
+  # It waits for its download in `built_documents`, which the worker empties after
+  # `document_keep_hours` and the nightly backup leaves out (`BACKED_UP = False`).
   docgen:
     build:
       context: ..
       dockerfile: deploy/docker/Dockerfile.docgen
     profiles: ["full"]
     environment:
-      DATABASE_URL: postgresql+psycopg://jobsearch:${POSTGRES_PASSWORD:?}@postgres:5432/jobsearch
+      MONGODB_URI: ${MONGODB_URI:?set it in deploy/.env — see .env.example}
+      MONGODB_DB: ${MONGODB_DB:-mahoraga}
       SECRETS_KEK: ${SECRETS_KEK:?docgen decrypts the key that pays for an AI-written document}
       # The platform's own paid key: each account's `ai_platform_requests_per_day` (default 20).
       PLATFORM_AI_PROVIDER: ${PLATFORM_AI_PROVIDER:-}
@@ -131,9 +95,6 @@ services:
       WORKER_NAME: docgen-1
     volumes:
       - ../logs:/var/log/jobsearch
-    depends_on:
-      postgres:
-        condition: service_healthy
     restart: always
     mem_limit: 1500m
     cpus: 2
@@ -146,7 +107,8 @@ services:
       dockerfile: deploy/docker/Dockerfile.notifier
     profiles: ["full"]
     environment:
-      DATABASE_URL: postgresql+psycopg://jobsearch:${POSTGRES_PASSWORD:?}@postgres:5432/jobsearch
+      MONGODB_URI: ${MONGODB_URI:?set it in deploy/.env — see .env.example}
+      MONGODB_DB: ${MONGODB_DB:-mahoraga}
       # The platform's one bot and its push keys. No SECRETS_KEK: nothing here decrypts a user's
       # credential any more. Each channel is optional — unset, it is skipped and the log says so.
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
@@ -158,9 +120,6 @@ services:
       WORKER_NAME: notifier-1
     volumes:
       - ../logs:/var/log/jobsearch
-    depends_on:
-      postgres:
-        condition: service_healthy
     restart: always
     mem_limit: 512m
     cpus: 1
@@ -187,7 +146,8 @@ services:
           # caller keeps working and the two names can be switched over independently.
           - platform-api
     environment:
-      DATABASE_URL: postgresql+psycopg://jobsearch:${POSTGRES_PASSWORD:?}@postgres:5432/jobsearch
+      MONGODB_URI: ${MONGODB_URI:?set it in deploy/.env — see .env.example}
+      MONGODB_DB: ${MONGODB_DB:-mahoraga}
       SECRETS_KEK: ${SECRETS_KEK:?the API writes the credential store}
       # Read where an AI document is requested, to decide who pays (`libs.llm.resolve`).
       PLATFORM_AI_PROVIDER: ${PLATFORM_AI_PROVIDER:-}
@@ -212,9 +172,6 @@ services:
       LOG_DIR: /var/log/jobsearch
     volumes:
       - ../logs:/var/log/jobsearch
-    depends_on:
-      postgres:
-        condition: service_healthy
     restart: always
     mem_limit: 1g
     cpus: 2
@@ -268,9 +225,3 @@ services:
       - api
     restart: unless-stopped
     mem_limit: 256m
-
-volumes:
-  pgdata:
-  # `models:` was here. It is a bind mount now (`../models`), because three host-side tools read that
-  # directory — the backup, the orphan pruner and the restore drill — and a named volume is invisible
-  # to all three. They were not failing; they were silently finding nothing.

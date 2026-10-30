@@ -3,53 +3,39 @@ from __future__ import annotations
 
 import os
 import uuid
+from dataclasses import fields
 
 import pytest
 
 pytest.importorskip("fastapi")
-pytest.importorskip("sqlalchemy")
 pytest.importorskip("argon2")
 pytest.importorskip("jwt")
 
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select
-from sqlalchemy.orm import Session
 
-from libs.db.models import AuthToken, User
+from libs.db import find_one
+from libs.db.models import AuthToken, User, UserSession
 from libs.mail import ConsoleSender
-
-pytestmark = pytest.mark.skipif(
-    not os.environ.get("DATABASE_URL"), reason="DATABASE_URL not set (no live Postgres)")
 
 PASSWORD = "a-perfectly-fine-passphrase"
 
 
 @pytest.fixture()
-def client():
-    """The real app, with the database session and mailer replaced."""
+def client(db, monkeypatch):
+    """The real app on the test database, with the mailer replaced."""
     os.environ.setdefault("ACCESS_TOKEN_SECRET", "test-" + "x" * 40)
-    os.environ["DISABLE_RATE_LIMIT"] = "1"
+    monkeypatch.setenv("DISABLE_RATE_LIMIT", "1")
 
     from services.api import deps
     from services.api.app import app
 
-    engine = create_engine(os.environ["DATABASE_URL"])
-    conn = engine.connect()
-    trans = conn.begin()
-    session = Session(bind=conn, join_transaction_mode="create_savepoint")
     mailer = ConsoleSender()
-
-    app.dependency_overrides[deps.get_db] = lambda: session
     app.dependency_overrides[deps.get_mailer] = lambda: mailer
     try:
         with TestClient(app, base_url="https://testserver") as http:
-            yield http, session, mailer
+            yield http, db, mailer
     finally:
         app.dependency_overrides.clear()
-        session.close()
-        trans.rollback()
-        conn.close()
-        os.environ.pop("DISABLE_RATE_LIMIT", None)
 
 
 def _email() -> str:
@@ -61,10 +47,11 @@ def _signup(http, email: str, password: str = PASSWORD):
     return http.post("/auth/signup", json={"email": email, "password": password})
 
 
-def _verify_token(session, email: str) -> str | None:
+def _verify_token(db, email: str) -> str | None:
     """Pull the token's *hash* owner back out — the plaintext only exists in the email."""
-    user_id = session.scalar(select(User.id).where(User.email == email))
-    return session.scalar(select(AuthToken.token_hash).where(AuthToken.user_id == user_id))
+    user = find_one(db, User, {"email": email})
+    token = find_one(db, AuthToken, {"user_id": user.id})
+    return token.id if token else None
 
 
 def _link_token(mailer: ConsoleSender) -> str:
@@ -76,11 +63,10 @@ def _link_token(mailer: ConsoleSender) -> str:
 
 def test_signup_answers_identically_for_a_new_and_an_existing_address(client):
     """Differing responses turn the endpoint into a way to test whether someone has an account here."""
-    http, session, _ = client
+    http, _db, _ = client
     email = _email()
 
     first = _signup(http, email)
-    session.flush()
     second = _signup(http, email)
 
     assert first.status_code == second.status_code == 202
@@ -105,10 +91,9 @@ def test_a_weak_password_is_refused_with_its_reasons(client):
 
 def test_an_unverified_account_cannot_log_in(client):
     """Otherwise the verification step is decorative."""
-    http, session, _ = client
+    http, _db, _ = client
     email = _email()
     _signup(http, email)
-    session.flush()
 
     response = http.post("/auth/login", json={"email": email, "password": PASSWORD})
     assert response.status_code == 403
@@ -116,14 +101,12 @@ def test_an_unverified_account_cannot_log_in(client):
 
 
 def test_verification_activates_the_account_and_works_once(client):
-    http, session, mailer = client
+    http, _db, mailer = client
     email = _email()
     _signup(http, email)
-    session.flush()
     token = _link_token(mailer)
 
     assert http.post("/auth/verify", json={"token": token}).status_code == 200
-    session.flush()
     assert http.post("/auth/login", json={"email": email, "password": PASSWORD}).status_code == 200
 
     replayed = http.post("/auth/verify", json={"token": token})
@@ -137,25 +120,19 @@ def test_signing_in_records_when_the_account_was_last_active(client):
     decides. If the login path stops stamping it, every account reads as never-used and the decision
     is made on a column that is always null.
     """
-    http, session, mailer = client
+    http, db, mailer = client
     email = _email()
     _signup(http, email)
-    session.flush()
-    user = session.scalar(select(User).where(User.email == email))
+    user = find_one(db, User, {"email": email})
     assert user.last_active_at is None, "signing up is not using the product"
 
     # The link signs you in (2026-10-28), so it counts the way a sign-in does.
     assert http.post("/auth/verify", json={"token": _link_token(mailer)}).status_code == 200
-    session.flush()
-    session.refresh(user)
-    assert user.last_active_at is not None
+    assert find_one(db, User, {"email": email}).last_active_at is not None
 
-    user.last_active_at = None
-    session.flush()
+    db[User.COLLECTION].update_one({"_id": user.id}, {"$set": {"last_active_at": None}})
     assert http.post("/auth/login", json={"email": email, "password": PASSWORD}).status_code == 200
-    session.flush()
-    session.refresh(user)
-    assert user.last_active_at is not None
+    assert find_one(db, User, {"email": email}).last_active_at is not None
 
 
 def test_verifying_signs_you_in(client):
@@ -165,13 +142,11 @@ def test_verifying_signs_you_in(client):
     lives a day; making a new person sign in by hand straight after proving their address was the
     second dead end the browser audit found.
     """
-    http, session, mailer = client
+    http, _db, mailer = client
     _signup(http, _email())
-    session.flush()
     assert http.get("/account").status_code == 401, "the premise: not signed in yet"
 
     response = http.post("/auth/verify", json={"token": _link_token(mailer)})
-    session.flush()
 
     assert response.status_code == 200
     assert {"access_token", "refresh_token"} <= {c.name for c in http.cookies.jar}
@@ -180,12 +155,10 @@ def test_verifying_signs_you_in(client):
 
 def test_a_suspended_account_is_not_signed_in_by_its_link(client):
     """The same refusal login gives, or a link would be a way round a suspension."""
-    http, session, mailer = client
+    http, db, mailer = client
     email = _email()
     _signup(http, email)
-    session.flush()
-    session.scalar(select(User).where(User.email == email)).status = "suspended"
-    session.flush()
+    db[User.COLLECTION].update_one({"email": email}, {"$set": {"status": "suspended"}})
 
     assert http.post("/auth/verify", json={"token": _link_token(mailer)}).status_code == 403
     assert "access_token" not in {c.name for c in http.cookies.jar}
@@ -193,14 +166,12 @@ def test_a_suspended_account_is_not_signed_in_by_its_link(client):
 
 def test_a_new_link_can_be_sent_and_only_the_newest_works(client):
     """"Check your email" had no way to send another, and its advice — sign up again — sent nothing."""
-    http, session, mailer = client
+    http, _db, mailer = client
     email = _email()
     _signup(http, email)
-    session.flush()
     first = _link_token(mailer)
 
     response = http.post("/auth/resend", json={"email": email})
-    session.flush()
 
     assert response.status_code == 202
     assert len(mailer.sent) == 2, "a second email went out"
@@ -210,12 +181,10 @@ def test_a_new_link_can_be_sent_and_only_the_newest_works(client):
 
 def test_resend_answers_the_same_whoever_asks(client):
     """No address oracle, and nothing sent to an address that is not waiting for a link."""
-    http, session, mailer = client
+    http, _db, mailer = client
     verified = _email()
     _signup(http, verified)
-    session.flush()
     http.post("/auth/verify", json={"token": _link_token(mailer)})
-    session.flush()
     sent = len(mailer.sent)
 
     unknown = http.post("/auth/resend", json={"email": _email()})
@@ -228,28 +197,25 @@ def test_resend_answers_the_same_whoever_asks(client):
 
 def test_the_emailed_token_is_not_what_is_stored(client):
     """A database dump must not let anyone verify an address."""
-    http, session, mailer = client
+    http, db, mailer = client
     email = _email()
     _signup(http, email)
-    session.flush()
-    assert _link_token(mailer) != _verify_token(session, email)
+    assert _link_token(mailer) != _verify_token(db, email)
 
 
 # ── cookies ───────────────────────────────────────────────────────────────────────────────────
 
-def _logged_in(http, session, mailer):
+def _logged_in(http, mailer):
     email = _email()
     _signup(http, email)
-    session.flush()
     http.post("/auth/verify", json={"token": _link_token(mailer)})
-    session.flush()
     return email, http.post("/auth/login", json={"email": email, "password": PASSWORD})
 
 
 def test_the_refresh_cookie_is_scoped_to_the_refresh_path(client):
     """The detail most implementations miss (`AUTH_REUSE.md` §3)."""
-    http, session, mailer = client
-    _, response = _logged_in(http, session, mailer)
+    http, _db, mailer = client
+    _, response = _logged_in(http, mailer)
     assert response.status_code == 200
 
     # Compared case-insensitively throughout.
@@ -261,8 +227,8 @@ def test_the_refresh_cookie_is_scoped_to_the_refresh_path(client):
 
 def test_both_cookies_are_httponly_and_secure(client):
     """Unconditionally, not depending on the environment."""
-    http, session, mailer = client
-    _, response = _logged_in(http, session, mailer)
+    http, _db, mailer = client
+    _, response = _logged_in(http, mailer)
     for header in response.headers.get_list("set-cookie"):
         assert "httponly" in header.lower()
         assert "secure" in header.lower()
@@ -271,26 +237,22 @@ def test_both_cookies_are_httponly_and_secure(client):
 # ── sessions ──────────────────────────────────────────────────────────────────────────────────
 
 def test_refresh_rotates_the_token(client):
-    http, session, mailer = client
-    _logged_in(http, session, mailer)
-    session.flush()
+    http, _db, mailer = client
+    _logged_in(http, mailer)
     before = http.cookies.get("refresh_token", path="/auth/refresh")
 
     response = http.post("/auth/refresh")
-    session.flush()
     assert response.status_code == 200
     assert http.cookies.get("refresh_token", path="/auth/refresh") != before
 
 
 def test_a_replayed_refresh_token_ends_the_session_and_clears_the_cookies(client):
     """Either the client is buggy or the token was stolen."""
-    http, session, mailer = client
-    _logged_in(http, session, mailer)
-    session.flush()
+    http, _db, mailer = client
+    _logged_in(http, mailer)
     stolen = http.cookies.get("refresh_token", path="/auth/refresh")
 
     http.post("/auth/refresh")
-    session.flush()
 
     replay = http.post("/auth/refresh", cookies={"refresh_token": stolen})
     assert replay.status_code == 401
@@ -299,22 +261,18 @@ def test_a_replayed_refresh_token_ends_the_session_and_clears_the_cookies(client
 
 
 def test_logout_ends_the_session(client):
-    http, session, mailer = client
-    _logged_in(http, session, mailer)
-    session.flush()
+    http, _db, mailer = client
+    _logged_in(http, mailer)
 
     assert http.post("/auth/logout").status_code == 200
-    session.flush()
     assert http.post("/auth/refresh").status_code == 401
 
 
 def test_logging_out_twice_is_not_an_error(client):
     """A user who clicks logout on a stale tab should see a logged-out page, not an error."""
-    http, session, mailer = client
-    _logged_in(http, session, mailer)
-    session.flush()
+    http, _db, mailer = client
+    _logged_in(http, mailer)
     http.post("/auth/logout")
-    session.flush()
     assert http.post("/auth/logout").status_code == 200
 
 
@@ -322,51 +280,65 @@ def test_logging_out_twice_is_not_an_error(client):
 
 def test_the_daily_cap_stops_sending_without_breaking_signup(client, monkeypatch):
     """Gmail's own limit fails silently — messages stop arriving and nothing raises."""
-    http, session, mailer = client
+    http, _db, mailer = client
     monkeypatch.setenv("MAIL_DAILY_CAP", "1")
 
     first = _signup(http, _email())
-    session.flush()
     second = _signup(http, _email())
-    session.flush()
 
     assert first.status_code == second.status_code == 202
     assert len(mailer.sent) == 1, "the second send was refused by the cap"
 
 
-def test_the_cap_counts_attempts_not_successes(client, monkeypatch):
-    """A provider outage would otherwise burn the allowance twice — once failing, once retrying."""
+def test_a_send_that_failed_is_not_counted_against_the_cap(client, monkeypatch):
+    """The cap stands in for the provider's own allowance, and a send the provider refused did not use
+    any of it. Changed by design on the move to MongoDB (it counted attempts before); signup still
+    answers, and the account is still there to ask for another link."""
     from libs.mail import MailError, sent_last_24h
 
-    http, session, mailer = client
+    http, db, mailer = client
     monkeypatch.setenv("MAIL_DAILY_CAP", "50")
 
-    def failing(to, subject, body):
-        raise MailError("smtp said no")
+    outage, send = [True], mailer.send
 
-    monkeypatch.setattr(mailer, "send", failing)
-    before = sent_last_24h(session)
-    assert _signup(http, _email()).status_code == 202
-    session.flush()
-    assert sent_last_24h(session) == before + 1
+    def flaky(to, subject, body):
+        if outage[0]:
+            raise MailError("smtp said no")
+        send(to, subject, body)
+
+    monkeypatch.setattr(mailer, "send", flaky)
+    before = sent_last_24h(db)
+    email = _email()
+    assert _signup(http, email).status_code == 202
+    assert sent_last_24h(db) == before
+    assert find_one(db, User, {"email": email}) is not None
+
+    outage[0] = False
+    assert http.post("/auth/resend", json={"email": email}).status_code == 202
+    assert sent_last_24h(db) == before + 1, "a send that went out is counted"
 
 
 def test_no_recipient_address_is_stored(client):
     """A cap needs a count, not a mailing list."""
     from libs.db.models import MailSend
 
-    columns = set(MailSend.__table__.columns.keys())
-    assert not (columns & {"to_email", "recipient", "email", "address"})
+    http, db, mailer = client
+    email = _email()
+    _signup(http, email)
+    assert mailer.sent, "the premise: a mail went out"
+
+    assert not ({field.name for field in fields(MailSend)} & {"to_email", "recipient", "email", "address"})
+    stored = list(db[MailSend.COLLECTION].find())
+    assert stored and not any(email in str(row) for row in stored)
 
 
 # ── forgot / reset ────────────────────────────────────────────────────────────────────────────
 
 def test_forgot_answers_identically_for_a_known_and_unknown_address(client):
     """The same no-oracle rule as login: a reset form must not confirm who has an account."""
-    http, session, _mailer = client
+    http, _db, _mailer = client
     email = _email()
     _signup(http, email)
-    session.flush()
 
     known = http.post("/auth/forgot", json={"email": email})
     unknown = http.post("/auth/forgot", json={"email": _email()})
@@ -376,19 +348,18 @@ def test_forgot_answers_identically_for_a_known_and_unknown_address(client):
 
 def test_the_emailed_links_point_at_the_spa_routes_not_the_api(client):
     """`/auth/verify` is a POST-only API path; a mail client GETs, and would land on a 405."""
-    http, session, mailer = client
+    http, _db, mailer = client
     email = _email()
     _signup(http, email)
     assert "/#/verify?token=" in mailer.sent[-1][2]
 
-    session.flush()
     http.post("/auth/forgot", json={"email": email})
     assert "/#/reset?token=" in mailer.sent[-1][2]
 
 
 def test_reset_sets_the_password_ends_every_session_and_does_not_log_in(client):
-    http, session, mailer = client
-    email, _ = _logged_in(http, session, mailer)
+    http, db, mailer = client
+    email, _ = _logged_in(http, mailer)
 
     http.post("/auth/forgot", json={"email": email})
     token = _link_token(mailer)
@@ -397,10 +368,9 @@ def test_reset_sets_the_password_ends_every_session_and_does_not_log_in(client):
     assert response.status_code == 200
     assert "set-cookie" not in {k.lower() for k in response.headers}
 
-    from libs.db.models import UserSession
-    user_id = session.scalar(select(User.id).where(User.email == email))
-    live = session.query(UserSession).filter(UserSession.user_id == user_id,
-                                             UserSession.revoked_at.is_(None)).count()
+    user_id = find_one(db, User, {"email": email}).id
+    assert db[UserSession.COLLECTION].count_documents({"user_id": user_id}) > 0, "the premise"
+    live = db[UserSession.COLLECTION].count_documents({"user_id": user_id, "revoked_at": None})
     assert live == 0
 
     old = http.post("/auth/login", json={"email": email, "password": PASSWORD})
@@ -412,7 +382,7 @@ def test_reset_sets_the_password_ends_every_session_and_does_not_log_in(client):
 
 def test_a_reset_token_works_once_and_a_verification_token_is_not_a_reset_token(client):
     """"Can receive email" must not become "can take the account" through the wrong door."""
-    http, _session, mailer = client
+    http, _db, mailer = client
     email = _email()
     _signup(http, email)
     verify_token = _link_token(mailer)
@@ -430,6 +400,25 @@ def test_a_reset_token_works_once_and_a_verification_token_is_not_a_reset_token(
                                             "new_password": "yet another phrase entirely"})
     assert first.status_code == 200
     assert second.status_code == 400
+
+
+def test_a_refused_new_password_leaves_the_reset_link_usable(client):
+    """The password is checked before the link is spent: a person whose first choice is refused tries
+    another on the same link, rather than being sent back to their inbox."""
+    http, _db, mailer = client
+    email, _ = _logged_in(http, mailer)
+    http.post("/auth/forgot", json={"email": email})
+    token = _link_token(mailer)
+
+    refused = http.post("/auth/reset", json={"token": token, "new_password": "short"})
+    assert refused.status_code == 400
+    assert "password" in refused.json()["detail"]
+
+    accepted = http.post("/auth/reset", json={"token": token,
+                                              "new_password": "an entirely different phrase"})
+    assert accepted.status_code == 200
+    assert http.post("/auth/login", json={"email": email,
+                                          "password": "an entirely different phrase"}).status_code == 200
 
 
 def test_the_console_sender_shows_the_link_a_developer_must_click(capsys):

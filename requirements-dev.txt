@@ -10,25 +10,11 @@ import-linter>=2.0        # enforces the boundary contracts in pyproject.toml �
 pytest>=8.0
 ruff>=0.8
 
-# libs/db is imported by nearly every service, so its dependencies are needed to run the tests and
-# to generate migrations. Services still pin their own runtime copies; these are the versions CI and
-# local development resolve against.
-SQLAlchemy>=2.0
+# libs/db is imported by nearly every service, so its driver is needed to run the tests. Services still
+# pin their own runtime copies; these are the versions local development resolves against. Capped at
+# the major version: a driver release must not change what the gates say about unchanged code.
+pymongo>=4.19,<5
 pydantic>=2.10        # libs/contracts: one model behind server validation and the form
-# **Capped, for the same reason ruff's rules are pinned: a release must not fail an unrelated
-# commit — and this one did, for four days, on every push.**
-#
-# `alembic>=1.13` let CI resolve 1.19.0 while a developer machine held 1.18.5, and 1.19 double-
-# applies the `ck_%(table_name)s_` naming convention when it compares check constraints. Its
-# autogenerate output is self-contradictory: it drops `ck_corpus_ck_corpus_workplace_valid` to
-# create `ck_corpus_corpus_workplace_valid`, then drops that to recreate the first. The drift gate
-# read that as real drift and failed every run, while the same gate run locally passed — so the
-# local check stopped being a prediction of CI, which is the whole point of CLAUDE.md §6
-# (ROADMAP 6al).
-#
-# Raise the cap deliberately, with the drift check run against the new version first.
-alembic>=1.13,<1.19
-psycopg[binary]>=3.2
 # services/harvester's fetch layer. Declared here because tests import it; the service pins its own
 # copy in services/harvester/requirements.txt. It went undeclared for one commit and CI caught it -
 # locally it was present only as a transitive dependency of the embedder's test deps.

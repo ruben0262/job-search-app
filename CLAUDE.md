@@ -200,19 +200,19 @@ Before every push, locally, in this order:
 ```
 lint-imports                       # services may not import each other; libs may not import services
 ruff check .
-alembic upgrade head               # from empty, on a throwaway Postgres
-pytest tests/ -q                   # with DATABASE_URL set — read the skip count, not just the colour
+python -m libs.db --prune          # the schema, on an empty database of a local mongod
 python web/scripts/dump_openapi.py && npx openapi-typescript openapi.json -o src/api-types.ts
 git diff --exit-code web/openapi.json web/src/api-types.ts   # the contract must already be current
-npm --prefix web run build         # the site has to compile
+npm --prefix web run build         # the site has to compile — before pytest, which walks the build
+pytest tests/ -q -rs               # MONGODB_URI = a local mongod, never Atlas — read the skip count
 ```
 
-The last three used to be CI's alone, and that is exactly why they are written out here: **a gate
+The contract and build steps used to be CI's alone, and that is exactly why they are written out here: **a gate
 nobody runs is a gate that does not exist.** The contract check caught a real break the day it was
 added, and the two before it are what would have caught it earlier.
 
-- **A skipped test is not a passing test.** Roughly 290 of them skip silently without
-  `DATABASE_URL`, and the suite still prints green. Check the skip count, not just the colour.
+- **A skipped test is not a passing test.** Most of them skip silently without `MONGODB_URI`, and
+  the suite still prints green. Check the skip count, not just the colour.
 - **Say which gate you ran and what it said, with the numbers.** "Gates green" is a claim; "1,340
   passed, 13 skipped, contracts 2 kept" is a report. Once CI stopped answering, the only thing
   standing between a broken push and production is whether that report is honest.
@@ -271,7 +271,7 @@ a traceback would otherwise carry one.
 
 ## Practical
 
-- Full suite against a real Postgres before pushing — see rule 6 for the gates and the skip trap.
+- Full suite against a real MongoDB before pushing (`tests/README.md`) — see rule 7 for the gates and the skip trap.
 - `.venv/Scripts/python.exe` on the Windows box; bare `python` has no dependencies.
 - `docs/saas/ROADMAP.md` is the plan and `CHANGELOG.md` is the history. A non-trivial change gets an
   entry in the second; a plan changes in the first.

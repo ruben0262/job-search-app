@@ -14,6 +14,7 @@ import docx
 from pypdf import PdfWriter
 
 from libs.documents import MAX_TEXT_CHARS, UnsupportedDocument, extract_text
+from tests.conftest import needs_db
 
 
 def _docx_bytes(paragraphs: list[str], table: list[list[str]] | None = None) -> bytes:
@@ -124,49 +125,25 @@ def test_a_legacy_encoding_is_read_rather_than_rejected():
 
 # ── the routes ────────────────────────────────────────────────────────────────────────────────
 
-pytestmark_db = pytest.mark.skipif(
-    not os.environ.get("DATABASE_URL"), reason="DATABASE_URL not set (no live Postgres)")
-
-
 @pytest.fixture()
-def api():
+def api(db, monkeypatch):
     pytest.importorskip("fastapi")
     os.environ.setdefault("ACCESS_TOKEN_SECRET", "test-" + "x" * 40)
-    os.environ["DISABLE_RATE_LIMIT"] = "1"
+    monkeypatch.setenv("DISABLE_RATE_LIMIT", "1")
 
     from fastapi.testclient import TestClient
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import Session
 
     from libs.auth.access import issue_access_token
+    from libs.db import insert
     from libs.db.models import User
-    from services.api import deps
     from services.api.app import app
 
-    engine = create_engine(os.environ["DATABASE_URL"])
-    conn = engine.connect()
-    trans = conn.begin()
-    session = Session(bind=conn, join_transaction_mode="create_savepoint")
+    users = [insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active"))
+             for _ in range(2)]
 
-    users = []
-    for _ in range(2):
-        user = User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active")
-        session.add(user)
-        users.append(user)
-    session.flush()
-
-    app.dependency_overrides[deps.get_db] = lambda: session
-    try:
-        with TestClient(app, base_url="https://testserver") as http:
-            http.cookies.set("access_token",
-                             issue_access_token(users[0].id, uuid.uuid4()), path="/")
-            yield http, session, users
-    finally:
-        app.dependency_overrides.clear()
-        session.close()
-        trans.rollback()
-        conn.close()
-        os.environ.pop("DISABLE_RATE_LIMIT", None)
+    with TestClient(app, base_url="https://testserver") as http:
+        http.cookies.set("access_token", issue_access_token(users[0].id, uuid.uuid4()), path="/")
+        yield http, db, users
 
 
 def _upload(http, name="cv.txt", body=b"Alice Example\nBackend Engineer at Acme", kind="cv"):
@@ -174,40 +151,36 @@ def _upload(http, name="cv.txt", body=b"Alice Example\nBackend Engineer at Acme"
                      files={"file": (name, body, "text/plain")})
 
 
-@pytestmark_db
+@needs_db
 def test_an_upload_stores_the_text_and_not_the_file(api):
     """Nothing downstream reads a PDF, and keeping strangers' records on disk would be a liability with."""
     from libs.db.models import UserDocument
 
-    http, session, users = api
+    http, db, users = api
     response = _upload(http)
-    session.flush()
 
     assert response.status_code == 201
-    (stored,) = session.query(UserDocument).filter_by(user_id=users[0].id).all()
-    assert "Backend Engineer at Acme" in stored.text
-    assert not hasattr(stored, "content"), "no column may hold the original bytes"
+    (stored,) = db[UserDocument.COLLECTION].find({"user_id": users[0].id})
+    assert "Backend Engineer at Acme" in stored["text"]
+    assert not [key for key, value in stored.items() if isinstance(value, bytes)], \
+        "no field may hold the original bytes"
+    assert "content" not in UserDocument.__dataclass_fields__
 
 
-@pytestmark_db
+@needs_db
 def test_re_uploading_the_same_file_replaces_rather_than_duplicates(api):
     """Users press the button twice, and two copies of one CV is one CV of signal at twice the processing."""
-    from sqlalchemy import func, select
-
     from libs.db.models import UserDocument
 
-    http, session, users = api
+    http, db, users = api
     _upload(http)
-    session.flush()
     second = _upload(http)
-    session.flush()
 
     assert second.json()["status"] == "replaced"
-    assert session.scalar(select(func.count()).select_from(UserDocument)
-                          .where(UserDocument.user_id == users[0].id)) == 1
+    assert db[UserDocument.COLLECTION].count_documents({"user_id": users[0].id}) == 1
 
 
-@pytestmark_db
+@needs_db
 def test_a_file_longer_than_we_read_is_kept_and_the_uploader_is_told(api):
     """The person can shorten it; the model cannot.
 
@@ -228,7 +201,7 @@ def test_a_file_longer_than_we_read_is_kept_and_the_uploader_is_told(api):
     assert f"{MAX_TEXT_CHARS:,}" in body["note"], "the note has to say how much was kept"
 
 
-@pytestmark_db
+@needs_db
 def test_an_ordinary_upload_carries_no_warning(api):
     """A note on every upload is a note nobody reads."""
     http, _, _ = api
@@ -237,7 +210,7 @@ def test_an_ordinary_upload_carries_no_warning(api):
     assert body["note"] is None
 
 
-@pytestmark_db
+@needs_db
 def test_a_bad_file_is_refused_with_something_the_user_can_act_on(api):
     http, _, _ = api
     response = http.post("/documents", data={"kind": "cv"},
@@ -246,34 +219,32 @@ def test_a_bad_file_is_refused_with_something_the_user_can_act_on(api):
     assert ".docx" in response.json()["detail"]
 
 
-@pytestmark_db
+@needs_db
 def test_the_list_shows_a_preview_not_the_whole_history(api):
     """Returning the full text would put a person's complete employment history into a response the."""
-    http, session, _ = api
+    http, _db, _ = api
     _upload(http, body=("Employment history. " * 500).encode())
-    session.flush()
 
     body = http.get("/documents").json()
     assert body["documents"][0]["chars"] > 200
     assert len(body["documents"][0]["preview"]) <= 200
 
 
-@pytestmark_db
+@needs_db
 def test_one_user_cannot_delete_anothers_document(api):
     """T1 at the document layer. An id from another account must find nothing, not delete it."""
+    from libs.db import get, insert
     from libs.db.models import UserDocument
 
-    http, session, users = api
-    other = UserDocument(user_id=users[1].id, kind="cv", filename="theirs.txt",
-                         text="not yours", text_sha256="a" * 64, chars=9)
-    session.add(other)
-    session.flush()
+    http, db, users = api
+    other = insert(db, UserDocument(user_id=users[1].id, kind="cv", filename="theirs.txt",
+                                    text="not yours", text_sha256="a" * 64, chars=9))
 
     assert http.delete(f"/documents/{other.id}").status_code == 404
-    assert session.get(UserDocument, other.id) is not None
+    assert get(db, UserDocument, other.id) is not None
 
 
-@pytestmark_db
+@needs_db
 def test_uploading_requires_signing_in(api):
     http, _, _ = api
     http.cookies.clear()

@@ -1,5 +1,5 @@
 """A CV or cover letter for a job: asked for on the site, built by the docgen worker, downloaded,
-deleted. The real app and the real worker step share one rolled-back session; only Chrome and the AI
+deleted. The real app and the real worker step share one test database; only Chrome and the AI
 providers are stand-ins, and the providers are reached through their real adapters."""
 from __future__ import annotations
 
@@ -8,16 +8,13 @@ import importlib.util
 import os
 import pathlib
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 from types import SimpleNamespace
 
 import pytest
 
 pytest.importorskip("fastapi")
 import httpx
-
-pytestmark = pytest.mark.skipif(not os.environ.get("DATABASE_URL"),
-                                reason="DATABASE_URL not set (no live Postgres)")
 
 PLATFORM_KEY = "AIzaPlatformKey-" + "p" * 24
 OWN_KEY = "sk-proj-OwnKey-" + "o" * 30
@@ -41,15 +38,13 @@ WRITTEN = """<!DOCTYPE html><html lang="en"><head><title>Alice Example CV</title
 
 
 @pytest.fixture()
-def api(monkeypatch):
+def api(db, monkeypatch):
     from fastapi.testclient import TestClient
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import Session
 
     from libs.auth.access import issue_access_token
+    from libs.db import insert
     from libs.db.models import CorpusJob, User, UserDocument
     from libs.secrets import KeyRing, SecretStore, generate_key
-    from services.api import deps
     from services.api.app import app
     from services.docgen import pdf
 
@@ -60,22 +55,14 @@ def api(monkeypatch):
     monkeypatch.delenv("PLATFORM_AI_PROVIDER", raising=False)
     monkeypatch.delenv("PLATFORM_AI_KEY", raising=False)
 
-    engine = create_engine(os.environ["DATABASE_URL"])
-    conn = engine.connect()
-    trans = conn.begin()
-    session = Session(bind=conn, join_transaction_mode="create_savepoint")
-    user = User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active",
-                full_name="Alice Example")
-    session.add(user)
-    session.flush()
-    session.add(UserDocument(user_id=user.id, kind="cv", filename="cv.txt", text=CV_TEXT,
-                             text_sha256=hashlib.sha256(CV_TEXT.encode()).hexdigest(),
-                             chars=len(CV_TEXT)))
-    job = CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
-                    title="Backend Engineer", company="Northwind",
-                    description="Backend engineer. Python, Postgres, on-call.")
-    session.add(job)
-    session.flush()
+    user = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active",
+                           full_name="Alice Example"))
+    insert(db, UserDocument(user_id=user.id, kind="cv", filename="cv.txt", text=CV_TEXT,
+                            text_sha256=hashlib.sha256(CV_TEXT.encode()).hexdigest(),
+                            chars=len(CV_TEXT)))
+    job = insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
+                               title="Backend Engineer", company="Northwind",
+                               description="Backend engineer. Python, Postgres, on-call."))
 
     # Chrome, as a function: what it was handed, and a PDF back.
     rendered: list[str] = []
@@ -86,18 +73,10 @@ def api(monkeypatch):
     # The posting's freshness check fetches the posting; nothing here may touch the network.
     monkeypatch.setattr("services.docgen.run.refresh_before_build", lambda *a, **k: {})
 
-    app.dependency_overrides[deps.get_db] = lambda: session
-    try:
-        with TestClient(app, base_url="https://testserver") as http:
-            http.cookies.set("access_token", issue_access_token(user.id, uuid.uuid4()), path="/")
-            yield SimpleNamespace(http=http, session=session, user=user, job=job,
-                                  rendered=rendered, store=SecretStore(session, KeyRing.from_env(
-                                      {"SECRETS_KEK": kek})))
-    finally:
-        app.dependency_overrides.clear()
-        session.close()
-        trans.rollback()
-        conn.close()
+    with TestClient(app, base_url="https://testserver") as http:
+        http.cookies.set("access_token", issue_access_token(user.id, uuid.uuid4()), path="/")
+        yield SimpleNamespace(http=http, db=db, user=user, job=job, rendered=rendered,
+                              store=SecretStore(db, KeyRing.from_env({"SECRETS_KEK": kek})))
 
 
 def _ask(api, kind="cv", mode="instant"):
@@ -109,7 +88,7 @@ def _work(api) -> bool:
     from libs.queue.worker import WorkerStats, run_once
     from services.docgen.__main__ import handle
 
-    return run_once(api.session, "docgen", "test-docgen", handle, WorkerStats())
+    return run_once(api.db, "docgen", "test-docgen", handle, WorkerStats())
 
 
 def _status(api, build_id: int) -> dict:
@@ -125,7 +104,7 @@ def _personalise(api):
     """What the setup chat left a legacy account with: the files the tailoring prompts need."""
     from libs.profiles.repository import ProfileFiles
 
-    files = ProfileFiles(api.session, api.user.id)
+    files = ProfileFiles(api.db, api.user.id)
     files.write("context.md", "# Alice Example\nBackend engineer in Berlin. Python, Postgres.",
                 kind="context")
     files.write("base_cv.html", WRITTEN, kind="template")
@@ -133,7 +112,6 @@ def _personalise(api):
                 kind="prompt")
     files.write("tailor_cover.md", "Write Alice Example a letter.\n<HEAD_BLOCK>\n<JOB_CONTEXT>",
                 kind="prompt")
-    api.session.flush()
 
 
 def _platform(monkeypatch):
@@ -183,11 +161,12 @@ def test_an_instant_cv_is_asked_for_built_and_downloaded(api):
 
 def test_making_a_document_is_not_applying(api):
     """Instant documents are free previews; only "I applied" on the jobs page records an application."""
+    from libs.db import find_one
     from libs.db.models import UserJobState
 
     _ask(api)
     assert _work(api)
-    state = api.session.get(UserJobState, (api.user.id, api.job.id))
+    state = find_one(api.db, UserJobState, {"user_id": api.user.id, "job_id": api.job.id})
     assert state is None or state.applied_at is None
 
 
@@ -207,13 +186,13 @@ def test_asking_twice_while_it_waits_is_the_same_build(api):
 
 def test_a_build_is_its_owners_alone(api):
     from libs.auth.access import issue_access_token
+    from libs.db import insert
     from libs.db.models import User
 
     build_id = _ask(api).json()["id"]
     _work(api)
-    stranger = User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active")
-    api.session.add(stranger)
-    api.session.flush()
+    assert api.http.get(f"/documents/build/{build_id}/file").status_code == 200, "the premise"
+    stranger = insert(api.db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active"))
     api.http.cookies.set("access_token", issue_access_token(stranger.id, uuid.uuid4()), path="/")
 
     assert api.http.get(f"/documents/build/{build_id}").status_code == 404
@@ -222,33 +201,34 @@ def test_a_build_is_its_owners_alone(api):
 
 def test_a_refusal_says_what_to_do_and_is_not_a_dead_letter(api):
     """A dead letter pages the operator; a person with no CV uploaded is not an incident."""
-    from sqlalchemy import delete
-
+    from libs.db import get
     from libs.db.models import QueueJob, UserDocument
 
-    api.session.execute(delete(UserDocument).where(UserDocument.user_id == api.user.id))
+    api.db[UserDocument.COLLECTION].delete_many({"user_id": api.user.id})
     build_id = _ask(api).json()["id"]
     _work(api)
 
     status = _status(api, build_id)
     assert status["state"] == "failed"
     assert "upload your CV" in status["detail"]
-    assert api.session.get(QueueJob, build_id).state == "done"
+    assert get(api.db, QueueJob, build_id).state == "done"
 
 
 def test_a_build_from_a_telegram_tap_is_refused_rather_than_lost(api):
     """Taps queued before documents moved onto the site carry no mode, and nowhere to send to."""
+    from libs.db import get
     from libs.db.models import QueueJob
     from libs.queue import enqueue
 
-    build_id = enqueue(api.session, "docgen", api.user.id, payload={"job_id": api.job.id})
+    build_id = enqueue(api.db, "docgen", api.user.id, payload={"job_id": api.job.id})
     _work(api)
 
-    assert api.session.get(QueueJob, build_id).payload["refused"].startswith("documents are built")
+    assert get(api.db, QueueJob, build_id).payload["refused"].startswith("documents are built")
 
 
 def test_a_built_document_is_deleted_once_it_has_been_kept_long_enough(api):
     """D9: kept for `document_keep_hours`, downloaded or not, and the page says so afterwards."""
+    from libs.db import now
     from libs.db.models import BuiltDocument
     from services.docgen.__main__ import purge
 
@@ -256,30 +236,51 @@ def test_a_built_document_is_deleted_once_it_has_been_kept_long_enough(api):
     _work(api)
     fresh = _ask(api, kind="cover").json()["id"]
     _work(api)
-    api.session.get(BuiltDocument, old).created_at = datetime.now(UTC) - timedelta(hours=2)
-    api.session.flush()
+    api.db[BuiltDocument.COLLECTION].update_one({"_id": old},
+                                                {"$set": {"created_at": now() - timedelta(hours=2)}})
 
-    purge(api.session)
+    purge(api.db)
 
     assert _status(api, old)["state"] == "expired"
     assert api.http.get(f"/documents/build/{old}/file").status_code == 404
     assert _status(api, fresh)["state"] == "ready"
 
 
-def test_the_nightly_dump_leaves_built_documents_out(api):
-    """Both halves of one rule: the table says its rows are ephemeral, and the dump skips such rows.
-    A CV kept here for an hour must not be kept for thirty days in a backup."""
-    from sqlalchemy import text
-
+def _backup():
     spec = importlib.util.spec_from_file_location(
         "backup", pathlib.Path(__file__).resolve().parents[1] / "deploy" / "scripts" / "backup.py")
     backup = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(backup)
+    return backup
 
-    persistence = api.session.scalar(
-        text("SELECT relpersistence FROM pg_class WHERE relname = 'built_documents'"))
-    assert persistence == "u", "built_documents is not UNLOGGED, so the dump keeps every CV in it"
-    assert "--no-unlogged-table-data" in backup._pg_dump_args("postgresql+psycopg://u@h/db")
+
+def test_the_nightly_backup_does_not_keep_built_documents():
+    """Both halves of one rule: the collection says its documents are ephemeral, and the backup skips
+    such collections. A CV kept here for an hour must not be kept for thirty days in a backup."""
+    from libs.db.models import BuiltDocument, User
+
+    kept = _backup().kept()
+    assert BuiltDocument.BACKED_UP is False
+    assert BuiltDocument.COLLECTION not in kept
+    assert User.COLLECTION in kept, "the list is the backup's, not an empty one"
+
+
+def test_a_written_backup_holds_no_built_document(api, tmp_path):
+    """The same rule, on the file the backup actually writes, with a built CV in the database."""
+    from libs.db.models import BuiltDocument, User
+
+    backup = _backup()
+    build_id = _ask(api).json()["id"]
+    _work(api)
+    assert api.db[BuiltDocument.COLLECTION].count_documents({"_id": build_id}) == 1, "the premise"
+
+    target = tmp_path / "backup.jsonl.gz"
+    counts = backup.write(api.db, target)
+
+    assert counts.get(User.COLLECTION), "the backup holds the accounts, so it is a real one"
+    assert BuiltDocument.COLLECTION not in counts
+    assert not [doc for name, doc in backup.read(target) if name == BuiltDocument.COLLECTION]
+    assert backup.verify(target)
 
 
 # ── the AI one ────────────────────────────────────────────────────────────────────────────────
@@ -318,7 +319,7 @@ def test_an_ai_document_on_the_platform_key_writes_with_the_operators_model(api,
     _platform(monkeypatch)
     _personalise(api)
     _consent(api)
-    settings.put(api.session, "document_models", {"gemini": "gemini-chosen-in-the-panel"})
+    settings.put(api.db, "document_models", {"gemini": "gemini-chosen-in-the-panel"})
     sent = _providers(monkeypatch)
 
     build_id = _ask(api, mode="ai").json()["id"]
@@ -328,7 +329,7 @@ def test_an_ai_document_on_the_platform_key_writes_with_the_operators_model(api,
     assert "models/gemini-chosen-in-the-panel:generateContent" in str(sent[0].url)
     assert sent[0].headers["x-goog-api-key"] == PLATFORM_KEY
     assert PLATFORM_KEY not in str(sent[0].url), "a key in the URL ends up in every error message"
-    assert ai_requests_today(api.session, api.user.id) == 1
+    assert ai_requests_today(api.db, api.user.id) == 1
 
 
 def test_their_own_key_pays_and_is_never_counted_against_the_allowance(api, monkeypatch):
@@ -345,7 +346,7 @@ def test_their_own_key_pays_and_is_never_counted_against_the_allowance(api, monk
 
     assert _status(api, build_id)["state"] == "ready"
     assert sent[0].headers["authorization"] == f"Bearer {OWN_KEY}"
-    assert ai_requests_today(api.session, api.user.id) == 0
+    assert ai_requests_today(api.db, api.user.id) == 0
 
 
 def test_without_any_key_ai_says_so_and_the_instant_version_still_works(api):
@@ -368,15 +369,15 @@ def test_the_allowance_is_one_count_that_the_chat_spends_too(api, monkeypatch):
     _platform(monkeypatch)
     _personalise(api)
     _consent(api)
-    set_limit(api.session, api.user.id, "ai_platform_requests_per_day", 2)
-    record_ai_request(api.session, api.user.id)          # what the chat does for one reply
+    set_limit(api.db, api.user.id, "ai_platform_requests_per_day", 2)
+    record_ai_request(api.db, api.user.id)          # what the chat does for one reply
 
     assert _ask(api, kind="cv", mode="ai").status_code == 202
     assert _ask(api, kind="cv", mode="ai").status_code == 202, "asking twice is one request"
     over = _ask(api, kind="cover", mode="ai")
 
     assert over.status_code == 409
-    assert ai_requests_today(api.session, api.user.id) == 2
+    assert ai_requests_today(api.db, api.user.id) == 2
 
 
 def test_the_daily_ceiling_counts_every_document_where_they_are_asked_for(api):
@@ -387,7 +388,7 @@ def test_the_daily_ceiling_counts_every_document_where_they_are_asked_for(api):
     _personalise(api)
     _consent(api)
     api.store.put(api.user.id, "gemini_api", "AIzaOwn-" + "g" * 30, validated=True)
-    set_limit(api.session, api.user.id, "cv_builds_per_day", 2)
+    set_limit(api.db, api.user.id, "cv_builds_per_day", 2)
 
     assert _ask(api, kind="cv", mode="instant").status_code == 202
     assert _ask(api, kind="cv", mode="ai").status_code == 202

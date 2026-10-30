@@ -14,6 +14,90 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-10-30 — MongoDB instead of Postgres (Phase 9)
+
+**The owner's decision:** users, their logins and everything about them live in MongoDB Atlas.
+Postgres, SQLAlchemy, Alembic and 58 migrations are gone. Before they went, the switched-off model
+was saved under the git tag `model-on-postgres` (CLAUDE.md §3) and removed from the tree.
+
+**What the data layer is now.** It lives in `libs/db/README.md`:
+
+- a dataclass per collection, holding its indexes and its allowed values;
+- `ensure_schema()` in place of migrations;
+- integer ids from a counters collection, so the site's job links and Telegram buttons stay numbers;
+- `delete_account()` in place of `ON DELETE CASCADE`.
+
+**Matching runs in the database.** The jobs page used to pull up to 2,000 postings into Python. It
+now sends the newest 2,000 candidates through a server-side regex on the green words, so only matches
+cross the network. Measured against Atlas from the owner's machine (26 ms a round trip, 5,000
+postings, realistic text):
+
+- 70 matches: 337 ms median.
+- 196 matches: 451 ms median.
+- The query itself took about 140 ms. The rest was four round trips and the Python filters.
+
+From the server, those trips cost whatever the distance to the Atlas region costs, which is why the
+cluster's region is on the owner's list.
+
+**Behaviour kept where rollback used to provide it:**
+
+- A refused new password leaves the reset link usable (`token_owner`).
+- A failed send is not counted against the mail cap.
+
+**Defects found in the port and fixed, each with a test that fails without the fix:**
+
+- **Schema startup race.** Two services starting together on an empty database crashed one of them:
+  the server answers a concurrent create with `NamespaceExists`.
+- **Backups could not be written at all.** The JSON settings had no way to write a UUID. The id
+  counters are now kept too, so a restore never reissues an id that an old alert link names.
+- **The help chat.** A writer that outlived its lease could keep writing over the worker that took
+  over. Now only the lease holder writes (`lease_holder`). A stream whose writer died starts it again.
+- **The per-account lane view** showed the alphabetically last error, not the newest.
+- **Metadata counting.** The describe pass counted no metadata it wrote. Retention's state sweep had
+  lost its batch bound.
+- **Account deletion.** It needed `SECRETS_KEK` from both the person's page and the operator's. It
+  was also a second way of doing what `delete_account` does.
+
+**Index pruning and lease timeouts:**
+
+- `ensure_schema` drops an index nothing declares only with `--prune`. Only the deploy passes it, from
+  an image of the commit being deployed, so an older service cannot undo a newer one.
+- Claude's calls get the same timeout as Gemini's and OpenAI's (`TIMEOUT_SEC`), so one call cannot
+  outlive the docgen claim it runs under.
+
+**Removed with no consumer left:**
+
+- the four reference-instance import scripts and the embedder probe;
+- `plan_id`, the Telegram per-bot fields and the `telegram_bot` credential kind with its validator;
+- the credentials page's `requirements` block, which nothing read, and `libs/profiles/harddata.py`;
+- the latency page's scoring stages and filter table, and the corpus-projection alert;
+- `too_old_to_send`, `unwanted_for_training`, `touch_last_seen` and `fill_missing_languages`.
+
+**Moving the data.** The switch-over copies **accounts only** (owner): `deploy/scripts/copy_accounts.py`,
+with the checklist in `deploy/README.md`. It reads only the final Postgres schema. It refuses a target
+that already holds accounts. The company boards, operator keywords and settings travel with the
+accounts, because without them postings would not be "collected again within hours". It was tested
+against a Postgres built from the tag, with rows it must leave out.
+
+**Backups** keep every collection except the ones that rebuild themselves, plus the postings someone
+acted on. They are written as canonical extended JSON and verified by reading every document back.
+`restore.py` replaces the Postgres restore drill.
+
+**Tests run on a local `mongod` 8.0.34**, the version Atlas runs, and never against Atlas: conftest
+refuses an Atlas URI.
+
+Gates, locally, in this order:
+
+- lint-imports: 2 contracts kept, 0 broken.
+- ruff: clean.
+- `python -m libs.db --prune` on an empty database: clean twice.
+- Contract: 67 paths, regenerated.
+- Web build: passes.
+- pytest: 1,191 passed, 3 skipped. The skips are the Postgres copy source, the reference checkout and
+  an empty guard list.
+
+---
+
 ## 2026-10-29 — a site that says when it cannot reach its API, and the review's fixes (Phase 8)
 
 **"It just says Loading."** The site opens on "Loading…" and asks `/dashboard`. Only a 401 was handled;

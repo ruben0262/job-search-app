@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import pytest
 
-from libs.db.models import SCORING_RELEVANT_FILES
 from libs.profiles import (
     GENERATION_FILES,
     PLATFORM_FILES,
@@ -126,15 +125,6 @@ def test_the_assembly_is_reproducible():
 
 
 # ── the retrain boundary ──────────────────────────────────────────────────────────────────────
-
-def test_only_the_scoring_files_are_scoring_relevant():
-    """The whole retraining policy is this set."""
-    assert set(SCORING_RELEVANT_FILES) == {"label.md", "04-job-evaluation.md"}
-
-    for name, _kind in SEED_FILES:
-        if name in ("context.md", "base_cv.html", "01-candidate-profile.md"):
-            assert name not in SCORING_RELEVANT_FILES, f"editing {name} must not cost a relabel"
-
 
 # ── a prompt still carrying a placeholder is not finished (2026-08-12) ─────────────────────────
 

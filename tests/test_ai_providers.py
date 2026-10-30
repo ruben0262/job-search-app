@@ -4,9 +4,8 @@ from __future__ import annotations
 import io
 import json
 import logging
-import os
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 
 import pytest
 
@@ -14,9 +13,7 @@ httpx = pytest.importorskip("httpx")
 
 from libs.llm import LlmError
 from libs.llm.rest import GeminiClient, OpenAIClient
-
-needs_db = pytest.mark.skipif(not os.environ.get("DATABASE_URL"),
-                              reason="DATABASE_URL not set (no live Postgres)")
+from tests.conftest import needs_db
 
 KEY = "AIzaSyTestKey-" + "k" * 26
 MESSAGES = [{"role": "user", "content": "Write the CV."}]
@@ -118,29 +115,23 @@ def test_every_provider_a_profile_can_be_sent_to_is_named_in_the_privacy_disclos
 # ── who pays ──────────────────────────────────────────────────────────────────────────────────
 
 @pytest.fixture()
-def db(monkeypatch):
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import Session
-
+def ctx(db, monkeypatch):
+    from libs.db import insert
     from libs.db.models import User
     from libs.secrets import KeyRing, SecretStore, generate_key
 
     monkeypatch.delenv("PLATFORM_AI_PROVIDER", raising=False)
     monkeypatch.delenv("PLATFORM_AI_KEY", raising=False)
-    engine = create_engine(os.environ["DATABASE_URL"])
-    conn = engine.connect()
-    trans = conn.begin()
-    session = Session(bind=conn, join_transaction_mode="create_savepoint")
-    user = User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active")
-    session.add(user)
-    session.flush()
-    try:
-        yield session, user, SecretStore(session, KeyRing.from_env(
-            {"SECRETS_KEK": f"k1:{generate_key()}"}))
-    finally:
-        session.close()
-        trans.rollback()
-        conn.close()
+    user = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active"))
+    return db, user, SecretStore(db, KeyRing.from_env({"SECRETS_KEK": f"k1:{generate_key()}"}))
+
+
+def _fresh(db, user):
+    """The account as stored now: `resolve` reads the limits off the document it is handed."""
+    from libs.db import get
+    from libs.db.models import User
+
+    return get(db, User, user.id)
 
 
 def _platform(monkeypatch):
@@ -149,82 +140,82 @@ def _platform(monkeypatch):
 
 
 @needs_db
-def test_the_platform_pays_only_with_its_own_key_and_only_while_the_allowance_lasts(db,
+def test_the_platform_pays_only_with_its_own_key_and_only_while_the_allowance_lasts(ctx,
                                                                                  monkeypatch):
     from libs.llm import PLATFORM, ai_requests_today, record_ai_request, resolve
 
-    session, user, _store = db
-    assert resolve(session, user) is None, "no platform key is configured, so nobody pays"
+    db, user, _store = ctx
+    assert resolve(db, user) is None, "no platform key is configured, so nobody pays"
 
     _platform(monkeypatch)
-    assert resolve(session, user).kind == PLATFORM
+    assert resolve(db, user).kind == PLATFORM
     for _ in range(19):
-        record_ai_request(session, user.id)
-    assert resolve(session, user).kind == PLATFORM, "twenty a day unless an operator says otherwise"
+        record_ai_request(db, user.id)
+    assert resolve(db, user).kind == PLATFORM, "twenty a day unless an operator says otherwise"
 
-    record_ai_request(session, user.id)
-    assert resolve(session, user) is None
-    assert ai_requests_today(session, user.id) == 20
+    record_ai_request(db, user.id)
+    assert resolve(db, user) is None
+    assert ai_requests_today(db, user.id) == 20
 
 
 @needs_db
-def test_their_own_key_comes_first_whatever_the_allowance_says(db, monkeypatch):
+def test_their_own_key_comes_first_whatever_the_allowance_says(ctx, monkeypatch):
     from libs.limits import set_limit
     from libs.llm import resolve
 
-    session, user, store = db
+    db, user, store = ctx
     _platform(monkeypatch)
-    set_limit(session, user.id, "ai_platform_requests_per_day", 0)
+    set_limit(db, user.id, "ai_platform_requests_per_day", 0)
     store.put(user.id, "openai_api", "sk-proj-" + "o" * 40)
     store.put(user.id, "gemini_api", "AIzaOwn-" + "g" * 30)
-    session.flush()
 
-    payer = resolve(session, user)
+    payer = resolve(db, _fresh(db, user))
 
     # Claude first, then Gemini, then OpenAI: the order is fixed, not whichever was saved last.
     assert (payer.kind, payer.provider) == ("gemini_api", "gemini")
 
 
 @needs_db
-def test_yesterdays_requests_are_not_counted_today(db):
+def test_yesterdays_requests_are_not_counted_today(ctx):
+    from libs.db import now
     from libs.db.models import AiRequest
     from libs.llm import ai_requests_today, record_ai_request
 
-    session, user, _store = db
-    record_ai_request(session, user.id)
-    session.flush()
-    session.query(AiRequest).filter(AiRequest.user_id == user.id).update(
-        {"created_at": datetime.now(UTC) - timedelta(days=2)})
+    db, user, _store = ctx
+    record_ai_request(db, user.id)
+    assert ai_requests_today(db, user.id) == 1, "the premise"
+    db[AiRequest.COLLECTION].update_many({"user_id": user.id},
+                                         {"$set": {"created_at": now() - timedelta(days=2)}})
 
-    assert ai_requests_today(session, user.id) == 0
+    assert ai_requests_today(db, user.id) == 0
 
 
 @needs_db
-def test_the_platform_allowance_can_be_switched_off_but_never_made_unlimited(db, monkeypatch):
+def test_the_platform_allowance_can_be_switched_off_but_never_made_unlimited(ctx, monkeypatch):
     from libs.limits import set_limit
     from libs.llm import resolve
 
-    session, user, _store = db
+    db, user, _store = ctx
     _platform(monkeypatch)
 
-    set_limit(session, user.id, "ai_platform_requests_per_day", 0)
-    assert resolve(session, user) is None
+    assert resolve(db, user) is not None, "the premise: the platform would pay"
+    set_limit(db, user.id, "ai_platform_requests_per_day", 0)
+    assert resolve(db, _fresh(db, user)) is None
     with pytest.raises(ValueError, match="cannot be unlimited"):
-        set_limit(session, user.id, "ai_platform_requests_per_day", None)
+        set_limit(db, user.id, "ai_platform_requests_per_day", None)
     with pytest.raises(ValueError, match="at least 1"):
-        set_limit(session, user.id, "cv_builds_per_day", 0)
+        set_limit(db, user.id, "cv_builds_per_day", 0)
 
 
 @needs_db
-def test_the_client_opened_is_the_payers_and_its_key_never_reaches_a_log(db, monkeypatch):
+def test_the_client_opened_is_the_payers_and_its_key_never_reaches_a_log(ctx, monkeypatch):
     from libs.llm import PLATFORM, paying_client
     from libs.secrets import install_on_handler
 
-    session, user, store = db
+    _db, user, store = ctx
     _platform(monkeypatch)
     own = "sk-proj-OwnKey-" + "o" * 30
     store.put(user.id, "openai_api", own)
-    session.flush()
     stream = io.StringIO()
     handler = logging.StreamHandler(stream)
     install_on_handler(handler)

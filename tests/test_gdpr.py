@@ -8,49 +8,29 @@ import pytest
 
 pytest.importorskip("fastapi")
 
-pytestmark = pytest.mark.skipif(
-    not os.environ.get("DATABASE_URL"), reason="DATABASE_URL not set (no live Postgres)")
-
 PASSWORD = "correct horse battery staple"
 
 
 @pytest.fixture()
-def api():
+def api(db, monkeypatch):
     os.environ.setdefault("ACCESS_TOKEN_SECRET", "test-" + "x" * 40)
     os.environ.setdefault("SECRETS_KEK", "k1:" + "A" * 43 + "=")
-    os.environ["DISABLE_RATE_LIMIT"] = "1"
+    monkeypatch.setenv("DISABLE_RATE_LIMIT", "1")
 
     from fastapi.testclient import TestClient
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import Session
 
     from libs.auth.access import issue_access_token
     from libs.auth.passwords import hash_password
+    from libs.db import insert
     from libs.db.models import User
-    from services.api import deps
     from services.api.app import app
 
-    engine = create_engine(os.environ["DATABASE_URL"])
-    conn = engine.connect()
-    trans = conn.begin()
-    session = Session(bind=conn, join_transaction_mode="create_savepoint")
+    user = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash=hash_password(PASSWORD),
+                           status="active", full_name="Alice Example"))
 
-    user = User(email=f"{uuid.uuid4()}@example.com", password_hash=hash_password(PASSWORD),
-                status="active", full_name="Alice Example")
-    session.add(user)
-    session.flush()
-
-    app.dependency_overrides[deps.get_db] = lambda: session
-    try:
-        with TestClient(app, base_url="https://testserver") as http:
-            http.cookies.set("access_token", issue_access_token(user.id, uuid.uuid4()), path="/")
-            yield http, session, user
-    finally:
-        app.dependency_overrides.clear()
-        session.close()
-        trans.rollback()
-        conn.close()
-        os.environ.pop("DISABLE_RATE_LIMIT", None)
+    with TestClient(app, base_url="https://testserver") as http:
+        http.cookies.set("access_token", issue_access_token(user.id, uuid.uuid4()), path="/")
+        yield http, db, user
 
 
 # ── the disclosure ────────────────────────────────────────────────────────────────────────────
@@ -93,26 +73,25 @@ def test_consent_to_a_superseded_disclosure_is_refused(api):
 
 def test_adding_a_processor_re_asks_everyone(api):
     """The mechanism, not the intention: consent is version-compared."""
-    http, session, user = api
+    from libs.db.models import User
+
+    http, db, user = api
     http.post("/account/consent",
               json={"version": http.get("/account/consent").json()["current_version"]})
-    session.flush()
     assert http.get("/account/consent").json()["granted"] is True
 
-    user.processing_consent_version = "2020-01-01"  # what a bumped disclosure leaves behind
-    session.flush()
+    # What a bumped disclosure leaves behind.
+    db[User.COLLECTION].update_one({"_id": user.id}, {"$set": {"processing_consent_version": "2020-01-01"}})
     assert http.get("/account/consent").json()["granted"] is False
 
 
 def test_withdrawing_says_what_it_does_not_undo(api):
     """A profile already built stays built, and what Anthropic processed cannot be recalled."""
-    http, session, _ = api
+    http, _db, _ = api
     http.post("/account/consent",
               json={"version": http.get("/account/consent").json()["current_version"]})
-    session.flush()
 
     body = http.delete("/account/consent").json()
-    session.flush()
     assert body["status"] == "withdrawn"
     assert "unchanged" in body["detail"]
     assert http.get("/account/consent").json()["granted"] is False
@@ -121,80 +100,105 @@ def test_withdrawing_says_what_it_does_not_undo(api):
 # ── erasure ───────────────────────────────────────────────────────────────────────────────────
 
 def test_deleting_an_account_leaves_no_row_anywhere(api):
-    """The obligation, proved rather than asserted."""
-    from sqlalchemy import func, select
+    """The obligation, proved rather than asserted: a document in every collection an account owns,
+    and none of them left afterwards."""
+    from datetime import timedelta
 
-    from libs.db.base import Base
+    from libs.db import get, insert, now
     from libs.db.models import (
+        MODELS,
+        AiRequest,
+        AuthToken,
+        BuiltDocument,
         CorpusJob,
+        ProxyCredential,
         PushSubscription,
         QueueJob,
+        SetupConversation,
+        SetupMessage,
+        User,
         UserConfig,
         UserDocument,
         UserJobState,
-        UserLabel,
+        UserNotification,
+        UserProfileFile,
         UserSecret,
+        UserSession,
     )
 
-    http, session, user = api
-    job = CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test", title="Engineer")
-    session.add(job)
-    session.flush()
+    http, db, user = api
+    job = insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test", title="Engineer"))
+    someone_else = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x"))
+    insert(db, UserConfig(user_id=someone_else.id, config={"sections": [{"keywords": ["y"]}]}))
 
-    # A row in as many of the user's tables as can be created directly.
-    session.add(UserConfig(user_id=user.id, config={"sections": [{"keywords": ["x"]}]}))
-    session.add(UserDocument(user_id=user.id, kind="cv", filename="cv.txt", text="x",
-                             text_sha256=uuid.uuid4().hex * 2, chars=1))
-    session.add(UserSecret(user_id=user.id, kind="claude_api", ciphertext=b"x", nonce=b"n"))
-    session.add(UserLabel(user_id=user.id, job_id=job.id, label=70))
-    session.add(UserJobState(user_id=user.id, job_id=job.id, score=70.0))
-    session.add(QueueJob(lane="label", user_id=user.id, payload={}))
-    session.add(PushSubscription(user_id=user.id, endpoint=f"https://push.example.com/{uuid.uuid4()}",
-                                 p256dh="k", auth="a"))
-    session.flush()
+    conversation = insert(db, SetupConversation(user_id=user.id))
+    build = insert(db, QueueJob(lane="docgen", user_id=user.id, payload={}))
+    for document in (
+            UserConfig(user_id=user.id, config={"sections": [{"keywords": ["x"]}]}),
+            UserDocument(user_id=user.id, kind="cv", filename="cv.txt", text="x",
+                         text_sha256=uuid.uuid4().hex * 2, chars=1),
+            UserSecret(user_id=user.id, kind="claude_api", ciphertext=b"x", nonce=b"n"),
+            UserSession(user_id=user.id, refresh_hash=uuid.uuid4().hex, expires_at=now() + timedelta(days=1)),
+            AuthToken(id=uuid.uuid4().hex, user_id=user.id, purpose="verify_email",
+                      expires_at=now() + timedelta(days=1)),
+            UserJobState(user_id=user.id, job_id=job.id),
+            SetupMessage(user_id=user.id, conversation_id=conversation.id, role="user", content="hi"),
+            UserNotification(user_id=user.id, event="test", title="hello"),
+            PushSubscription(user_id=user.id, endpoint=f"https://push.example.com/{uuid.uuid4()}",
+                             p256dh="k", auth="a"),
+            UserProfileFile(user_id=user.id, name="context.md", content="x", kind="context"),
+            ProxyCredential(user_id=user.id, secret_ref=f"{user.id}:proxy"),
+            AiRequest(user_id=user.id),
+            BuiltDocument(id=build.id, filename="cv.pdf", content=b"%PDF")):
+        insert(db, document)
+
+    owned = [model for model in MODELS if model.OWNER]
+    unseeded = [model.COLLECTION for model in owned
+                if not db[model.COLLECTION].count_documents({model.OWNER: user.id})]
+    assert not unseeded, f"seed these too, or the erasure below proves nothing about them: {unseeded}"
 
     assert http.request("DELETE", "/account", json={"password": PASSWORD}).status_code == 200
-    session.flush()
 
-    with_user = [table for table in Base.metadata.sorted_tables if "user_id" in table.c]
-    assert len(with_user) >= 9, "the enumeration found suspiciously few tables"
-    for table in with_user:
-        remaining = session.scalar(
-            select(func.count()).select_from(table).where(table.c.user_id == user.id))
-        assert remaining == 0, f"{table.name} still holds {remaining} rows for a deleted account"
+    for model in owned:
+        remaining = db[model.COLLECTION].count_documents({model.OWNER: user.id})
+        assert remaining == 0, f"{model.COLLECTION} still holds {remaining} documents for a deleted account"
+    assert get(db, User, user.id) is None
+    assert get(db, BuiltDocument, build.id) is None, "a built CV goes with the account that asked for it"
 
     # The shared corpus is untouched: one user leaving must not remove another user's job.
-    assert session.get(CorpusJob, job.id) is not None
+    assert get(db, CorpusJob, job.id) is not None
+    assert get(db, User, someone_else.id) is not None
+    assert db[UserConfig.COLLECTION].count_documents({"user_id": someone_else.id}) == 1
 
 
 def test_deleting_requires_the_password_not_just_a_session(api):
     """Irreversible, and it unwinds an account somebody spent real money building."""
+    from libs.db import get
     from libs.db.models import User
 
-    http, session, user = api
+    http, db, user = api
     response = http.request("DELETE", "/account", json={"password": "not the password"})
 
     assert response.status_code == 401
-    session.flush()
-    assert session.get(User, user.id) is not None
+    assert get(db, User, user.id) is not None
 
 
 def test_changing_the_password_needs_the_old_one_and_ends_every_session(api):
     """The reference's semantics (`security/handler.go`)."""
     from libs.auth.passwords import verify_password
     from libs.auth.sessions import issue_session
-    from libs.db.models import UserSession
+    from libs.db import get
+    from libs.db.models import User, UserSession
 
-    http, session, user = api
-    live = issue_session(session, user.id)
+    http, db, user = api
+    live = issue_session(db, user.id)
 
     response = http.put("/account/password", json={
         "current_password": PASSWORD, "new_password": "an entirely different phrase"})
     assert response.status_code == 200
     assert response.json()["force_relogin"] is True
-    session.refresh(user)
-    assert verify_password(user.password_hash, "an entirely different phrase")
-    assert session.get(UserSession, live.session_id).revoked_at is not None
+    assert verify_password(get(db, User, user.id).password_hash, "an entirely different phrase")
+    assert get(db, UserSession, live.session_id).revoked_at is not None
 
 
 def test_changing_the_password_refuses_a_wrong_current_or_a_weak_new_one(api):
@@ -214,15 +218,17 @@ def test_changing_the_password_refuses_a_wrong_current_or_a_weak_new_one(api):
 
 def test_the_delivery_interval_is_not_a_user_setting(api):
     """The cadence belongs to the platform (owner, 2026-08-01)."""
-    http, session, user = api
+    from libs.db.models import User
+
+    http, db, user = api
+    db[User.COLLECTION].update_one({"_id": user.id}, {"$set": {"active": True}})
 
     # Ignored, not honoured: the field is not part of the request model any more.
     assert http.patch("/account", json={"notify_interval_min": 30}).status_code == 200
-    assert not hasattr(user, "notify_interval_min")
+    assert "notify_interval_min" not in db[User.COLLECTION].find_one({"_id": user.id})
 
     assert http.patch("/account", json={"active": False}).status_code == 200
-    session.flush()
-    assert user.active is False
+    assert db[User.COLLECTION].find_one({"_id": user.id})["active"] is False
 
 
 def test_the_settings_page_never_returns_a_credential(api):

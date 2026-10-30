@@ -89,7 +89,7 @@ def archive_expired(db: Database, *, retention_days: int = CORPUS_RETENTION_DAYS
         states = db[UserJobState.COLLECTION].delete_many({"job_id": {"$in": ids}}).deleted_count
         db[CorpusJob.COLLECTION].delete_many({"_id": {"$in": ids}})
 
-    states += forget_stale_state(db, cutoff=cutoff, kept=kept)
+    states += forget_stale_state(db, cutoff=cutoff, kept=kept, limit=limit)
     if ids or states:
         logger.info("archive: %d posting(s) and %d user state row(s) removed, older than %d days%s",
                     len(ids), states, retention_days,
@@ -97,18 +97,22 @@ def archive_expired(db: Database, *, retention_days: int = CORPUS_RETENTION_DAYS
     return ArchiveResult(len(ids), states, path)
 
 
-def forget_stale_state(db: Database, *, cutoff: datetime, kept: list[int] | None = None) -> int:
+def forget_stale_state(db: Database, *, cutoff: datetime, kept: list[int] | None = None,
+                       limit: int = ARCHIVE_BATCH) -> int:
     """Drop the rows other accounts hold against old postings kept for somebody else's action.
 
     A posting one account applied to stays in the corpus, correctly. Every *other* account's row for
-    it only says we sent it, and those rows would never have a reason to leave.
+    it only says we sent it, and those rows would never have a reason to leave. Bounded like the rest
+    of the pass, so it cannot be the stage that overruns the harvest tick.
     """
     kept = db[UserJobState.COLLECTION].distinct("job_id", ACTED_ON) if kept is None else kept
     old = db[CorpusJob.COLLECTION].distinct("_id", {"_id": {"$in": kept}, "first_seen_at": {"$lt": cutoff}})
-    if not old:
+    stale = [row["_id"] for row in db[UserJobState.COLLECTION].find(
+        {"job_id": {"$in": old}, "$nor": [ACTED_ON]}, {"_id": 1}, limit=limit)] if old else []
+    if not stale:
         return 0
-    return db[UserJobState.COLLECTION].delete_many(
-        {"job_id": {"$in": old}, "$nor": [ACTED_ON]}).deleted_count
+    # Asked again on delete: a person who acted between the read and the delete keeps their row.
+    return db[UserJobState.COLLECTION].delete_many({"_id": {"$in": stale}, "$nor": [ACTED_ON]}).deleted_count
 
 
 def write_archive(rows: list, directory: Path | None = None) -> Path:

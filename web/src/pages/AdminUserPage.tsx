@@ -74,8 +74,7 @@ export function AdminUserPage({ userId }: { userId: string }) {
       </div>
       <p className="facts">
         {user.status}
-        {user.active ? "" : " · delivery paused"} · telegram {user.telegram} · plan {user.plan} ·
-        profile generation {user.profile_generation}
+        {user.active ? "" : " · delivery paused"} · telegram {user.telegram}
         {user.last_active_at
           ? ` · last active ${new Date(user.last_active_at).toLocaleDateString()}`
           : ""}

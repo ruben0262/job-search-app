@@ -21,6 +21,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import timedelta
@@ -272,6 +273,10 @@ def _result(use: dict, answer: str, *, error: bool = False) -> dict:
 
 # ── writing one reply ──────────────────────────────────────────────────────────────────────────
 
+class LeaseLost(RuntimeError):
+    """Another worker took this reply over after this one's lease ran out: this writer stops."""
+
+
 class _Reply:
     """The reply as it is written: saved at most `TICK` apart, and at every step."""
 
@@ -297,10 +302,13 @@ class _Reply:
         """Write what there is, and renew the lease — or give it up, once the reply has ended."""
         self.row.content = self.text
         self.row.tool_calls = {**(self.row.tool_calls or {}), "steps": self.steps}
-        self.db[SetupMessage.COLLECTION].update_one({"_id": self.row.id}, {"$set": {
-            "content": self.row.content, "tool_calls": self.row.tool_calls, "status": self.row.status,
-            "error": self.row.error,
-            "lease_until": now() + LEASE if self.row.status in RUNNING else None}})
+        saved = self.db[SetupMessage.COLLECTION].update_one(
+            {"_id": self.row.id, "lease_holder": self.row.lease_holder}, {"$set": {
+                "content": self.row.content, "tool_calls": self.row.tool_calls, "status": self.row.status,
+                "error": self.row.error,
+                "lease_until": now() + LEASE if self.row.status in RUNNING else None}})
+        if not saved.matched_count:
+            raise LeaseLost(f"reply {self.row.id} was taken over by another writer")
         self.saved = time.monotonic()
 
 
@@ -325,9 +333,15 @@ def run(db: Database, reply_id: int) -> None:
     claimed = SetupMessage.from_doc(db[SetupMessage.COLLECTION].find_one_and_update(
         {"_id": reply_id, "agent": SUPPORT, "status": {"$in": list(RUNNING)},
          "$or": [{"lease_until": None}, {"lease_until": {"$lt": now()}}]},
-        {"$set": {"lease_until": now() + LEASE}}, return_document=ReturnDocument.AFTER))
-    if claimed is not None:
+        {"$set": {"lease_until": now() + LEASE, "lease_holder": uuid.uuid4().hex}},
+        return_document=ReturnDocument.AFTER))
+    if claimed is None:
+        return
+    try:
         _write(db, claimed)
+    except LeaseLost:
+        logger.warning("support: reply %s outlived its lease and another worker took it over; this "
+                       "writer stopped without writing again", reply_id)
 
 
 def resume() -> int:
@@ -369,6 +383,8 @@ def _write(db: Database, row: SetupMessage) -> None:
                 reply.gap = True
             else:
                 reply.write("I could not finish looking that up. Please ask again in fewer words.")
+    except LeaseLost:
+        raise
     except Exception as exc:  # a reply must end, whatever broke: somebody is waiting on it
         status = "failed"
         error = (f"The AI could not answer: {exc}. If this keeps happening, check your AI key in "

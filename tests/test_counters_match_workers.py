@@ -19,79 +19,37 @@ test is not "does this function work" but "do these two agree", which is the onl
 """
 from __future__ import annotations
 
-import os
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
-import pytest
-
-pytest.importorskip("sqlalchemy")
-
-pytestmark = pytest.mark.skipif(
-    not os.environ.get("DATABASE_URL"), reason="DATABASE_URL not set (no live Postgres)")
-
-
-@pytest.fixture()
-def db():
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import Session
-
-    engine = create_engine(os.environ["DATABASE_URL"])
-    conn = engine.connect()
-    trans = conn.begin()
-    session = Session(bind=conn, join_transaction_mode="create_savepoint")
-    try:
-        yield session
-    finally:
-        session.close()
-        trans.rollback()
-        conn.close()
-
-
-def _account(db):
-    from libs.db.models import User
-
-    user = User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active",
-                active=True, model_version=1)
-    db.add(user)
-    db.flush()
-    return user
+from libs.db import insert
 
 
 def _job(db, **kwargs):
     from libs.db.models import CorpusJob
 
     kwargs.setdefault("source", "himalayas")
-    kwargs.setdefault("embedding", b"\x00" * 16)
-    kwargs.setdefault("text_sha256", uuid.uuid4().hex)
-    kwargs.setdefault("embedding_dim", 4)
     kwargs.setdefault("posted_at", datetime.now(UTC))
-    row = CorpusJob(url=f"https://example.com/{uuid.uuid4()}", title="Engineer", **kwargs)
-    db.add(row)
-    db.flush()
-    return row
+    return insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", title="Engineer", **kwargs))
 
-
-# ── the scorer: the counter that drove a loop ─────────────────────────────────────────────────
 
 # ── the pipeline page: counters that drove an operator, not a loop ────────────────────────────
 
 def test_the_page_and_the_describer_count_the_same_rows(db):
-    """Same shape, same guard: a closed row is never fetched and must not read as waiting."""
+    """Same shape, same guard: a closed row is never fetched and must not read as waiting, and neither
+    is one too old to deliver. Only the row the describer will actually take is counted, by both."""
     from libs import settings
     from libs.corpus.repository import CorpusRepository
     from libs.ops.pipeline import pipeline
 
-    _job(db, description=None, embedding=None, text_sha256=None, embedding_dim=None,
-         closed_at=datetime.now(UTC))
-    db.flush()
+    max_age = int(settings.get(db, "job_max_age_hours"))
+    _job(db, description=None, closed_at=datetime.now(UTC))
+    _job(db, description=None, first_seen_at=datetime.now(UTC) - timedelta(hours=max_age + 1),
+         posted_at=datetime.now(UTC) - timedelta(hours=max_age + 1))
+    waiting = _job(db, description=None)
 
     page = {s["key"]: s for s in pipeline(db, hours=24)["stages"]}["describe"]["waiting"]
-    worker = len(CorpusRepository(db).awaiting_description(
-        limit=5000, max_age_hours=int(settings.get(db, "job_max_age_hours"))))
+    worker = CorpusRepository(db).awaiting_description(limit=5000, max_age_hours=max_age)
 
-    assert page == worker
-
-
-# ── delivery: the counter that showed a phantom backlog to a user ─────────────────────────────
-
+    assert [row.id for row in worker] == [waiting.id]
+    assert page == len(worker)

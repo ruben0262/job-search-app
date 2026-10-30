@@ -28,7 +28,7 @@ COMPOSE="docker compose -f deploy/compose.yml -p job-search-platform"
 # so it was left out of this list — and every full deploy then rebuilt eight services and silently
 # left the one that does the collecting on old code. It ran for hours without `fetched_at` after the
 # column shipped, reporting healthy cycles the whole time.
-ALL_SERVICES="api oauthbroker notifier scorer trainer labeller docgen setupagent capture harvester"
+ALL_SERVICES="api oauthbroker notifier docgen harvester"
 
 # The one-shots. They exit when their work is done, so "is it running" and `exec` are the wrong
 # questions — verification runs a fresh container instead.
@@ -42,17 +42,16 @@ git pull --ff-only
 COMMIT=$(git rev-parse --short HEAD)
 echo "at $COMMIT"
 
-say "Migrating"
-# Alembic is only in requirements-dev, which no service image carries, so this runs from the host
-# venv against the published port. **Before the build, not after**: new code may require a column,
-# and a migration is additive far more often than it is destructive.
-PW=$($COMPOSE exec -T postgres printenv POSTGRES_PASSWORD | tr -d '\r\n')
-DATABASE_URL="postgresql+psycopg://jobsearch:${PW}@127.0.0.1:5432/jobsearch" \
-  .venv/bin/python -m alembic upgrade head
-
 say "Building"
+# `api` always, whatever is being deployed: the schema step below runs in it, and it must be this
+# commit's code that decides which indexes exist.
 # shellcheck disable=SC2086
-$COMPOSE build $SERVICES
+$COMPOSE build $SERVICES api
+
+say "Schema"
+# In the image just built, against MongoDB, **before anything restarts**: a rule or index the database
+# refuses stops the deploy here instead of a service at start-up (`libs/db/__main__.py`).
+$COMPOSE run --rm --no-deps api python -m libs.db --prune
 
 say "Recreating"
 # shellcheck disable=SC2086

@@ -230,21 +230,23 @@ class CorpusRepository:
                              applicants_caption: str | None = None,
                              easy_apply: bool | None = None, reposted: bool | None = None,
                              workplace: str | None = None,
-                             posted_at: datetime | None = None) -> None:
-        """Record what the posting's own page said."""
+                             posted_at: datetime | None = None) -> bool:
+        """Record what the posting's own page said. True if that changed anything stored."""
         values = {name: value for name, value in (
             ("applicants", applicants), ("applicants_caption", applicants_caption),
             ("easy_apply", easy_apply), ("reposted", reposted),
             ("workplace", workplace)) if value is not None}
-        if values:
-            self._corpus.update_one({"_id": job_id}, {"$set": values})
+        changed = bool(values) and self._corpus.update_one(
+            {"_id": job_id}, {"$set": values}).modified_count > 0
         if posted_at is not None:
-            self._set_posted_at(job_id, posted_at)
+            changed = self._set_posted_at(job_id, posted_at) or changed
+        return changed
 
-    def _set_posted_at(self, job_id: int, posted_at: datetime) -> None:
+    def _set_posted_at(self, job_id: int, posted_at: datetime) -> bool:
         """Record when a posting went up, never later than the moment we first saw it."""
-        self._corpus.update_one({"_id": job_id},
-                                [{"$set": {"posted_at": {"$min": [posted_at, "$first_seen_at"]}}}])
+        return self._corpus.update_one(
+            {"_id": job_id},
+            [{"$set": {"posted_at": {"$min": [posted_at, "$first_seen_at"]}}}]).modified_count > 0
 
     # Retention lives in `libs.corpus.archive`. `trim_cold` and `pin` were removed on 2026-08-11:
     # trimming nulled the description and vector in place, which dropped the row out of every future

@@ -2,7 +2,7 @@
 back as Server-Sent Events, and able to change an account only through a button the person taps.
 
 The model is the one stand-in. The guard, the allowance, the consent gate, the stream and the
-restart are the code that runs in production, against a real Postgres.
+restart are the code that runs in production, against a real MongoDB.
 """
 from __future__ import annotations
 
@@ -14,14 +14,12 @@ import threading
 import time
 import uuid
 from contextlib import contextmanager
+from datetime import timedelta
 from types import SimpleNamespace
 
 import pytest
 
 pytest.importorskip("fastapi")
-
-pytestmark = pytest.mark.skipif(not os.environ.get("DATABASE_URL"),
-                                reason="DATABASE_URL not set (no live Postgres)")
 
 PLATFORM_KEY = "AIzaPlatformKey-" + "p" * 24
 CONFIG = {"sections": [{"platform": "all", "keywords": ["data engineer"],
@@ -70,42 +68,34 @@ def _env(monkeypatch) -> None:
     monkeypatch.setenv("PLATFORM_AI_KEY", PLATFORM_KEY)
 
 
-@pytest.fixture()
-def api(monkeypatch):
-    """The app on one rolled-back transaction, the reply written inside the request that asked."""
-    from fastapi.testclient import TestClient
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import Session
-
-    from libs import assistant, settings
-    from libs.auth.access import issue_access_token
+def _account(db):
+    """One account with a search and the help chat open."""
+    from libs import settings
+    from libs.db import insert
     from libs.db.models import User, UserConfig
-    from services.api import deps
+
+    user = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active"))
+    insert(db, UserConfig(user_id=user.id, schema_version=2, config=copy.deepcopy(CONFIG)))
+    settings.put(db, "support_chat_enabled", 1)
+    return user
+
+
+@pytest.fixture()
+def api(db, monkeypatch):
+    """The app on the test database, the reply written inside the request that asked."""
+    from fastapi.testclient import TestClient
+
+    from libs import assistant
+    from libs.auth.access import issue_access_token
     from services.api.app import app
 
     _env(monkeypatch)
-    engine = create_engine(os.environ["DATABASE_URL"])
-    conn = engine.connect()
-    trans = conn.begin()
-    session = Session(bind=conn, join_transaction_mode="create_savepoint")
-    user = User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active")
-    session.add(user)
-    session.flush()
-    session.add(UserConfig(user_id=user.id, schema_version=2, config=copy.deepcopy(CONFIG)))
-    settings.put(session, "support_chat_enabled", 1)
-    session.flush()
-    monkeypatch.setattr(assistant, "start", lambda reply_id: assistant.run(session, reply_id))
+    user = _account(db)
+    monkeypatch.setattr(assistant, "start", lambda reply_id: assistant.run(db, reply_id))
 
-    app.dependency_overrides[deps.get_db] = lambda: session
-    try:
-        with TestClient(app, base_url="https://testserver") as http:
-            http.cookies.set("access_token", issue_access_token(user.id, uuid.uuid4()), path="/")
-            yield SimpleNamespace(http=http, session=session, user=user)
-    finally:
-        app.dependency_overrides.clear()
-        session.close()
-        trans.rollback()
-        conn.close()
+    with TestClient(app, base_url="https://testserver") as http:
+        http.cookies.set("access_token", issue_access_token(user.id, uuid.uuid4()), path="/")
+        yield SimpleNamespace(http=http, db=db, user=user)
 
 
 def _ask(api, question: str = "hello") -> dict:
@@ -115,11 +105,11 @@ def _ask(api, question: str = "hello") -> dict:
 
 
 def _words(api) -> tuple[list[str], list[str]]:
+    from libs.db import find_one
     from libs.db.models import UserConfig
     from libs.matching import green_words
 
-    api.session.expire_all()
-    config = api.session.get(UserConfig, api.user.id).config
+    config = find_one(api.db, UserConfig, {"user_id": api.user.id}).config
     return green_words(config), config["sections"][0].get("exclude_keywords") or []
 
 
@@ -147,6 +137,7 @@ def test_the_ai_can_only_offer_a_change_and_the_persons_tap_makes_it(api, monkey
 
 def test_a_button_is_only_what_was_offered_and_only_for_whoever_asked(api, monkeypatch):
     from libs.auth.access import issue_access_token
+    from libs.db import insert
     from libs.db.models import User
 
     _answers(monkeypatch, Scripted(("", [("my_words", {}), ("remove_word", {"word": "Senior"})]),
@@ -158,9 +149,7 @@ def test_a_button_is_only_what_was_offered_and_only_for_whoever_asked(api, monke
     button = f"/support/replies/{reply['id']}/steps"
     assert api.http.post(f"{button}/0").status_code == 404, "a lookup is not a button"
     assert api.http.post(f"{button}/7").status_code == 404
-    stranger = User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active")
-    api.session.add(stranger)
-    api.session.flush()
+    stranger = insert(api.db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active"))
     mine = api.http.cookies.get("access_token")
     api.http.cookies.set("access_token", issue_access_token(stranger.id, uuid.uuid4()), path="/")
     assert api.http.post(f"{button}/1").status_code == 404, "somebody else's button"
@@ -182,15 +171,14 @@ def test_a_platform_paid_answer_uses_one_request_and_an_own_key_none(api, monkey
     _answers(monkeypatch, model)
 
     _ask(api)
-    assert ai_requests_today(api.session, api.user.id) == 1
+    assert ai_requests_today(api.db, api.user.id) == 1
     assert api.http.get("/support").json()["ai"] == {"payer": "platform", "provider": "Gemini",
                                                     "left": 19, "per_day": 20}
     assert model.seen[0]["model"] == "claude-haiku-4-5", "the operator's model for that provider"
 
-    SecretStore(api.session).put(api.user.id, "openai_api", "sk-proj-" + "o" * 40)
-    api.session.flush()
+    SecretStore(api.db).put(api.user.id, "openai_api", "sk-proj-" + "o" * 40)
     _ask(api)
-    assert ai_requests_today(api.session, api.user.id) == 1, "their own key is not the allowance"
+    assert ai_requests_today(api.db, api.user.id) == 1, "their own key is not the allowance"
     assert api.http.get("/support").json()["ai"] == {"payer": "own", "provider": "OpenAI",
                                                     "left": None, "per_day": 20}
 
@@ -205,7 +193,7 @@ def test_with_no_ai_left_the_page_says_why_and_what_to_do(api, monkeypatch):
         "OpenAI key in Settings, and you can ask as much as you like.")
 
     monkeypatch.setenv("PLATFORM_AI_KEY", PLATFORM_KEY)
-    set_limit(api.session, api.user.id, "ai_platform_requests_per_day", 1)
+    set_limit(api.db, api.user.id, "ai_platform_requests_per_day", 1)
     _ask(api)
 
     page = api.http.get("/support").json()
@@ -221,22 +209,24 @@ def test_the_help_chat_is_closed_until_the_operator_opens_it(api, monkeypatch):
     from libs import settings
 
     _answers(monkeypatch, Scripted(("Hello.", [])))
-    settings.put(api.session, "support_chat_enabled", 0)
+    settings.put(api.db, "support_chat_enabled", 0)
 
     assert api.http.get("/support").json()["closed"] == "The help chat is not open yet."
     assert api.http.post("/support/messages", json={"text": "hi"}).status_code == 409
     assert api.http.get("/support").json()["messages"] == []
 
-    settings.put(api.session, "support_chat_enabled", 1)
+    settings.put(api.db, "support_chat_enabled", 1)
     assert _ask(api)["text"] == "Hello."
 
 
 # ── consent ───────────────────────────────────────────────────────────────────────────────────
 
 def test_without_consent_what_their_documents_say_never_reaches_the_ai(api, monkeypatch):
-    api.user.suggestions = {"green": [{"term": "kotlin", "reason": "Your job title at Zanzibar Widgets"}],
-                            "red": [], "dismissed": []}
-    api.session.flush()
+    from libs.db.models import User
+
+    api.db[User.COLLECTION].update_one({"_id": api.user.id}, {"$set": {"suggestions": {
+        "green": [{"term": "kotlin", "reason": "Your job title at Zanzibar Widgets"}],
+        "red": [], "dismissed": []}}})
     model = Scripted(("", [("suggested_words", {})]), ("I cannot see those.", []),
                      ("", [("suggested_words", {})]), ("We suggest kotlin.", []))
     _answers(monkeypatch, model)
@@ -253,31 +243,18 @@ def test_without_consent_what_their_documents_say_never_reaches_the_ai(api, monk
     assert "Zanzibar" in json.dumps(model.seen[3]["messages"]), "with consent, it may"
 
 
-# ── streamed, and restart-proof: committed rows, real threads, the app's own sessions ─────────
+# ── streamed, and restart-proof: real threads, the app's own database client ─────────────────
 
 @pytest.fixture()
-def live(monkeypatch):
+def live(db, monkeypatch):
+    """The app as it runs: each reply written on a thread of its own, through `libs.db.database()`."""
     from fastapi.testclient import TestClient
-    from sqlalchemy import create_engine, delete
 
-    from libs import settings
     from libs.auth.access import issue_access_token
-    from libs.db import session as database
-    from libs.db.models import PlatformSetting, User, UserConfig
-    from libs.db.session import session_scope
     from services.api.app import app
 
     _env(monkeypatch)
-    # The app's own engine, unpooled as every engine in this suite is (conftest.py).
-    monkeypatch.setattr(database, "_engine", create_engine(os.environ["DATABASE_URL"]))
-    monkeypatch.setattr(database, "_Session", None)
-    with session_scope() as session:
-        user = User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active")
-        session.add(user)
-        session.flush()
-        session.add(UserConfig(user_id=user.id, schema_version=2, config=copy.deepcopy(CONFIG)))
-        settings.put(session, "support_chat_enabled", 1)
-        user_id = user.id
+    user_id = _account(db).id
 
     @contextmanager
     def started():
@@ -286,12 +263,7 @@ def live(monkeypatch):
             http.cookies.set("access_token", issue_access_token(user_id, uuid.uuid4()), path="/")
             yield http
 
-    try:
-        yield SimpleNamespace(user_id=user_id, started=started)
-    finally:
-        with session_scope() as session:
-            session.execute(delete(User).where(User.id == user_id))
-            session.execute(delete(PlatformSetting).where(PlatformSetting.key == "support_chat_enabled"))
+    yield SimpleNamespace(db=db, user_id=user_id, started=started)
 
 
 def _stream(http, reply_id: int, since: float) -> list[tuple[str, dict, float]]:
@@ -337,8 +309,8 @@ def test_a_reply_streams_as_a_snapshot_then_deltas_and_steps_then_done(live, mon
 
 def test_a_reply_cut_off_by_a_restart_is_written_once_when_the_api_starts_again(live, monkeypatch):
     from libs import assistant
+    from libs.db import insert, now
     from libs.db.models import SetupConversation, SetupMessage
-    from libs.db.session import session_scope
 
     gate = threading.Event()
 
@@ -356,19 +328,14 @@ def test_a_reply_cut_off_by_a_restart_is_written_once_when_the_api_starts_again(
 
     model = Waits(*[("Your words are fine.", [])] * 3)
     _answers(monkeypatch, model)
-    with session_scope() as session:
-        chat = SetupConversation(user_id=live.user_id, title="Help")
-        session.add(chat)
-        session.flush()
-        session.add(SetupMessage(user_id=live.user_id, conversation_id=chat.id, role="user",
+    chat = insert(live.db, SetupConversation(user_id=live.user_id, title="Help"))
+    insert(live.db, SetupMessage(user_id=live.user_id, conversation_id=chat.id, role="user",
                                  content="are my words ok?", agent="support"))
-        # Half written when the API stopped.
-        cut_off = SetupMessage(user_id=live.user_id, conversation_id=chat.id, role="assistant",
-                               content="Your wor", agent="support", status="streaming",
-                               tool_calls={"payer": "platform", "steps": []})
-        session.add(cut_off)
-        session.flush()
-        cut_off_id = cut_off.id
+    # Half written when the API stopped, by a writer whose lease has since run out.
+    cut_off_id = insert(live.db, SetupMessage(
+        user_id=live.user_id, conversation_id=chat.id, role="assistant", content="Your wor",
+        agent="support", status="streaming", tool_calls={"payer": "platform", "steps": []},
+        lease_until=now() - timedelta(seconds=1))).id
 
     def reply(http, reply_id: int) -> dict:
         for _ in range(100):
@@ -389,3 +356,53 @@ def test_a_reply_cut_off_by_a_restart_is_written_once_when_the_api_starts_again(
         gate.set()
         assert reply(http, held)["status"] == "done"
     assert model.calls == 2, "each reply was written once"
+
+
+def test_a_reply_whose_writer_died_is_started_again_by_the_stream_once_its_lease_runs_out(
+        live, monkeypatch):
+    """A writer that dies mid-reply still holds its lease when the API starts, so the start-up leaves
+    it alone — it might be alive on another worker. The page watching it must not wait forever: the
+    stream starts it again once the lease has run out, and not before."""
+    from libs.db import get, insert, now
+    from libs.db.models import SetupConversation, SetupMessage
+
+    model = Scripted(*[("Your words are fine.", [])] * 2)
+    _answers(monkeypatch, model)
+    chat = insert(live.db, SetupConversation(user_id=live.user_id, title="Help"))
+    insert(live.db, SetupMessage(user_id=live.user_id, conversation_id=chat.id, role="user",
+                                 content="are my words ok?", agent="support"))
+
+    with live.started() as http:
+        held_for = 1.0
+        reply_id = insert(live.db, SetupMessage(
+            user_id=live.user_id, conversation_id=chat.id, role="assistant", content="Your wor",
+            agent="support", status="streaming", tool_calls={"payer": "platform", "steps": []},
+            lease_until=now() + timedelta(seconds=held_for))).id
+        opened = time.monotonic()
+        events = _stream(http, reply_id, opened)
+
+    assert events[0][:2] == ("snapshot", {"text": "Your wor", "status": "streaming", "steps": []})
+    name, done, at = events[-1]
+    assert name == "done" and (done["status"], done["text"]) == ("done", "Your words are fine."), events
+    assert at >= held_for - 0.2, "a live lease was taken: the writer might still have been alive"
+    assert len(model.seen) == 1, "written once, however often the stream looked"
+    assert get(live.db, SetupMessage, reply_id).lease_until is None, "a finished reply holds no lease"
+
+
+def test_a_writer_that_outlived_its_lease_cannot_write_over_the_one_that_took_over(db, user):
+    """A slow model call with retries can outlast the lease; the reply then belongs to its new writer."""
+    from libs import assistant
+    from libs.db import insert, now
+    from libs.db.models import SetupConversation, SetupMessage
+
+    conversation = insert(db, SetupConversation(user_id=user.id))
+    reply = insert(db, SetupMessage(user_id=user.id, conversation_id=conversation.id, role="assistant",
+                                    content="the new writer's words", agent=assistant.SUPPORT,
+                                    status="streaming", lease_until=now() + assistant.LEASE,
+                                    lease_holder="the-new-writer"))
+    reply.lease_holder = "the-old-writer"
+
+    with pytest.raises(assistant.LeaseLost):
+        assistant._Reply(db, reply)
+
+    assert db.setup_messages.find_one({"_id": reply.id})["content"] == "the new writer's words"

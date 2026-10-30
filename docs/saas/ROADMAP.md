@@ -3039,23 +3039,37 @@ leaving the site — `tests/test_e2e_site.py` walks exactly that, to a downloade
    prompts. That is blocked on an Anthropic key at `certificates/anthropic.key`. Until then, new
    accounts get the free instant documents.
 3. **Leftovers with no consumer:**
-   - the `telegram_routes` and `telegram_webhook_secret` fields;
-   - the `telegram_bot` credential kind;
    - four endpoints no page calls: `/status` (which runs the whole alert match per load),
      `GET /onboarding/config`, `GET /onboarding/state` and `POST /credentials/{kind}/reveal`;
    - the admin pages' hand-written API types.
 
-   Recommendation: delete them all. The MongoDB port does not carry the fields or the credential kind
-   over unless the owner says otherwise.
+   Recommendation: delete them all. The per-bot Telegram fields and the `telegram_bot` credential
+   kind were not carried into MongoDB (Phase 9).
 4. **`NOTIFY_SCAN = 10_000`** (`libs/notify`). Recommendation: leave it in code. It is a safety
    bound, and reaching it is logged.
-5. **CLAUDE.md §7 gate order.** The site test refuses a stale build, so the contract and build steps
-   belong before pytest. The MongoDB switch rewrites §7 anyway, because the Alembic gate goes.
-6. **README.** It has no "run it locally" section and still says "Phase 1 of 4".
-7. **Merge and push.** `simplify` goes into `main` and is pushed only when the owner says so. The
+5. **README.** It has no "run it locally" section and still says "Phase 1 of 4".
+6. **Merge and push.** `simplify` goes into `main` and is pushed only when the owner says so. The
    checklist is `deploy/README.md`.
-8. **MongoDB credentials.** The Atlas password was shared in a chat, so rotate it after the switch,
+7. **MongoDB credentials.** The Atlas password was shared in a chat, so rotate it after the switch,
    and limit the cluster's network access to the VPS and the owner's machine.
+8. **Atlas region.** The jobs page makes about five round trips to the database. Measured from the
+   owner's machine (26 ms a trip), matching took 337–451 ms against the 300 ms budget, and the query
+   itself was about 140 ms of that. Recommendation: put the cluster in the region nearest the VPS.
+   Batching the settings reads saves one trip whatever the region.
+9. **Retention on the free tier.**
+    - A posting takes about 5 KB with its indexes, so the 0.5 GB tier holds roughly 80,000 before
+      the 80% alert.
+    - `CORPUS_RETENTION_DAYS` keeps 30 days, but no posting older than about 7 days (the widest source
+      floor) is ever shown.
+    - Recommendation: about 10 days, as a platform setting with a control, since it now decides
+      whether the platform fits.
+10. **`DATABASE_BUDGET_BYTES`** (512 MB, `libs/ops/alerts.py`) is the free tier's size, hardcoded.
+    Recommendation: a platform setting, changed when the tier changes.
+11. **`ProxyCredential.daily_cap_mb`** is a second source of truth beside the `proxy_mb_per_day`
+    limit, read only when the account is missing, which cannot happen now. Recommendation: delete it.
+12. **The help chat after a deploy.** A reply cut off by a restart is taken over only when its lease
+    runs out, up to 8 minutes (`LEASE` = 2 × `TIMEOUT_SEC`); until then the person cannot ask again.
+    Fix this before `support_chat_enabled` is turned on, along with item 1's ceiling on reply threads.
 
 ## Phase 9 — MongoDB instead of Postgres (added 2026-10-30)
 
@@ -3102,8 +3116,10 @@ their 58 migrations.
   `postgres` service, the volume and the nightly `pg_dump` go. The nightly backup becomes
   `mongodump`, and Atlas's daily snapshots are switched on as a second copy.
 
-**Done when** no file imports SQLAlchemy, the six gates pass on MongoDB, the jobs page answers in
-under 300 ms against Atlas, and a copied account signs in and sees its words, documents and settings.
+**Done when** no file imports SQLAlchemy ✅, the six gates pass on MongoDB ✅ (2026-10-30), a copied
+account keeps its login, words, documents and settings ✅ (tested against a Postgres built from the
+tag), and the jobs page answers in under 300 ms against Atlas — 337–451 ms measured from the owner's
+machine, which depends on the region (owner's item 8).
 
 ## Deliberately deferred
 

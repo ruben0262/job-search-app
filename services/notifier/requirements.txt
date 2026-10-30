@@ -4,8 +4,7 @@
 # No numpy, no sklearn: the notifier matches words, it does not compute scores. Keeping it that light
 # is what makes it fast to rebuild and safe to run at concurrency 8.
 httpx>=0.28
-SQLAlchemy>=2.0
-psycopg[binary]>=3.2
+pymongo>=4.19,<5
 cryptography>=44.0       # libs/secrets, imported for its log redaction; pywebpush encrypts with it too
 pywebpush>=2.0           # browser notifications: encrypts each alert to the browser's keys and signs it
 

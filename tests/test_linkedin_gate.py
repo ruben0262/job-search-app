@@ -1,13 +1,16 @@
 """The LinkedIn visibility gate and the tier's global governor."""
 from __future__ import annotations
 
-import os
 import random
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from libs.db import insert, now
+from libs.db.models import CorpusJob, ProxyCredential, User
+from libs.matching import matching_jobs
+from libs.tenant.repository import TenantRepository
 from services.harvester.governor import (
     LINKEDIN_JITTER_FRACTION,
     LINKEDIN_MIN_INTERVAL_MIN,
@@ -16,123 +19,86 @@ from services.harvester.governor import (
     resolve_linkedin_interval,
 )
 
-pytest.importorskip("sqlalchemy")
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
 
-from libs.corpus.repository import CorpusRepository
-from libs.db.models import ProxyCredential, User
-from libs.tenant.repository import TenantRepository
-
-db_required = pytest.mark.skipif(
-    not os.environ.get("DATABASE_URL"),
-    reason="DATABASE_URL not set (no live Postgres)")
+def _user(db) -> User:
+    """An account searching for "backend engineer", which every job below matches."""
+    user = insert(db, User(email=f"{uuid.uuid4()}@example.test", password_hash="x",
+                           timezone="Europe/Budapest", status="active", active=True))
+    TenantRepository(db).save_config(user.id, {"sections": [
+        {"platform": "all", "keywords": ["backend engineer"]}]}, schema_version=2)
+    return user
 
 
-@pytest.fixture()
-def ctx():
-    engine = create_engine(os.environ["DATABASE_URL"])
-    conn = engine.connect()
-    trans = conn.begin()
-    s = Session(bind=conn, join_transaction_mode="create_savepoint")
-    try:
-        yield TenantRepository(s), CorpusRepository(s), s
-    finally:
-        s.close()
-        trans.rollback()
-        conn.close()
+def _job(db, source: str, *, minutes_ago: int = 1) -> int:
+    moment = now() - timedelta(minutes=minutes_ago)
+    return insert(db, CorpusJob(url=f"https://example.test/{uuid.uuid4().hex}", source=source,
+                                title="Backend Engineer", company=f"Acme{uuid.uuid4().hex[:8]}",
+                                description="Go, gRPC, Postgres. " * 20, posted_at=moment,
+                                first_seen_at=moment)).id
 
 
-def _user(s) -> User:
-    u = User(email=f"{uuid.uuid4()}@example.test", password_hash="x", timezone="Europe/Budapest")
-    s.add(u)
-    s.flush()
-    return u
+def _feed(db, user, **kwargs) -> list[CorpusJob]:
+    return [match.job for match in matching_jobs(db, user, **kwargs)]
 
 
-def _job(corpus, s, source: str) -> int:
-    job_id = corpus.add(url=f"https://example.test/{uuid.uuid4().hex}", source=source,
-                        title="Backend Engineer", company=f"Acme{uuid.uuid4().hex[:8]}")
-    corpus.set_description(job_id, "Go, gRPC, Postgres. " * 20)
-    s.flush()
-    return job_id
+def _proxy(db, user, status: str) -> None:
+    insert(db, ProxyCredential(user_id=user.id, secret_ref="secret:proxy", status=status))
 
 
 # ── the gate ──────────────────────────────────────────────────────────────────────────────────
 
-@db_required
-def test_a_user_without_a_credential_sees_no_linkedin_rows(ctx):
+def test_a_user_without_a_credential_sees_no_linkedin_rows(db):
     """The free-rider case, and the reason the gate exists at all."""
-    t, c, s = ctx
-    user = _user(s)
-    linkedin_job = _job(c, s, "linkedin")
-    ats_job = _job(c, s, "greenhouse")
-    t.record_score(user.id, linkedin_job, score=0.99, model_version=1)
-    t.record_score(user.id, ats_job, score=0.50, model_version=1)
-    s.flush()
+    user = _user(db)
+    linkedin_job = _job(db, "linkedin")
+    ats_job = _job(db, "greenhouse")
 
-    assert t.linkedin_visible(user.id) is False
-    feed_ids = [j.id for j in t.visible_feed(user.id)]
+    assert TenantRepository(db).linkedin_visible(user.id) is False
+    feed_ids = [j.id for j in _feed(db, user)]
     assert linkedin_job not in feed_ids, "a paid-for row leaked to a user who did not pay"
     assert ats_job in feed_ids, "the free two-thirds must still be a useful product"
 
 
-@db_required
-def test_a_healthy_credential_unlocks_the_tier(ctx):
-    t, c, s = ctx
-    user = _user(s)
-    s.add(ProxyCredential(user_id=user.id, secret_ref="secret:proxy", status="healthy"))
-    linkedin_job = _job(c, s, "linkedin")
-    t.record_score(user.id, linkedin_job, score=0.99, model_version=1)
-    s.flush()
+def test_a_healthy_credential_unlocks_the_tier(db):
+    user = _user(db)
+    _proxy(db, user, "healthy")
+    linkedin_job = _job(db, "linkedin")
 
-    assert t.linkedin_visible(user.id) is True
-    assert linkedin_job in [j.id for j in t.visible_feed(user.id)]
+    assert TenantRepository(db).linkedin_visible(user.id) is True
+    assert linkedin_job in [j.id for j in _feed(db, user)]
 
 
-@db_required
 @pytest.mark.parametrize("status", ["quarantined", "disabled"])
-def test_an_unhealthy_credential_closes_the_gate_again(ctx, status):
+def test_an_unhealthy_credential_closes_the_gate_again(db, status):
     """Quarantine must actually stop delivery, or a broken credential becomes free access."""
-    t, c, s = ctx
-    user = _user(s)
-    s.add(ProxyCredential(user_id=user.id, secret_ref="secret:proxy", status=status))
-    linkedin_job = _job(c, s, "linkedin")
-    t.record_score(user.id, linkedin_job, score=0.99, model_version=1)
-    s.flush()
+    user = _user(db)
+    _proxy(db, user, status)
+    linkedin_job = _job(db, "linkedin")
 
-    assert t.linkedin_visible(user.id) is False
-    assert linkedin_job not in [j.id for j in t.visible_feed(user.id)]
+    assert TenantRepository(db).linkedin_visible(user.id) is False
+    assert linkedin_job not in [j.id for j in _feed(db, user)]
 
 
-@db_required
-def test_the_gate_is_applied_before_the_limit_not_after(ctx):
-    """Filtering after LIMIT would hand short pages to exactly the users who have no credential."""
-    t, c, s = ctx
-    user = _user(s)
+def test_the_gate_is_applied_before_the_limit_not_after(db):
+    """Filtering after the scan would hand short pages to exactly the users who have no credential."""
+    user = _user(db)
+    # The four newest are LinkedIn's, so a gate applied after the scan would leave nothing.
     for i in range(6):
-        job = _job(c, s, "linkedin" if i < 4 else "greenhouse")
-        t.record_score(user.id, job, score=0.9 - i * 0.01, model_version=1)
-    s.flush()
+        _job(db, "linkedin" if i < 4 else "greenhouse", minutes_ago=i + 1)
 
-    feed = t.visible_feed(user.id, limit=2)
+    feed = _feed(db, user, scan=2)
     assert len(feed) == 2, "the page is filled from eligible rows, not truncated by the gate"
     assert all(j.source != "linkedin" for j in feed)
 
 
-@db_required
-def test_the_gate_is_per_user_on_the_same_shared_row(ctx):
+def test_the_gate_is_per_user_on_the_same_shared_row(db):
     """One corpus row, two users, different visibility. That is the whole design in one assertion."""
-    t, c, s = ctx
-    paying, freeloader = _user(s), _user(s)
-    s.add(ProxyCredential(user_id=paying.id, secret_ref="secret:proxy", status="healthy"))
-    shared_linkedin_job = _job(c, s, "linkedin")
-    t.record_score(paying.id, shared_linkedin_job, score=0.9, model_version=1)
-    t.record_score(freeloader.id, shared_linkedin_job, score=0.9, model_version=1)
-    s.flush()
+    paying, freeloader = _user(db), _user(db)
+    _proxy(db, paying, "healthy")
+    shared_linkedin_job = _job(db, "linkedin")
 
-    assert shared_linkedin_job in [j.id for j in t.visible_feed(paying.id)]
-    assert shared_linkedin_job not in [j.id for j in t.visible_feed(freeloader.id)]
+    assert shared_linkedin_job in [j.id for j in _feed(db, paying)]
+    assert shared_linkedin_job not in [j.id for j in _feed(db, freeloader)]
 
 
 # ── the governor ──────────────────────────────────────────────────────────────────────────────

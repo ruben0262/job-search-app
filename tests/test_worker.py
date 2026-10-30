@@ -1,51 +1,26 @@
-"""The worker loop's one real invariant: the handler's effect and the job's completion are atomic."""
+"""The worker loop: a handler's writes and the job's outcome, each recorded as it happens.
+
+There is no transaction around a handler any more. What it wrote before failing stays written, by
+design: a delivery that stops part-way keeps the sends it made rather than repeating them on the retry.
+"""
 from __future__ import annotations
 
-import os
 import uuid
 
-import pytest
-
-pytest.importorskip("sqlalchemy")
-
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import Session, sessionmaker
-
+from libs.db import find_one, insert
 from libs.db.models import QueueJob, User
 from libs.queue.queue import enqueue
 from libs.queue.worker import Terminal, run_worker
 
-pytestmark = pytest.mark.skipif(
-    not os.environ.get("DATABASE_URL"), reason="DATABASE_URL not set (no live Postgres)")
+
+def _account(db) -> uuid.UUID:
+    user_id = insert(db, User(email=f"{uuid.uuid4()}@example.test", password_hash="x")).id
+    enqueue(db, "notify", user_id)
+    return user_id
 
 
-@pytest.fixture()
-def stack():
-    """A real engine, because the worker commits — a rolled-back outer transaction would hide it."""
-    engine = create_engine(os.environ["DATABASE_URL"])
-    factory = sessionmaker(engine)
-    created: list[uuid.UUID] = []
-
-    def make_user() -> uuid.UUID:
-        with factory() as s:
-            user = User(email=f"{uuid.uuid4()}@example.test", password_hash="x")
-            s.add(user)
-            s.commit()
-            created.append(user.id)
-            return user.id
-
-    try:
-        yield factory, make_user
-    finally:
-        with factory() as s:
-            for user_id in created:
-                s.execute(text("DELETE FROM jobs WHERE user_id = :u"), {"u": user_id})
-                s.execute(text("DELETE FROM users WHERE id = :u"), {"u": user_id})
-            s.commit()
-
-
-def _drain(factory, lane: str, handler, *, max_jobs: int = 1):
-    return run_worker(factory, lane, "test-worker", handler,
+def _drain(db, lane: str, handler, *, max_jobs: int = 1):
+    return run_worker(db, lane, "test-worker", handler,
                       max_jobs=max_jobs, idle_sleep=0.0, stop=_stop_after(max_jobs))
 
 
@@ -60,96 +35,78 @@ def _stop_after(n: int):
     return stop
 
 
-def _state(factory, user_id) -> str:
-    with factory() as s:
-        return s.scalar(text("SELECT state FROM jobs WHERE user_id = :u").bindparams(u=user_id))
+def _job(db, user_id) -> QueueJob:
+    return find_one(db, QueueJob, {"user_id": user_id})
 
 
-def test_the_handlers_effect_and_the_completion_commit_together(stack):
-    """The invariant the whole protocol rests on."""
-    factory, make_user = stack
-    user_id = make_user()
-    enqueue_in(factory, "notify", user_id)
+def _timezone(db, user_id) -> str:
+    return db[User.COLLECTION].find_one({"_id": user_id})["timezone"]
 
-    def handler(session: Session, job: QueueJob) -> None:
-        session.execute(text("UPDATE users SET timezone = 'Europe/Budapest' WHERE id = :u"),
-                        {"u": job.user_id})
 
-    stats = _drain(factory, "notify", handler)
+def _set_timezone(db, job: QueueJob, zone: str) -> None:
+    db[User.COLLECTION].update_one({"_id": job.user_id}, {"$set": {"timezone": zone}})
+
+
+def test_the_handlers_effect_and_the_completion_both_land(db):
+    """The invariant the whole protocol rests on: done means the work happened."""
+    user_id = _account(db)
+
+    stats = _drain(db, "notify", lambda d, job: _set_timezone(d, job, "Europe/Budapest"))
 
     assert stats.completed == 1
-    assert _state(factory, user_id) == "done"
-    with factory() as s:
-        assert s.scalar(text("SELECT timezone FROM users WHERE id = :u")
-                        .bindparams(u=user_id)) == "Europe/Budapest"
+    assert _job(db, user_id).state == "done"
+    assert _timezone(db, user_id) == "Europe/Budapest"
 
 
-def test_a_failing_handler_rolls_back_its_effect_and_the_job_retries(stack):
-    """Both halves."""
-    factory, make_user = stack
-    user_id = make_user()
-    enqueue_in(factory, "notify", user_id)
+def test_a_failing_handler_keeps_what_it_wrote_and_the_job_retries(db):
+    """Both halves. The write stays, by design: a delivery that stopped part-way keeps the sends it made,
+    so the retry does not send them twice."""
+    user_id = _account(db)
 
-    def handler(session: Session, job: QueueJob) -> None:
-        session.execute(text("UPDATE users SET timezone = 'Mars/Olympus' WHERE id = :u"),
-                        {"u": job.user_id})
+    def handler(d, job: QueueJob) -> None:
+        _set_timezone(d, job, "Mars/Olympus")
         raise RuntimeError("upstream 500")
 
-    stats = _drain(factory, "notify", handler)
+    stats = _drain(db, "notify", handler)
 
     assert stats.failed == 1
-    assert _state(factory, user_id) == "ready"
-    with factory() as s:
-        # The rollback that undid the handler's write also undid the claim.
-        assert s.scalar(text("SELECT attempts FROM jobs WHERE user_id = :u")
-                        .bindparams(u=user_id)) == 1
-    with factory() as s:
-        assert s.scalar(text("SELECT timezone FROM users WHERE id = :u")
-                        .bindparams(u=user_id)) == "UTC", "the failed write must not survive"
+    job = _job(db, user_id)
+    assert job.state == "ready"
+    assert job.attempts == 1, "one claim, one attempt: the failure does not count twice"
+    assert job.claimed_by is None, "a job waiting for its retry belongs to no worker"
+    assert _timezone(db, user_id) == "Mars/Olympus", "what the handler wrote before failing stays written"
 
 
-def test_the_failure_is_recorded_even_though_the_handlers_transaction_was_poisoned(stack):
-    """The failure has to be written in a fresh transaction."""
-    factory, make_user = stack
-    user_id = make_user()
-    enqueue_in(factory, "notify", user_id)
+def test_the_failure_is_recorded(db):
+    """Whatever the handler raised is on the job, where the operator will look for it."""
+    user_id = _account(db)
 
-    def handler(session: Session, job: QueueJob) -> None:
+    def handler(d, job: QueueJob) -> None:
         raise ValueError("telegram said no")
 
-    _drain(factory, "notify", handler)
+    stats = _drain(db, "notify", handler)
 
-    with factory() as s:
-        error = s.scalar(text("SELECT last_error FROM jobs WHERE user_id = :u").bindparams(u=user_id))
-    assert "telegram said no" in error
+    assert "telegram said no" in _job(db, user_id).last_error
+    assert stats.errors == {"ValueError": 1}
 
 
-def test_a_terminal_handler_dead_letters_without_spending_the_retries(stack):
-    """A revoked token, or a retrain that is not owed."""
-    factory, make_user = stack
-    user_id = make_user()
-    enqueue_in(factory, "notify", user_id)
+def test_a_terminal_handler_dead_letters_without_spending_the_retries(db):
+    """A revoked token will never succeed."""
+    user_id = _account(db)
 
-    def handler(session: Session, job: QueueJob) -> None:
+    def handler(d, job: QueueJob) -> None:
         raise Terminal("bot was blocked by the user")
 
-    stats = _drain(factory, "notify", handler)
+    stats = _drain(db, "notify", handler)
 
     assert stats.dead == 1
-    assert _state(factory, user_id) == "dead"
-    with factory() as s:
-        attempts = s.scalar(text("SELECT attempts FROM jobs WHERE user_id = :u").bindparams(u=user_id))
-    assert attempts == 1
+    job = _job(db, user_id)
+    assert job.state == "dead"
+    assert job.attempts == 1
+    assert job.last_error == "bot was blocked by the user"
 
 
-def test_an_empty_lane_is_not_an_error(stack):
+def test_an_empty_lane_is_not_an_error(db):
     """A worker with nothing to do must idle, not exit or raise. Most of a lane's life is this."""
-    factory, _ = stack
-    stats = _drain(factory, "docgen", lambda s, j: None)
+    stats = _drain(db, "docgen", lambda d, j: None)
     assert stats.claimed == 0
-
-
-def enqueue_in(factory, lane: str, user_id) -> None:
-    with factory() as s:
-        enqueue(s, lane, user_id)
-        s.commit()

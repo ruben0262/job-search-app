@@ -16,9 +16,8 @@ from libs.db import get, now
 from libs.db.models import User
 from libs.legal import DISCLOSURE_VERSION, disclosure, has_consented
 from libs.obs import audit
-from libs.secrets import SecretStore
 from services.api.auth_routes import _clear_session_cookies
-from services.api.deps import current_user, get_db, get_store
+from services.api.deps import current_user, get_db
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["account"])
@@ -135,7 +134,6 @@ class DeleteBody(BaseModel):
 
 @router.delete("/account")
 def delete_account(body: DeleteBody, db: Database = Depends(get_db),
-                   store: SecretStore = Depends(get_store),
                    user_id: _uuid.UUID = Depends(current_user)) -> dict:
     """Erase the account."""
     user = get(db, User, user_id)
@@ -143,7 +141,7 @@ def delete_account(body: DeleteBody, db: Database = Depends(get_db),
         # Deliberately the same shape as a failed login: no oracle, no timing shortcut.
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="that password is not correct")
 
-    store.purge(user_id)
+    # Their credentials and the key that could read them go with the account (`libs.db.delete_account`).
     erase_account(db, user_id)
     audit(logger, "account.deleted", user=user_id)
     return {"status": "deleted"}

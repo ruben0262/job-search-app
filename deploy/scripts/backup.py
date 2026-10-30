@@ -21,13 +21,18 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from bson import json_util
+from bson.binary import UuidRepresentation
 
 from libs.corpus.archive import ACTED_ON
 from libs.db import database
 from libs.db.models import MODELS, CorpusJob, User, UserJobState
 
 KEEP_DAYS = 30
-OPTIONS = json_util.CANONICAL_JSON_OPTIONS
+# Account ids are UUIDs; without saying how to write one, the first account fails the whole backup.
+OPTIONS = json_util.CANONICAL_JSON_OPTIONS.with_options(uuid_representation=UuidRepresentation.STANDARD)
+# The integer ids handed out so far. Kept so a restore never hands one out twice: an old alert's
+# link names a posting by its id.
+COUNTERS = "counters"
 
 
 def kept() -> list[str]:
@@ -45,6 +50,7 @@ def write(db, target: Path) -> dict[str, int]:
                 counts[name] = counts.get(name, 0) + 1
         for name in kept():
             put(name, db[name].find())
+        put(COUNTERS, db[COUNTERS].find())
         put(CorpusJob.COLLECTION, db[CorpusJob.COLLECTION].find(
             {"_id": {"$in": db[UserJobState.COLLECTION].distinct("job_id", ACTED_ON)}}))
     return counts
@@ -68,7 +74,8 @@ def verify(path: Path) -> bool:
     counts: dict[str, int] = {}
     try:
         for name, doc in read(path):
-            shapes[name].from_doc(doc)
+            if name != COUNTERS:
+                shapes[name].from_doc(doc)
             counts[name] = counts.get(name, 0) + 1
     except (OSError, EOFError, KeyError, TypeError, ValueError) as exc:
         print(f"  FAILED: {path} did not read back cleanly — {type(exc).__name__}: {exc}", file=sys.stderr)

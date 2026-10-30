@@ -1,36 +1,23 @@
 """The corpus repository's behaviour — the storage half of the `store.py` port."""
 from __future__ import annotations
 
-import os
 import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
 
-pytest.importorskip("sqlalchemy")
-from sqlalchemy import create_engine, select
-from sqlalchemy.orm import Session
-
-from libs.corpus.repository import CorpusRepository, text_digest
+from libs.corpus.repository import CorpusRepository
+from libs.db import get
 from libs.db.models import CorpusJob
-
-pytestmark = pytest.mark.skipif(
-    not os.environ.get("DATABASE_URL"),
-    reason="DATABASE_URL not set (no live Postgres)")
 
 
 @pytest.fixture()
-def repo():
-    engine = create_engine(os.environ["DATABASE_URL"])
-    conn = engine.connect()
-    trans = conn.begin()
-    s = Session(bind=conn, join_transaction_mode="create_savepoint")
-    try:
-        yield CorpusRepository(s), s
-    finally:
-        s.close()
-        trans.rollback()
-        conn.close()
+def repo(db):
+    return CorpusRepository(db), db
+
+
+def _get(s, job_id: int) -> CorpusJob:
+    return get(s, CorpusJob, job_id)
 
 
 def _u(path: str = "") -> str:
@@ -44,11 +31,10 @@ def test_adding_the_same_url_twice_inserts_once(repo):
     url = _u()
     first = r.add(url=url, source="greenhouse", title="Backend Engineer", company="Acme")
     second = r.add(url=url, source="greenhouse", title="Backend Engineer", company="Acme")
-    s.flush()
 
     assert first is not None
     assert second is None, "second insert must be ignored, not raise and not duplicate"
-    assert s.scalar(select(CorpusJob.id).where(CorpusJob.url == url).limit(1)) == first
+    assert [row["_id"] for row in s[CorpusJob.COLLECTION].find({"url": url})] == [first]
 
 
 def test_rediscovering_a_job_never_makes_it_look_new(repo):
@@ -56,26 +42,19 @@ def test_rediscovering_a_job_never_makes_it_look_new(repo):
     r, s = repo
     url = _u()
     job_id = r.add(url=url, source="greenhouse", title="Backend Engineer", company="Acme")
-    s.flush()
-    original = s.get(CorpusJob, job_id).first_seen_at
+    original = _get(s, job_id).first_seen_at
 
     r.add(url=url, source="greenhouse", title="Backend Engineer", company="Acme")
-    r.touch_last_seen([job_id])
-    s.flush()
-    s.refresh(s.get(CorpusJob, job_id))
 
-    job = s.get(CorpusJob, job_id)
-    assert job.first_seen_at == original, "first_seen_at must never be overwritten"
-    assert job.last_seen_at >= original
+    assert _get(s, job_id).first_seen_at == original, "first_seen_at must never be overwritten"
 
 
 # ── dedup ─────────────────────────────────────────────────────────────────────────────────────
 
 def test_dedup_matches_on_exact_url(repo):
-    r, s = repo
+    r, _s = repo
     url = _u()
     r.add(url=url, source="greenhouse", title="Backend Engineer", company="Acme")
-    s.flush()
 
     hit = r.find_duplicate(url, "Backend Engineer", "Acme")
     assert hit is not None
@@ -84,10 +63,9 @@ def test_dedup_matches_on_exact_url(repo):
 
 def test_dedup_matches_across_tracking_noise_via_canonical(repo):
     """The same posting linked with `?gh_src=` is not a second job."""
-    r, s = repo
+    r, _s = repo
     token = uuid.uuid4().hex
     r.add(url=_u(token), source="greenhouse", title="Backend Engineer", company="Acme")
-    s.flush()
 
     hit = r.find_duplicate(_u(token) + "?gh_src=abcd", "Backend Engineer", "Acme")
     assert hit is not None
@@ -96,11 +74,10 @@ def test_dedup_matches_across_tracking_noise_via_canonical(repo):
 
 def test_dedup_matches_the_same_role_on_an_unrelated_board(repo):
     """LinkedIn and Greenhouse URLs share nothing, so only the content key can see this."""
-    r, s = repo
+    r, _s = repo
     company = f"Acme{uuid.uuid4().hex[:8]}"
     r.add(url=_u(), source="greenhouse", title="Backend Engineer", company=company,
           location="London")
-    s.flush()
 
     hit = r.find_duplicate("https://www.linkedin.com/jobs/view/4012345678/",
                            "Backend Engineer", company, "London")
@@ -110,26 +87,22 @@ def test_dedup_matches_the_same_role_on_an_unrelated_board(repo):
 
 def test_the_same_role_in_another_city_is_not_a_duplicate(repo):
     """Location is part of the content key on purpose — two cities are two jobs."""
-    r, s = repo
+    r, _s = repo
     company = f"Acme{uuid.uuid4().hex[:8]}"
     r.add(url=_u(), source="greenhouse", title="Backend Engineer", company=company,
           location="London")
-    s.flush()
 
     assert r.find_duplicate(_u(), "Backend Engineer", company, "Berlin") is None
 
 
 def test_an_unusable_key_never_matches_another_unusable_key(repo):
     """Fail open."""
-    r, s = repo
+    r, _s = repo
     r.add(url="https://example.test/" + uuid.uuid4().hex, source="board", title="Engineer",
           company="")            # no company -> content_key is None
-    s.flush()
 
     # A different job, also with no usable content key, must not match the first.
     assert r.find_duplicate("https://example.test/" + uuid.uuid4().hex, "Engineer", "") is None
-    assert r.seen_content_key(None) is False
-    assert r.seen_canonical(None) is False
 
 
 def test_a_genuinely_new_job_is_not_a_duplicate(repo):
@@ -142,11 +115,10 @@ def test_a_genuinely_new_job_is_not_a_duplicate(repo):
 
 def test_a_linkedin_listing_resolving_to_a_known_ats_url_is_a_duplicate(repo):
     """LinkedIn arrives second; the Greenhouse row is already in the corpus."""
-    r, s = repo
+    r, _s = repo
     token = uuid.uuid4().hex
     r.add(url=_u(token), source="greenhouse", title="Backend Engineer",
           company=f"Acme{uuid.uuid4().hex[:8]}")
-    s.flush()
 
     hit = r.find_duplicate(
         "https://www.linkedin.com/jobs/view/4012345678/",
@@ -159,16 +131,14 @@ def test_a_linkedin_listing_resolving_to_a_known_ats_url_is_a_duplicate(repo):
 
 def test_an_ats_row_arriving_after_the_linkedin_one_is_a_duplicate(repo):
     """The other direction: the ATS poll arrives second, beaten by a LinkedIn listing."""
-    r, s = repo
+    r, _s = repo
     token = uuid.uuid4().hex
     ats_url = _u(token)
 
     linkedin_id = r.add(url="https://www.linkedin.com/jobs/view/" + uuid.uuid4().hex,
                         source="linkedin", title="Backend Engineer (Remote)",
                         company="Acme Technologies International")
-    s.flush()
     r.set_application_url(linkedin_id, ats_url)
-    s.flush()
 
     hit = r.find_duplicate(ats_url, title="Backend Engineer",
                            company=f"Acme{uuid.uuid4().hex[:8]}")
@@ -179,11 +149,10 @@ def test_an_ats_row_arriving_after_the_linkedin_one_is_a_duplicate(repo):
 
 def test_the_apply_url_layer_ignores_tracking_noise(repo):
     """It compares canonical forms, so `?gh_src=linkedin` is not a different apply target."""
-    r, s = repo
+    r, _s = repo
     token = uuid.uuid4().hex
     job_id = r.add(url=_u(token), source="greenhouse", title="Backend Engineer",
                    company=f"Acme{uuid.uuid4().hex[:8]}")
-    s.flush()
 
     hit = r.find_duplicate("https://www.linkedin.com/jobs/view/9999/",
                            title="Unrelated Title", company=f"Other{uuid.uuid4().hex[:8]}",
@@ -193,10 +162,9 @@ def test_the_apply_url_layer_ignores_tracking_noise(repo):
 
 def test_an_unresolvable_apply_url_does_not_match_anything(repo):
     """Fail open, same contract as the other layers."""
-    r, s = repo
+    r, _s = repo
     r.add(url=_u(), source="greenhouse", title="Backend Engineer",
           company=f"Acme{uuid.uuid4().hex[:8]}")
-    s.flush()
 
     assert r.find_duplicate(_u(), "Totally Different Role",
                             f"Other{uuid.uuid4().hex[:8]}", application_url="") is None
@@ -205,89 +173,30 @@ def test_an_unresolvable_apply_url_does_not_match_anything(repo):
                             application_url="not-a-url") is None
 
 
-# ── description and embedding ────────────────────────────────────────────────────────────────
-
-def test_changing_the_description_invalidates_the_vector(repo):
-    """A vector must never outlive the text it was computed from."""
-    r, s = repo
-    job_id = r.add(url=_u(), source="greenhouse", title="Backend Engineer", company="Acme")
-    s.flush()
-
-    r.set_description(job_id, "Go, gRPC, Postgres.")
-    s.flush()
-    digest = s.get(CorpusJob, job_id).text_sha256
-    assert r.set_embedding(job_id, vector=b"\x00" * 8, text_sha256=digest,
-                           model="BAAI/bge-base-en-v1.5", dim=768, version="1.9") is True
-    s.flush()
-    assert s.get(CorpusJob, job_id).embedding is not None
-
-    changed = r.set_description(job_id, "Rust, Kafka, ClickHouse.")
-    s.flush()
-    job = s.get(CorpusJob, job_id)
-    assert changed is True
-    assert job.embedding is None, "the old vector must be dropped, not left attached"
-    assert job.text_sha256 == text_digest("Rust, Kafka, ClickHouse.")
-
+# ── description ──────────────────────────────────────────────────────────────────────────────
 
 def test_rewriting_identical_text_is_not_a_change(repo):
-    """Re-fetching a posting that did not change must not throw away a good vector."""
+    """Re-fetching a posting that did not change is not news; new text is, and is stored."""
     r, s = repo
     job_id = r.add(url=_u(), source="greenhouse", title="Backend Engineer", company="Acme")
-    s.flush()
-    r.set_description(job_id, "Go, gRPC, Postgres.")
-    s.flush()
-    digest = s.get(CorpusJob, job_id).text_sha256
-    r.set_embedding(job_id, vector=b"\x00" * 8, text_sha256=digest,
-                    model="m", dim=768, version="1")
-    s.flush()
+    assert r.set_description(job_id, "Go, gRPC, Postgres.") is True
 
     assert r.set_description(job_id, "Go, gRPC, Postgres.") is False
-    s.flush()
-    assert s.get(CorpusJob, job_id).embedding is not None
-
-
-def test_a_vector_computed_from_superseded_text_is_refused(repo):
-    """The real race: bulk embedding takes minutes while refresh.py runs concurrently."""
-    r, s = repo
-    job_id = r.add(url=_u(), source="greenhouse", title="Backend Engineer", company="Acme")
-    s.flush()
-    r.set_description(job_id, "Original text.")
-    s.flush()
-    stale_digest = s.get(CorpusJob, job_id).text_sha256
-
-    r.set_description(job_id, "Text was updated while the embedder was working.")
-    s.flush()
-
-    accepted = r.set_embedding(job_id, vector=b"\x11" * 8, text_sha256=stale_digest,
-                               model="m", dim=768, version="1")
-    s.flush()
-    assert accepted is False
-    assert s.get(CorpusJob, job_id).embedding is None
-
-
-def test_awaiting_embedding_finds_text_without_a_vector(repo):
-    r, s = repo
-    job_id = r.add(url=_u(), source="greenhouse", title="Backend Engineer", company="Acme")
-    s.flush()
-    assert job_id not in [j.id for j in r.awaiting_embedding()]   # no description yet
-
-    r.set_description(job_id, "Go, gRPC, Postgres.")
-    s.flush()
-    assert job_id in [j.id for j in r.awaiting_embedding()]
+    assert r.set_description(job_id, "Rust, Kafka, ClickHouse.") is True
+    assert _get(s, job_id).description == "Rust, Kafka, ClickHouse."
 
 
 # ── retention ────────────────────────────────────────────────────────────────────────────────
 
-def test_the_repository_no_longer_trims_rows_in_place(repo):
+def test_the_repository_no_longer_trims_rows_in_place():
     """Removed 2026-08-11, and this fails if it comes back.
 
     `trim_cold` nulled the description and vector and kept the row. The trainer joins labels back to
     the corpus and requires `embedding IS NOT NULL`, so a trimmed row silently left every future
     training set. Retention is `libs.corpus.archive` now: the whole row, written out then deleted.
     """
-    r, _s = repo
-    assert not hasattr(r, "trim_cold")
-    assert not hasattr(r, "pin")
+    assert not hasattr(CorpusRepository, "trim_cold")
+    assert not hasattr(CorpusRepository, "pin")
 
 
 def test_a_long_real_world_content_key_is_storable(repo):
@@ -300,9 +209,8 @@ def test_a_long_real_world_content_key_is_storable(repo):
         title="Mitarbeiter Buchhaltung (m/w/d) in Voll- oder Teilzeit",
         company="OsnaTruck Nutzfahrzeugservice GmbH",
         location="Osnabrück")
-    s.flush()
 
-    job = s.get(CorpusJob, job_id)
+    job = _get(s, job_id)
     assert job.content_key and len(job.content_key) > 64
 
 
@@ -311,8 +219,7 @@ def test_a_very_long_title_does_not_break_ingest(repo):
     r, s = repo
     job_id = r.add(url=f"https://example.test/{uuid.uuid4().hex}", source="board",
                    title="Senior " * 60 + "Engineer", company="A" * 300, location="B" * 300)
-    s.flush()
-    assert s.get(CorpusJob, job_id).content_key
+    assert _get(s, job_id).content_key
 
 
 def test_every_corpus_timestamp_comes_from_one_clock_and_it_is_the_real_one(repo):
@@ -322,18 +229,12 @@ def test_every_corpus_timestamp_comes_from_one_clock_and_it_is_the_real_one(repo
                         fetched_at=datetime.now(UTC) - timedelta(seconds=1))
     assert job_id is not None
     corpus.set_description(job_id, "A real description. " * 40)
-    s.flush()
-    corpus.set_embedding(job_id, vector=bytes(8),
-                         text_sha256=s.get(CorpusJob, job_id).text_sha256,
-                         model="m", dim=8, version="v")
-    s.flush()
 
-    row = s.get(CorpusJob, job_id)
+    row = _get(s, job_id)
     # Every one of these is written by a different statement, and they must be readable in order.
-    assert row.fetched_at <= row.first_seen_at <= row.last_seen_at
-    assert row.first_seen_at <= row.description_fetched_at <= row.embedded_at, (
-        "a corpus row's timestamps are out of order — something is still reading the transaction "
-        "clock instead of the wall clock")
+    assert row.fetched_at <= row.first_seen_at <= row.description_fetched_at, (
+        "a corpus row's timestamps are out of order — something is reading a clock other than the "
+        "wall clock")
 
 
 
@@ -341,19 +242,16 @@ def test_a_posting_is_never_recorded_as_published_after_we_found_it(repo):
     """LinkedIn reports age relatively and we read it late."""
     corpus, s = repo
     job_id = corpus.add(url=_u(), source="linkedin", title="Engineer")
-    s.flush()
-    seen = s.get(CorpusJob, job_id).first_seen_at
+    seen = _get(s, job_id).first_seen_at
 
     # A caption read an hour after ingest, claiming the job went up "just now".
     corpus.set_posting_metadata(job_id, posted_at=seen + timedelta(hours=1))
-    s.flush()
-    assert s.get(CorpusJob, job_id).posted_at <= seen
+    assert _get(s, job_id).posted_at <= seen
 
     # A genuinely older timestamp is kept exactly as given — the clamp is a ceiling, not a rewrite.
     older = seen - timedelta(days=2)
     corpus.set_posting_metadata(job_id, posted_at=older)
-    s.flush()
-    assert s.get(CorpusJob, job_id).posted_at == older
+    assert _get(s, job_id).posted_at == older
 
 
 # ── the working arrangement, classified when the text arrives (ROADMAP 6aj) ───────────────────
@@ -361,75 +259,66 @@ def test_a_posting_is_never_recorded_as_published_after_we_found_it(repo):
 
 def test_a_description_arriving_classifies_the_working_arrangement(repo):
     """The filter that was barely running."""
-    repo, session = repo
+    repo, s = repo
     job_id = repo.add(url=f"https://example.com/{uuid.uuid4()}", source="linkedin",
                       title="Backend Engineer", company="Acme", location="Berlin")
-    session.flush()
-    assert session.get(CorpusJob, job_id).workplace is None, "nothing to classify from yet"
+    assert _get(s, job_id).workplace is None, "nothing to classify from yet"
 
     repo.set_description(job_id, "We are a fully remote team and this role is remote. " * 8)
-    session.flush()
 
-    assert session.get(CorpusJob, job_id).workplace == "remote"
+    assert _get(s, job_id).workplace == "remote"
 
 
 def test_the_page_s_own_tag_is_never_overwritten_by_the_guess(repo):
     """LinkedIn's workplace pill and schema.org's `jobLocationType` are the real tag on the page."""
-    repo, session = repo
+    repo, s = repo
     job_id = repo.add(url=f"https://example.com/{uuid.uuid4()}", source="linkedin",
                       title="Backend Engineer", company="Acme", location="Berlin")
     repo.set_posting_metadata(job_id, workplace="onsite")
-    session.flush()
 
     repo.set_description(job_id, "This is a fully remote position, work from anywhere. " * 8)
-    session.flush()
 
-    assert session.get(CorpusJob, job_id).workplace == "onsite"
+    assert _get(s, job_id).workplace == "onsite"
 
 
 def test_an_unreadable_description_leaves_the_arrangement_unknown(repo):
     """Unknown means keep, here as everywhere else."""
-    repo, session = repo
+    repo, s = repo
     job_id = repo.add(url=f"https://example.com/{uuid.uuid4()}", source="test",
                       title="Backend Engineer", company="Acme", location="Berlin")
-    session.flush()
 
     repo.set_description(job_id, "We build things. You will build things with us. " * 8)
-    session.flush()
 
-    assert session.get(CorpusJob, job_id).workplace is None
+    assert _get(s, job_id).workplace is None
 
 
 def test_a_new_row_carries_the_country_it_was_read_from(repo):
     """The column exists so the filter is an indexed equality, not a regex per user per job."""
-    repo, session = repo
+    repo, s = repo
     job_id = repo.add(url=f"https://example.com/{uuid.uuid4()}", source="test",
                       title="Backend Engineer", company="Acme", location="Berlin, Germany")
-    session.flush()
 
-    assert session.get(CorpusJob, job_id).country == "DE"
+    assert _get(s, job_id).country == "DE"
 
 
 def test_a_posting_that_names_no_place_stores_no_country(repo):
     """NULL is the value that passes every filter, and 16% of the corpus has it."""
-    repo, session = repo
+    repo, s = repo
     job_id = repo.add(url=f"https://example.com/{uuid.uuid4()}", source="test",
                       title="Backend Engineer", company="Acme", location="Remote")
-    session.flush()
 
-    assert session.get(CorpusJob, job_id).country is None
+    assert _get(s, job_id).country is None
 
 
 def test_the_country_column_is_read_from_the_same_place_the_filter_will_be(repo):
     """One definition."""
     from libs.corpus.geo import EU_COUNTRIES, allows, wanted_countries
 
-    repo, session = repo
+    repo, s = repo
     job_id = repo.add(url=f"https://example.com/{uuid.uuid4()}", source="test",
                       title="Backend Engineer", company="Acme", location="Toulouse, FR")
-    session.flush()
 
-    country = session.get(CorpusJob, job_id).country
+    country = _get(s, job_id).country
     assert country == "FR"
     assert country in EU_COUNTRIES
     assert allows(country, wanted_countries(["europe"])) is True

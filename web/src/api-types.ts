@@ -1434,12 +1434,8 @@ export interface components {
             last_active_at: string | null;
             /** Onboarded */
             onboarded: boolean;
-            /** Plan */
-            plan: string;
             /** Profile Files Visible */
             profile_files_visible: boolean;
-            /** Profile Generation */
-            profile_generation: number;
             /** Status */
             status: string;
             /** Telegram */
@@ -1606,7 +1602,6 @@ export interface components {
         CredentialList: {
             /** Credentials */
             credentials: components["schemas"]["StoredCredential"][];
-            requirements: components["schemas"]["Requirements"];
         };
         /**
          * Currency
@@ -2044,15 +2039,6 @@ export interface components {
         Removed: {
             /** Status */
             status: string;
-        };
-        /** Requirements */
-        Requirements: {
-            /** Claude */
-            claude: boolean;
-            /** Proxy */
-            proxy: boolean;
-            /** Telegram Bot */
-            telegram_bot: boolean;
         };
         /** ResendRequest */
         ResendRequest: {

@@ -126,9 +126,10 @@ def lane_accounts(db: Database, since: datetime) -> list[dict]:
     """
     rows = db[QueueJob.COLLECTION].aggregate([
         {"$group": {"_id": {"lane": "$lane", "user_id": "$user_id"}, **_tally(since),
-                    # The newest failure on this lane for this account, whatever its state now: a job
-                    # that failed four times and then succeeded is still worth seeing.
-                    "last_error": {"$max": "$last_error"}}},
+                    # The newest failure on record for this lane and account. `$max` of the text alone
+                    # would be the alphabetically last one; paired with the id, it is the latest.
+                    "last_error": {"$max": {"$cond": [{"$ne": [{"$ifNull": ["$last_error", None]}, None]},
+                                                      {"at": "$_id", "error": "$last_error"}, None]}}}},
         {"$lookup": {"from": User.COLLECTION, "localField": "_id.user_id", "foreignField": "_id",
                      "pipeline": [{"$project": {"email": 1}}], "as": "user"}},
         {"$unwind": "$user"},
@@ -140,5 +141,5 @@ def lane_accounts(db: Database, since: datetime) -> list[dict]:
              "ready": row["ready"], "running": row["running"],
              "dead": row["dead"], "done": row["done"],
              # Truncated: this is a panel, and a traceback belongs in the logs.
-             "last_error": (row["last_error"] or "")[:200] or None}
+             "last_error": ((row["last_error"] or {}).get("error") or "")[:200] or None}
             for row in rows]

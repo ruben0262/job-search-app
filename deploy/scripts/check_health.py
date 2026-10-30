@@ -32,9 +32,6 @@ REQUIRED_TIMERS = tuple(sorted(
 WARN_EXIT = 3
 PAGE_EXIT = 2
 
-# How long the embedder gets to answer before it counts as down.
-EMBEDDER_TIMEOUT_SEC = 20.0
-
 
 def missing_timers() -> list[str]:
     """Which required timers are not enabled."""
@@ -50,24 +47,6 @@ def missing_timers() -> list[str]:
         if result.stdout.strip() != "enabled":
             missing.append(unit)
     return missing
-
-
-def embedder_down() -> str | None:
-    """Why the embedder is unreachable, or `None` if it answers."""
-    url = os.environ.get("EMBEDDER_URL")
-    if not url:
-        return None
-    try:
-        import httpx
-    except ImportError:
-        return None
-    try:
-        response = httpx.get(f"{url.rstrip('/')}/health", timeout=EMBEDDER_TIMEOUT_SEC)
-    except Exception as exc:
-        return f"{type(exc).__name__} reaching {url}"
-    if response.status_code != 200:
-        return f"answered {response.status_code}"
-    return None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -88,16 +67,7 @@ def main(argv: list[str] | None = None) -> int:
     alerts = evaluate(state)
 
     absent = missing_timers()
-    embedder = embedder_down()
     summary = render(alerts)
-    if embedder:
-        # Same reasoning as the timer block: this is the finding that explains the others.
-        summary = (
-            f"EMBEDDER UNREACHABLE: {embedder}\n"
-            "  Without it no new job gets a vector, so nothing is scored and the feed goes quiet\n"
-            "  with no other symptom.\n"
-            "  Check: docker compose -f deploy/compose.embedder.yml ps\n\n"
-            + summary)
     if absent:
         # Prepended rather than appended: it is the finding that explains the others.
         summary = ("TIMERS NOT ENABLED: " + ", ".join(absent)
@@ -111,15 +81,11 @@ def main(argv: list[str] | None = None) -> int:
     print(summary)
 
     paging = [alert for alert in alerts if alert.pages]
-    if embedder:
-        # Pages.
-        paging.append(f"embedder unreachable: {embedder}")
     if absent:
         # A missing timer pages.
         paging.append(f"timers not enabled: {', '.join(absent)}")
     audit(logger, "health.checked", alerts=len(alerts), paging=len(paging),
-          corpus=state.corpus_rows, timers_missing=len(absent),
-          embedder_down=bool(embedder))
+          corpus=state.corpus_rows, timers_missing=len(absent))
 
     threshold_met = (args.email_on == "warn" and alerts) or (args.email_on == "page" and paging)
     if threshold_met and args.to:

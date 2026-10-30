@@ -171,46 +171,22 @@ def test_a_posting_outside_the_wanted_countries_is_never_a_candidate(db):
 
 # ── the age window, against a real database ─────────────────────────────────────────────────────
 
-@pytest.fixture()
-def db():
-    import os
-
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import Session
-
-    if not os.environ.get("DATABASE_URL"):
-        pytest.skip("DATABASE_URL not set (no live Postgres)")
-    engine = create_engine(os.environ["DATABASE_URL"])
-    conn = engine.connect()
-    trans = conn.begin()
-    session = Session(bind=conn, join_transaction_mode="create_savepoint")
-    try:
-        yield session
-    finally:
-        session.close()
-        trans.rollback()
-        conn.close()
-
-
 def _row(db, **kwargs):
+    """A posting, stored. `db` is the conftest fixture: a clean database, skipped without one."""
     import uuid
 
+    from libs.db import insert
     from libs.db.models import CorpusJob
 
     kwargs.setdefault("source", "test")
-    row = CorpusJob(url=f"https://example.com/{uuid.uuid4()}", title="Engineer", **kwargs)
-    db.add(row)
-    db.flush()
-    return row
+    return insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", title="Engineer", **kwargs))
 
 
 def _survivors(db, filters):
-    from sqlalchemy import select
-
     from libs.db.models import CorpusJob
     from libs.tenant.filters import candidate_conditions
 
-    return set(db.scalars(select(CorpusJob.id).where(*candidate_conditions(filters))).all())
+    return set(db[CorpusJob.COLLECTION].distinct("_id", {"$and": candidate_conditions(filters)}))
 
 
 def test_a_posting_older_than_the_account_asked_for_never_reaches_the_model(db):
@@ -232,9 +208,7 @@ def test_an_undated_posting_is_aged_from_when_we_found_it(db):
 
     now = datetime.now(UTC)
     recent = _row(db, posted_at=None)
-    old = _row(db, posted_at=None)
-    old.first_seen_at = now - timedelta(hours=40)
-    db.flush()
+    old = _row(db, posted_at=None, first_seen_at=now - timedelta(hours=40))
 
     kept = _survivors(db, built(config(), max_age_hours=6))
     assert recent.id in kept, "found a moment ago, so there is nothing to drop it on"
@@ -243,19 +217,14 @@ def test_an_undated_posting_is_aged_from_when_we_found_it(db):
 
 # ── the corpus is shared, and every account reads all of it ───────────────────────────────────
 
-def test_every_account_is_scored_on_the_whole_corpus_whoever_fetched_it(db):
-    """No source is withheld from an account for how it was paid for.
+def test_the_filters_do_not_gate_on_source(db):
+    """No source is withheld by the filters for how it was paid for: that is one other place's job.
 
-    A read gate used to keep LinkedIn away from accounts with no proxy credential of their own, on
-    the grounds that somebody else's proxy paid to fetch it. The owner's decision on 2026-08-09 is
-    that the fetch cost is already sunk: the row is in the shared corpus, showing it to a second
-    reader costs nothing further, and withholding it cost far more. It was 72% of the corpus, and
-    the account it was withheld from had 8,918 rows to be scored against instead of 31,352.
-
-    The split that remains is the one that actually spends money, and it lives in the harvester:
-    an account with no proxy credential does not *cause* a LinkedIn fetch
-    (`services/harvester/linkedin.py` asks the credential store directly). It just reads what is
-    already there.
+    A read gate in the filters kept LinkedIn away from accounts with no proxy credential until the
+    owner removed it on 2026-08-09. Decision D3 brought the gate back on 2026-10-28, in exactly one
+    place — `libs.matching.matching_jobs` asks `TenantRepository.linkedin_visible`
+    (`tests/test_linkedin_gate.py`). These conditions must not ask a second time, or the two copies
+    will disagree (CLAUDE.md §1).
     """
     linkedin = _row(db, source="linkedin")
     open_board = _row(db, source="himalayas")
@@ -267,12 +236,8 @@ def test_every_account_is_scored_on_the_whole_corpus_whoever_fetched_it(db):
     assert {linkedin.id, open_board.id} <= set(kept)
 
 
-def test_no_source_is_a_reason_to_withhold_a_posting_already_scored(db):
-    """The delivery-side half of the same rule.
-
-    `candidate_conditions` keeps rows out of a fresh scoring pass; `unwanted` is what stops one
-    already scored from being sent. Both used to reject on source, so both have to stop.
-    """
+def test_no_source_is_a_reason_for_unwanted_to_refuse_a_posting(db):
+    """The other half of the same rule: `unwanted` judges what a person said, never the source."""
     filters = _filters_for_account_without_a_proxy(db)
 
     assert filters.unwanted({"source": "linkedin", "title": "Engineer"}) is None
@@ -283,16 +248,14 @@ def _filters_for_account_without_a_proxy(db):
     """A real account with no `proxy` secret — the case the old gate silenced."""
     import uuid
 
+    from libs.db import insert
     from libs.db.models import User
     from libs.tenant.filters import filters_for
     from libs.tenant.repository import TenantRepository
 
-    user = User(email=f"{uuid.uuid4()}@example.test", password_hash="x", status="active",
-                active=True)
-    db.add(user)
-    db.flush()
+    user = insert(db, User(email=f"{uuid.uuid4()}@example.test", password_hash="x", status="active",
+                           active=True))
     TenantRepository(db).save_config(user.id, config())
-    db.flush()
     return filters_for(db, user)
 
 
@@ -342,12 +305,19 @@ def test_a_date_only_posting_is_judged_on_when_we_found_it(db):
     now = datetime.now(UTC)
     midnight_today = now.replace(hour=0, minute=0, second=0, microsecond=0)
     # Stamped midnight, but we watched the board and saw it appear minutes ago.
-    row = _row(db, source="workday", posted_at=midnight_today)
-    row.first_seen_at = now - timedelta(minutes=10)
-    db.flush()
+    row = _row(db, source="workday", posted_at=midnight_today, first_seen_at=now - timedelta(minutes=10))
 
     assert row.id in _survivors(db, built(config(), max_age_hours=6)), (
         "a job we saw ten minutes ago is not stale because its source stamps dates")
+
+    # Workday's own floor is a week, which would admit the row above on either clock. On a source
+    # with the 24-hour default, a date two days back admits it only if the clock is first_seen_at.
+    two_days_back = midnight_today - timedelta(days=2)
+    dated = _row(db, posted_at=two_days_back, first_seen_at=now - timedelta(minutes=10))
+    timed = _row(db, posted_at=two_days_back + timedelta(hours=9), first_seen_at=now - timedelta(minutes=10))
+    kept = _survivors(db, built(config(), max_age_hours=6))
+    assert dated.id in kept, "a midnight stamp is a date, and the row is judged on when we saw it"
+    assert timed.id not in kept, "a real time two days back is two days old however recently we saw it"
 
 
 def test_a_real_timestamp_is_still_judged_on_the_posting_time(db):
@@ -355,9 +325,8 @@ def test_a_real_timestamp_is_still_judged_on_the_posting_time(db):
     from datetime import UTC, datetime, timedelta
 
     now = datetime.now(UTC)
-    old = _row(db, source="linkedin", posted_at=now - timedelta(hours=30))
-    old.first_seen_at = now - timedelta(minutes=5)
-    db.flush()
+    old = _row(db, source="linkedin", posted_at=now - timedelta(hours=30),
+               first_seen_at=now - timedelta(minutes=5))
 
     assert old.id not in _survivors(db, built(config(), max_age_hours=6)), (
         "seeing an old posting recently does not make it fresh"
@@ -375,25 +344,22 @@ def test_the_delivery_floor_is_the_operator_s_to_change(db):
     from datetime import UTC, datetime, timedelta
 
     from libs import settings
+    from libs.db import insert
     from libs.db.models import User
     from libs.tenant.filters import filters_for
     from libs.tenant.repository import TenantRepository
 
     old = _row(db, source="greenhouse",
                posted_at=datetime.now(UTC) - timedelta(hours=100), first_seen_at=datetime.now(UTC))
-    db.flush()
 
-    user = User(email=f"{uuid_hex()}@example.test", password_hash="x", status="active", active=True)
-    db.add(user)
-    db.flush()
+    user = insert(db, User(email=f"{uuid_hex()}@example.test", password_hash="x", status="active",
+                           active=True))
     TenantRepository(db).save_config(user.id, config())
-    db.flush()
 
     # Measured default for greenhouse is 72 hours, so a 100-hour-old posting is out.
     assert old.id not in _survivors(db, filters_for(db, user))
 
     settings.put(db, "source_min_age_hours", {"greenhouse": 168})
-    db.flush()
 
     assert old.id in _survivors(db, filters_for(db, user)), (
         "raising the floor in the panel must change what is actually delivered")

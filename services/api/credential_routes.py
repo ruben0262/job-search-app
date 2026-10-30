@@ -14,7 +14,6 @@ from libs.credentials import validate_credential
 from libs.db import get
 from libs.db.models import ProxyCredential, User
 from libs.db.models.user import SECRET_KINDS
-from libs.llm.client import CLAUDE_KINDS
 from libs.obs import audit
 from libs.secrets import SecretStore, redacting
 from services.api.deps import current_user, get_db, get_store, rate_limit
@@ -76,15 +75,8 @@ class StoredCredential(BaseModel):
     updated_at: str | None
 
 
-class Requirements(BaseModel):
-    claude: bool
-    telegram_bot: bool
-    proxy: bool
-
-
 class CredentialList(BaseModel):
     credentials: list[StoredCredential]
-    requirements: Requirements
 
 
 @router.get("")
@@ -94,15 +86,12 @@ def list_credentials(db: Database = Depends(get_db),
     from libs.tenant.repository import TenantRepository  # noqa: PLC0415 - avoids an import cycle
 
     stored = TenantRepository(db).secret_metadata(user_id)
-    kinds = {row.kind for row in stored}
     return CredentialList(
         credentials=[
             StoredCredential(kind=row.kind, last_4=row.last_4,
                              validated=row.validated_at is not None,
                              updated_at=row.updated_at.isoformat() if row.updated_at else None)
-            for row in stored],
-        requirements=Requirements(claude=bool(kinds & set(CLAUDE_KINDS)),
-                                  telegram_bot="telegram_bot" in kinds, proxy="proxy" in kinds))
+            for row in stored])
 
 
 # The broker owns the sign-in processes; see `services/oauthbroker`.

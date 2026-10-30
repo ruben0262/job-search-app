@@ -37,7 +37,6 @@ from libs.ops.latency import (
 )
 from libs.ops.pipeline import pipeline
 from libs.profiles.repository import ProfileFiles
-from libs.secrets import SecretStore
 from libs.settings import (
     DEFAULT_SOURCE_MIN_AGE_HOURS,
     DEFAULTS,
@@ -275,7 +274,7 @@ def delete_user(user_id: _uuid.UUID, body: DeleteConfirmation, db: Database = De
             detail="That address does not match the account. Nothing was deleted.")
 
     email = target.email
-    SecretStore(db).purge(user_id)
+    # Credentials and the key that reads them included: both are this account's documents.
     delete_account(db, user_id)
     audit(logger, "admin.user_deleted", user=admin.id, subject=user_id)
     logger.warning("admin: %s deleted account %s (%s)", admin.id, user_id, email)

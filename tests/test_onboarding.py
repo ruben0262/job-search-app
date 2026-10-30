@@ -10,10 +10,7 @@ import pytest
 pytest.importorskip("fastapi")
 
 from libs.contracts.onboarding import IdentitySchema
-
-pytestmark_db = pytest.mark.skipif(
-    not os.environ.get("DATABASE_URL"), reason="DATABASE_URL not set (no live Postgres)")
-
+from tests.conftest import needs_db
 
 # ── the identity contract (no database) ───────────────────────────────────────────────────────
 
@@ -47,39 +44,22 @@ def test_the_same_link_twice_is_stored_once():
 # ── the routes ────────────────────────────────────────────────────────────────────────────────
 
 @pytest.fixture()
-def api():
+def api(db, monkeypatch):
     os.environ.setdefault("ACCESS_TOKEN_SECRET", "test-" + "x" * 40)
-    os.environ["DISABLE_RATE_LIMIT"] = "1"
+    monkeypatch.setenv("DISABLE_RATE_LIMIT", "1")
 
     from fastapi.testclient import TestClient
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import Session
 
     from libs.auth.access import issue_access_token
+    from libs.db import insert
     from libs.db.models import User
-    from services.api import deps
     from services.api.app import app
 
-    engine = create_engine(os.environ["DATABASE_URL"])
-    conn = engine.connect()
-    trans = conn.begin()
-    session = Session(bind=conn, join_transaction_mode="create_savepoint")
+    user = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active"))
 
-    user = User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active")
-    session.add(user)
-    session.flush()
-
-    app.dependency_overrides[deps.get_db] = lambda: session
-    try:
-        with TestClient(app, base_url="https://testserver") as http:
-            http.cookies.set("access_token", issue_access_token(user.id, uuid.uuid4()), path="/")
-            yield http, session, user
-    finally:
-        app.dependency_overrides.clear()
-        session.close()
-        trans.rollback()
-        conn.close()
-        os.environ.pop("DISABLE_RATE_LIMIT", None)
+    with TestClient(app, base_url="https://testserver") as http:
+        http.cookies.set("access_token", issue_access_token(user.id, uuid.uuid4()), path="/")
+        yield http, db, user
 
 
 CONFIG = {"sections": [{"platform": "all", "keywords": ["backend engineer"],
@@ -100,7 +80,7 @@ def _upload_cv(http, text: str = CV):
                      files={"file": ("cv.txt", text.encode(), "text/plain")})
 
 
-@pytestmark_db
+@needs_db
 def test_a_new_account_is_sent_to_the_first_of_three_screens(api):
     """Upload, confirm what we found, done (ROADMAP Phase 8). Nothing else stands in the way."""
     http, _, _ = api
@@ -110,14 +90,14 @@ def test_a_new_account_is_sent_to_the_first_of_three_screens(api):
     assert [page["key"] for page in body["pages"]] == ["documents", "review"]
 
 
-@pytestmark_db
+@needs_db
 def test_uploading_a_cv_moves_them_on_to_the_review(api):
     http, _, _ = api
     _upload_cv(http)
     assert http.get("/onboarding/state").json()["next_page"] == "review"
 
 
-@pytestmark_db
+@needs_db
 def test_the_review_arrives_filled_in_from_their_cv(api):
     """Confirm what we found, rather than type it: every field here was read off the CV."""
     http, _, _ = api
@@ -141,7 +121,7 @@ def test_the_review_arrives_filled_in_from_their_cv(api):
     assert http.get("/onboarding/config").json()["config"] == review["config"]
 
 
-@pytestmark_db
+@needs_db
 def test_what_they_saved_wins_over_what_their_cv_says(api):
     http, _, _ = api
     _upload_cv(http)
@@ -153,7 +133,7 @@ def test_what_they_saved_wins_over_what_their_cv_says(api):
     assert review["config"]["sections"][0]["locations"] == ["europe"]
 
 
-@pytestmark_db
+@needs_db
 def test_the_pickers_are_served_every_place_language_and_policy_with_a_label(api):
     """**The bug this closes**: the location and language pickers were empty for two months.
 
@@ -173,7 +153,7 @@ def test_the_pickers_are_served_every_place_language_and_policy_with_a_label(api
     assert {"value": "united_kingdom", "label": "United Kingdom", "hint": None} in choices["locations"]
 
 
-@pytestmark_db
+@needs_db
 def test_the_place_limit_the_page_is_served_is_the_one_a_save_enforces(api):
     """The picker stops at the served number, so it must be the number that refuses a save — a copy
     of it in the page would agree today and drift tomorrow (CLAUDE.md §5)."""
@@ -192,12 +172,13 @@ def test_the_place_limit_the_page_is_served_is_the_one_a_save_enforces(api):
     assert save(most + 1) == 422
 
 
-@pytestmark_db
+@needs_db
 def test_finishing_needs_a_cv_a_name_and_one_green_word_and_nothing_else(api):
     """No Telegram, no Claude key, no proxy: none of them is needed to see a matching job."""
-    from libs.db.models import UserSecret
+    from libs.db import get
+    from libs.db.models import User, UserSecret
 
-    http, session, user = api
+    http, db, user = api
     response = http.post("/onboarding/complete")
     assert response.status_code == 409
     assert response.json()["detail"]["missing"] == ["documents", "review"]
@@ -207,26 +188,28 @@ def test_finishing_needs_a_cv_a_name_and_one_green_word_and_nothing_else(api):
     http.put("/onboarding/config", json=CONFIG)
 
     assert http.post("/onboarding/complete").json() == {"status": "complete"}
-    session.flush()
-    assert user.onboarding_completed_at is not None
-    assert session.query(UserSecret).filter_by(user_id=user.id).count() == 0
-    assert user.telegram_status == "unconfigured"
+    stored = get(db, User, user.id)
+    assert stored.onboarding_completed_at is not None
+    assert db[UserSecret.COLLECTION].count_documents({"user_id": user.id}) == 0
+    assert stored.telegram_status == "unconfigured"
 
 
-@pytestmark_db
+@needs_db
 def test_finishing_does_not_start_the_notifier(api):
     """`active` means the scheduler may dispatch."""
-    http, session, user = api
+    from libs.db import get
+    from libs.db.models import User
+
+    http, db, user = api
     _upload_cv(http)
     http.put("/onboarding/identity", json={"full_name": "Alice Example"})
     http.put("/onboarding/config", json=CONFIG)
 
     assert http.post("/onboarding/complete").json()["status"] == "complete"
-    session.flush()
-    assert user.active is False
+    assert get(db, User, user.id).active is False
 
 
-@pytestmark_db
+@needs_db
 def test_deleting_the_cv_reopens_its_page(api):
     """The reason completion is derived rather than stored."""
     http, _, _ = api
@@ -243,24 +226,20 @@ def test_deleting_the_cv_reopens_its_page(api):
     assert body["next_page"] == "documents"
 
 
-@pytestmark_db
+@needs_db
 def test_the_about_you_text_replaces_rather_than_accumulates(api):
     """It is one document the user edits, and a sentence is enough."""
-    from sqlalchemy import func, select
-
     from libs.db.models import UserDocument
 
-    http, session, user = api
+    http, db, user = api
     http.put("/onboarding/history", json={"text": "First version. " * 20})
     assert http.put("/onboarding/history", json={"text": "Night shifts suit me."}).status_code == 200
-    session.flush()
 
-    assert session.scalar(select(func.count()).select_from(UserDocument)
-                          .where(UserDocument.user_id == user.id)) == 1
+    assert db[UserDocument.COLLECTION].count_documents({"user_id": user.id}) == 1
     assert http.get("/onboarding/history").json()["text"] == "Night shifts suit me."
 
 
-@pytestmark_db
+@needs_db
 def test_the_config_is_validated_server_side(api):
     """The form is the usability layer; a write path that bypassed it must not bypass the bounds."""
     http, _, _ = api
@@ -268,7 +247,7 @@ def test_the_config_is_validated_server_side(api):
     assert http.put("/onboarding/config", json=over_cap).status_code == 422
 
 
-@pytestmark_db
+@needs_db
 def test_onboarding_requires_signing_in(api):
     http, _, _ = api
     http.cookies.clear()
@@ -277,7 +256,7 @@ def test_onboarding_requires_signing_in(api):
 
 # ── the schema payloads nobody reads (2026-08-11) ──────────────────────────────────────────────
 
-@pytestmark_db
+@needs_db
 def test_the_identity_and_config_routes_return_the_users_own_data(api):
     """**Written before removing the `schema` key from these payloads**, to pin what must survive.
 
@@ -289,7 +268,7 @@ def test_the_identity_and_config_routes_return_the_users_own_data(api):
     What these routes are actually for is the account's own stored values. That is what this asserts,
     so the removal is provably a removal of the unused half.
     """
-    http, _session, _user = api
+    http, _db, _user = api
     http.put("/onboarding/identity", json={"full_name": "Alice Example"})
     http.put("/onboarding/config", json=CONFIG)
 
@@ -301,7 +280,7 @@ def test_the_identity_and_config_routes_return_the_users_own_data(api):
     assert config["config"]["sections"][0]["keywords"] == CONFIG["sections"][0]["keywords"]
 
 
-@pytestmark_db
+@needs_db
 def test_saving_your_links_marks_the_profile_files_as_behind(api):
     """**The bug this closes, end to end through the real route.**
 
@@ -312,28 +291,29 @@ def test_saving_your_links_marks_the_profile_files_as_behind(api):
     Asserted through the endpoint rather than by calling the stamp directly: the failure was that
     nothing on the save path set it, so a test that sets it itself would have passed throughout.
     """
+    from libs.db import get
     from libs.db.models import User
 
-    http, session, user = api
-    assert session.get(User, user.id).hard_data_changed_at is None
+    http, db, user = api
+    assert get(db, User, user.id).hard_data_changed_at is None
 
     http.put("/onboarding/identity",
              json={"full_name": "Alice Example",
                    "links": [{"url": "https://github.com/alice"},
                              {"url": "https://alice.dev"}]})
-    session.flush()
 
-    assert session.get(User, user.id).hard_data_changed_at is not None, (
+    assert get(db, User, user.id).hard_data_changed_at is not None, (
         "saving links left nothing to compare the profile files against")
 
 
-@pytestmark_db
+@needs_db
 def test_saving_your_search_settings_marks_the_profile_files_as_behind(api):
     """`label.md` and the role angles were written against the previous keywords."""
+    from libs.db import get
     from libs.db.models import User
 
-    http, session, user = api
+    http, db, user = api
+    assert get(db, User, user.id).hard_data_changed_at is None, "the premise"
     http.put("/onboarding/config", json=CONFIG)
-    session.flush()
 
-    assert session.get(User, user.id).hard_data_changed_at is not None
+    assert get(db, User, user.id).hard_data_changed_at is not None

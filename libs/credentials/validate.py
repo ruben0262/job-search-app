@@ -11,7 +11,6 @@ from libs.secrets import redact
 ANTHROPIC_URL = "https://api.anthropic.com/v1/models"
 GEMINI_MODELS_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 OPENAI_MODELS_URL = "https://api.openai.com/v1/models"
-TELEGRAM_URL = "https://api.telegram.org/bot{token}/{method}"
 
 TIMEOUT = 15.0
 
@@ -34,7 +33,6 @@ def validate_credential(kind: str, value: str, *,
         "claude_oauth": _validate_claude_oauth,
         "gemini_api": _validate_gemini,
         "openai_api": _validate_openai,
-        "telegram_bot": _validate_telegram,
         "proxy": _validate_proxy,
     }
     if kind not in validators:
@@ -96,23 +94,6 @@ def _validate_openai(value: str, http: httpx.Client) -> ValidationResult:
     """Listing the models, which costs nothing."""
     return _key_result(http.get(OPENAI_MODELS_URL, headers={"Authorization": f"Bearer {value}"}),
                        "OpenAI")
-
-
-def _validate_telegram(value: str, http: httpx.Client) -> ValidationResult:
-    """`getMe`. Returns the bot's username so the form can show which bot was connected."""
-    response = http.get(TELEGRAM_URL.format(token=value, method="getMe"))
-    if response.status_code == 401:
-        return ValidationResult(False, "Telegram rejected this token — check it was copied in full "
-                                       "from BotFather")
-    if response.status_code != 200:
-        return ValidationResult(False, f"Telegram answered {response.status_code} while checking")
-
-    payload = response.json()
-    if not payload.get("ok"):
-        return ValidationResult(
-            False, redact(payload.get("description", "Telegram rejected this token")))
-    username = (payload.get("result") or {}).get("username", "")
-    return ValidationResult(True, extra={"bot_username": username} if username else None)
 
 
 def _validate_proxy(value: str, http: httpx.Client) -> ValidationResult:

@@ -3,14 +3,14 @@ from __future__ import annotations
 
 import os
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 
 import pytest
 
-pytest.importorskip("fastapi")
+from libs.db import insert, now
+from libs.db.models import CorpusJob, User, UserJobState
 
-pytestmark = pytest.mark.skipif(
-    not os.environ.get("DATABASE_URL"), reason="DATABASE_URL not set (no live Postgres)")
+pytest.importorskip("fastapi")
 
 # A stored config as accounts actually have them, retired field and all.
 CONFIG = {"sections": [{"platform": "all", "keywords": ["backend engineer"]}],
@@ -18,61 +18,44 @@ CONFIG = {"sections": [{"platform": "all", "keywords": ["backend engineer"]}],
 
 
 @pytest.fixture()
-def api():
+def api(db, monkeypatch):
     os.environ.setdefault("ACCESS_TOKEN_SECRET", "test-" + "x" * 40)
-    os.environ["DISABLE_RATE_LIMIT"] = "1"
+    monkeypatch.setenv("DISABLE_RATE_LIMIT", "1")
 
     from fastapi.testclient import TestClient
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import Session
 
     from libs.auth.access import issue_access_token
-    from libs.db.models import CorpusJob, User, UserConfig
-    from services.api import deps
+    from libs.db.models import UserConfig
     from services.api.app import app
 
-    engine = create_engine(os.environ["DATABASE_URL"])
-    conn = engine.connect()
-    trans = conn.begin()
-    session = Session(bind=conn, join_transaction_mode="create_savepoint")
+    user = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active",
+                           active=True, full_name="Alice Example", telegram_status="connected",
+                           telegram_chat_id="1", onboarding_completed_at=now()))
+    insert(db, UserConfig(user_id=user.id, config=CONFIG, schema_version=2))
 
-    user = User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active",
-                active=True, full_name="Alice Example", telegram_status="connected",
-                telegram_chat_id="1", onboarding_completed_at=datetime.now(UTC))
-    session.add(user)
-    session.flush()
-    session.add(UserConfig(user_id=user.id, config=CONFIG, schema_version=2))
-
-    jobs = [CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
-                      title=title, description="we build things", is_remote=True)
+    jobs = [insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
+                                 title=title, description="we build things", is_remote=True))
             for title in ("Backend Engineer", "Senior Backend Engineer", "Registered Nurse")]
-    session.add_all(jobs)
-    session.flush()
 
-    app.dependency_overrides[deps.get_db] = lambda: session
-    try:
-        with TestClient(app, base_url="https://testserver") as http:
-            http.cookies.set("access_token", issue_access_token(user.id, uuid.uuid4()), path="/")
-            yield http, session, user, jobs
-    finally:
-        app.dependency_overrides.clear()
-        session.close()
-        trans.rollback()
-        conn.close()
-        os.environ.pop("DISABLE_RATE_LIMIT", None)
+    with TestClient(app, base_url="https://testserver") as http:
+        http.cookies.set("access_token", issue_access_token(user.id, uuid.uuid4()), path="/")
+        yield http, db, user, jobs
 
 
 def _ids(body: dict) -> list[int]:
     return [job["id"] for job in body["jobs"]]
 
 
+def _change(db, user, **fields) -> None:
+    db[User.COLLECTION].update_one({"_id": user.id}, {"$set": fields})
+
+
 # ── the front page ────────────────────────────────────────────────────────────────────────────
 
 def test_an_unfinished_signup_gets_the_onboarding_state_and_nothing_else(api):
     """Empty panels read as a broken product rather than an unfinished signup."""
-    http, session, user, _ = api
-    user.onboarding_completed_at = None
-    session.flush()
+    http, db, user, _ = api
+    _change(db, user, onboarding_completed_at=None)
 
     body = http.get("/dashboard").json()
     assert body["stage"] == "onboarding"
@@ -83,13 +66,8 @@ def test_an_unfinished_signup_gets_the_onboarding_state_and_nothing_else(api):
 def test_the_front_page_counts_applications_and_never_runs_the_match(api, monkeypatch):
     """The jobs page counts its own list, so the dashboard every page waits for must not run a second
     match: that was 150 ms of a 13 ms answer (median, 2,000 rows)."""
-    from sqlalchemy import func
-
-    from libs.db.models import UserJobState
-
-    http, session, user, jobs = api
-    session.add(UserJobState(user_id=user.id, job_id=jobs[0].id, applied_at=func.now()))
-    session.flush()
+    http, db, user, jobs = api
+    insert(db, UserJobState(user_id=user.id, job_id=jobs[0].id, applied_at=now()))
 
     def no_match(*_args, **_kwargs):
         raise AssertionError("the dashboard ran the match")
@@ -102,9 +80,8 @@ def test_the_front_page_counts_applications_and_never_runs_the_match(api, monkey
 
 def test_a_stopped_telegram_is_a_reconnect_offer_not_an_error(api):
     """Their old per-user bot, or they blocked the platform's: the page offers to reconnect."""
-    http, session, user, _ = api
-    user.telegram_status = "broken"
-    session.flush()
+    http, db, user, _ = api
+    _change(db, user, telegram_status="broken")
 
     banners = http.get("/dashboard").json()["banners"]
     assert [banner["key"] for banner in banners] == ["telegram_broken"]
@@ -115,24 +92,21 @@ def test_with_no_alerts_at_all_the_page_offers_them_quietly(api):
     """Alerts are optional, and a browser is a channel: "nothing is being delivered" was wrong twice."""
     from libs.db.models import PushSubscription
 
-    http, session, user, _ = api
-    user.telegram_status, user.telegram_chat_id = "unconfigured", None
-    session.flush()
+    http, db, user, _ = api
+    _change(db, user, telegram_status="unconfigured", telegram_chat_id=None)
     banners = http.get("/dashboard").json()["banners"]
     assert [(banner["key"], banner["level"]) for banner in banners] == [("no_alerts", "info")]
 
-    session.add(PushSubscription(user_id=user.id, endpoint=f"https://push.example/{uuid.uuid4()}",
-                                 p256dh="key", auth="auth"))
-    session.flush()
+    insert(db, PushSubscription(user_id=user.id, endpoint=f"https://push.example/{uuid.uuid4()}",
+                                p256dh="key", auth="auth"))
     assert http.get("/dashboard").json()["banners"] == [], "notifications on in a browser are enough"
 
 
 def test_a_paused_account_is_told_it_is_paused(api):
     """It used to be said only to accounts with a trained model, which after Phase 8 is nobody."""
-    http, session, user, _ = api
+    http, db, user, _ = api
     assert http.get("/dashboard").json()["banners"] == [], "alerts on and working: nothing to say"
-    user.active = False
-    session.flush()
+    _change(db, user, active=False)
 
     keys = {banner["key"] for banner in http.get("/dashboard").json()["banners"]}
     assert keys == {"paused"}
@@ -143,7 +117,7 @@ def test_the_front_page_says_whether_ai_can_write_for_them_and_on_whose_key(api,
     from libs.db.models import AiRequest
     from libs.secrets import KeyRing, SecretStore, generate_key
 
-    http, session, user, _ = api
+    http, db, user, _ = api
     monkeypatch.delenv("PLATFORM_AI_PROVIDER", raising=False)
     monkeypatch.delenv("PLATFORM_AI_KEY", raising=False)
     ai = http.get("/dashboard").json()["ai"]
@@ -152,15 +126,14 @@ def test_the_front_page_says_whether_ai_can_write_for_them_and_on_whose_key(api,
 
     monkeypatch.setenv("PLATFORM_AI_PROVIDER", "gemini")
     monkeypatch.setenv("PLATFORM_AI_KEY", "AIza" + "k" * 30)
-    session.add_all([AiRequest(user_id=user.id) for _ in range(3)])
-    session.flush()
+    for _ in range(3):
+        insert(db, AiRequest(user_id=user.id))
     ai = http.get("/dashboard").json()["ai"]
     assert (ai["payer"], ai["left"]) == ("platform", 17)
 
     kek = f"k1:{generate_key()}"
-    SecretStore(session, KeyRing.from_env({"SECRETS_KEK": kek})).put(
+    SecretStore(db, KeyRing.from_env({"SECRETS_KEK": kek})).put(
         user.id, "openai_api", "sk-proj-" + "o" * 30, validated=True)
-    session.flush()
     assert http.get("/dashboard").json()["ai"]["payer"] == "own", "their own key first, unlimited"
 
 
@@ -186,23 +159,17 @@ def test_green_words_pick_the_jobs_and_each_says_why(api):
 def test_a_red_word_takes_a_job_off_the_page(api):
     from libs.db.models import UserConfig
 
-    http, session, user, jobs = api
-    session.get(UserConfig, user.id).config = {"sections": [{
-        "platform": "all", "keywords": ["backend engineer"], "exclude_keywords": ["senior"]}]}
-    session.flush()
+    http, db, user, jobs = api
+    db[UserConfig.COLLECTION].update_one({"user_id": user.id}, {"$set": {"config": {"sections": [{
+        "platform": "all", "keywords": ["backend engineer"], "exclude_keywords": ["senior"]}]}}})
 
     assert _ids(http.get("/feed").json()) == [jobs[0].id]
 
 
 def test_a_dismissed_job_stays_off_the_page(api):
     """Dismissing has to mean something, or the button is a lie."""
-    from sqlalchemy import func
-
-    from libs.db.models import UserJobState
-
-    http, session, user, jobs = api
-    session.add(UserJobState(user_id=user.id, job_id=jobs[0].id, dismissed_at=func.now()))
-    session.flush()
+    http, db, user, jobs = api
+    insert(db, UserJobState(user_id=user.id, job_id=jobs[0].id, dismissed_at=now()))
 
     body = http.get("/feed").json()
     assert _ids(body) == [jobs[1].id]
@@ -231,13 +198,9 @@ def test_the_search_box_reaches_titles_and_links(api):
 
 
 def test_remote_only_narrows_the_matches_and_unknown_is_not_remote(api):
-    from libs.db.models import CorpusJob
-
-    http, session, _, jobs = api
-    unknown = CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
-                        title="Backend Engineer II", description="x", is_remote=None)
-    session.add(unknown)
-    session.flush()
+    http, db, _, jobs = api
+    unknown = insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
+                                   title="Backend Engineer II", description="x", is_remote=None))
 
     assert unknown.id in _ids(http.get("/feed").json())
     assert set(_ids(http.get("/feed?remote=true").json())) == {jobs[0].id, jobs[1].id}
@@ -245,9 +208,9 @@ def test_remote_only_narrows_the_matches_and_unknown_is_not_remote(api):
 
 def test_a_salary_in_the_description_reaches_the_row_without_the_description(api):
     """The one thing the description holds that the table wants, extracted server-side for free."""
-    http, session, _, jobs = api
-    jobs[0].description = "Backend role paying €60,000 - €80,000 per year. We build things."
-    session.flush()
+    http, db, _, jobs = api
+    db[CorpusJob.COLLECTION].update_one({"_id": jobs[0].id}, {"$set": {
+        "description": "Backend role paying €60,000 - €80,000 per year. We build things."}})
 
     row = next(job for job in http.get("/feed").json()["jobs"] if job["id"] == jobs[0].id)
     assert row["salary"]["min"] == 60000
@@ -258,17 +221,13 @@ def test_a_salary_in_the_description_reaches_the_row_without_the_description(api
 
 def test_equal_scores_are_newest_first(api):
     """Freshness breaks a tie: the order `libs.matching` gives, not a second one made up here."""
-    from libs.db.models import CorpusJob
-
-    http, session, _, _ = api
-    now = datetime.now(UTC)
-    rows = {age: CorpusJob(url=f"https://example.test/tie-{age}", source="test",
-                           title="Backend Engineer", description="x", is_remote=True,
-                           first_seen_at=now - timedelta(hours=age))
+    http, db, _, _ = api
+    moment = now()
+    rows = {age: insert(db, CorpusJob(url=f"https://example.test/tie-{age}", source="test",
+                                      title="Backend Engineer", description="x", is_remote=True,
+                                      first_seen_at=moment - timedelta(hours=age)))
             # The older one first, so its id is the lower: insertion order cannot pass for freshness.
             for age in (5, 1)}
-    session.add_all(rows.values())
-    session.flush()
 
     order = [i for i in _ids(http.get("/feed").json()) if i in {r.id for r in rows.values()}]
     assert order == [rows[1].id, rows[5].id]
@@ -287,7 +246,7 @@ def test_an_alerts_link_finds_its_job_while_it_is_still_theirs(api):
 
 
 def test_i_applied_counts_on_the_front_page_and_can_be_taken_back(api):
-    http, _session, _user, jobs = api
+    http, db, user, jobs = api
     job = jobs[0]
 
     assert http.put(f"/jobs/{job.id}/applied").json() == {
@@ -297,10 +256,12 @@ def test_i_applied_counts_on_the_front_page_and_can_be_taken_back(api):
 
     assert http.delete(f"/jobs/{job.id}/applied").json()["applied"] is False
     assert http.get("/dashboard").json()["applied"] == 0
+    assert db[UserJobState.COLLECTION].count_documents({"user_id": user.id}) == 1, (
+        "one row per person per job, however many times it is marked")
 
 
 def test_a_hidden_job_leaves_the_jobs_page_until_it_is_shown_again(api):
-    http, _session, _user, jobs = api
+    http, _db, _user, jobs = api
     job = jobs[0]
 
     def listed():
@@ -314,6 +275,6 @@ def test_a_hidden_job_leaves_the_jobs_page_until_it_is_shown_again(api):
 
 
 def test_only_a_real_job_and_the_two_marks_are_accepted(api):
-    http, _session, _user, jobs = api
+    http, _db, _user, jobs = api
     assert http.put("/jobs/999999999/applied").status_code == 404
     assert http.put(f"/jobs/{jobs[0].id}/sent").status_code == 422

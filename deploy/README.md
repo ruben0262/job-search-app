@@ -78,29 +78,57 @@ deploy/
 └── scripts/               operational one-shots run on the VPS
 ```
 
-## Upgrading the live box to Phase 8 — once
+## Switching the live box to MongoDB — once (Phases 8 and 9 together)
 
-The box still runs the pre-Phase-8 services. `docker compose up` cannot infer the steps below: it
-does not stop containers whose service moved to another profile, and it does not empty a queue lane
-nothing drains any more. In this order:
+The box still runs the pre-Phase-8 services on Postgres. This moves it to the current code on MongoDB
+Atlas, copying the **accounts only** (owner, 2026-10-30): people, logins, settings, words, documents,
+profile files, credentials, browsers, plus the operator's settings, keywords and company boards.
+Postings are collected again within hours; applied and hidden marks, and sessions, are not copied.
+In this order:
 
-1. **Back up first**: `./.venv/bin/python deploy/scripts/backup.py`.
-2. **New settings in `deploy/.env`**: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`,
-   `TELEGRAM_WEBHOOK_SECRET` (see Telegram below), the `VAPID_*` trio (`.env.example` has the one-line
-   generator), and — for the AI allowance and the support chat — `PLATFORM_AI_PROVIDER` and
-   `PLATFORM_AI_KEY` (a **paid** key; leave both empty and only people's own keys write AI documents).
-   The notifier now requires `PUBLIC_URL` and no longer receives `SECRETS_KEK`; the harvester no
-   longer needs `EMBEDDER_URL`.
-3. **Schema**: `./.venv/bin/alembic upgrade head` (to `ee2add9ee95f` or later).
-4. **Stop what is switched off**: the five services moved to the `ml` profile keep running until
-   removed — `docker compose -f deploy/compose.yml rm -sf capture setupagent labeller scorer trainer`.
-5. **Empty the lanes nothing drains**: rows queued for them would raise `stalled:<lane>` warnings for
-   ever. `DELETE FROM jobs WHERE lane IN ('score','label','train','process','setup') AND state = 'ready';`
-6. **Bring the rest up**: `docker compose -f deploy/compose.yml --profile full up -d --build`.
+1. **On the old code, back up and finish the Postgres schema.** The copy reads exactly one schema:
+   ```bash
+   git fetch && git checkout model-on-postgres
+   set -a && . deploy/.env && set +a
+   export DATABASE_URL="postgresql+psycopg://jobsearch:${POSTGRES_PASSWORD}@127.0.0.1:5432/jobsearch"
+   ./.venv/bin/python deploy/scripts/backup.py --out ~/backups      # pg_dump, verified
+   ./.venv/bin/alembic upgrade head                                 # to 3c7d1e9a5b20
+   ```
+2. **Stop everything that writes**: `sudo systemctl stop harvester.timer backup.timer health.timer`,
+   then `docker compose -f deploy/compose.yml --profile full --profile ml stop`. Postgres keeps running
+   for the copy.
+3. **Atlas**: allow this box's public address under Network Access (and nothing wider), then add
+   `MONGODB_URI` and `MONGODB_DB` to `deploy/.env` (`.env.example` says where to find them). Also the
+   Phase 8 settings: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`, `TELEGRAM_WEBHOOK_SECRET`, the
+   `VAPID_*` trio, `PUBLIC_URL`, and — for the AI allowance and the help chat — `PLATFORM_AI_PROVIDER`
+   and `PLATFORM_AI_KEY` (a **paid** key; leave both empty and only people's own keys write AI documents).
+4. **The new code, and the copy** — a dry run first; it reads and converts everything, writes nothing:
+   ```bash
+   git checkout main
+   ./.venv/bin/pip install -r requirements-dev.txt "psycopg[binary]"
+   set -a && . deploy/.env && set +a
+   export POSTGRES_URL="postgresql://jobsearch:${POSTGRES_PASSWORD}@127.0.0.1:5432/jobsearch"
+   ./.venv/bin/python deploy/scripts/copy_accounts.py --dry-run
+   ./.venv/bin/python deploy/scripts/copy_accounts.py
+   ./.venv/bin/python deploy/scripts/show_accounts.py               # the same people, in MongoDB
+   ```
+5. **Retire the old containers, keep Postgres's data**: `docker rm -f` the five switched-off services
+   (`job-search-platform-{capture,setupagent,labeller,scorer,trainer}-1`), then
+   `docker stop job-search-platform-postgres-1`. Its volume stays for two weeks as the way back.
+6. **Deploy**: `deploy/deploy.sh` — it builds, applies the schema (`python -m libs.db --prune`) and
+   recreates. Then `sudo deploy/install-units.sh` (the backup and health units changed) and start the
+   timers again.
 7. **Register the Telegram webhook** (below), then check: `/health`, `deploy/scripts/check_health.py`.
-8. **Tell the existing accounts** two things: press **Start** in the platform bot once (their own
-   bots no longer deliver), and agree once more before an AI document — the disclosure now names
-   Google and OpenAI, so its version moved.
+8. **Tell the existing accounts** three things: sign in once more (sessions were not copied); press
+   **Start** in the platform bot once if they used a bot of their own; and agree once more before an AI
+   document — the disclosure now names Google and OpenAI.
+9. **Afterwards**: change the Atlas database user's password (it has been shared in a chat) and update
+   `deploy/.env`. After two quiet weeks, delete the old database:
+   `docker rm job-search-platform-postgres-1 && docker volume rm job-search-platform_pgdata`, and drop
+   `POSTGRES_PASSWORD` from `deploy/.env`.
+
+**The way back**, while the volume exists: `git checkout model-on-postgres`, `docker start
+job-search-platform-postgres-1`, `deploy/deploy.sh`. Anything written to MongoDB meanwhile stays there.
 
 ## Running the platform
 
@@ -117,7 +145,7 @@ cp deploy/.env.example deploy/.env      # first time only
 chmod 600 deploy/.env
 ```
 
-Fill in `POSTGRES_PASSWORD`, `SECRETS_KEK`, `ACCESS_TOKEN_SECRET`, `TUNNEL_TOKEN` and the `SMTP_*`
+Fill in `MONGODB_URI`, `SECRETS_KEK`, `ACCESS_TOKEN_SECRET`, `TUNNEL_TOKEN` and the `SMTP_*`
 block. **`SECRETS_KEK` is the one that cannot be regenerated** — every stored credential is sealed
 with it, and losing it means every user re-enters every secret.
 
@@ -134,11 +162,9 @@ curl -s localhost:8080/health          # expect verified: true
 ### 3. The platform
 
 ```bash
-# Postgres — the default, and safe to run any time.
-docker compose -f deploy/compose.yml up -d
-
-# Schema. Host-side, so it needs DATABASE_URL in the environment (see below).
-./.venv/bin/alembic upgrade head
+# The database is MongoDB Atlas, off this box. The schema — safe to run any time, and every service
+# applies it again as it starts. Needs MONGODB_URI in the environment (see below).
+./.venv/bin/python -m libs.db
 
 # Everything else: the API, the site, the tunnel, CV building and delivery.
 docker compose -f deploy/compose.yml --profile full up -d --build
@@ -160,7 +186,7 @@ curl -s https://mahoraga-app.rubenlekli.com/health          # {"status":"ok"}
 ./.venv/bin/python deploy/scripts/show_accounts.py
 ```
 
-### Host-side scripts need `DATABASE_URL`
+### Host-side scripts need `MONGODB_URI`
 
 Nothing sets it for you. The containers get it from `compose.yml`; a shell does not, and the failure
 is a clear `RuntimeError` rather than a silent default pointing at the wrong database.
@@ -168,11 +194,7 @@ is a clear `RuntimeError` rather than a silent default pointing at the wrong dat
 ```bash
 cd ~/job-search-app
 set -a && . deploy/.env && set +a
-export DATABASE_URL="postgresql+psycopg://jobsearch:${POSTGRES_PASSWORD}@127.0.0.1:5432/jobsearch"
 ```
-
-`127.0.0.1` rather than `postgres`: the compose service name only resolves inside the network, and
-the loopback mapping exists for exactly this.
 
 ### What runs where
 
@@ -233,7 +255,7 @@ Driven by [`harvester.timer`](harvester.timer) every 15 minutes. Exit codes are 
 | Code | Meaning |
 |---|---|
 | 0 | A cycle ran — or another cycle held the lock and this tick skipped |
-| 1 | The cycle raised — a missing `DATABASE_URL` included |
+| 1 | The cycle raised — a missing `MONGODB_URI` included |
 
 There is no 2 any more: it meant "no `EMBEDDER_URL`", and nothing embeds (ROADMAP Phase 8).
 
@@ -266,8 +288,9 @@ it is personal.
   ```
   Without `--no-deps`, Compose helpfully recreates linked services and the blast radius is the
   whole stack again.
-- **Migrations are their own one-shot step** (`alembic upgrade head`), never a service entrypoint.
-  Two services racing to migrate on restart is a real outage (`CODE_STRUCTURE.md` §5).
+- **The schema is applied before anything restarts** (`python -m libs.db --prune`, in `deploy.sh`), and
+  again, without pruning, as each service starts. Every step of it is idempotent, so services starting
+  together cannot race into an outage the way two Alembic runs could (`CODE_STRUCTURE.md` §5).
 - **Compose profiles**, carried over from the reference instance: always-on services start with a
   bare `up`; one-shot tools sit behind `profiles: ["tools"]`. That split exists because a no-arg
   `up` once launched a trainer beside the scorer and loaded a second model into RAM. The

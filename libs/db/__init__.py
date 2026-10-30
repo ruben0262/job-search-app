@@ -6,6 +6,7 @@ an index or a rule, so the declaration and the database cannot drift apart unnot
 """
 from __future__ import annotations
 
+import logging
 import os
 import uuid
 from collections.abc import Iterator
@@ -17,7 +18,9 @@ from typing import Any, ClassVar, Self
 from pymongo import IndexModel, MongoClient, ReturnDocument
 from pymongo.client_session import ClientSession
 from pymongo.database import Database
-from pymongo.errors import DuplicateKeyError
+from pymongo.errors import CollectionInvalid, DuplicateKeyError, OperationFailure
+
+logger = logging.getLogger(__name__)
 
 _client: MongoClient | None = None
 
@@ -130,9 +133,14 @@ def find[D: Document](db: Database, model: type[D], where: dict, **options: Any)
     return [model.from_doc(doc) for doc in db[model.COLLECTION].find(where, **options)]
 
 
-def ensure_schema(db: Database | None = None) -> None:
+def ensure_schema(db: Database | None = None, *, prune: bool = False) -> None:
     """Make every collection's rules and indexes what `libs.db.models` declares. Safe to repeat: it runs
-    at every service start. An index nobody declares any more is dropped, so removing one is a code change."""
+    at every service start.
+
+    An index nobody declares any more is dropped only with `prune`, which the deploy's schema step
+    passes (`python -m libs.db --prune`) from an image of the commit being deployed. A service starting
+    on older code must not drop what newer code added, or two versions would undo each other.
+    """
     from libs.db.models import MODELS  # noqa: PLC0415 - the models import this module
 
     db = database() if db is None else db
@@ -140,15 +148,37 @@ def ensure_schema(db: Database | None = None) -> None:
     for model in MODELS:
         rules = {"$jsonSchema": {"bsonType": "object", "properties": {
             name: {"enum": list(values)} for name, values in model.CHOICES.items()}}}
-        if model.COLLECTION in existing:
-            db.command("collMod", model.COLLECTION, validator=rules, validationLevel="strict")
-        else:
-            db.create_collection(model.COLLECTION, validator=rules)
+        if model.COLLECTION not in existing:
+            _create(db, model.COLLECTION, rules)
+        db.command("collMod", model.COLLECTION, validator=rules, validationLevel="strict")
         collection = db[model.COLLECTION]
         declared = set(collection.create_indexes(list(model.INDEXES))) if model.INDEXES else set()
         for index in collection.list_indexes():
-            if index["name"] not in declared | {"_id_"}:
+            if index["name"] in declared | {"_id_"}:
+                continue
+            if prune:
                 collection.drop_index(index["name"])
+                logger.info("schema: dropped %s.%s, which nothing declares any more", model.COLLECTION,
+                            index["name"])
+            else:
+                logger.warning("schema: %s.%s is not declared by this code; left for the deploy's prune",
+                               model.COLLECTION, index["name"])
+
+
+def _create(db: Database, name: str, rules: dict) -> None:
+    """Create a collection, unless another service starting at the same moment made it first: its rules
+    are set by the `collMod` that follows either way."""
+    try:
+        db.create_collection(name, validator=rules)
+    except CollectionInvalid:
+        pass
+    except OperationFailure as exc:
+        if exc.code != NAMESPACE_EXISTS:
+            raise
+
+
+# What the server answers when the collection appeared between our look and our create.
+NAMESPACE_EXISTS = 48
 
 
 def delete_account(db: Database, user_id: Any) -> dict[str, int]:

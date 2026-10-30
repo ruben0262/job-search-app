@@ -9,34 +9,16 @@ import json
 import logging
 import os
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 
 import pytest
 
-pytest.importorskip("sqlalchemy")
+from libs.db import get, insert, now
+from tests.conftest import needs_db
+
 pytest.importorskip("pywebpush")
 
-needs_db = pytest.mark.skipif(not os.environ.get("DATABASE_URL"),
-                              reason="DATABASE_URL not set (no live Postgres)")
-
 SECRET = "webhook-secret-" + "w" * 24
-
-
-@pytest.fixture()
-def db():
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import Session
-
-    engine = create_engine(os.environ["DATABASE_URL"])
-    conn = engine.connect()
-    trans = conn.begin()
-    session = Session(bind=conn, join_transaction_mode="create_savepoint")
-    try:
-        yield session
-    finally:
-        session.close()
-        trans.rollback()
-        conn.close()
 
 
 @pytest.fixture(autouse=True)
@@ -47,46 +29,51 @@ def no_pacing(monkeypatch):
     monkeypatch.setattr(deliver, "sleep", lambda _seconds: None)
 
 
-def _person(session, *, telegram=True, browsers=0, joined_minutes_ago=24 * 60):
+def _person(db, *, telegram=True, browsers=0, joined_minutes_ago=24 * 60):
     """Somebody with one green word of their own, so no other test's posting can match them."""
     from libs.db.models import PushSubscription, User, UserConfig
 
     word = f"wrangler{uuid.uuid4().hex[:8]}"
-    user = User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active", active=True,
-                telegram_status="connected" if telegram else "unconfigured",
-                telegram_chat_id="555" if telegram else None,
-                created_at=datetime.now(UTC) - timedelta(minutes=joined_minutes_ago))
-    session.add(user)
-    session.flush()
-    session.add(UserConfig(user_id=user.id, schema_version=2,
-                           config={"sections": [{"platform": "all", "keywords": [word]}]}))
+    user = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active",
+                           active=True, telegram_status="connected" if telegram else "unconfigured",
+                           telegram_chat_id="555" if telegram else None,
+                           created_at=now() - timedelta(minutes=joined_minutes_ago)))
+    insert(db, UserConfig(user_id=user.id, schema_version=2,
+                          config={"sections": [{"platform": "all", "keywords": [word]}]}))
     # Subscribed since they joined: when a browser subscribed is when its alerts start.
     for _ in range(browsers):
-        session.add(PushSubscription(user_id=user.id, endpoint=f"https://push.example.com/{uuid.uuid4()}",
-                                     p256dh="k", auth="a", created_at=user.created_at))
-    session.flush()
+        insert(db, PushSubscription(user_id=user.id, endpoint=f"https://push.example.com/{uuid.uuid4()}",
+                                    p256dh="k", auth="a", created_at=user.created_at))
     return user, word
 
 
-def _posting(session, title, *, minutes_ago=5):
+def _posting(db, title, *, minutes_ago=5):
     from libs.db.models import CorpusJob
 
-    seen = datetime.now(UTC) - timedelta(minutes=minutes_ago)
-    job = CorpusJob(url=f"https://jobs.example.com/{uuid.uuid4()}", source="test", title=title,
-                    company="Acme", description="Build APIs", is_remote=True, posted_at=seen,
-                    first_seen_at=seen)
-    session.add(job)
-    session.flush()
-    return job
+    seen = now() - timedelta(minutes=minutes_ago)
+    return insert(db, CorpusJob(url=f"https://jobs.example.com/{uuid.uuid4()}", source="test", title=title,
+                                company="Acme", description="Build APIs", is_remote=True, posted_at=seen,
+                                first_seen_at=seen))
 
 
-def _notified(session, user) -> set[int]:
-    from sqlalchemy import select
-
+def _notified(db, user) -> set[int]:
     from libs.db.models import UserJobState
 
-    return set(session.scalars(select(UserJobState.job_id).where(
-        UserJobState.user_id == user.id, UserJobState.notified_at.is_not(None))))
+    return set(db[UserJobState.COLLECTION].distinct(
+        "job_id", {"user_id": user.id, "notified_at": {"$ne": None}}))
+
+
+def _endpoints(db, user) -> list[str]:
+    from libs.db.models import PushSubscription
+
+    return sorted(db[PushSubscription.COLLECTION].distinct("endpoint", {"user_id": user.id}))
+
+
+def _account(db, user):
+    """The account as it is stored now: what a test changed through the API or the notifier."""
+    from libs.db.models import User
+
+    return get(db, User, user.id)
 
 
 class Outbox:
@@ -105,10 +92,10 @@ class Outbox:
         return True
 
 
-def run(session, user, outbox, **transports):
+def run(db, user, outbox, **transports):
     from services.notifier.deliver import deliver
 
-    return deliver(session, user.id, telegram=transports.get("telegram", outbox.tg),
+    return deliver(db, user.id, telegram=transports.get("telegram", outbox.tg),
                    push=transports.get("push", outbox.push))
 
 
@@ -139,14 +126,13 @@ def test_a_new_match_reaches_telegram_and_every_browser_once(db):
 
 @needs_db
 def test_only_jobs_first_seen_after_the_newest_one_sent_go_out(db):
-    from libs.db.models import UserJobState
+    from libs.db.models.tenant import record_state
 
     user, word = _person(db)
     sent = _posting(db, word, minutes_ago=60)
-    db.add(UserJobState(user_id=user.id, job_id=sent.id, notified_at=datetime.now(UTC)))
+    record_state(db, user.id, sent.id, notified_at=now())
     _posting(db, word, minutes_ago=90)
     newer = _posting(db, word, minutes_ago=10)
-    db.flush()
 
     run(db, user, Outbox())
 
@@ -172,8 +158,8 @@ def test_alerts_start_when_telegram_is_connected_not_when_they_joined(db):
 
     user, word = _person(db, joined_minutes_ago=3 * 24 * 60)
     _posting(db, word, minutes_ago=5 * 60)  # inside every freshness window, before they connected
-    db.add(AuthToken(token_hash=uuid.uuid4().hex, user_id=user.id, purpose="telegram_connect",
-                     expires_at=datetime.now(UTC), used_at=datetime.now(UTC) - timedelta(hours=1)))
+    insert(db, AuthToken(id=uuid.uuid4().hex, user_id=user.id, purpose="telegram_connect",
+                         expires_at=now(), used_at=now() - timedelta(hours=1)))
     new = _posting(db, word, minutes_ago=10)
 
     run(db, user, Outbox())
@@ -187,8 +173,8 @@ def test_alerts_start_when_the_browser_subscribed(db):
 
     user, word = _person(db, telegram=False, joined_minutes_ago=3 * 24 * 60)
     _posting(db, word, minutes_ago=5 * 60)  # inside every freshness window, before they connected
-    db.add(PushSubscription(user_id=user.id, endpoint=f"https://push.example.com/{uuid.uuid4()}",
-                            p256dh="k", auth="a", created_at=datetime.now(UTC) - timedelta(hours=1)))
+    insert(db, PushSubscription(user_id=user.id, endpoint=f"https://push.example.com/{uuid.uuid4()}",
+                                p256dh="k", auth="a", created_at=now() - timedelta(hours=1)))
     new = _posting(db, word, minutes_ago=10)
 
     run(db, user, Outbox())
@@ -244,26 +230,19 @@ def test_with_no_cap_a_run_sends_everything_owed(db):
 
 @needs_db
 def test_a_browser_that_has_gone_is_deleted_and_the_others_still_get_the_job(db):
-    from sqlalchemy import select
-
-    from libs.db.models import PushSubscription
-
     user, word = _person(db, telegram=False, browsers=2)
     job = _posting(db, word)
-    mine = select(PushSubscription.endpoint).where(PushSubscription.user_id == user.id)
-    gone, kept = sorted(db.scalars(mine))
+    gone, kept = _endpoints(db, user)
     outbox = Outbox(gone={gone})
 
     assert run(db, user, outbox) == 1
     assert [endpoint for endpoint, _ in outbox.browsers] == [kept]
-    assert db.scalars(mine).all() == [kept]
+    assert _endpoints(db, user) == [kept]
     assert _notified(db, user) == {job.id}
 
 
 @needs_db
 def test_a_blocked_bot_marks_telegram_broken_and_the_browser_still_gets_the_job(db):
-    from sqlalchemy import select
-
     from libs.db.models import UserNotification
 
     user, word = _person(db, browsers=1)
@@ -274,9 +253,8 @@ def test_a_blocked_bot_marks_telegram_broken_and_the_browser_still_gets_the_job(
         raise RuntimeError("Forbidden: bot was blocked by the user")
 
     assert run(db, user, outbox, telegram=blocked) == 1
-    assert user.telegram_status == "broken"
-    assert db.scalar(select(UserNotification.event)
-                     .where(UserNotification.user_id == user.id)) == "telegram.broken"
+    assert _account(db, user).telegram_status == "broken"
+    assert db[UserNotification.COLLECTION].distinct("event", {"user_id": user.id}) == ["telegram.broken"]
     assert len(outbox.browsers) == 1
     assert _notified(db, user) == {job.id}
 
@@ -292,7 +270,7 @@ def test_a_telegram_outage_is_retried_rather_than_disconnecting(db):
 
     with pytest.raises(RuntimeError):
         run(db, user, Outbox(), telegram=down)
-    assert user.telegram_status == "connected"
+    assert _account(db, user).telegram_status == "connected"
     assert _notified(db, user) == set()
 
 
@@ -309,8 +287,7 @@ def test_a_run_that_fails_partway_sends_nothing_twice(db):
 
     with pytest.raises(RuntimeError):
         run(db, user, outbox, telegram=fourth_fails)
-    # What the worker does with a failed run: only what was committed as it went survives.
-    db.rollback()
+    # Each send was recorded the moment it went, so the failure keeps the three that did.
     assert _notified(db, user) == {job.id for job in jobs[:3]}
 
     assert run(db, user, Outbox()) == 2, "only the two that never went"
@@ -320,8 +297,6 @@ def test_a_run_that_fails_partway_sends_nothing_twice(db):
 @needs_db
 def test_a_run_stops_before_its_claim_expires_and_queues_the_rest(db, monkeypatch):
     import time
-
-    from sqlalchemy import select
 
     from libs import limits
     from libs.db.models import QueueJob
@@ -343,8 +318,8 @@ def test_a_run_stops_before_its_claim_expires_and_queues_the_rest(db, monkeypatc
 
     assert 0 < sent < 10
     assert len(owed(db, user)) == 10 - sent, "what did not go is still owed, not lost"
-    assert db.scalar(select(QueueJob.id).where(QueueJob.lane == "notify", QueueJob.user_id == user.id,
-                                               QueueJob.state == "ready")) is not None
+    assert db[QueueJob.COLLECTION].count_documents(
+        {"lane": "notify", "user_id": user.id, "state": "ready"}) == 1
 
 
 @needs_db
@@ -395,7 +370,7 @@ def test_the_push_transport_reads_404_and_410_as_gone(monkeypatch):
 # ── connecting, through the API ───────────────────────────────────────────────────────────────
 
 @pytest.fixture()
-def api(monkeypatch):
+def api(monkeypatch, db):
     os.environ.setdefault("ACCESS_TOKEN_SECRET", "test-" + "x" * 40)
     monkeypatch.setenv("DISABLE_RATE_LIMIT", "1")
     monkeypatch.setenv("TELEGRAM_BOT_USERNAME", "jobs_test_bot")
@@ -404,32 +379,15 @@ def api(monkeypatch):
     monkeypatch.setenv("PUBLIC_URL", "https://jobs.example.com")
 
     from fastapi.testclient import TestClient
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import Session
 
     from libs.auth.access import issue_access_token
     from libs.db.models import User
-    from services.api import deps
     from services.api.app import app
 
-    engine = create_engine(os.environ["DATABASE_URL"])
-    conn = engine.connect()
-    trans = conn.begin()
-    session = Session(bind=conn, join_transaction_mode="create_savepoint")
-    user = User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active")
-    session.add(user)
-    session.flush()
-
-    app.dependency_overrides[deps.get_db] = lambda: session
-    try:
-        with TestClient(app, base_url="https://testserver") as http:
-            http.cookies.set("access_token", issue_access_token(user.id, uuid.uuid4()), path="/")
-            yield http, session, user
-    finally:
-        app.dependency_overrides.clear()
-        session.close()
-        trans.rollback()
-        conn.close()
+    user = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active"))
+    with TestClient(app, base_url="https://testserver") as http:
+        http.cookies.set("access_token", issue_access_token(user.id, uuid.uuid4()), path="/")
+        yield http, db, user
 
 
 def say(http, text, *, chat=4242, secret=SECRET):
@@ -446,14 +404,14 @@ def _code(http) -> str:
 
 @needs_db
 def test_telegram_connects_with_one_link_and_one_press_of_start(api):
-    http, session, user = api
+    http, db, user = api
     link = http.post("/telegram/link").json()["url"]
     assert link.startswith("https://t.me/jobs_test_bot?start=")
 
     reply = say(http, "/start " + link.split("start=")[1]).json()
-    session.flush()
 
-    assert (user.telegram_status, user.telegram_chat_id) == ("connected", "4242")
+    account = _account(db, user)
+    assert (account.telegram_status, account.telegram_chat_id) == ("connected", "4242")
     # Carried in the answer to Telegram's own call, which is how it reaches the chat.
     assert (reply["method"], reply["chat_id"]) == ("sendMessage", 4242)
     assert "Connected" in reply["text"]
@@ -461,27 +419,26 @@ def test_telegram_connects_with_one_link_and_one_press_of_start(api):
 
 @needs_db
 def test_the_webhook_refuses_a_call_without_the_platforms_secret(api, caplog):
-    http, _session, user = api
+    http, db, user = api
     code = _code(http)
 
     with caplog.at_level(logging.WARNING):
         assert say(http, f"/start {code}", secret=None).status_code == 404
         assert say(http, f"/start {code}", secret="not-the-secret").status_code == 404
 
-    assert user.telegram_status == "unconfigured"
+    assert _account(db, user).telegram_status == "unconfigured"
     assert any("secret header" in record.getMessage() for record in caplog.records)
 
 
 @needs_db
 def test_a_code_works_once_and_nobody_else_can_reuse_it(api):
-    http, session, user = api
+    http, db, user = api
     code = _code(http)
     say(http, f"/start {code}")
 
     stranger = say(http, f"/start {code}", chat=9999).json()
-    session.flush()
 
-    assert user.telegram_chat_id == "4242"
+    assert _account(db, user).telegram_chat_id == "4242"
     assert "expired" in stranger["text"]
     # Tapping your own link twice is not a failure, and is not told it is one.
     assert "already connected" in say(http, f"/start {code}").json()["text"]
@@ -495,12 +452,15 @@ def test_anything_else_sent_to_the_bot_points_at_the_site(api):
 
 @needs_db
 def test_disconnecting_stops_telegram(api):
-    http, session, user = api
-    user.telegram_status, user.telegram_chat_id = "connected", "4242"
-    session.flush()
+    from libs.db.models import User
+
+    http, db, user = api
+    db[User.COLLECTION].update_one({"_id": user.id}, {"$set": {"telegram_status": "connected",
+                                                                "telegram_chat_id": "4242"}})
 
     assert http.delete("/telegram/link").json() == {"status": "unconfigured"}
-    assert (user.telegram_status, user.telegram_chat_id) == ("unconfigured", None)
+    account = _account(db, user)
+    assert (account.telegram_status, account.telegram_chat_id) == ("unconfigured", None)
 
 
 @needs_db
@@ -515,24 +475,22 @@ def test_connecting_says_so_when_the_site_has_no_bot(api, monkeypatch):
 
 @needs_db
 def test_a_browser_subscribes_once_and_can_unsubscribe(api):
-    from sqlalchemy import select
-
     from libs.db.models import PushSubscription
 
-    http, session, user = api
+    http, db, user = api
     assert http.get("/push/key").json() == {"key": "BPublicKey"}
     browser = {"endpoint": f"https://push.example.com/{uuid.uuid4()}", "expirationTime": None,
                "keys": {"p256dh": "BKey", "auth": "secret"}}
-    mine = select(PushSubscription.endpoint).where(PushSubscription.user_id == user.id)
 
     # The same browser twice is one subscription.
     assert http.post("/push/subscribe", json=browser).status_code == 200
     assert http.post("/push/subscribe", json=browser).status_code == 200
-    assert session.scalars(mine).all() == [browser["endpoint"]]
+    assert _endpoints(db, user) == [browser["endpoint"]]
+    assert db[PushSubscription.COLLECTION].count_documents({"endpoint": browser["endpoint"]}) == 1
 
     assert http.request("DELETE", "/push/subscribe",
                         json={"endpoint": browser["endpoint"]}).status_code == 200
-    assert session.scalars(mine).all() == []
+    assert _endpoints(db, user) == []
 
 
 @needs_db
@@ -570,34 +528,3 @@ def test_the_webhook_script_points_telegram_at_the_route_the_api_serves(monkeypa
     assert script.main() == 0
     assert sent == {"url": "https://jobs.example.com/telegram/webhook", "secret_token": SECRET,
                     "allowed_updates": ["message"]}
-
-
-@needs_db
-def test_old_bot_accounts_are_offered_one_tap_and_platform_linked_ones_stay_connected(db):
-    """Runs the 2026-10-29 migration's own statement: an account linked through a bot of its own is
-    moved to unconfigured (one tap to connect), never left to be marked broken on its first delivery."""
-    import importlib.util
-    import pathlib
-
-    from sqlalchemy import text
-
-    from libs.db.models import AuthToken, User
-
-    path = next((pathlib.Path(__file__).resolve().parents[1] / "libs/db/migrations/versions")
-                .glob("*telegram_connected_through_the_platform_bot_only.py"))
-    spec = importlib.util.spec_from_file_location("legacy_telegram", path)
-    migration = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(migration)
-
-    old_bot, _ = _person(db)
-    linked, _ = _person(db)
-    db.add(AuthToken(token_hash=uuid.uuid4().hex, user_id=linked.id, purpose="telegram_connect",
-                     expires_at=datetime.now(UTC), used_at=datetime.now(UTC)))
-    db.flush()
-
-    db.execute(text(migration.LEGACY_TELEGRAM))
-    db.expire_all()
-
-    assert db.get(User, old_bot.id).telegram_status == "unconfigured"
-    assert db.get(User, old_bot.id).telegram_chat_id == "555", "kept; Start in the platform bot replaces it"
-    assert db.get(User, linked.id).telegram_status == "connected"

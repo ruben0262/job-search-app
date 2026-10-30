@@ -362,35 +362,17 @@ BSc Computer Science, TU Berlin    2017
 
 def _session(monkeypatch, *, profile=PROFILE, description="Backend role. Python.",
              profile_files=DEFAULT_FILES, documents=None):
-    """A stand-in for the two `session.get` calls and the pin, with no database."""
+    """The build's two reads — the account and the posting — and its config read, with no database."""
     # `full_name` is where the document's filename comes from — the name the user typed at signup,
     # not `profile.identity.name`. The schema was a second copy of the same fact and it was the last
     # thing in a build still reading `user.profile`.
     user = type("U", (), {"id": uuid.uuid4(), "profile": profile.model_dump(),
                           "full_name": profile.identity.name, "links": [],
-                          "facts_md": "# Facts about Alice Example",
-                          "config": None})()
+                          "facts_md": "# Facts about Alice Example"})()
     job = FakeJob(description=description)
-    state = type("S", (), {"score": 88.0, "applied_at": None})()
-
-    class Session:
-        def scalar(self, _statement):
-            """The labeller's fifteen-word read on this job, which the build writes toward."""
-            return "Backend API role; matches her Python and Postgres work."
-
-        def get(self, model, key, **kwargs):
-            name = model.__name__
-            if name == "User":
-                return user
-            if name == "CorpusJob":
-                return job
-            return state
-
-        def add(self, _obj):  # pragma: no cover - the state row exists in these tests
-            pass
-
-        def flush(self):
-            pass
+    state = type("S", (), {"applied_at": None})()
+    monkeypatch.setattr(run, "_load", lambda _db, _user_id, _job_id: (user, job))
+    monkeypatch.setattr(run, "_salary_bands", lambda _db, _user_id: None)
 
     # The profile is files now (`libs/profiles`), not a schema render.
     class Files:
@@ -408,8 +390,7 @@ def _session(monkeypatch, *, profile=PROFILE, description="Backend role. Python.
     monkeypatch.setattr(run, "ProfileFiles", Files)
     # Their uploads by kind, as `libs.suggestions.documents_of` reads them.
     monkeypatch.setattr(run, "documents_of", lambda _session, _user_id: documents or {})
-    # `func.now()` is a SQL expression, not a value; nothing here evaluates it.
-    return Session(), user, job, state
+    return object(), user, job, state
 
 
 def _ai(session, user, client=None, **kwargs):

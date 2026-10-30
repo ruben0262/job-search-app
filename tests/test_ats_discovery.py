@@ -12,15 +12,16 @@ companies with an ATS-shaped URL, 171 of them boards nobody polled.
 """
 from __future__ import annotations
 
-import os
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 
 import pytest
 
-pytest.importorskip("sqlalchemy")
-
+from libs.corpus.ats import AtsRepository
 from libs.corpus.ats_urls import token_from_url, tokens_from_urls
+from libs.db import insert, now
+from libs.db.models import CorpusJob
+from services.harvester.cycle import _discover_ats_tokens
 
 # ── reading a board out of a link ─────────────────────────────────────────────────────────────
 
@@ -73,35 +74,10 @@ def test_the_same_board_seen_twice_is_one_token():
 
 # ── the loop it breaks, end to end ────────────────────────────────────────────────────────────
 
-pytestmark = pytest.mark.skipif(
-    not os.environ.get("DATABASE_URL"), reason="DATABASE_URL not set (no live Postgres)")
-
-
-@pytest.fixture()
-def db():
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import Session
-
-    engine = create_engine(os.environ["DATABASE_URL"])
-    conn = engine.connect()
-    trans = conn.begin()
-    session = Session(bind=conn, join_transaction_mode="create_savepoint")
-    try:
-        yield session
-    finally:
-        session.close()
-        trans.rollback()
-        conn.close()
-
-
 def _posting(db, url: str, *, source: str = "linkedin", age_hours: int = 1) -> None:
-    from libs.db.models import CorpusJob
-
-    db.add(CorpusJob(url=url, title="Design Engineer", source=source,
-                     first_seen_at=datetime.now(UTC) - timedelta(hours=age_hours),
-                     posted_at=datetime.now(UTC) - timedelta(hours=age_hours),
-                     text_sha256=uuid.uuid4().hex))
-    db.flush()
+    insert(db, CorpusJob(url=url, title="Design Engineer", source=source,
+                         first_seen_at=now() - timedelta(hours=age_hours),
+                         posted_at=now() - timedelta(hours=age_hours)))
 
 
 def test_a_board_named_by_a_posting_becomes_a_board_we_poll(db):
@@ -111,52 +87,39 @@ def test_a_board_named_by_a_posting_becomes_a_board_we_poll(db):
     names a Greenhouse board. From the next cycle that board is polled directly, which is how a
     new user from a new field widens the corpus for themselves.
     """
-    from libs.corpus.ats import AtsRepository
-    from services.harvester.cycle import _discover_ats_tokens
-
     token = f"ricardo{uuid.uuid4().hex[:8]}"
     _posting(db, f"https://boards.greenhouse.io/{token}/jobs/4012345")
     ats = AtsRepository(db)
     assert token not in ats.live_tokens("greenhouse")
 
     found = _discover_ats_tokens(db, ats)
-    db.flush()
 
-    assert found >= 1
+    assert found == 1
     assert token in ats.live_tokens("greenhouse")
 
 
 def test_a_board_already_polled_is_not_enrolled_twice(db):
     """It runs every cycle over overlapping rows, so it has to be idempotent."""
-    from libs.corpus.ats import AtsRepository
-    from services.harvester.cycle import _discover_ats_tokens
-
     token = f"cosworth{uuid.uuid4().hex[:8]}"
     _posting(db, f"https://jobs.lever.co/{token}/8f2c")
     ats = AtsRepository(db)
 
     first = _discover_ats_tokens(db, ats)
-    db.flush()
     second = _discover_ats_tokens(db, ats)
-    db.flush()
 
-    assert first >= 1
+    assert first == 1
     assert second == 0, "the second pass re-enrolled boards it had already added"
     assert ats.live_tokens("lever").count(token) == 1
 
 
 def test_discovery_reads_every_source_not_only_the_one_that_used_to_feed_it(db):
     """`harvest_from_hits` read hiring.cafe alone, which is what made the list a closed loop."""
-    from libs.corpus.ats import AtsRepository
-    from services.harvester.cycle import _discover_ats_tokens
-
     from_linkedin = f"mclaren{uuid.uuid4().hex[:8]}"
     from_adzuna = f"jlr{uuid.uuid4().hex[:8]}"
     _posting(db, f"https://jobs.ashbyhq.com/{from_linkedin}/1a2b", source="linkedin")
     _posting(db, f"https://{from_adzuna}.recruitee.com/o/design-engineer", source="adzuna")
 
     _discover_ats_tokens(db, AtsRepository(db))
-    db.flush()
 
     ats = AtsRepository(db)
     assert from_linkedin in ats.live_tokens("ashby")

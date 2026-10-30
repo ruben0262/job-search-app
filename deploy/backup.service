@@ -1,24 +1,20 @@
-# Nightly dump, then exit. Invoked by backup.timer.
+# Nightly backup, then exit. Invoked by backup.timer.
 #
 # **SECRETS_KEK is deliberately absent from the environment here.** The dump must not contain it and
 # this script has no use for it — a backup beside its key is a credential breach in one file, and
 # the surest way to keep them apart is for the process that writes one to be unable to read the
 # other (OPERATIONS_PLAN.md §7).
 [Unit]
-Description=job-search-app nightly Postgres backup (one-shot)
-After=docker.service
-Requires=docker.service
+Description=job-search-app nightly MongoDB backup (one-shot)
+# The database is Atlas, off this box: the network, not Docker, is what this needs.
+Wants=network-online.target
+After=network-online.target
 
 [Service]
 Type=oneshot
 User=ruben
 WorkingDirectory=/home/ruben/job-search-app
 EnvironmentFile=/home/ruben/job-search-app/deploy/.env
-# **`DATABASE_URL` is built here and not in an `Environment=` line, because systemd does not expand
-# `${VAR}` in `Environment=`** — it passes the literal text through. This unit authenticated with
-# the string `${POSTGRES_PASSWORD}` from 2026-07-29, so `pg_dump` failed every night and
-# `backup.py` correctly removed each partial file: fourteen days with no backup at all, and the
-# only dumps on disk dated Jul 28. A shell expands it.
-ExecStart=/bin/sh -c 'DATABASE_URL="postgresql+psycopg://jobsearch:$${POSTGRES_PASSWORD}@127.0.0.1:5432/jobsearch" exec /home/ruben/job-search-app/.venv/bin/python deploy/scripts/backup.py --out /home/ruben/backups --models "$${MODEL_DIR}" --archive /home/ruben/job-search-app/archive'
-# A dump that cannot finish in fifteen minutes at this size is a symptom, not a slow disk.
+ExecStart=/home/ruben/job-search-app/.venv/bin/python deploy/scripts/backup.py --out /home/ruben/backups --archive /home/ruben/job-search-app/archive
+# A backup that cannot finish in fifteen minutes at this size is a symptom, not a slow link.
 TimeoutStartSec=15min

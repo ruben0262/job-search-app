@@ -1,4 +1,4 @@
-"""Every column the product reads is written by something."""
+"""Every field the product reads is written by something."""
 from __future__ import annotations
 
 import re
@@ -8,36 +8,23 @@ import pytest
 
 CODE = [Path("libs"), Path("services")]
 
-# Columns that are genuinely written by the database or by Alembic rather than by application code.
+# Fields written by their dataclass default when the document is inserted, not by a named write.
 WRITTEN_ELSEWHERE = {
-    "id": "primary keys are the database's",
-    "created_at": "server_default",
-    "first_seen_at": "server_default on insert",
-    "updated_at": "server_default / onupdate",
-    "sent_at": "server_default now() on the mail_sends insert",
-    # A column default on the model (`default="free"`), applied by SQLAlchemy on insert.
-    "plan_id": "model column default, applied on insert",
-    # Not a column: the `User.secrets` relationship, which SQLAlchemy fills from `user_secrets` rows.
-    # It passed only because the old onboarding gate had a local variable called `secrets`.
-    "secrets": "relationship, loaded from user_secrets",
+    "id": "issued by `libs.db.insert` (a counter) or by the field's default factory",
+    "created_at": "default_factory=now, on insert",
+    "first_seen_at": "default_factory=now, on insert",
+    "updated_at": "default_factory=now on insert; writes that change a document set it again",
+    "sent_at": "default_factory=now, on the mail_sends insert",
+    "paused_at": "default_factory=now, on a lane pause",
+    "uploaded_at": "default_factory=now, on a document upload",
 }
 
-# Columns this test found on its first run, each a real answer to "what is silently absent".
+# Fields this test found on its first run, each a real answer to "what is silently absent".
 KNOWN_UNWRITTEN = {
     # Deliberate, and documented at the reader.
     "daily_cap_mb": "intentional fallback; libs.limits.proxy_mb_per_day is the live value",
     # A second source of truth that disagrees with the first.
-    "linkedin_interval_min": "superseded by libs.limits; column default 240 vs limit default 15",
-    # The per-user bot's, retired 2026-10-28 for one platform bot; kept with their data, read by nothing.
-    "telegram_routes": "retired with the per-user bot's channels; kept rather than dropped",
-    "telegram_webhook_secret": "retired with the per-user bot's webhook; kept rather than dropped",
-    # The switched-off model's scored-match lifecycle (CLAUDE.md §3 exception): its one writer,
-    # `TenantRepository.retire_stale_matches`, was deleted with its last caller on 2026-10-28.
-    "retired_at": "switched off with the model; its data and partial indexes are kept",
-    # Read only by the switched-off labeller. Its one writer, the setup page's Start button
-    # (`POST /setup/start`), was deleted with the setup chat on 2026-10-29.
-    "labelling_paused": "switched off with the model; the labeller that reads it comes back with a control",
-    # `quota_overrides` and `profile_context` were here and are now dropped.
+    "linkedin_interval_min": "superseded by libs.limits; field default 240 vs limit default 15",
 }
 
 
@@ -47,16 +34,12 @@ def source_files() -> list[Path]:
 
 
 def declared_columns() -> dict[str, list[str]]:
-    """Every mapped column, by the model file that declares it."""
-    declaration = re.compile(r"^\s{4}(\w+):\s*Mapped\[")
-    out: dict[str, list[str]] = {}
-    for path in Path("libs/db/models").rglob("*.py"):
-        names = [match.group(1) for match in
-                 (declaration.match(line) for line in path.read_text(encoding="utf-8").splitlines())
-                 if match]
-        if names:
-            out[path.name] = names
-    return out
+    """Every field of every collection, by the collection that declares it."""
+    from dataclasses import fields
+
+    from libs.db.models import MODELS
+
+    return {model.COLLECTION: [field.name for field in fields(model)] for model in MODELS}
 
 
 @pytest.fixture(scope="module")
@@ -67,8 +50,8 @@ def bodies() -> str:
 def test_there_are_columns_to_check(bodies):
     """The guard on the guard."""
     columns = declared_columns()
-    assert len(columns) >= 5, f"only found columns in {list(columns)} — the parser has drifted"
-    assert sum(len(names) for names in columns.values()) > 60
+    assert len(columns) >= 20, f"only found fields in {list(columns)} — MODELS has shrunk"
+    assert sum(len(names) for names in columns.values()) > 150
 
 
 def test_every_column_is_written_by_something(bodies):
@@ -112,7 +95,7 @@ def test_the_check_can_tell_a_written_column_from_an_unwritten_one(bodies):
     having no producer. The positive half is the chat id the Telegram link writes: lose that and
     nobody can be reached on Telegram.
     """
-    assert re.search(r"\.telegram_chat_id\s*=[^=]", bodies), (
+    assert re.search(r"[\"']telegram_chat_id[\"']\s*:\s*str\(chat_id\)", bodies), (
         "the Telegram link no longer records the chat it connected")
 
     # And the negative: a column name that exists nowhere must not appear written.
