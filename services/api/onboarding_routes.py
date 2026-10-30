@@ -6,8 +6,7 @@ import uuid as _uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from pymongo.database import Database
 
 from libs import limits, suggestions
 from libs.contracts.config import (
@@ -21,6 +20,7 @@ from libs.contracts.config import (
     migrate_config,
 )
 from libs.contracts.onboarding import IdentitySchema, ProfileLink
+from libs.db import find_one, get, insert, now
 from libs.db.models import User, UserDocument
 from libs.documents import UnsupportedDocument, extract_text
 from libs.documents.read import LANGUAGE_NAMES, Facts, read
@@ -130,7 +130,7 @@ class HistoryText(BaseModel):
 
 
 @router.get("/state", response_model=OnboardingSteps)
-def state(db: Session = Depends(get_db), user_id: _uuid.UUID = Depends(current_user)) -> dict:
+def state(db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(current_user)) -> dict:
     """What is done, what is left, and where to send the user next."""
     return onboarding_state(db, user_id).as_dict()
 
@@ -143,7 +143,7 @@ class HistoryBody(BaseModel):
 
 
 @router.put("/history", response_model=HistorySaved)
-def put_history(body: HistoryBody, request: Request, db: Session = Depends(get_db),
+def put_history(body: HistoryBody, request: Request, db: Database = Depends(get_db),
                 user_id: _uuid.UUID = Depends(current_user)) -> dict:
     """Their own words about themselves, typed rather than uploaded."""
     rate_limit(request, f"history:{user_id}", limit=60, per_seconds=3600)
@@ -152,46 +152,38 @@ def put_history(body: HistoryBody, request: Request, db: Session = Depends(get_d
     except UnsupportedDocument as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
 
-    document = db.scalar(
-        select(UserDocument).where(UserDocument.user_id == user_id,
-                                   UserDocument.kind == "history"))
+    document = find_one(db, UserDocument, {"user_id": user_id, "kind": "history"})
     if document is None:
-        document = UserDocument(user_id=user_id, kind="history", filename="history.txt",
-                                text=extracted.text, text_sha256=extracted.sha256,
-                                chars=extracted.chars)
-        db.add(document)
+        insert(db, UserDocument(user_id=user_id, kind="history", filename="history.txt",
+                                text=extracted.text, text_sha256=extracted.sha256, chars=extracted.chars))
     else:
         # Replaced rather than appended: this page is one document the user edits.
-        document.text = extracted.text
-        document.text_sha256 = extracted.sha256
-        document.chars = extracted.chars
-    db.flush()
+        db[UserDocument.COLLECTION].update_one({"_id": document.id}, {"$set": {
+            "text": extracted.text, "text_sha256": extracted.sha256, "chars": extracted.chars}})
     # The history is a document like any other, so changing it makes the profile stale.
-    db.get(User, user_id).documents_changed_at = func.now()
+    _stamp(db, user_id, documents_changed_at=now())
     suggestions.refresh(db, user_id)
     audit(logger, "onboarding.history", user=user_id, chars=extracted.chars)
     return {"status": "saved", "chars": extracted.chars, "truncated": extracted.truncated}
 
 
 @router.get("/history", response_model=HistoryText)
-def get_history(db: Session = Depends(get_db),
+def get_history(db: Database = Depends(get_db),
                 user_id: _uuid.UUID = Depends(current_user)) -> dict:
     """Returned in full, unlike `/documents`, because this is an edit box the user types into."""
-    document = db.scalar(
-        select(UserDocument).where(UserDocument.user_id == user_id,
-                                   UserDocument.kind == "history"))
+    document = find_one(db, UserDocument, {"user_id": user_id, "kind": "history"})
     return {"text": document.text if document else "", "chars": document.chars if document else 0}
 
 
 # ── review: what we found, confirmed ──────────────────────────────────────────────────────────
 
 @router.get("/review", response_model=ReviewPage)
-def review(db: Session = Depends(get_db), user_id: _uuid.UUID = Depends(current_user)) -> dict:
+def review(db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(current_user)) -> dict:
     """Everything the review page opens with: what they told us, else what their documents say."""
     facts = read(suggestions.documents_of(db, user_id))
     found = suggestions.current(db, user_id)
     stored = TenantRepository(db).get_config(user_id)
-    return {"identity": _identity(db.get(User, user_id), facts),
+    return {"identity": _identity(get(db, User, user_id), facts),
             "config": migrate_config(stored) if stored is not None else _prefill(facts, found),
             "found": {"name": facts.name, "email": facts.email, "phone": facts.phone,
                       "links": list(facts.links), "location": facts.location,
@@ -202,28 +194,26 @@ def review(db: Session = Depends(get_db), user_id: _uuid.UUID = Depends(current_
 
 
 @router.get("/identity", response_model=NameAndLinks)
-def get_identity(db: Session = Depends(get_db),
+def get_identity(db: Database = Depends(get_db),
                  user_id: _uuid.UUID = Depends(current_user)) -> dict:
     """Their name and links; read off their CV until they have saved their own."""
-    return _identity(db.get(User, user_id), read(suggestions.documents_of(db, user_id)))
+    return _identity(get(db, User, user_id), read(suggestions.documents_of(db, user_id)))
 
 
 @router.put("/identity")
-def put_identity(body: IdentitySchema, db: Session = Depends(get_db),
+def put_identity(body: IdentitySchema, db: Database = Depends(get_db),
                  user_id: _uuid.UUID = Depends(current_user)) -> dict:
     """Store the name and links."""
-    user = db.get(User, user_id)
-    user.full_name = body.full_name
-    user.links = [link.model_dump() for link in body.links]
+    links = [link.model_dump() for link in body.links]
     # Their name and links are hard data: typed, theirs, and read by the prompts the setup agents
     # wrote. Stamped so those files can be found stale rather than silently describing an old you.
-    user.hard_data_changed_at = func.now()
-    audit(logger, "onboarding.identity", user=user_id, links=len(user.links))
-    return {"status": "saved", "full_name": user.full_name, "links": user.links}
+    _stamp(db, user_id, full_name=body.full_name, links=links, hard_data_changed_at=now())
+    audit(logger, "onboarding.identity", user=user_id, links=len(links))
+    return {"status": "saved", "full_name": body.full_name, "links": links}
 
 
 @router.get("/config", response_model=ConfigOut)
-def get_config(db: Session = Depends(get_db),
+def get_config(db: Database = Depends(get_db),
                user_id: _uuid.UUID = Depends(current_user)) -> dict:
     """The search, read in the *current* shape whatever version it was written in, and the choices."""
     stored = TenantRepository(db).get_config(user_id)
@@ -235,16 +225,16 @@ def get_config(db: Session = Depends(get_db),
 
 
 @router.put("/config", response_model=SaveResult)
-def put_config(body: UserConfigSchema, db: Session = Depends(get_db),
+def put_config(body: UserConfigSchema, db: Database = Depends(get_db),
                user_id: _uuid.UUID = Depends(current_user)) -> dict:
     """Validate and store."""
     save_config(db, user_id, body)
     return {"status": "saved"}
 
 
-def save_config(db: Session, user_id: _uuid.UUID, body: UserConfigSchema) -> None:
+def save_config(db: Database, user_id: _uuid.UUID, body: UserConfigSchema) -> None:
     """The one way a search is saved: under the account's ceiling, stamped, its suggestions redone."""
-    ceiling = limits.resolve(db.get(User, user_id), "keywords")
+    ceiling = limits.resolve(get(db, User, user_id), "keywords")
     total = sum(len(section.keywords) for section in body.sections)
     if ceiling is not None and total > ceiling:
         raise HTTPException(
@@ -255,7 +245,7 @@ def save_config(db: Session, user_id: _uuid.UUID, body: UserConfigSchema) -> Non
     TenantRepository(db).save_config(user_id, body.model_dump())
     # Same reason as identity: what they search for is hard data, and `label.md` and the role angles
     # were written against the previous answer.
-    db.get(User, user_id).hard_data_changed_at = func.now()
+    _stamp(db, user_id, hard_data_changed_at=now())
     suggestions.refresh(db, user_id)
     audit(logger, "onboarding.config", user=user_id,
           sections=len(body.sections),
@@ -305,7 +295,7 @@ def _choices() -> dict:
 # ── the gate ──────────────────────────────────────────────────────────────────────────────────
 
 @router.post("/complete", response_model=SaveResult)
-def complete(db: Session = Depends(get_db), user_id: _uuid.UUID = Depends(current_user)) -> dict:
+def complete(db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(current_user)) -> dict:
     """Finish onboarding, if every page is satisfied."""
     current = onboarding_state(db, user_id)
     if not current.complete:
@@ -315,12 +305,14 @@ def complete(db: Session = Depends(get_db), user_id: _uuid.UUID = Depends(curren
                     "missing": [page.key for page in current.pages if not page.complete],
                     "next_page": current.next_page})
 
-    user = db.get(User, user_id)
-    if user.onboarding_completed_at is None:
-        user.onboarding_completed_at = func.now()
+    if db[User.COLLECTION].update_one({"_id": user_id, "onboarding_completed_at": None},
+                                      {"$set": {"onboarding_completed_at": now()}}).modified_count:
         audit(logger, "onboarding.complete", user=user_id)
-
     return {"status": "complete"}
+
+
+def _stamp(db: Database, user_id: _uuid.UUID, **fields) -> None:
+    db[User.COLLECTION].update_one({"_id": user_id}, {"$set": {**fields, "updated_at": now()}})
 
 
 # `GET /onboarding/schema` was here, and served both JSON Schemas "the front end generates its forms

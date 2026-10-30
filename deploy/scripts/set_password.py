@@ -4,16 +4,13 @@ from __future__ import annotations
 import argparse
 import getpass
 import sys
-from datetime import UTC, datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from sqlalchemy import select
-
 from libs.auth import hash_password, password_problems, revoke_all
+from libs.db import database, find_one, now
 from libs.db.models import User
-from libs.db.session import session_scope
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -31,20 +28,18 @@ def main(argv: list[str] | None = None) -> int:
         print("password " + "; ".join(problems), file=sys.stderr)
         return 2
 
-    with session_scope() as session:
-        user = session.scalar(select(User).where(User.email == args.email.lower()))
-        if user is None:
-            print(f"no such account: {args.email}", file=sys.stderr)
-            return 2
-        user.password_hash = hash_password(password)
-        user.status = "active"
-        user.active = True
-        if user.email_verified_at is None:
-            # These accounts were migrated by the operator, not self-registered.
-            user.email_verified_at = datetime.now(UTC)
-        # A password change ends every existing session.
-        revoke_all(session, user.id)
-        print(f"password set for {args.email}")
+    db = database()
+    user = find_one(db, User, {"email": args.email.lower()})
+    if user is None:
+        print(f"no such account: {args.email}", file=sys.stderr)
+        return 2
+    db[User.COLLECTION].update_one({"_id": user.id}, {"$set": {
+        "password_hash": hash_password(password), "status": "active", "active": True,
+        # Set by the operator, so the inbox counts as proven.
+        "email_verified_at": user.email_verified_at or now(), "updated_at": now()}})
+    # A password change ends every existing session.
+    revoke_all(db, user.id)
+    print(f"password set for {args.email}")
     return 0
 
 

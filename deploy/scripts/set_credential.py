@@ -8,12 +8,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from sqlalchemy import select
-
 from libs.credentials import validate_credential
+from libs.db import database, find_one
 from libs.db.models import ProxyCredential, User
 from libs.db.models.user import SECRET_KINDS
-from libs.db.session import session_scope
 from libs.obs import configure
 from libs.secrets import SecretStore, install, redacting
 from services.api.credential_routes import _ensure_proxy_credential
@@ -38,8 +36,9 @@ def main(argv: list[str] | None = None) -> int:
         print("nothing entered", file=sys.stderr)
         return 2
 
-    with redacting(value), session_scope() as session:
-        user = session.scalar(select(User).where(User.email == args.email.lower()))
+    db = database()
+    with redacting(value):
+        user = find_one(db, User, {"email": args.email.lower()})
         if user is None:
             print(f"no such account: {args.email}", file=sys.stderr)
             return 2
@@ -54,17 +53,16 @@ def main(argv: list[str] | None = None) -> int:
                       "provider is simply unreachable.", file=sys.stderr)
                 return 3
 
-        SecretStore(session).put(user.id, args.kind, value, validated=validated)
+        SecretStore(db).put(user.id, args.kind, value, validated=validated)
 
         if args.kind == "proxy":
             # The credential row, not just the secret.
-            _ensure_proxy_credential(session, user.id)
-            credential = session.get(ProxyCredential, user.id)
+            _ensure_proxy_credential(db, user.id)
+            credential = find_one(db, ProxyCredential, {"user_id": user.id})
             if credential.status != "healthy":
                 # A rotation is usually somebody replacing the credential that got quarantined.
-                credential.status = "healthy"
-                credential.fail_streak = 0
-                credential.last_error = None
+                db[ProxyCredential.COLLECTION].update_one({"user_id": user.id}, {"$set": {
+                    "status": "healthy", "fail_streak": 0, "last_error": None}})
                 print("credential was quarantined — reset to healthy for the new URL")
             print(f"proxy credential ready: {credential.daily_cap_mb} MB/day cap")
 

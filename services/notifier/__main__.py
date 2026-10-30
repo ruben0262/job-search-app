@@ -10,8 +10,8 @@ import time
 import httpx
 from pywebpush import WebPushException, webpush
 
+from libs.db import database, ensure_schema
 from libs.db.models import PushSubscription, QueueJob
-from libs.db.session import session_scope
 from libs.obs import configure
 from libs.queue.queue import dispatch_due_notifications
 from libs.queue.worker import run_worker
@@ -105,18 +105,18 @@ def push(subscription: PushSubscription, payload: dict) -> bool:
     return True
 
 
-def _dispatch(session) -> None:
+def _dispatch(db) -> None:
     """The sweep: anybody the corpus has grown for since their last run. Silent when it finds none."""
-    enqueued = dispatch_due_notifications(session)
+    enqueued = dispatch_due_notifications(db)
     if enqueued:
         logger.info("sweep: enqueued %d notify job(s)", enqueued)
 
 
-def handle(session, job: QueueJob) -> None:
+def handle(db, job: QueueJob) -> None:
     """One person's run, through whichever transports the platform has keys for."""
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
     vapid = os.environ.get("VAPID_PRIVATE_KEY") and os.environ.get("VAPID_SUBJECT")
-    deliver(session, job.user_id,
+    deliver(db, job.user_id,
             telegram=(lambda chat, text, buttons: send(token, chat, text, buttons)) if token else None,
             push=push if vapid else None)
 
@@ -124,15 +124,15 @@ def handle(session, job: QueueJob) -> None:
 def main(argv: list[str] | None = None) -> int:
     configure("notifier")
     install()
+    ensure_schema()
 
     if "--tick" in (argv if argv is not None else sys.argv[1:]):
-        with session_scope() as session:
-            enqueued = dispatch_due_notifications(session)
+        enqueued = dispatch_due_notifications(database())
         logger.info("dispatcher: enqueued %d notify job(s)", enqueued)
         return 0
 
     # The dispatcher runs inside the worker, not on its own timer.
-    run_worker(session_scope, "notify", os.environ.get("WORKER_NAME", "notifier-1"), handle,
+    run_worker(database(), "notify", os.environ.get("WORKER_NAME", "notifier-1"), handle,
                periodic=_dispatch, periodic_every=DISPATCH_EVERY_SEC)
     return 0
 

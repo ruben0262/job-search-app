@@ -1,4 +1,4 @@
-"""The six-lane job queue — claim, retry, dead-letter."""
+"""The job queue — claim, retry, dead-letter."""
 from libs.queue.queue import (
     claim,
     complete,

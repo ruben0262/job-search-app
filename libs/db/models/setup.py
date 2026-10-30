@@ -1,84 +1,49 @@
-"""The setup conversations: one thread per chat, replayed into every request."""
+"""The help chat's conversations and messages. A reply is written into its message as it streams."""
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass, field
+from datetime import datetime
 
-from sqlalchemy import (
-    BigInteger,
-    CheckConstraint,
-    ForeignKey,
-    Index,
-    String,
-    Text,
-    func,
-)
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column
+from pymongo import IndexModel
 
-from libs.db.base import Base, timestamptz
+from libs.db import Document, now
 
-# The commands a user can run in the chat.
-SETUP_AGENTS = ("setup-director", "setup-context", "setup", "setup-prompts",
-                "setup-role-angles", "setup-scorer")
-
-# What a conversation is called before anybody has said anything in it.
 DEFAULT_TITLE = "Untitled chat"
+# `cancelling` is the person having asked to stop and the writer not having noticed yet.
+MESSAGE_STATUSES = ("pending", "streaming", "done", "failed", "cancelling", "cancelled")
 
 
-class SetupConversation(Base):
-    """One chat thread. The unit of context."""
+@dataclass(kw_only=True)
+class SetupConversation(Document):
+    COLLECTION = "setup_conversations"
+    INDEXES = (IndexModel([("user_id", 1), ("created_at", 1)], name="by_user"),)
 
-    __tablename__ = "setup_conversations"
-
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
-
-    # Derived from the first thing the user says: a naming call would be one more thing to fail.
-    title: Mapped[str] = mapped_column(String(80), default=DEFAULT_TITLE)
-
-    created_at: Mapped[timestamptz] = mapped_column(server_default=func.now())
-    # Ordering key for the list, so the chat you are actually in sits at the top.
-    last_message_at: Mapped[timestamptz | None]
-
-    __table_args__ = (
-        Index("ix_setup_conversations_user", "user_id", "last_message_at"),
-    )
+    id: uuid.UUID = field(default_factory=uuid.uuid4)
+    user_id: uuid.UUID
+    title: str = DEFAULT_TITLE
+    created_at: datetime = field(default_factory=now)
 
 
-class SetupMessage(Base):
-    """One turn of one conversation."""
+@dataclass(kw_only=True)
+class SetupMessage(Document):
+    COLLECTION = "setup_messages"
+    SEQUENCE = True
+    CHOICES = {"role": ("user", "assistant"), "status": MESSAGE_STATUSES}  # noqa: RUF012
+    INDEXES = (IndexModel([("conversation_id", 1), ("_id", 1)], name="by_conversation"),
+               IndexModel([("user_id", 1), ("_id", 1)], name="by_user"),
+               IndexModel("status", partialFilterExpression={"status": {"$in": ["pending", "streaming"]}},
+                          name="unfinished"))
 
-    __tablename__ = "setup_messages"
-
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
-    # The context boundary.
-    conversation_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("setup_conversations.id", ondelete="CASCADE"))
-
-    role: Mapped[str] = mapped_column(String(16))
-    content: Mapped[str] = mapped_column(Text)
-
-    # How far this turn has got.
-    status: Mapped[str] = mapped_column(String(16), default="done", server_default="done")
-    # Why it failed, in the words the reader gets. Null unless `status = 'failed'`.
-    error: Mapped[str | None] = mapped_column(Text)
-
-    # Which command was driving. Null for a message sent outside one.
-    agent: Mapped[str | None] = mapped_column(String(32))
-
-    # The assistant's tool calls and their results, in the shape the API takes them back.
-    tool_calls: Mapped[list | None] = mapped_column(JSONB)
-
-    created_at: Mapped[timestamptz] = mapped_column(server_default=func.now())
-
-    __table_args__ = (
-        # The only query this table has: one conversation's transcript, oldest first.
-        Index("ix_setup_messages_conversation", "conversation_id", "id"),
-        Index("ix_setup_messages_user", "user_id", "id"),
-        CheckConstraint("role IN ('user', 'assistant')", name="setup_messages_role"),
-        # `cancelling` is the user having asked to stop and the worker not having noticed yet.
-        CheckConstraint(
-            "status IN ('pending', 'streaming', 'done', 'failed', 'cancelling', 'cancelled')",
-            name="setup_messages_status"),
-    )
+    id: int | None = None
+    user_id: uuid.UUID
+    conversation_id: uuid.UUID
+    role: str
+    content: str
+    status: str = "done"
+    error: str | None = None
+    agent: str | None = None
+    tool_calls: list | None = None
+    # Who is writing this reply, and until when: a worker that dies lets go when its lease runs out.
+    lease_until: datetime | None = None
+    created_at: datetime = field(default_factory=now)

@@ -1,19 +1,19 @@
-"""Settings the operator owns."""
+"""The operator's platform settings: one document per key, set from the admin panel."""
 from __future__ import annotations
 
-from sqlalchemy import String
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy.sql import func
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any
 
-from libs.db.base import Base, timestamptz
+from libs.db import Document, now
 
 
-class PlatformSetting(Base):
-    __tablename__ = "platform_settings"
+@dataclass(kw_only=True)
+class PlatformSetting(Document):
+    COLLECTION = "platform_settings"
+    OWNER = None
 
-    key: Mapped[str] = mapped_column(String(64), primary_key=True)
-    value: Mapped[dict | list | int | str] = mapped_column(JSONB)
-    updated_at: Mapped[timestamptz] = mapped_column(server_default=func.now(), onupdate=func.now())
-    # Who changed it. An operator setting that nobody can attribute is one nobody will own.
-    updated_by: Mapped[str | None] = mapped_column(String(320))
+    id: str  # the setting's key
+    value: Any
+    updated_at: datetime = field(default_factory=now)
+    updated_by: str | None = None

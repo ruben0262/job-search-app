@@ -13,7 +13,7 @@ class PostingClosed(RuntimeError):
     """The posting says it is no longer accepting applications."""
 
 
-def refresh_before_build(session, job, client) -> dict:
+def refresh_before_build(db, job, client) -> dict:
     """Re-read the posting's live metadata, store it, and raise if it has closed.
 
     A row already marked closed is answered from the column: the fetch costs the user's own metered
@@ -26,7 +26,7 @@ def refresh_before_build(session, job, client) -> dict:
 
     meta = fetch_meta(job.url, client=client)
 
-    corpus = CorpusRepository(session)
+    corpus = CorpusRepository(db)
     corpus.set_posting_metadata(
         job.id, applicants=meta["applicants"], easy_apply=meta["easy_apply"],
         reposted=meta["reposted"], workplace=meta["workplace"], posted_at=meta["posted_at"])

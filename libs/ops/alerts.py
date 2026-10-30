@@ -5,12 +5,9 @@ from dataclasses import dataclass
 
 from libs.ops.health import PlatformHealth
 
-# Disk headroom before a full disk stops being hypothetical.
-POSTGRES_DISK_BUDGET_BYTES = 60 * 1024**3
-POSTGRES_DISK_ALERT_FRACTION = 0.80
-
-# Corpus growth past this multiple of projection means the retention trim is not running.
-CORPUS_GROWTH_ALERT_FACTOR = 1.5
+# Atlas's free tier stops accepting writes at 0.5 GB of data and indexes (ROADMAP Phase 9).
+DATABASE_BUDGET_BYTES = 512 * 1024**2
+DATABASE_ALERT_FRACTION = 0.80
 
 
 @dataclass(frozen=True)
@@ -57,23 +54,15 @@ def _queue_alerts(health: PlatformHealth) -> list[Alert]:
 
 def _capacity_alerts(health: PlatformHealth) -> list[Alert]:
     alerts = []
-    used = health.postgres_bytes / POSTGRES_DISK_BUDGET_BYTES
-    if used > POSTGRES_DISK_ALERT_FRACTION:
+    used = health.database_bytes / DATABASE_BUDGET_BYTES
+    if used > DATABASE_ALERT_FRACTION:
         alerts.append(Alert(
-            "page", "postgres_disk",
-            f"Postgres is using {health.postgres_bytes / 1024**3:.1f} GB, "
-            f"{used:.0%} of its budget",
-            "Everything is in one database by design, so this is the whole platform. Check the "
-            "archive pass ran (`archive:` in the harvester log), then the disk."))
-
-    if health.corpus_rows > health.corpus_projection_rows * CORPUS_GROWTH_ALERT_FACTOR:
-        alerts.append(Alert(
-            "warn", "corpus_growth",
-            f"the corpus holds {health.corpus_rows:,} rows against a projection of "
-            f"{health.corpus_projection_rows:,}",
-            "The 30-day archive pass is probably not running — it moves aged-out postings to "
-            "`ARCHIVE_DIR` and deletes them (`libs.corpus.archive`). Left alone this is a full disk "
-            "in a few months, and nothing else will report it."))
+            "page", "database_size",
+            f"MongoDB holds {health.database_bytes / 1024**2:.0f} MB, {used:.0%} of the free tier's "
+            f"{DATABASE_BUDGET_BYTES // 1024**2} MB",
+            "At the ceiling Atlas refuses every write, sign-ups included. Check the archive pass ran "
+            "(`archive:` in the harvester log); if it did, shorten `CORPUS_RETENTION_DAYS` or move "
+            "the cluster to a paid tier."))
     return alerts
 
 

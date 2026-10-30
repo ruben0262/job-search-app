@@ -12,6 +12,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from libs import assistant
+from libs.db import ensure_schema
 from libs.obs import configure
 from libs.secrets import install
 from services.api.account_routes import router as account_router
@@ -35,7 +36,9 @@ install()
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-    """Help-chat replies the last stop cut off are written again — off the start-up path."""
+    """The schema first, so nothing is served before its unique rules exist; then the help-chat
+    replies the last stop cut off are written again — off the start-up path."""
+    ensure_schema()
     threading.Thread(target=assistant.resume, daemon=True, name="support-resume").start()
     yield
 

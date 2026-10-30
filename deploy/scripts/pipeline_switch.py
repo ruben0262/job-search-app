@@ -7,43 +7,24 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from sqlalchemy import text
+from pymongo.database import Database
 
-from libs.db.session import session_scope
-
-# The lanes worth pausing.
-LANES = ("score", "notify", "label", "docgen", "train")
+from libs.db import database, now
+from libs.db.models import LANES, LanePause
 
 
-def _ensure_table(session) -> None:
-    """The switch table, created on first use."""
-    session.execute(text("""
-        CREATE TABLE IF NOT EXISTS lane_pauses (
-            lane        TEXT PRIMARY KEY,
-            paused_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-            reason      TEXT
-        )"""))
+def status(db: Database) -> dict[str, str | None]:
+    return {row["_id"]: row.get("reason") for row in db[LanePause.COLLECTION].find()}
 
 
-def status(session) -> dict[str, str | None]:
-    _ensure_table(session)
-    rows = session.execute(text("SELECT lane, reason FROM lane_pauses")).all()
-    return dict(rows)
-
-
-def pause(session, lanes: list[str], reason: str) -> None:
-    _ensure_table(session)
+def pause(db: Database, lanes: list[str], reason: str) -> None:
     for lane in lanes:
-        session.execute(
-            text("INSERT INTO lane_pauses (lane, reason) VALUES (:lane, :reason) "
-                 "ON CONFLICT (lane) DO UPDATE SET reason = EXCLUDED.reason, paused_at = now()"),
-            {"lane": lane, "reason": reason})
+        db[LanePause.COLLECTION].update_one(
+            {"_id": lane}, {"$set": {"reason": reason, "paused_at": now()}}, upsert=True)
 
 
-def resume(session, lanes: list[str]) -> None:
-    _ensure_table(session)
-    for lane in lanes:
-        session.execute(text("DELETE FROM lane_pauses WHERE lane = :lane"), {"lane": lane})
+def resume(db: Database, lanes: list[str]) -> None:
+    db[LanePause.COLLECTION].delete_many({"_id": {"$in": lanes}})
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -59,12 +40,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.action != "status" and not args.lanes:
         raise SystemExit("name at least one lane")
 
-    with session_scope() as session:
-        if args.action == "pause":
-            pause(session, args.lanes, args.reason)
-        elif args.action == "resume":
-            resume(session, args.lanes)
-        current = status(session)
+    db = database()
+    if args.action == "pause":
+        pause(db, args.lanes, args.reason)
+    elif args.action == "resume":
+        resume(db, args.lanes)
+    current = status(db)
 
     for lane in LANES:
         state = f"PAUSED — {current[lane]}" if lane in current else "running"

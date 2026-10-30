@@ -8,11 +8,12 @@ from __future__ import annotations
 import uuid as _uuid
 from dataclasses import dataclass
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from pymongo.database import Database
 
-from libs.db.models import User, UserConfig, UserDocument
+from libs.db import get
+from libs.db.models import User, UserDocument
 from libs.matching import green_words
+from libs.tenant.repository import TenantRepository
 
 
 @dataclass(frozen=True)
@@ -50,15 +51,14 @@ class OnboardingState:
         }
 
 
-def onboarding_state(session: Session, user_id: _uuid.UUID) -> OnboardingState:
+def onboarding_state(db: Database, user_id: _uuid.UUID) -> OnboardingState:
     """The two pages before done, in order."""
-    user = session.get(User, user_id)
+    user = get(db, User, user_id)
     if user is None:
         raise LookupError(f"no such user {user_id}")
 
-    has_cv = session.scalar(select(UserDocument.id).where(
-        UserDocument.user_id == user_id, UserDocument.kind == "cv").limit(1)) is not None
-    config = session.scalar(select(UserConfig.config).where(UserConfig.user_id == user_id))
+    has_cv = db[UserDocument.COLLECTION].count_documents({"user_id": user_id, "kind": "cv"}, limit=1) > 0
+    config = TenantRepository(db).get_config(user_id)
 
     pages = (
         PageState(

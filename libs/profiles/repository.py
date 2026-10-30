@@ -4,11 +4,11 @@ from __future__ import annotations
 import logging
 import uuid as _uuid
 
-from sqlalchemy import select
-from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.orm import Session
+from pymongo import UpdateOne
+from pymongo.database import Database
 
-from libs.db.models import SCORING_RELEVANT_FILES, User, UserProfileFile
+from libs.db import now
+from libs.db.models import User, UserProfileFile
 from libs.profiles import (
     grounding,
     is_filled,
@@ -38,21 +38,19 @@ def _personalised(name: str, content: str | None) -> bool:
 class ProfileFiles:
     """One user's markdown profile. **`user_id` on every method, never inferred.**"""
 
-    def __init__(self, session: Session, user_id: _uuid.UUID):
-        self._s = session
+    def __init__(self, db: Database, user_id: _uuid.UUID):
+        self._db = db
+        self._files = db[UserProfileFile.COLLECTION]
         self._user = user_id
 
     def all(self) -> dict[str, str]:
         """`{name: content}` for this user."""
-        rows = self._s.execute(
-            select(UserProfileFile.name, UserProfileFile.content)
-            .where(UserProfileFile.user_id == self._user)).all()
-        return dict(rows)
+        return {row["name"]: row["content"]
+                for row in self._files.find({"user_id": self._user}, {"name": 1, "content": 1})}
 
     def read(self, name: str) -> str | None:
-        return self._s.scalar(
-            select(UserProfileFile.content)
-            .where(UserProfileFile.user_id == self._user, UserProfileFile.name == name))
+        row = self._files.find_one({"user_id": self._user, "name": name}, {"content": 1})
+        return row["content"] if row else None
 
     def listing(self) -> list[dict]:
         """What the setup agent and the file panel both need: names, kinds, filled state.
@@ -66,46 +64,32 @@ class ProfileFiles:
         account's `tailor_cover.md` was byte-identical to the default while every check reported
         it complete, so it had been reporting a personalised cover-letter prompt it did not have.
         """
-        rows = self._s.execute(
-            select(UserProfileFile.name, UserProfileFile.kind, UserProfileFile.filled,
-                   UserProfileFile.content, UserProfileFile.updated_at)
-            .where(UserProfileFile.user_id == self._user)
-            .order_by(UserProfileFile.name)).all()
-        return [{"name": n, "kind": k, "filled": f,
-                 "personalised": _personalised(n, c),
-                 "updated_at": u} for n, k, f, c, u in rows]
+        rows = self._files.find({"user_id": self._user}, sort=[("name", 1)])
+        return [{"name": row["name"], "kind": row["kind"], "filled": row["filled"],
+                 "personalised": _personalised(row["name"], row["content"]),
+                 "updated_at": row["updated_at"]} for row in rows]
 
-    def write(self, name: str, content: str, *, kind: str | None = None) -> bool:
+    def write(self, name: str, content: str, *, kind: str | None = None) -> None:
         """Store a file."""
-        existing_kind = self._s.scalar(
-            select(UserProfileFile.kind)
-            .where(UserProfileFile.user_id == self._user, UserProfileFile.name == name))
-        resolved = kind or existing_kind
+        existing = self._files.find_one({"user_id": self._user, "name": name}, {"kind": 1})
+        resolved = kind or (existing and existing["kind"])
         if resolved is None:
             raise ValueError(f"{name} is new and has no kind — pass one")
-
-        self._s.execute(
-            pg_insert(UserProfileFile)
-            .values(user_id=self._user, name=name, content=content, kind=resolved,
-                    filled=is_filled(content))
-            .on_conflict_do_update(
-                index_elements=["user_id", "name"],
-                set_={"content": content, "kind": resolved, "filled": is_filled(content)}))
-        return name in SCORING_RELEVANT_FILES
+        self._files.update_one(
+            {"user_id": self._user, "name": name},
+            {"$set": {"content": content, "kind": resolved, "filled": is_filled(content),
+                      "updated_at": now()},
+             "$setOnInsert": {"created_at": now()}},
+            upsert=True)
 
     def seed(self) -> int:
         """Give a new account the scaffolds."""
-        # Counted with RETURNING: for `ON CONFLICT DO NOTHING` the driver reports -1 for `rowcount`.
-        written = 0
-        for name, kind, content in seed_files():
-            inserted = self._s.scalar(
-                pg_insert(UserProfileFile)
-                .values(user_id=self._user, name=name, kind=kind, content=content,
-                        filled=ships_usable(name))
-                .on_conflict_do_nothing(index_elements=["user_id", "name"])
-                .returning(UserProfileFile.name))
-            written += 1 if inserted else 0
-        return written
+        # Only where the name is absent: a file the person already has is theirs, never replaced.
+        seeds = [UpdateOne({"user_id": self._user, "name": name},
+                           {"$setOnInsert": {"kind": kind, "content": content, "filled": ships_usable(name),
+                                             "created_at": now(), "updated_at": now()}}, upsert=True)
+                 for name, kind, content in seed_files()]
+        return self._files.bulk_write(seeds, ordered=False).upserted_count if seeds else 0
 
     def grounding(self) -> str:
         """The system prompt for a generation call. Raises `ProfileIncomplete` if setup is unfinished."""
@@ -123,10 +107,7 @@ class ProfileFiles:
         (`repair_filled_flags` exists because of it), and a stale flag here would refuse
         a build for somebody whose profile is complete.
         """
-        context = self._s.scalar(
-            select(UserProfileFile.content)
-            .where(UserProfileFile.user_id == self._user,
-                   UserProfileFile.name == "context.md"))
+        context = self.read("context.md")
         return context is not None and is_filled(context)
 
     def build_blocker(self) -> str | None:
@@ -152,7 +133,7 @@ class ProfileFiles:
         """
         if not self.is_ready():
             return ("Finish your setup chat first — a CV needs your profile to build from.")
-        if self._s.get(User, self._user) is None:
+        if self._db[User.COLLECTION].count_documents({"_id": self._user}, limit=1) == 0:
             return f"no such user: {self._user}"
         return None
 
@@ -165,20 +146,17 @@ class ProfileFiles:
 
         Answered from each row's own `updated_at`, so nothing extra is stored to know it.
         """
-        changed_at = self._s.scalar(
-            select(User.hard_data_changed_at).where(User.id == self._user))
-        written = dict(self._s.execute(
-            select(UserProfileFile.name, UserProfileFile.updated_at)
-            .where(UserProfileFile.user_id == self._user)).all())
-        return stale_after(written, changed_at)
+        user = self._db[User.COLLECTION].find_one({"_id": self._user}, {"hard_data_changed_at": 1}) or {}
+        written = {row["name"]: row["updated_at"]
+                   for row in self._files.find({"user_id": self._user}, {"name": 1, "updated_at": 1})}
+        return stale_after(written, user.get("hard_data_changed_at"))
 
     def repair_filled_flags(self) -> list[str]:
         """Recompute `filled` from content."""
         repaired = []
-        for row in self._s.scalars(
-                select(UserProfileFile).where(UserProfileFile.user_id == self._user)):
-            correct = is_filled(row.content)
-            if row.filled != correct:
-                row.filled = correct
-                repaired.append(row.name)
+        for row in self._files.find({"user_id": self._user}, {"name": 1, "content": 1, "filled": 1}):
+            correct = is_filled(row["content"])
+            if row["filled"] != correct:
+                self._files.update_one({"_id": row["_id"]}, {"$set": {"filled": correct}})
+                repaired.append(row["name"])
         return repaired

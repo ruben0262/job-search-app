@@ -3,10 +3,12 @@ from __future__ import annotations
 
 import uuid as _uuid
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from pymongo.database import Database
 
+from libs.db import now
 from libs.db.models import User
 
 
@@ -115,8 +117,8 @@ def all_for(user: User) -> dict[str, int | None]:
     return {limit.key: resolve(user, limit.key) for limit in LIMITS}
 
 
-def set_limit(session: Session, user_id: _uuid.UUID, key: str, value: int | None) -> None:
-    """Set or clear one ceiling. Does not commit — the caller owns the transaction."""
+def set_limit(db: Database, user_id: _uuid.UUID, key: str, value: int | None) -> None:
+    """Set or clear one ceiling."""
     limit = BY_KEY.get(key)
     if limit is None:
         raise KeyError(f"unknown limit {key!r}; known: {sorted(BY_KEY)}")
@@ -126,19 +128,19 @@ def set_limit(session: Session, user_id: _uuid.UUID, key: str, value: int | None
         raise ValueError(f"{key} must be at least {limit.minimum}"
                          + (", or unlimited" if limit.allow_unlimited else ""))
 
-    user = session.get(User, user_id)
-    if user is None:
+    # One key of the map, so a change to another limit made meanwhile is not written over.
+    changed = db[User.COLLECTION].update_one(
+        {"_id": user_id}, {"$set": {f"limits.{key}": value, "updated_at": now()}})
+    if not changed.matched_count:
         raise KeyError(f"no such user: {user_id}")
-    # Replaced rather than mutated: SQLAlchemy does not track in-place changes to a JSONB dict.
-    user.limits = {**(user.limits or {}), key: value}
 
 
-def since_their_midnight(session: Session, user_id: _uuid.UUID, column):
-    """`column` falls on this person's today, in their own timezone: the one boundary every daily
+def their_midnight(db: Database, user_id: _uuid.UUID) -> datetime:
+    """The start of this person's today in their own timezone, as UTC: the one boundary every daily
     ceiling here counts from, so they all reset at the same moment."""
-    timezone = session.scalar(select(User.timezone).where(User.id == user_id)) or "UTC"
-    return (func.timezone(timezone, column)
-            >= func.date_trunc("day", func.timezone(timezone, func.now())))
+    found = db[User.COLLECTION].find_one({"_id": user_id}, {"timezone": 1}) or {}
+    today = datetime.now(ZoneInfo(found.get("timezone") or "UTC"))
+    return today.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(UTC)
 
 
 def describe() -> list[dict]:

@@ -26,7 +26,7 @@ type Health = {
   users_total: number;
   users_active: number;
   corpus_rows: number;
-  postgres_bytes: number;
+  database_bytes: number;
   connections: number;
   alerts: Alert[];
   latency: {
@@ -470,7 +470,7 @@ export function AdminPage() {
       <dl className="stats">
         <Stat value={health.corpus_rows.toLocaleString()} label="corpus rows" />
         <Stat value={`${health.users_active}/${health.users_total}`} label="active users" />
-        <Stat value={`${(health.postgres_bytes / 1024 ** 3).toFixed(1)} GB`} label="postgres" />
+        <Stat value={`${Math.round(health.database_bytes / 1024 ** 2)} MB`} label="database" />
       </dl>
 
           <p className="kicker" style={{ marginTop: "2.5rem" }}>Queue</p>

@@ -6,9 +6,9 @@ import uuid as _uuid
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from pymongo.database import Database
 
+from libs.db import find, now
 from libs.db.models import UserNotification
 from services.api.deps import current_user, get_db
 
@@ -34,18 +34,12 @@ class NotificationList(BaseModel):
 
 
 @router.get("", response_model=NotificationList)
-def list_notifications(db: Session = Depends(get_db),
+def list_notifications(db: Database = Depends(get_db),
                        user_id: _uuid.UUID = Depends(current_user),
                        limit: int = Query(20, ge=1, le=100)) -> dict:
     """The panel's list plus the bell's count, in one call — they are always shown together."""
-    rows = db.scalars(
-        select(UserNotification)
-        .where(UserNotification.user_id == user_id)
-        .order_by(UserNotification.id.desc())
-        .limit(limit)).all()
-    unread = db.scalar(
-        select(func.count()).select_from(UserNotification)
-        .where(UserNotification.user_id == user_id, UserNotification.read_at.is_(None)))
+    rows = find(db, UserNotification, {"user_id": user_id}, sort=[("_id", -1)], limit=limit)
+    unread = db[UserNotification.COLLECTION].count_documents({"user_id": user_id, "read_at": None})
     return {
         "unread": unread,
         "notifications": [{
@@ -68,16 +62,15 @@ class MarkRead(BaseModel):
 
 
 @router.post("/read")
-def mark_read(body: MarkRead, db: Session = Depends(get_db),
+def mark_read(body: MarkRead, db: Database = Depends(get_db),
               user_id: _uuid.UUID = Depends(current_user)) -> dict:
-    query = db.query(UserNotification).filter(UserNotification.user_id == user_id,
-                                              UserNotification.read_at.is_(None))
+    where: dict = {"user_id": user_id, "read_at": None}
     if not body.all:
         if not body.ids:
             return {"marked": 0}
-        query = query.filter(UserNotification.id.in_(body.ids))
-    marked = query.update({"read_at": func.now()}, synchronize_session=False)
-    return {"marked": marked or 0}
+        where["_id"] = {"$in": body.ids}
+    return {"marked": db[UserNotification.COLLECTION].update_many(
+        where, {"$set": {"read_at": now()}}).modified_count}
 
 
 class Discard(BaseModel):
@@ -87,13 +80,12 @@ class Discard(BaseModel):
 
 
 @router.post("/delete")
-def delete_notifications(body: Discard, db: Session = Depends(get_db),
+def delete_notifications(body: Discard, db: Database = Depends(get_db),
                          user_id: _uuid.UUID = Depends(current_user)) -> dict:
     """Dismiss notifications for good."""
-    query = db.query(UserNotification).filter(UserNotification.user_id == user_id)
+    where: dict = {"user_id": user_id}
     if not body.all:
         if not body.ids:
             return {"deleted": 0}
-        query = query.filter(UserNotification.id.in_(body.ids))
-    deleted = query.delete(synchronize_session=False)
-    return {"deleted": deleted or 0}
+        where["_id"] = {"$in": body.ids}
+    return {"deleted": db[UserNotification.COLLECTION].delete_many(where).deleted_count}

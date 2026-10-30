@@ -5,15 +5,16 @@ import asyncio
 import json
 import logging
 import os
+import re
 import uuid as _uuid
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import func, or_, select
-from sqlalchemy.orm import Session
+from pymongo.database import Database
 
+from libs.db import delete_account, find, find_one, get, insert
 from libs.db.models import (
     AtsToken,
     CorpusJob,
@@ -28,7 +29,6 @@ from libs.limits import all_for, describe, set_limit
 from libs.obs import audit
 from libs.ops import evaluate, platform_health, render
 from libs.ops.latency import (
-    filter_effect,
     lane_timings,
     latency_series,
     pipeline_latency,
@@ -37,6 +37,7 @@ from libs.ops.latency import (
 )
 from libs.ops.pipeline import pipeline
 from libs.profiles.repository import ProfileFiles
+from libs.secrets import SecretStore
 from libs.settings import (
     DEFAULT_SOURCE_MIN_AGE_HOURS,
     DEFAULTS,
@@ -64,10 +65,10 @@ def admin_emails() -> set[str]:
     return {entry.strip().lower() for entry in raw.split(",") if entry.strip()}
 
 
-def require_admin(db: Session = Depends(get_db),
+def require_admin(db: Database = Depends(get_db),
                   user_id: _uuid.UUID = Depends(current_user)) -> User:
     """404, not 403."""
-    user = db.get(User, user_id)
+    user = get(db, User, user_id)
     allowed = admin_emails()
     # The env var or the row.
     granted = user is not None and (user.is_admin or user.email.lower() in allowed)
@@ -78,7 +79,7 @@ def require_admin(db: Session = Depends(get_db),
 
 
 @router.get("/health")
-def health(db: Session = Depends(get_db), admin: User = Depends(require_admin)) -> dict:
+def health(db: Database = Depends(get_db), admin: User = Depends(require_admin)) -> dict:
     """Every number, plus the conditions that currently need a person."""
     state = platform_health(db)
     alerts = evaluate(state)
@@ -96,7 +97,7 @@ def health(db: Session = Depends(get_db), admin: User = Depends(require_admin)) 
 
 
 @router.get("/users")
-def users(db: Session = Depends(get_db), admin: User = Depends(require_admin)) -> dict:
+def users(db: Database = Depends(get_db), admin: User = Depends(require_admin)) -> dict:
     """The account list, with no credential material of any kind."""
     audit(logger, "admin.users", user=admin.id)
     allowed = admin_emails()
@@ -107,10 +108,7 @@ def users(db: Session = Depends(get_db), admin: User = Depends(require_admin)) -
                 "email": row.email,
                 "status": row.status,
                 "active": row.active,
-                "plan": row.plan_id,
                 "telegram": row.telegram_status,
-                "profile_generation": row.profile_generation,
-                "model_version": row.model_version,
                 # Effective access, not just the column.
                 "is_admin": row.is_admin or row.email.lower() in allowed,
                 # Whether the flag can be changed here at all.
@@ -123,7 +121,7 @@ def users(db: Session = Depends(get_db), admin: User = Depends(require_admin)) -
                 "last_active_at": (row.last_active_at.isoformat()
                                    if row.last_active_at else None),
             }
-            for row in db.scalars(select(User).order_by(User.created_at))],
+            for row in find(db, User, {}, sort=[("created_at", 1)])],
     }
 
 
@@ -132,9 +130,7 @@ class AdminAccount(BaseModel):
     email: str
     status: str
     active: bool
-    plan: str
     telegram: str
-    profile_generation: int
     profile_files_visible: bool
     onboarded: bool
     created_at: datetime | None
@@ -166,10 +162,10 @@ class AdminAccountDetail(BaseModel):
 
 
 @router.get("/users/{user_id}")
-def user_detail(user_id: _uuid.UUID, db: Session = Depends(get_db),
+def user_detail(user_id: _uuid.UUID, db: Database = Depends(get_db),
                 admin: User = Depends(require_admin)) -> AdminAccountDetail:
     """One account, for the two questions an operator actually has."""
-    user = db.get(User, user_id)
+    user = get(db, User, user_id)
     if user is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="no such user")
 
@@ -178,8 +174,7 @@ def user_detail(user_id: _uuid.UUID, db: Session = Depends(get_db),
     return AdminAccountDetail(
         user=AdminAccount(
             id=str(user.id), email=user.email, status=user.status, active=user.active,
-            plan=user.plan_id, telegram=user.telegram_status,
-            profile_generation=user.profile_generation,
+            telegram=user.telegram_status,
             profile_files_visible=bool(user.profile_files_visible),
             onboarded=user.onboarding_completed_at is not None,
             created_at=user.created_at, last_active_at=user.last_active_at),
@@ -189,12 +184,10 @@ def user_detail(user_id: _uuid.UUID, db: Session = Depends(get_db),
                    for row in files.listing()]),
         limits=all_for(user),
         counts=AdminCounts(
-            applied=db.scalar(select(func.count()).select_from(UserJobState)
-                              .where(UserJobState.user_id == user_id,
-                                     UserJobState.applied_at.isnot(None))) or 0,
-            notified=db.scalar(select(func.count()).select_from(UserJobState)
-                               .where(UserJobState.user_id == user_id,
-                                      UserJobState.notified_at.isnot(None))) or 0))
+            applied=db[UserJobState.COLLECTION].count_documents(
+                {"user_id": user_id, "applied_at": {"$ne": None}}),
+            notified=db[UserJobState.COLLECTION].count_documents(
+                {"user_id": user_id, "notified_at": {"$ne": None}})))
 
 
 class SettingPatch(BaseModel):
@@ -202,14 +195,14 @@ class SettingPatch(BaseModel):
 
 
 @router.get("/settings")
-def read_settings(db: Session = Depends(get_db), admin: User = Depends(require_admin)) -> dict:
+def read_settings(db: Database = Depends(get_db), admin: User = Depends(require_admin)) -> dict:
     """What the operator controls, with the defaults filled in for anything unset."""
     audit(logger, "admin.settings_read", user=admin.id)
     return {"settings": all_settings(db), "defaults": DEFAULTS}
 
 
 @router.put("/settings/{key}")
-def write_setting(key: str, body: SettingPatch, db: Session = Depends(get_db),
+def write_setting(key: str, body: SettingPatch, db: Database = Depends(get_db),
                   admin: User = Depends(require_admin)) -> dict:
     """Set one."""
     try:
@@ -230,33 +223,33 @@ class FilesFlag(BaseModel):
 
 
 @router.put("/users/{user_id}/files")
-def set_files_visible(user_id: _uuid.UUID, body: FilesFlag, db: Session = Depends(get_db),
+def set_files_visible(user_id: _uuid.UUID, body: FilesFlag, db: Database = Depends(get_db),
                       admin: User = Depends(require_admin)) -> dict:
     """Open or close this account's profile files to the person they are about."""
-    target = db.get(User, user_id)
+    target = get(db, User, user_id)
     if target is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="no such account")
-    target.profile_files_visible = body.visible
+    db[User.COLLECTION].update_one({"_id": user_id}, {"$set": {"profile_files_visible": body.visible}})
     audit(logger, "admin.files_visibility_changed", user=admin.id, subject=user_id,
           visible=body.visible)
     return {"status": "saved", "profile_files_visible": body.visible}
 
 
 @router.put("/users/{user_id}/admin")
-def set_admin(user_id: _uuid.UUID, body: AdminFlag, db: Session = Depends(get_db),
+def set_admin(user_id: _uuid.UUID, body: AdminFlag, db: Database = Depends(get_db),
               admin: User = Depends(require_admin)) -> dict:
     """Grant or revoke operator access."""
     if user_id == admin.id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             detail="You cannot change your own operator access.")
 
-    target = db.get(User, user_id)
+    target = get(db, User, user_id)
     if target is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="no such user")
 
-    target.is_admin = body.is_admin
+    db[User.COLLECTION].update_one({"_id": user_id}, {"$set": {"is_admin": body.is_admin}})
     audit(logger, "admin.access_changed", user=admin.id, subject=user_id, granted=body.is_admin)
-    return {"status": "ok", "id": str(user_id), "is_admin": target.is_admin}
+    return {"status": "ok", "id": str(user_id), "is_admin": body.is_admin}
 
 
 class DeleteConfirmation(BaseModel):
@@ -265,14 +258,14 @@ class DeleteConfirmation(BaseModel):
 
 
 @router.delete("/users/{user_id}")
-def delete_user(user_id: _uuid.UUID, body: DeleteConfirmation, db: Session = Depends(get_db),
+def delete_user(user_id: _uuid.UUID, body: DeleteConfirmation, db: Database = Depends(get_db),
                 admin: User = Depends(require_admin)) -> dict:
     """Delete an account and everything belonging to it, immediately and permanently."""
     if user_id == admin.id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             detail="You cannot delete your own account from here.")
 
-    target = db.get(User, user_id)
+    target = get(db, User, user_id)
     if target is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="no such user")
 
@@ -282,14 +275,15 @@ def delete_user(user_id: _uuid.UUID, body: DeleteConfirmation, db: Session = Dep
             detail="That address does not match the account. Nothing was deleted.")
 
     email = target.email
-    db.delete(target)
+    SecretStore(db).purge(user_id)
+    delete_account(db, user_id)
     audit(logger, "admin.user_deleted", user=admin.id, subject=user_id)
     logger.warning("admin: %s deleted account %s (%s)", admin.id, user_id, email)
     return {"status": "deleted", "id": str(user_id)}
 
 
 @router.get("/sources")
-def sources(db: Session = Depends(get_db), admin: User = Depends(require_admin)) -> dict:
+def sources(db: Database = Depends(get_db), admin: User = Depends(require_admin)) -> dict:
     """Every source the harvester collects from, with the freshness window each one is using."""
     # One number per query-taking source: a source is asked once per distinct keyword.
     wanted = len(distinct_keywords(TenantRepository(db).active_configs()))
@@ -314,8 +308,7 @@ def sources(db: Session = Depends(get_db), admin: User = Depends(require_admin))
         # The ATS ceiling, with the number it is a ceiling on.
         "ats": {
             "companies_per_cycle": ats_companies_per_cycle(db),
-            "companies_held": db.scalar(
-                select(func.count()).select_from(AtsToken)) or 0,
+            "companies_held": db[AtsToken.COLLECTION].count_documents({}),
         },
     }
 
@@ -333,10 +326,10 @@ def limit_catalogue(admin: User = Depends(require_admin)) -> dict:
 
 @router.put("/users/{user_id}/limits/{key}")
 def set_user_limit(user_id: _uuid.UUID, key: str, body: LimitPatch,
-                   db: Session = Depends(get_db),
+                   db: Database = Depends(get_db),
                    admin: User = Depends(require_admin)) -> dict:
     """Set one ceiling on one account, or clear it to unlimited."""
-    target = db.get(User, user_id)
+    target = get(db, User, user_id)
     if target is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="no such user")
 
@@ -348,35 +341,31 @@ def set_user_limit(user_id: _uuid.UUID, key: str, body: LimitPatch,
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     audit(logger, "admin.limit_set", user=admin.id, subject=user_id, limit=key, value=body.value)
-    return {"status": "ok", "limits": all_for(target)}
+    return {"status": "ok", "limits": all_for(get(db, User, user_id))}
 
 # What an operator can page through at once.
 CORPUS_PAGE = 50
 
 
 @router.get("/corpus")
-def corpus(db: Session = Depends(get_db), admin: User = Depends(require_admin), *,
+def corpus(db: Database = Depends(get_db), admin: User = Depends(require_admin), *,
            q: str = "", source: str = "", days: int = 30,
            offset: int = 0) -> dict:
     """Search the shared corpus."""
     window = datetime.now(UTC) - timedelta(days=max(days, 1))
-    filters = [CorpusJob.first_seen_at >= window]
+    where: dict = {"first_seen_at": {"$gte": window}}
     if q.strip():
-        needle = f"%{q.strip()}%"
-        filters.append(or_(CorpusJob.title.ilike(needle), CorpusJob.company.ilike(needle)))
+        needle = {"$regex": re.escape(q.strip()), "$options": "i"}
+        where["$or"] = [{"title": needle}, {"company": needle}]
     if source.strip():
-        filters.append(CorpusJob.source == source.strip())
+        where["source"] = source.strip()
 
-    total = db.scalar(select(func.count()).select_from(CorpusJob).where(*filters)) or 0
-    rows = db.scalars(
-        select(CorpusJob).where(*filters)
-        .order_by(CorpusJob.first_seen_at.desc())
-        .offset(max(offset, 0)).limit(CORPUS_PAGE)).all()
-
-    by_source = db.execute(
-        select(CorpusJob.source, func.count())
-        .where(CorpusJob.first_seen_at >= window)
-        .group_by(CorpusJob.source).order_by(func.count().desc())).all()
+    total = db[CorpusJob.COLLECTION].count_documents(where)
+    rows = find(db, CorpusJob, where, sort=[("first_seen_at", -1), ("_id", -1)],
+                skip=max(offset, 0), limit=CORPUS_PAGE)
+    by_source = [(row["_id"], row["count"]) for row in db[CorpusJob.COLLECTION].aggregate([
+        {"$match": {"first_seen_at": {"$gte": window}}},
+        {"$group": {"_id": "$source", "count": {"$sum": 1}}}, {"$sort": {"count": -1}}])]
 
     audit(logger, "admin.corpus", user=admin.id, q=q[:60], total=total)
     return {
@@ -387,8 +376,6 @@ def corpus(db: Session = Depends(get_db), admin: User = Depends(require_admin), 
         "jobs": [
             {"id": row.id, "title": row.title, "company": row.company,
              "location": row.location, "source": row.source, "is_remote": row.is_remote,
-             # Whether it can be scored at all.
-             "embedded": row.embedding is not None,
              "described": bool(row.description and len(row.description) > 400),
              "url": row.url,
              "first_seen_at": row.first_seen_at.isoformat() if row.first_seen_at else None,
@@ -405,13 +392,14 @@ class KeywordBody(BaseModel):
 
 
 @router.get("/keywords")
-def keywords(db: Session = Depends(get_db), admin: User = Depends(require_admin)) -> dict:
+def keywords(db: Database = Depends(get_db), admin: User = Depends(require_admin)) -> dict:
     """Every term the harvest currently searches, and who it belongs to."""
-    injected = db.scalars(select(OperatorKeyword).order_by(OperatorKeyword.keyword)).all()
+    injected = find(db, OperatorKeyword, {}, sort=[("keyword", 1)])
 
     owned: dict[str, set[str]] = {}
-    rows = db.execute(select(UserConfig.user_id, UserConfig.config)).all()
-    emails = dict(db.execute(select(User.id, User.email)).all())
+    rows = [(row["user_id"], row["config"])
+            for row in db[UserConfig.COLLECTION].find({}, {"user_id": 1, "config": 1})]
+    emails = {row["_id"]: row["email"] for row in db[User.COLLECTION].find({}, {"email": 1})}
     for user_id, config in rows:
         for section in (config or {}).get("sections") or []:
             for term in section.get("keywords") or []:
@@ -431,58 +419,51 @@ def keywords(db: Session = Depends(get_db), admin: User = Depends(require_admin)
 
 
 @router.post("/keywords", status_code=status.HTTP_201_CREATED)
-def add_keyword(body: KeywordBody, db: Session = Depends(get_db),
+def add_keyword(body: KeywordBody, db: Database = Depends(get_db),
                 admin: User = Depends(require_admin)) -> dict:
     """Inject a term into the harvest, to fill the corpus ahead of the users who will need it."""
     term = " ".join(body.keyword.split()).lower()
     place = (body.location or "").strip() or None
-    existing = db.scalar(
-        select(OperatorKeyword).where(OperatorKeyword.keyword == term,
-                                      OperatorKeyword.location == place))
+    existing = find_one(db, OperatorKeyword, {"keyword": term, "location": place})
     if existing is not None:
         # Idempotent: adding the same term twice is a person being unsure, not a request for two.
         return {"id": existing.id, "keyword": existing.keyword, "location": existing.location,
                 "created": False}
 
-    row = OperatorKeyword(keyword=term, location=place, note=(body.note or "").strip() or None,
-                          created_by=admin.email)
-    db.add(row)
-    db.flush()
+    row = insert(db, OperatorKeyword(keyword=term, location=place, note=(body.note or "").strip() or None,
+                                     created_by=admin.email))
     audit(logger, "admin.keyword_added", user=admin.id, keyword=term, location=place)
     return {"id": row.id, "keyword": row.keyword, "location": row.location, "created": True}
 
 
 @router.delete("/keywords/{keyword_id}")
-def remove_keyword(keyword_id: int, db: Session = Depends(get_db),
+def remove_keyword(keyword_id: int, db: Database = Depends(get_db),
                    admin: User = Depends(require_admin)) -> dict:
     """Remove an injected term."""
-    row = db.get(OperatorKeyword, keyword_id)
+    row = get(db, OperatorKeyword, keyword_id)
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="no such keyword")
-    db.delete(row)
+    db[OperatorKeyword.COLLECTION].delete_one({"_id": keyword_id})
     audit(logger, "admin.keyword_removed", user=admin.id, keyword=row.keyword)
     return {"status": "removed", "keyword": row.keyword}
 
 @router.delete("/queue/dead")
-def discard_dead_letters(db: Session = Depends(get_db), admin: User = Depends(require_admin), *,
+def discard_dead_letters(db: Database = Depends(get_db), admin: User = Depends(require_admin), *,
                          lane: str | None = None) -> dict:
     """Clear dead-lettered jobs an operator has read and dealt with."""
-    query = select(QueueJob).where(QueueJob.state == "dead")
-    if lane:
-        query = query.where(QueueJob.lane == lane)
-
-    rows = list(db.scalars(query))
+    where = {"state": "dead", **({"lane": lane} if lane else {})}
+    rows = find(db, QueueJob, where)
     for row in rows:
         logger.warning("admin: discarding dead %s job %s for user %s — last error: %s",
                        row.lane, row.id, row.user_id, (row.last_error or "")[:200])
-        db.delete(row)
+    db[QueueJob.COLLECTION].delete_many({"_id": {"$in": [row.id for row in rows]}})
 
     audit(logger, "admin.dead_discarded", user=admin.id, lane=lane or "all", count=len(rows))
     return {"status": "discarded", "count": len(rows), "lane": lane}
 
 
 @router.get("/pipeline")
-def pipeline_shape(db: Session = Depends(get_db), admin: User = Depends(require_admin), *,
+def pipeline_shape(db: Database = Depends(get_db), admin: User = Depends(require_admin), *,
                    hours: int = 24) -> dict:
     """Where the jobs are right now, stage by stage."""
     return pipeline(db, hours=max(1, min(hours, 168)))
@@ -496,7 +477,7 @@ STREAM_MAX_SECONDS = 300
 
 
 @router.get("/pipeline/stream")
-async def pipeline_stream(request: Request, db: Session = Depends(get_db),
+async def pipeline_stream(request: Request, db: Database = Depends(get_db),
                           admin: User = Depends(require_admin), *, hours: int = 24) -> Response:
     """The same numbers as `/pipeline`, pushed once a second."""
     window = max(1, min(hours, 168))
@@ -512,8 +493,6 @@ async def pipeline_stream(request: Request, db: Session = Depends(get_db),
                 # Ends the response; the browser reopens and is authorised again.
                 return
             try:
-                # Each frame starts clean, or Postgres answers every one from the first frame's snapshot.
-                db.rollback()
                 payload = json.dumps(pipeline(db, hours=window))
             except Exception as exc:  # noqa: BLE001 - one bad frame must not kill the stream
                 logger.warning("pipeline stream: frame failed, retrying next tick: %s", exc)
@@ -529,7 +508,7 @@ async def pipeline_stream(request: Request, db: Session = Depends(get_db),
 
 
 @router.get("/latency")
-def latency(db: Session = Depends(get_db), admin: User = Depends(require_admin), *,
+def latency(db: Database = Depends(get_db), admin: User = Depends(require_admin), *,
             hours: int = 24) -> dict:
     """The drill-down: the spans, then where the time actually went, then when."""
     window = max(1, min(hours, 24 * 7))
@@ -538,8 +517,6 @@ def latency(db: Session = Depends(get_db), admin: User = Depends(require_admin),
         "window_hours": window,
         # One row per zone the posting crosses, in pipeline order.
         "stages": stage_breakdown(db, hours=window),
-        # What the pre-score filter removed, per account.
-        "filter": filter_effect(db, hours=window),
         "spans": pipeline_latency(db, hours=window),
         "lanes": lane_timings(db, hours=window),
         "series": latency_series(db, hours=window),
@@ -547,7 +524,7 @@ def latency(db: Session = Depends(get_db), admin: User = Depends(require_admin),
 
 
 @router.get("/latency/{key}")
-def latency_stage(key: str, db: Session = Depends(get_db),
+def latency_stage(key: str, db: Database = Depends(get_db),
                   admin: User = Depends(require_admin), *, hours: int = 24) -> dict:
     """One zone, expanded: waiting versus running, the backlog, and the hour-by-hour shape."""
     window = max(1, min(hours, 24 * 7))

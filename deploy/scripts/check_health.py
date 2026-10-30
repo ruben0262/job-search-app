@@ -9,7 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from libs.db.session import session_scope
+from libs.db import database
 from libs.mail import sender_from_env
 from libs.obs import audit, configure
 from libs.ops import evaluate, platform_health, render
@@ -83,9 +83,9 @@ def main(argv: list[str] | None = None) -> int:
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8", errors="replace")
 
-    with session_scope() as session:
-        state = platform_health(session)
-        alerts = evaluate(state)
+    db = database()
+    state = platform_health(db)
+    alerts = evaluate(state)
 
     absent = missing_timers()
     embedder = embedder_down()
@@ -103,7 +103,7 @@ def main(argv: list[str] | None = None) -> int:
         summary = ("TIMERS NOT ENABLED: " + ", ".join(absent)
                    + "\n  Fix with: sudo deploy/install-units.sh\n\n" + summary)
     print(f"{state.corpus_rows:,} corpus rows, {state.users_active} active users, "
-          f"{state.postgres_bytes / 1024**3:.2f} GB, {state.connections} connections")
+          f"{state.database_bytes / 1024**2:.0f} MB, {state.connections} connections")
     for lane in state.lanes:
         print(f"  {lane.lane:8} ready={lane.ready:<5} claimed={lane.claimed:<4} "
               f"dead={lane.dead:<4} oldest={lane.oldest_ready_min or 0:.0f}m")

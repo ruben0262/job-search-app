@@ -5,19 +5,18 @@ import logging
 import uuid as _uuid
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from time import monotonic
 
-from sqlalchemy import select, text
-from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
+from pymongo.database import Database
+from pymongo.errors import PyMongoError
 
 from libs.corpus.archive import archive_expired
 from libs.corpus.ats import AtsRepository
 from libs.corpus.ats_urls import tokens_from_urls
 from libs.corpus.repository import CorpusRepository
+from libs.db import find, get, lease
 from libs.db.models import CorpusJob, User
 from libs.obs import Timings, audit, report_timings, timed
 from libs.settings import (
@@ -42,8 +41,6 @@ from services.harvester.sources import OUTER_CONCURRENCY, JobLink, Source, Tier,
 
 logger = logging.getLogger(__name__)
 
-# One arbitrary constant, shared by every harvester process.
-HARVEST_LOCK_KEY = 0x6A6F_6273_0001
 
 @dataclass
 class CycleReport:
@@ -57,8 +54,6 @@ class CycleReport:
     # Rows whose thin snippet was replaced by the posting's own text.
     described: int = 0
     describe_outcomes: dict[str, int] = field(default_factory=dict)
-    # Rows whose language was read from text that was already stored.
-    languages_read: int = 0
     # Per source, so "the cycle found 200 links" cannot hide "and four of six sources found none".
     links_by_source: dict[str, int] = field(default_factory=dict)
     source_failures: dict[str, str] = field(default_factory=dict)
@@ -75,21 +70,10 @@ class CycleReport:
         return sum(self.duplicates.values())
 
 
-@contextmanager
-def harvest_lock(session: Session, *, key: int = HARVEST_LOCK_KEY):
-    """Hold the cycle lock, or yield False if another run already has it."""
-    acquired = bool(session.execute(
-        text("SELECT pg_try_advisory_lock(:key)"), {"key": key}).scalar())
-    try:
-        yield acquired
-    finally:
-        if acquired:
-            try:
-                session.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": key})
-            except Exception:
-                # Never let cleanup mask the failure that caused it.
-                logger.debug("advisory unlock failed; the connection close will release it",
-                             exc_info=True)
+def harvest_lock(db: Database):
+    """Hold the cycle's lease, or yield False if another run already has it. As long as a cycle may
+    run, so a cycle that died lets go before the next tick rather than holding the harvest forever."""
+    return lease(db, "harvest", HARVEST_CYCLE_BUDGET_SECONDS)
 
 
 def _run_source(source: Source, cfg: dict, repo: AtsRepository) -> list[JobLink]:
@@ -103,11 +87,11 @@ def _run_source(source: Source, cfg: dict, repo: AtsRepository) -> list[JobLink]
 OPERATOR_DEMAND_ID = _uuid.UUID("00000000-0000-0000-0000-0000000000ff")
 
 
-def _operator_demand(session) -> dict:
+def _operator_demand(db) -> dict:
     """Operator keywords, shaped like a user config so the fold needs no special case."""
     from libs.db.models import OperatorKeyword  # noqa: PLC0415 - avoids a cycle at import time
 
-    rows = session.scalars(select(OperatorKeyword)).all()
+    rows = find(db, OperatorKeyword, {})
     if not rows:
         return {}
 
@@ -122,7 +106,7 @@ def _operator_demand(session) -> dict:
     return {OPERATOR_DEMAND_ID: {"sections": sections}}
 
 def run_cycle(
-    session: Session,
+    db: Database,
     *,
     source_configs: dict[str, dict] | None = None,
     carried_over: Iterable[QueryKey] = (),
@@ -134,12 +118,12 @@ def run_cycle(
     """Run one shared harvest cycle. Nothing is embedded or scored: matching happens when it is read."""
     started = monotonic()
     report = CycleReport()
-    corpus = CorpusRepository(session)
-    tenant = TenantRepository(session)
-    ats = AtsRepository(session)
+    corpus = CorpusRepository(db)
+    tenant = TenantRepository(db)
+    ats = AtsRepository(db)
     source_configs = source_configs or {}
 
-    with harvest_lock(session) as acquired:
+    with harvest_lock(db) as acquired:
         if not acquired:
             logger.warning("harvest: another cycle holds the lock, skipping this tick")
             report.skipped_locked = True
@@ -149,13 +133,13 @@ def run_cycle(
         configs = tenant.active_configs()
 
         # Operator-injected demand, folded in as one more participant.
-        configs = {**configs, **_operator_demand(session)}
+        configs = {**configs, **_operator_demand(db)}
         # The sources that are actually enabled and actually read a query set.
         askable = tuple(sorted(QUERY_TAKING_SOURCES & set(source_configs)))
         # No location axis at all, decided 2026-08-04.
         query_set = build_query_set(configs, sources=askable,
                                     locating_sources=(), remote_aware_sources=(),
-                                    budgets=_keyword_budgets(session, configs))
+                                    budgets=_keyword_budgets(db, configs))
         planned, deferred = select_within_budget(
             query_set, limits=limits, carried_over=carried_over)
         report.queries_planned = len(planned)
@@ -185,18 +169,14 @@ def run_cycle(
             report.described = described.described
             report.describe_outcomes = described.outcomes
 
-        # 5c. Read the language off whatever text now exists. No network, and once per posting.
-        with timed("language", report.timings):
-            report.languages_read = corpus.fill_missing_languages()
-
         # 5d. Learn which company boards to poll, from the URLs already stored.
         with timed("ats_discovery", report.timings):
-            report.ats_tokens_found = _discover_ats_tokens(session, ats)
+            report.ats_tokens_found = _discover_ats_tokens(db, ats)
 
         # 6. Retire what has aged out. On this tick rather than a timer of its own: the corpus is
         # the thing that grows and this is the pass that already touches it, and a second clock is
         # a second outage (CLAUDE.md §6). Bounded per pass, so it cannot become the slow stage.
-        _archive_expired(session, report)
+        _archive_expired(db, report)
 
     logger.info(
         "harvest: %d queries (%d deferred), %d links, %d duplicates, %d new, %d described",
@@ -215,7 +195,7 @@ def run_cycle(
     return report, [q.key for q in deferred]
 
 
-def _archive_expired(session: Session, report: CycleReport) -> None:
+def _archive_expired(db: Database, report: CycleReport) -> None:
     """Move aged-out postings to the archive file, and never let that stop a harvest.
 
     Retention failing is not a reason to lose a cycle's intake: nothing is deleted unless it was
@@ -225,8 +205,8 @@ def _archive_expired(session: Session, report: CycleReport) -> None:
     """
     try:
         with timed("archive", report.timings):
-            report.archived = archive_expired(session).jobs
-    except (OSError, SQLAlchemyError) as exc:
+            report.archived = archive_expired(db).jobs
+    except (OSError, PyMongoError) as exc:
         logger.error("harvest: archiving aged-out postings failed, nothing was deleted "
                      "and the corpus keeps growing: %s", exc)
 
@@ -326,7 +306,6 @@ def _ingest(corpus: CorpusRepository, links: Iterable[JobLink], report: CycleRep
         if duplicate is not None:
             report.duplicates[duplicate.matched_on] = \
                 report.duplicates.get(duplicate.matched_on, 0) + 1
-            corpus.touch_last_seen([duplicate.job_id])
             continue
 
         job_id = corpus.add(**link.as_corpus_row())
@@ -343,19 +322,19 @@ def _ingest(corpus: CorpusRepository, links: Iterable[JobLink], report: CycleRep
     return new_jobs
 
 
-def _keyword_budgets(session, configs) -> dict:
+def _keyword_budgets(db, configs) -> dict:
     """Each account's own `keywords` ceiling, so the panel's value is the one that harvests."""
     from libs import limits  # noqa: PLC0415 - one caller, kept local
 
     out = {}
     for user_id in configs:
-        user = session.get(User, user_id)
+        user = get(db, User, user_id)
         # Operator-injected demand has no user row and keeps the catalogue default.
         out[user_id] = limits.resolve(user, "keywords") if user is not None else None
     return out
 
 
-def _discover_ats_tokens(session, ats: AtsRepository) -> int:
+def _discover_ats_tokens(db, ats: AtsRepository) -> int:
     """Enrol company boards named by postings the corpus already holds. Returns how many are new.
 
     **The company list was a closed loop.** Tokens came only from hiring.cafe's `board_token`
@@ -374,10 +353,8 @@ def _discover_ats_tokens(session, ats: AtsRepository) -> int:
     only grows: a token found last week is already enrolled, and `add_tokens` ignores duplicates.
     """
     since = datetime.now(UTC) - timedelta(hours=ATS_DISCOVERY_LOOKBACK_HOURS)
-    urls = session.scalars(
-        select(CorpusJob.url)
-        .where(CorpusJob.first_seen_at >= since, CorpusJob.url.is_not(None))
-        .limit(ATS_DISCOVERY_MAX_ROWS)).all()
+    urls = [row["url"] for row in db[CorpusJob.COLLECTION].find(
+        {"first_seen_at": {"$gte": since}, "url": {"$ne": None}}, {"url": 1}, limit=ATS_DISCOVERY_MAX_ROWS)]
 
     pairs = tokens_from_urls(urls)
     if not pairs:

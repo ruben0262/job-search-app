@@ -1,39 +1,28 @@
-"""The user's profile, as the files the reference instance keeps on disk."""
+"""One person's profile files: markdown and HTML the documents are written from (CLAUDE.md §3a)."""
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass, field
+from datetime import datetime
 
-from sqlalchemy import Boolean, CheckConstraint, ForeignKey, String, Text, func
-from sqlalchemy.orm import Mapped, mapped_column
+from pymongo import IndexModel
 
-from libs.db.base import Base, timestamptz
+from libs.db import Document, now
 
-# What a row's `kind` may be. Ordered as the files are concatenated into a generation call.
 PROFILE_FILE_KINDS = ("context", "skill", "prompt", "template")
 
-# Editing one of these changes what counts as a fit, so old labels answer a different question.
-SCORING_RELEVANT_FILES = ("label.md", "04-job-evaluation.md")
 
+@dataclass(kw_only=True)
+class UserProfileFile(Document):
+    COLLECTION = "user_profile_files"
+    CHOICES = {"kind": PROFILE_FILE_KINDS}  # noqa: RUF012
+    INDEXES = (IndexModel([("user_id", 1), ("name", 1)], unique=True, name="one_per_name"),)
 
-class UserProfileFile(Base):
-    """One markdown (or HTML) file belonging to one user."""
-
-    __tablename__ = "user_profile_files"
-
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
-    # `context.md`, `01-candidate-profile.md`, `label.md`, `base_cv.html` — the reference's own names.
-    name: Mapped[str] = mapped_column(String(64), primary_key=True)
-
-    content: Mapped[str] = mapped_column(Text)
-    kind: Mapped[str] = mapped_column(String(16))
-
-    # False while the row still holds the shipped scaffold.
-    filled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
-
-    created_at: Mapped[timestamptz] = mapped_column(server_default=func.now())
-    updated_at: Mapped[timestamptz] = mapped_column(server_default=func.now(), onupdate=func.now())
-
-    __table_args__ = (
-        CheckConstraint(f"kind IN {PROFILE_FILE_KINDS}", name="user_profile_files_kind_valid"),
-    )
+    user_id: uuid.UUID
+    name: str
+    content: str
+    kind: str
+    filled: bool = False
+    created_at: datetime = field(default_factory=now)
+    # Read by `stale_setup`: a file written before the person last changed their details is stale.
+    updated_at: datetime = field(default_factory=now)

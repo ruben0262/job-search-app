@@ -17,10 +17,10 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 
-from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from pymongo.database import Database
 
 from libs import limits
+from libs.db import insert
 from libs.db.models import AiRequest, User, UserSecret
 from libs.llm.client import AnthropicClient, LlmClient
 from libs.llm.rest import GeminiClient, OpenAIClient
@@ -44,45 +44,43 @@ class Payer:
     provider: str
 
 
-def resolve(session: Session, user: User) -> Payer | None:
+def resolve(db: Database, user: User) -> Payer | None:
     """Who pays for one AI request from this person, or `None` when nobody can.
 
     The platform pays only for an account with no key of its own, only when it has a key configured,
     and only while today's `ai_requests_today` is under `ai_platform_requests_per_day`.
     """
-    held = set(session.scalars(select(UserSecret.kind).where(
-        UserSecret.user_id == user.id, UserSecret.kind.in_(OWN_KEYS))))
+    held = set(db[UserSecret.COLLECTION].distinct(
+        "kind", {"user_id": user.id, "kind": {"$in": list(OWN_KEYS)}}))
     for kind in OWN_KEYS:
         if kind in held:
             return Payer(kind, PROVIDERS[kind])
 
-    if platform_left(session, user) > 0:
+    if platform_left(db, user) > 0:
         return Payer(PLATFORM, os.environ[PLATFORM_PROVIDER_ENV])
     return None
 
 
-def platform_left(session: Session, user: User) -> int:
+def platform_left(db: Database, user: User) -> int:
     """How many more requests the platform's key will pay for, for this person, today: 0 when the
     platform has no key configured. What `resolve` decides on, and what a page shows as left."""
     allowance = limits.resolve(user, "ai_platform_requests_per_day")
     configured = os.environ.get(PLATFORM_PROVIDER_ENV) in _PLATFORM_KIND and os.environ.get(PLATFORM_KEY_ENV)
     if not configured or allowance is None:
         return 0
-    return max(0, allowance - ai_requests_today(session, user.id))
+    return max(0, allowance - ai_requests_today(db, user.id))
 
 
-def ai_requests_today(session: Session, user_id: _uuid.UUID) -> int:
+def ai_requests_today(db: Database, user_id: _uuid.UUID) -> int:
     """How many AI requests the platform's key has paid for, for this person, since their midnight."""
-    return session.scalar(
-        select(func.count()).select_from(AiRequest)
-        .where(AiRequest.user_id == user_id,
-               limits.since_their_midnight(session, user_id, AiRequest.created_at))) or 0
+    return db[AiRequest.COLLECTION].count_documents(
+        {"user_id": user_id, "created_at": {"$gte": limits.their_midnight(db, user_id)}})
 
 
-def record_ai_request(session: Session, user_id: _uuid.UUID) -> None:
+def record_ai_request(db: Database, user_id: _uuid.UUID) -> None:
     """Count one request against this person's allowance. Call it once `resolve` has said
-    `PLATFORM` and the request is going ahead — in the same transaction that sends it."""
-    session.add(AiRequest(user_id=user_id))
+    `PLATFORM` and the request is going ahead."""
+    insert(db, AiRequest(user_id=user_id))
 
 
 def client_for(value: str, kind: str) -> LlmClient:

@@ -1,17 +1,16 @@
-"""Request-scoped dependencies: the database session, the mailer, and the rate limiter."""
+"""Request-scoped dependencies: the database, the mailer, and the rate limiter."""
 from __future__ import annotations
 
 import os
 import threading
 import time
 import uuid
-from collections.abc import Iterator
 
 from fastapi import Depends, HTTPException, Request, status
-from sqlalchemy.orm import Session
+from pymongo.database import Database
 
 from libs.auth.access import InvalidAccessToken, read_access_token
-from libs.db.session import session_scope
+from libs.db import database
 from libs.mail import EmailSender, sender_from_env
 from libs.secrets import SecretStore
 
@@ -22,15 +21,14 @@ _LOCK = threading.Lock()
 _MAILER: EmailSender | None = None
 
 
-def get_db() -> Iterator[Session]:
-    """One transaction per request, committed on a clean return."""
-    with session_scope() as session:
-        yield session
+def get_db() -> Database:
+    """The platform's database. Each write is its own; a request is not one transaction."""
+    return database()
 
 
-def get_store(session: Session = Depends(get_db)) -> SecretStore:
+def get_store(db: Database = Depends(get_db)) -> SecretStore:
     """The credential store for this request."""
-    return SecretStore(session)
+    return SecretStore(db)
 
 
 def current_user(request: Request) -> uuid.UUID:

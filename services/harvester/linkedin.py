@@ -5,12 +5,11 @@ import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-from sqlalchemy import or_, select
-
 from libs import limits
 from libs.contracts.config import location_search_name
 from libs.corpus.repository import CorpusRepository
-from libs.db.models import User, UserConfig
+from libs.db import find
+from libs.db.models import User
 from libs.obs import audit
 from libs.secrets import SecretStore, redacting
 from libs.secrets.keyring import SecretsError
@@ -21,6 +20,7 @@ from libs.settings import (
     results_per_query,
 )
 from libs.settings import get as settings_get
+from libs.tenant.repository import TenantRepository
 from services.harvester.describe import describe_pending
 from services.harvester.fetch import make_client
 from services.harvester.governor import (
@@ -59,20 +59,17 @@ class LinkedInReport:
     failures: dict[str, str] = field(default_factory=dict)
 
 
-def due_users(session, *, now: datetime, limit: int) -> list[User]:
+def due_users(db, *, now: datetime, limit: int) -> list[User]:
     """Active users whose LinkedIn run is due, soonest first."""
-    return list(session.scalars(
-        select(User)
-        .where(User.active.is_(True),
-               User.status == "active",
-               or_(User.linkedin_next_run_at.is_(None), User.linkedin_next_run_at <= now))
-        .order_by(User.linkedin_next_run_at.asc().nulls_first())
-        .limit(limit)))
+    # Ascending puts an empty `linkedin_next_run_at` first: never run is the most overdue.
+    return find(db, User, {"active": True, "status": "active",
+                           "$or": [{"linkedin_next_run_at": None}, {"linkedin_next_run_at": {"$lte": now}}]},
+                sort=[("linkedin_next_run_at", 1)], limit=limit)
 
 
-def queries_for(session, user: User) -> list[dict]:
+def queries_for(db, user: User) -> list[dict]:
     """This user's own LinkedIn queries — their keywords, nobody else's."""
-    config = session.scalar(select(UserConfig.config).where(UserConfig.user_id == user.id))
+    config = TenantRepository(db).get_config(user.id)
     if not config:
         return []
 
@@ -84,10 +81,10 @@ def queries_for(session, user: User) -> list[dict]:
                 "location": location_search_name(key.location_norm) or None,
                 "is_remote": key.is_remote, "hours_old": key.max_age_hours}
                for key in keys]
-    return queries[:queries_per_cycle(session, "linkedin")]
+    return queries[:queries_per_cycle(db, "linkedin")]
 
 
-def run_for_due_users(session, *, now: datetime | None = None,
+def run_for_due_users(db, *, now: datetime | None = None,
                       limit: int = LINKEDIN_MAX_CONCURRENT_USERS,
                       gather=jobspy_source.gather_linkedin) -> LinkedInReport:
     """One pass over the users whose LinkedIn run is due."""
@@ -97,27 +94,28 @@ def run_for_due_users(session, *, now: datetime | None = None,
         return report
 
     now = now or datetime.now(UTC)
-    corpus = CorpusRepository(session)
-    usage = ProxyUsageRepository(session)
+    corpus = CorpusRepository(db)
+    usage = ProxyUsageRepository(db)
     # Read once per pass rather than per user: both are platform settings, not per-account ones.
-    window = freshness_hours(session, "linkedin")
-    depth = results_per_query(session, "linkedin") or RESULTS_WANTED
+    window = freshness_hours(db, "linkedin")
+    depth = results_per_query(db, "linkedin") or RESULTS_WANTED
     # **Not `window`.** `freshness_hours` is how far back to *search*; `job_max_age_hours` is how
     # old a posting may be and still reach anybody. Describing is bounded by the second, because a
     # row past it has already been refused by the pre-score filter and its text will never be read.
-    deliverable_for = int(settings_get(session, "job_max_age_hours"))
-    store = SecretStore(session)
+    deliverable_for = int(settings_get(db, "job_max_age_hours"))
+    store = SecretStore(db)
 
-    for user in due_users(session, now=now, limit=limit):
+    for user in due_users(db, now=now, limit=limit):
         report.considered += 1
         # Scheduled first, deliberately: every path below wants the same next run, success or not.
         chosen = limits.resolve(user, "linkedin_interval_min")
         if chosen is None:
             chosen = user.linkedin_interval_min or LINKEDIN_MIN_INTERVAL_MIN
         interval = chosen
-        user.linkedin_next_run_at = next_linkedin_run(now, resolve_linkedin_interval(interval))
+        db[User.COLLECTION].update_one({"_id": user.id}, {"$set": {
+            "linkedin_next_run_at": next_linkedin_run(now, resolve_linkedin_interval(interval))}})
 
-        queries = queries_for(session, user)
+        queries = queries_for(db, user)
         if not queries:
             continue
 
@@ -214,7 +212,7 @@ def _ingest(corpus: CorpusRepository, links, *, user_id=None) -> int:
         if corpus.find_duplicate(link.url, link.title, link.company, link.location,
                                  application_url=link.application_url) is not None:
             continue
-        job_id = corpus.add(**link.as_corpus_row(), discovered_by=user_id)
+        job_id = corpus.add(**link.as_corpus_row())
         if job_id is None:
             continue
         new += 1

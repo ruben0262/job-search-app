@@ -1,10 +1,9 @@
 """Settings the operator owns, and the defaults they start from."""
 from __future__ import annotations
 
-from sqlalchemy import select
-from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.orm import Session
+from pymongo.database import Database
 
+from libs.db import now
 from libs.db.models import PlatformSetting
 
 # How often the platform's one-shots run, and the only schedule number in the tree.
@@ -212,7 +211,7 @@ SOURCE_MIN_AGE_HOURS: dict[str, int] = {
 DEFAULT_SOURCE_MIN_AGE_HOURS = 24
 
 
-def source_min_ages(session: Session) -> dict[str, int]:
+def source_min_ages(db: Database) -> dict[str, int]:
     """The delivery floor per source, with the operator's overrides applied over the measured map.
 
     The twin of `freshness_hours`, and it needed to become one. That setting says how far back a
@@ -221,7 +220,7 @@ def source_min_ages(session: Session) -> dict[str, int]:
     could widen a source's harvest window in the panel, watch the corpus fill with rows, and never
     learn that a floor they could not see was discarding them. Now they are set in the same place.
     """
-    stored = get(session, "source_min_age_hours") or {}
+    stored = get(db, "source_min_age_hours") or {}
     merged = dict(SOURCE_MIN_AGE_HOURS)
     merged.update({str(name).lower(): int(hours) for name, hours in stored.items()})
     return merged
@@ -273,36 +272,32 @@ DEFAULTS: dict[str, object] = {
 }
 
 
-def get(session: Session, key: str) -> object:
+def get(db: Database, key: str) -> object:
     """One setting, or its default."""
     if key not in DEFAULTS:
         raise KeyError(f"unknown platform setting {key!r}; known: {sorted(DEFAULTS)}")
-    stored = session.scalar(select(PlatformSetting.value).where(PlatformSetting.key == key))
-    return DEFAULTS[key] if stored is None else stored
+    stored = db[PlatformSetting.COLLECTION].find_one({"_id": key}, {"value": 1})
+    return DEFAULTS[key] if stored is None or stored["value"] is None else stored["value"]
 
 
-def all_settings(session: Session) -> dict[str, object]:
+def all_settings(db: Database) -> dict[str, object]:
     """Every setting with its current value — what the admin panel renders."""
-    stored = dict(session.execute(
-        select(PlatformSetting.key, PlatformSetting.value)).all())
+    stored = {row["_id"]: row["value"] for row in db[PlatformSetting.COLLECTION].find({}, {"value": 1})}
     return {key: stored.get(key, default) for key, default in DEFAULTS.items()}
 
 
-def put(session: Session, key: str, value: object, *, by: str | None = None) -> None:
-    """Set one setting. Does not commit — the caller owns the transaction."""
+def put(db: Database, key: str, value: object, *, by: str | None = None) -> None:
+    """Set one setting."""
     if key not in DEFAULTS:
         raise KeyError(f"unknown platform setting {key!r}; known: {sorted(DEFAULTS)}")
-    session.execute(
-        pg_insert(PlatformSetting)
-        .values(key=key, value=value, updated_by=by)
-        .on_conflict_do_update(index_elements=["key"],
-                               set_={"value": value, "updated_by": by}))
+    db[PlatformSetting.COLLECTION].update_one(
+        {"_id": key}, {"$set": {"value": value, "updated_by": by, "updated_at": now()}}, upsert=True)
 
 
 
 
 def queries_per_cycle_default(source: str) -> int:
-    """The catalogue ceiling for a caller with no session — an adapter reading its own fallback.
+    """The catalogue ceiling for a caller with no database — an adapter reading its own fallback.
 
     Split out so `services.harvester.sources` can share this map instead of restating a number
     beside it. A constant on each side plus a test asserting they are equal passes while both are
@@ -311,9 +306,9 @@ def queries_per_cycle_default(source: str) -> int:
     return DEFAULT_SOURCE_QUERIES_PER_CYCLE.get(source, DEFAULT_QUERIES_PER_CYCLE)
 
 
-def queries_per_cycle(session: Session, source: str) -> int:
+def queries_per_cycle(db: Database, source: str) -> int:
     """How many queries this source may be asked this cycle."""
-    per_source = get(session, "source_queries_per_cycle") or {}
+    per_source = get(db, "source_queries_per_cycle") or {}
     if source in per_source:
         return int(per_source[source])
     if source in DEFAULT_SOURCE_QUERIES_PER_CYCLE:
@@ -321,53 +316,53 @@ def queries_per_cycle(session: Session, source: str) -> int:
     return DEFAULT_QUERIES_PER_CYCLE
 
 
-def pages_per_cycle(session: Session, source: str) -> int | None:
+def pages_per_cycle(db: Database, source: str) -> int | None:
     """How many pages this source may walk in one cycle, or `None` when it does not paginate."""
-    stored = get(session, "source_pages_per_cycle") or {}
+    stored = get(db, "source_pages_per_cycle") or {}
     if source in stored:
         return int(stored[source])
     return DEFAULT_SOURCE_PAGES_PER_CYCLE.get(source)
 
 
-def results_per_query(session: Session, source: str) -> int | None:
+def results_per_query(db: Database, source: str) -> int | None:
     """How deep one query to this source may reach, or `None` when the source has no such control."""
-    stored = get(session, "source_results_per_query") or {}
+    stored = get(db, "source_results_per_query") or {}
     if source in stored:
         return int(stored[source])
     return DEFAULT_SOURCE_RESULTS_PER_QUERY.get(source)
 
 
-def ats_companies_per_cycle(session: Session) -> int:
+def ats_companies_per_cycle(db: Database) -> int:
     """How many company boards the ATS family polls in one cycle."""
-    return int(get(session, "ats_companies_per_cycle") or DEFAULT_ATS_COMPANIES_PER_CYCLE)
+    return int(get(db, "ats_companies_per_cycle") or DEFAULT_ATS_COMPANIES_PER_CYCLE)
 
 
-def describe_per_cycle(session: Session) -> int:
+def describe_per_cycle(db: Database) -> int:
     """How many postings the shared cycle fetches descriptions for in one pass."""
-    return int(get(session, "describe_per_cycle") or DEFAULT_DESCRIBE_PER_CYCLE)
+    return int(get(db, "describe_per_cycle") or DEFAULT_DESCRIBE_PER_CYCLE)
 
 
-def linkedin_concurrent_users(session: Session) -> int:
+def linkedin_concurrent_users(db: Database) -> int:
     """How many users' LinkedIn passes run in one tick."""
-    return int(get(session, "linkedin_concurrent_users") or DEFAULT_LINKEDIN_CONCURRENT_USERS)
+    return int(get(db, "linkedin_concurrent_users") or DEFAULT_LINKEDIN_CONCURRENT_USERS)
 
 
-def document_model(session: Session, provider: str) -> str:
+def document_model(db: Database, provider: str) -> str:
     """The model this provider writes documents with: the operator's choice, else the default."""
-    chosen = (get(session, "document_models") or {}).get(provider)
+    chosen = (get(db, "document_models") or {}).get(provider)
     return str(chosen) if chosen else DEFAULT_DOCUMENT_MODELS[provider]
 
 
-def document_keep_hours(session: Session) -> int:
+def document_keep_hours(db: Database) -> int:
     """How many hours a built document is kept for download."""
-    return int(get(session, "document_keep_hours"))
+    return int(get(db, "document_keep_hours"))
 
 
-def freshness_hours(session: Session, source: str) -> int:
+def freshness_hours(db: Database, source: str) -> int:
     """How fresh a posting from this source must be."""
-    per_source = get(session, "source_freshness_hours") or {}
+    per_source = get(db, "source_freshness_hours") or {}
     if source in per_source:
         return int(per_source[source])
     if source in DEFAULT_SOURCE_FRESHNESS_HOURS:
         return DEFAULT_SOURCE_FRESHNESS_HOURS[source]
-    return int(get(session, "default_freshness_hours"))
+    return int(get(db, "default_freshness_hours"))

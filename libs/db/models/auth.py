@@ -1,90 +1,67 @@
-"""Session and token storage for `libs.auth`."""
+"""Sessions, one-time tokens, and the mail sent — the storage behind `libs.auth` and `libs.mail`."""
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass, field
+from datetime import datetime
 
-from sqlalchemy import (
-    BigInteger,
-    CheckConstraint,
-    ForeignKey,
-    Index,
-    String,
-    Text,
-    func,
-    text,
-)
-from sqlalchemy.orm import Mapped, mapped_column
+from bson import ObjectId
+from pymongo import IndexModel
 
-from libs.db.base import Base, timestamptz
+from libs.db import Document, now
 
-# `telegram_connect` rides in a t.me link rather than an email: it ties a Telegram chat to the account.
+
+@dataclass(kw_only=True)
+class UserSession(Document):
+    """A signed-in browser. The refresh token is stored only as its hash."""
+
+    COLLECTION = "user_sessions"
+    BACKED_UP = False
+    INDEXES = (IndexModel("refresh_hash", unique=True, name="refresh_hash_unique"),
+               IndexModel("user_id", name="by_user"))
+
+    id: uuid.UUID = field(default_factory=uuid.uuid4)
+    user_id: uuid.UUID
+    refresh_hash: str
+    expires_at: datetime
+    rotated_at: datetime | None = None
+    revoked_at: datetime | None = None
+    created_at: datetime = field(default_factory=now)
+
+
 TOKEN_PURPOSES = ("verify_email", "reset_password", "telegram_connect")
 
 
-class UserSession(Base):
-    """One refresh session. Rotated on every use, so a row is spent rather than long-lived."""
+@dataclass(kw_only=True)
+class AuthToken(Document):
+    """A one-time link: stored as its hash, so a leaked database cannot be used to sign in."""
 
-    __tablename__ = "user_sessions"
+    COLLECTION = "auth_tokens"
+    BACKED_UP = False
+    CHOICES = {"purpose": TOKEN_PURPOSES}  # noqa: RUF012
+    INDEXES = (IndexModel([("user_id", 1), ("purpose", 1)], name="outstanding"),)
 
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
-
-    # SHA-256 hex of the refresh token.
-    refresh_hash: Mapped[str] = mapped_column(String(64), unique=True)
-
-    expires_at: Mapped[timestamptz]
-    # Set when this token was exchanged for its successor.
-    rotated_at: Mapped[timestamptz | None]
-    revoked_at: Mapped[timestamptz | None]
-
-    # Diagnostic only — shown on a "your sessions" page, never used for authorisation.
-    user_agent: Mapped[str | None] = mapped_column(Text)
-    ip: Mapped[str | None] = mapped_column(String(64))
-
-    created_at: Mapped[timestamptz] = mapped_column(server_default=func.now())
-
-    __table_args__ = (
-        # The "log me out everywhere" and "list my sessions" reads.
-        Index("ix_user_sessions_live", "user_id",
-              postgresql_where=text("revoked_at IS NULL AND rotated_at IS NULL")),
-    )
+    id: str  # the token's hash
+    user_id: uuid.UUID
+    purpose: str
+    expires_at: datetime
+    used_at: datetime | None = None
+    created_at: datetime = field(default_factory=now)
 
 
-class AuthToken(Base):
-    """A single-use token. The plaintext exists in the link it travels in and nowhere else."""
-
-    __tablename__ = "auth_tokens"
-
-    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
-    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
-    purpose: Mapped[str] = mapped_column(String(32))
-
-    expires_at: Mapped[timestamptz]
-    used_at: Mapped[timestamptz | None]
-    created_at: Mapped[timestamptz] = mapped_column(server_default=func.now())
-
-    __table_args__ = (
-        CheckConstraint(f"purpose IN {TOKEN_PURPOSES}", name="purpose_valid"),
-        # Issuing a token revokes the user's earlier unused ones for the same purpose.
-        Index("ix_auth_tokens_outstanding", "user_id", "purpose"),
-    )
-
-
-# What a send was for. Not who it was to — see `libs.mail.quota`.
 MAIL_PURPOSES = ("verify_email", "reset_password", "notice")
 
 
-class MailSend(Base):
-    """One outbound message, counted against the platform's daily allowance."""
+@dataclass(kw_only=True)
+class MailSend(Document):
+    """One email sent, counted against the sending provider's daily quota (`libs.mail.quota`)."""
 
-    __tablename__ = "mail_sends"
+    COLLECTION = "mail_sends"
+    BACKED_UP = False
+    OWNER = None
+    CHOICES = {"purpose": MAIL_PURPOSES}  # noqa: RUF012
+    INDEXES = (IndexModel("sent_at", name="recent"),)
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    purpose: Mapped[str] = mapped_column(String(32))
-    sent_at: Mapped[timestamptz] = mapped_column(server_default=func.now())
-
-    __table_args__ = (
-        CheckConstraint(f"purpose IN {MAIL_PURPOSES}", name="purpose_valid"),
-        # The only read: how many in the last 24 hours.
-        Index("ix_mail_sends_recent", "sent_at"),
-    )
+    id: ObjectId = field(default_factory=ObjectId)
+    purpose: str
+    sent_at: datetime = field(default_factory=now)

@@ -7,10 +7,9 @@ import uuid as _uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
-from sqlalchemy import delete
-from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.orm import Session
+from pymongo.database import Database
 
+from libs.db import now
 from libs.db.models import PushSubscription
 from libs.obs import audit
 from services.api.deps import current_user, get_db
@@ -56,20 +55,20 @@ def key() -> PushKey:
 
 
 @router.post("/subscribe")
-def subscribe(body: PushSubscriptionBody, db: Session = Depends(get_db),
+def subscribe(body: PushSubscriptionBody, db: Database = Depends(get_db),
               user_id: _uuid.UUID = Depends(current_user)) -> PushStatus:
     """Remember this browser. Subscribing it again replaces its row, whichever account it was on."""
-    values = {"user_id": user_id, "p256dh": body.keys.p256dh, "auth": body.keys.auth}
-    db.execute(pg_insert(PushSubscription).values(endpoint=body.endpoint, **values)
-               .on_conflict_do_update(index_elements=[PushSubscription.endpoint], set_=values))
+    db[PushSubscription.COLLECTION].update_one(
+        {"endpoint": body.endpoint},
+        {"$set": {"user_id": user_id, "p256dh": body.keys.p256dh, "auth": body.keys.auth},
+         "$setOnInsert": {"created_at": now()}}, upsert=True)
     audit(logger, "push.subscribed", user=user_id)
     return PushStatus(status="subscribed")
 
 
 @router.delete("/subscribe")
-def unsubscribe(body: PushEndpoint, db: Session = Depends(get_db),
+def unsubscribe(body: PushEndpoint, db: Database = Depends(get_db),
                 user_id: _uuid.UUID = Depends(current_user)) -> PushStatus:
     """Forget this browser."""
-    db.execute(delete(PushSubscription).where(PushSubscription.endpoint == body.endpoint,
-                                              PushSubscription.user_id == user_id))
+    db[PushSubscription.COLLECTION].delete_one({"endpoint": body.endpoint, "user_id": user_id})
     return PushStatus(status="unsubscribed")

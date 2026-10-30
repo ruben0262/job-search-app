@@ -8,8 +8,8 @@ Its design is the owner's project-planner portal, ported as ideas rather than co
   and comes back finds the answer there.
 - **Restart-proof without a journal.** A reply still `pending` or `streaming` when the API starts is
   written again from the start (`resume`): the rows are the journal. Whether a live process is
-  writing one is a Postgres advisory lock held for as long as it writes, so four workers starting at
-  once write it once, and a process that dies lets go of it.
+  writing one is a lease on its row, taken in one atomic write and renewed at every save, so four
+  workers starting at once write it once, and a process that dies lets go when the lease runs out.
 - **A guard on every tool call** (`Tools.call`): a lookup runs; a change to the account becomes a
   button under the reply. Nothing here can make the change — that code is in the API, where only the
   person's tap reaches it.
@@ -23,21 +23,23 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import timedelta
 
-from sqlalchemy import select, text
-from sqlalchemy.orm import Session
-from sqlalchemy.orm.attributes import flag_modified
+from pymongo import ReturnDocument
+from pymongo.database import Database
 
 from libs import limits, settings, suggestions
 from libs.contracts.config import location_search_name, migrate_config
-from libs.db.models import SetupMessage, User, UserConfig
-from libs.db.session import get_engine, session_scope
+from libs.db import database, get, now
+from libs.db.models import SetupMessage, User
 from libs.documents.read import LANGUAGE_NAMES
 from libs.legal import has_consented
 from libs.llm import PLATFORM, LlmError, ai_requests_today, paying_client, platform_left, resolve
+from libs.llm.client import TIMEOUT_SEC
 from libs.matching import green_words, matching_jobs, norm, pattern, score
 from libs.prompts import load
 from libs.secrets import SecretStore
+from libs.tenant.repository import TenantRepository
 
 logger = logging.getLogger(__name__)
 
@@ -53,9 +55,9 @@ MAX_TOKENS = 1_024
 # How far behind the page may be, in seconds: the longest the writer waits between saves, and the
 # stream between reads.
 TICK = 0.1
-# The advisory-lock space of a reply being written. Two-key locks never meet the harvester's one-key one.
-_CLAIM = text("SELECT pg_try_advisory_lock(21333, CAST(:id % 2147483648 AS integer))")
-_RELEASE = text("SELECT pg_advisory_unlock(21333, CAST(:id % 2147483648 AS integer))")
+# How long a reply's writer holds it between saves. Twice the longest a live writer can be silent —
+# one model call — so only a writer that has died loses it, and a restart's replies resume after it.
+LEASE = timedelta(seconds=TIMEOUT_SEC * 2)
 PROVIDER_NAMES = {"anthropic": "Claude", "gemini": "Gemini", "openai": "OpenAI"}
 
 
@@ -73,16 +75,16 @@ class AiStatus:
     why_not: str | None
 
 
-def ai_status(session: Session, user: User) -> AiStatus:
+def ai_status(db: Database, user: User) -> AiStatus:
     """Who would pay for one more answer, and what is left: `libs.llm.resolve`'s answer, said."""
-    payer = resolve(session, user)
+    payer = resolve(db, user)
     allowance = limits.resolve(user, "ai_platform_requests_per_day")
     per_day = 0 if allowance is None else allowance
     if payer is not None:
         own = payer.kind != PLATFORM
         return AiStatus("own" if own else "platform", PROVIDER_NAMES[payer.provider],
-                        None if own else platform_left(session, user), per_day, None)
-    used_up = per_day and ai_requests_today(session, user.id) >= per_day
+                        None if own else platform_left(db, user), per_day, None)
+    used_up = per_day and ai_requests_today(db, user.id) >= per_day
     return AiStatus(None, None, 0, per_day, (
         f"You have used today's {per_day} AI requests. They come back at midnight. To ask more "
         "now, add your own Claude, Gemini or OpenAI key in Settings." if used_up else
@@ -99,14 +101,14 @@ class Tool:
     # What the person reads under the reply.
     label: Callable[[dict], str]
     # A lookup: its answer. A change: why it cannot be offered, or None to offer its button.
-    run: Callable[[Session, User, dict], str | None]
+    run: Callable[[Database, User, dict], str | None]
     change: bool = False
     # Reads what their documents say, so it is offered only with their processing consent.
     documents: bool = False
 
 
-def _config(session: Session, user: User) -> dict:
-    stored = session.scalar(select(UserConfig.config).where(UserConfig.user_id == user.id))
+def _config(db: Database, user: User) -> dict:
+    stored = TenantRepository(db).get_config(user.id)
     return migrate_config(stored) if stored else {"sections": []}
 
 
@@ -115,8 +117,8 @@ def _red(config: dict) -> list[str]:
                    for word in section.get("exclude_keywords") or [] if word.strip()})
 
 
-def _words(session: Session, user: User, _args: dict) -> str:
-    config = _config(session, user)
+def _words(db: Database, user: User, _args: dict) -> str:
+    config = _config(db, user)
     places = {location_search_name(place) for section in config["sections"]
               for place in section.get("locations") or []}
     ways = {(section.get("remote_policy") or "").replace("_", " ") for section in config["sections"]}
@@ -129,17 +131,17 @@ def _words(session: Session, user: User, _args: dict) -> str:
         f"Way of working: {', '.join(sorted(ways - {''})) or 'any'}"])
 
 
-def _why_job(session: Session, user: User, args: dict) -> str:
+def _why_job(db: Database, user: User, args: dict) -> str:
     wanted = norm(str(args.get("search") or "")).split()
     if not wanted:
         return "Ask them which job: a few words from its title or company."
-    found = [match for match in matching_jobs(session, user)
+    found = [match for match in matching_jobs(db, user)
              if all(word in norm(f"{match.job.title} {match.job.company or ''}") for word in wanted)]
     if not found:
         return (f"No job on their list has “{' '.join(wanted)}” in its title or company. A job is "
                 "left out when a red word is in its title or company, when it is in a place, "
                 "language or way of working they did not pick, or when it is too old.")
-    in_title = pattern(green_words(_config(session, user)))
+    in_title = pattern(green_words(_config(db, user)))
     lines = []
     for match in found[:3]:
         titled = set(score(in_title, match.job.title, None)[1])
@@ -149,8 +151,8 @@ def _why_job(session: Session, user: User, args: dict) -> str:
     return "\n".join(lines)
 
 
-def _ai_left(session: Session, user: User, _args: dict) -> str:
-    status = ai_status(session, user)
+def _ai_left(db: Database, user: User, _args: dict) -> str:
+    status = ai_status(db, user)
     if status.payer == "own":
         return f"Unlimited: they use their own {status.provider} key."
     if status.payer is None:
@@ -159,14 +161,14 @@ def _ai_left(session: Session, user: User, _args: dict) -> str:
             "starts again at midnight.")
 
 
-def _suggested(session: Session, user: User, _args: dict) -> str:
-    found = suggestions.current(session, user.id)
+def _suggested(db: Database, user: User, _args: dict) -> str:
+    found = suggestions.current(db, user.id)
     return "\n".join(f"{kind} “{each['term']}”: {each['reason']}" for kind in ("green", "red")
                      for each in found.get(kind) or []) or "There are no words to suggest right now."
 
 
-def _can_add(session: Session, user: User, args: dict) -> str | None:
-    word, kind, config = norm(str(args.get("word") or "")), args.get("kind"), _config(session, user)
+def _can_add(db: Database, user: User, args: dict) -> str | None:
+    word, kind, config = norm(str(args.get("word") or "")), args.get("kind"), _config(db, user)
     if kind not in ("green", "red") or not 2 <= len(word) <= 40:
         return "a word is 2 to 40 letters, and green or red"
     if word in (green_words(config) if kind == "green" else _red(config)):
@@ -174,8 +176,8 @@ def _can_add(session: Session, user: User, args: dict) -> str | None:
     return None
 
 
-def _can_remove(session: Session, user: User, args: dict) -> str | None:
-    word, config = norm(str(args.get("word") or "")), _config(session, user)
+def _can_remove(db: Database, user: User, args: dict) -> str | None:
+    word, config = norm(str(args.get("word") or "")), _config(db, user)
     if word not in green_words(config) + _red(config):
         return f"“{word}” is not one of their words"
     if green_words(config) == [word]:
@@ -183,8 +185,8 @@ def _can_remove(session: Session, user: User, args: dict) -> str | None:
     return None
 
 
-def _can_stop(session: Session, user: User, args: dict) -> str | None:
-    found = suggestions.current(session, user.id)
+def _can_stop(db: Database, user: User, args: dict) -> str | None:
+    found = suggestions.current(db, user.id)
     word = norm(str(args.get("word") or ""))
     if word not in {each["term"] for kind in ("green", "red") for each in found.get(kind) or []}:
         return f"“{word}” is not one of the words we suggest"
@@ -224,9 +226,9 @@ TOOLS: dict[str, Tool] = {
 class Tools:
     """What the model may use in one reply, and the guard every call it makes goes through."""
 
-    def __init__(self, session: Session, user: User, reply: _Reply):
-        consented = has_consented(session, user.id)
-        self.session, self.user, self.reply = session, user, reply
+    def __init__(self, db: Database, user: User, reply: _Reply):
+        consented = has_consented(db, user.id)
+        self.db, self.user, self.reply = db, user, reply
         self.offered = {name: tool for name, tool in TOOLS.items() if consented or not tool.documents}
 
     def schemas(self) -> list[dict]:
@@ -243,13 +245,13 @@ class Tools:
                                                                "error": True}
         elif not tool.change:
             try:
-                answer, step = str(tool.run(self.session, self.user, args)), {"label": tool.label(args)}
+                answer, step = str(tool.run(self.db, self.user, args)), {"label": tool.label(args)}
             except Exception:  # one lookup failing must not cost the person the reply
                 logger.warning("support: lookup %s failed for user %s", use["name"], self.user.id,
                                exc_info=True)
                 answer, step = "That lookup failed.", {"label": tool.label(args), "error": True}
             step["output"] = answer
-        elif refused := tool.run(self.session, self.user, args):
+        elif refused := tool.run(self.db, self.user, args):
             answer, step = f"Not offered: {refused}.", {"label": tool.label(args), "output": refused,
                                                          "error": True}
         else:
@@ -273,8 +275,8 @@ def _result(use: dict, answer: str, *, error: bool = False) -> dict:
 class _Reply:
     """The reply as it is written: saved at most `TICK` apart, and at every step."""
 
-    def __init__(self, session: Session, row: SetupMessage):
-        self.session, self.row = session, row
+    def __init__(self, db: Database, row: SetupMessage):
+        self.db, self.row = db, row
         self.text, self.steps, self.saved, self.first, self.gap = "", [], 0.0, None, False
         row.status, row.error = "streaming", None
         self.save()
@@ -292,57 +294,47 @@ class _Reply:
         self.save()
 
     def save(self) -> None:
+        """Write what there is, and renew the lease — or give it up, once the reply has ended."""
         self.row.content = self.text
         self.row.tool_calls = {**(self.row.tool_calls or {}), "steps": self.steps}
-        flag_modified(self.row, "tool_calls")
-        self.session.commit()
+        self.db[SetupMessage.COLLECTION].update_one({"_id": self.row.id}, {"$set": {
+            "content": self.row.content, "tool_calls": self.row.tool_calls, "status": self.row.status,
+            "error": self.row.error,
+            "lease_until": now() + LEASE if self.row.status in RUNNING else None}})
         self.saved = time.monotonic()
 
 
 def start(reply_id: int) -> threading.Thread:
-    """Write this reply on a thread and a connection of its own, so leaving the page cannot stop it."""
-    thread = threading.Thread(target=_on_own_connection, args=(reply_id,), daemon=True,
+    """Write this reply on a thread of its own, so leaving the page cannot stop it."""
+    thread = threading.Thread(target=_in_background, args=(reply_id,), daemon=True,
                               name=f"support-{reply_id}")
     thread.start()
     return thread
 
 
-def _on_own_connection(reply_id: int) -> None:
+def _in_background(reply_id: int) -> None:
     try:
-        with get_engine().connect() as connection, \
-                Session(bind=connection, expire_on_commit=False) as session:
-            try:
-                run(session, reply_id)
-            except Exception:
-                # Closed, not pooled: a lock it may still hold must not outlive this reply.
-                connection.invalidate()
-                raise
+        run(database(), reply_id)
     except Exception:  # a thread's exception otherwise goes to stderr and is lost
         logger.exception("support: reply %s could not be written; it is tried again when the page "
                          "or the API next asks", reply_id)
 
 
-def run(session: Session, reply_id: int) -> None:
-    """Write one reply, unless it is finished or a live process is writing it already. `session` is
-    bound to one connection for the whole reply: the lock that says it is being written lives there."""
-    connection = session.connection()
-    if not connection.scalar(_CLAIM, {"id": reply_id}):
-        return
-    try:
-        row = session.get(SetupMessage, reply_id, populate_existing=True)
-        if row is not None and row.agent == SUPPORT and row.status in RUNNING:
-            _write(session, row)
-    finally:
-        session.rollback()
-        connection.execute(_RELEASE, {"id": reply_id})
+def run(db: Database, reply_id: int) -> None:
+    """Write one reply, unless it is finished or a live process holds its lease."""
+    claimed = SetupMessage.from_doc(db[SetupMessage.COLLECTION].find_one_and_update(
+        {"_id": reply_id, "agent": SUPPORT, "status": {"$in": list(RUNNING)},
+         "$or": [{"lease_until": None}, {"lease_until": {"$lt": now()}}]},
+        {"$set": {"lease_until": now() + LEASE}}, return_document=ReturnDocument.AFTER))
+    if claimed is not None:
+        _write(db, claimed)
 
 
 def resume() -> int:
     """Start every reply the API's last stop cut off: the rows are the journal."""
     try:
-        with session_scope() as session:
-            cut_off = session.scalars(select(SetupMessage.id).where(
-                SetupMessage.agent == SUPPORT, SetupMessage.status.in_(RUNNING))).all()
+        cut_off = database()[SetupMessage.COLLECTION].distinct(
+            "_id", {"agent": SUPPORT, "status": {"$in": list(RUNNING)}})
     except Exception as exc:  # noqa: BLE001 - the API starts whether or not this can look
         logger.warning("support: could not look for replies a restart cut off: %s", exc)
         return 0
@@ -354,18 +346,18 @@ def resume() -> int:
     return len(cut_off)
 
 
-def _write(session: Session, row: SetupMessage) -> None:
-    started, user = time.monotonic(), session.get(User, row.user_id)
+def _write(db: Database, row: SetupMessage) -> None:
+    started, user = time.monotonic(), get(db, User, row.user_id)
     payer = (row.tool_calls or {}).get("payer") or ""
-    reply = _Reply(session, row)
+    reply = _Reply(db, row)
     status, error = "done", None
     try:
-        messages, tools = _transcript(session, row), Tools(session, user, reply)
-        with paying_client(SecretStore(session), user.id, payer) as paid:
+        messages, tools = _transcript(db, row), Tools(db, user, reply)
+        with paying_client(SecretStore(db), user.id, payer) as paid:
             if paid is None:
                 raise LlmError("the key that was to pay for this answer has been removed")
             client, provider = paid
-            model = settings.document_model(session, provider)
+            model = settings.document_model(db, provider)
             for _ in range(ROUNDS):
                 answer = client.complete_tools(model=model, system=load("support.md"),
                                                messages=messages, tools=tools.schemas(),
@@ -391,11 +383,11 @@ def _write(session: Session, row: SetupMessage) -> None:
                 f"{reply.first - started:.2f}s" if reply.first else "none", len(reply.steps), payer)
 
 
-def _transcript(session: Session, row: SetupMessage) -> list[dict]:
+def _transcript(db: Database, row: SetupMessage) -> list[dict]:
     """The conversation up to this reply, as text: what was said, and what came of each button."""
-    earlier = session.scalars(select(SetupMessage).where(
-        SetupMessage.user_id == row.user_id, SetupMessage.agent == SUPPORT, SetupMessage.id < row.id)
-        .order_by(SetupMessage.id.desc()).limit(HISTORY)).all()
+    earlier = [SetupMessage.from_doc(doc) for doc in db[SetupMessage.COLLECTION].find(
+        {"user_id": row.user_id, "agent": SUPPORT, "_id": {"$lt": row.id}},
+        sort=[("_id", -1)], limit=HISTORY)]
     messages: list[dict] = []
     for message in reversed(earlier):
         said = message.content + "".join(

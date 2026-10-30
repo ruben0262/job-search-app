@@ -3,11 +3,11 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 
-from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from pymongo.database import Database
 
+from libs.db import insert, now
 from libs.db.models import MailSend
 from libs.mail.sender import EmailSender, MailError
 
@@ -27,22 +27,20 @@ def daily_cap(env: dict[str, str] | None = None) -> int:
     return int(raw) if raw else DEFAULT_DAILY_CAP
 
 
-def sent_last_24h(session: Session) -> int:
-    return session.scalar(
-        select(func.count()).select_from(MailSend)
-        .where(MailSend.sent_at >= datetime.now(UTC) - WINDOW)) or 0
+def sent_last_24h(db: Database) -> int:
+    return db[MailSend.COLLECTION].count_documents({"sent_at": {"$gte": now() - WINDOW}})
 
 
-def send_within_cap(session: Session, mailer: EmailSender, to: str, subject: str, body: str,
+def send_within_cap(db: Database, mailer: EmailSender, to: str, subject: str, body: str,
                     *, purpose: str, cap: int | None = None) -> None:
     """Send, unless the platform is at its cap."""
     limit = cap if cap is not None else daily_cap()
-    already = sent_last_24h(session)
+    already = sent_last_24h(db)
     if already >= limit:
         logger.error("mail: platform cap reached (%d in 24h, limit %d) — not sending %s",
                      already, limit, purpose)
         raise MailCapReached(f"daily sending cap of {limit} reached")
 
-    session.add(MailSend(purpose=purpose))
-    session.flush()
     mailer.send(to, subject, body)
+    # Counted once sent: a send that raised did not use the provider's allowance.
+    insert(db, MailSend(purpose=purpose))

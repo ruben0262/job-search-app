@@ -6,12 +6,13 @@ import uuid as _uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, Field
-from sqlalchemy import func
-from sqlalchemy.orm import Session
+from pymongo.database import Database
 
 import libs.notify as notifylib
 from libs.auth.passwords import hash_password, password_problems, verify_password
 from libs.auth.sessions import revoke_all
+from libs.db import delete_account as erase_account
+from libs.db import get, now
 from libs.db.models import User
 from libs.legal import DISCLOSURE_VERSION, disclosure, has_consented
 from libs.obs import audit
@@ -53,10 +54,10 @@ class ConsentState(BaseModel):
 
 
 @router.get("/account/consent", response_model=ConsentState)
-def consent_state(db: Session = Depends(get_db),
+def consent_state(db: Database = Depends(get_db),
                   user_id: _uuid.UUID = Depends(current_user)) -> dict:
     """Whether this account has agreed to the current disclosure."""
-    user = db.get(User, user_id)
+    user = get(db, User, user_id)
     return {
         "granted": has_consented(db, user_id),
         "granted_at": user.processing_consent_at.isoformat() if user.processing_consent_at else None,
@@ -72,27 +73,23 @@ class ConsentBody(BaseModel):
 
 
 @router.post("/account/consent")
-def grant_consent(body: ConsentBody, db: Session = Depends(get_db),
+def grant_consent(body: ConsentBody, db: Database = Depends(get_db),
                   user_id: _uuid.UUID = Depends(current_user)) -> dict:
     if body.version != DISCLOSURE_VERSION:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             detail="the disclosure has changed since this was shown to you — please read it again")
 
-    user = db.get(User, user_id)
-    user.processing_consent_at = func.now()
-    user.processing_consent_version = DISCLOSURE_VERSION
+    _set(db, user_id, processing_consent_at=now(), processing_consent_version=DISCLOSURE_VERSION)
     audit(logger, "consent.granted", user=user_id, version=DISCLOSURE_VERSION)
     return {"status": "granted", "version": DISCLOSURE_VERSION}
 
 
 @router.delete("/account/consent")
-def withdraw_consent(db: Session = Depends(get_db),
+def withdraw_consent(db: Database = Depends(get_db),
                      user_id: _uuid.UUID = Depends(current_user)) -> dict:
     """Withdraw."""
-    user = db.get(User, user_id)
-    user.processing_consent_at = None
-    user.processing_consent_version = None
+    _set(db, user_id, processing_consent_at=None, processing_consent_version=None)
     audit(logger, "consent.withdrawn", user=user_id)
     return {"status": "withdrawn",
             "detail": ("Processing is now unavailable. Your existing profile is unchanged — delete "
@@ -105,10 +102,10 @@ class PasswordChange(BaseModel):
 
 
 @router.put("/account/password")
-def change_password(body: PasswordChange, response: Response, db: Session = Depends(get_db),
+def change_password(body: PasswordChange, response: Response, db: Database = Depends(get_db),
                     user_id: _uuid.UUID = Depends(current_user)) -> dict:
     """Change the password."""
-    user = db.get(User, user_id)
+    user = get(db, User, user_id)
     if not verify_password(user.password_hash, body.current_password):
         # Deliberately the same shape as a failed login: no oracle, no timing shortcut.
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="that password is not correct")
@@ -120,7 +117,7 @@ def change_password(body: PasswordChange, response: Response, db: Session = Depe
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             detail="that password " + "; ".join(problems))
 
-    user.password_hash = hash_password(body.new_password)
+    _set(db, user_id, password_hash=hash_password(body.new_password))
     notifylib.notify(db, user_id, notifylib.PASSWORD_CHANGED,
                      "Every session was signed out. If this was not you, reset your password "
                      "from the sign-in page immediately.")
@@ -137,17 +134,17 @@ class DeleteBody(BaseModel):
 
 
 @router.delete("/account")
-def delete_account(body: DeleteBody, db: Session = Depends(get_db),
+def delete_account(body: DeleteBody, db: Database = Depends(get_db),
                    store: SecretStore = Depends(get_store),
                    user_id: _uuid.UUID = Depends(current_user)) -> dict:
     """Erase the account."""
-    user = db.get(User, user_id)
+    user = get(db, User, user_id)
     if not verify_password(user.password_hash, body.password):
         # Deliberately the same shape as a failed login: no oracle, no timing shortcut.
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="that password is not correct")
 
     store.purge(user_id)
-    db.delete(user)
+    erase_account(db, user_id)
     audit(logger, "account.deleted", user=user_id)
     return {"status": "deleted"}
 
@@ -158,14 +155,17 @@ class AccountPatch(BaseModel):
 
 
 @router.patch("/account")
-def patch_account(body: AccountPatch, db: Session = Depends(get_db),
+def patch_account(body: AccountPatch, db: Database = Depends(get_db),
                   user_id: _uuid.UUID = Depends(current_user)) -> dict:
     """Settings the user may change directly. Only what is named is touched."""
-    user = db.get(User, user_id)
     if body.active is not None:
-        user.active = body.active
+        _set(db, user_id, active=body.active)
         audit(logger, "account.delivery_toggled", user=user_id, active=body.active)
-    return {"status": "ok", "active": user.active}
+    return {"status": "ok", "active": get(db, User, user_id).active}
+
+
+def _set(db: Database, user_id: _uuid.UUID, **fields) -> None:
+    db[User.COLLECTION].update_one({"_id": user_id}, {"$set": {**fields, "updated_at": now()}})
 
 
 class AccountOut(BaseModel):
@@ -177,10 +177,10 @@ class AccountOut(BaseModel):
 
 
 @router.get("/account")
-def account(db: Session = Depends(get_db),
+def account(db: Database = Depends(get_db),
             user_id: _uuid.UUID = Depends(current_user)) -> AccountOut:
     """What the settings page shows, minus anything secret. Their name and links are on
     `/onboarding/identity`, their words on `/onboarding/review`."""
-    user = db.get(User, user_id)
+    user = get(db, User, user_id)
     return AccountOut(email=user.email, active=user.active, telegram_status=user.telegram_status,
                       consent_version=user.processing_consent_version)

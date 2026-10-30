@@ -13,9 +13,8 @@ from typing import NoReturn
 
 import httpx
 
-from libs.db.models.queue import CLAIM_TIMEOUT_MIN
 from libs.llm import toolcalls
-from libs.llm.client import LlmError, warn_if_truncated
+from libs.llm.client import TIMEOUT_SEC, LlmError, warn_if_truncated
 from libs.secrets import redact
 
 logger = logging.getLogger(__name__)
@@ -24,11 +23,6 @@ GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:ge
 GEMINI_STREAM_URL = ("https://generativelanguage.googleapis.com/v1beta/models/{model}"
                      ":streamGenerateContent?alt=sse")
 OPENAI_URL = "https://api.openai.com/v1/chat/completions"
-
-# One reply is one whole document, so the read timeout is the time it takes to write it. Derived
-# from the docgen lane's claim rather than chosen: a CV and its one revision, the most a build
-# makes, finish inside the claim with a fifth of it left for rendering.
-TIMEOUT_SEC = CLAIM_TIMEOUT_MIN["docgen"] * 60 * 2 / 5
 
 
 class GeminiClient:

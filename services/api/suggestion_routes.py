@@ -7,7 +7,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field, ValidationError
-from sqlalchemy.orm import Session
+from pymongo.database import Database
 
 from libs import suggestions
 from libs.contracts.config import UserConfigSchema, migrate_config
@@ -31,14 +31,14 @@ class SuggestionDismissal(BaseModel):
 
 
 @router.get("", response_model=WordSuggestions)
-def get_suggestions(db: Session = Depends(get_db),
+def get_suggestions(db: Database = Depends(get_db),
                     user_id: _uuid.UUID = Depends(current_user)) -> dict:
     """The words worth adding to their search, each with the reason."""
     return suggestions.current(db, user_id)
 
 
 @router.post("/accept", response_model=WordSuggestions)
-def accept(body: SuggestionPick, db: Session = Depends(get_db),
+def accept(body: SuggestionPick, db: Database = Depends(get_db),
            user_id: _uuid.UUID = Depends(current_user)) -> dict:
     """Add a word to their search: green picks jobs, red hides them."""
     stored = TenantRepository(db).get_config(user_id)
@@ -61,7 +61,7 @@ def accept(body: SuggestionPick, db: Session = Depends(get_db),
 
 
 @router.post("/dismiss", response_model=WordSuggestions)
-def dismiss(body: SuggestionDismissal, db: Session = Depends(get_db),
+def dismiss(body: SuggestionDismissal, db: Database = Depends(get_db),
             user_id: _uuid.UUID = Depends(current_user)) -> dict:
     """Never suggest this word again."""
     audit(logger, "suggestion.dismissed", user=user_id)

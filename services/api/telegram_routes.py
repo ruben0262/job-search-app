@@ -15,10 +15,10 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from pymongo.database import Database
 
 from libs.auth import consume_token, issue_token
+from libs.db import get
 from libs.db.models import User
 from libs.notify import site_url
 from libs.obs import audit
@@ -45,7 +45,7 @@ class TelegramReply(BaseModel):
 
 
 @router.post("/link")
-def link(db: Session = Depends(get_db),
+def link(db: Database = Depends(get_db),
          user_id: _uuid.UUID = Depends(current_user)) -> TelegramLink:
     """A one-time link that opens the platform's bot carrying a code for this account."""
     bot = os.environ.get("TELEGRAM_BOT_USERNAME", "").lstrip("@")
@@ -57,18 +57,17 @@ def link(db: Session = Depends(get_db),
 
 
 @router.delete("/link")
-def unlink(db: Session = Depends(get_db),
+def unlink(db: Database = Depends(get_db),
            user_id: _uuid.UUID = Depends(current_user)) -> TelegramStatus:
     """Stop sending to Telegram. Connecting again is the same one tap."""
-    user = db.get(User, user_id)
-    user.telegram_chat_id = None
-    user.telegram_status = "unconfigured"
+    db[User.COLLECTION].update_one({"_id": user_id}, {"$set": {"telegram_chat_id": None,
+                                                                "telegram_status": "unconfigured"}})
     audit(logger, "telegram.disconnected", user=user_id)
-    return TelegramStatus(status=user.telegram_status)
+    return TelegramStatus(status="unconfigured")
 
 
 @router.post("/webhook")
-async def webhook(request: Request, db: Session = Depends(get_db),
+async def webhook(request: Request, db: Database = Depends(get_db),
                   x_telegram_bot_api_secret_token: str | None = Header(default=None),
                   ) -> TelegramReply | None:
     """Everything anybody sends the bot: `/start <code>` connects, anything else points at the site."""
@@ -90,16 +89,16 @@ async def webhook(request: Request, db: Session = Depends(get_db),
                              text=f"I send you new jobs that match you. Everything else is on {site_url()}")
 
     user_id = consume_token(db, code.strip(), "telegram_connect")
-    user = db.get(User, user_id) if user_id else None
+    user = get(db, User, user_id) if user_id else None
     if user is None:
-        connected = db.scalar(select(User.id).where(User.telegram_chat_id == str(chat_id),
-                                                    User.telegram_status == "connected").limit(1))
+        connected = db[User.COLLECTION].count_documents(
+            {"telegram_chat_id": str(chat_id), "telegram_status": "connected"}, limit=1)
         return TelegramReply(chat_id=chat_id, text=(
             "You are already connected. New jobs that match you arrive here." if connected else
             f"That link has expired. Tap Connect Telegram on {site_url()} for a fresh one."))
 
-    user.telegram_chat_id = str(chat_id)
-    user.telegram_status = "connected"
+    db[User.COLLECTION].update_one({"_id": user.id}, {"$set": {"telegram_chat_id": str(chat_id),
+                                                                "telegram_status": "connected"}})
     audit(logger, "telegram.connected", user=user.id)
     return TelegramReply(chat_id=chat_id,
                          text="Connected! New jobs that match you will arrive here as they are found.")

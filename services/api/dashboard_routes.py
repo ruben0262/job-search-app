@@ -8,12 +8,13 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
-from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from pymongo.database import Database
 
 from libs import limits
 from libs.corpus import salary
+from libs.db import get, now
 from libs.db.models import CorpusJob, User, UserJobState
+from libs.db.models.tenant import record_state
 from libs.llm import PLATFORM, ai_requests_today, resolve
 from libs.matching import Match, matching_jobs
 from libs.notify import reachable
@@ -103,26 +104,25 @@ def _is_admin(user: User) -> bool:
     return bool(user.is_admin) or user.email.lower() in admin_emails()
 
 
-def _marks(db: Session, user_id: _uuid.UUID) -> tuple[set[int], dict[int, datetime]]:
+def _marks(db: Database, user_id: _uuid.UUID) -> tuple[set[int], dict[int, datetime]]:
     """The jobs this person dismissed, and when they applied to which."""
-    rows = db.execute(
-        select(UserJobState.job_id, UserJobState.dismissed_at, UserJobState.applied_at)
-        .where(UserJobState.user_id == user_id,
-               UserJobState.dismissed_at.isnot(None) | UserJobState.applied_at.isnot(None))).all()
-    return ({job for job, dismissed, _ in rows if dismissed},
-            {job: applied for job, _, applied in rows if applied})
+    rows = list(db[UserJobState.COLLECTION].find(
+        {"user_id": user_id, "$or": [{"dismissed_at": {"$ne": None}}, {"applied_at": {"$ne": None}}]},
+        {"job_id": 1, "dismissed_at": 1, "applied_at": 1}))
+    return ({row["job_id"] for row in rows if row["dismissed_at"]},
+            {row["job_id"]: row["applied_at"] for row in rows if row["applied_at"]})
 
 
-def _visible(db: Session, user: User, dismissed: set[int]) -> list[Match]:
+def _visible(db: Database, user: User, dismissed: set[int]) -> list[Match]:
     """This person's matches, minus the ones they dismissed."""
     return [match for match in matching_jobs(db, user) if match.job.id not in dismissed]
 
 
 @router.get("/dashboard")
-def dashboard(db: Session = Depends(get_db), user_id: _uuid.UUID = Depends(current_user)
+def dashboard(db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(current_user)
               ) -> OnboardingDashboard | ReadyDashboard:
     """Everything the front page shows, in one call."""
-    user = db.get(User, user_id)
+    user = get(db, User, user_id)
     if user.onboarding_completed_at is None:
         # Nothing below is meaningful yet, and empty panels read as a broken product.
         return OnboardingDashboard(stage="onboarding", is_admin=_is_admin(user),
@@ -133,7 +133,7 @@ def dashboard(db: Session = Depends(get_db), user_id: _uuid.UUID = Depends(curre
                           banners=_banners(db, user), ai=_ai(db, user))
 
 
-def _ai(db: Session, user: User) -> AiWriting:
+def _ai(db: Database, user: User) -> AiWriting:
     payer = resolve(db, user)
     allowance = limits.resolve(user, "ai_platform_requests_per_day")
     # Never Unlimited (`allow_unlimited=False`): a `None` written by hand is no allowance, as
@@ -144,13 +144,13 @@ def _ai(db: Session, user: User) -> AiWriting:
                      profile=ProfileFiles(db, user.id).build_blocker() is None)
 
 
-def _banners(db: Session, user: User) -> list[DashboardBanner]:
+def _banners(db: Database, user: User) -> list[DashboardBanner]:
     """What the jobs page says above the list, one thing at a time. Alerts are optional, so having
     none is a quiet offer rather than a warning — and a Telegram that stopped is a button to press."""
     if user.telegram_status == "broken":
         return [DashboardBanner(level="warning", key="telegram_broken",
                                 text="Telegram stopped taking our messages.")]
-    if db.scalar(select(User.id).where(User.id == user.id, reachable())) is None:
+    if not db[User.COLLECTION].count_documents({"_id": user.id, **reachable(db, user.id)}, limit=1):
         return [DashboardBanner(level="info", key="no_alerts",
                                 text="Get alerts on your phone when a new job matches your words.")]
     if not user.active:
@@ -159,7 +159,7 @@ def _banners(db: Session, user: User) -> list[DashboardBanner]:
 
 
 @router.get("/feed")
-def feed(*, db: Session = Depends(get_db), user_id: _uuid.UUID = Depends(current_user),
+def feed(*, db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(current_user),
          limit: int = Query(FEED_PAGE, ge=1, le=100),
          offset: int = Query(0, ge=0),
          q: str | None = Query(None, max_length=200),
@@ -170,7 +170,7 @@ def feed(*, db: Session = Depends(get_db), user_id: _uuid.UUID = Depends(current
     dismissed, applied_at = _marks(db, user_id)
     needle = (q or "").lower()
     # `None` is a filter that is off, so `x in (None, value)` reads "off, or equal".
-    matches = [match for match in _visible(db, db.get(User, user_id), dismissed)
+    matches = [match for match in _visible(db, get(db, User, user_id), dismissed)
                if needle in f"{match.job.title} {match.job.company or ''} {match.job.url}".lower()
                and remote in (None, bool(match.job.is_remote))
                and job in (None, match.job.id)]
@@ -203,15 +203,12 @@ _MARKS = {"applied": "applied_at", "hidden": "dismissed_at"}
 @router.put("/jobs/{job_id}/{mark}", response_model=JobMarks)
 @router.delete("/jobs/{job_id}/{mark}", response_model=JobMarks)
 def mark_job(job_id: int, mark: Literal["applied", "hidden"], request: Request,
-             db: Session = Depends(get_db),
+             db: Database = Depends(get_db),
              user_id: _uuid.UUID = Depends(current_user)) -> JobMarks:
     """PUT records the mark, DELETE takes it back. Only ever this person's own row."""
-    if db.get(CorpusJob, job_id) is None:
+    if not db[CorpusJob.COLLECTION].count_documents({"_id": job_id}, limit=1):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="no such job")
-    state = db.get(UserJobState, (user_id, job_id)) or UserJobState(user_id=user_id, job_id=job_id)
-    db.add(state)
-    setattr(state, _MARKS[mark], func.now() if request.method == "PUT" else None)
-    db.flush()
+    state = record_state(db, user_id, job_id, **{_MARKS[mark]: now() if request.method == "PUT" else None})
     audit(logger, "job.marked", user=user_id, job=job_id, mark=mark, on=request.method == "PUT")
     return JobMarks(job_id=job_id, applied=state.applied_at is not None,
                     hidden=state.dismissed_at is not None)

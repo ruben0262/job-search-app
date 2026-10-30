@@ -16,7 +16,6 @@ import socket
 import threading
 import time
 import uuid
-from datetime import UTC, datetime
 from urllib.parse import urlparse
 
 import pytest
@@ -62,24 +61,18 @@ def built() -> pathlib.Path:
 
 
 @pytest.fixture()
-def site(monkeypatch, built):
+def site(monkeypatch, built, db):
     """The API and the site on a free port, the docgen worker on a thread, and the three jobs."""
-    if not os.environ.get("DATABASE_URL"):
-        pytest.skip("needs DATABASE_URL")
     os.environ.setdefault("ACCESS_TOKEN_SECRET", "test-" + "x" * 40)
     from fastapi.staticfiles import StaticFiles
-    from sqlalchemy import create_engine
 
     from libs.mail import ConsoleSender
     from services.api import deps
     from services.api.app import app
 
-    # The real request scope and the worker's, on an engine made the way this suite makes them.
-    monkeypatch.setattr("libs.db.session._engine", create_engine(os.environ["DATABASE_URL"]))
-    monkeypatch.setattr("libs.db.session._Session", None)
     monkeypatch.setenv("DISABLE_RATE_LIMIT", "1")
-    run, started = uuid.uuid4().hex[:8], datetime.now(UTC)
-    ids = _seed(run)
+    run = uuid.uuid4().hex[:8]
+    ids = _jobs(db, run, TITLES)
     app.dependency_overrides[deps.get_mailer] = ConsoleSender
     app.mount("/", StaticFiles(directory=built, html=True), name="e2e-site")
     base, stop = _serve(app, monkeypatch)
@@ -90,7 +83,6 @@ def site(monkeypatch, built):
         app.router.routes[:] = [route for route in app.router.routes
                                 if getattr(route, "name", None) != "e2e-site"]
         app.dependency_overrides.clear()
-        _forget(mailed_since=started)
 
 
 def test_a_new_person_goes_from_sign_up_to_a_downloaded_cv(site, capsys, tmp_path):
@@ -238,7 +230,9 @@ def _settings(browser, page, base: str) -> None:
 
 def _more(page, base: str) -> None:
     """More than a page of matches: the first page, then the rest on "Show more jobs", none twice."""
-    _jobs("more", [f"Backend Engineer {n}" for n in range(30)])
+    from libs.db import database
+
+    _jobs(database(), "more", [f"Backend Engineer {n}" for n in range(30)])
     page.goto(f"{base}/#/")
     cards = page.locator("article.job-card")
     expect(page.get_by_role("heading", name="32 jobs match your words")).to_be_visible()
@@ -248,47 +242,22 @@ def _more(page, base: str) -> None:
     expect(page.get_by_role("button", name="Show more jobs")).to_have_count(0)
 
 
-def _seed(run: str) -> dict[str, int]:
-    _forget()
-    return _jobs(run, TITLES)
-
-
-def _jobs(run: str, titles) -> dict[str, int]:
+def _jobs(db, run: str, titles) -> dict[str, int]:
+    from libs.db import insert, now
     from libs.db.models import CorpusJob
-    from libs.db.session import session_scope
 
-    with session_scope() as session:
-        jobs = [CorpusJob(url=f"https://jobs.example.com/{run}/{n}", source="test", title=title,
-                          company="Acme", location="Berlin, Germany", is_remote=True, language="en",
-                          first_seen_at=datetime.now(UTC),
-                          description=f"{title}. Python, Postgres, on call one week in six.")
-                for n, title in enumerate(titles)]
-        session.add_all(jobs)
-        session.flush()
-        return {job.title: job.id for job in jobs}
-
-
-def _forget(mailed_since: datetime | None = None) -> None:
-    """Every person and job a run made — including one that died before it could clean up, whose
-    jobs would otherwise be counted as this one's — and the emails it logged, which count against
-    the daily cap every other test sends under."""
-    from sqlalchemy import delete
-
-    from libs.db.models import CorpusJob, MailSend, User
-    from libs.db.session import session_scope
-
-    with session_scope() as session:
-        session.execute(delete(User).where(User.email.like("jordan.%@example.com")))
-        session.execute(delete(CorpusJob).where(CorpusJob.url.like("https://jobs.example.com/%")))
-        if mailed_since is not None:
-            session.execute(delete(MailSend).where(MailSend.sent_at >= mailed_since))
+    return {title: insert(db, CorpusJob(
+                url=f"https://jobs.example.com/{run}/{n}", source="test", title=title, company="Acme",
+                location="Berlin, Germany", is_remote=True, language="en", first_seen_at=now(),
+                description=f"{title}. Python, Postgres, on call one week in six.")).id
+            for n, title in enumerate(titles)}
 
 
 def _serve(app, monkeypatch):
     """Uvicorn and the docgen worker, each on a thread. Returns the address and a way to stop both."""
     import uvicorn
 
-    from libs.db.session import session_scope
+    from libs.db import database
     from libs.queue.worker import WorkerStats, run_once
     from services.docgen.__main__ import handle
 
@@ -302,9 +271,8 @@ def _serve(app, monkeypatch):
 
     def docgen() -> None:
         while not finished.is_set():
-            with session_scope() as session:
-                if not run_once(session, "docgen", "e2e-docgen", handle, WorkerStats()):
-                    time.sleep(0.2)
+            if not run_once(database(), "docgen", "e2e-docgen", handle, WorkerStats()):
+                time.sleep(0.2)
 
     threads = [threading.Thread(target=server.run, daemon=True), threading.Thread(target=docgen, daemon=True)]
     for thread in threads:

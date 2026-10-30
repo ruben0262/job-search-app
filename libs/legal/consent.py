@@ -7,14 +7,15 @@ from __future__ import annotations
 
 import uuid as _uuid
 
-from sqlalchemy.orm import Session
+from pymongo.database import Database
 
+from libs.db import get
 from libs.db.models import User
 from libs.legal.disclosure import DISCLOSURE_VERSION
 
 
-def has_consented(session: Session, user_id: _uuid.UUID) -> bool:
+def has_consented(db: Database, user_id: _uuid.UUID) -> bool:
     """Agreed to the disclosure as it reads now. A changed disclosure asks everyone again."""
-    user = session.get(User, user_id)
+    user = get(db, User, user_id)
     return bool(user and user.processing_consent_at is not None
                 and user.processing_consent_version == DISCLOSURE_VERSION)

@@ -5,13 +5,10 @@ import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import case, func, select, true
-
 from libs.contracts.config import migrate_config
 from libs.corpus import langfilter, workfilter
 from libs.corpus.geo import wanted_countries
 from libs.corpus.repository import DESCRIBE_MAX_FAILURES
-from libs.db.models import CorpusJob
 from libs.limits import limit_default
 from libs.settings import DEFAULT_SOURCE_MIN_AGE_HOURS, SOURCE_MIN_AGE_HOURS
 
@@ -104,22 +101,6 @@ class UserFilters:
         return found.group(0).lower() if found else None
 
 
-    def unwanted_for_training(self, row) -> str | None:
-        """Why this posting is not worth buying a label for, or `None`.
-
-        A narrower question than `unwanted`. A label is an example of what this person wants, so the
-        checks that describe the *posting's* content apply — the language they cannot read, the words
-        they never want to see. The ones that describe its *circumstances* do not: how many people
-        have applied, whether it is on site this week, and how old it is say nothing about whether
-        it is a good example, and filtering on them would thin the training set for no gain.
-        """
-        if self.excluded(row.get("title"), row.get("company")):
-            return "excluded_keyword"
-        if not langfilter.is_allowed(row.get("language"), set(self.languages),
-                                     source=row.get("source")):
-            return "language"
-        return None
-
     def unwanted(self, row) -> str | None:
         """Why this account can never receive this posting, or `None`."""
         # Title and company only, never the description.
@@ -147,7 +128,7 @@ class UserFilters:
         return None
 
 
-def _fresh_enough(filters: UserFilters, *, now: datetime | None = None):
+def _fresh_enough(filters: UserFilters, *, now: datetime | None = None) -> dict:
     """Whether a posting is recent enough for this account, judged per source.
 
     **One global window does not mean "fresher jobs", it means "LinkedIn only".** Measured against
@@ -166,41 +147,16 @@ def _fresh_enough(filters: UserFilters, *, now: datetime | None = None):
     """
     reference = now or datetime.now(UTC)
     floors = dict(filters.source_min_ages) or SOURCE_MIN_AGE_HOURS
-    per_source = case(
-        *[(CorpusJob.source == source,
-           reference - timedelta(hours=max(hours, filters.max_age_hours)))
-          for source, hours in sorted(floors.items())],
-        else_=reference - timedelta(
-            hours=max(DEFAULT_SOURCE_MIN_AGE_HOURS, filters.max_age_hours)))
-
-    # A midnight timestamp is a date, not a time. Judge those on when we found the row.
-    date_only = func.date_trunc("day", CorpusJob.posted_at) == CorpusJob.posted_at
-    return (
-        (CorpusJob.posted_at.is_(None) & (CorpusJob.first_seen_at >= per_source))
-        | (date_only & (CorpusJob.first_seen_at >= per_source))
-        | (CorpusJob.posted_at.is_not(None) & ~date_only & (CorpusJob.posted_at >= per_source)))
-
-
-def too_old_to_send(filters: UserFilters, *, now: datetime | None = None):
-    """A posting that is no longer a candidate, for the sweep that gives up on unsent matches.
-
-    **The negation of the admission rule, not a rule of its own**, and that is the whole point. The
-    retirement sweep used to read a flat `job_max_age_hours` against
-    `coalesce(posted_at, first_seen_at)` while carrying a comment claiming it read "the same clock
-    the pre-score filter reads". It did not, in two ways: no per-source floor, and no handling of a
-    date-only `posted_at`.
-
-    What that cost, measured on the live platform 2026-08-11: **13 Adzuna matches destroyed an
-    average of two minutes after the posting was first seen.** Adzuna's floor is 48 hours and
-    `hiringcafe`'s is 168, so the filter admitted those postings on purpose; the sweep then judged
-    them at the operator's 6 and retired them before the notifier could send them. Every source
-    except LinkedIn has a floor above 6 hours, so this reached every account.
-
-    Whether a given match survived was a race: delivery applies no age filter at all, so if the
-    score lane's own notify job ran first the posting went out — 27 hours old and fine — and if the
-    sweep ran first the same row was destroyed.
-    """
-    return ~_fresh_enough(filters, now=now)
+    cutoff = {"$switch": {
+        "branches": [{"case": {"$eq": ["$source", source]},
+                      "then": reference - timedelta(hours=max(hours, filters.max_age_hours))}
+                     for source, hours in sorted(floors.items())],
+        "default": reference - timedelta(hours=max(DEFAULT_SOURCE_MIN_AGE_HOURS, filters.max_age_hours))}}
+    # A midnight timestamp is a date, not a time: judge those, and postings with none, on when we found them.
+    date_only = {"$or": [{"$eq": [{"$ifNull": ["$posted_at", None]}, None]},
+                         {"$eq": ["$posted_at", {"$dateTrunc": {"date": "$posted_at", "unit": "day"}}]}]}
+    clock = {"$cond": [date_only, "$first_seen_at", "$posted_at"]}
+    return {"$expr": {"$gte": [clock, cutoff]}}
 
 
 @dataclass(frozen=True)
@@ -239,30 +195,31 @@ def filters_for(session, user, *, windows: PlatformWindows | None = None) -> Use
     account stays a one-liner.
     """
     from libs import limits  # noqa: PLC0415 - avoids a cycle at import time
-    from libs.db.models import UserConfig  # noqa: PLC0415
 
     windows = windows or platform_windows(session)
     # Kept next to the `None` that honours Unlimited: `test_unlimited_is_honoured_wherever_it_is
     # _offered` reads the few lines after a `resolve(...)` looking for it, and putting anything
     # between the two hides the check from the guard as well as from a reader.
     cap = limits.resolve(user, "applicant_cap")
+    from libs.tenant.repository import TenantRepository  # noqa: PLC0415 - avoids a cycle at import time
+
     return UserFilters.from_config(
-        session.scalar(select(UserConfig.config).where(UserConfig.user_id == user.id)),
+        TenantRepository(session).get_config(user.id),
         max_age_hours=windows.max_age_hours,
         applicant_cap=None if cap is None else int(cap),
         source_min_ages=windows.source_min_ages)
 
 
-def candidate_conditions(filters: UserFilters, *, now: datetime | None = None) -> list:
-    """The SQL every "is this row a candidate for this account" question must ask."""
+def candidate_conditions(filters: UserFilters, *, now: datetime | None = None) -> list[dict]:
+    """The conditions every "is this posting a candidate for this account" question must ask, for `$and`."""
     return [
         # Nothing to apply for.
-        CorpusJob.closed_at.is_(None),
+        {"closed_at": None},
         _fresh_enough(filters, now=now),
         # Their countries, or a posting that names no readable place.
-        true() if not filters.countries
-        else CorpusJob.country.is_(None) | CorpusJob.country.in_(filters.countries),
+        {} if not filters.countries
+        else {"$or": [{"country": None}, {"country": {"$in": sorted(filters.countries)}}]},
         # A posting whose page refused to answer twice was abandoned, and its stored "description"
-        # is its own title. Scoring a user's model against a sentence is worse than not scoring.
-        CorpusJob.describe_failures < DESCRIBE_MAX_FAILURES,
+        # is its own title. Matching words against a sentence is worse than not matching.
+        {"describe_failures": {"$lt": DESCRIBE_MAX_FAILURES}},
     ]

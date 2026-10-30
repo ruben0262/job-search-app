@@ -5,7 +5,7 @@ import argparse
 import logging
 import sys
 
-from libs.db.session import session_scope
+from libs.db import database, ensure_schema
 from libs.obs import configure
 from libs.secrets import install
 from libs.settings import (
@@ -46,12 +46,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args(argv)
     _configure_logging(args.verbose)
+    ensure_schema()
 
     if args.linkedin:
         # Per user, on their own schedule and their own credential.
         install()
-        with session_scope() as session:
-            report = run_linkedin(session, limit=linkedin_concurrent_users(session))
+        db = database()
+        report = run_linkedin(db, limit=linkedin_concurrent_users(db))
         logger.info("linkedin: %d considered, %d ran, %d without a lease, %d link(s), %d new",
                     report.considered, report.ran, report.skipped_no_lease,
                     report.links_found, report.new_jobs)
@@ -60,8 +61,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.describe_linkedin:
         # A separate pass on a slower timer, not part of the cycle.
         install()
-        with session_scope() as session:
-            totals = describe_linkedin_for_all(session)
+        db = database()
+        totals = describe_linkedin_for_all(db)
         logger.info("describe(linkedin): %s", totals)
         return 0
 
@@ -70,28 +71,28 @@ def main(argv: list[str] | None = None) -> int:
         kwargs["run_source"] = lambda *a, **k: []
 
     try:
-        with session_scope() as session:
-            # Source pre-filters come from the union of active users' configs, never from one person's.
-            source_configs = build_source_configs(
-                TenantRepository(session).active_configs(),
-                freshness={name: freshness_hours(session, name) for name in HARVEST_SOURCES},
-                results={name: results_per_query(session, name) for name in HARVEST_SOURCES
-                         if results_per_query(session, name)},
-                pages={name: pages_per_cycle(session, name) for name in HARVEST_SOURCES
-                       if pages_per_cycle(session, name)},
-                # Sources that iterate their own demand rather than a planned query set read their
-                # ceiling from the config; `select_within_budget` never sees them.
-                queries={name: queries_per_cycle(session, name) for name in HARVEST_SOURCES},
-                ats_companies=ats_companies_per_cycle(session))
-            # The operator's per-source query ceilings, read where the session is.
-            limits = (dict.fromkeys(HARVEST_SOURCES, args.max_queries)
-                      if args.max_queries is not None
-                      else {name: queries_per_cycle(session, name) for name in HARVEST_SOURCES})
-            kwargs["limits"] = limits
-            kwargs["describe_limit"] = describe_per_cycle(session)
-            logger.info("harvest: %d sources enabled", len(source_configs))
+        db = database()
+        # Source pre-filters come from the union of active users' configs, never from one person's.
+        source_configs = build_source_configs(
+            TenantRepository(db).active_configs(),
+            freshness={name: freshness_hours(db, name) for name in HARVEST_SOURCES},
+            results={name: results_per_query(db, name) for name in HARVEST_SOURCES
+                     if results_per_query(db, name)},
+            pages={name: pages_per_cycle(db, name) for name in HARVEST_SOURCES
+                   if pages_per_cycle(db, name)},
+            # Sources that iterate their own demand rather than a planned query set read their
+            # ceiling from the config; `select_within_budget` never sees them.
+            queries={name: queries_per_cycle(db, name) for name in HARVEST_SOURCES},
+            ats_companies=ats_companies_per_cycle(db))
+        # The operator's per-source query ceilings, read where the db is.
+        limits = (dict.fromkeys(HARVEST_SOURCES, args.max_queries)
+                  if args.max_queries is not None
+                  else {name: queries_per_cycle(db, name) for name in HARVEST_SOURCES})
+        kwargs["limits"] = limits
+        kwargs["describe_limit"] = describe_per_cycle(db)
+        logger.info("harvest: %d sources enabled", len(source_configs))
 
-            report, deferred = run_cycle(session, source_configs=source_configs, **kwargs)
+        report, deferred = run_cycle(db, source_configs=source_configs, **kwargs)
     except Exception:
         logger.exception("harvest cycle failed")
         return 1
@@ -118,8 +119,8 @@ def main(argv: list[str] | None = None) -> int:
 def _run_linkedin_pass() -> None:
     """The per-user LinkedIn tier."""
     try:
-        with session_scope() as session:
-            report = run_linkedin(session, limit=linkedin_concurrent_users(session))
+        db = database()
+        report = run_linkedin(db, limit=linkedin_concurrent_users(db))
         logger.info("linkedin: %d considered, %d ran, %d without a lease, %d link(s), %d new",
                     report.considered, report.ran, report.skipped_no_lease,
                     report.links_found, report.new_jobs)

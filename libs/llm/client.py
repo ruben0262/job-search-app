@@ -5,10 +5,18 @@ import json
 import logging
 from typing import Protocol
 
+from libs.db.models.queue import CLAIM_TIMEOUT_MIN
+
 logger = logging.getLogger(__name__)
 
 # How many times the SDK retries a 429 or a 5xx before giving up.
 MAX_RETRIES = 2
+
+# One reply is one whole document, so the read timeout is the time it takes to write it. Derived
+# from the docgen lane's claim rather than chosen: a CV and its one revision, the most a build
+# makes, finish inside the claim with a fifth of it left for rendering. Every provider's, Claude's
+# included: left to its SDK's ten minutes, one Claude call could outlive the claim it ran under.
+TIMEOUT_SEC = CLAIM_TIMEOUT_MIN["docgen"] * 60 * 2 / 5
 
 # The identity block a subscription OAuth token is entitled to.
 CLAUDE_CODE_IDENTITY = "You are Claude Code, Anthropic's official CLI for Claude."
@@ -47,10 +55,10 @@ class AnthropicClient:
         self._oauth = kind == "claude_oauth"
         if self._oauth:
             self._client = anthropic.Anthropic(
-                auth_token=value, max_retries=MAX_RETRIES,
+                auth_token=value, max_retries=MAX_RETRIES, timeout=TIMEOUT_SEC,
                 default_headers={"anthropic-beta": CLAUDE_OAUTH_BETA})
         else:
-            self._client = anthropic.Anthropic(api_key=value, max_retries=MAX_RETRIES)
+            self._client = anthropic.Anthropic(api_key=value, max_retries=MAX_RETRIES, timeout=TIMEOUT_SEC)
 
     def _system(self, system: str) -> str | list[dict]:
         """The system prompt, with the identity block an OAuth token requires in front of it."""

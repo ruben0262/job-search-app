@@ -8,9 +8,10 @@ import uuid as _uuid
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
-from sqlalchemy.orm import Session
+from pymongo.database import Database
 
 from libs.credentials import validate_credential
+from libs.db import get
 from libs.db.models import ProxyCredential, User
 from libs.db.models.user import SECRET_KINDS
 from libs.llm.client import CLAUDE_KINDS
@@ -37,7 +38,7 @@ class Saved(BaseModel):
 
 @router.put("/{kind}")
 def put_credential(kind: str, body: CredentialBody, request: Request, *,
-                   db: Session = Depends(get_db),
+                   db: Database = Depends(get_db),
                    store: SecretStore = Depends(get_store),
                    user_id: _uuid.UUID = Depends(current_user)) -> Saved:
     """Store or replace one credential."""
@@ -62,12 +63,10 @@ def put_credential(kind: str, body: CredentialBody, request: Request, *,
     return Saved(status="saved", validated=result.ok, detail=result.detail)
 
 
-def _ensure_proxy_credential(db: Session, user_id) -> None:
+def _ensure_proxy_credential(db: Database, user_id) -> None:
     """Give this user a proxy credential row if they have none."""
-    if db.get(ProxyCredential, user_id) is not None:
-        return
-    db.add(ProxyCredential(user_id=user_id, secret_ref=f"{user_id}:proxy"))
-    db.flush()
+    fresh = ProxyCredential(user_id=user_id, secret_ref=f"{user_id}:proxy").to_doc()
+    db[ProxyCredential.COLLECTION].update_one({"user_id": user_id}, {"$setOnInsert": fresh}, upsert=True)
 
 
 class StoredCredential(BaseModel):
@@ -89,7 +88,7 @@ class CredentialList(BaseModel):
 
 
 @router.get("")
-def list_credentials(db: Session = Depends(get_db),
+def list_credentials(db: Database = Depends(get_db),
                      user_id: _uuid.UUID = Depends(current_user)) -> CredentialList:
     """What the account page shows: which credentials exist, never what they are."""
     from libs.tenant.repository import TenantRepository  # noqa: PLC0415 - avoids an import cycle
@@ -185,7 +184,7 @@ class RevealBody(BaseModel):
 
 @router.post("/{kind}/reveal")
 def reveal_credential(kind: str, body: RevealBody, request: Request, *,
-                      db: Session = Depends(get_db),
+                      db: Database = Depends(get_db),
                       store: SecretStore = Depends(get_store),
                       user_id: _uuid.UUID = Depends(current_user)) -> dict:
     """Hand back the plaintext, once, after the account password."""
@@ -195,7 +194,7 @@ def reveal_credential(kind: str, body: RevealBody, request: Request, *,
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=f"unknown credential {kind!r}")
     rate_limit(request, f"reveal:{user_id}", limit=10, per_seconds=3600)
 
-    user = db.get(User, user_id)
+    user = get(db, User, user_id)
     if not verify_password(user.password_hash, body.password):
         audit(logger, "credentials.reveal_refused", user=user_id, kind=kind)
         # Deliberately the same shape as a failed login: no oracle, no timing shortcut.

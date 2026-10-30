@@ -1,16 +1,13 @@
 """Which jobs a person sees: green words pick them, red words veto them, the order is explainable."""
 from __future__ import annotations
 
-import os
 import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from libs.matching import TEXT_POINTS, TITLE_POINTS, green_words, pattern, score, underpaid
-
-needs_db = pytest.mark.skipif(not os.environ.get("DATABASE_URL"),
-                              reason="DATABASE_URL not set (no live Postgres)")
+from tests.conftest import needs_db
 
 
 def test_a_green_word_matches_whole_words_and_ignores_case_spaces_and_hyphens():
@@ -50,54 +47,43 @@ def test_a_job_is_dropped_for_pay_only_when_its_stated_top_is_known_and_below(
 
 
 @pytest.fixture()
-def db():
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import Session
+def account(db, user):
+    """One person searching for "backend engineer", with "senior" as a red word."""
 
-    from libs.db.models import User, UserConfig
-
-    engine = create_engine(os.environ["DATABASE_URL"])
-    conn = engine.connect()
-    trans = conn.begin()
-    session = Session(bind=conn, join_transaction_mode="create_savepoint")
-    user = User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active")
-    session.add(user)
-    session.flush()
-    session.add(UserConfig(user_id=user.id, schema_version=2, config={"sections": [{
-        "platform": "all", "keywords": ["backend engineer"], "exclude_keywords": ["senior"]}]}))
-    try:
-        yield session, user
-    finally:
-        session.close()
-        trans.rollback()
-        conn.close()
+    _search(db, user, {"sections": [{"platform": "all", "keywords": ["backend engineer"],
+                                     "exclude_keywords": ["senior"]}]})
+    return db, user
 
 
-def _jobs(session, *rows):
+def _search(db, user, config: dict) -> None:
+    from libs.tenant.repository import TenantRepository
+
+    TenantRepository(db).save_config(user.id, config, schema_version=2)
+
+
+def _jobs(db, *rows):
+    from libs.db import insert, now
     from libs.db.models import CorpusJob
 
-    now = datetime.now(UTC)
-    jobs = [CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test", title=title,
-                      description=text, is_remote=remote, posted_at=now,
-                      first_seen_at=now - timedelta(minutes=age))
+    moment = now()
+    return [insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test", title=title,
+                                 description=text, is_remote=remote, posted_at=moment,
+                                 first_seen_at=moment - timedelta(minutes=age)))
             for title, text, remote, age in rows]
-    session.add_all(jobs)
-    session.flush()
-    return jobs
 
 
 @needs_db
-def test_green_words_pick_jobs_red_words_veto_them_and_titles_rank_first(db):
+def test_green_words_pick_jobs_red_words_veto_them_and_titles_rank_first(account):
     from libs.matching import matching_jobs
 
-    session, user = db
-    _jobs(session,
+    db, user = account
+    _jobs(db,
           ("Platform Engineer", "You are a backend engineer at heart", True, 1),
           ("Backend Engineer", "Build APIs", True, 2),
           ("Senior Backend Engineer", "Lead the team", True, 3),
           ("Registered Nurse", "Ward rounds", True, 4))
 
-    found = matching_jobs(session, user)
+    found = matching_jobs(db, user)
 
     assert [(m.job.title, m.score) for m in found] == [
         ("Backend Engineer", TITLE_POINTS), ("Platform Engineer", TEXT_POINTS)]
@@ -105,72 +91,67 @@ def test_green_words_pick_jobs_red_words_veto_them_and_titles_rank_first(db):
 
 
 @needs_db
-def test_since_only_returns_jobs_first_seen_after_it(db):
+def test_since_only_returns_jobs_first_seen_after_it(account):
     from libs.matching import matching_jobs
 
-    session, user = db
-    _old, new = _jobs(session, ("Backend Engineer", "", True, 60), ("Backend Engineer II", "", True, 1))
+    db, user = account
+    _old, new = _jobs(db, ("Backend Engineer", "", True, 60), ("Backend Engineer II", "", True, 1))
 
-    found = matching_jobs(session, user, since=datetime.now(UTC) - timedelta(minutes=30))
+    found = matching_jobs(db, user, since=datetime.now(UTC) - timedelta(minutes=30))
 
     assert [m.job.id for m in found] == [new.id]
 
 
 @needs_db
-def test_remote_only_drops_jobs_known_to_be_on_site_but_keeps_unknown_ones(db):
-    from libs.db.models import UserConfig
+def test_remote_only_drops_jobs_known_to_be_on_site_but_keeps_unknown_ones(account):
     from libs.matching import matching_jobs
 
-    session, user = db
-    config = session.get(UserConfig, user.id)
-    config.config = {"sections": [{"platform": "all", "keywords": ["backend engineer"],
-                                   "remote_policy": "remote_only"}]}
-    _jobs(session, ("Backend Engineer A", "", False, 1), ("Backend Engineer B", "", None, 2))
+    db, user = account
+    _search(db, user, {"sections": [{"platform": "all", "keywords": ["backend engineer"],
+                                     "remote_policy": "remote_only"}]})
+    _jobs(db, ("Backend Engineer A", "", False, 1), ("Backend Engineer B", "", None, 2))
 
-    assert [m.job.title for m in matching_jobs(session, user)] == ["Backend Engineer B"]
+    assert [m.job.title for m in matching_jobs(db, user)] == ["Backend Engineer B"]
 
 
 @needs_db
-def test_a_minimum_salary_drops_what_pays_less_and_keeps_what_does_not_say(db):
-    from libs.db.models import UserConfig
+def test_a_minimum_salary_drops_what_pays_less_and_keeps_what_does_not_say(account):
     from libs.matching import matching_jobs
 
-    session, user = db
-    config = session.get(UserConfig, user.id)
-    config.config = {**config.config, "min_salary": 60_000, "salary_currency": "EUR"}
-    _low, high, silent = _jobs(session,
+    db, user = account
+    _search(db, user, {"sections": [{"platform": "all", "keywords": ["backend engineer"]}],
+                       "min_salary": 60_000, "salary_currency": "EUR"})
+    _low, high, silent = _jobs(db,
                                ("Backend Engineer A", "€40,000 - €50,000 per year", True, 1),
                                ("Backend Engineer B", "€70,000 - €90,000 per year", True, 2),
                                ("Backend Engineer C", "Competitive pay", True, 3))
 
-    assert [m.job.id for m in matching_jobs(session, user)] == [high.id, silent.id]
+    assert [m.job.id for m in matching_jobs(db, user)] == [high.id, silent.id]
 
 
 @needs_db
-def test_no_green_words_means_no_jobs_rather_than_every_job(db):
-    from libs.db.models import UserConfig
+def test_no_green_words_means_no_jobs_rather_than_every_job(account):
     from libs.matching import matching_jobs
 
-    session, user = db
-    session.get(UserConfig, user.id).config = {"sections": [{"platform": "all", "keywords": []}]}
-    _jobs(session, ("Backend Engineer", "", True, 1))
+    db, user = account
+    _search(db, user, {"sections": [{"platform": "all", "keywords": []}]})
+    _jobs(db, ("Backend Engineer", "", True, 1))
 
-    assert matching_jobs(session, user) == []
+    assert matching_jobs(db, user) == []
 
 
 @needs_db
-def test_only_a_person_with_a_healthy_proxy_of_their_own_sees_linkedin_jobs(db):
+def test_only_a_person_with_a_healthy_proxy_of_their_own_sees_linkedin_jobs(account):
     """Decision D3: LinkedIn is fetched through someone's own proxy, never shared with the rest."""
+    from libs.db import insert
     from libs.db.models import ProxyCredential
     from libs.matching import matching_jobs
 
-    session, user = db
-    linkedin, board = _jobs(session, ("Backend Engineer", "", True, 1), ("Backend Engineer", "", True, 2))
-    linkedin.source = "linkedin"
-    session.flush()
+    db, user = account
+    linkedin, board = _jobs(db, ("Backend Engineer", "", True, 1), ("Backend Engineer", "", True, 2))
+    db.corpus.update_one({"_id": linkedin.id}, {"$set": {"source": "linkedin"}})
 
-    assert [m.job.id for m in matching_jobs(session, user)] == [board.id]
+    assert [m.job.id for m in matching_jobs(db, user)] == [board.id]
 
-    session.add(ProxyCredential(user_id=user.id, secret_ref=f"{user.id}:proxy", status="healthy"))
-    session.flush()
-    assert {m.job.id for m in matching_jobs(session, user)} == {linkedin.id, board.id}
+    insert(db, ProxyCredential(user_id=user.id, secret_ref=f"{user.id}:proxy", status="healthy"))
+    assert {m.job.id for m in matching_jobs(db, user)} == {linkedin.id, board.id}

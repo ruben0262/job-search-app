@@ -11,12 +11,11 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session, defer
+from pymongo.database import Database
 
 from libs.contracts.config import migrate_config
 from libs.corpus import salary
-from libs.db.models import CorpusJob, User, UserConfig
+from libs.db.models import CorpusJob, User
 from libs.tenant.filters import candidate_conditions, filters_for
 from libs.tenant.repository import TenantRepository
 
@@ -31,6 +30,8 @@ SCAN = 2_000
 # What `UserFilters.unwanted` reads off a row.
 _ROW = ("title", "company", "description", "source", "applicants", "location", "is_remote",
         "workplace", "language")
+# PCRE's `\w` is ASCII unless told otherwise; this makes a word boundary mean what Python's does.
+_UNICODE = "(*UCP)"
 
 
 @dataclass(frozen=True)
@@ -82,26 +83,35 @@ def underpaid(config: dict | None, description: str | None) -> bool:
     return top is not None and floor is not None and top < floor
 
 
-def matching_jobs(session: Session, user: User, *, since: datetime | None = None,
+def matching_jobs(db: Database, user: User, *, since: datetime | None = None,
                   scan: int = SCAN) -> list[Match]:
     """This person's matches, best first, then newest first."""
-    config = session.scalar(select(UserConfig.config).where(UserConfig.user_id == user.id))
+    config = TenantRepository(db).get_config(user.id)
     regex = pattern(green_words(config))
     if regex is None:
         return []
 
-    filters = filters_for(session, user)
+    filters = filters_for(db, user)
     where = candidate_conditions(filters)
     if since is not None:
-        where.append(CorpusJob.first_seen_at > since)
+        where.append({"first_seen_at": {"$gt": since}})
     # Decision D3: LinkedIn rows are fetched through someone's own proxy, so only a person with a
     # healthy one of their own sees them. Without this, everyone saw rows others' proxies paid for.
-    if not TenantRepository(session).linkedin_visible(user.id):
-        where.append(CorpusJob.source != "linkedin")
-    # The vector is the switched-off model's, ~3 KB a row, and nothing here reads it.
-    jobs = session.scalars(select(CorpusJob).options(defer(CorpusJob.embedding)).where(*where)
-                           .order_by(CorpusJob.first_seen_at.desc()).limit(scan)).all()
-    if since is not None and len(jobs) == scan:
+    if not TenantRepository(db).linkedin_visible(user.id):
+        where.append({"source": {"$ne": "linkedin"}})
+    # The newest `scan` candidates, then their green words judged in the database: only matches
+    # cross the network, where pulling every candidate's text would be megabytes per page.
+    in_database = _UNICODE + regex.pattern
+    head = {"$substrCP": [{"$ifNull": ["$description", ""]}, 0, TEXT_CHARS]}
+    jobs = [CorpusJob.from_doc(row) for row in db[CorpusJob.COLLECTION].aggregate([
+        {"$match": {"$and": where}},
+        {"$sort": {"first_seen_at": -1, "_id": -1}},
+        {"$limit": scan},
+        {"$match": {"$or": [
+            {"title": {"$regex": in_database, "$options": "i"}},
+            {"$expr": {"$regexMatch": {"input": head, "regex": in_database, "options": "i"}}}]}},
+    ])]
+    if since is not None and db[CorpusJob.COLLECTION].count_documents({"$and": where}, limit=scan) == scan:
         # The caller's watermark will pass every older candidate this scan never reached.
         logger.warning("matching: %s has at least %d new candidates since %s; only the newest %d were "
                        "examined, so older matches will not be alerted (the jobs page still lists them)",
@@ -109,8 +119,7 @@ def matching_jobs(session: Session, user: User, *, since: datetime | None = None
 
     found = []
     for job in jobs:
-        # The cheap question first: most candidates carry none of their words, and the filters'
-        # workplace classifier is the costliest step in the loop.
+        # Scored here to say which words, and where: the database only said that some matched.
         points, words = score(regex, job.title, job.description)
         if (points and not filters.unwanted({name: getattr(job, name) for name in _ROW})
                 and not underpaid(config, job.description)):

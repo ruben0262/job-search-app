@@ -15,14 +15,15 @@ import re
 import uuid as _uuid
 from collections import Counter
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from pymongo.database import Database
 
 from libs.contracts.config import migrate_config
 from libs.corpus.geo import read_country
-from libs.db.models import CorpusJob, User, UserConfig, UserDocument
+from libs.db import get
+from libs.db.models import CorpusJob, User, UserDocument
 from libs.documents.read import Facts, fold, read, stem, words
 from libs.matching import SCAN, matching_jobs, norm, pattern, score
+from libs.tenant.repository import TenantRepository
 
 logger = logging.getLogger(__name__)
 
@@ -134,56 +135,57 @@ def _plain_title(title: str) -> str:
     return " ".join(words_)
 
 
-def documents_of(session: Session, user_id: _uuid.UUID) -> dict[str, str]:
+def documents_of(db: Database, user_id: _uuid.UUID) -> dict[str, str]:
     """Their documents' text by kind, newest first where they have several of one kind."""
     texts: dict[str, list[str]] = {}
-    for kind, text in session.execute(
-            select(UserDocument.kind, UserDocument.text).where(UserDocument.user_id == user_id)
-            .order_by(UserDocument.uploaded_at.desc(), UserDocument.id.desc())):
-        texts.setdefault(kind, []).append(text)
+    for row in db[UserDocument.COLLECTION].find({"user_id": user_id}, {"kind": 1, "text": 1},
+                                                sort=[("uploaded_at", -1), ("_id", -1)]):
+        texts.setdefault(row["kind"], []).append(row["text"])
     return {kind: "\n\n".join(parts) for kind, parts in texts.items()}
 
 
-def refresh(session: Session, user_id: _uuid.UUID) -> dict:
+def refresh(db: Database, user_id: _uuid.UUID) -> dict:
     """Recompute and store this person's suggestions, keeping what they dismissed.
 
     Never raises. A CV the reader cannot follow must not cost the person the upload that triggered
     this, so a failure is logged and the previous suggestions stand.
     """
-    user = session.get(User, user_id)
+    user = get(db, User, user_id)
     previous = user.suggestions or {"green": [], "red": [], "dismissed": []}
     dismissed = previous.get("dismissed") or []
     try:
-        with session.begin_nested():
-            documents = documents_of(session, user_id)
-            config = session.scalar(select(UserConfig.config).where(UserConfig.user_id == user_id))
-            titles = session.scalars(select(CorpusJob.title)
-                                     .order_by(CorpusJob.first_seen_at.desc()).limit(SCAN)).all()
-            matched = [match.job.title for match in matching_jobs(session, user)]
-            fresh = compute(read(documents), config=config, titles=list(titles), matched=matched,
-                            text="\n".join(documents.values()), dismissed=set(dismissed))
+        documents = documents_of(db, user_id)
+        config = TenantRepository(db).get_config(user_id)
+        titles = [row["title"] for row in db[CorpusJob.COLLECTION].find(
+            {}, {"title": 1}, sort=[("first_seen_at", -1)], limit=SCAN)]
+        matched = [match.job.title for match in matching_jobs(db, user)]
+        fresh = compute(read(documents), config=config, titles=titles, matched=matched,
+                        text="\n".join(documents.values()), dismissed=set(dismissed))
     except Exception:  # see the docstring: the save that triggered this must survive it
         logger.exception("suggestions: could not work them out for user %s; the previous ones stand",
                          user_id)
         return previous
-    user.suggestions = {**fresh, "dismissed": dismissed}
+    suggestions = _store(db, user_id, {**fresh, "dismissed": dismissed})
     logger.info("suggestions: user %s has %d green and %d red, from %d document kind(s) and %d match(es)",
                 user_id, len(fresh["green"]), len(fresh["red"]), len(documents), len(matched))
-    return user.suggestions
+    return suggestions
 
 
-def current(session: Session, user_id: _uuid.UUID) -> dict:
+def current(db: Database, user_id: _uuid.UUID) -> dict:
     """What is stored; worked out now for an account that has never had any."""
-    user = session.get(User, user_id)
-    return user.suggestions if user.suggestions is not None else refresh(session, user_id)
+    user = get(db, User, user_id)
+    return user.suggestions if user.suggestions is not None else refresh(db, user_id)
 
 
-def dismiss(session: Session, user_id: _uuid.UUID, term: str) -> dict:
+def dismiss(db: Database, user_id: _uuid.UUID, term: str) -> dict:
     """Never suggest this word again."""
-    stored, key = current(session, user_id), norm(term)
-    user = session.get(User, user_id)
-    user.suggestions = {
+    stored, key = current(db, user_id), norm(term)
+    return _store(db, user_id, {
         **{kind: [each for each in stored.get(kind) or [] if each["term"] != key]
            for kind in ("green", "red")},
-        "dismissed": sorted({*(stored.get("dismissed") or []), key})}
-    return user.suggestions
+        "dismissed": sorted({*(stored.get("dismissed") or []), key})})
+
+
+def _store(db: Database, user_id: _uuid.UUID, suggestions: dict) -> dict:
+    db[User.COLLECTION].update_one({"_id": user_id}, {"$set": {"suggestions": suggestions}})
+    return suggestions

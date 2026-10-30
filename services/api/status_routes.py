@@ -8,10 +8,10 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from pymongo.database import Database
 
 from libs import limits
+from libs.db import find_one, get
 from libs.db.models import CorpusJob, QueueJob, User, UserJobState
 from libs.notify import owed, reachable, sent_today
 from services.api.deps import current_user, get_db
@@ -46,10 +46,10 @@ def _entry(key: str, label: str, state: str, detail: str) -> StatusComponent:
 
 
 @router.get("/status")
-def status(db: Session = Depends(get_db),
+def status(db: Database = Depends(get_db),
            user_id: _uuid.UUID = Depends(current_user)) -> StatusReport:
     """Every component, one call — the page shows them together or not at all."""
-    user = db.get(User, user_id)
+    user = get(db, User, user_id)
     now = datetime.now(UTC)
 
     return StatusReport(components=[
@@ -72,9 +72,10 @@ def _telegram_bot(user: User) -> StatusComponent:
                   "Not connected. Connect it in Settings to get new matches on your phone.")
 
 
-def _harvester(db: Session, now: datetime) -> StatusComponent:
+def _harvester(db: Database, now: datetime) -> StatusComponent:
     """Shared, deliberately: one corpus serves everyone, so its freshness is everyone's answer."""
-    last = db.scalar(select(func.max(CorpusJob.first_seen_at)))
+    newest = db[CorpusJob.COLLECTION].find_one({}, {"first_seen_at": 1}, sort=[("first_seen_at", -1)])
+    last = newest["first_seen_at"] if newest else None
     if last is None:
         return _entry("harvester", "Job collection", "down", "No jobs collected yet.")
     if last.tzinfo is None:
@@ -91,9 +92,9 @@ def _harvester(db: Session, now: datetime) -> StatusComponent:
                   f"Collecting. Last new job {minutes} minute{'s' if minutes != 1 else ''} ago.")
 
 
-def _delivery(db: Session, user: User, now: datetime) -> StatusComponent:
+def _delivery(db: Database, user: User, now: datetime) -> StatusComponent:
     """Is anything actually arriving — the question every other check assumes and none of them ask."""
-    if db.scalar(select(User.id).where(User.id == user.id, reachable())) is None:
+    if not db[User.COLLECTION].count_documents({"_id": user.id, **reachable(db, user.id)}, limit=1):
         return _entry("delivery", "Delivery", "off",
                       "Connect Telegram or turn on notifications to get new matches off the site.")
 
@@ -122,8 +123,9 @@ def _delivery(db: Session, user: User, now: datetime) -> StatusComponent:
         return _entry("delivery", "Delivery", "ok",
                       f"Sending — {len(waiting)} new matching job(s) on the way.")
 
-    last_sent = db.scalar(
-        select(func.max(UserJobState.notified_at)).where(UserJobState.user_id == user.id))
+    sent = db[UserJobState.COLLECTION].find_one({"user_id": user.id, "notified_at": {"$ne": None}},
+                                                {"notified_at": 1}, sort=[("notified_at", -1)])
+    last_sent = sent["notified_at"] if sent else None
     if last_sent is None:
         return _entry("delivery", "Delivery", "off",
                       "Nothing sent yet — matches are sent as they are found.")
@@ -137,10 +139,8 @@ def _delivery(db: Session, user: User, now: datetime) -> StatusComponent:
                   f"Sending. Last delivery {hours} hour{'s' if hours != 1 else ''} ago.")
 
 
-def _docgen(db: Session, user_id: _uuid.UUID) -> StatusComponent:
-    last = db.scalar(
-        select(QueueJob).where(QueueJob.user_id == user_id, QueueJob.lane == "docgen")
-        .order_by(QueueJob.id.desc()).limit(1))
+def _docgen(db: Database, user_id: _uuid.UUID) -> StatusComponent:
+    last = find_one(db, QueueJob, {"user_id": user_id, "lane": "docgen"}, sort=[("_id", -1)])
     if last is None:
         return _entry("docgen", "CV & cover letters", "off",
                       "Nothing built yet. Tap Make my CV under a job to try it.")

@@ -12,14 +12,14 @@ import re
 import uuid as _uuid
 from dataclasses import dataclass
 
-from sqlalchemy import select
-
-from libs.db.models import CorpusJob, User, UserJobState, UserLabel
+from libs.db import get
+from libs.db.models import CorpusJob, User
 from libs.documents import instant
 from libs.obs import audit
 from libs.profiles import PLACEHOLDER_MARKERS, ProfileIncomplete
 from libs.profiles.repository import ProfileFiles
 from libs.suggestions import documents_of
+from libs.tenant.repository import TenantRepository
 from services.docgen import build, pdf
 from services.docgen.refresh import PostingClosed, refresh_before_build
 
@@ -45,24 +45,24 @@ class Built:
     revised: bool = False
 
 
-def run_instant(session, user_id: _uuid.UUID, job_id: int, *, kind: str) -> Built:
+def run_instant(db, user_id: _uuid.UUID, job_id: int, *, kind: str) -> Built:
     """The free document: their own lines, picked and ordered by the posting. No model, no key."""
-    user, job, _score = _load(session, user_id, job_id)
-    documents = documents_of(session, user_id)
+    user, job = _load(db, user_id, job_id)
+    documents = documents_of(db, user_id)
     if not (documents.get("cv") or documents.get("linkedin")):
         raise NotBuildable("upload your CV first — the instant version is built from it")
     html = instant.render(kind, documents=documents, job=job,
                           identity={"full_name": user.full_name, "links": user.links or []})
     # Their own text, so invisible characters a PDF export left in it are dropped, not refused.
     document, report = _render(build.strip_hidden(html), kind=kind)
-    return _done(session, user, job, kind=kind, mode="instant", document=document,
+    return _done(db, user, job, kind=kind, mode="instant", document=document,
                  report=report, calls=0)
 
 
-def run_ai(session, user_id: _uuid.UUID, job_id: int, *, client, model: str, kind: str,
+def run_ai(db, user_id: _uuid.UUID, job_id: int, *, client, model: str, kind: str,
            http: object | None = None) -> Built:
     """The tailored document, written by the model on the key that pays for it."""
-    user, job, score = _load(session, user_id, job_id)
+    user, job = _load(db, user_id, job_id)
     if not (job.description or "").strip():
         # Without the posting there is nothing to tailor to, and the result is the generic CV.
         raise NotBuildable("this posting has no description stored — nothing to tailor against")
@@ -70,12 +70,12 @@ def run_ai(session, user_id: _uuid.UUID, job_id: int, *, client, model: str, kin
     # Before anything is spent.
     if http is not None:
         try:
-            refresh_before_build(session, job, http)
+            refresh_before_build(db, job, http)
         except PostingClosed as exc:
             raise NotBuildable(str(exc)) from exc
 
     # The reference instance's `CLAUDE.md` and skill files, per user (`libs/profiles`).
-    files = ProfileFiles(session, user_id)
+    files = ProfileFiles(db, user_id)
     try:
         grounding = files.grounding()
     except ProfileIncomplete as exc:
@@ -86,9 +86,9 @@ def run_ai(session, user_id: _uuid.UUID, job_id: int, *, client, model: str, kin
     if not base_cv or not base_cv.strip():
         raise NotBuildable("this account has no base CV yet — finish setup first")
 
-    context = build.job_context(job, score=score,
-                                fit_notes=_fit_notes(session, user_id, job_id),
-                                salary_bands=_salary_bands(user))
+    # No score and no fit notes since the model was switched off: what the build was given then too.
+    context = build.job_context(job, score=None, fit_notes=None,
+                                salary_bands=_salary_bands(db, user_id))
     if kind == "cover":
         document, report, calls = _cover(
             client, context, model=model, base_cv=base_cv, grounding=grounding,
@@ -97,11 +97,11 @@ def run_ai(session, user_id: _uuid.UUID, job_id: int, *, client, model: str, kin
         document, report, calls = _tailor_until_it_fits(
             client, context, model=model, base_cv=base_cv, facts_md=grounding,
             template=files.read("tailor_cv.md"), role_angles=files.read("08-role-angles.md"))
-    return _done(session, user, job, kind=kind, mode="ai", document=document, report=report,
+    return _done(db, user, job, kind=kind, mode="ai", document=document, report=report,
                  calls=calls)
 
 
-def _done(session, user: User, job: CorpusJob, *, kind: str, mode: str, document: bytes,
+def _done(db, user: User, job: CorpusJob, *, kind: str, mode: str, document: bytes,
           report: pdf.PdfReport, calls: int) -> Built:
     """Say the build happened, once. It is not an application: "I applied" on the jobs page is."""
     if not report.ats_ok:
@@ -176,31 +176,21 @@ def _render(html: str, *, kind: str) -> tuple[bytes, pdf.PdfReport]:
     return document, pdf.inspect_pdf(document, kind=kind)
 
 
-def _fit_notes(session, user_id: _uuid.UUID, job_id: int) -> str | None:
-    """What the labeller concluded about this job, in its own fifteen words."""
-    return session.scalar(
-        select(UserLabel.rationale)
-        .where(UserLabel.user_id == user_id, UserLabel.job_id == job_id))
-
-
-def _load(session, user_id: _uuid.UUID, job_id: int) -> tuple[User, CorpusJob, float | None]:
+def _load(db, user_id: _uuid.UUID, job_id: int) -> tuple[User, CorpusJob]:
     """Everything the build needs, with the reasons it cannot run stated as refusals."""
-    user = session.get(User, user_id)
+    user = get(db, User, user_id)
     if user is None:
         raise NotBuildable(f"no such user: {user_id}")
 
-    job = session.get(CorpusJob, job_id)
+    job = get(db, CorpusJob, job_id)
     if job is None:
         raise NotBuildable(f"job {job_id} is no longer in the corpus")
-
-    state = session.get(UserJobState, (user_id, job_id))
-    return user, job, (state.score if state else None)
+    return user, job
 
 
-def _salary_bands(user: User) -> dict | None:
+def _salary_bands(db, user_id: _uuid.UUID) -> dict | None:
     """This user's target ask bands, from their config."""
-    config = getattr(user, "config", None)
-    return (getattr(config, "config", None) or {}).get("salary_bands") if config else None
+    return (TenantRepository(db).get_config(user_id) or {}).get("salary_bands")
 
 
 def _filename(full_name: str | None, kind: str = "cv") -> str:

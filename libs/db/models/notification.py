@@ -1,52 +1,44 @@
-"""Notifications: what happened to this account while nobody was looking, and where else to say so."""
+"""The bell's in-app notifications, and the browsers that asked for Web Push."""
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass, field
+from datetime import datetime
 
-from sqlalchemy import BigInteger, CheckConstraint, ForeignKey, Index, String, Text, func
-from sqlalchemy.orm import Mapped, mapped_column
+from pymongo import IndexModel
 
-from libs.db.base import Base, timestamptz
-
-
-class UserNotification(Base):
-    """One thing this user should know about."""
-
-    __tablename__ = "user_notifications"
-
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
-
-    # A dotted slug ("telegram.broken", "model.trained").
-    event: Mapped[str] = mapped_column(String(64))
-    level: Mapped[str] = mapped_column(String(8), default="info")
-
-    title: Mapped[str] = mapped_column(String(120))
-    body: Mapped[str] = mapped_column(Text, default="")
-    # An in-app hash route ("#/settings") — where clicking the notification takes you.
-    url: Mapped[str | None] = mapped_column(String(200))
-
-    created_at: Mapped[timestamptz] = mapped_column(server_default=func.now())
-    read_at: Mapped[timestamptz | None]
-
-    __table_args__ = (
-        # The two queries this table has: the bell's unread count, and the panel's recent list.
-        Index("ix_user_notifications_unread", "user_id", "read_at"),
-        Index("ix_user_notifications_recent", "user_id", "id"),
-        CheckConstraint("level IN ('info', 'warning', 'error')", name="user_notifications_level"),
-    )
+from libs.db import Document, now
 
 
-class PushSubscription(Base):
-    """One browser that asked for job alerts (Web Push). Deleted when its push service says it is gone."""
+@dataclass(kw_only=True)
+class UserNotification(Document):
+    COLLECTION = "user_notifications"
+    SEQUENCE = True
+    CHOICES = {"level": ("info", "warning", "error")}  # noqa: RUF012
+    INDEXES = (IndexModel([("user_id", 1), ("read_at", 1)], name="unread"),
+               IndexModel([("user_id", 1), ("_id", 1)], name="recent"))
 
-    __tablename__ = "push_subscriptions"
+    id: int | None = None
+    user_id: uuid.UUID
+    event: str
+    level: str = "info"
+    title: str
+    body: str = ""
+    url: str | None = None
+    created_at: datetime = field(default_factory=now)
+    read_at: datetime | None = None
 
-    # The push service's address for this browser, which is what identifies it.
-    endpoint: Mapped[str] = mapped_column(Text, primary_key=True)
-    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"),
-                                               index=True)
-    # The browser's keys: what is sent is encrypted to them, so only that browser can read it.
-    p256dh: Mapped[str] = mapped_column(String(256))
-    auth: Mapped[str] = mapped_column(String(64))
-    created_at: Mapped[timestamptz] = mapped_column(server_default=func.now())
+
+@dataclass(kw_only=True)
+class PushSubscription(Document):
+    """One browser's Web Push subscription. The endpoint is the browser's own address, so it is unique."""
+
+    COLLECTION = "push_subscriptions"
+    INDEXES = (IndexModel("endpoint", unique=True, name="one_per_browser"),
+               IndexModel("user_id", name="by_user"))
+
+    endpoint: str
+    user_id: uuid.UUID
+    p256dh: str
+    auth: str
+    created_at: datetime = field(default_factory=now)

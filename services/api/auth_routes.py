@@ -3,13 +3,12 @@ from __future__ import annotations
 
 import logging
 import uuid as _uuid
-from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, EmailStr, Field
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from pymongo.database import Database
+from pymongo.errors import DuplicateKeyError
 
 from libs.auth import (
     MIN_PASSWORD_LENGTH,
@@ -23,10 +22,12 @@ from libs.auth import (
     revoke_all,
     revoke_session,
     rotate_session,
+    token_owner,
     verify_password,
 )
 from libs.auth.access import issue_access_token
 from libs.auth.sessions import ACCESS_TTL, REFRESH_TTL, session_owner
+from libs.db import find_one, get, insert, now
 from libs.db.models import User, UserSession
 from libs.mail import EmailSender, MailError, reset_email, send_within_cap, verification_email
 from libs.notify import site_url
@@ -72,7 +73,7 @@ def _clear_session_cookies(response: Response) -> None:
 
 @router.post("/signup", status_code=status.HTTP_202_ACCEPTED)
 def signup(body: SignupRequest, request: Request,
-           db: Session = Depends(get_db),
+           db: Database = Depends(get_db),
            mailer: EmailSender = Depends(get_mailer)) -> dict:
     """Create an unverified account and email a link."""
     rate_limit(request, "signup", limit=5, per_seconds=3600)
@@ -84,15 +85,12 @@ def signup(body: SignupRequest, request: Request,
                             detail={"password": problems})
 
     email = body.email.lower()
-    existing = db.scalar(select(User).where(User.email == email))
-    if existing is not None:
+    try:
+        user = insert(db, User(email=email, password_hash=hash_password(body.password),
+                               status="pending_verification", active=False))
+    except DuplicateKeyError:
         logger.info("signup for an existing address; answering opaquely")
         return OPAQUE_SIGNUP
-
-    user = User(email=email, password_hash=hash_password(body.password),
-                status="pending_verification", active=False)
-    db.add(user)
-    db.flush()
 
     token = issue_token(db, user.id, "verify_email")
     _send_verification(db, mailer, email, token)
@@ -108,13 +106,13 @@ class ResendRequest(BaseModel):
 
 
 @router.post("/resend", status_code=status.HTTP_202_ACCEPTED)
-def resend(body: ResendRequest, request: Request, db: Session = Depends(get_db),
+def resend(body: ResendRequest, request: Request, db: Database = Depends(get_db),
            mailer: EmailSender = Depends(get_mailer)) -> AuthStatus:
     """Email a fresh verification link to an account still waiting for one. Answers the same anyway."""
     email = body.email.lower()
     rate_limit(request, f"resend:{email}", limit=3, per_seconds=3600)
 
-    user = db.scalar(select(User).where(User.email == email))
+    user = find_one(db, User, {"email": email})
     if user is not None and user.status == "pending_verification":
         # Issuing revokes the older links, so the newest one in the inbox is the one that works.
         _send_verification(db, mailer, email, issue_token(db, user.id, "verify_email"))
@@ -129,23 +127,20 @@ class VerifyRequest(BaseModel):
 
 @router.post("/verify")
 def verify(body: VerifyRequest, request: Request, response: Response,
-           db: Session = Depends(get_db)) -> AuthStatus:
+           db: Database = Depends(get_db)) -> AuthStatus:
     """Redeem a verification link and sign in: opening it proves the inbox, as a password would."""
     user_id = consume_token(db, body.token, "verify_email")
     if user_id is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             detail="this link is invalid or has expired — request another")
 
-    user = db.get(User, user_id)
+    user = get(db, User, user_id)
     if user is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="account no longer exists")
     # The same refusal login gives: a link must not become a way round a suspension.
     if user.status in ("suspended", "deleted"):
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="this account is not active")
-    if user.email_verified_at is None:
-        user.email_verified_at = _now()
-    user.status = "active"
-    user.active = True
+    _verified(db, user)
     _sign_in(request, response, db, user)
     return AuthStatus(status="verified")
 
@@ -155,12 +150,12 @@ class ForgotRequest(BaseModel):
 
 
 @router.post("/forgot", status_code=status.HTTP_202_ACCEPTED)
-def forgot(body: ForgotRequest, request: Request, db: Session = Depends(get_db),
+def forgot(body: ForgotRequest, request: Request, db: Database = Depends(get_db),
            mailer: EmailSender = Depends(get_mailer)) -> dict:
     """Email a reset link."""
     rate_limit(request, f"forgot:{body.email.lower()}", limit=3, per_seconds=3600)
 
-    user = db.scalar(select(User).where(User.email == body.email.lower()))
+    user = find_one(db, User, {"email": body.email.lower()})
     if user is not None and user.status not in ("suspended", "deleted"):
         token = issue_token(db, user.id, "reset_password")
         url = site_url(f"/#/reset?token={token}")
@@ -182,39 +177,39 @@ class ResetRequest(BaseModel):
 
 
 @router.post("/reset")
-def reset(body: ResetRequest, request: Request, db: Session = Depends(get_db)) -> dict:
+def reset(body: ResetRequest, request: Request, db: Database = Depends(get_db)) -> dict:
     """Redeem a reset link and set the new password."""
     rate_limit(request, "reset", limit=10, per_seconds=900)
 
-    user_id = consume_token(db, body.token, "reset_password")
-    if user_id is None:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+    expired = HTTPException(status.HTTP_400_BAD_REQUEST,
                             detail="this link is invalid or has expired — request another")
-    user = db.get(User, user_id)
+    # Looked at, not spent, until the new password passes: a refused password keeps the link working.
+    user = get(db, User, token_owner(db, body.token, "reset_password"))
     if user is None:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="account no longer exists")
+        raise expired
 
     problems = password_problems(body.new_password, email=user.email)
     if problems:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail={"password": problems})
+    if consume_token(db, body.token, "reset_password") != user.id:
+        raise expired
 
-    user.password_hash = hash_password(body.new_password)
-    revoke_all(db, user_id)
+    db[User.COLLECTION].update_one({"_id": user.id}, {"$set": {
+        "password_hash": hash_password(body.new_password), "updated_at": now()}})
+    revoke_all(db, user.id)
     # Arriving here also proves control of the inbox, which is what verification proves.
     if user.email_verified_at is None:
-        user.email_verified_at = _now()
-        user.status = "active"
-        user.active = True
+        _verified(db, user)
     return {"status": "reset"}
 
 
 @router.post("/login")
 def login(body: LoginRequest, request: Request, response: Response,
-          db: Session = Depends(get_db)) -> dict:
+          db: Database = Depends(get_db)) -> dict:
     """Exchange a password for a session. Sets both cookies."""
     rate_limit(request, f"login:{body.email.lower()}", limit=10, per_seconds=900)
 
-    user = db.scalar(select(User).where(User.email == body.email.lower()))
+    user = find_one(db, User, {"email": body.email.lower()})
     # The hash is verified even when the user does not exist, so timing reveals no addresses.
     stored = user.password_hash if user else _DUMMY_HASH
     if not verify_password(stored, body.password) or user is None:
@@ -228,35 +223,39 @@ def login(body: LoginRequest, request: Request, response: Response,
 
     if needs_rehash(user.password_hash):
         # The parameters moved since this hash was written.
-        user.password_hash = hash_password(body.password)
+        db[User.COLLECTION].update_one({"_id": user.id},
+                                       {"$set": {"password_hash": hash_password(body.password)}})
 
     _sign_in(request, response, db, user)
     return {"status": "ok"}
 
 
-def _sign_in(request: Request, response: Response, db: Session, user: User) -> None:
+def _sign_in(request: Request, response: Response, db: Database, user: User) -> None:
     """A session and both cookies: what a correct password earns, and what a verification link does."""
-    session = issue_session(db, user.id,
-                            user_agent=request.headers.get("user-agent"),
-                            ip=_client_ip(request))
+    session = issue_session(db, user.id)
     _set_session_cookies(response, issue_access_token(user.id, session.session_id),
                          session.refresh_token)
-    user.last_active_at = _now()
+    db[User.COLLECTION].update_one({"_id": user.id}, {"$set": {"last_active_at": now()}})
+
+
+def _verified(db: Database, user: User) -> None:
+    """The inbox is proven: the account is active, and verified from the first time that was shown."""
+    db[User.COLLECTION].update_one({"_id": user.id}, {"$set": {
+        "email_verified_at": user.email_verified_at or now(), "status": "active", "active": True,
+        "updated_at": now()}})
 
 
 # `response_model=None`: the handler returns either a dict or a Response.
 @router.post("/refresh", response_model=None)
 def refresh(request: Request, response: Response,
-            db: Session = Depends(get_db)) -> dict | JSONResponse:
+            db: Database = Depends(get_db)) -> dict | JSONResponse:
     """Rotate the refresh token and mint a new access token."""
     presented = request.cookies.get(REFRESH_COOKIE)
     if not presented:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="no session")
 
     try:
-        rotated = rotate_session(db, presented,
-                                 user_agent=request.headers.get("user-agent"),
-                                 ip=_client_ip(request))
+        rotated = rotate_session(db, presented)
     except SessionExpired as exc:
         # Returned, not raised.
         failure = JSONResponse(status_code=status.HTTP_401_UNAUTHORIZED,
@@ -264,14 +263,13 @@ def refresh(request: Request, response: Response,
         _clear_session_cookies(failure)
         return failure
 
-    user_id = db.scalar(select(User.id).where(User.id == _owner(db, rotated.session_id)))
-    _set_session_cookies(response, issue_access_token(user_id, rotated.session_id),
+    _set_session_cookies(response, issue_access_token(_owner(db, rotated.session_id), rotated.session_id),
                          rotated.refresh_token)
     return {"status": "ok"}
 
 
 @router.post("/logout")
-def logout(request: Request, response: Response, db: Session = Depends(get_db)) -> dict:
+def logout(request: Request, response: Response, db: Database = Depends(get_db)) -> dict:
     """End this session. Always answers 200 — logging out twice is not an error."""
     presented = request.cookies.get(REFRESH_COOKIE)
     if presented:
@@ -282,7 +280,7 @@ def logout(request: Request, response: Response, db: Session = Depends(get_db)) 
 
 @router.post("/logout-everywhere")
 def logout_everywhere(request: Request, response: Response,
-                      db: Session = Depends(get_db)) -> dict:
+                      db: Database = Depends(get_db)) -> dict:
     """End every session for this user. What a password change and a suspected theft both need."""
     presented = request.cookies.get(REFRESH_COOKIE)
     if not presented:
@@ -295,7 +293,7 @@ def logout_everywhere(request: Request, response: Response,
     return {"status": "ok", "sessions_ended": revoked}
 
 
-def _send_verification(db: Session, mailer: EmailSender, email: str, token: str) -> None:
+def _send_verification(db: Database, mailer: EmailSender, email: str, token: str) -> None:
     """Send the link, and treat any delivery failure as recoverable."""
     # The SPA's hash route, not the API's path.
     url = site_url(f"/#/verify?token={token}")
@@ -309,17 +307,8 @@ def _send_verification(db: Session, mailer: EmailSender, email: str, token: str)
                            exc_info=True)
 
 
-def _owner(db: Session, session_id: _uuid.UUID) -> _uuid.UUID:
-    return db.scalar(select(UserSession.user_id).where(UserSession.id == session_id))
-
-
-def _client_ip(request: Request) -> str | None:
-    """The peer address."""
-    return request.client.host if request.client else None
-
-
-def _now() -> datetime:
-    return datetime.now(UTC)
+def _owner(db: Database, session_id: _uuid.UUID) -> _uuid.UUID:
+    return get(db, UserSession, session_id).user_id
 
 
 # A real argon2 hash of a value nobody has.

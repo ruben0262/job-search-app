@@ -8,7 +8,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from sqlalchemy.orm import Session
+from pymongo.database import Database
 
 from libs.db.models import QueueJob
 from libs.queue.queue import claim, complete, fail, sweep_expired, terminate
@@ -45,48 +45,39 @@ class WorkerStats:
     errors: dict[str, int] = field(default_factory=dict)
 
 
-def run_once(session: Session, lane: str, worker: str,
-             handler: Callable[[Session, QueueJob], None],
+def run_once(db: Database, lane: str, worker: str,
+             handler: Callable[[Database, QueueJob], None],
              stats: WorkerStats) -> bool:
-    """Claim and run at most one job."""
-    job = claim(session, lane, worker)
+    """Claim and run at most one job. What the handler wrote before failing stays written: each write
+    is its own, so a delivery that stops part-way keeps the sends it made rather than repeating them."""
+    job = claim(db, lane, worker)
     if job is None:
-        session.commit()
         return False
 
     stats.claimed += 1
-    job_id = job.id
-    # Captured now: `session.rollback()` below undoes the claim, and the retry budget must survive.
-    attempts = job.attempts
     try:
-        handler(session, job)
-        complete(session, job)
-        session.commit()
+        handler(db, job)
+        complete(db, job)
         stats.completed += 1
     except Terminal as exc:
-        session.rollback()
-        # Bound to a local first: Python unbinds the `except` name at the end of the block.
-        reason = str(exc)
-        _record(session, job_id, attempts, lambda s, j: terminate(s, j, reason))
+        terminate(db, job, str(exc))
         stats.dead += 1
-        logger.warning("%s job %s: terminal — %s", lane, job_id, exc)
+        logger.warning("%s job %s: terminal — %s", lane, job.id, exc)
     except Exception as exc:
-        session.rollback()
-        message = f"{type(exc).__name__}: {exc}"
-        state = _record(session, job_id, attempts, lambda s, j: fail(s, j, message))
+        state = fail(db, job, f"{type(exc).__name__}: {exc}")
         stats.failed += 1
         stats.dead += state == "dead"
         stats.errors[type(exc).__name__] = stats.errors.get(type(exc).__name__, 0) + 1
-        logger.warning("%s job %s failed (%s): %s", lane, job_id, state, exc, exc_info=True)
+        logger.warning("%s job %s failed (%s): %s", lane, job.id, state, exc, exc_info=True)
     return True
 
 
-def run_worker(session_factory: Callable[[], Session], lane: str, worker: str,
-               handler: Callable[[Session, QueueJob], None], *,
+def run_worker(db: Database, lane: str, worker: str,
+               handler: Callable[[Database, QueueJob], None], *,
                max_jobs: int | None = None,
                idle_sleep: float = IDLE_SLEEP_SEC,
                stop: Callable[[], bool] | None = None,
-               periodic: Callable[[Session], None] | None = None,
+               periodic: Callable[[Database], None] | None = None,
                periodic_every: float = SWEEP_EVERY_SEC) -> WorkerStats:
     """Drain `lane` until told to stop."""
     stats = WorkerStats()
@@ -100,37 +91,19 @@ def run_worker(session_factory: Callable[[], Session], lane: str, worker: str,
 
         now = time.monotonic()
         if now - last_sweep > SWEEP_EVERY_SEC:
-            with session_factory() as session:
-                stats.swept += sweep_expired(session, lane)
-                session.commit()
+            stats.swept += sweep_expired(db, lane)
             last_sweep = now
 
         if periodic is not None and now - last_periodic > periodic_every:
             last_periodic = now
             try:
-                with session_factory() as session:
-                    periodic(session)
-                    session.commit()
+                periodic(db)
             except Exception:
                 logger.exception("%s: the periodic pass failed; the lane keeps running", lane)
 
-        with session_factory() as session:
-            worked = run_once(session, lane, worker, handler, stats)
-        if not worked:
+        if not run_once(db, lane, worker, handler, stats):
             time.sleep(idle_sleep)
     return stats
-
-
-def _record(session: Session, job_id: int, attempts: int,
-            write: Callable[[Session, QueueJob], object]) -> object:
-    """Write a failure in a clean transaction — the handler's is unusable after a rollback."""
-    job = session.get(QueueJob, job_id, populate_existing=True)
-    if job is None:
-        return None
-    job.attempts = attempts
-    result = write(session, job)
-    session.commit()
-    return result
 
 
 def _sigterm_flag() -> Callable[[], bool]:

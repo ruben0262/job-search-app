@@ -1,19 +1,17 @@
 """The shared corpus repository — the storage half of the `store.py` port."""
 from __future__ import annotations
 
-import uuid
-from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
-from hashlib import sha256
+from datetime import datetime, timedelta
 
-from sqlalchemy import func, or_, select, update
-from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.orm import Session
+from pymongo import ReturnDocument
+from pymongo.database import Database
+from pymongo.errors import DuplicateKeyError
 
 from libs.corpus import langfilter, workfilter
 from libs.corpus.geo import read_country
 from libs.corpus.keys import canonical_url, content_key
+from libs.db import insert, now
 from libs.db.models import CorpusJob
 
 # Below this, stored text is a teaser rather than a description and the job is re-fetched from its own page.
@@ -31,13 +29,8 @@ MIN_DESCRIPTION = 200
 DESCRIBE_MAX_FAILURES = 2
 
 
-def _readable() -> tuple:
-    """Rows we have not given up on reading. Shared by every stage downstream of describing."""
-    return (CorpusJob.describe_failures < DESCRIBE_MAX_FAILURES,)
-
-
 def awaiting_description_conditions(min_chars: int = MIN_DESCRIPTION,
-                                    max_age_hours: int | None = None) -> tuple:
+                                    max_age_hours: int | None = None) -> list[dict]:
     """Rows the describer will actually fetch text for.
 
     A closed posting is not worth a fetch: on the proxied tier that fetch is the user's own
@@ -52,34 +45,15 @@ def awaiting_description_conditions(min_chars: int = MIN_DESCRIPTION,
     `max_age_hours` is passed in rather than read here, because it is the operator's setting and
     this module is not where platform policy lives.
     """
-    fresh: tuple = ()
+    conditions = [{"closed_at": None}, {"describe_failures": {"$lt": DESCRIBE_MAX_FAILURES}},
+                  {"$expr": {"$lt": [{"$strLenCP": {"$ifNull": ["$description", ""]}}, min_chars]}}]
     if max_age_hours:
-        cutoff = datetime.now(UTC) - timedelta(hours=int(max_age_hours))
+        cutoff = now() - timedelta(hours=int(max_age_hours))
         # Dated rows against their posted time, undated ones against when we found them — the same
         # rule `UserFilters.fresh_since` applies, so the two cannot disagree about what is stale.
-        fresh = (or_(CorpusJob.posted_at >= cutoff,
-                     CorpusJob.posted_at.is_(None) & (CorpusJob.first_seen_at >= cutoff)),)
-
-    return (CorpusJob.closed_at.is_(None),
-            *_readable(),
-            *fresh,
-            or_(CorpusJob.description.is_(None),
-                func.length(CorpusJob.description) < min_chars))
-
-
-def awaiting_embedding_conditions() -> tuple:
-    """Rows the embedder will actually compute a vector for.
-
-    Same reason as above in CPU rather than bandwidth: the pre-score filter refuses a closed row,
-    so embedding one is ~0.37s of the shared embedder spent on nothing.
-    """
-    return (CorpusJob.closed_at.is_(None),
-            # An abandoned row's only "description" is its own title. Embedding that produces a
-            # vector for a sentence rather than for a job, and scoring against it is worse than
-            # not scoring at all.
-            *_readable(),
-            CorpusJob.description.is_not(None),
-            CorpusJob.embedding.is_(None))
+        conditions.append({"$or": [{"posted_at": {"$gte": cutoff}},
+                                   {"posted_at": None, "first_seen_at": {"$gte": cutoff}}]})
+    return conditions
 
 
 @dataclass(frozen=True)
@@ -90,30 +64,29 @@ class DuplicateMatch:
     matched_on: str      # "url" | "canonical_url" | "content_key"
 
 
-def text_digest(text: str) -> str:
-    """The hash an embedding is keyed on."""
-    return sha256((text or "").encode("utf-8")).hexdigest()
-
-
 class CorpusRepository:
-    """Reads and writes the shared corpus. Holds no state beyond its session."""
+    """Reads and writes the shared corpus."""
 
-    def __init__(self, session: Session):
-        self._s = session
+    def __init__(self, db: Database):
+        self._db = db
+        self._corpus = db[CorpusJob.COLLECTION]
+
+    def _first(self, where: dict) -> int | None:
+        row = self._corpus.find_one(where, {"_id": 1})
+        return row["_id"] if row else None
 
     # ── dedup ────────────────────────────────────────────────────────────────────────────────
 
     def find_duplicate(self, url: str, title: str = "", company: str = "", location: str = "",
                        application_url: str | None = None) -> DuplicateMatch | None:
         """The four-layer check, narrowing, in the order the harvest loop applies it."""
-        exact = self._s.scalar(select(CorpusJob.id).where(CorpusJob.url == url).limit(1))
+        exact = self._first({"url": url})
         if exact is not None:
             return DuplicateMatch(exact, "url")
 
         canon = canonical_url(url)
         if canon is not None:
-            hit = self._s.scalar(
-                select(CorpusJob.id).where(CorpusJob.canonical_url == canon).limit(1))
+            hit = self._first({"canonical_url": canon})
             if hit is not None:
                 return DuplicateMatch(hit, "canonical_url")
 
@@ -123,8 +96,7 @@ class CorpusRepository:
 
         key = content_key(title, company, location)
         if key is not None:
-            hit = self._s.scalar(
-                select(CorpusJob.id).where(CorpusJob.content_key == key).limit(1))
+            hit = self._first({"content_key": key})
             if hit is not None:
                 return DuplicateMatch(hit, "content_key")
 
@@ -136,18 +108,13 @@ class CorpusRepository:
         app_canon = canonical_url(application_url or "")
 
         if app_canon is not None:
-            hit = self._s.scalar(
-                select(CorpusJob.id)
-                .where((CorpusJob.canonical_url == app_canon)
-                       | (CorpusJob.application_canonical_url == app_canon))
-                .limit(1))
+            hit = self._first({"$or": [{"canonical_url": app_canon},
+                                       {"application_canonical_url": app_canon}]})
             if hit is not None:
                 return DuplicateMatch(hit, "application_url")
 
         if canon is not None:
-            hit = self._s.scalar(
-                select(CorpusJob.id)
-                .where(CorpusJob.application_canonical_url == canon).limit(1))
+            hit = self._first({"application_canonical_url": canon})
             if hit is not None:
                 return DuplicateMatch(hit, "application_url")
 
@@ -155,22 +122,9 @@ class CorpusRepository:
 
     def set_application_url(self, job_id: int, application_url: str) -> None:
         """Record the resolved Apply target, discovered during description fetch."""
-        self._s.execute(
-            update(CorpusJob).where(CorpusJob.id == job_id)
-            .values(application_url=application_url,
-                    application_canonical_url=canonical_url(application_url)))
-
-    def seen_canonical(self, canon: str | None) -> bool:
-        if not canon:                                   # None means no opinion — never a match
-            return False
-        return self._s.scalar(
-            select(CorpusJob.id).where(CorpusJob.canonical_url == canon).limit(1)) is not None
-
-    def seen_content_key(self, key: str | None) -> bool:
-        if not key:                                     # ditto
-            return False
-        return self._s.scalar(
-            select(CorpusJob.id).where(CorpusJob.content_key == key).limit(1)) is not None
+        self._corpus.update_one({"_id": job_id}, {"$set": {
+            "application_url": application_url,
+            "application_canonical_url": canonical_url(application_url)}})
 
     # ── ingest ───────────────────────────────────────────────────────────────────────────────
 
@@ -179,92 +133,54 @@ class CorpusRepository:
             easy_apply: bool | None = None, applicants: int | None = None,
             reposted: bool | None = None, workplace: str | None = None,
             fetched_at: datetime | None = None,
-            discovered_via: str | None = None,
-            discovered_by: uuid.UUID | None = None) -> int | None:
-        """Insert if absent."""
-        stmt = (
-            pg_insert(CorpusJob)
-            .values(
-                url=url,
-                canonical_url=canonical_url(url),
-                content_key=content_key(title, company, location),
-                source=source,
-                title=title,
-                company=company or None,
-                location=location or None,
-                # Read once here, for everyone, rather than per user per query.
-                country=read_country(location, title=title),
-                is_remote=is_remote,
-                posted_at=posted_at,
-                # When the fetch found this row, so our latency is separable from the board's.
-                fetched_at=fetched_at,
-                # What the feed card reads.
-                easy_apply=easy_apply,
-                applicants=applicants,
-                reposted=reposted,
-                workplace=workplace,
-                # How the row got here. `discovered_by` is set only by the per-user tiers; the
-                # shared cycle folds one query across every account that wanted it, so there is no
-                # single owner and NULL is the honest answer rather than a guess.
-                discovered_via=discovered_via,
-                discovered_by=discovered_by,
-            )
-            .on_conflict_do_nothing(index_elements=[CorpusJob.url])
-            .returning(CorpusJob.id)
+            discovered_via: str | None = None) -> int | None:
+        """Insert if absent: the new id, or `None` when the URL is already stored."""
+        job = CorpusJob(
+            url=url,
+            canonical_url=canonical_url(url),
+            content_key=content_key(title, company, location),
+            source=source,
+            title=title,
+            company=company or None,
+            location=location or None,
+            # Read once here, for everyone, rather than per user per query.
+            country=read_country(location, title=title),
+            is_remote=is_remote,
+            posted_at=posted_at,
+            # When the fetch found this row, so our latency is separable from the board's.
+            fetched_at=fetched_at,
+            # What the feed card reads.
+            easy_apply=easy_apply,
+            applicants=applicants,
+            reposted=reposted,
+            workplace=workplace,
+            # How the row got here.
+            discovered_via=discovered_via,
         )
-        return self._s.scalar(stmt)
-
-    def touch_last_seen(self, job_ids: Sequence[int]) -> None:
-        """Record that these jobs are still being listed, without disturbing `first_seen_at`."""
-        if not job_ids:
-            return
-        self._s.execute(
-            update(CorpusJob).where(CorpusJob.id.in_(job_ids))
-            .values(last_seen_at=func.clock_timestamp()))
+        try:
+            return insert(self._db, job).id
+        except DuplicateKeyError:
+            return None
 
     def set_description(self, job_id: int, description: str) -> bool:
         """Attach fetched description text."""
-        job = self._s.get(CorpusJob, job_id)
-        if job is None:
+        row = self._corpus.find_one({"_id": job_id}, {"description": 1, "title": 1, "location": 1,
+                                                      "is_remote": 1, "workplace": 1})
+        if row is None:
             return False
-        digest = text_digest(description)
-        if job.text_sha256 == digest and job.description is not None:
-            job.description_fetched_at = func.clock_timestamp()
+        if row["description"] == description:
+            self._corpus.update_one({"_id": job_id}, {"$set": {"description_fetched_at": now()}})
             return False
 
-        job.description = description
-        job.text_sha256 = digest
-        # The same clock as `embedded_at`, deliberately.
-        job.description_fetched_at = func.clock_timestamp()
-        job.embedding = None
-        job.embedding_model = None
-        job.embedding_dim = None
-        job.embedding_version = None
-        # The vector is gone, so the time it was written is no longer a fact about this row.
-        job.embedded_at = None
-
+        changes = {"description": description, "description_fetched_at": now(),
+                   # Read once here rather than per reader per pass: the language is a fact about the posting.
+                   "language": langfilter.detect_language(description)}
         # Classify the working arrangement now the text exists, if nothing authoritative has.
-        if job.workplace is None:
-            job.workplace = workfilter.classify(
-                job.title, job.location or "", description, job.is_remote)
-        # Read once here rather than per reader per pass: the language is a fact about the posting.
-        job.language = langfilter.detect_language(description)
+        if row["workplace"] is None:
+            changes["workplace"] = workfilter.classify(
+                row["title"], row["location"] or "", description, row["is_remote"])
+        self._corpus.update_one({"_id": job_id}, {"$set": changes})
         return True
-
-    def fill_missing_languages(self, *, limit: int = 500) -> int:
-        """Detect the language of rows described before the column existed. No network, bounded."""
-        rows = list(self._s.scalars(
-            select(CorpusJob)
-            .where(CorpusJob.description.is_not(None), CorpusJob.language.is_(None))
-            .order_by(CorpusJob.first_seen_at.desc())
-            .limit(limit)))
-        filled = 0
-        for job in rows:
-            code = langfilter.detect_language(job.description or "")
-            if code is not None:
-                job.language = code
-                filled += 1
-        return filled
 
     # ── what each stage is still waiting for ──────────────────────────────────────────────────
     #
@@ -277,50 +193,38 @@ class CorpusRepository:
     def awaiting_description(self, *, limit: int = 200, linkedin: bool | None = None,
                              min_chars: int = MIN_DESCRIPTION,
                              max_age_hours: int | None = None) -> list[CorpusJob]:
-        """Jobs whose stored text is too thin to score on."""
-        query = (
-            select(CorpusJob)
-            .where(*awaiting_description_conditions(min_chars, max_age_hours))
-            .order_by(CorpusJob.first_seen_at.desc())
-            .limit(limit))
+        """Jobs whose stored text is too thin to match words against."""
+        where = awaiting_description_conditions(min_chars, max_age_hours)
         if linkedin is True:
-            query = query.where(CorpusJob.url.like("%/jobs/view/%"))
+            where.append({"url": {"$regex": "/jobs/view/"}})
         elif linkedin is False:
-            query = query.where(CorpusJob.url.not_like("%/jobs/view/%"))
-        return list(self._s.scalars(query))
+            where.append({"url": {"$not": {"$regex": "/jobs/view/"}}})
+        return self._jobs({"$and": where}, limit)
+
+    def _jobs(self, where: dict, limit: int) -> list[CorpusJob]:
+        return [CorpusJob.from_doc(row) for row in
+                self._corpus.find(where, sort=[("first_seen_at", -1)], limit=limit)]
 
     def awaiting_metadata(self, *, limit: int = 200) -> list[CorpusJob]:
         """LinkedIn rows whose description is fine but whose posting signals were never read."""
-        return list(self._s.scalars(
-            select(CorpusJob)
-            .where(CorpusJob.closed_at.is_(None),
-                   CorpusJob.url.like("%/jobs/view/%"),
-                   CorpusJob.applicants.is_(None),
-                   CorpusJob.posted_at.is_(None))
-            .order_by(CorpusJob.first_seen_at.desc())
-            .limit(limit)))
+        return self._jobs({"closed_at": None, "url": {"$regex": "/jobs/view/"}, "applicants": None,
+                           "posted_at": None}, limit)
 
     def record_describe_failure(self, job_id: int) -> int:
         """One more failed read. Returns the new count, so the caller can log the abandonment."""
-        return self._s.scalar(
-            update(CorpusJob)
-            .where(CorpusJob.id == job_id)
-            .values(describe_failures=CorpusJob.describe_failures + 1)
-            .returning(CorpusJob.describe_failures))
+        row = self._corpus.find_one_and_update({"_id": job_id}, {"$inc": {"describe_failures": 1}},
+                                               {"describe_failures": 1},
+                                               return_document=ReturnDocument.AFTER)
+        return row["describe_failures"] if row else 0
 
     def clear_describe_failures(self, job_id: int) -> None:
         """A read that worked. Consecutive means consecutive."""
-        self._s.execute(
-            update(CorpusJob)
-            .where(CorpusJob.id == job_id, CorpusJob.describe_failures > 0)
-            .values(describe_failures=0))
+        self._corpus.update_one({"_id": job_id, "describe_failures": {"$gt": 0}},
+                                {"$set": {"describe_failures": 0}})
 
     def mark_closed(self, job_id: int) -> None:
         """Record that the posting is no longer accepting applications."""
-        self._s.execute(
-            update(CorpusJob)
-            .where(CorpusJob.id == job_id, CorpusJob.closed_at.is_(None))
-            .values(closed_at=datetime.now(UTC)))
+        self._corpus.update_one({"_id": job_id, "closed_at": None}, {"$set": {"closed_at": now()}})
 
     def set_posting_metadata(self, job_id: int, *, applicants: int | None = None,
                              applicants_caption: str | None = None,
@@ -333,38 +237,14 @@ class CorpusRepository:
             ("easy_apply", easy_apply), ("reposted", reposted),
             ("workplace", workplace)) if value is not None}
         if values:
-            self._s.execute(update(CorpusJob).where(CorpusJob.id == job_id).values(**values))
+            self._corpus.update_one({"_id": job_id}, {"$set": values})
         if posted_at is not None:
             self._set_posted_at(job_id, posted_at)
 
     def _set_posted_at(self, job_id: int, posted_at: datetime) -> None:
         """Record when a posting went up, never later than the moment we first saw it."""
-        self._s.execute(
-            update(CorpusJob)
-            .where(CorpusJob.id == job_id)
-            .values(posted_at=func.least(posted_at, CorpusJob.first_seen_at)))
-
-    # ── embedding ────────────────────────────────────────────────────────────────────────────
-
-    def awaiting_embedding(self, limit: int = 500) -> list[CorpusJob]:
-        """Jobs with text but no vector. Backed by the partial index on the same predicate."""
-        return list(self._s.scalars(
-            select(CorpusJob)
-            .where(*awaiting_embedding_conditions())
-            .order_by(CorpusJob.id)
-            .limit(limit)))
-
-    def set_embedding(self, job_id: int, *, vector: bytes, text_sha256: str,
-                      model: str, dim: int, version: str) -> bool:
-        """Store a vector, but only if the text it was computed from is still the current text."""
-        result = self._s.execute(
-            update(CorpusJob)
-            .where(CorpusJob.id == job_id, CorpusJob.text_sha256 == text_sha256)
-            .values(embedding=vector, embedding_model=model, embedding_dim=dim,
-                    embedding_version=version,
-                    # Stamped here: the moment the vector became readable by a scorer.
-                    embedded_at=func.clock_timestamp()))
-        return result.rowcount == 1
+        self._corpus.update_one({"_id": job_id},
+                                [{"$set": {"posted_at": {"$min": [posted_at, "$first_seen_at"]}}}])
 
     # Retention lives in `libs.corpus.archive`. `trim_cold` and `pin` were removed on 2026-08-11:
     # trimming nulled the description and vector in place, which dropped the row out of every future

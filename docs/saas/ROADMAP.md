@@ -3057,6 +3057,54 @@ leaving the site — `tests/test_e2e_site.py` walks exactly that, to a downloade
 8. **MongoDB credentials.** The Atlas password was shared in a chat, so rotate it after the switch,
    and limit the cluster's network access to the VPS and the owner's machine.
 
+## Phase 9 — MongoDB instead of Postgres (added 2026-10-30)
+
+**Why.** The owner's decision: users, their logins and everything stored about them live in MongoDB
+Atlas (cluster `mahoraga`, Free tier). SQL is removed completely: Postgres, SQLAlchemy, Alembic and
+their 58 migrations.
+
+**Decisions (owner, 2026-10-30)**
+
+- **Accounts only are copied.** People, their logins, settings, words, uploaded documents and
+  profile files, credentials, push subscriptions and the operator's settings all move. Jobs do not:
+  the harvester collects them again within hours, and applied and hidden marks are lost.
+- **Free tier (M0).** Its limits shape the design, quoted from Atlas's docs on 2026-10-30:
+  - 0.5 GB of data and indexes;
+  - 100 operations a second;
+  - 10 GB in and 10 GB out per rolling seven days;
+  - 500 connections;
+  - the cluster pauses after 30 days with no connections.
+- **The switched-off model is saved in git, then removed.** It is under the tag `model-on-postgres`
+  (CLAUDE.md §3).
+
+**Design**
+
+- **Driver and setup.** `pymongo`, synchronous like the code it replaces. There is one client per
+  process, `libs.db.database()`, read from `MONGODB_URI` and `MONGODB_DB`. UUIDs are stored in the
+  standard form and datetimes are timezone-aware.
+- **Collections.** There is one collection per table that live code still reads, and the old
+  primary key becomes `_id`. Numbers the site shows or links to (jobs, builds, notifications,
+  messages, documents) stay integers, issued by a `counters` collection. Old-model tables and
+  columns are not carried over.
+- **The schema lives in `libs/db`.** A dataclass per collection holds its fields and their defaults,
+  and each collection's indexes are declared beside it. `ensure_schema()` replaces Alembic: it is
+  idempotent and runs when a service starts.
+- **Matching runs in the database.** The jobs page used to pull up to 2,000 postings into Python, and
+  alerts up to 10,000. Across the internet that is megabytes per page load, which breaks both the
+  300 ms budget and the weekly transfer limit. The green words become one server-side regular
+  expression over the title and the first 2,500 characters, and only matches come back.
+- **Writes are explicit, with no request-wide transaction.** Each write is atomic for one document.
+  The few changes that must land together use a transaction.
+- **Tests run on a local `mongod` 8.0.34**, the version Atlas runs, as a one-node replica set. They
+  never run against Atlas.
+- **Gates.** "`alembic upgrade head` from empty" becomes "`ensure_schema()` on an empty database".
+- **Switch-over.** A one-off script copies the accounts out of the VPS's Postgres. Then the
+  `postgres` service, the volume and the nightly `pg_dump` go. The nightly backup becomes
+  `mongodump`, and Atlas's daily snapshots are switched on as a second copy.
+
+**Done when** no file imports SQLAlchemy, the six gates pass on MongoDB, the jobs page answers in
+under 300 ms against Atlas, and a copied account signs in and sees its words, documents and settings.
+
 ## Deliberately deferred
 
 Do not build these before Phase 4, regardless of how appealing they look mid-build.

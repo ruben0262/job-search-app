@@ -15,11 +15,12 @@ Read from the columns each save path already writes. Nothing is stored to answer
 """
 from __future__ import annotations
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from pymongo.database import Database
 
 from libs.contracts.config import migrate_config
-from libs.db.models import User, UserConfig
+from libs.db import get
+from libs.db.models import User
+from libs.tenant.repository import TenantRepository
 
 
 def _links(user: User) -> list[str]:
@@ -60,13 +61,13 @@ def _search(config: dict | None) -> list[str]:
     return lines
 
 
-def render(session: Session, user_id) -> str:
+def render(db: Database, user_id) -> str:
     """The typed half of this person's profile, as plain text. Empty string if there is none."""
-    user = session.get(User, user_id)
+    user = get(db, User, user_id)
     if user is None:
         return ""
 
-    config = session.scalar(select(UserConfig.config).where(UserConfig.user_id == user_id))
+    config = TenantRepository(db).get_config(user_id)
     lines = [f"- Name: {user.full_name}" if user.full_name else "- Name: not given yet",
              f"- Account email: {user.email}"]
     links = _links(user)

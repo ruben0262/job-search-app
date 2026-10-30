@@ -5,8 +5,6 @@ import logging
 from dataclasses import dataclass, field
 from time import monotonic
 
-from sqlalchemy import select
-
 from libs.corpus.postings import ProxyUnusable, fetch_job, fetch_meta
 from libs.corpus.repository import DESCRIBE_MAX_FAILURES, CorpusRepository
 from libs.db.models import User
@@ -154,14 +152,14 @@ def refresh_metadata(corpus: CorpusRepository, client, *, limit: int) -> Describ
     return report
 
 
-def describe_linkedin_for_all(session, *, limit_per_user: int = PROXIED_LIMIT) -> dict[str, int]:
+def describe_linkedin_for_all(db, *, limit_per_user: int = PROXIED_LIMIT) -> dict[str, int]:
     """The proxied half of the pass, run for every user who brought a proxy credential."""
-    corpus = CorpusRepository(session)
-    usage = ProxyUsageRepository(session)
-    store = SecretStore(session)
+    corpus = CorpusRepository(db)
+    usage = ProxyUsageRepository(db)
+    store = SecretStore(db)
     totals: dict[str, int] = {"users": 0, "attempted": 0, "described": 0}
 
-    for user_id in list(session.scalars(select(User.id).where(User.active))):
+    for user_id in db[User.COLLECTION].distinct("_id", {"active": True}):
         # The plaintext lives inside `store.use` and nowhere else, so it outlives no request.
         with store.use(user_id, "proxy") as secret:
             if secret is None:

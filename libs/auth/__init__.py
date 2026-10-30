@@ -21,6 +21,7 @@ from libs.auth.tokens import (
     consume_token,
     hash_token,
     issue_token,
+    token_owner,
 )
 
 __all__ = [
@@ -40,5 +41,6 @@ __all__ = [
     "revoke_session",
     "rotate_session",
     "session_owner",
+    "token_owner",
     "verify_password",
 ]

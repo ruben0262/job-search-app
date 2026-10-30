@@ -1,35 +1,37 @@
-"""Shared harvester state for the direct-ATS tier: company tokens, and conditional-poll ETags."""
+"""Company job boards the harvester polls, and the validator that lets a poll ask "changed since?"."""
 from __future__ import annotations
 
-from sqlalchemy import Index, String, Text, func, text
-from sqlalchemy.orm import Mapped, mapped_column
+from dataclasses import dataclass, field
+from datetime import datetime
 
-from libs.db.base import Base, timestamptz
+from pymongo import IndexModel
 
-
-class AtsToken(Base):
-    """A company's board token on one ATS."""
-
-    __tablename__ = "ats_tokens"
-
-    ats: Mapped[str] = mapped_column(String(32), primary_key=True)
-    token: Mapped[str] = mapped_column(String(200), primary_key=True)
-    first_seen_at: Mapped[timestamptz] = mapped_column(server_default=func.now())
-    # Set when a board 404s.
-    dead_at: Mapped[timestamptz | None]
-
-    # The poll loop's only read: "every live token for this ATS".
-    __table_args__ = (
-        Index("ix_ats_tokens_live", "ats", postgresql_where=text("dead_at IS NULL")),
-    )
+from libs.db import Document, now
 
 
-class AtsEtag(Base):
-    """The last ETag seen for one company's board."""
+@dataclass(kw_only=True)
+class AtsToken(Document):
+    """One company's board on one ATS. A dead board is kept, not deleted, so it is not rediscovered."""
 
-    __tablename__ = "ats_etags"
+    COLLECTION = "ats_tokens"
+    OWNER = None
+    INDEXES = (IndexModel([("ats", 1), ("token", 1)], unique=True, name="one_per_board"),
+               IndexModel("ats", partialFilterExpression={"dead_at": None}, name="live"))
 
-    ats: Mapped[str] = mapped_column(String(32), primary_key=True)
-    token: Mapped[str] = mapped_column(String(200), primary_key=True)
-    etag: Mapped[str] = mapped_column(Text)
-    updated_at: Mapped[timestamptz] = mapped_column(server_default=func.now(), onupdate=func.now())
+    ats: str
+    token: str
+    first_seen_at: datetime = field(default_factory=now)
+    dead_at: datetime | None = None
+
+
+@dataclass(kw_only=True)
+class AtsEtag(Document):
+    COLLECTION = "ats_etags"
+    BACKED_UP = False
+    OWNER = None
+    INDEXES = (IndexModel([("ats", 1), ("token", 1)], unique=True, name="one_per_board"),)
+
+    ats: str
+    token: str
+    etag: str
+    updated_at: datetime = field(default_factory=now)

@@ -1,39 +1,32 @@
-"""Document text belonging to one user."""
+"""The documents a person uploaded, kept as the text read out of them."""
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass, field
+from datetime import datetime
 
-from sqlalchemy import BigInteger, CheckConstraint, ForeignKey, Index, Integer, String, Text, func
-from sqlalchemy.orm import Mapped, mapped_column
+from pymongo import IndexModel
 
-from libs.db.base import Base, timestamptz
+from libs.db import Document, now
 
-# What the user said the document is.
-DOCUMENT_KINDS = ("cv", "cover_letter", "reference", "achievement", "diploma", "linkedin",
-                  "history", "other")
+DOCUMENT_KINDS = ("cv", "cover_letter", "reference", "achievement", "diploma", "linkedin", "history",
+                  "other")
 
 
-class UserDocument(Base):
-    __tablename__ = "user_documents"
+@dataclass(kw_only=True)
+class UserDocument(Document):
+    COLLECTION = "user_documents"
+    SEQUENCE = True
+    CHOICES = {"kind": DOCUMENT_KINDS}  # noqa: RUF012
+    INDEXES = (IndexModel([("user_id", 1), ("uploaded_at", 1)], name="by_user"),
+               # The same text uploaded twice is one document.
+               IndexModel([("user_id", 1), ("text_sha256", 1)], unique=True, name="one_per_text"))
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
-
-    kind: Mapped[str] = mapped_column(String(32))
-    # Shown back to the user so they can tell two uploads apart. Not a path — nothing is on disk.
-    filename: Mapped[str] = mapped_column(Text)
-
-    text: Mapped[str] = mapped_column(Text)
-    # Of the extracted text, not the file: two exports of one CV are the same content.
-    text_sha256: Mapped[str] = mapped_column(String(64))
-    chars: Mapped[int] = mapped_column(Integer)
-
-    uploaded_at: Mapped[timestamptz] = mapped_column(server_default=func.now())
-
-    __table_args__ = (
-        CheckConstraint(f"kind IN {DOCUMENT_KINDS}", name="kind_valid"),
-        # The processing step reads every document a user has, in upload order.
-        Index("ix_user_documents_owner", "user_id", "uploaded_at"),
-        # Re-uploading the same file replaces rather than duplicates: users press the button twice.
-        Index("uq_user_documents_content", "user_id", "text_sha256", unique=True),
-    )
+    id: int | None = None
+    user_id: uuid.UUID
+    kind: str
+    filename: str
+    text: str
+    text_sha256: str
+    chars: int
+    uploaded_at: datetime = field(default_factory=now)

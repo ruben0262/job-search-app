@@ -4,18 +4,13 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import Float, cast, func, select, text
-from sqlalchemy.orm import Session
+from pymongo.database import Database
 
 from libs.db.models import CorpusJob, ProxyCredential, QueueJob, User, UserSecret
 from libs.db.models.queue import LANES
 
 # What a lane's oldest waiting job is *expected* to be, in minutes.
-EXPECTED_WAIT_MIN = {"notify": 5, "train": 30, "docgen": 10, "label": 60, "process": 15,
-                     "score": 10}
-
-# The steady-state corpus projection from `PLATFORM_ARCHITECTURE.md` §4, in rows.
-CORPUS_PROJECTION_ROWS = 400_000
+EXPECTED_WAIT_MIN = {"notify": 5, "docgen": 10}
 
 
 @dataclass
@@ -48,8 +43,8 @@ class PlatformHealth:
     users_total: int
     users_active: int
     corpus_rows: int
-    corpus_projection_rows: int
-    postgres_bytes: int
+    # Data and indexes, which is what Atlas's free-tier ceiling counts (ROADMAP Phase 9).
+    database_bytes: int
     connections: int
     users: list[UserHealth] = field(default_factory=list)
 
@@ -57,19 +52,19 @@ class PlatformHealth:
         return asdict(self)
 
 
-def lane_health(session: Session) -> list[LaneHealth]:
+def lane_health(db: Database) -> list[LaneHealth]:
     """Depth, dead letters, and the oldest thing waiting, per lane."""
-    rows = session.execute(
-        select(QueueJob.lane, QueueJob.state, func.count(),
-               func.min(QueueJob.run_after).filter(QueueJob.state == "ready"))
-        .group_by(QueueJob.lane, QueueJob.state)).all()
+    rows = db[QueueJob.COLLECTION].aggregate([{"$group": {
+        "_id": {"lane": "$lane", "state": "$state"}, "count": {"$sum": 1},
+        "first_run": {"$min": "$run_after"}}}])
 
     counts: dict[str, dict[str, int]] = {lane: {} for lane in LANES}
     oldest: dict[str, datetime | None] = dict.fromkeys(LANES)
-    for lane, state, count, min_run_after in rows:
-        counts.setdefault(lane, {})[state] = count
-        if min_run_after and (oldest.get(lane) is None or min_run_after < oldest[lane]):
-            oldest[lane] = min_run_after
+    for row in rows:
+        lane, state = row["_id"]["lane"], row["_id"]["state"]
+        counts.setdefault(lane, {})[state] = row["count"]
+        if state == "ready":
+            oldest[lane] = row["first_run"]
 
     now = datetime.now(UTC)
     return [
@@ -86,16 +81,16 @@ def lane_health(session: Session) -> list[LaneHealth]:
     ]
 
 
-def _proxy_statuses(session: Session) -> dict:
+def _proxy_statuses(db: Database) -> dict:
     """Every account's proxy state, as two queries for the platform rather than two per account."""
-    proxies = {row.user_id: row for row in session.scalars(select(ProxyCredential))}
-    with_secret = set(session.scalars(
-        select(UserSecret.user_id).where(UserSecret.kind == "proxy")))
-    return {user_id: (proxy.status if user_id in with_secret else "no_secret")
-            for user_id, proxy in proxies.items()}
+    proxies = {row["user_id"]: row["status"]
+               for row in db[ProxyCredential.COLLECTION].find({}, {"user_id": 1, "status": 1})}
+    with_secret = set(db[UserSecret.COLLECTION].distinct("user_id", {"kind": "proxy"}))
+    return {user_id: (status if user_id in with_secret else "no_secret")
+            for user_id, status in proxies.items()}
 
 
-def user_health(session: Session) -> list[UserHealth]:
+def user_health(db: Database) -> list[UserHealth]:
     """Per-account state, for the alerts that name a user.
 
     **Asked for the whole platform at once.** This was a loop of about seven queries an account; at
@@ -103,31 +98,27 @@ def user_health(session: Session) -> list[UserHealth]:
     60-second timeout. What it counted per account — matches scored above the account's cutoff and
     not yet sent — went with the scorer (ROADMAP Phase 8), and with it the last per-account query.
     """
-    proxies = _proxy_statuses(session)
-    return [UserHealth(user_id=str(user.id), email=user.email,
-                       telegram_status=user.telegram_status,
+    proxies = _proxy_statuses(db)
+    return [UserHealth(user_id=str(user["_id"]), email=user["email"],
+                       telegram_status=user["telegram_status"],
                        # A row is not a credential.
-                       proxy_status=proxies.get(user.id))
-            for user in session.scalars(
-                select(User).where(User.status == "active").order_by(User.email))]
+                       proxy_status=proxies.get(user["_id"]))
+            for user in db[User.COLLECTION].find({"status": "active"},
+                                                 {"email": 1, "telegram_status": 1}, sort=[("email", 1)])]
 
 
-def platform_health(session: Session, *, include_users: bool = True) -> PlatformHealth:
+def platform_health(db: Database, *, include_users: bool = True) -> PlatformHealth:
     """Everything, in one call. Serves the admin endpoint and the alert timer alike."""
+    size = db.command("dbStats")
     return PlatformHealth(
         checked_at=datetime.now(UTC).isoformat(),
-        lanes=lane_health(session),
-        users_total=session.scalar(select(func.count()).select_from(User)) or 0,
-        users_active=session.scalar(
-            select(func.count()).select_from(User).where(User.active)) or 0,
-        corpus_rows=session.scalar(select(func.count()).select_from(CorpusJob)) or 0,
-        corpus_projection_rows=CORPUS_PROJECTION_ROWS,
-        # `pg_database_size` rather than a table sum: indexes, bloat and WAL are what fill a disk.
-        postgres_bytes=int(session.scalar(
-            select(cast(func.pg_database_size(func.current_database()), Float))) or 0),
-        # A view, not a function.
-        connections=int(session.scalar(text("SELECT count(*) FROM pg_stat_activity")) or 0),
-        users=user_health(session) if include_users else [],
+        lanes=lane_health(db),
+        users_total=db[User.COLLECTION].count_documents({}),
+        users_active=db[User.COLLECTION].count_documents({"active": True}),
+        corpus_rows=db[CorpusJob.COLLECTION].estimated_document_count(),
+        database_bytes=int(size.get("dataSize", 0) + size.get("indexSize", 0)),
+        connections=int(db.command("serverStatus")["connections"]["current"]),
+        users=user_health(db) if include_users else [],
     )
 
 
