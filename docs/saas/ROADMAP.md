@@ -3029,6 +3029,34 @@ resend a verification email, the setup chat skipping consent).
 pass ✅, and a new account goes from sign-up to its first matching job in under five minutes without
 leaving the site — `tests/test_e2e_site.py` walks exactly that, to a downloaded CV, in about ten seconds.
 
+**Waiting on the owner** (listed 2026-10-30; to be settled once the MongoDB switch works):
+
+1. **Help chat prompt.** `libs/prompts/support.md` is new and unapproved (CLAUDE.md §3a). The chat
+   stays off (`support_chat_enabled` 0) until it is approved, and two chat defects must be fixed
+   before it is switched on: a reply whose writer died is never ended, and reply threads have no
+   ceiling.
+2. **Shared CV and cover prompts.** These still need writing and measuring against the setup chat's
+   prompts. That is blocked on an Anthropic key at `certificates/anthropic.key`. Until then, new
+   accounts get the free instant documents.
+3. **Leftovers with no consumer:**
+   - the `telegram_routes` and `telegram_webhook_secret` fields;
+   - the `telegram_bot` credential kind;
+   - four endpoints no page calls: `/status` (which runs the whole alert match per load),
+     `GET /onboarding/config`, `GET /onboarding/state` and `POST /credentials/{kind}/reveal`;
+   - the admin pages' hand-written API types.
+
+   Recommendation: delete them all. The MongoDB port does not carry the fields or the credential kind
+   over unless the owner says otherwise.
+4. **`NOTIFY_SCAN = 10_000`** (`libs/notify`). Recommendation: leave it in code. It is a safety
+   bound, and reaching it is logged.
+5. **CLAUDE.md §7 gate order.** The site test refuses a stale build, so the contract and build steps
+   belong before pytest. The MongoDB switch rewrites §7 anyway, because the Alembic gate goes.
+6. **README.** It has no "run it locally" section and still says "Phase 1 of 4".
+7. **Merge and push.** `simplify` goes into `main` and is pushed only when the owner says so. The
+   checklist is `deploy/README.md`.
+8. **MongoDB credentials.** The Atlas password was shared in a chat, so rotate it after the switch,
+   and limit the cluster's network access to the VPS and the owner's machine.
+
 ## Deliberately deferred
 
 Do not build these before Phase 4, regardless of how appealing they look mid-build.
