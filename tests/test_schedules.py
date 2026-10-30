@@ -163,12 +163,3 @@ def test_the_health_checks_warning_code_is_not_the_code_a_crash_returns():
         f"a warning ({WARN_EXIT}) must not mark the unit failed, or a warning starts a restart storm")
 
 
-def test_an_embed_batch_can_finish_inside_the_client_timeout():
-    """A batch that cannot finish is a deadlock, not a slow path."""
-    from libs.contracts.embedder import DEFAULT_EMBED_TIMEOUT
-    from services.harvester.embedding import EMBED_BATCH_SIZE, EMBED_SECONDS_PER_TEXT
-
-    worst_case = EMBED_BATCH_SIZE * EMBED_SECONDS_PER_TEXT
-    assert worst_case < DEFAULT_EMBED_TIMEOUT * 0.6, (
-        f"a full batch takes about {worst_case:.0f}s against a {DEFAULT_EMBED_TIMEOUT:.0f}s "
-        "timeout, which leaves nothing for a slow day")

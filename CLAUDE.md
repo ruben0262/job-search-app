@@ -54,20 +54,16 @@ Not "later", and not a test of how the code is arranged.
 - Removing something is a decision that belongs in the commit message with its evidence, so it can
   be reversed by a person who was not there.
 
-### The one exception: the switched-off model (owner's decision, 2026-10-28)
+### The one exception: the switched-off model (owner's decisions, 2026-10-28 and 2026-10-30)
 
-The learned scoring model is **switched off, not deleted**. It worked, and it may come back:
-training, scoring, labelling, the AI profile capture, the setup agents and the embedding step.
-Do not delete it, and do not count it as dead code.
+The learned scoring model (training, scoring, labelling, the AI profile capture, the setup agents
+and the embedding step) was switched off on 2026-10-28. On 2026-10-30, when the platform moved
+from Postgres to MongoDB, it was removed from the tree. It worked and may come back, so it is kept
+in git rather than lost. **The tag `model-on-postgres` holds it**, with the Postgres schema it runs on.
 
-Kept code is only safe while nobody mistakes it for live code, so:
-
-- **Nothing live may import it.** The `switched-off model` contract in `pyproject.toml` is the one
-  list of what is switched off, and `lint-imports` fails the build if live code reaches it.
-- **Its services start in no default profile.** They sit in compose's `ml` profile.
-- **It is not maintained alongside live changes.** Its own tests keep running; if one breaks
-  because live code moved on, fix it if cheap, otherwise skip it with a note — never by bending live
-  code back towards it.
+- Restore it with `git checkout model-on-postgres -- <paths>`. Bringing it back means porting it to
+  MongoDB, and it returns with its own tests.
+- Do not rebuild it piecemeal from memory, and do not treat the tag as clutter to clean up.
 
 Everything else still follows this section.
 

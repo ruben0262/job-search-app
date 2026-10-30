@@ -78,7 +78,7 @@ def test_the_lanes_a_person_is_waiting_on_poll_faster_than_the_rest():
 
     assert INTERACTIVE_IDLE_SLEEP_SEC < IDLE_SLEEP_SEC
 
-    for name in ("services/docgen/__main__.py", "services/setupagent/__main__.py"):
+    for name in ("services/docgen/__main__.py",):
         body = (ROOT / name).read_text(encoding="utf-8")
         assert "INTERACTIVE_IDLE_SLEEP_SEC" in body, (
             f"{name} runs a lane somebody is watching, so it must not wait the background poll")

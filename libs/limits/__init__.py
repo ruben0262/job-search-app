@@ -72,14 +72,6 @@ LIMITS: tuple[Limit, ...] = (
     Limit("documents", "Uploaded documents", 25, "files",
           "CVs, references, diplomas — what the setup agent reads from.",
           choices=(10, 25, 50, 100)),
-    Limit("label_pool", "Jobs bought per labelling run", 300, "jobs",
-          "Labelling runs on the user's own Claude credential, so this is their money.",
-          allow_unlimited=False,
-          # 1,500 and 2,000 added 2026-08-14. This is not "per run" in practice: cold start stops
-          # for good once an account reaches its target and nothing tops it up as the corpus grows,
-          # so this number is the entire automatic training set the account will ever have. The
-          # first account to be labelled by the platform rather than migrated stopped at 338.
-          choices=(100, 300, 500, 1000, 1500, 2000)),
     # Every CV and cover letter asked for, instant or AI, counted at the one place they are asked
     # for (`POST /documents/build`). Generous, because an instant one is a render: fifty is
     # twenty-five applications a day, and still a ceiling on a script or a loop. Never unlimited.

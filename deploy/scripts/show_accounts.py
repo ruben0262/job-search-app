@@ -6,11 +6,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from services.scorer.registry import ModelRegistry, ModelUnavailable
 from sqlalchemy import func, select
 
 from libs.db.models import User, UserJobState, UserLabel, UserModel
 from libs.db.session import session_scope
-from services.scorer.registry import ModelRegistry, ModelUnavailable
 
 
 def main() -> int:

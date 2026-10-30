@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import os
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 import pytest
 
@@ -73,40 +73,6 @@ def _job(db, **kwargs):
 
 
 # ── the scorer: the counter that drove a loop ─────────────────────────────────────────────────
-
-def test_the_scorer_counts_only_what_it_could_actually_score(db):
-    """`remaining` decides whether the lane runs again, so it must mean what the lane can reach."""
-    from libs.tenant.filters import filters_for
-    from services.scorer.score_lane import _candidates, unscored_count
-
-    user = _account(db)
-    reachable = _job(db)
-    # Each of these is excluded by `candidate_conditions` and must not inflate the count.
-    _job(db, closed_at=datetime.now(UTC))
-    _job(db, describe_failures=5)
-    _job(db, posted_at=datetime.now(UTC) - timedelta(days=400))
-    db.flush()
-
-    counted = unscored_count(db, user.id)
-    fetched = _candidates(db, user, user.id, filters_for(db, user), 500)
-
-    assert counted == len(fetched), (
-        f"the counter says {counted} and the fetcher finds {len(fetched)}; that gap is what made "
-        "the score lane re-enqueue itself forever")
-    assert {row["id"] for row in fetched} == {reachable.id}
-
-
-def test_a_lane_with_nothing_reachable_reports_nothing_remaining(db):
-    """Zero is what stops the self-continuation. A non-zero count here is the loop."""
-    from services.scorer.score_lane import unscored_count
-
-    user = _account(db)
-    _job(db, closed_at=datetime.now(UTC))
-    _job(db, describe_failures=5)
-    db.flush()
-
-    assert unscored_count(db, user.id) == 0
-
 
 # ── the pipeline page: counters that drove an operator, not a loop ────────────────────────────
 

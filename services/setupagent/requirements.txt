@@ -1,9 +1,0 @@
-# services/setupagent — one setup-chat turn, run off the request path.
-#
-# The same shape as `capture`: the SDK is imported only inside `AnthropicClient`, and the turn runs
-# on the user's own decrypted credential.
-anthropic>=0.92
-pydantic>=2.10           # libs/contracts, reached through libs/profiles and the config migration
-SQLAlchemy>=2.0
-psycopg[binary]>=3.2
-cryptography>=44.0       # libs/secrets: the credential is decrypted for the length of one turn

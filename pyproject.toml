@@ -29,11 +29,9 @@ type = "independence"
 modules = [
     "services.api",
     "services.harvester",
-    "services.scorer",
-    "services.trainer",
     "services.notifier",
     "services.docgen",
-    "services.capture",
+    "services.oauthbroker",
     "services.embedder",
 ]
 
@@ -42,31 +40,6 @@ name = "libs must not import services"
 type = "forbidden"
 source_modules = ["libs"]
 forbidden_modules = ["services"]
-
-[[tool.importlinter.contracts]]
-name = "switched-off model"
-type = "forbidden"
-# CLAUDE.md §3's one exception: the learned model is kept, not deleted, and THIS is the list of what
-# is switched off. Live code may not reach it; the services named here start in compose's `ml`
-# profile only. `ignore_imports` is the live code still to be moved off it, and must be empty before
-# `simplify` merges (ROADMAP Phase 8).
-source_modules = [
-    # The harvester's children rather than the package: a forbidden module inside a source package
-    # is an "overlapping pair" import-linter skips without saying so, and `embedding` is one.
-    "services.api", "services.notifier", "services.docgen", "services.harvester.*",
-    "services.oauthbroker",
-    "libs.auth", "libs.claudeauth", "libs.contracts", "libs.corpus", "libs.credentials",
-    "libs.db", "libs.documents", "libs.harvest", "libs.legal", "libs.limits", "libs.llm",
-    "libs.mail", "libs.notify", "libs.obs", "libs.onboarding", "libs.ops", "libs.profiles",
-    "libs.queue", "libs.secrets", "libs.settings", "libs.templates", "libs.tenant",
-    "libs.matching", "libs.suggestions", "libs.assistant",
-]
-forbidden_modules = [
-    "services.trainer", "services.scorer", "services.labeller", "services.capture",
-    "services.setupagent", "services.harvester.embedding",
-    "libs.scoring", "libs.labels", "libs.feedback", "libs.agents",
-]
-ignore_imports = []
 
 [tool.pytest.ini_options]
 # Left permissive on purpose: each component's tests are runnable from its own directory (the
@@ -185,22 +158,6 @@ ignore = [
 # stored no language and every account's language filter admitted everything, silently, for days.
 # `detect_language` now separates the two and logs the missing library once at ERROR.
 "libs/corpus/langfilter.py" = ["BLE001", "PLC0415"]
-# The objective CV checks, lifted from the reference's `pipeline/cv_eval.py` on 2026-07-29. Same
-# argument as the source adapters: every threshold, weight, stopword and tech term came from
-# reading real postings against real outcomes, and restyling it makes the diff against the source
-# unreviewable for no gain.
-#
-# `PLE2502`/`PLE2515` are the point of the file, not a defect: `_scan_hidden` matches literal
-# zero-width and bidi control characters, and escaping them would stop it detecting the thing it
-# exists to detect. `F841` is a genuine artifact of porting only the parts the platform uses —
-# `fmt_ok` is consumed by a gate block that lives in the half not ported.
-"libs/scoring/cveval.py" = [
-    "B034",     # positional re.split as the original wrote it
-    "F841",     # fmt_ok, set by the ported half and read by the half that is not
-    "PLE2502", "PLE2515",  # the hidden-character detector's own literals
-    "PLR0912", "PLR0915", "PLR0917",  # one long linear checker, as in the original
-    "RUF001",   # the × in a dimension string
-]
 "libs/corpus/timefilter.py" = ["UP017", "UP035", "UP037", "RUF001", "E501"]
 "libs/corpus/workfilter.py" = ["UP017", "UP035", "UP037", "RUF001", "E501", "PLR0911"]
 

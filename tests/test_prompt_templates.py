@@ -157,43 +157,6 @@ def test_a_platform_prompt_is_the_same_bytes_for_everyone(name):
             f"{name} still carries {specific!r} from the reference instance")
 
 
-def test_every_command_forbids_naming_internals_to_the_user():
-    """One block, every command."""
-    from libs.agents import STARTABLE, system_prompt
-
-    for name in STARTABLE:
-        prompt = system_prompt(name)
-        assert "Never name a file, path, script or tool" in prompt, name
-        assert "Never tell them to run a shell command" in prompt, name
-
-
-def test_every_command_says_how_to_reach_another_one():
-    """A conversation runs one command and cannot hand off inside itself."""
-    from libs.agents import STARTABLE, system_prompt
-
-    # Every command except the director, which runs all four steps itself.
-    for name in STARTABLE:
-        prompt = system_prompt(name)
-        if name == "setup-director":
-            assert "There is no other chat" in prompt
-            assert "Open a new chat and run" not in prompt
-            continue
-        assert "Open a new chat and run" in prompt, name
-        assert "new chat, every time" in prompt, name
-
-
-def test_every_command_is_told_which_commands_exist_here():
-    """The ported instructions name commands from the single-user checkout -- /setup-boards."""
-    from libs.agents import STARTABLE, system_prompt
-
-    for name in STARTABLE:
-        prompt = system_prompt(name)
-        assert "Only these commands exist here" in prompt, name
-        for absent in ("/setup-boards", "/setup-companies", "/apply"):
-            assert absent in prompt, f"{name} must name {absent} as unavailable"
-        assert "Which jobs get searched for is not yours to set" in prompt, name
-
-
 def test_the_base_cv_scaffold_uses_the_section_names_the_ats_check_looks_for():
     """`pdf.inspect_pdf` searches the extracted text for the literal words the checker names.
 

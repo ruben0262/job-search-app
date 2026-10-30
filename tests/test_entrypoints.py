@@ -8,13 +8,9 @@ import pytest
 # Every module named by a deploy artifact — a systemd unit, a compose service, or the uvicorn target.
 ENTRYPOINTS = [
     "services.api.app",
-    "services.capture.__main__",
     "services.docgen.__main__",
     "services.harvester.__main__",
-    "services.labeller.__main__",
     "services.notifier.__main__",
-    "services.scorer.__main__",
-    "services.trainer.__main__",
 ]
 
 

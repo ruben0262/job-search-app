@@ -130,8 +130,7 @@ def test_every_caller_that_still_asks_uses_the_shared_conditions():
         "delivery must not filter — the pre-score filter is the one place that decides")
 
     # The ops pages ask no candidate question any more: they counted scored matches (Phase 8).
-    for name in ("libs/matching.py",
-                 "services/scorer/score_lane.py"):
+    for name in ("libs/matching.py",):
         body = Path(name).read_text(encoding="utf-8")
         assert "candidate_conditions" in body, (
             f"{name} must ask `libs.tenant.filters.candidate_conditions` rather than spell the "
