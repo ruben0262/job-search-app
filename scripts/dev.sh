@@ -36,6 +36,9 @@ EOF
   echo "made certificates/dev.env"
 fi
 set -a; . certificates/dev.env; set +a
+# Real email, through the same Zoho mailbox as the server, once its password is in this file.
+# Without it a sign-up link prints in this terminal instead.
+if [ -e certificates/smtp.env ]; then set -a; . certificates/smtp.env; set +a; fi
 PORT=5180
 export PUBLIC_URL=http://localhost:$PORT  # where the sign-up link points
 

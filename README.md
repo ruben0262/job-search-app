@@ -77,8 +77,11 @@ scripts/dev.sh
 
 Then open **http://localhost:5180**: its own port, because another project's site on Vite's usual
 5173 answered there instead. One terminal runs everything: the database, the API, the CV maker, a job
-fetch every 15 minutes, and the site. Ctrl-C stops it all. No email is sent from your computer, so a
-sign-up link prints in that terminal. Open it to sign in.
+fetch every 15 minutes, and the site. Ctrl-C stops it all.
+
+**Email.** Put the Zoho mailbox's password in `certificates/smtp.env` (made for you, password left
+blank) and sign-up emails are really sent, from the same address as the live site. Until then none
+are, and the sign-up link prints in that terminal instead.
 
 Once, before the first run: `.venv/bin/pip install -r requirements-dev.txt`,
 `npm --prefix web install`, and MongoDB 8.0 unpacked into `~/.local/opt/mongodb`. The script makes
