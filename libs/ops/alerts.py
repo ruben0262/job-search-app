@@ -5,8 +5,7 @@ from dataclasses import dataclass
 
 from libs.ops.health import PlatformHealth
 
-# Atlas's free tier stops accepting writes at 0.5 GB of data and indexes (ROADMAP Phase 9).
-DATABASE_BUDGET_BYTES = 512 * 1024**2
+# The share of the database budget (`database_budget_mb`, a platform setting) that pages.
 DATABASE_ALERT_FRACTION = 0.80
 
 
@@ -54,15 +53,15 @@ def _queue_alerts(health: PlatformHealth) -> list[Alert]:
 
 def _capacity_alerts(health: PlatformHealth) -> list[Alert]:
     alerts = []
-    used = health.database_bytes / DATABASE_BUDGET_BYTES
+    used = health.database_bytes / health.database_budget_bytes
     if used > DATABASE_ALERT_FRACTION:
         alerts.append(Alert(
             "page", "database_size",
-            f"MongoDB holds {health.database_bytes / 1024**2:.0f} MB, {used:.0%} of the free tier's "
-            f"{DATABASE_BUDGET_BYTES // 1024**2} MB",
+            f"MongoDB holds {health.database_bytes / 1024**2:.0f} MB, {used:.0%} of its "
+            f"{health.database_budget_bytes // 1024**2} MB budget",
             "At the ceiling Atlas refuses every write, sign-ups included. Check the archive pass ran "
-            "(`archive:` in the harvester log); if it did, shorten `CORPUS_RETENTION_DAYS` or move "
-            "the cluster to a paid tier."))
+            "(`archive:` in the harvester log); if it did, keep jobs for fewer days in the admin "
+            "panel, or move the cluster to a bigger tier and raise the budget there."))
     return alerts
 
 

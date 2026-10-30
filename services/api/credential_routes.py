@@ -11,8 +11,7 @@ from pydantic import BaseModel, Field
 from pymongo.database import Database
 
 from libs.credentials import validate_credential
-from libs.db import get
-from libs.db.models import ProxyCredential, User
+from libs.db.models import ProxyCredential
 from libs.db.models.user import SECRET_KINDS
 from libs.obs import audit
 from libs.secrets import SecretStore, redacting
@@ -165,37 +164,6 @@ def claude_oauth_cancel(body: OAuthCancelBody,
     """Back out. Cheap, and it frees the process instead of leaving it to the TTL."""
     _broker("/cancel", {"session_id": body.session_id})
     return {"status": "cancelled"}
-
-
-class RevealBody(BaseModel):
-    password: str = Field(min_length=1, max_length=1024)
-
-
-@router.post("/{kind}/reveal")
-def reveal_credential(kind: str, body: RevealBody, request: Request, *,
-                      db: Database = Depends(get_db),
-                      store: SecretStore = Depends(get_store),
-                      user_id: _uuid.UUID = Depends(current_user)) -> dict:
-    """Hand back the plaintext, once, after the account password."""
-    from libs.auth.passwords import verify_password  # noqa: PLC0415 - the one route that needs it
-
-    if kind not in SECRET_KINDS:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=f"unknown credential {kind!r}")
-    rate_limit(request, f"reveal:{user_id}", limit=10, per_seconds=3600)
-
-    user = get(db, User, user_id)
-    if not verify_password(user.password_hash, body.password):
-        audit(logger, "credentials.reveal_refused", user=user_id, kind=kind)
-        # Deliberately the same shape as a failed login: no oracle, no timing shortcut.
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="that password is not correct")
-
-    with store.use(user_id, kind) as secret:
-        if secret is None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="nothing stored")
-        value = secret.reveal()
-
-    audit(logger, "credentials.revealed", user=user_id, kind=kind)
-    return {"value": value}
 
 
 class Removed(BaseModel):

@@ -352,7 +352,7 @@ def test_a_reply_cut_off_by_a_restart_is_written_once_when_the_api_starts_again(
         # A reply a live worker is writing is not written again by a worker starting up now.
         held = http.post("/support/messages", json={"text": "wait for it"}).json()["reply_id"]
         assert model.writing.wait(5)
-        assistant.start(held).join(5)
+        assistant.start(held).result(5)
         gate.set()
         assert reply(http, held)["status"] == "done"
     assert model.calls == 2, "each reply was written once"
@@ -406,3 +406,88 @@ def test_a_writer_that_outlived_its_lease_cannot_write_over_the_one_that_took_ov
         assistant._Reply(db, reply)
 
     assert db.setup_messages.find_one({"_id": reply.id})["content"] == "the new writer's words"
+
+
+def _pending(db, user_id, question: str = "are my words ok?") -> int:
+    """A question and its reply, waiting for a writer."""
+    from libs.db import insert
+    from libs.db.models import SetupConversation, SetupMessage
+
+    chat = insert(db, SetupConversation(user_id=user_id, title="Help"))
+    insert(db, SetupMessage(user_id=user_id, conversation_id=chat.id, role="user", content=question,
+                            agent="support"))
+    return insert(db, SetupMessage(user_id=user_id, conversation_id=chat.id, role="assistant",
+                                   content="", agent="support", status="pending",
+                                   tool_calls={"payer": "platform", "steps": []})).id
+
+
+def test_a_live_writer_keeps_its_reply_through_a_model_call_longer_than_the_lease(live, monkeypatch):
+    """The lease is short, so a reply a restart cut off is taken over in seconds rather than after
+    the longest a model call may take (it was 8 minutes). That is only safe because a live writer
+    renews it while the model is silent: otherwise every slow answer would be written twice."""
+    from libs import assistant
+    from libs.db import get
+    from libs.db.models import SetupMessage
+
+    assert assistant.LEASE.total_seconds() <= 30, "a cut-off reply waits this long to be written again"
+    monkeypatch.setattr(assistant, "LEASE", timedelta(seconds=0.6))
+
+    class Slow(Scripted):
+        def complete_tools(self, **kwargs):
+            time.sleep(1.8)  # three leases with not a word written
+            return super().complete_tools(**kwargs)
+
+    model = Slow(*[("Your words are fine.", [])] * 2)
+    _answers(monkeypatch, model)
+    reply_id = _pending(live.db, live.user_id)
+
+    writing = assistant.start(reply_id)
+    time.sleep(1.2)
+    assistant.run(live.db, reply_id)  # the page's stream, or a worker starting up, trying to take it
+    writing.result(5)
+
+    assert len(model.seen) == 1, "taken over from a writer that was alive"
+    assert get(live.db, SetupMessage, reply_id).content == "Your words are fine."
+
+
+def test_replies_beyond_the_writer_ceiling_wait_their_turn(live, monkeypatch):
+    """Each reply used to get a thread of its own, however many were asked at once. Now one process
+    writes at most `WRITERS` at a time and the rest stay `pending` until a writer is free."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    from libs import assistant
+    from libs.db import get
+    from libs.db.models import SetupMessage
+
+    gate, lock = threading.Event(), threading.Lock()
+
+    class Held(Scripted):
+        busy = most = 0
+
+        def complete_tools(self, **kwargs):
+            with lock:
+                self.busy += 1
+                self.most = max(self.most, self.busy)
+            assert gate.wait(10)
+            with lock:
+                self.busy -= 1
+            return super().complete_tools(**kwargs)
+
+    model = Held(*[("Your words are fine.", [])] * 3)
+    _answers(monkeypatch, model)
+    monkeypatch.setattr(assistant, "_writers", ThreadPoolExecutor(max_workers=2))
+    replies = [_pending(live.db, live.user_id, f"question {n}") for n in range(3)]
+
+    writing = [assistant.start(reply_id) for reply_id in replies]
+    for _ in range(100):
+        if model.busy == 2:
+            break
+        time.sleep(0.05)
+    time.sleep(0.2)
+    assert (model.busy, get(live.db, SetupMessage, replies[2]).status) == (2, "pending")
+
+    gate.set()
+    for each in writing:
+        each.result(5)
+    assert model.most == 2, "more replies were written at once than there are writers"
+    assert [get(live.db, SetupMessage, reply_id).status for reply_id in replies] == ["done"] * 3

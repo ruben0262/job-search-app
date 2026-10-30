@@ -274,32 +274,6 @@ def test_signing_in_is_required(api):
 
 
 @needs_db
-def test_reveal_needs_the_password_and_returns_the_value_once(api, monkeypatch):
-    """The one exception to write-only, gated the way deletion is: a stolen session cookie is not enough."""
-    from libs.auth.passwords import hash_password
-    from libs.credentials import ValidationResult
-    from libs.db.models import User
-
-    http, db, user, _ = api
-    db[User.COLLECTION].update_one({"_id": user.id},
-                                   {"$set": {"password_hash": hash_password("correct horse battery staple")}})
-    monkeypatch.setattr("services.api.credential_routes.validate_credential",
-                        lambda kind, value, **kw: ValidationResult(True))
-    http.put("/credentials/proxy", json={"value": "http://user:pass@proxy.example:8080"})
-
-    wrong = http.post("/credentials/proxy/reveal", json={"password": "not the password"})
-    assert wrong.status_code == 401
-    assert "value" not in wrong.json()
-
-    right = http.post("/credentials/proxy/reveal", json={"password": "correct horse battery staple"})
-    assert right.status_code == 200
-    assert right.json()["value"] == "http://user:pass@proxy.example:8080"
-
-    nothing = http.post("/credentials/claude_api/reveal", json={"password": "correct horse battery staple"})
-    assert nothing.status_code == 404
-
-
-@needs_db
 def test_an_oauth_token_that_does_not_work_is_never_stored(api, monkeypatch):
     """Unlike a pasted credential, this one is refused rather than kept unvalidated."""
     from libs.credentials import ValidationResult

@@ -16,7 +16,6 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, ClassVar, Self
 
 from pymongo import IndexModel, MongoClient, ReturnDocument
-from pymongo.client_session import ClientSession
 from pymongo.database import Database
 from pymongo.errors import CollectionInvalid, DuplicateKeyError, OperationFailure
 
@@ -50,13 +49,6 @@ def next_ids(db: Database, sequence: str, count: int = 1) -> range:
     issued = db.counters.find_one_and_update({"_id": sequence}, {"$inc": {"value": count}},
                                              upsert=True, return_document=ReturnDocument.AFTER)
     return range(issued["value"] - count + 1, issued["value"] + 1)
-
-
-@contextmanager
-def transaction(db: Database) -> Iterator[ClientSession]:
-    """For the few changes that must land together; everything else is one atomic document write."""
-    with db.client.start_session() as session, session.start_transaction():
-        yield session
 
 
 @contextmanager
@@ -113,11 +105,11 @@ class Document:
         return data
 
 
-def insert[D: Document](db: Database, document: D, *, session: ClientSession | None = None) -> D:
+def insert[D: Document](db: Database, document: D) -> D:
     """Store a new document, issuing its integer id first where its collection uses one."""
     if document.SEQUENCE and getattr(document, "id", None) is None:
         document.id = next_ids(db, document.COLLECTION)[0]
-    db[document.COLLECTION].insert_one(document.to_doc(), session=session)
+    db[document.COLLECTION].insert_one(document.to_doc())
     return document
 
 

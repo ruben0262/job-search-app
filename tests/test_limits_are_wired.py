@@ -111,36 +111,20 @@ def test_unlimited_is_honoured_wherever_it_is_offered():
 
 
 def test_only_one_place_answers_how_many_jobs_a_day():
-    """Four answers, and the page showed a fifth of the truth."""
+    """Four answers, and the page showed a fifth of the truth. The notifier enforces the cap, so the
+    notifier is the one place that reads it."""
     from pathlib import Path
 
     dashboard = Path("services/api/dashboard_routes.py").read_text(encoding="utf-8")
-    status = Path("services/api/status_routes.py").read_text(encoding="utf-8")
+    deliver = Path("services/notifier/deliver.py").read_text(encoding="utf-8")
 
     # Definitions and reads, not prose — the docstrings below name the old mechanisms deliberately.
-    assert "DEFAULT_NOTIFICATIONS_PER_DAY = " not in dashboard + status, (
+    assert "DEFAULT_NOTIFICATIONS_PER_DAY = " not in dashboard + deliver, (
         "the mirrored constant is back; libs.limits is in libs so both services can read it")
-    assert 'get("max_notifications_per_day"' not in dashboard + status, (
+    assert 'get("max_notifications_per_day"' not in dashboard + deliver, (
         "the user config field is not what the notifier enforces, so it must not be reported as "
         "the delivery cap")
-    assert 'resolve(user, "notifications_per_day")' in status
-
-
-def test_unlimited_delivery_is_reported_as_unlimited_not_as_a_number():
-    """`None` means no cap."""
-    from libs import limits
-    from libs.db.models import User
-    from services.api.status_routes import daily_cap
-
-    user = User(email="x@example.com", password_hash="x", limits={})
-    assert daily_cap(user) is None, "the catalogue default is unlimited"
-
-    user.limits = {"notifications_per_day": 40}
-    assert daily_cap(user) == 40
-
-    # And the catalogue itself still offers unlimited, which is what makes `None` reachable.
-    assert next(item for item in limits.LIMITS
-                if item.key == "notifications_per_day").allow_unlimited
+    assert 'resolve(user, "notifications_per_day")' in deliver
 
 
 def test_the_applicant_ceiling_is_the_operators_and_unlimited_shows_everything():

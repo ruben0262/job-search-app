@@ -5,10 +5,11 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 from libs.db import insert
-from libs.ops.alerts import DATABASE_ALERT_FRACTION, DATABASE_BUDGET_BYTES, Alert, evaluate, render
+from libs.ops.alerts import DATABASE_ALERT_FRACTION, Alert, evaluate, render
 from libs.ops.health import LaneHealth, PlatformHealth, UserHealth
 
-# Comfortably inside Atlas's free tier, and past the point it pages at.
+# Atlas's free tier; comfortably inside it, and past the point it pages at.
+DATABASE_BUDGET_BYTES = 512 * 1024**2
 ROOMY = DATABASE_BUDGET_BYTES // 4
 NEARLY_FULL = int(DATABASE_BUDGET_BYTES * (DATABASE_ALERT_FRACTION + 0.05))
 
@@ -26,7 +27,7 @@ def user(**kwargs) -> UserHealth:
 def health(**kwargs) -> PlatformHealth:
     base = {"checked_at": datetime.now(UTC).isoformat(), "lanes": [lane()], "users_total": 1,
             "users_active": 1, "corpus_rows": 1000, "database_bytes": ROOMY,
-            "connections": 5, "users": []}
+            "database_budget_bytes": DATABASE_BUDGET_BYTES, "connections": 5, "users": []}
     return PlatformHealth(**{**base, **kwargs})
 
 
@@ -86,6 +87,17 @@ def test_a_nearly_full_database_pages():
     assert keys(alerts) == {"database_size"}
     assert alerts[0].pages
     assert "512 MB" in alerts[0].text
+
+
+def test_the_budget_the_alert_measures_against_is_the_operators_setting(db):
+    """A bigger tier is a panel change: the same size that pages on the free tier is quiet on 2 GB."""
+    from libs import settings
+    from libs.ops.health import platform_health
+
+    assert platform_health(db).database_budget_bytes == DATABASE_BUDGET_BYTES, "the free tier by default"
+    settings.put(db, "database_budget_mb", 2048)
+    assert platform_health(db).database_budget_bytes == 2048 * 1024**2
+    assert evaluate(health(database_bytes=NEARLY_FULL, database_budget_bytes=2048 * 1024**2)) == []
 
 
 def test_the_database_alert_comes_before_the_ceiling_not_at_it():

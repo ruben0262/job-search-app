@@ -38,7 +38,7 @@ def _stored(s, user) -> ProxyCredential:
 def test_a_healthy_credential_with_budget_yields_a_lease(ctx):
     repo, s = ctx
     user = _user(s)
-    _credential(s, user, daily_cap_mb=200, mb_used_today=50)
+    _credential(s, user, mb_used_today=50)
 
     lease = repo.acquire_lease(user.id, secret_resolver=RESOLVER)
     assert lease is not None
@@ -65,7 +65,7 @@ def test_a_spent_budget_yields_no_lease(ctx):
     """Admission, not interruption: the loop never starts rather than stopping mid-way."""
     repo, s = ctx
     user = _user(s)
-    _credential(s, user, daily_cap_mb=200, mb_used_today=200)
+    _credential(s, user, mb_used_today=200)
     assert repo.acquire_lease(user.id, secret_resolver=RESOLVER) is None
 
 
@@ -84,24 +84,14 @@ def test_an_unresolvable_secret_counts_as_a_failure(ctx):
 # ── admission ─────────────────────────────────────────────────────────────────────────────────
 
 def test_admission_raises_at_the_cap(ctx):
-    """The operator's limit is the authority, not the column."""
+    """The operator's limit is the cap."""
     repo, s = ctx
     user = _user(s, limits={"proxy_mb_per_day": 100})
-    _credential(s, user, daily_cap_mb=100, mb_used_today=99)
+    _credential(s, user, mb_used_today=99)
 
     repo.check_admission(user.id)                      # still under
     with pytest.raises(ProxyCapExceeded, match="daily proxy cap"):
         repo.check_admission(user.id, projected_mb=5)  # this request would cross it
-
-
-def test_the_operators_cap_beats_the_column(ctx):
-    """Two values for one ceiling is how they disagree."""
-    repo, s = ctx
-    user = _user(s, limits={"proxy_mb_per_day": 10})
-    _credential(s, user, daily_cap_mb=500, mb_used_today=12)
-
-    with pytest.raises(ProxyCapExceeded):
-        repo.check_admission(user.id)
 
 
 # ── metering ──────────────────────────────────────────────────────────────────────────────────
@@ -109,7 +99,7 @@ def test_the_operators_cap_beats_the_column(ctx):
 def test_usage_accumulates(ctx):
     repo, s = ctx
     user = _user(s)
-    _credential(s, user, daily_cap_mb=200)
+    _credential(s, user)
 
     assert repo.record_usage(user.id, 10.5) == pytest.approx(10.5)
     assert repo.record_usage(user.id, 4.5) == pytest.approx(15.0)
@@ -156,7 +146,7 @@ def test_a_first_lease_initialises_the_window_without_wiping_usage(ctx):
     """A null `usage_reset_at` is initialisation, not a day boundary."""
     repo, s = ctx
     user = _user(s)
-    cred = _credential(s, user, daily_cap_mb=200, mb_used_today=50)
+    cred = _credential(s, user, mb_used_today=50)
     assert cred.usage_reset_at is None
 
     assert repo.roll_daily_window(user.id) is False
@@ -237,8 +227,8 @@ def test_one_users_usage_never_touches_anothers(ctx):
     """T13 at the database layer: there is only ever one candidate credential for a fetch."""
     repo, s = ctx
     alice, bob = _user(s), _user(s)
-    _credential(s, alice, daily_cap_mb=200)
-    _credential(s, bob, daily_cap_mb=200)
+    _credential(s, alice)
+    _credential(s, bob)
 
     repo.record_usage(alice.id, 40)
     repo.record_failure(bob.id, "bob's problem")
@@ -263,7 +253,7 @@ def test_saving_a_proxy_url_also_creates_the_credential_row(ctx):
     _ensure_proxy_credential(s, user.id)
     credential = _stored(s, user)
     assert credential is not None
-    assert credential.status == "healthy" and credential.daily_cap_mb > 0
+    assert credential.status == "healthy"
 
 
 def test_re_saving_a_proxy_url_does_not_un_quarantine_the_account(ctx):

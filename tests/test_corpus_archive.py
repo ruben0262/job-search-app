@@ -322,11 +322,19 @@ def test_the_oldest_postings_leave_first(ctx, tmp_path):
     assert get(s, CorpusJob, oldest) is None
 
 
-def test_the_retention_window_is_thirty_days():
-    """Set by the owner 2026-08-11. It had two values before: 90 in code against the stated 30."""
-    from libs.settings import CORPUS_RETENTION_DAYS
+def test_the_retention_window_is_thirty_days_unless_the_operator_says_otherwise(ctx, tmp_path):
+    """Set by the owner 2026-08-11. It had two values before: 90 in code against the stated 30. A
+    setting since 2026-10-30, and the pass reads it rather than a copy of it."""
+    from libs import settings
+    from libs.settings import DEFAULTS
 
-    assert CORPUS_RETENTION_DAYS == 30
+    assert DEFAULTS["corpus_retention_days"] == 30
+    r, s = ctx
+    twelve_days_old = _aged(r, s, days=12)
+    assert archive_expired(s, directory=tmp_path).jobs == 0, "inside thirty days"
+    settings.put(s, "corpus_retention_days", 10)
+    assert archive_expired(s, directory=tmp_path).jobs == 1
+    assert get(s, CorpusJob, twelve_days_old) is None
     assert not hasattr(__import__("libs.corpus.repository", fromlist=["x"]), "CORPUS_HOT_DAYS"), (
         "the 90-day constant is back, and it is the one the code would enforce")
 

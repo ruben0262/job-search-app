@@ -52,7 +52,7 @@ def test_what_is_not_carried_over_is_dropped_and_the_rest_keeps_its_values():
     assert copy.converted(PlatformSetting, {"id": "embed_batch_size", "value": 64, "updated_at": None,
                                             "updated_by": None}) is None
     proxy = copy.converted(ProxyCredential, {
-        "user_id": ALICE, "secret_ref": "r", "daily_cap_mb": 200, "mb_used_today": Decimal("12.5"),
+        "user_id": ALICE, "secret_ref": "r", "mb_used_today": Decimal("12.5"),
         "usage_reset_at": None, "status": "healthy", "fail_streak": 0, "last_error": None,
         "last_used_at": None, "created_at": None, "updated_at": None})
     assert proxy["mb_used_today"] == 12.5 and isinstance(proxy["mb_used_today"], float)

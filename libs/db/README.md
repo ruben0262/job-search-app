@@ -26,8 +26,8 @@ their documents and credentials, the shared job corpus, and the work queue, in o
 - **`lease()`** — a named lease for work that must not run twice at once (the harvest cycle).
 - **`insert`, `get`, `find_one`, `find`** — the thin layer between dataclasses and documents.
 
-Each write is its own; there is no request-wide transaction. Changes that must land together use
-`transaction()`.
+Each write is its own, and atomic for its one document; nothing uses a multi-document transaction, so
+a standalone `mongod` serves for development and tests.
 
 ## Rules
 

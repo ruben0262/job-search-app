@@ -22,7 +22,6 @@ WRITTEN_ELSEWHERE = {
 # Fields this test found on its first run, each a real answer to "what is silently absent".
 KNOWN_UNWRITTEN = {
     # Deliberate, and documented at the reader.
-    "daily_cap_mb": "intentional fallback; libs.limits.proxy_mb_per_day is the live value",
     # A second source of truth that disagrees with the first.
     "linkedin_interval_min": "superseded by libs.limits; field default 240 vs limit default 15",
 }

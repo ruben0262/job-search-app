@@ -6,8 +6,8 @@ sharing this repo's plans and conventions.
 
 ```
 libs/         shared code — services import from here, and only here
-services/     one folder per container; embedder is the only one built so far
-web/          React + TypeScript SPA (Phase 3)
+services/     one folder per container
+web/          React + TypeScript SPA
 deploy/       compose stack, per-service Dockerfiles, VPS scripts
 tests/        cross-service behaviour tests
 docs/saas/    the platform plans the rest of the build follows
@@ -15,23 +15,14 @@ docs/saas/    the platform plans the rest of the build follows
 
 The dependency rule is one arrow, one direction: `services/*` imports `libs/*`, `libs` never
 imports `services`, and **no service imports another service** — they talk over HTTP or the queue.
-[`import-linter`](pyproject.toml) enforces it in CI, because a rule a linter checks survives a late
+[`import-linter`](pyproject.toml) enforces it, because a rule a linter checks survives a late
 night and a rule in a document is a suggestion. Full layout and reasoning in
 [`docs/saas/CODE_STRUCTURE.md`](docs/saas/CODE_STRUCTURE.md).
 
 ## Where the project is
 
-**Phase 1 of 4** (shared core). [`CHANGELOG.md`](CHANGELOG.md) is the history — what changed and
-why. Each folder's `README.md` carries its own **Current state**.
-
-| | |
-|---|---|
-| Deployed | Postgres 17 + the platform embedder, both on the VPS |
-| Built | [`libs/db`](libs/db/) — 8 tables, Alembic-managed, drift-checked · [`services/embedder`](services/embedder/) |
-| Tests | 23 passed / 1 skipped (embedder) · 8 passed (schema) |
-| Next | T2 dedup regression suite, then the `store.py` port — the critical path |
-
-Roadmap and phasing: [`docs/saas/ROADMAP.md`](docs/saas/ROADMAP.md).
+Live on the VPS, with its data in MongoDB Atlas. [`CHANGELOG.md`](CHANGELOG.md) is the history and
+[`docs/saas/ROADMAP.md`](docs/saas/ROADMAP.md) the plan, including what is waiting on the owner.
 
 ## Components
 
@@ -61,10 +52,9 @@ resident). `andras-job-search` is next.
 
 ### The other services
 
-`services/api`, `harvester`, `scorer`, `trainer`, `notifier`, `docgen`, `capture` and all of
-`libs/` exist as empty packages. Each one's `__init__.py` records why it exists and what constraint
-it carries, so the tree is navigable before it is populated. They are filled in during Phases 1–3
-— see the roadmap.
+`api` (the site's backend), `harvester` (fetches postings), `notifier` (Telegram and browser
+alerts), `docgen` (CVs and cover letters, the only one with Chrome) and `oauthbroker`. Shared code
+is in `libs/`; the deployed stack is [`deploy/compose.yml`](deploy/compose.yml).
 
 ## [`docs/saas/`](docs/saas/) — platform plans
 
@@ -79,13 +69,25 @@ the source of truth going forward and let the ones in `job-search` go stale, or 
 The embedder's maintained design is [`services/embedder/docs/PLAN.md`](services/embedder/docs/PLAN.md),
 kept current against the running service.
 
-## Development
+## Run it on your computer
+
+Once: `.venv/bin/pip install -r requirements-dev.txt`, `npm --prefix web install`, MongoDB 8.0
+unpacked into `~/.local/opt/mongodb`, and `certificates/dev.env` (local keys, never the server's).
+Then each in its own terminal, from the repo root:
 
 ```bash
-pip install -r requirements-dev.txt
-lint-imports                        # the boundary contracts — must stay green
-pytest services/embedder/tests      # integration tier skips while EMBEDDER_URL is unset
+~/.local/opt/mongodb/bin/mongod --dbpath ~/.local/share/job-search-app/mongo --port 27017 \
+    --bind_ip 127.0.0.1 --fork --logpath ~/.local/share/job-search-app/mongod.log   # once per boot
+set -a; . certificates/dev.env; set +a; .venv/bin/uvicorn services.api.app:app --port 8000 --reload
+set -a; . certificates/dev.env; set +a; .venv/bin/python -m services.docgen       # makes the CVs
+npm --prefix web run dev                                                           # the site
 ```
+
+Open http://localhost:5173. No email is sent from here: the sign-up link prints in the API's
+terminal. Jobs arrive when a harvest runs, after an account has finished the setup screens:
+`set -a; . certificates/dev.env; set +a; .venv/bin/python -m services.harvester`.
+
+The checks to run before a push are in [`CLAUDE.md`](CLAUDE.md) §7.
 
 ## Conventions
 

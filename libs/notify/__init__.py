@@ -1,7 +1,7 @@
 """Telling a person something: an in-app notification, and the new matches owed to them off the site.
 
-What is owed is defined once, here, because two places ask: the notifier sends it and the status page
-counts it. `services` may not import each other, so the definition lives in `libs` (CLAUDE.md §5).
+What is owed is defined once, here. The notifier is its one reader since the status page was deleted
+(2026-10-30); it stays in `libs` beside the in-app notifications the API writes.
 """
 from __future__ import annotations
 
@@ -98,8 +98,7 @@ def sent_up_to(db: Database, user: User) -> datetime:
 
 
 def sent_today(db: Database, user_id: _uuid.UUID) -> int:
-    """Jobs sent to this person since their own midnight. One count, read by the notifier's daily cap
-    and by the status page, so the page cannot say "limit reached" while the notifier disagrees."""
+    """Jobs sent to this person since their own midnight, which the notifier's daily cap counts."""
     return db[UserJobState.COLLECTION].count_documents(
         {"user_id": user_id, "notified_at": {"$gte": limits.their_midnight(db, user_id)}})
 

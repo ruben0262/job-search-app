@@ -84,7 +84,7 @@ def _upload_cv(http, text: str = CV):
 def test_a_new_account_is_sent_to_the_first_of_three_screens(api):
     """Upload, confirm what we found, done (ROADMAP Phase 8). Nothing else stands in the way."""
     http, _, _ = api
-    body = http.get("/onboarding/state").json()
+    body = http.get("/dashboard").json()["onboarding"]
     assert body["complete"] is False
     assert body["next_page"] == "documents"
     assert [page["key"] for page in body["pages"]] == ["documents", "review"]
@@ -94,7 +94,7 @@ def test_a_new_account_is_sent_to_the_first_of_three_screens(api):
 def test_uploading_a_cv_moves_them_on_to_the_review(api):
     http, _, _ = api
     _upload_cv(http)
-    assert http.get("/onboarding/state").json()["next_page"] == "review"
+    assert http.get("/dashboard").json()["onboarding"]["next_page"] == "review"
 
 
 @needs_db
@@ -116,9 +116,8 @@ def test_the_review_arrives_filled_in_from_their_cv(api):
     assert review["found"]["email"] == "jane.doe@example.com"
     assert {"term": "backend engineer", "reason": "Your job title at Acme Payments"} in (
         review["suggestions"]["green"])
-    # The same answer the two pages that edit it give, so the stacked forms open filled in too.
+    # The same answer the page that edits it gives, so the stacked forms open filled in too.
     assert http.get("/onboarding/identity").json() == review["identity"]
-    assert http.get("/onboarding/config").json()["config"] == review["config"]
 
 
 @needs_db
@@ -143,7 +142,7 @@ def test_the_pickers_are_served_every_place_language_and_policy_with_a_label(api
     from libs.contracts.config import Language, Location, RemotePolicy
 
     http, _, _ = api
-    choices = http.get("/onboarding/config").json()["choices"]
+    choices = http.get("/onboarding/review").json()["choices"]
 
     for key, enum in (("locations", Location), ("languages", Language),
                       ("remote_policies", RemotePolicy)):
@@ -216,12 +215,12 @@ def test_deleting_the_cv_reopens_its_page(api):
     _upload_cv(http)
     http.put("/onboarding/identity", json={"full_name": "Alice Example"})
     http.put("/onboarding/config", json=CONFIG)
-    assert http.get("/onboarding/state").json()["complete"] is True
+    assert http.get("/dashboard").json()["onboarding"]["complete"] is True
 
     (document,) = http.get("/documents").json()["documents"]
     http.delete(f"/documents/{document['id']}")
 
-    body = http.get("/onboarding/state").json()
+    body = http.get("/dashboard").json()["onboarding"]
     assert body["complete"] is False
     assert body["next_page"] == "documents"
 
@@ -251,7 +250,7 @@ def test_the_config_is_validated_server_side(api):
 def test_onboarding_requires_signing_in(api):
     http, _, _ = api
     http.cookies.clear()
-    assert http.get("/onboarding/state").status_code == 401
+    assert http.get("/onboarding/review").status_code == 401
 
 
 # ── the schema payloads nobody reads (2026-08-11) ──────────────────────────────────────────────
@@ -276,7 +275,7 @@ def test_the_identity_and_config_routes_return_the_users_own_data(api):
     assert identity["full_name"] == "Alice Example"
     assert identity["links"] == []
 
-    config = http.get("/onboarding/config").json()
+    config = http.get("/onboarding/review").json()
     assert config["config"]["sections"][0]["keywords"] == CONFIG["sections"][0]["keywords"]
 
 

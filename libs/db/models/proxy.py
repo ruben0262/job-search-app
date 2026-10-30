@@ -21,7 +21,6 @@ class ProxyCredential(Document):
     user_id: uuid.UUID
     # Which `user_secrets` kind holds the proxy URL; the URL itself is never stored here.
     secret_ref: str
-    daily_cap_mb: int = 200
     mb_used_today: float = 0.0
     usage_reset_at: datetime | None = None
     status: str = "healthy"

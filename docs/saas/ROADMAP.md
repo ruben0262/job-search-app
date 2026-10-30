@@ -3029,47 +3029,32 @@ resend a verification email, the setup chat skipping consent).
 pass ✅, and a new account goes from sign-up to its first matching job in under five minutes without
 leaving the site — `tests/test_e2e_site.py` walks exactly that, to a downloaded CV, in about ten seconds.
 
-**Waiting on the owner** (listed 2026-10-30; to be settled once the MongoDB switch works):
+**Waiting on the owner** (listed 2026-10-30; the owner answered the same day, and what is settled is
+marked so):
 
-1. **Help chat prompt.** `libs/prompts/support.md` is new and unapproved (CLAUDE.md §3a). The chat
-   stays off (`support_chat_enabled` 0) until it is approved, and two chat defects must be fixed
-   before it is switched on: a reply whose writer died is never ended, and reply threads have no
-   ceiling.
-2. **Shared CV and cover prompts.** These still need writing and measuring against the setup chat's
-   prompts. That is blocked on an Anthropic key at `certificates/anthropic.key`. Until then, new
-   accounts get the free instant documents.
-3. **Leftovers with no consumer:**
-   - four endpoints no page calls: `/status` (which runs the whole alert match per load),
-     `GET /onboarding/config`, `GET /onboarding/state` and `POST /credentials/{kind}/reveal`;
-   - the admin pages' hand-written API types.
-
-   Recommendation: delete them all. The per-bot Telegram fields and the `telegram_bot` credential
-   kind were not carried into MongoDB (Phase 9).
+1. ~~**Help chat prompt.**~~ Approved 2026-10-30. Both defects fixed (the 8-minute takeover, the
+   writer ceiling) and `support_chat_enabled` defaults to on.
+2. **Shared CV and cover prompts.** Deferred by the owner ("later"). Blocked on an Anthropic key at
+   `certificates/anthropic.key`. Until then, new accounts get the free instant documents.
+3. **Leftovers with no consumer.** ~~The four endpoints~~ (deleted 2026-10-30). Still open: the admin
+   pages' hand-written API types. Recommendation: replace them with the generated ones.
 4. **`NOTIFY_SCAN = 10_000`** (`libs/notify`). Recommendation: leave it in code. It is a safety
    bound, and reaching it is logged.
-5. **README.** It has no "run it locally" section and still says "Phase 1 of 4".
-6. **Merge and push.** `simplify` goes into `main` and is pushed only when the owner says so. The
-   checklist is `deploy/README.md`.
-7. **MongoDB credentials.** The Atlas password was shared in a chat, so rotate it after the switch,
-   and limit the cluster's network access to the VPS and the owner's machine.
+5. ~~**README.**~~ Done 2026-10-30.
+6. **Push, then the switch.** `main` holds everything, committed locally. The push needs the owner's
+   GitHub sign-in, and the switch needs the VPS (checklist: `deploy/README.md`).
+7. **MongoDB credentials.** The owner keeps the password (2026-10-30). Still recommended: limit the
+   cluster's network access to the VPS and the owner's machine.
 8. **Atlas region.** The jobs page makes about five round trips to the database. Measured from the
    owner's machine (26 ms a trip), matching took 337–451 ms against the 300 ms budget, and the query
    itself was about 140 ms of that. Recommendation: put the cluster in the region nearest the VPS.
    Batching the settings reads saves one trip whatever the region.
-9. **Retention on the free tier.**
-    - A posting takes about 5 KB with its indexes, so the 0.5 GB tier holds roughly 80,000 before
-      the 80% alert.
-    - `CORPUS_RETENTION_DAYS` keeps 30 days, but no posting older than about 7 days (the widest source
-      floor) is ever shown.
-    - Recommendation: about 10 days, as a platform setting with a control, since it now decides
-      whether the platform fits.
-10. **`DATABASE_BUDGET_BYTES`** (512 MB, `libs/ops/alerts.py`) is the free tier's size, hardcoded.
-    Recommendation: a platform setting, changed when the tier changes.
-11. **`ProxyCredential.daily_cap_mb`** is a second source of truth beside the `proxy_mb_per_day`
-    limit, read only when the account is missing, which cannot happen now. Recommendation: delete it.
-12. **The help chat after a deploy.** A reply cut off by a restart is taken over only when its lease
-    runs out, up to 8 minutes (`LEASE` = 2 × `TIMEOUT_SEC`); until then the person cannot ask again.
-    Fix this before `support_chat_enabled` is turned on, along with item 1's ceiling on reply threads.
+9. ~~**Retention.**~~ A platform setting since 2026-10-30, kept at 30 days. Only postings fill the
+   database, at about 5 KB each, so the free tier holds roughly 80,000 before the 80% alert.
+   Measure what the harvester stores a day once it runs on Atlas.
+10. ~~**`DATABASE_BUDGET_BYTES`.**~~ The `database_budget_mb` setting since 2026-10-30.
+11. ~~**`ProxyCredential.daily_cap_mb`.**~~ Deleted 2026-10-30.
+12. ~~**The help chat after a deploy.**~~ Fixed 2026-10-30, with item 1.
 
 ## Phase 9 — MongoDB instead of Postgres (added 2026-10-30)
 

@@ -24,7 +24,6 @@ from services.api.document_routes import router as document_router
 from services.api.notification_routes import router as notification_router
 from services.api.onboarding_routes import router as onboarding_router
 from services.api.push_routes import router as push_router
-from services.api.status_routes import router as status_router
 from services.api.suggestion_routes import router as suggestion_router
 from services.api.support_routes import router as support_router
 from services.api.telegram_routes import router as telegram_router
@@ -53,7 +52,6 @@ app.include_router(onboarding_router)
 app.include_router(push_router)
 app.include_router(dashboard_router)
 app.include_router(notification_router)
-app.include_router(status_router)
 app.include_router(suggestion_router)
 app.include_router(support_router)
 app.include_router(telegram_router)

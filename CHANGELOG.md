@@ -14,6 +14,45 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-10-30 — the help chat opens, retention and the database budget are settings, and the leftovers go
+
+**The help chat is on.** The owner approved `libs/prompts/support.md` on 2026-10-30 (CLAUDE.md §3a), so
+`support_chat_enabled` now defaults to 1. It is new wording with nothing before it to measure against;
+the two defects it shipped closed with are fixed first:
+
+- **A reply cut off by a restart waited up to 8 minutes** to be written again, and the person could not
+  ask anything meanwhile. The lease was twice the longest model call (480 s) because nothing renewed it
+  while a model was silent. Now a live writer renews it every third of `LEASE`, and `LEASE` is 15 s.
+  `test_a_live_writer_keeps_its_reply_through_a_model_call_longer_than_the_lease` fails on the old code
+  (480 s), and fails again with the renewal switched off (the reply is written twice).
+- **Reply threads had no ceiling**: each question got a thread and a provider connection of its own.
+  Each API process now writes at most `WRITERS` (8) at once, and the rest wait, `pending`.
+  `test_replies_beyond_the_writer_ceiling_wait_their_turn` fails on the old code.
+
+**Retention and the database budget are platform settings**, with controls in the admin panel:
+`corpus_retention_days` (30, unchanged) and `database_budget_mb` (512, Atlas's free tier). The archive
+pass and the size alert read them. The database stat now reads "X of Y MB". Each has a test that fails
+without the setting being read.
+
+**Deleted, with no caller on the site** (the owner's decision, 2026-10-30): `GET /status`, which ran the
+whole alert match on every load; `GET /onboarding/state` and `GET /onboarding/config`, which the
+dashboard and `/onboarding/review` already answer, so their tests now read those; and
+`POST /credentials/{kind}/reveal`. The contract went from 67 paths to 64.
+
+**`ProxyCredential.daily_cap_mb` is gone.** It was a second answer beside the `proxy_mb_per_day` limit,
+read only for an account that no longer existed; such an account now gets no proxy budget. The copy
+from Postgres no longer reads the column.
+
+Dead code removed: `libs.db.transaction()`, which nothing called (and the replica set the test docs
+asked for because of it), `numpy` and `joblib` in `requirements-dev.txt`, and `MODEL_DIR` in
+`deploy/.env.example`. All four were left over from the switched-off model. The README now says how to run the platform on your own
+computer, and no longer says "Phase 1 of 4".
+
+Gates, run locally, in this order: lint-imports 2 kept, 0 broken; ruff clean; `python -m libs.db --prune`
+on an empty database clean; contract 64 paths, regenerated; web build; pytest 1,183 passed, 3 skipped
+(the Postgres copy source, the reference checkout, one empty guard). The full copy test, run separately
+against a Postgres at the tag's schema: 2 passed.
+
 ## 2026-10-30 — MongoDB instead of Postgres (Phase 9)
 
 **The owner's decision:** users, their logins and everything about them live in MongoDB Atlas.

@@ -9,16 +9,11 @@ Against a local `mongod`, **never Atlas**: the tests empty every collection they
 `conftest.py` refuses a `MONGODB_URI` that names an Atlas cluster. Each run works in its own
 `test_<pid>` database and drops it at the end.
 
-A one-node replica set, because the platform uses transactions and those need one:
+A standalone `mongod` is enough: nothing uses a multi-document transaction. The one the README's
+"Run it on your computer" starts will do, since every run uses a database of its own:
 
 ```bash
-# MongoDB Community Server 8.0 (the version Atlas runs), unpacked anywhere.
-mkdir -p /tmp/mongo-tests
-mongod --dbpath /tmp/mongo-tests --bind_ip 127.0.0.1 --port 27018 --replSet rs0 --fork \
-       --logpath /tmp/mongo-tests/mongod.log
-mongosh --port 27018 --eval 'rs.initiate({_id: "rs0", members: [{_id: 0, host: "127.0.0.1:27018"}]})'
-
-export MONGODB_URI="mongodb://127.0.0.1:27018/?replicaSet=rs0"
+export MONGODB_URI="mongodb://127.0.0.1:27017"
 pytest tests/ -q -rs
 ```
 

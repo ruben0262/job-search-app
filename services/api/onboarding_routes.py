@@ -77,12 +77,6 @@ class ConfigChoices(BaseModel):
     remote_policies: list[ConfigChoice]
 
 
-class ConfigOut(BaseModel):
-    # Stored, else what their documents suggest; `None` only for an account with nothing to go on.
-    config: dict | None
-    choices: ConfigChoices
-
-
 class WordSuggestion(BaseModel):
     term: str
     reason: str
@@ -127,12 +121,6 @@ class HistorySaved(SaveResult):
 class HistoryText(BaseModel):
     text: str
     chars: int
-
-
-@router.get("/state", response_model=OnboardingSteps)
-def state(db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(current_user)) -> dict:
-    """What is done, what is left, and where to send the user next."""
-    return onboarding_state(db, user_id).as_dict()
 
 
 # ── documents: the CV, and the "about you" text ───────────────────────────────────────────────
@@ -210,18 +198,6 @@ def put_identity(body: IdentitySchema, db: Database = Depends(get_db),
     _stamp(db, user_id, full_name=body.full_name, links=links, hard_data_changed_at=now())
     audit(logger, "onboarding.identity", user=user_id, links=len(links))
     return {"status": "saved", "full_name": body.full_name, "links": links}
-
-
-@router.get("/config", response_model=ConfigOut)
-def get_config(db: Database = Depends(get_db),
-               user_id: _uuid.UUID = Depends(current_user)) -> dict:
-    """The search, read in the *current* shape whatever version it was written in, and the choices."""
-    stored = TenantRepository(db).get_config(user_id)
-    if stored is not None:
-        return {"config": migrate_config(stored), "choices": _choices()}
-    documents = suggestions.documents_of(db, user_id)
-    return {"config": _prefill(read(documents), suggestions.current(db, user_id)) if documents else None,
-            "choices": _choices()}
 
 
 @router.put("/config", response_model=SaveResult)

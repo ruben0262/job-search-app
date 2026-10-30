@@ -8,6 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from libs import limits
 from libs.credentials import validate_credential
 from libs.db import database, find_one
 from libs.db.models import ProxyCredential, User
@@ -64,7 +65,8 @@ def main(argv: list[str] | None = None) -> int:
                 db[ProxyCredential.COLLECTION].update_one({"user_id": user.id}, {"$set": {
                     "status": "healthy", "fail_streak": 0, "last_error": None}})
                 print("credential was quarantined — reset to healthy for the new URL")
-            print(f"proxy credential ready: {credential.daily_cap_mb} MB/day cap")
+            cap = limits.resolve(user, "proxy_mb_per_day")
+            print(f"proxy credential ready: {'unlimited' if cap is None else cap} MB/day cap")
 
     print(f"stored {args.kind} for {args.email}")
     return 0

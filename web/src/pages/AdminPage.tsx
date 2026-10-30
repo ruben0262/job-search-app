@@ -27,6 +27,7 @@ type Health = {
   users_active: number;
   corpus_rows: number;
   database_bytes: number;
+  database_budget_bytes: number;
   connections: number;
   alerts: Alert[];
   latency: {
@@ -166,8 +167,10 @@ type Settings = {
   /** Per provider: `anthropic`, `gemini`, `openai`. */
   document_models: Record<string, string>;
   document_keep_hours: number;
-  /** The help chat: 0 off, 1 on. Off until the owner approves its prompt. */
+  /** The help chat: 0 off, 1 on. */
   support_chat_enabled: number;
+  corpus_retention_days: number;
+  database_budget_mb: number;
 };
 
 type Source = {
@@ -446,7 +449,10 @@ export function AdminPage() {
       <dl className="stats">
         <Stat value={health.corpus_rows.toLocaleString()} label="corpus rows" />
         <Stat value={`${health.users_active}/${health.users_total}`} label="active users" />
-        <Stat value={`${Math.round(health.database_bytes / 1024 ** 2)} MB`} label="database" />
+        <Stat
+          value={`${Math.round(health.database_bytes / 1024 ** 2)} of ${Math.round(health.database_budget_bytes / 1024 ** 2)} MB`}
+          label="database"
+        />
       </dl>
 
           <p className="kicker" style={{ marginTop: "2.5rem" }}>Queue</p>
@@ -648,6 +654,43 @@ export function AdminPage() {
             ))}
           </select>
 
+          <p className="label" style={{ marginTop: "1.5rem" }}>Jobs kept for</p>
+          <span className="hint">
+            How long a job stays before it is moved to the archive file. Jobs somebody applied to
+            or hid stay regardless. Jobs are what fill the database, so this is the control when it
+            nears its size.
+          </span>
+          <select
+            value={settings.corpus_retention_days}
+            disabled={savePlatform.busy}
+            aria-label="Jobs kept for"
+            onChange={(event) =>
+              void savePlatform.run("corpus_retention_days", Number(event.target.value))}
+            style={{ maxWidth: "10rem", marginTop: "0.5rem" }}
+          >
+            {[7, 10, 14, 30, 60, 90].map((n) => (
+              <option key={n} value={n}>{n} days</option>
+            ))}
+          </select>
+
+          <p className="label" style={{ marginTop: "1.5rem" }}>Database size</p>
+          <span className="hint">
+            The size of the MongoDB Atlas tier. An alert goes out at 80% of it, before Atlas stops
+            accepting writes. Change it when the tier changes.
+          </span>
+          <select
+            value={settings.database_budget_mb}
+            disabled={savePlatform.busy}
+            aria-label="Database size"
+            onChange={(event) =>
+              void savePlatform.run("database_budget_mb", Number(event.target.value))}
+            style={{ maxWidth: "10rem", marginTop: "0.5rem" }}
+          >
+            {[512, 2048, 5120, 10240].map((n) => (
+              <option key={n} value={n}>{n < 1024 ? `${n} MB` : `${n / 1024} GB`}</option>
+            ))}
+          </select>
+
           <p className="label" style={{ marginTop: "1.5rem" }}>LinkedIn accounts per tick</p>
           <span className="hint">
             How many users&apos; LinkedIn passes run at once. Not a per-user setting — each account
@@ -709,8 +752,7 @@ export function AdminPage() {
 
           <p className="label" style={{ marginTop: "1.5rem" }}>Help chat</p>
           <span className="hint">
-            Answers questions on the Help page, with the AI document models above. Off until its
-            prompt is approved.
+            Answers questions on the Help page, with the AI document models above.
           </span>
           <select
             value={settings.support_chat_enabled}

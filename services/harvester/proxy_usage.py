@@ -44,7 +44,7 @@ class ProxyUsageRepository:
 
         if self.roll_daily_window(user_id):
             credential = self._credential(user_id)
-        remaining = float(self._cap(user_id, credential)) - float(credential.mb_used_today)
+        remaining = self._cap(user_id) - float(credential.mb_used_today)
         if remaining <= 0:
             return None
 
@@ -62,19 +62,18 @@ class ProxyUsageRepository:
         if credential is None:
             raise ProxyCapExceeded(f"user {user_id} has no proxy credential")
         used = float(credential.mb_used_today) + projected_mb
-        cap = self._cap(user_id, credential)
+        cap = self._cap(user_id)
         if used >= float(cap):
             raise ProxyCapExceeded(
                 f"user {user_id} is at their daily proxy cap ({used:.1f}/{cap} MB)")
 
-    def _cap(self, user_id: UUID, credential: ProxyCredential) -> float:
-        """This account's daily ceiling, from the admin panel first."""
+    def _cap(self, user_id: UUID) -> float:
+        """This account's daily ceiling: its `proxy_mb_per_day` limit, set in the admin panel. An
+        account that no longer exists has none."""
         user = get(self._db, User, user_id)
-        if user is None:
-            return float(credential.daily_cap_mb)
-        override = limits.resolve(user, "proxy_mb_per_day")
-        # `None` is Unlimited, not "fall back to the stored cap".
-        return math.inf if override is None else float(override)
+        cap = limits.resolve(user, "proxy_mb_per_day") if user else 0
+        # `None` is Unlimited.
+        return math.inf if cap is None else float(cap)
 
     # ── metering ─────────────────────────────────────────────────────────────────────────────
 

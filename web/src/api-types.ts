@@ -730,26 +730,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/credentials/{kind}/reveal": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Reveal Credential
-         * @description Hand back the plaintext, once, after the account password.
-         */
-        post: operations["reveal_credential_credentials__kind__reveal_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/dashboard": {
         parameters: {
             query?: never;
@@ -1046,11 +1026,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Get Config
-         * @description The search, read in the *current* shape whatever version it was written in, and the choices.
-         */
-        get: operations["get_config_onboarding_config_get"];
+        get?: never;
         /**
          * Put Config
          * @description Validate and store.
@@ -1131,26 +1107,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/onboarding/state": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * State
-         * @description What is done, what is left, and where to send the user next.
-         */
-        get: operations["state_onboarding_state_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/push/key": {
         parameters: {
             query?: never;
@@ -1190,26 +1146,6 @@ export interface paths {
          * @description Forget this browser.
          */
         delete: operations["unsubscribe_push_subscribe_delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/status": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Status
-         * @description Every component, one call — the page shows them together or not at all.
-         */
-        get: operations["status_status_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1562,14 +1498,6 @@ export interface components {
             max_locations: number;
             /** Remote Policies */
             remote_policies: components["schemas"]["ConfigChoice"][];
-        };
-        /** ConfigOut */
-        ConfigOut: {
-            choices: components["schemas"]["ConfigChoices"];
-            /** Config */
-            config: {
-                [key: string]: unknown;
-            } | null;
         };
         /** ConsentBody */
         ConsentBody: {
@@ -2055,11 +1983,6 @@ export interface components {
             /** Token */
             token: string;
         };
-        /** RevealBody */
-        RevealBody: {
-            /** Password */
-            password: string;
-        };
         /** ReviewPage */
         ReviewPage: {
             choices: components["schemas"]["ConfigChoices"];
@@ -2134,30 +2057,6 @@ export interface components {
             email: string;
             /** Password */
             password: string;
-        };
-        /** StatusComponent */
-        StatusComponent: {
-            /** Detail */
-            detail: string;
-            /** Key */
-            key: string;
-            /** Label */
-            label: string;
-            /**
-             * State
-             * @enum {string}
-             */
-            state: "ok" | "warn" | "down" | "off";
-        };
-        /** StatusReport */
-        StatusReport: {
-            /**
-             * Checked At
-             * Format: date-time
-             */
-            checked_at: string;
-            /** Components */
-            components: components["schemas"]["StatusComponent"][];
         };
         /** StoredCredential */
         StoredCredential: {
@@ -3623,43 +3522,6 @@ export interface operations {
             };
         };
     };
-    reveal_credential_credentials__kind__reveal_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                kind: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RevealBody"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     dashboard_dashboard_get: {
         parameters: {
             query?: never;
@@ -4123,26 +3985,6 @@ export interface operations {
             };
         };
     };
-    get_config_onboarding_config_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ConfigOut"];
-                };
-            };
-        };
-    };
     put_config_onboarding_config_put: {
         parameters: {
             query?: never;
@@ -4304,26 +4146,6 @@ export interface operations {
             };
         };
     };
-    state_onboarding_state_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OnboardingSteps"];
-                };
-            };
-        };
-    };
     key_push_key_get: {
         parameters: {
             query?: never;
@@ -4406,26 +4228,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    status_status_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["StatusReport"];
                 };
             };
         };

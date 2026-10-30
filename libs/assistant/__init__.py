@@ -8,8 +8,10 @@ Its design is the owner's project-planner portal, ported as ideas rather than co
   and comes back finds the answer there.
 - **Restart-proof without a journal.** A reply still `pending` or `streaming` when the API starts is
   written again from the start (`resume`): the rows are the journal. Whether a live process is
-  writing one is a lease on its row, taken in one atomic write and renewed at every save, so four
-  workers starting at once write it once, and a process that dies lets go when the lease runs out.
+  writing one is a lease on its row, taken in one atomic write and renewed while the writer lives, so
+  four workers starting at once write it once, and a process that dies lets go within one `LEASE`.
+- **A ceiling on writers.** Each API process writes at most `WRITERS` replies at once; the rest wait
+  their turn, `pending`.
 - **A guard on every tool call** (`Tools.call`): a lookup runs; a change to the account becomes a
   button under the reply. Nothing here can make the change — that code is in the API, where only the
   person's tap reaches it.
@@ -23,11 +25,13 @@ import threading
 import time
 import uuid
 from collections.abc import Callable
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import timedelta
 
 from pymongo import ReturnDocument
 from pymongo.database import Database
+from pymongo.errors import PyMongoError
 
 from libs import limits, settings, suggestions
 from libs.contracts.config import location_search_name, migrate_config
@@ -36,7 +40,6 @@ from libs.db.models import SetupMessage, User
 from libs.documents.read import LANGUAGE_NAMES
 from libs.legal import has_consented
 from libs.llm import PLATFORM, LlmError, ai_requests_today, paying_client, platform_left, resolve
-from libs.llm.client import TIMEOUT_SEC
 from libs.matching import green_words, matching_jobs, norm, pattern, score
 from libs.prompts import load
 from libs.secrets import SecretStore
@@ -56,9 +59,13 @@ MAX_TOKENS = 1_024
 # How far behind the page may be, in seconds: the longest the writer waits between saves, and the
 # stream between reads.
 TICK = 0.1
-# How long a reply's writer holds it between saves. Twice the longest a live writer can be silent —
-# one model call — so only a writer that has died loses it, and a restart's replies resume after it.
-LEASE = timedelta(seconds=TIMEOUT_SEC * 2)
+# How long a reply's writer holds it without renewing. A live writer renews it every third of that,
+# silent model call or not (`_Reply.keep`), so only a writer that has died loses it — and a reply a
+# restart cut off is written again within this, not after the longest a model call may take.
+LEASE = timedelta(seconds=15)
+# The most replies one API process writes at once. Each is a thread and a provider connection for as
+# long as the reply takes; the rest wait, `pending`, in the order they were asked.
+WRITERS = 8
 PROVIDER_NAMES = {"anthropic": "Claude", "gemini": "Gemini", "openai": "OpenAI"}
 
 
@@ -283,8 +290,21 @@ class _Reply:
     def __init__(self, db: Database, row: SetupMessage):
         self.db, self.row = db, row
         self.text, self.steps, self.saved, self.first, self.gap = "", [], 0.0, None, False
+        self.ended = threading.Event()
         row.status, row.error = "streaming", None
         self.save()
+        threading.Thread(target=self.keep, daemon=True, name=f"support-lease-{row.id}").start()
+
+    def keep(self) -> None:
+        """Renew the lease every third of it until the reply ends, however long a model call is silent."""
+        while not self.ended.wait(LEASE.total_seconds() / 3):
+            try:
+                self.db[SetupMessage.COLLECTION].update_one(
+                    {"_id": self.row.id, "lease_holder": self.row.lease_holder,
+                     "status": {"$in": list(RUNNING)}}, {"$set": {"lease_until": now() + LEASE}})
+            except PyMongoError as exc:
+                logger.warning("support: could not renew the lease on reply %s, trying again in %.0fs: "
+                               "%s", self.row.id, LEASE.total_seconds() / 3, exc)
 
     def write(self, chunk: str) -> None:
         # The first words are saved at once: how soon they show is what the person feels.
@@ -312,15 +332,25 @@ class _Reply:
         self.saved = time.monotonic()
 
 
-def start(reply_id: int) -> threading.Thread:
-    """Write this reply on a thread of its own, so leaving the page cannot stop it."""
-    thread = threading.Thread(target=_in_background, args=(reply_id,), daemon=True,
-                              name=f"support-{reply_id}")
-    thread.start()
-    return thread
+_writers = ThreadPoolExecutor(max_workers=WRITERS, thread_name_prefix="support")
+# Replies waiting here for a writer, so a page asking again while one waits does not queue it twice.
+_waiting: set[int] = set()
+_waiting_lock = threading.Lock()
+
+
+def start(reply_id: int) -> Future | None:
+    """Write this reply off the request, so leaving the page cannot stop it: on one of this process's
+    `WRITERS`, once one is free. `None` when it is already waiting for one."""
+    with _waiting_lock:
+        if reply_id in _waiting:
+            return None
+        _waiting.add(reply_id)
+    return _writers.submit(_in_background, reply_id)
 
 
 def _in_background(reply_id: int) -> None:
+    with _waiting_lock:
+        _waiting.discard(reply_id)
     try:
         run(database(), reply_id)
     except Exception:  # a thread's exception otherwise goes to stderr and is lost
@@ -345,7 +375,8 @@ def run(db: Database, reply_id: int) -> None:
 
 
 def resume() -> int:
-    """Start every reply the API's last stop cut off: the rows are the journal."""
+    """Start every reply the API's last stop cut off: the rows are the journal. One still held by a
+    writer that stopped with the last process is started by the page's stream once its lease runs out."""
     try:
         cut_off = database()[SetupMessage.COLLECTION].distinct(
             "_id", {"agent": SUPPORT, "status": {"$in": list(RUNNING)}})
@@ -364,6 +395,17 @@ def _write(db: Database, row: SetupMessage) -> None:
     started, user = time.monotonic(), get(db, User, row.user_id)
     payer = (row.tool_calls or {}).get("payer") or ""
     reply = _Reply(db, row)
+    try:
+        _answer(db, row, user, payer, reply)
+    finally:
+        reply.ended.set()
+    logger.info("support: reply %s for user %s %s in %.1fs, first text after %s, %d step(s), paid by %s",
+                row.id, user.id, row.status, time.monotonic() - started,
+                f"{reply.first - started:.2f}s" if reply.first else "none", len(reply.steps), payer)
+
+
+def _answer(db: Database, row: SetupMessage, user: User, payer: str, reply: _Reply) -> None:
+    """Write the reply through to its end: done, or failed with why."""
     status, error = "done", None
     try:
         messages, tools = _transcript(db, row), Tools(db, user, reply)
@@ -394,9 +436,6 @@ def _write(db: Database, row: SetupMessage) -> None:
                      exc_info=not isinstance(exc, LlmError))
     row.status, row.error = status, error
     reply.save()
-    logger.info("support: reply %s for user %s %s in %.1fs, first text after %s, %d step(s), paid by %s",
-                row.id, user.id, status, time.monotonic() - started,
-                f"{reply.first - started:.2f}s" if reply.first else "none", len(reply.steps), payer)
 
 
 def _transcript(db: Database, row: SetupMessage) -> list[dict]:

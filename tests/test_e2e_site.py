@@ -1,7 +1,7 @@
 """A new person, end to end, on the real built site: sign up, open the emailed link, the three
 onboarding screens, their jobs with why each one is there, and a CV that downloads as a PDF.
 
-Headless Chromium drives `web/dist`, served by the real API on a real Postgres, with the real docgen
+Headless Chromium drives `web/dist`, served by the real API on a real MongoDB, with the real docgen
 worker beside it rendering through the real Chrome. Only the outside world is faked: the email is
 printed instead of sent, and nothing here can reach Telegram or an AI — an instant CV needs neither.
 

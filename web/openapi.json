@@ -465,31 +465,6 @@
         "title": "ConfigChoices",
         "type": "object"
       },
-      "ConfigOut": {
-        "properties": {
-          "choices": {
-            "$ref": "#/components/schemas/ConfigChoices"
-          },
-          "config": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Config"
-          }
-        },
-        "required": [
-          "config",
-          "choices"
-        ],
-        "title": "ConfigOut",
-        "type": "object"
-      },
       "ConsentBody": {
         "properties": {
           "version": {
@@ -1920,21 +1895,6 @@
         "title": "ResetRequest",
         "type": "object"
       },
-      "RevealBody": {
-        "properties": {
-          "password": {
-            "maxLength": 1024,
-            "minLength": 1,
-            "title": "Password",
-            "type": "string"
-          }
-        },
-        "required": [
-          "password"
-        ],
-        "title": "RevealBody",
-        "type": "object"
-      },
       "ReviewPage": {
         "properties": {
           "choices": {
@@ -2137,62 +2097,6 @@
           "password"
         ],
         "title": "SignupRequest",
-        "type": "object"
-      },
-      "StatusComponent": {
-        "properties": {
-          "detail": {
-            "title": "Detail",
-            "type": "string"
-          },
-          "key": {
-            "title": "Key",
-            "type": "string"
-          },
-          "label": {
-            "title": "Label",
-            "type": "string"
-          },
-          "state": {
-            "enum": [
-              "ok",
-              "warn",
-              "down",
-              "off"
-            ],
-            "title": "State",
-            "type": "string"
-          }
-        },
-        "required": [
-          "key",
-          "label",
-          "state",
-          "detail"
-        ],
-        "title": "StatusComponent",
-        "type": "object"
-      },
-      "StatusReport": {
-        "properties": {
-          "checked_at": {
-            "format": "date-time",
-            "title": "Checked At",
-            "type": "string"
-          },
-          "components": {
-            "items": {
-              "$ref": "#/components/schemas/StatusComponent"
-            },
-            "title": "Components",
-            "type": "array"
-          }
-        },
-        "required": [
-          "components",
-          "checked_at"
-        ],
-        "title": "StatusReport",
         "type": "object"
       },
       "StoredCredential": {
@@ -4471,61 +4375,6 @@
         ]
       }
     },
-    "/credentials/{kind}/reveal": {
-      "post": {
-        "description": "Hand back the plaintext, once, after the account password.",
-        "operationId": "reveal_credential_credentials__kind__reveal_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "kind",
-            "required": true,
-            "schema": {
-              "title": "Kind",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RevealBody"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Reveal Credential Credentials  Kind  Reveal Post",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Reveal Credential",
-        "tags": [
-          "credentials"
-        ]
-      }
-    },
     "/dashboard": {
       "get": {
         "description": "Everything the front page shows, in one call.",
@@ -5202,26 +5051,6 @@
       }
     },
     "/onboarding/config": {
-      "get": {
-        "description": "The search, read in the *current* shape whatever version it was written in, and the choices.",
-        "operationId": "get_config_onboarding_config_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ConfigOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Get Config",
-        "tags": [
-          "onboarding"
-        ]
-      },
       "put": {
         "description": "Validate and store.",
         "operationId": "put_config_onboarding_config_put",
@@ -5411,28 +5240,6 @@
         ]
       }
     },
-    "/onboarding/state": {
-      "get": {
-        "description": "What is done, what is left, and where to send the user next.",
-        "operationId": "state_onboarding_state_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OnboardingSteps"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "State",
-        "tags": [
-          "onboarding"
-        ]
-      }
-    },
     "/push/key": {
       "get": {
         "description": "The public half of the platform's VAPID key pair: what a browser subscribes with.",
@@ -5534,28 +5341,6 @@
         "summary": "Subscribe",
         "tags": [
           "push"
-        ]
-      }
-    },
-    "/status": {
-      "get": {
-        "description": "Every component, one call \u2014 the page shows them together or not at all.",
-        "operationId": "status_status_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StatusReport"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Status",
-        "tags": [
-          "status"
         ]
       }
     },

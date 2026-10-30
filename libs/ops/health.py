@@ -8,6 +8,7 @@ from pymongo.database import Database
 
 from libs.db.models import CorpusJob, ProxyCredential, QueueJob, User, UserSecret
 from libs.db.models.queue import LANES
+from libs.settings import database_budget_bytes
 
 # What a lane's oldest waiting job is *expected* to be, in minutes.
 EXPECTED_WAIT_MIN = {"notify": 5, "docgen": 10}
@@ -45,6 +46,8 @@ class PlatformHealth:
     corpus_rows: int
     # Data and indexes, which is what Atlas's free-tier ceiling counts (ROADMAP Phase 9).
     database_bytes: int
+    # What it must stay under: the operator's setting, the tier's size.
+    database_budget_bytes: int
     connections: int
     users: list[UserHealth] = field(default_factory=list)
 
@@ -117,6 +120,7 @@ def platform_health(db: Database, *, include_users: bool = True) -> PlatformHeal
         users_active=db[User.COLLECTION].count_documents({"active": True}),
         corpus_rows=db[CorpusJob.COLLECTION].estimated_document_count(),
         database_bytes=int(size.get("dataSize", 0) + size.get("indexSize", 0)),
+        database_budget_bytes=database_budget_bytes(db),
         connections=int(db.command("serverStatus")["connections"]["current"]),
         users=user_health(db) if include_users else [],
     )

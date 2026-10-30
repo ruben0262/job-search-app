@@ -124,13 +124,16 @@ DEFAULT_SOURCE_PAGES_PER_CYCLE: dict[str, int] = {
 DEFAULT_LINKEDIN_CONCURRENT_USERS = 4
 
 # How long a posting stays in the corpus before it is archived to a file and deleted
-# (`libs.corpus.archive`). Thirty days, set by the owner 2026-08-11.
+# (`libs.corpus.archive`). Thirty days, set by the owner 2026-08-11; a setting since 2026-10-30,
+# because on Atlas the corpus is what decides whether the database fits its tier.
 #
 # One definition, because the number this replaced had two: `CORPUS_HOT_DAYS = 90` in the corpus
 # repository against the 30 the owner had stated twice, and the code wins that argument silently.
-# Not a platform setting yet — nothing has needed it changed on a live box, and the panel control
-# every setting must have is worth adding when somebody wants to move it, not before.
-CORPUS_RETENTION_DAYS = 30
+DEFAULT_CORPUS_RETENTION_DAYS = 30
+
+# The database's size ceiling, in MB of data and indexes: Atlas's free tier stops accepting writes at
+# 512 (ROADMAP Phase 9). The health alert pages at 80% of it, so it changes when the tier does.
+DEFAULT_DATABASE_BUDGET_MB = 512
 
 # How long one harvest cycle may spend before it must stop and let the next tick have the box.
 # Below `harvester.service`'s TimeoutStartSec, which is what kills a cycle that ignores this — and
@@ -247,9 +250,10 @@ DEFAULT_DOCUMENT_MODELS: dict[str, str] = {
 # person who comes back later builds it again.
 DEFAULT_DOCUMENT_KEEP_HOURS = 1
 
-# Whether the help chat answers (`services/api/support_routes.py`). Off until the owner approves its
-# prompt, `libs/prompts/support.md` (CLAUDE.md §3a): 1 is on. It answers with `document_models`.
-DEFAULT_SUPPORT_CHAT_ENABLED = 0
+# Whether the help chat answers (`services/api/support_routes.py`): 1 is on. Its prompt,
+# `libs/prompts/support.md`, was approved by the owner on 2026-10-30 (CLAUDE.md §3a). It answers with
+# `document_models`.
+DEFAULT_SUPPORT_CHAT_ENABLED = 1
 
 
 DEFAULTS: dict[str, object] = {
@@ -269,6 +273,8 @@ DEFAULTS: dict[str, object] = {
     "document_models": DEFAULT_DOCUMENT_MODELS,
     "document_keep_hours": DEFAULT_DOCUMENT_KEEP_HOURS,
     "support_chat_enabled": DEFAULT_SUPPORT_CHAT_ENABLED,
+    "corpus_retention_days": DEFAULT_CORPUS_RETENTION_DAYS,
+    "database_budget_mb": DEFAULT_DATABASE_BUDGET_MB,
 }
 
 
@@ -356,6 +362,16 @@ def document_model(db: Database, provider: str) -> str:
 def document_keep_hours(db: Database) -> int:
     """How many hours a built document is kept for download."""
     return int(get(db, "document_keep_hours"))
+
+
+def corpus_retention_days(db: Database) -> int:
+    """How many days a posting stays in the corpus before it is archived."""
+    return int(get(db, "corpus_retention_days"))
+
+
+def database_budget_bytes(db: Database) -> int:
+    """The size the database must stay under, data and indexes."""
+    return int(get(db, "database_budget_mb")) * 1024**2
 
 
 def freshness_hours(db: Database, source: str) -> int:

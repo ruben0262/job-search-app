@@ -28,7 +28,7 @@ from pymongo.database import Database
 
 from libs.db import now
 from libs.db.models import CorpusJob, UserJobState
-from libs.settings import CORPUS_RETENTION_DAYS
+from libs.settings import corpus_retention_days
 
 logger = logging.getLogger(__name__)
 
@@ -65,16 +65,19 @@ def _plain(value: object) -> object:
     raise TypeError(f"no archive representation for {type(value).__name__}")
 
 
-def archive_expired(db: Database, *, retention_days: int = CORPUS_RETENTION_DAYS,
+def archive_expired(db: Database, *, retention_days: int | None = None,
                     directory: Path | None = None,
                     limit: int = ARCHIVE_BATCH) -> ArchiveResult:
-    """Move postings older than `retention_days` out of the corpus and into the archive file.
+    """Move postings older than `retention_days` — the operator's setting unless given — out of the
+    corpus and into the archive file.
 
     The order is deliberate: **write, then delete.** If the write raises, nothing is deleted and the
     next pass tries the same rows again. The archive is append-only and a crash between the write
     and the delete can repeat a row in it — a duplicate line is recoverable and a missing posting is
     not, so the trade is taken in that direction on purpose.
     """
+    if retention_days is None:
+        retention_days = corpus_retention_days(db)
     cutoff = now() - timedelta(days=retention_days)
     kept = db[UserJobState.COLLECTION].distinct("job_id", ACTED_ON)
     rows = list(db[CorpusJob.COLLECTION].find({"first_seen_at": {"$lt": cutoff}, "_id": {"$nin": kept}},
