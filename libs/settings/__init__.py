@@ -131,6 +131,10 @@ DEFAULT_LINKEDIN_CONCURRENT_USERS = 4
 # repository against the 30 the owner had stated twice, and the code wins that argument silently.
 DEFAULT_CORPUS_RETENTION_DAYS = 30
 
+# Where the Help page's contact form is emailed, with the person's own address to reply to. The
+# FlowSolutions inbox the owner's marketplace app already sends its support mail to.
+DEFAULT_SUPPORT_EMAIL = "hello@flow-solutions.xyz"
+
 # The database's size ceiling, in MB of data and indexes: Atlas's free tier stops accepting writes at
 # 512 (ROADMAP Phase 9). The health alert pages at 80% of it, so it changes when the tier does.
 DEFAULT_DATABASE_BUDGET_MB = 512
@@ -275,6 +279,7 @@ DEFAULTS: dict[str, object] = {
     "support_chat_enabled": DEFAULT_SUPPORT_CHAT_ENABLED,
     "corpus_retention_days": DEFAULT_CORPUS_RETENTION_DAYS,
     "database_budget_mb": DEFAULT_DATABASE_BUDGET_MB,
+    "support_email": DEFAULT_SUPPORT_EMAIL,
 }
 
 

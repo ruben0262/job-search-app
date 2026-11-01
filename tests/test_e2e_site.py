@@ -226,6 +226,47 @@ def test_step_two_says_what_it_found_with_switches_suggestions_and_round_choices
     assert section["remote_policy"] == "any"
 
 
+def test_the_tabs_in_order_and_what_each_one_is_for(site, capsys):
+    """Settings last; Applied keeps what was applied to; Help sends a message to a person; Chat is its
+    own tab; Admin is there for an admin only, and shows what was sent from Help."""
+    from libs.db import database
+
+    base, email, _ = site
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = browser.new_context(viewport={"width": 1280, "height": 860}).new_page()
+        _sign_up(page, base, email, capsys)
+        _onboard(page)
+        tabs = page.locator("nav .places a")
+        expect(tabs).to_have_text(["Jobs", "Applied", "My search", "My documents", "Chat", "Help", "Settings"])
+
+        card = page.locator("article.job-card").filter(has=page.get_by_role("link", name=TITLES[0], exact=True))
+        card.get_by_role("button", name="I applied").click()
+        expect(card.get_by_role("button", name="I applied ✓")).to_be_visible()
+        tabs.filter(has_text="Applied").click()
+        expect(page.get_by_role("heading", name="You applied to 1 job")).to_be_visible()
+        expect(page.get_by_role("link", name=TITLES[0], exact=True)).to_be_visible()
+
+        tabs.filter(has_text="Help").click()
+        page.get_by_label("Subject").fill("My CV shows the wrong city")
+        page.get_by_label("Message").fill("It says Berlin, but I moved to Paris last month.")
+        page.get_by_role("button", name="Send message").click()
+        expect(page.get_by_role("heading", name="Message received")).to_be_visible()
+        expect(page.get_by_text(f"We will reply to {email}.")).to_be_visible()
+
+        tabs.filter(has_text="Chat").click()
+        expect(page.get_by_role("heading", name="Ask anything about your jobs")).to_be_visible()
+
+        database().users.update_one({"email": email}, {"$set": {"is_admin": True}})
+        page.reload()
+        expect(tabs).to_have_text(["Jobs", "Applied", "My search", "My documents", "Chat", "Help", "Admin",
+                                   "Settings"])
+        tabs.filter(has_text="Admin").click()
+        page.get_by_role("button", name="Messages").click()
+        expect(page.get_by_text("My CV shows the wrong city")).to_be_visible()
+        browser.close()
+
+
 def _sign_up(page, base: str, email: str, capsys) -> None:
     """Sign up, and open the link from the email, which is printed rather than sent."""
     page.goto(f"{base}/#/signup")

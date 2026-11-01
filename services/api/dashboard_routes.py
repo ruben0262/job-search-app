@@ -189,6 +189,31 @@ def _row(match: Match, applied_at: datetime | None) -> FeedJob:
                    applied_at=applied_at)
 
 
+class AppliedJob(BaseModel):
+    id: int
+    title: str
+    company: str | None
+    location: str | None
+    url: str
+    applied_at: datetime
+
+
+@router.get("/applied")
+def applied(db: Database = Depends(get_db),
+            user_id: _uuid.UUID = Depends(current_user)) -> list[AppliedJob]:
+    """Every job this person said they applied to, the latest first, whether or not it still matches
+    their words. Retention keeps these postings (`libs.corpus.archive.ACTED_ON`)."""
+    rows = list(db[UserJobState.COLLECTION].find(
+        {"user_id": user_id, "applied_at": {"$ne": None}}, {"job_id": 1, "applied_at": 1},
+        sort=[("applied_at", -1)]))
+    jobs = {doc["_id"]: doc for doc in db[CorpusJob.COLLECTION].find(
+        {"_id": {"$in": [row["job_id"] for row in rows]}}, {"title": 1, "company": 1, "location": 1, "url": 1})}
+    return [AppliedJob(id=row["job_id"], title=jobs[row["job_id"]]["title"],
+                       company=jobs[row["job_id"]].get("company"), location=jobs[row["job_id"]].get("location"),
+                       url=jobs[row["job_id"]]["url"], applied_at=row["applied_at"])
+            for row in rows if row["job_id"] in jobs]
+
+
 class JobMarks(BaseModel):
     job_id: int
     applied: bool

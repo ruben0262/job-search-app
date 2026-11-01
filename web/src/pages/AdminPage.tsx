@@ -171,6 +171,8 @@ type Settings = {
   support_chat_enabled: number;
   corpus_retention_days: number;
   database_budget_mb: number;
+  /** Where the Help page's contact form is emailed. */
+  support_email: string;
 };
 
 type Source = {
@@ -200,9 +202,14 @@ const TABS: [Tab, string][] = [
   ["pipeline", "Pipeline"],
   ["latency", "Latency"],
   ["accounts", "Accounts"],
+  ["messages", "Messages"],
 ];
 
-type Tab = "health" | "settings" | "corpus" | "pipeline" | "latency" | "accounts";
+type Tab = "health" | "settings" | "corpus" | "pipeline" | "latency" | "accounts" | "messages";
+
+/** One message from the Help page's contact form. */
+type ContactRow = { reference: string; email: string; subject: string; message: string; created_at: string;
+                    emailed: boolean };
 
 type CorpusJob = {
   id: number;
@@ -270,6 +277,12 @@ export function AdminPage() {
   // One source, one number.
   const savePlatform = useAction(async (key: string, value: number) => {
     const body = await api.put<{ settings: Settings }>(`/admin/settings/${key}`, { value });
+    setSettings(body.settings);
+  });
+
+  const saveAddress = useAction(async (value: string) => {
+    if (!value || value === settings?.support_email) return;
+    const body = await api.put<{ settings: Settings }>("/admin/settings/support_email", { value });
     setSettings(body.settings);
   });
 
@@ -750,6 +763,21 @@ export function AdminPage() {
           ))}
           <Error>{saveModel.error}</Error>
 
+          <p className="label" style={{ marginTop: "1.5rem" }}>Support address</p>
+          <span className="hint">
+            Where the Help page&apos;s contact form is emailed. Each message is also kept under
+            Messages, sent or not, and a reply goes to the person&apos;s own address.
+          </span>
+          <input
+            type="email"
+            aria-label="Support address"
+            defaultValue={settings.support_email}
+            disabled={saveAddress.busy}
+            onBlur={(event) => void saveAddress.run(event.target.value.trim())}
+            style={{ maxWidth: "20rem", marginTop: "0.5rem" }}
+          />
+          <Error>{saveAddress.error}</Error>
+
           <p className="label" style={{ marginTop: "1.5rem" }}>Help chat</p>
           <span className="hint">
             Answers questions on the Help page, with the AI document models above.
@@ -772,6 +800,7 @@ export function AdminPage() {
       {tab === "corpus" ? <CorpusTab /> : null}
       {tab === "pipeline" ? <PipelineTab /> : null}
       {tab === "latency" ? <LatencyTab /> : null}
+      {tab === "messages" ? <MessagesTab /> : null}
 
       {tab === "accounts" ? <>      <p className="kicker" style={{ marginTop: "2.5rem" }}>
         Accounts
@@ -880,6 +909,35 @@ function Stat({ value, label }: { value: string; label: string }) {
 
 
 /** What the shared corpus actually holds, and the terms filling it. */
+/** What people wrote on the Help page, newest first, and whether each reached the support inbox. */
+function MessagesTab() {
+  const [rows, setRows] = useState<ContactRow[] | null>(null);
+  useEffect(() => {
+    void api.get<ContactRow[]>("/admin/contact").then(setRows);
+  }, []);
+  if (rows === null) return <p className="muted">Loading messages…</p>;
+  if (rows.length === 0) return <p className="muted">Nobody has written yet.</p>;
+  return (
+    <div className="messages">
+      {rows.map((row) => (
+        <details key={row.reference} className="card">
+          <summary>
+            <strong>{row.subject}</strong>{" "}
+            <span className="small muted">
+              {row.reference} · {row.email} · {new Date(row.created_at).toLocaleString()}
+              {row.emailed ? "" : " · not emailed"}
+            </span>
+          </summary>
+          <p style={{ whiteSpace: "pre-wrap" }}>{row.message}</p>
+          <a className="small" href={`mailto:${row.email}?subject=${encodeURIComponent(`Re: ${row.subject} (${row.reference})`)}`}>
+            Reply to {row.email}
+          </a>
+        </details>
+      ))}
+    </div>
+  );
+}
+
 function CorpusTab() {
   const [page, setPage] = useState<CorpusPage | null>(null);
   const [keywords, setKeywords] = useState<Keywords | null>(null);

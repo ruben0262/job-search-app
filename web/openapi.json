@@ -275,6 +275,59 @@
         "title": "AiWriting",
         "type": "object"
       },
+      "AppliedJob": {
+        "properties": {
+          "applied_at": {
+            "format": "date-time",
+            "title": "Applied At",
+            "type": "string"
+          },
+          "company": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "company",
+          "location",
+          "url",
+          "applied_at"
+        ],
+        "title": "AppliedJob",
+        "type": "object"
+      },
       "Asked": {
         "properties": {
           "reply_id": {
@@ -524,6 +577,99 @@
           "disclosure"
         ],
         "title": "ConsentState",
+        "type": "object"
+      },
+      "ContactAddress": {
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "ContactAddress",
+        "type": "object"
+      },
+      "ContactReceipt": {
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "reference": {
+            "title": "Reference",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reference",
+          "email"
+        ],
+        "title": "ContactReceipt",
+        "type": "object"
+      },
+      "ContactRequest": {
+        "properties": {
+          "message": {
+            "maxLength": 4000,
+            "minLength": 10,
+            "title": "Message",
+            "type": "string"
+          },
+          "subject": {
+            "maxLength": 120,
+            "minLength": 3,
+            "pattern": "^[^\\r\\n]+$",
+            "title": "Subject",
+            "type": "string"
+          }
+        },
+        "required": [
+          "subject",
+          "message"
+        ],
+        "title": "ContactRequest",
+        "type": "object"
+      },
+      "ContactRow": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "emailed": {
+            "title": "Emailed",
+            "type": "boolean"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "reference": {
+            "title": "Reference",
+            "type": "string"
+          },
+          "subject": {
+            "title": "Subject",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reference",
+          "email",
+          "subject",
+          "message",
+          "created_at",
+          "emailed"
+        ],
+        "title": "ContactRow",
         "type": "object"
       },
       "CredentialBody": {
@@ -2943,6 +3089,32 @@
         ]
       }
     },
+    "/admin/contact": {
+      "get": {
+        "description": "Every contact message, newest first.",
+        "operationId": "contact_messages_admin_contact_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ContactRow"
+                  },
+                  "title": "Response Contact Messages Admin Contact Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Contact Messages",
+        "tags": [
+          "contact"
+        ]
+      }
+    },
     "/admin/corpus": {
       "get": {
         "description": "Search the shared corpus.",
@@ -3821,6 +3993,32 @@
         ]
       }
     },
+    "/applied": {
+      "get": {
+        "description": "Every job this person said they applied to, the latest first, whether or not it still matches\ntheir words. Retention keeps these postings (`libs.corpus.archive.ACTED_ON`).",
+        "operationId": "applied_applied_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AppliedJob"
+                  },
+                  "title": "Response Applied Applied Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Applied",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
     "/auth/forgot": {
       "post": {
         "description": "Email a reset link.",
@@ -4146,6 +4344,68 @@
         "summary": "Verify",
         "tags": [
           "auth"
+        ]
+      }
+    },
+    "/contact": {
+      "get": {
+        "description": "Where the form's messages go, for anyone who would rather use their own email app.",
+        "operationId": "contact_address_contact_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactAddress"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Contact Address",
+        "tags": [
+          "contact"
+        ]
+      },
+      "post": {
+        "description": "Send a message to support.",
+        "operationId": "contact_contact_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContactRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Contact",
+        "tags": [
+          "contact"
         ]
       }
     },

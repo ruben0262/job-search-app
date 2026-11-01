@@ -1458,8 +1458,14 @@ button.making::after {
     gap: 1rem;
   }
 
-  /* The five places become a tab bar along the bottom: where every phone app keeps them, in reach
-     of the thumb, with a picture and a word each. */
+  /* The places become a tab bar along the bottom: where every phone app keeps them, in reach of the
+     thumb, with a picture and a word each. As many columns as there are places; an admin's extra one
+     scrolls sideways on the narrowest phones rather than squeezing every word. */
+  /* Admin is a laptop tool; on a phone its tab would push Settings off the bar. */
+  .places a[href="#/admin"] {
+    display: none;
+  }
+
   .places {
     position: fixed;
     z-index: 30;
@@ -1467,7 +1473,10 @@ button.making::after {
     right: 0;
     bottom: 0;
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(3.4rem, 1fr);
+    overflow-x: auto;
+    scrollbar-width: none;
     gap: 0;
     padding-bottom: env(safe-area-inset-bottom);
     border-top: 1px solid var(--hairline);
@@ -1485,7 +1494,7 @@ button.making::after {
     padding: 0.45rem 0.15rem;
     border-bottom: none;
     font-family: var(--font-body);
-    font-size: 0.7rem;
+    font-size: 0.64rem;
     letter-spacing: 0;
     text-transform: none;
     text-align: center;
@@ -2404,4 +2413,37 @@ input[type="checkbox"]:disabled {
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* ── Help ───────────────────────────────────────────────────────────────────────────────────── */
+
+.answers {
+  margin: 0 0 2rem;
+}
+
+.answers details {
+  padding: 0.85rem 0;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.answers summary {
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.answers details p {
+  margin: 0.6rem 0 0;
+  color: var(--muted);
+  font-size: 0.9375rem;
+  line-height: 1.6;
+}
+
+.contact h2 {
+  margin-top: 0;
+  font-size: 1.15rem;
+}
+
+.contact textarea {
+  resize: vertical;
 }

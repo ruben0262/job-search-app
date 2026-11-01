@@ -1,4 +1,4 @@
-/** My words: the words that pick and hide your jobs, where you can work, your languages. One Save.
+/** My search: the words that pick and hide your jobs, where you can work, your languages. One Save.
  *
  * The same form is onboarding's second screen ("What we found"), with your name and links on top.
  */
@@ -14,8 +14,8 @@ export function WordsPage() {
   const [saved, setSaved] = useState(false);
   return (
     <>
-      <p className="kicker">My words</p>
-      <h1>The words that find your jobs</h1>
+      <p className="kicker">My search</p>
+      <h1>What we look for</h1>
       <p className="lede">Green words show you jobs. Red words hide them.</p>
       <WordsForm action="Save" onSaved={() => setSaved(true)} onEdited={() => setSaved(false)} />
       {saved ? <p className="saved-flash" role="status">Saved. Your jobs are updated.</p> : null}

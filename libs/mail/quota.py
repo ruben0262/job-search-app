@@ -32,7 +32,7 @@ def sent_last_24h(db: Database) -> int:
 
 
 def send_within_cap(db: Database, mailer: EmailSender, to: str, subject: str, body: str,
-                    *, purpose: str, cap: int | None = None) -> None:
+                    *, purpose: str, cap: int | None = None, reply_to: str | None = None) -> None:
     """Send, unless the platform is at its cap."""
     limit = cap if cap is not None else daily_cap()
     already = sent_last_24h(db)
@@ -41,6 +41,6 @@ def send_within_cap(db: Database, mailer: EmailSender, to: str, subject: str, bo
                      already, limit, purpose)
         raise MailCapReached(f"daily sending cap of {limit} reached")
 
-    mailer.send(to, subject, body)
+    mailer.send(to, subject, body, reply_to=reply_to)
     # Counted once sent: a send that raised did not use the provider's allowance.
     insert(db, MailSend(purpose=purpose))

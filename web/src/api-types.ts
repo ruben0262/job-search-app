@@ -78,6 +78,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/contact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Contact Messages
+         * @description Every contact message, newest first.
+         */
+        get: operations["contact_messages_admin_contact_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/corpus": {
         parameters: {
             query?: never;
@@ -446,6 +466,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/applied": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Applied
+         * @description Every job this person said they applied to, the latest first, whether or not it still matches
+         *     their words. Retention keeps these postings (`libs.corpus.archive.ACTED_ON`).
+         */
+        get: operations["applied_applied_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/forgot": {
         parameters: {
             query?: never;
@@ -620,6 +661,30 @@ export interface paths {
          * @description Redeem a verification link and sign in: opening it proves the inbox, as a password would.
          */
         post: operations["verify_auth_verify_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/contact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Contact Address
+         * @description Where the form's messages go, for anyone who would rather use their own email app.
+         */
+        get: operations["contact_address_contact_get"];
+        put?: never;
+        /**
+         * Contact
+         * @description Send a message to support.
+         */
+        post: operations["contact_contact_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1430,6 +1495,24 @@ export interface components {
             /** Profile */
             profile: boolean;
         };
+        /** AppliedJob */
+        AppliedJob: {
+            /**
+             * Applied At
+             * Format: date-time
+             */
+            applied_at: string;
+            /** Company */
+            company: string | null;
+            /** Id */
+            id: number;
+            /** Location */
+            location: string | null;
+            /** Title */
+            title: string;
+            /** Url */
+            url: string;
+        };
         /** Asked */
         Asked: {
             /** Reply Id */
@@ -1515,6 +1598,43 @@ export interface components {
             granted_at: string | null;
             /** Granted Version */
             granted_version: string | null;
+        };
+        /** ContactAddress */
+        ContactAddress: {
+            /** Email */
+            email: string;
+        };
+        /** ContactReceipt */
+        ContactReceipt: {
+            /** Email */
+            email: string;
+            /** Reference */
+            reference: string;
+        };
+        /** ContactRequest */
+        ContactRequest: {
+            /** Message */
+            message: string;
+            /** Subject */
+            subject: string;
+        };
+        /** ContactRow */
+        ContactRow: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Email */
+            email: string;
+            /** Emailed */
+            emailed: boolean;
+            /** Message */
+            message: string;
+            /** Reference */
+            reference: string;
+            /** Subject */
+            subject: string;
         };
         /** CredentialBody */
         CredentialBody: {
@@ -2458,6 +2578,26 @@ export interface operations {
             };
         };
     };
+    contact_messages_admin_contact_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContactRow"][];
+                };
+            };
+        };
+    };
     corpus_admin_corpus_get: {
         parameters: {
             query?: {
@@ -3076,6 +3216,26 @@ export interface operations {
             };
         };
     };
+    applied_applied_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppliedJob"][];
+                };
+            };
+        };
+    };
     forgot_auth_forgot_post: {
         parameters: {
             query?: never;
@@ -3333,6 +3493,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AuthStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    contact_address_contact_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContactAddress"];
+                };
+            };
+        };
+    };
+    contact_contact_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContactRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContactReceipt"];
                 };
             };
             /** @description Validation Error */

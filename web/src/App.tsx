@@ -5,6 +5,8 @@ import { ApiError, api, type Dashboard } from "./api";
 import { Landing } from "./landing/Landing";
 import { AdminPage } from "./pages/AdminPage";
 import { AdminUserPage } from "./pages/AdminUserPage";
+import { AppliedPage } from "./pages/AppliedPage";
+import { ChatPage } from "./pages/ChatPage";
 import { DocumentsPage } from "./pages/DocumentsPage";
 import { HelpPage } from "./pages/HelpPage";
 import { JobsPage, clearJobsCache } from "./pages/JobsPage";
@@ -31,13 +33,17 @@ function useHash(): string {
 type Session =
   | { state: "loading" } | { state: "down"; why: string } | { state: "out" } | { state: "in"; dashboard: Dashboard };
 
-/** The five places, in tab-bar order. `#/feed` is Jobs too: every alert links there. */
+/** The places, in tab-bar order, Settings last. `#/feed` is Jobs too: every alert links there. Admin is
+ * only listed for an admin; the API refuses `/admin/*` to anybody else on its own. */
 const PLACES: [string, string, ReactNode][] = [
   ["jobs", "Jobs", <path key="i" d="M4 8h16v11H4zM9 8V5h6v3" />],
-  ["words", "My words", <path key="i" d="M4 12l8-8h7v7l-8 8zM15.5 8.5h.01" />],
+  ["applied", "Applied", <path key="i" d="M5 12.5l4.5 4.5L19 7.5" />],
+  ["words", "My search", <path key="i" d="M4 12l8-8h7v7l-8 8zM15.5 8.5h.01" />],
   ["documents", "My documents", <path key="i" d="M6 3h8l4 4v14H6zM14 3v4h4M9 13h6M9 17h6" />],
-  ["settings", "Settings", <path key="i" d="M12 9a3 3 0 100 6 3 3 0 000-6zM4 12h2m12 0h2M12 4v2m0 12v2M6.3 6.3l1.4 1.4m8.6 8.6l1.4 1.4m0-11.4l-1.4 1.4m-8.6 8.6l-1.4 1.4" />],
+  ["chat", "Chat", <path key="i" d="M4 5h16v11H9l-5 4z" />],
   ["help", "Help", <path key="i" d="M12 21a9 9 0 100-18 9 9 0 000 18zM9.5 9.5a2.5 2.5 0 114 2c-1 .7-1.5 1.2-1.5 2.5M12 17h.01" />],
+  ["admin", "Admin", <path key="i" d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6z" />],
+  ["settings", "Settings", <path key="i" d="M12 9a3 3 0 100 6 3 3 0 000-6zM4 12h2m12 0h2M12 4v2m0 12v2M6.3 6.3l1.4 1.4m8.6 8.6l1.4 1.4m0-11.4l-1.4 1.4m-8.6 8.6l-1.4 1.4" />],
 ];
 
 export function App() {
@@ -110,7 +116,7 @@ export function App() {
   }
 
   const [path, query = ""] = hash.split("?");
-  const section = ["words", "documents", "settings", "help", "admin"]
+  const section = ["applied", "words", "documents", "chat", "help", "admin", "settings"]
     .find((name) => path?.startsWith(`/${name}`)) ?? "jobs";
   const focus = Number(new URLSearchParams(query).get("job")) || null;
 
@@ -124,7 +130,7 @@ export function App() {
           </a>
           {/* A row of links up top on a laptop; a tab bar along the bottom on a phone. */}
           <div className="places">
-            {PLACES.map(([key, label, icon]) => (
+            {PLACES.filter(([key]) => key !== "admin" || dashboard.is_admin).map(([key, label, icon]) => (
               <a key={key} href={key === "jobs" ? "#/" : `#/${key}`} className={section === key ? "on" : ""}
                  aria-current={section === key ? "page" : undefined}>
                 <svg viewBox="0 0 24 24" aria-hidden="true">{icon}</svg>
@@ -137,12 +143,16 @@ export function App() {
         </nav>
         {/* Keyed on the place so the fade-up replays on navigation, not only on first load. */}
         <main className={section === "admin" ? "page-in admin" : "page-in"} key={section}>
-          {section === "words" ? (
+          {section === "applied" ? (
+            <AppliedPage />
+          ) : section === "words" ? (
             <WordsPage />
           ) : section === "documents" ? (
             <DocumentsPage />
           ) : section === "settings" ? (
             <SettingsPage dashboard={dashboard} onChanged={reload} onSignedOut={reload} />
+          ) : section === "chat" ? (
+            <ChatPage />
           ) : section === "help" ? (
             <HelpPage />
           ) : section === "admin" ? (

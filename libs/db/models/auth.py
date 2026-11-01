@@ -49,7 +49,7 @@ class AuthToken(Document):
     created_at: datetime = field(default_factory=now)
 
 
-MAIL_PURPOSES = ("verify_email", "reset_password", "notice")
+MAIL_PURPOSES = ("verify_email", "reset_password", "notice", "contact")
 
 
 @dataclass(kw_only=True)

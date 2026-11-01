@@ -75,7 +75,7 @@ export function DocumentsPage() {
         <p className="toast" role="status">
           {found ? (
             <>
-              We found {found} new word{found === 1 ? "" : "s"} for you. <a href="#/words">See them in My words</a>
+              We found {found} new word{found === 1 ? "" : "s"} for you. <a href="#/words">See them in My search</a>
             </>
           ) : (
             "Saved."
