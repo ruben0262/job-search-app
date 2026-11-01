@@ -77,7 +77,8 @@ scripts/dev.sh
 
 Then open **http://localhost:5180**: its own port, because another project's site on Vite's usual
 5173 answered there instead. One terminal runs everything: the database, the API, the CV maker, a job
-fetch every 15 minutes, and the site. Ctrl-C stops it all.
+fetch every 15 minutes, and the site. Ctrl-C stops it all. Running it again restarts it, whichever
+terminal the running copy is in.
 
 **Email.** Put the Zoho mailbox's password in `certificates/smtp.env` (made for you, password left
 blank) and sign-up emails are really sent, from the same address as the live site. Until then none

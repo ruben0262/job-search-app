@@ -42,6 +42,20 @@ if [ -e certificates/smtp.env ]; then set -a; . certificates/smtp.env; set +a; f
 PORT=5180
 export PUBLIC_URL=http://localhost:$PORT  # where the sign-up link points
 
+# Running it again restarts it: the copy started last, in whichever terminal, is stopped first.
+PIDFILE="$DATA/dev.pid"
+if [ -s "$PIDFILE" ] && ps -o args= -p "$(cat "$PIDFILE")" 2>/dev/null | grep -q 'scripts/dev.sh'; then
+  echo "stopping the copy that was already running"
+  kill -TERM -- -"$(cat "$PIDFILE")" 2>/dev/null || kill -TERM "$(cat "$PIDFILE")" 2>/dev/null || true
+  for _ in $(seq 50); do  # until its ports are free, at most ten seconds
+    (exec 3<>"/dev/tcp/127.0.0.1/$PORT") 2>/dev/null || (exec 3<>/dev/tcp/127.0.0.1/8000) 2>/dev/null \
+      || break
+    sleep 0.2
+  done
+fi
+mkdir -p "$DATA"
+echo $$ > "$PIDFILE"
+
 if ! (exec 3<>/dev/tcp/127.0.0.1/27017) 2>/dev/null; then
   mkdir -p "$DATA/mongo"
   "$MONGOD" --dbpath "$DATA/mongo" --port 27017 --bind_ip 127.0.0.1 --fork \
