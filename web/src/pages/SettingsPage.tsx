@@ -1,9 +1,10 @@
-/** Settings: alerts, AI writing, and your account. */
+/** Settings: alerts, AI writing, your account, and help with a way to write to us. */
 import { useEffect, useState } from "react";
 
 import { Alerts } from "../alerts";
 import { api, type Ready, type Schema } from "../api";
 import { ClaudeConnect } from "../components/ClaudeConnect";
+import { HelpAndContact } from "../help";
 import { Card, Error, Field, useAction } from "../ui";
 
 type Account = Schema<"AccountOut">;
@@ -134,6 +135,10 @@ export function SettingsPage({ dashboard, onChanged, onSignedOut }: {
           <DeleteAccount onDeleted={onSignedOut} />
         </div>
         <Error>{signOut.error}</Error>
+      </Card>
+
+      <Card title="Help and contact">
+        <HelpAndContact />
       </Card>
 
       <p className="small">

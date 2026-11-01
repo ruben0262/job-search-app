@@ -2624,3 +2624,31 @@ input[type="checkbox"]:disabled {
 .telegram-on .row {
   margin-top: 0.5rem;
 }
+
+/* ── a job's description, and two columns where there is room ──────────────────────────────── */
+
+.job-card .summary {
+  margin: 0.6rem 0 0.4rem;
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.job-card .description p {
+  margin: 0.6rem 0 0.4rem;
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  white-space: pre-line;
+}
+
+/* Two columns on a laptop, one on a phone. A card whose description is open takes the whole row,
+   so a long one reads at a comfortable width and does not stretch its neighbour. */
+@media (min-width: 900px) {
+  .jobs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .jobs .job-card.open {
+    grid-column: 1 / -1;
+  }
+}

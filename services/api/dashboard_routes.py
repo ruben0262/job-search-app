@@ -33,6 +33,9 @@ router = APIRouter(tags=["dashboard"])
 
 FEED_PAGE = 25
 
+# How much of a description a job card shows before "Show the full description".
+SUMMARY_CHARS = 280
+
 
 class DashboardBanner(BaseModel):
     level: Literal["error", "warning", "info"]
@@ -94,6 +97,11 @@ class FeedJob(BaseModel):
     posted_at: datetime | None
     first_seen_at: datetime | None
     salary: FeedSalary | None
+    # The start of the description, whitespace folded, cut at a word: what the card shows. None until
+    # the posting has been described.
+    summary: str | None
+    # Whether there is more of it than the summary, to fetch from `/jobs/{id}/description`.
+    more: bool
     applied_at: datetime | None
     # The CVs and cover letters made for it, newest first: still downloadable after a refresh.
     documents: list[JobDocument]
@@ -224,7 +232,31 @@ def _row(match: Match, applied_at: datetime | None, documents: list[dict]) -> Fe
                    is_remote=job.is_remote, url=job.url, source=job.source, score=match.score,
                    words=list(match.words), posted_at=job.posted_at,
                    first_seen_at=job.first_seen_at, salary=salary.extract(job.description),
-                   applied_at=applied_at, documents=[job_document(row) for row in documents])
+                   **_summary(job.description), applied_at=applied_at,
+                   documents=[job_document(row) for row in documents])
+
+
+def _summary(description: str | None) -> dict:
+    """The first `SUMMARY_CHARS` of a description, on one line, cut at a word."""
+    text = " ".join((description or "").split())
+    if len(text) <= SUMMARY_CHARS:
+        return {"summary": text or None, "more": False}
+    cut = text[:SUMMARY_CHARS].rsplit(" ", 1)[0].rstrip(" ,;:-")
+    return {"summary": f"{cut}…", "more": True}
+
+
+class JobDescription(BaseModel):
+    text: str
+
+
+@router.get("/jobs/{job_id}/description")
+def job_description(job_id: int, db: Database = Depends(get_db),
+                    _user_id: _uuid.UUID = Depends(current_user)) -> JobDescription:
+    """A posting's whole description, as stored, for a card that was asked to show it."""
+    found = db[CorpusJob.COLLECTION].find_one({"_id": job_id}, {"description": 1})
+    if not found or not found.get("description"):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="no description for that job")
+    return JobDescription(text=found["description"])
 
 
 class AppliedJob(BaseModel):

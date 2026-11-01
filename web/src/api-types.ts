@@ -964,6 +964,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/jobs/{job_id}/description": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Job Description
+         * @description A posting's whole description, as stored, for a card that was asked to show it.
+         */
+        get: operations["job_description_jobs__job_id__description_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/jobs/{job_id}/{mark}": {
         parameters: {
             query?: never;
@@ -1857,6 +1877,8 @@ export interface components {
             is_remote: boolean | null;
             /** Location */
             location: string | null;
+            /** More */
+            more: boolean;
             /** Posted At */
             posted_at: string | null;
             salary: components["schemas"]["FeedSalary"] | null;
@@ -1864,6 +1886,8 @@ export interface components {
             score: number;
             /** Source */
             source: string;
+            /** Summary */
+            summary: string | null;
             /** Title */
             title: string;
             /** Url */
@@ -1965,6 +1989,11 @@ export interface components {
             full_name: string;
             /** Links */
             links?: components["schemas"]["ProfileLink"][];
+        };
+        /** JobDescription */
+        JobDescription: {
+            /** Text */
+            text: string;
         };
         /**
          * JobDocument
@@ -4157,6 +4186,37 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    job_description_jobs__job_id__description_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobDescription"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

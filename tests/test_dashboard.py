@@ -288,6 +288,34 @@ def test_newest_first_puts_the_latest_job_on_top_whatever_its_score(api):
     assert _ids(http.get("/feed?sort=newest").json())[0] == in_text.id
 
 
+def test_a_card_gets_the_start_of_the_description_and_the_rest_on_request(api):
+    """A summary cut at a word, said to have more; the whole text from its own endpoint, so the list
+    stays light."""
+    http, db, _, jobs = api
+    long = "We build payment systems.  \n\n" + "Python and Postgres all day. " * 40
+    db[CorpusJob.COLLECTION].update_one({"_id": jobs[0].id}, {"$set": {"description": long}})
+    db[CorpusJob.COLLECTION].update_one({"_id": jobs[1].id}, {"$set": {"description": "Short and sweet."}})
+
+    rows = {job["id"]: job for job in http.get("/feed").json()["jobs"]}
+
+    summary = rows[jobs[0].id]["summary"]
+    assert summary.startswith("We build payment systems. Python and Postgres") and summary.endswith("…")
+    assert len(summary) <= 281 and " Postgres all day… " not in summary, "cut at a word"
+    assert rows[jobs[0].id]["more"] is True
+    assert (rows[jobs[1].id]["summary"], rows[jobs[1].id]["more"]) == ("Short and sweet.", False)
+    assert http.get(f"/jobs/{jobs[0].id}/description").json()["text"] == long
+
+
+def test_a_job_not_described_yet_has_no_summary_and_no_more(api):
+    http, db, _, jobs = api
+    db[CorpusJob.COLLECTION].update_one({"_id": jobs[0].id}, {"$set": {"description": None}})
+
+    row = next(job for job in http.get("/feed").json()["jobs"] if job["id"] == jobs[0].id)
+
+    assert (row["summary"], row["more"]) == (None, False)
+    assert http.get(f"/jobs/{jobs[0].id}/description").status_code == 404
+
+
 # ── one job, hidden, applied ──────────────────────────────────────────────────────────────────
 
 def test_an_alerts_link_finds_its_job_while_it_is_still_theirs(api):

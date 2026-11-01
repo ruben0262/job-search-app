@@ -283,6 +283,11 @@ function JobCard({ job, ai, hidden, focus = false, onMarked, onApplied }: {
   // Made before (kept, so a refresh still shows it) or made now: what colours the card.
   const [made, setMade] = useState<Set<Made["kind"]>>(() => new Set(job.documents.map((each) => each.kind)));
   const existing = latest(job.documents);
+  // The whole description, fetched the first time it is asked for; `null` while folded.
+  const [full, setFull] = useState<string | null>(null);
+  const expand = useAction(async () => {
+    setFull((await api.get<Schema<"JobDescription">>(`/jobs/${job.id}/description`)).text);
+  });
   const madeNow = useCallback((kind: Made["kind"]) =>
     setMade((now) => (now.has(kind) ? now : new Set([...now, kind]))), []);
   // PUT records "I applied" or "Hide", DELETE takes it back.
@@ -311,8 +316,8 @@ function JobCard({ job, ai, hidden, focus = false, onMarked, onApplied }: {
   const age = ago(job.posted_at ?? job.first_seen_at);
   const when = age ? `${job.posted_at ? "Posted" : "Found"} ${age}` : null;
   return (
-    <article className={["job-card", focus && "focus", made.has("cv") && "made-cv", made.has("cover") && "made-cover"]
-      .filter(Boolean).join(" ")}>
+    <article className={["job-card", focus && "focus", made.has("cv") && "made-cv", made.has("cover") && "made-cover",
+                         full !== null && "open"].filter(Boolean).join(" ")}>
       {made.size ? (
         <p className="made-badges">
           {made.has("cv") ? <span className="made-badge cv">CV made</span> : null}
@@ -324,6 +329,22 @@ function JobCard({ job, ai, hidden, focus = false, onMarked, onApplied }: {
       </h3>
       <p className="job-meta">{[job.company, place, when].filter(Boolean).join(" · ")}</p>
       {job.salary ? <p className="job-meta">{money(job.salary)}</p> : null}
+      {full !== null ? (
+        <div className="description">
+          <p>{full}</p>
+          <button type="button" className="linklike small" onClick={() => setFull(null)}>Show less</button>
+        </div>
+      ) : job.summary ? (
+        <p className="summary">
+          {job.summary}{" "}
+          {job.more ? (
+            <button type="button" className="linklike small" disabled={expand.busy} onClick={() => void expand.run()}>
+              {expand.busy ? "Loading…" : "Show the full description"}
+            </button>
+          ) : null}
+        </p>
+      ) : null}
+      <Error>{expand.error}</Error>
       <p className="why">
         Why:{" "}
         {job.words.map((word) => (

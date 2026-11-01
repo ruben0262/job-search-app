@@ -1085,6 +1085,10 @@
             ],
             "title": "Location"
           },
+          "more": {
+            "title": "More",
+            "type": "boolean"
+          },
           "posted_at": {
             "anyOf": [
               {
@@ -1115,6 +1119,17 @@
             "title": "Source",
             "type": "string"
           },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          },
           "title": {
             "title": "Title",
             "type": "string"
@@ -1144,6 +1159,8 @@
           "posted_at",
           "first_seen_at",
           "salary",
+          "summary",
+          "more",
           "applied_at",
           "documents"
         ],
@@ -1429,6 +1446,19 @@
           "full_name"
         ],
         "title": "IdentitySchema",
+        "type": "object"
+      },
+      "JobDescription": {
+        "properties": {
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "JobDescription",
         "type": "object"
       },
       "JobDocument": {
@@ -5340,6 +5370,49 @@
           }
         },
         "summary": "Health"
+      }
+    },
+    "/jobs/{job_id}/description": {
+      "get": {
+        "description": "A posting's whole description, as stored, for a card that was asked to show it.",
+        "operationId": "job_description_jobs__job_id__description_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobDescription"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Job Description",
+        "tags": [
+          "dashboard"
+        ]
       }
     },
     "/jobs/{job_id}/{mark}": {

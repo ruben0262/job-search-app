@@ -1,8 +1,9 @@
-/** Help: the answers people look for first, then a form that reaches a person. */
+/** Help and contact, at the end of Settings: the answers people look for first, then a form that
+ * reaches a person. */
 import { useEffect, useState } from "react";
 
-import { api, type Schema } from "../api";
-import { Error, Field, useAction } from "../ui";
+import { api, type Schema } from "./api";
+import { Error, Field, useAction } from "./ui";
 
 type Receipt = Schema<"ContactReceipt">;
 
@@ -23,7 +24,7 @@ const ANSWERS: [string, string][] = [
    "Sign out, then tap “Forgot your password?” on the sign-in page. We email you a link to set a new one."],
 ];
 
-export function HelpPage() {
+export function HelpAndContact() {
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
   const [sent, setSent] = useState<Receipt | null>(null);
@@ -40,9 +41,7 @@ export function HelpPage() {
 
   return (
     <>
-      <p className="kicker">Help</p>
-      <h1>How can we help?</h1>
-      <p className="lede">The quick answers first. If yours is not here, write to us and a person replies.</p>
+      <p className="small muted">The quick answers first. If yours is not here, write to us and a person replies.</p>
 
       <section className="answers">
         {ANSWERS.map(([question, answer]) => (
@@ -53,10 +52,10 @@ export function HelpPage() {
         ))}
       </section>
 
-      <section className="card contact">
+      <section className="contact">
         {sent ? (
           <div role="status">
-            <h2>Message received</h2>
+            <h3>Message received</h3>
             <p>
               Your reference is <strong>{sent.reference}</strong>. We will reply to {sent.email}.
             </p>
@@ -67,7 +66,7 @@ export function HelpPage() {
             event.preventDefault();
             if (ready) void send.run();
           }}>
-            <h2>Write to us</h2>
+            <h3>Write to us</h3>
             <Field label="Subject" hint="A few words about what it is.">
               <input value={subject} maxLength={120} onChange={(event) => setSubject(event.target.value)} />
             </Field>

@@ -227,8 +227,8 @@ def test_step_two_says_what_it_found_with_switches_suggestions_and_round_choices
 
 
 def test_the_tabs_in_order_and_what_each_one_is_for(site, capsys):
-    """Settings last; Applied keeps what was applied to; Help sends a message to a person; Chat is its
-    own tab; Admin is there for an admin only, and shows what was sent from Help."""
+    """Settings last; Applied keeps what was applied to; help and the contact form are in Settings;
+    Admin is there for an admin only, and shows what was sent from Settings."""
     from libs.db import database
 
     base, email, _ = site
@@ -238,8 +238,7 @@ def test_the_tabs_in_order_and_what_each_one_is_for(site, capsys):
         _sign_up(page, base, email, capsys)
         _onboard(page)
         tabs = page.locator("nav .places a")
-        expect(tabs).to_have_text(["Jobs", "Applied", "My search", "My documents", "Chat", "Help",
-                                   "Settings"])
+        expect(tabs).to_have_text(["Jobs", "Applied", "My search", "My documents", "Settings"])
 
         card = page.locator("article.job-card").filter(
             has=page.get_by_role("link", name=TITLES[0], exact=True))
@@ -249,23 +248,44 @@ def test_the_tabs_in_order_and_what_each_one_is_for(site, capsys):
         expect(page.get_by_role("heading", name="You applied to 1 job")).to_be_visible()
         expect(page.get_by_role("link", name=TITLES[0], exact=True)).to_be_visible()
 
-        tabs.filter(has_text="Help").click()
+        tabs.filter(has_text="Settings").click()
+        expect(page.get_by_role("heading", name="Help and contact")).to_be_visible()
+        page.get_by_text("How are my jobs chosen?").click()
+        expect(page.get_by_text("A job shows up when one of your green words is in it")).to_be_visible()
         page.get_by_label("Subject").fill("My CV shows the wrong city")
         page.get_by_label("Message").fill("It says Berlin, but I moved to Paris last month.")
         page.get_by_role("button", name="Send message").click()
         expect(page.get_by_role("heading", name="Message received")).to_be_visible()
         expect(page.get_by_text(f"We will reply to {email}.")).to_be_visible()
 
-        tabs.filter(has_text="Chat").click()
-        expect(page.get_by_role("heading", name="Ask anything about your jobs")).to_be_visible()
-
         database().users.update_one({"email": email}, {"$set": {"is_admin": True}})
         page.reload()
-        expect(tabs).to_have_text(["Jobs", "Applied", "My search", "My documents", "Chat", "Help", "Admin",
-                                   "Settings"])
+        expect(tabs).to_have_text(["Jobs", "Applied", "My search", "My documents", "Admin", "Settings"])
         tabs.filter(has_text="Admin").click()
         page.get_by_role("button", name="Messages").click()
         expect(page.get_by_text("My CV shows the wrong city")).to_be_visible()
+        browser.close()
+
+
+def test_job_cards_show_the_start_of_the_description_and_sit_two_to_a_row_on_a_laptop(site, capsys):
+    """One column on a phone, two on a laptop; a card opened to its whole description takes the row."""
+    base, email, _ = site
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = browser.new_context(viewport={"width": 1280, "height": 860}).new_page()
+        _sign_up(page, base, email, capsys)
+        _onboard(page)
+        cards = page.locator(".jobs article.job-card")
+        expect(cards).to_have_count(2)
+
+        first, second = cards.nth(0).bounding_box(), cards.nth(1).bounding_box()
+        assert abs(first["y"] - second["y"]) < 1 and second["x"] > first["x"] + first["width"] / 2, (
+            "two to a row")
+        expect(cards.first.locator(".summary")).to_contain_text("Python, Postgres")
+
+        page.set_viewport_size({"width": 390, "height": 844})
+        first, second = cards.nth(0).bounding_box(), cards.nth(1).bounding_box()
+        assert abs(first["x"] - second["x"]) < 1 and second["y"] > first["y"], "one to a row"
         browser.close()
 
 
