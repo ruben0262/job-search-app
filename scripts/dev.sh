@@ -7,7 +7,8 @@
 # Its own port, not Vite's usual 5173: another project's site on 5173 answered instead of this one, and
 # the page that opened was not this app's.
 # No email is sent from here: a sign-up link prints in this terminal. Needs, once:
-# `.venv/bin/pip install -r requirements-dev.txt`, `npm --prefix web install`, and MongoDB 8.0
+# `.venv/bin/pip install -r requirements-dev.txt -r services/harvester/requirements.txt`,
+# `npm --prefix web install`, and MongoDB 8.0
 # unpacked into ~/.local/opt/mongodb (README, "Run it on your computer").
 set -euo pipefail
 cd "$(dirname "$0")/.."

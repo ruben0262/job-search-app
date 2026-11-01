@@ -84,7 +84,8 @@ terminal the running copy is in.
 blank) and sign-up emails are really sent, from the same address as the live site. Until then none
 are, and the sign-up link prints in that terminal instead.
 
-Once, before the first run: `.venv/bin/pip install -r requirements-dev.txt`,
+Once, before the first run: `.venv/bin/pip install -r requirements-dev.txt -r
+services/harvester/requirements.txt` (the second brings the LinkedIn scraper),
 `npm --prefix web install`, and MongoDB 8.0 unpacked into `~/.local/opt/mongodb`. The script makes
 `certificates/dev.env` (keys for your computer only) the first time.
 
