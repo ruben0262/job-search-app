@@ -20,7 +20,7 @@ def lane(name="notify", *, ready=0, claimed=0, dead=0, oldest=None, expected=5) 
 
 def user(**kwargs) -> UserHealth:
     base = {"user_id": str(uuid.uuid4()), "email": "a@example.com",
-            "telegram_status": "connected", "proxy_status": "healthy"}
+            "telegram_status": "connected"}
     return UserHealth(**{**base, **kwargs})
 
 
@@ -116,11 +116,6 @@ def test_a_broken_bot_warns_and_names_the_user():
     assert alerts[0].key == "telegram_broken"
 
 
-def test_a_quarantined_proxy_warns():
-    alerts = evaluate(health(users=[user(proxy_status="quarantined")]))
-    assert keys(alerts) == {"proxy_quarantined"}
-
-
 def test_pages_sort_above_warnings():
     """Read at three in the morning on a phone, where only the top line is read."""
     alerts = evaluate(health(lanes=[lane("docgen", dead=1)],
@@ -131,9 +126,9 @@ def test_pages_sort_above_warnings():
 def test_every_alert_says_what_to_do():
     """"Look into it" is not an action. Each alert names the likely cause."""
     alerts = evaluate(health(lanes=[lane("notify", dead=1, ready=1, oldest=60)],
-                             users=[user(telegram_status="broken", proxy_status="quarantined")],
+                             users=[user(telegram_status="broken")],
                              database_bytes=NEARLY_FULL))
-    assert len(alerts) == 5
+    assert len(alerts) == 4
     assert all(len(alert.action) > 20 for alert in alerts)
 
 
@@ -170,32 +165,6 @@ def test_health_reads_a_live_database_without_scanning_it(db):
     assert any(row.email == account.email for row in state.users)
     assert {"dead_letter:docgen", "stalled:notify"} <= keys(evaluate(state))
 
-
-# ── the proxy is opt-in (ROADMAP 6aw) ─────────────────────────────────────────────────────────
-
-
-def test_an_account_with_no_proxy_is_not_an_alert():
-    """LinkedIn is opt-in, so having no proxy is a configuration rather than a fault."""
-    assert "proxy_missing" not in keys(evaluate(health(users=[user(proxy_status="no_secret")])))
-    assert "proxy_missing" not in keys(evaluate(health(users=[user(proxy_status=None)])))
-
-
-def test_the_status_reads_the_secret_not_just_the_row(db):
-    """The distinction the panel got wrong: a row saying `healthy` beside no secret at all."""
-    from libs.db.models import ProxyCredential, User, UserSecret
-    from libs.ops.health import user_health
-
-    bare, kept = (insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x",
-                                  status="active", active=True)) for _ in range(2))
-    # The row `_ensure_proxy_credential` writes, with its default status and no secret behind it.
-    for account in (bare, kept):
-        insert(db, ProxyCredential(user_id=account.id, secret_ref=f"{account.id}:proxy"))
-    insert(db, UserSecret(user_id=kept.id, kind="proxy", ciphertext=b"x", nonce=b"n"))
-
-    rows = {row.email: row for row in user_health(db)}
-    assert rows[bare.email].proxy_status == "no_secret", (
-        "a row with no secret behind it must not report the row's own status")
-    assert rows[kept.email].proxy_status == "healthy", "a row with its secret reports its own status"
 
 
 # ── what the health check costs as the platform grows (ROADMAP 6be) ───────────────────────────

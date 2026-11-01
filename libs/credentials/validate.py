@@ -33,7 +33,6 @@ def validate_credential(kind: str, value: str, *,
         "claude_oauth": _validate_claude_oauth,
         "gemini_api": _validate_gemini,
         "openai_api": _validate_openai,
-        "proxy": _validate_proxy,
     }
     if kind not in validators:
         return ValidationResult(False, f"{kind!r} is not a credential this platform stores")
@@ -94,21 +93,3 @@ def _validate_openai(value: str, http: httpx.Client) -> ValidationResult:
     """Listing the models, which costs nothing."""
     return _key_result(http.get(OPENAI_MODELS_URL, headers={"Authorization": f"Bearer {value}"}),
                        "OpenAI")
-
-
-def _validate_proxy(value: str, http: httpx.Client) -> ValidationResult:
-    """Prove the proxy both accepts us and forwards traffic."""
-    try:
-        with httpx.Client(proxy=value, timeout=TIMEOUT, trust_env=False) as through:
-            response = through.get("https://api.ipify.org", follow_redirects=False)
-    except httpx.ProxyError as exc:
-        return ValidationResult(False, redact(f"the proxy refused the connection: {exc!s}")[:200])
-    except httpx.HTTPError as exc:
-        return ValidationResult(
-            False, redact(f"could not reach anything through the proxy: {exc!s}")[:200])
-
-    if response.status_code == 407:
-        return ValidationResult(False, "the proxy rejected these credentials")
-    if response.status_code != 200:
-        return ValidationResult(False, f"the proxy answered {response.status_code}")
-    return ValidationResult(True, extra={"egress_ip": response.text.strip()[:64]})

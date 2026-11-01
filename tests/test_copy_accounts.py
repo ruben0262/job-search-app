@@ -11,7 +11,6 @@ import importlib.util
 import os
 import pathlib
 import uuid
-from decimal import Decimal
 
 import pytest
 
@@ -30,7 +29,7 @@ def _script():
 
 
 def test_what_is_not_carried_over_is_dropped_and_the_rest_keeps_its_values():
-    from libs.db.models import PlatformSetting, ProxyCredential, SetupMessage, User, UserSecret
+    from libs.db.models import PlatformSetting, SetupMessage, User, UserSecret
 
     copy = _script()
     user = copy.converted(User, {
@@ -51,11 +50,6 @@ def test_what_is_not_carried_over_is_dropped_and_the_rest_keeps_its_values():
                                        "updated_at": None}) is None
     assert copy.converted(PlatformSetting, {"id": "embed_batch_size", "value": 64, "updated_at": None,
                                             "updated_by": None}) is None
-    proxy = copy.converted(ProxyCredential, {
-        "user_id": ALICE, "secret_ref": "r", "mb_used_today": Decimal("12.5"),
-        "usage_reset_at": None, "status": "healthy", "fail_streak": 0, "last_error": None,
-        "last_used_at": None, "created_at": None, "updated_at": None})
-    assert proxy["mb_used_today"] == 12.5 and isinstance(proxy["mb_used_today"], float)
     reply = copy.converted(SetupMessage, {
         "id": 21, "user_id": ALICE, "conversation_id": ALICE, "role": "assistant", "content": "Gre",
         "status": "streaming", "error": None, "agent": "support", "tool_calls": None, "created_at": None})

@@ -1,4 +1,5 @@
-"""The per-user LinkedIn pass."""
+"""The per-user LinkedIn pass: each person's own words, on their own schedule, through the site's one
+proxy (`libs.proxy`), within their own daily bandwidth."""
 from __future__ import annotations
 
 import logging
@@ -11,8 +12,9 @@ from libs.corpus.repository import CorpusRepository
 from libs.db import find
 from libs.db.models import User
 from libs.obs import audit
-from libs.secrets import SecretStore, redacting
-from libs.secrets.keyring import SecretsError
+from libs.proxy import ENV as PROXY_ENV
+from libs.proxy import site_proxy
+from libs.secrets import redacting
 from libs.settings import (
     PLATFORM_TICK_MIN,
     freshness_hours,
@@ -30,7 +32,7 @@ from services.harvester.governor import (
     next_linkedin_run,
     resolve_linkedin_interval,
 )
-from services.harvester.proxy_usage import ProxyCapExceeded, ProxyUsageRepository
+from services.harvester.proxy_usage import ProxyUsageRepository
 from services.harvester.query_set import build_query_set, original_terms
 from services.harvester.sources import jobspy_source
 
@@ -92,6 +94,10 @@ def run_for_due_users(db, *, now: datetime | None = None,
     if not linkedin_enabled():
         logger.warning("linkedin: tier disabled by HARVEST_LINKEDIN_DISABLED")
         return report
+    proxy = site_proxy()
+    if proxy is None:
+        logger.warning("linkedin: %s is not set, so nobody's LinkedIn search ran", PROXY_ENV)
+        return report
 
     now = now or datetime.now(UTC)
     corpus = CorpusRepository(db)
@@ -103,7 +109,6 @@ def run_for_due_users(db, *, now: datetime | None = None,
     # old a posting may be and still reach anybody. Describing is bounded by the second, because a
     # row past it has already been refused by the pre-score filter and its text will never be read.
     deliverable_for = int(settings_get(db, "job_max_age_hours"))
-    store = SecretStore(db)
 
     for user in due_users(db, now=now, limit=limit):
         report.considered += 1
@@ -120,7 +125,7 @@ def run_for_due_users(db, *, now: datetime | None = None,
             continue
 
         try:
-            ran = _run_one(user, queries, corpus=corpus, usage=usage, store=store,
+            ran = _run_one(user, queries, corpus=corpus, usage=usage, proxy=proxy,
                            report=report, gather=gather, hours_old=window,
                            results_wanted=depth, deliverable_for=deliverable_for)
         except Exception as exc:                                    # noqa: BLE001
@@ -138,57 +143,37 @@ def run_for_due_users(db, *, now: datetime | None = None,
 
 
 def _run_one(user: User, queries: list[dict], *, corpus: CorpusRepository,
-             usage: ProxyUsageRepository, store: SecretStore,
+             usage: ProxyUsageRepository, proxy: str,
              report: LinkedInReport, gather, hours_old: int,
              results_wanted: int, deliverable_for: int | None = None) -> bool:
-    """One user's fetch, inside their own credential's scope."""
-    try:
-        with store.use(user.id, "proxy") as secret:
-            if secret is None:
-                # Normal now the proxy is optional: no proxy, no LinkedIn. Counted in the pass's tally.
-                logger.debug("linkedin: %s has no proxy credential, so no LinkedIn run", user.id)
-                report.skipped_no_lease += 1
-                return False
+    """One user's fetch, through the site proxy, counted against their own bandwidth."""
+    with redacting(proxy):
+        lease = usage.acquire_lease(user.id, proxy_url=proxy)
+        if lease is None:
+            logger.info("linkedin: %s is at its daily proxy cap — resumes tomorrow", user.id)
+            report.skipped_no_lease += 1
+            return False
 
-            proxy = secret.reveal()
-            with redacting(proxy):
-                try:
-                    lease = usage.acquire_lease(user.id, secret_resolver=lambda _ref: proxy)
-                except ProxyCapExceeded:
-                    logger.warning("linkedin: %s is at its daily proxy cap — resumes tomorrow",
-                                   user.id)
-                    report.skipped_no_lease += 1
-                    return False
-                if lease is None:
-                    logger.warning("linkedin: %s could not take a proxy lease — the credential is "
-                                   "quarantined or unusable", user.id)
-                    report.skipped_no_lease += 1
-                    return False
+        cfg = {"queries": queries,
+               # The operator's ceiling, not the constant beside it.
+               "results_wanted": results_wanted,
+               # The operator's window, not the user's.
+               "hours_old": hours_old,
+               # Never from jobspy.
+               "linkedin_fetch_description": False}
+        links = gather(cfg, logger, lease=lease)
 
-                cfg = {"queries": queries,
-                       # The operator's ceiling, not the constant beside it.
-                       "results_wanted": results_wanted,
-                       # The operator's window, not the user's.
-                       "hours_old": hours_old,
-                       # Never from jobspy.
-                       "linkedin_fetch_description": False}
-                links = gather(cfg, logger, lease=lease)
-
-                # Dedup, then describe what is left — on this same lease, in this same pass.
-                new_jobs = _ingest(corpus, links)
-                with make_client(lease) as client:
-                    # `None` is Unlimited.
-                    per_run = limits.resolve(user, "describe_per_run")
-                    described = describe_pending(
-                        corpus, client, linkedin=True,
-                        limit=UNLIMITED_DESCRIBES if per_run is None else per_run,
-                        budget_seconds=DESCRIBE_BUDGET_SECONDS,
-                        max_age_hours=deliverable_for)
-
-    except SecretsError:
-        # The store could not answer. Not this user's fault and not a reason to stop the pass.
-        report.skipped_no_lease += 1
-        return False
+        # Dedup, then describe what is left — on this same lease, in this same pass.
+        new_jobs = _ingest(corpus, links)
+        with make_client(lease) as client:
+            # `None` is Unlimited.
+            per_run = limits.resolve(user, "describe_per_run")
+            described = describe_pending(
+                corpus, client, linkedin=True,
+                limit=UNLIMITED_DESCRIBES if per_run is None else per_run,
+                budget_seconds=DESCRIBE_BUDGET_SECONDS,
+                max_age_hours=deliverable_for)
+            usage.record_usage(user.id, megabytes=client.megabytes_downloaded)
 
     report.links_found += len(links)
     report.new_jobs += new_jobs

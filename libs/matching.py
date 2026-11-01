@@ -95,10 +95,6 @@ def matching_jobs(db: Database, user: User, *, since: datetime | None = None,
     where = candidate_conditions(filters)
     if since is not None:
         where.append({"first_seen_at": {"$gt": since}})
-    # Decision D3: LinkedIn rows are fetched through someone's own proxy, so only a person with a
-    # healthy one of their own sees them. Without this, everyone saw rows others' proxies paid for.
-    if not TenantRepository(db).linkedin_visible(user.id):
-        where.append({"source": {"$ne": "linkedin"}})
     # The newest `scan` candidates, then their green words judged in the database: only matches
     # cross the network, where pulling every candidate's text would be megabytes per page.
     in_database = _UNICODE + regex.pattern

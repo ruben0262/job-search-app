@@ -78,8 +78,9 @@ class UserConfig(Document):
     updated_at: datetime = field(default_factory=now)
 
 
-# What the Settings credentials form stores: an AI key or subscription, or a proxy.
-CREDENTIAL_KINDS = ("claude_api", "claude_oauth", "proxy", "gemini_api", "openai_api")
+# What the Settings credentials form stores: an AI key or subscription. (A person's own proxy went
+# on 2026-11-01: the site has one proxy for everyone, `libs.proxy`.)
+CREDENTIAL_KINDS = ("claude_api", "claude_oauth", "gemini_api", "openai_api")
 # Everything encrypted here: those, and the token of the person's own Telegram bot, which only the
 # Telegram setup (`services/api/telegram_routes.py`) stores.
 SECRET_KINDS = (*CREDENTIAL_KINDS, "telegram_bot")

@@ -734,13 +734,13 @@ def test_a_harvest_runs_without_an_embedder(ctx, monkeypatch):
     assert ran, "the cycle itself ran, not just the entry point"
 
 
-def test_an_account_with_no_proxy_is_harvested_everywhere_but_linkedin(ctx, monkeypatch):
-    """Proxy optional (ROADMAP Phase 8, D3): no proxy is no LinkedIn, and nothing else is lost."""
-    from libs.secrets import generate_key
+def test_with_no_site_proxy_every_board_but_linkedin_is_harvested(ctx, monkeypatch):
+    """The site proxy is what LinkedIn needs and nothing else does: unset, LinkedIn is skipped and no
+    other board loses anything."""
     from services.harvester import linkedin
     from services.harvester.sources import Tier, sources_for
 
-    monkeypatch.setenv("SECRETS_KEK", f"k1:{generate_key()}")
+    monkeypatch.delenv("HARVEST_PROXY", raising=False)
     s = ctx
     _active_user(s, keywords=["welder"])
     shared = {source.key for source in sources_for(Tier.SHARED)}
@@ -758,8 +758,7 @@ def test_an_account_with_no_proxy_is_harvested_everywhere_but_linkedin(ctx, monk
     assert report.new_jobs == 1
 
     def no_request(*args, **kwargs):
-        raise AssertionError("LinkedIn was fetched for an account with no proxy")
+        raise AssertionError("LinkedIn was fetched with no proxy to fetch it through")
 
     passed = linkedin.run_for_due_users(s, gather=no_request)
-    assert passed.skipped_no_lease >= 1
-    assert passed.links_found == 0
+    assert (passed.considered, passed.links_found) == (0, 0)

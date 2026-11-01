@@ -8,20 +8,18 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from libs import limits
 from libs.credentials import validate_credential
 from libs.db import database, find_one
-from libs.db.models import ProxyCredential, User
-from libs.db.models.user import SECRET_KINDS
+from libs.db.models import User
+from libs.db.models.user import CREDENTIAL_KINDS
 from libs.obs import configure
 from libs.secrets import SecretStore, install, redacting
-from services.api.credential_routes import _ensure_proxy_credential
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--email", required=True)
-    parser.add_argument("--kind", required=True, choices=SECRET_KINDS)
+    parser.add_argument("--kind", required=True, choices=CREDENTIAL_KINDS)
     parser.add_argument("--stdin", action="store_true",
                         help="read the value from stdin instead of prompting")
     parser.add_argument("--no-validate", action="store_true",
@@ -55,18 +53,6 @@ def main(argv: list[str] | None = None) -> int:
                 return 3
 
         SecretStore(db).put(user.id, args.kind, value, validated=validated)
-
-        if args.kind == "proxy":
-            # The credential row, not just the secret.
-            _ensure_proxy_credential(db, user.id)
-            credential = find_one(db, ProxyCredential, {"user_id": user.id})
-            if credential.status != "healthy":
-                # A rotation is usually somebody replacing the credential that got quarantined.
-                db[ProxyCredential.COLLECTION].update_one({"user_id": user.id}, {"$set": {
-                    "status": "healthy", "fail_streak": 0, "last_error": None}})
-                print("credential was quarantined — reset to healthy for the new URL")
-            cap = limits.resolve(user, "proxy_mb_per_day")
-            print(f"proxy credential ready: {'unlimited' if cap is None else cap} MB/day cap")
 
     print(f"stored {args.kind} for {args.email}")
     return 0

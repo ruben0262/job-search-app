@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 
 from pymongo.database import Database
 
-from libs.db.models import CorpusJob, ProxyCredential, QueueJob, User, UserSecret
+from libs.db.models import CorpusJob, QueueJob, User
 from libs.db.models.queue import LANES
 from libs.settings import database_budget_bytes
 
@@ -34,7 +34,6 @@ class UserHealth:
     user_id: str
     email: str
     telegram_status: str
-    proxy_status: str | None
 
 
 @dataclass
@@ -84,15 +83,6 @@ def lane_health(db: Database) -> list[LaneHealth]:
     ]
 
 
-def _proxy_statuses(db: Database) -> dict:
-    """Every account's proxy state, as two queries for the platform rather than two per account."""
-    proxies = {row["user_id"]: row["status"]
-               for row in db[ProxyCredential.COLLECTION].find({}, {"user_id": 1, "status": 1})}
-    with_secret = set(db[UserSecret.COLLECTION].distinct("user_id", {"kind": "proxy"}))
-    return {user_id: (status if user_id in with_secret else "no_secret")
-            for user_id, status in proxies.items()}
-
-
 def user_health(db: Database) -> list[UserHealth]:
     """Per-account state, for the alerts that name a user.
 
@@ -101,11 +91,8 @@ def user_health(db: Database) -> list[UserHealth]:
     60-second timeout. What it counted per account — matches scored above the account's cutoff and
     not yet sent — went with the scorer (ROADMAP Phase 8), and with it the last per-account query.
     """
-    proxies = _proxy_statuses(db)
     return [UserHealth(user_id=str(user["_id"]), email=user["email"],
-                       telegram_status=user["telegram_status"],
-                       # A row is not a credential.
-                       proxy_status=proxies.get(user["_id"]))
+                       telegram_status=user["telegram_status"])
             for user in db[User.COLLECTION].find({"status": "active"},
                                                  {"email": 1, "telegram_status": 1}, sort=[("email", 1)])]
 

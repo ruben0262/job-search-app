@@ -1,14 +1,12 @@
-"""The LinkedIn visibility gate and the tier's global governor."""
+"""LinkedIn jobs for everyone, and the LinkedIn tier's global governor."""
 from __future__ import annotations
 
 import random
 import uuid
 from datetime import UTC, datetime, timedelta
 
-import pytest
-
 from libs.db import insert, now
-from libs.db.models import CorpusJob, ProxyCredential, User
+from libs.db.models import CorpusJob, User
 from libs.matching import matching_jobs
 from libs.tenant.repository import TenantRepository
 from services.harvester.governor import (
@@ -41,64 +39,16 @@ def _feed(db, user, **kwargs) -> list[CorpusJob]:
     return [match.job for match in matching_jobs(db, user, **kwargs)]
 
 
-def _proxy(db, user, status: str) -> None:
-    insert(db, ProxyCredential(user_id=user.id, secret_ref="secret:proxy", status=status))
+# ── LinkedIn is everyone's ────────────────────────────────────────────────────────────────────
 
+def test_linkedin_jobs_reach_everyone_their_words_match(db):
+    """Fetched through the site's proxy since 2026-11-01, so nobody needs one of their own to see them.
+    Before, a person without a proxy never saw a LinkedIn job (decision D3, retired)."""
+    first, second = _user(db), _user(db)
+    linkedin_job, board_job = _job(db, "linkedin"), _job(db, "greenhouse")
 
-# ── the gate ──────────────────────────────────────────────────────────────────────────────────
-
-def test_a_user_without_a_credential_sees_no_linkedin_rows(db):
-    """The free-rider case, and the reason the gate exists at all."""
-    user = _user(db)
-    linkedin_job = _job(db, "linkedin")
-    ats_job = _job(db, "greenhouse")
-
-    assert TenantRepository(db).linkedin_visible(user.id) is False
-    feed_ids = [j.id for j in _feed(db, user)]
-    assert linkedin_job not in feed_ids, "a paid-for row leaked to a user who did not pay"
-    assert ats_job in feed_ids, "the free two-thirds must still be a useful product"
-
-
-def test_a_healthy_credential_unlocks_the_tier(db):
-    user = _user(db)
-    _proxy(db, user, "healthy")
-    linkedin_job = _job(db, "linkedin")
-
-    assert TenantRepository(db).linkedin_visible(user.id) is True
-    assert linkedin_job in [j.id for j in _feed(db, user)]
-
-
-@pytest.mark.parametrize("status", ["quarantined", "disabled"])
-def test_an_unhealthy_credential_closes_the_gate_again(db, status):
-    """Quarantine must actually stop delivery, or a broken credential becomes free access."""
-    user = _user(db)
-    _proxy(db, user, status)
-    linkedin_job = _job(db, "linkedin")
-
-    assert TenantRepository(db).linkedin_visible(user.id) is False
-    assert linkedin_job not in [j.id for j in _feed(db, user)]
-
-
-def test_the_gate_is_applied_before_the_limit_not_after(db):
-    """Filtering after the scan would hand short pages to exactly the users who have no credential."""
-    user = _user(db)
-    # The four newest are LinkedIn's, so a gate applied after the scan would leave nothing.
-    for i in range(6):
-        _job(db, "linkedin" if i < 4 else "greenhouse", minutes_ago=i + 1)
-
-    feed = _feed(db, user, scan=2)
-    assert len(feed) == 2, "the page is filled from eligible rows, not truncated by the gate"
-    assert all(j.source != "linkedin" for j in feed)
-
-
-def test_the_gate_is_per_user_on_the_same_shared_row(db):
-    """One corpus row, two users, different visibility. That is the whole design in one assertion."""
-    paying, freeloader = _user(db), _user(db)
-    _proxy(db, paying, "healthy")
-    shared_linkedin_job = _job(db, "linkedin")
-
-    assert shared_linkedin_job in [j.id for j in _feed(db, paying)]
-    assert shared_linkedin_job not in [j.id for j in _feed(db, freeloader)]
+    for person in (first, second):
+        assert {linkedin_job, board_job} <= {job.id for job in _feed(db, person)}
 
 
 # ── the governor ──────────────────────────────────────────────────────────────────────────────

@@ -20,7 +20,7 @@ from libs.settings import (
 )
 from libs.tenant.repository import TenantRepository
 from services.harvester.cycle import run_cycle
-from services.harvester.describe import describe_linkedin_for_all
+from services.harvester.describe import describe_linkedin
 from services.harvester.linkedin import run_for_due_users as run_linkedin
 from services.harvester.source_config import build_source_configs
 
@@ -46,11 +46,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args(argv)
     _configure_logging(args.verbose)
+    # Every path, the cycle's own LinkedIn pass included: the site proxy's address carries a password.
+    install()
     ensure_schema()
 
     if args.linkedin:
-        # Per user, on their own schedule and their own credential.
-        install()
+        # Per user, on their own schedule, through the site proxy.
         db = database()
         report = run_linkedin(db, limit=linkedin_concurrent_users(db))
         logger.info("linkedin: %d considered, %d ran, %d without a lease, %d link(s), %d new",
@@ -60,10 +61,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.describe_linkedin:
         # A separate pass on a slower timer, not part of the cycle.
-        install()
         db = database()
-        totals = describe_linkedin_for_all(db)
-        logger.info("describe(linkedin): %s", totals)
+        describe_linkedin(db)
         return 0
 
     kwargs = {}

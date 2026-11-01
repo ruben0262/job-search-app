@@ -15,6 +15,7 @@ from libs.documents.saved import keep, purge_unsaved
 from libs.legal import has_consented
 from libs.llm import LlmError, paying_client
 from libs.obs import configure
+from libs.proxy import site_proxy
 from libs.queue.worker import INTERACTIVE_IDLE_SLEEP_SEC, Terminal, run_worker
 from libs.secrets import SecretStore, install, redacting
 from services.docgen import pdf, run
@@ -59,7 +60,7 @@ def _with_ai(db, job: QueueJob, *, job_id: int, kind: str, payer: str | None):
                            "the privacy page")
     store = SecretStore(db)
     with paying_client(store, job.user_id, payer or "") as paid, \
-            _http_for(store, job.user_id) as http:
+            _http_for() as http:
         if paid is None:
             raise NotBuildable("the key that was to pay for this has been removed — add one, or "
                                "use the instant version")
@@ -75,17 +76,12 @@ def _with_ai(db, job: QueueJob, *, job_id: int, kind: str, payer: str | None):
 
 
 @contextmanager
-def _http_for(store: SecretStore, user_id):
-    """An HTTP client for the pre-build freshness check, on this user's own proxy if they have one."""
-    with store.use(user_id, "proxy") as secret:
-        if secret is None:
-            with httpx.Client(timeout=25, follow_redirects=True) as client:
-                yield client
-            return
-        value = secret.reveal()
-        with redacting(value), httpx.Client(timeout=25, follow_redirects=True,
-                                            proxy=value) as client:
-            yield client
+def _http_for():
+    """An HTTP client for the pre-build freshness check: through the site proxy when there is one, as
+    the boards that refuse a server's address are what it most often checks."""
+    proxy = site_proxy()
+    with redacting(proxy or ""), httpx.Client(timeout=25, follow_redirects=True, proxy=proxy) as client:
+        yield client
 
 
 def purge(db) -> None:

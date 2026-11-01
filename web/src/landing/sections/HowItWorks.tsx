@@ -7,8 +7,7 @@ const STAGES = [
     name: "Collect",
     body: (
       <>
-        Every 15 minutes, new jobs from job boards and company career pages.
-        LinkedIn too, if you add a proxy of your own.
+        Every 15 minutes, new jobs from job boards, company career pages and LinkedIn.
       </>
     ),
   },

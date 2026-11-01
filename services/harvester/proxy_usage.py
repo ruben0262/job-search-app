@@ -1,4 +1,8 @@
-"""Leasing, metering, and health for per-user proxy credentials."""
+"""Each account's share of the site proxy: a lease while its daily bandwidth lasts, and the meter.
+
+The proxy is the site's (`libs.proxy`), so there is nothing per account to quarantine: a proxy that
+fails is the site's to fix, and is logged where it fails.
+"""
 from __future__ import annotations
 
 import logging
@@ -12,13 +16,10 @@ from pymongo.database import Database
 
 from libs import limits
 from libs.db import find_one, get, now
-from libs.db.models import ProxyCredential, User
+from libs.db.models import ProxyUsage, User
 from services.harvester.fetch import ProxyCapExceeded, ProxyLease
 
 logger = logging.getLogger(__name__)
-
-# Consecutive failures before a credential is quarantined.
-QUARANTINE_AFTER_FAILURES = 3
 
 
 class ProxyUsageRepository:
@@ -26,41 +27,33 @@ class ProxyUsageRepository:
 
     def __init__(self, db: Database):
         self._db = db
-        self._proxies = db[ProxyCredential.COLLECTION]
+        self._proxies = db[ProxyUsage.COLLECTION]
 
-    def _credential(self, user_id: UUID) -> ProxyCredential | None:
-        return find_one(self._db, ProxyCredential, {"user_id": user_id})
+    def _credential(self, user_id: UUID) -> ProxyUsage | None:
+        return find_one(self._db, ProxyUsage, {"user_id": user_id})
 
     def _set(self, user_id: UUID, **fields) -> None:
         self._proxies.update_one({"user_id": user_id}, {"$set": {**fields, "updated_at": now()}})
 
     # ── leasing ──────────────────────────────────────────────────────────────────────────────
 
-    def acquire_lease(self, user_id: UUID, *, secret_resolver) -> ProxyLease | None:
-        """Authorise this user's LinkedIn loop, or return `None` if they may not run one."""
-        credential = self._credential(user_id)
-        if credential is None or credential.status != "healthy":
-            return None
-
-        if self.roll_daily_window(user_id):
-            credential = self._credential(user_id)
-        remaining = self._cap(user_id) - float(credential.mb_used_today)
+    def acquire_lease(self, user_id: UUID, *, proxy_url: str) -> ProxyLease | None:
+        """Authorise this account's LinkedIn run through the site proxy, or `None` once its day's
+        bandwidth is spent. The meter is made on first use."""
+        fresh = ProxyUsage(user_id=user_id).to_doc()
+        fresh.pop("_id", None)
+        self._proxies.update_one({"user_id": user_id}, {"$setOnInsert": fresh}, upsert=True)
+        self.roll_daily_window(user_id)
+        remaining = self._cap(user_id) - float(self._credential(user_id).mb_used_today)
         if remaining <= 0:
             return None
-
-        proxy_url = secret_resolver(credential.secret_ref)
-        if not proxy_url:
-            # A credential whose secret cannot be resolved is broken, not merely idle.
-            self.record_failure(user_id, "proxy secret could not be resolved")
-            return None
-
         return ProxyLease(user_id=user_id, proxy_url=proxy_url, remaining_mb=remaining)
 
     def check_admission(self, user_id: UUID, *, projected_mb: float = 0.0) -> None:
         """Raise if this user is over budget. Called before each request, not during it."""
         credential = self._credential(user_id)
         if credential is None:
-            raise ProxyCapExceeded(f"user {user_id} has no proxy credential")
+            raise ProxyCapExceeded(f"user {user_id} has no proxy lease")
         used = float(credential.mb_used_today) + projected_mb
         cap = self._cap(user_id)
         if used >= float(cap):
@@ -106,27 +99,6 @@ class ProxyUsageRepository:
 
         self._set(user_id, mb_used_today=0.0, usage_reset_at=now)
         return True
-
-    # ── health ───────────────────────────────────────────────────────────────────────────────
-
-    def record_success(self, user_id: UUID) -> None:
-        """A working fetch clears the streak. Consecutive means consecutive."""
-        self._set(user_id, fail_streak=0, last_error=None)
-
-    def record_failure(self, user_id: UUID, error: str) -> bool:
-        """Record a failure; quarantine after `QUARANTINE_AFTER_FAILURES` in a row."""
-        credential = self._credential(user_id)
-        if credential is None:
-            return False
-        streak = credential.fail_streak + 1
-        quarantined = streak >= QUARANTINE_AFTER_FAILURES and credential.status == "healthy"
-        self._set(user_id, fail_streak=streak, last_error=error[:500],
-                  **({"status": "quarantined"} if quarantined else {}))
-        return quarantined
-
-    def restore(self, user_id: UUID) -> None:
-        """Return a quarantined credential to service, e.g. after the user re-enters it."""
-        self._set(user_id, status="healthy", fail_streak=0, last_error=None)
 
 
 def _tz(db: Database, user_id: UUID) -> ZoneInfo:

@@ -7,7 +7,9 @@ from dataclasses import dataclass
 # 2026-10-28: Google and OpenAI added; Anthropic's purpose is now documents only — profiles are read
 # by rules and nothing scores (ROADMAP Phase 8); and a small allowance runs on the platform's own
 # key. A new processor asks everyone again.
-DISCLOSURE_VERSION = "2026-10-28"
+# 2026-11-01: the proxy is the site's one provider now, not a person's own, and LinkedIn is searched
+# for everyone's words through it — so it reaches people it did not reach before.
+DISCLOSURE_VERSION = "2026-11-01"
 
 
 @dataclass(frozen=True)
@@ -60,12 +62,13 @@ PROCESSORS = (
         location="Outside the EU",
     ),
     Processor(
-        name="Your proxy provider",
-        purpose="Fetching LinkedIn postings on your behalf. Never shared with another user "
-                "(decision D3).",
-        data="The job-search requests made for your account.",
-        on_your_credential=True,
-        location="Depends on the provider you chose",
+        name="The site's proxy provider",
+        purpose="Searching LinkedIn for the jobs your words describe, and reading those postings. "
+                "LinkedIn refuses a server's own address, so this site reaches it through one proxy.",
+        data="The words, places and kind of work your account searches for. Nothing else about you: "
+             "not your name, your email or your CV.",
+        on_your_credential=False,
+        location="The provider's network of residential addresses",
     ),
 )
 

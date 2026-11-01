@@ -1,7 +1,7 @@
-"""The per-user LinkedIn pass: who runs, whose credential, and when they run next."""
+"""The per-user LinkedIn pass: who runs, through the site proxy, within whose bandwidth, and when
+they run next."""
 from __future__ import annotations
 
-import os
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -18,11 +18,13 @@ CONFIG = {"sections": [{"keywords": ["python developer", "backend engineer"],
                         "remote_policy": "remote_or_hybrid", "posted_within_hours": 6}]}
 
 
+SITE_PROXY = "http://user:pass@proxy.example:8080"
+
+
 @pytest.fixture(autouse=True)
-def _kek():
-    """A key, because `SecretStore` refuses to run without one — correctly."""
-    from libs.secrets import generate_key
-    os.environ.setdefault("SECRETS_KEK", f"k1:{generate_key()}")
+def _site_proxy(monkeypatch):
+    """The site's one proxy, set as it is on the server (`HARVEST_PROXY`)."""
+    monkeypatch.setenv("HARVEST_PROXY", SITE_PROXY)
 
 
 def _user(db, **kwargs) -> User:
@@ -84,13 +86,50 @@ def test_a_user_with_no_config_contributes_no_queries(db):
 
 # ── what happens when it runs ─────────────────────────────────────────────────────────────────
 
-def test_a_user_with_no_proxy_is_skipped_and_still_rescheduled(db):
-    """Always rescheduled."""
+def test_everyone_due_runs_through_the_site_proxy_with_none_of_their_own(db):
+    """Nobody brings a proxy any more (owner's decision, 2026-11-01): the site's carries everyone's."""
+    from libs.db.models import UserSecret
+
+    users = [_user(db, linkedin_next_run_at=None) for _ in range(2)]
+    leases = []
+
+    report = linkedin.run_for_due_users(db, now=NOW,
+                                        gather=lambda cfg, log, *, lease: leases.append(lease) or [])
+
+    assert report.ran == 2
+    assert sorted((str(lease.user_id), lease.proxy_url) for lease in leases) == sorted(
+        (str(user.id), SITE_PROXY) for user in users)
+    assert db[UserSecret.COLLECTION].count_documents({}) == 0, "and no credential of anybody's was read"
+
+
+def test_without_the_site_proxy_nobodys_linkedin_runs_and_it_is_said(db, monkeypatch, caplog):
+    import logging
+
+    monkeypatch.delenv("HARVEST_PROXY")
+    _user(db, linkedin_next_run_at=None)
+
+    def no_request(*_args, **_kwargs):
+        raise AssertionError("LinkedIn was fetched without the proxy")
+
+    with caplog.at_level(logging.WARNING):
+        report = linkedin.run_for_due_users(db, now=NOW, gather=no_request)
+
+    assert (report.considered, report.links_found) == (0, 0)
+    assert any("HARVEST_PROXY is not set" in record.getMessage() for record in caplog.records)
+
+
+def test_an_account_whose_day_is_spent_is_skipped_and_still_rescheduled(db):
+    """Its own bandwidth (`proxy_mb_per_day`), on the site's proxy: spent is spent until its midnight."""
+    from libs.db import now
+    from libs.db.models import ProxyUsage
+
     user = _user(db, linkedin_next_run_at=None)
+    # Spent today by the real clock, which is the one the meter's day turns on.
+    insert(db, ProxyUsage(user_id=user.id, mb_used_today=200, usage_reset_at=now()))
 
     report = linkedin.run_for_due_users(db, now=NOW, gather=lambda *a, **k: [])
 
-    assert report.skipped_no_lease == 1
+    assert (report.skipped_no_lease, report.ran) == (1, 0)
     next_run = get(db, User, user.id).linkedin_next_run_at
     assert next_run is not None
     assert next_run > NOW
@@ -110,14 +149,8 @@ def test_the_next_run_respects_the_interval_floor(db):
 
 def test_one_users_failure_does_not_stop_the_pass(db):
     """One account's LinkedIn breaking is not the tier breaking."""
-    from libs.db.models import ProxyCredential
-    from libs.secrets import SecretStore
-
     for _ in range(2):
-        user = _user(db, linkedin_next_run_at=None)
-        # A usable proxy each, so the fetch is actually reached rather than skipped for want of one.
-        SecretStore(db).put(user.id, "proxy", "http://user:pass@proxy.example:8080")
-        insert(db, ProxyCredential(user_id=user.id, secret_ref=f"{user.id}:proxy"))
+        _user(db, linkedin_next_run_at=None)
 
     def explode(*_args, **_kwargs):
         raise RuntimeError("linkedin said no")

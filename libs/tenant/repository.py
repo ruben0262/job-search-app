@@ -8,7 +8,7 @@ from pymongo.database import Database
 
 from libs.contracts.config import CONFIG_SCHEMA_VERSION
 from libs.db import now
-from libs.db.models import ProxyCredential, User, UserConfig, UserSecret
+from libs.db.models import User, UserConfig, UserSecret
 
 
 @dataclass(frozen=True)
@@ -57,10 +57,3 @@ class TenantRepository:
             sort=[("kind", 1)])
         return [SecretMetadata(row["kind"], row.get("last_4"), row.get("validated_at"),
                                row.get("updated_at")) for row in rows]
-
-    # ── the LinkedIn visibility gate ─────────────────────────────────────────────────────────
-
-    def linkedin_visible(self, user_id: _uuid.UUID) -> bool:
-        """Whether this user may see `source='linkedin'` rows: only with a healthy proxy of their own."""
-        row = self._db[ProxyCredential.COLLECTION].find_one({"user_id": user_id}, {"status": 1})
-        return bool(row) and row["status"] == "healthy"

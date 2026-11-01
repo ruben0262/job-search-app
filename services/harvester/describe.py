@@ -7,11 +7,11 @@ from time import monotonic
 
 from libs.corpus.postings import ProxyUnusable, fetch_job, fetch_meta
 from libs.corpus.repository import DESCRIBE_MAX_FAILURES, CorpusRepository
-from libs.db.models import User
 from libs.obs import audit
-from libs.secrets import SecretStore, redacting
-from services.harvester.fetch import ProxyCapExceeded, make_client
-from services.harvester.proxy_usage import ProxyUsageRepository
+from libs.proxy import ENV as PROXY_ENV
+from libs.proxy import site_proxy
+from libs.secrets import redacting
+from services.harvester.fetch import make_site_client
 
 logger = logging.getLogger(__name__)
 
@@ -147,46 +147,24 @@ def refresh_metadata(corpus: CorpusRepository, client, *, limit: int) -> Describ
     return report
 
 
-def describe_linkedin_for_all(db, *, limit_per_user: int = PROXIED_LIMIT) -> dict[str, int]:
-    """The proxied half of the pass, run for every user who brought a proxy credential."""
+def describe_linkedin(db, *, limit: int = PROXIED_LIMIT) -> DescribeReport:
+    """The proxied half of the pass: LinkedIn postings' descriptions, then what is left of the budget on
+    their metadata, through the site proxy. Nothing when no proxy is set."""
+    proxy = site_proxy()
+    if proxy is None:
+        logger.warning("describe(linkedin): %s is not set, so LinkedIn postings were not described",
+                       PROXY_ENV)
+        return DescribeReport()
     corpus = CorpusRepository(db)
-    usage = ProxyUsageRepository(db)
-    store = SecretStore(db)
-    totals: dict[str, int] = {"users": 0, "attempted": 0, "described": 0}
-
-    for user_id in db[User.COLLECTION].distinct("_id", {"active": True}):
-        # The plaintext lives inside `store.use` and nowhere else, so it outlives no request.
-        with store.use(user_id, "proxy") as secret:
-            if secret is None:
-                continue
-            proxy_url = secret.reveal()
-            with redacting(proxy_url):
-                try:
-                    lease = usage.acquire_lease(user_id, secret_resolver=lambda _ref, url=proxy_url: url)
-                except ProxyCapExceeded:
-                    continue
-                if lease is None:
-                    continue
-
-                totals["users"] += 1
-                with make_client(lease) as client:
-                    report = describe_pending(corpus, client, linkedin=True,
-                                              limit=limit_per_user)
-                    # Descriptions first, then whatever budget is left on metadata.
-                    remaining = max(limit_per_user - report.attempted, 0)
-                    meta = (refresh_metadata(corpus, client, limit=remaining)
-                            if remaining and not report.proxy_error else DescribeReport())
-                    usage.record_usage(user_id, megabytes=client.megabytes_downloaded)
-                report.proxy_error = report.proxy_error or meta.proxy_error
-                totals["metadata"] = totals.get("metadata", 0) + meta.metadata_written
-                if report.proxy_error:
-                    # Recorded against the credential, not swallowed.
-                    usage.record_failure(user_id, report.proxy_error[:200])
-                    totals["proxy_failures"] = totals.get("proxy_failures", 0) + 1
-
-        totals["attempted"] += report.attempted
-        totals["described"] += report.described
-
-    logger.info("describe(linkedin): %d user(s), %d attempted, %d described",
-                totals["users"], totals["attempted"], totals["described"])
-    return totals
+    with redacting(proxy), make_site_client(proxy) as client:
+        report = describe_pending(corpus, client, linkedin=True, limit=limit)
+        remaining = max(limit - report.attempted, 0)
+        meta = (refresh_metadata(corpus, client, limit=remaining)
+                if remaining and not report.proxy_error else DescribeReport())
+    report.proxy_error = report.proxy_error or meta.proxy_error
+    report.metadata_written = meta.metadata_written
+    if report.proxy_error:
+        logger.error("describe(linkedin): the site proxy failed: %s", report.proxy_error[:200])
+    logger.info("describe(linkedin): %d attempted, %d described, %d metadata, %.1f MB",
+                report.attempted, report.described, report.metadata_written, client.megabytes_downloaded)
+    return report

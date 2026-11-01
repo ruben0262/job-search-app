@@ -11,7 +11,6 @@ from pydantic import BaseModel, Field
 from pymongo.database import Database
 
 from libs.credentials import validate_credential
-from libs.db.models import ProxyCredential
 from libs.db.models.user import CREDENTIAL_KINDS
 from libs.obs import audit
 from libs.secrets import SecretStore, redacting
@@ -54,17 +53,7 @@ def put_credential(kind: str, body: CredentialBody, request: Request, *,
 
         store.put(user_id, kind, value, validated=result.ok)
 
-        if kind == "proxy":
-            # The credential row, not just the secret.
-            _ensure_proxy_credential(db, user_id)
-
     return Saved(status="saved", validated=result.ok, detail=result.detail)
-
-
-def _ensure_proxy_credential(db: Database, user_id) -> None:
-    """Give this user a proxy credential row if they have none."""
-    fresh = ProxyCredential(user_id=user_id, secret_ref=f"{user_id}:proxy").to_doc()
-    db[ProxyCredential.COLLECTION].update_one({"user_id": user_id}, {"$setOnInsert": fresh}, upsert=True)
 
 
 class StoredCredential(BaseModel):

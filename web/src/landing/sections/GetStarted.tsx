@@ -54,8 +54,8 @@ export default function GetStarted() {
       <Reveal delay={0.18}>
         <p className="honest">
           Honest by design: there is no hidden score. Every job is shown because of words you
-          chose, and every line of your CV comes from what you wrote. Phone alerts need Telegram
-          or a browser that allows notifications, and LinkedIn jobs need a small proxy of your own.
+          chose, and every line of your CV comes from what you wrote. Alerts come by Telegram, by
+          your browser's notifications, or in one email each morning.
         </p>
         <div className="hero-ctas">
           <a className="btn btn-solid" href="#/signup">

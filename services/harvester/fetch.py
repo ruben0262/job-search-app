@@ -92,6 +92,16 @@ def make_client(lease: ProxyLease | None = None, **kwargs: Any) -> TenantClient:
     return TenantClient(lease=lease, mounts=_mounts(lease.proxy_url, direct), **opts)
 
 
+def make_site_client(proxy_url: str, **kwargs: Any) -> TenantClient:
+    """A client with the site proxy for `PROXIED_HOSTS`, for work no one account owns: describing the
+    LinkedIn postings everyone's searches stored."""
+    opts: dict[str, Any] = {
+        "headers": _UA, "timeout": DEFAULT_TIMEOUT, "follow_redirects": True,
+        "trust_env": False, **kwargs}
+    direct = opts.pop("transport", None)
+    return TenantClient(lease=None, mounts=_mounts(proxy_url, direct), **opts)
+
+
 def make_shared_client(**kwargs: Any) -> TenantClient:
     """The shared harvest loop's client."""
     return make_client(lease=None, **kwargs)

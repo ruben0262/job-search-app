@@ -30,7 +30,6 @@ from libs.db.models import (
     LanePause,
     OperatorKeyword,
     PlatformSetting,
-    ProxyCredential,
     PushSubscription,
     SetupConversation,
     SetupMessage,
@@ -64,9 +63,6 @@ TABLES: list[tuple[type, str]] = [
     (UserProfileFile, """SELECT user_id, name, content, kind, filled, created_at, updated_at
                          FROM user_profile_files"""),
     (PushSubscription, "SELECT endpoint, user_id, p256dh, auth, created_at FROM push_subscriptions"),
-    (ProxyCredential, """SELECT user_id, secret_ref, mb_used_today, usage_reset_at, status,
-                                fail_streak, last_error, last_used_at, created_at, updated_at
-                         FROM proxy_credentials"""),
     (UserNotification, """SELECT id, user_id, event, level, title, body, url, created_at, read_at
                           FROM user_notifications WHERE event <> 'model.trained'"""),
     # Only the help chat's: the setup agents' conversations went with the switched-off model.

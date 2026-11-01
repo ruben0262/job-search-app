@@ -141,17 +141,13 @@ def test_no_green_words_means_no_jobs_rather_than_every_job(account):
 
 
 @needs_db
-def test_only_a_person_with_a_healthy_proxy_of_their_own_sees_linkedin_jobs(account):
-    """Decision D3: LinkedIn is fetched through someone's own proxy, never shared with the rest."""
-    from libs.db import insert
-    from libs.db.models import ProxyCredential
+def test_linkedin_jobs_are_matched_like_any_other_board(account):
+    """Fetched through the site's proxy since 2026-11-01, so no proxy of a person's own is needed to see
+    them (decision D3, retired)."""
     from libs.matching import matching_jobs
 
     db, user = account
     linkedin, board = _jobs(db, ("Backend Engineer", "", True, 1), ("Backend Engineer", "", True, 2))
     db.corpus.update_one({"_id": linkedin.id}, {"$set": {"source": "linkedin"}})
 
-    assert [m.job.id for m in matching_jobs(db, user)] == [board.id]
-
-    insert(db, ProxyCredential(user_id=user.id, secret_ref=f"{user.id}:proxy", status="healthy"))
     assert {m.job.id for m in matching_jobs(db, user)} == {linkedin.id, board.id}

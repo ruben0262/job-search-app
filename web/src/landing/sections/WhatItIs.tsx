@@ -12,8 +12,7 @@ export default function WhatItIs() {
       <Reveal delay={0.1}>
         <p className="lede">
           Mahoraga collects new jobs <strong>every 15 minutes, all day, every day</strong>: from
-          job boards, from company career pages, and from LinkedIn too if you add a proxy of your
-          own.
+          job boards, from company career pages, and from LinkedIn.
         </p>
         <p className="lede">
           <strong>You decide what you see.</strong> Green words find jobs, like "nurse" or

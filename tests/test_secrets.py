@@ -299,7 +299,7 @@ def test_nothing_the_database_holds_contains_the_plaintext(store, db):
     """T4's headline assertion, made the way an attacker would: every document in every collection."""
     user = _user(db)
     store.put(user.id, "claude_api", CLAUDE_KEY)
-    store.put(user.id, "proxy", PROXY_URL)
+    store.put(user.id, "gemini_api", PROXY_URL)
 
     dumped = repr([list(db[name].find()) for name in db.list_collection_names()])
     assert repr(_secret_row(db, user.id).ciphertext) in dumped, "the premise: the dump holds the secret"
@@ -396,7 +396,7 @@ def test_purge_destroys_the_key_as_well_as_the_rows(store, db):
     """Deleting rows is undone by restoring a backup."""
     user = _user(db)
     store.put(user.id, "claude_api", CLAUDE_KEY)
-    store.put(user.id, "proxy", PROXY_URL)
+    store.put(user.id, "gemini_api", PROXY_URL)
 
     assert store.purge(user.id) == 2
 
@@ -457,8 +457,8 @@ def test_an_empty_credential_is_refused(store, db):
 def test_asking_for_a_credential_that_was_never_set_is_not_an_error(store, db):
     """A user who has not added a proxy yet is the normal case, not an exception."""
     user = _user(db)
-    assert store.reveal(user.id, "proxy") is None
-    with store.use(user.id, "proxy") as key:
+    assert store.reveal(user.id, "gemini_api") is None
+    with store.use(user.id, "gemini_api") as key:
         assert key is None
 
 

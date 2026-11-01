@@ -75,11 +75,6 @@ def _user_alerts(health: PlatformHealth) -> list[Alert]:
                 "Tell the user: they need to reconnect the bot. Nothing is being delivered until "
                 "they do.", user.email))
 
-        if user.proxy_status == "quarantined":
-            alerts.append(Alert(
-                "warn", "proxy_quarantined",
-                "their proxy is quarantined",
-                "LinkedIn is not being fetched for this account. Tell the user.", user.email))
     return alerts
 
 

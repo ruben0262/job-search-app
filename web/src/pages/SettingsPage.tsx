@@ -1,4 +1,4 @@
-/** Settings: alerts on your phone, AI writing, your account, and the proxy only LinkedIn needs. */
+/** Settings: alerts, AI writing, and your account. */
 import { useEffect, useState } from "react";
 
 import { Alerts } from "../alerts";
@@ -135,16 +135,6 @@ export function SettingsPage({ dashboard, onChanged, onSignedOut }: {
         </div>
         <Error>{signOut.error}</Error>
       </Card>
-
-      <details className="card fold-plain">
-        <summary>Advanced — only needed for LinkedIn jobs</summary>
-        <p className="small muted">
-          LinkedIn jobs are collected through your own proxy, never a shared one. Without one you get
-          jobs from every other source.
-        </p>
-        <Credential kind="proxy" label="Proxy address" hint="With its username and password, e.g. http://user:pass@host:port."
-                    placeholder="http://user:pass@host:port" stored={stored} onChanged={reload} />
-      </details>
 
       <p className="small">
         <a href="#/privacy">Who sees your data</a>

@@ -708,9 +708,8 @@ export function AdminPage() {
 
           <p className="label" style={{ marginTop: "1.5rem" }}>LinkedIn accounts per tick</p>
           <span className="hint">
-            How many users&apos; LinkedIn passes run at once. Not a per-user setting — each account
-            uses its own proxy, so this is the platform not issuing hundreds of LinkedIn requests
-            simultaneously. At this rate a full rotation of every account takes{" "}
+            How many users&apos; LinkedIn passes run at once, through the site proxy. Not a per-user
+            setting — this is the platform not issuing hundreds of LinkedIn requests simultaneously. At this rate a full rotation of every account takes{" "}
             {Math.ceil((users?.length ?? 1) / Math.max(settings.linkedin_concurrent_users, 1))}{" "}
             tick(s).
           </span>

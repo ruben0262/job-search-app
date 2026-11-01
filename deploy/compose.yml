@@ -23,11 +23,9 @@ services:
     environment:
       MONGODB_URI: ${MONGODB_URI:?set it in deploy/.env — see .env.example}
       MONGODB_DB: ${MONGODB_DB:-mahoraga}
-      # Needed once the per-user LinkedIn loop decrypts proxy credentials (D3). Passed through
-      # rather than `:?`-required, so the shared tiers keep harvesting on a box where the key is not
-      # set yet — but `libs.secrets` refuses to construct without it, so the LinkedIn loop fails
-      # loudly rather than silently skipping.
-      SECRETS_KEK: ${SECRETS_KEK:-}
+      # The site's one proxy (`libs.proxy`), which LinkedIn is searched and described through for
+      # everyone. Unset, LinkedIn is skipped and the log says so; every other board carries on.
+      HARVEST_PROXY: ${HARVEST_PROXY:-}
       # The platform's own credentials for three free aggregator APIs, not the user's. Adzuna,
       # Jooble and Findwork are general boards — every industry, not only software — which is what
       # makes them worth having: on 2026-08-09 the corpus was 336 ATS companies and every one was a
@@ -88,6 +86,8 @@ services:
       MONGODB_URI: ${MONGODB_URI:?set it in deploy/.env — see .env.example}
       MONGODB_DB: ${MONGODB_DB:-mahoraga}
       SECRETS_KEK: ${SECRETS_KEK:?docgen decrypts the key that pays for an AI-written document}
+      # The freshness check before a build goes through the site proxy when there is one.
+      HARVEST_PROXY: ${HARVEST_PROXY:-}
       # The platform's own paid key: each account's `ai_platform_requests_per_day` (default 20).
       PLATFORM_AI_PROVIDER: ${PLATFORM_AI_PROVIDER:-}
       PLATFORM_AI_KEY: ${PLATFORM_AI_KEY:-}

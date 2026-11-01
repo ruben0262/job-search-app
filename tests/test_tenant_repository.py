@@ -90,7 +90,7 @@ def test_one_users_secrets_are_never_listed_for_another(db, t):
     """T1: secrets read path. These are strangers' live credentials."""
     alice, bob = _user(db), _user(db)
     for owner, kind, last_4 in ((alice, "claude_api", "aaaa"), (bob, "claude_api", "bbbb"),
-                                (bob, "proxy", "cccc")):
+                                (bob, "gemini_api", "cccc")):
         insert(db, UserSecret(user_id=owner.id, kind=kind, ciphertext=last_4.encode(), nonce=b"n",
                               last_4=last_4))
 
