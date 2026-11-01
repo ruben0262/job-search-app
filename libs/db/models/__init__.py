@@ -11,7 +11,6 @@ from libs.db.models.document import DOCUMENT_KINDS, UserDocument
 from libs.db.models.notification import PushSubscription, UserNotification
 from libs.db.models.operator import OperatorKeyword
 from libs.db.models.profile_file import PROFILE_FILE_KINDS, UserProfileFile
-from libs.db.models.proxy import ProxyUsage
 from libs.db.models.queue import (
     CLAIM_TIMEOUT_MIN,
     JOB_STATES,
@@ -35,7 +34,7 @@ from libs.db.models.user import (
 
 MODELS = (User, UserConfig, UserSecret, UserSession, AuthToken, MailSend, CorpusJob, QueueJob,
           UserJobState, SetupConversation, SetupMessage, UserNotification, PushSubscription,
-          UserDocument, UserProfileFile, ProxyUsage, PlatformSetting, AiRequest, AtsToken, AtsEtag,
+          UserDocument, UserProfileFile, PlatformSetting, AiRequest, AtsToken, AtsEtag,
           BuiltDocument, OperatorKeyword, LanePause, Lock, ContactMessage)
 
 __all__ = [
@@ -44,7 +43,7 @@ __all__ = [
     "TELEGRAM_STATUSES", "TOKEN_PURPOSES", "USER_STATUSES", "WORKPLACES",
     "AiRequest", "AtsEtag", "AtsToken", "AuthToken", "BuiltDocument", "ContactMessage", "CorpusJob",
     "LanePause", "Lock",
-    "MailSend", "OperatorKeyword", "PlatformSetting", "ProxyUsage", "PushSubscription", "QueueJob",
+    "MailSend", "OperatorKeyword", "PlatformSetting", "PushSubscription", "QueueJob",
     "SetupConversation", "SetupMessage", "User", "UserConfig", "UserDocument", "UserJobState",
     "UserNotification", "UserProfileFile", "UserSecret", "UserSession",
 ]

@@ -34,6 +34,10 @@ FEW_YEARS, MANY_YEARS = 3, 5
 # How many of their matches a word must turn up in before it "keeps appearing".
 DRIFT_MIN = 3
 
+# The most words a suggestion has. A board searches a phrase as one thing, so "team coordinator & co
+# lead" finds almost nothing while "team coordinator" finds the jobs (owner, 2026-11-01).
+MAX_WORDS = 2
+
 _SENIOR = ("senior", "lead", "principal", "head of")
 _JUNIOR = ("intern", "internship", "graduate", "junior", "trainee")
 _PAY = {"unpaid": "Jobs that pay nothing",
@@ -67,7 +71,8 @@ def compute(facts: Facts, *, config: dict | None, titles: list[str], matched: li
         out: list[dict] = []
         for term, reason in candidates:
             term = norm(term)  # noqa: PLW2901 - compared in the form green words are matched in
-            if (limit is None or len(out) < limit) and 2 <= len(term) <= 40 and term not in taken:
+            if ((limit is None or len(out) < limit) and 2 <= len(term) <= 40
+                    and len(term.split()) <= MAX_WORDS and term not in taken):
                 taken.add(term)
                 out.append({"term": term, "reason": reason})
         return out
@@ -80,10 +85,14 @@ def compute(facts: Facts, *, config: dict | None, titles: list[str], matched: li
 
 
 def _held(facts: Facts):
-    """The job titles they held, most recent first."""
+    """The job titles they held, most recent first, each as one or two words: a title that names two
+    jobs ("Software Engineer & Developer") offers both, and a long one is cut to its last two words,
+    which are the job ("Full Stack Software Engineer" is a software engineer)."""
     for job in facts.jobs:
-        yield _plain_title(job.title), (f"Your job title at {job.organisation}" if job.organisation
-                                        else "A job title from your CV")
+        reason = f"Your job title at {job.organisation}" if job.organisation else "A job title from your CV"
+        for part in re.split(r"\s*(?:&|\+|/|\band\b)\s*", _plain_title(job.title), flags=re.I):
+            if part.split():
+                yield " ".join(part.split()[-MAX_WORDS:]), reason
 
 
 def _named(facts: Facts, titles: list[str]) -> list[tuple[str, str]]:

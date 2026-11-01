@@ -70,9 +70,8 @@ def main(argv: list[str] | None = None) -> int:
         # Per user, on their own schedule, through the site proxy.
         db = database()
         report = run_linkedin(db, limit=linkedin_concurrent_users(db))
-        logger.info("linkedin: %d considered, %d ran, %d without a lease, %d link(s), %d new",
-                    report.considered, report.ran, report.skipped_no_lease,
-                    report.links_found, report.new_jobs)
+        logger.info("linkedin: %d considered, %d ran, %d link(s), %d new",
+                    report.considered, report.ran, report.links_found, report.new_jobs)
         return 0
 
     if args.describe_linkedin:
@@ -125,9 +124,8 @@ def _run_linkedin_pass() -> None:
     try:
         db = database()
         report = run_linkedin(db, limit=linkedin_concurrent_users(db))
-        logger.info("linkedin: %d considered, %d ran, %d without a lease, %d link(s), %d new",
-                    report.considered, report.ran, report.skipped_no_lease,
-                    report.links_found, report.new_jobs)
+        logger.info("linkedin: %d considered, %d ran, %d link(s), %d new",
+                    report.considered, report.ran, report.links_found, report.new_jobs)
     except Exception:
         logger.exception("the LinkedIn pass failed; the shared harvest was unaffected")
 

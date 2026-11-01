@@ -201,6 +201,14 @@ def test_step_two_says_what_it_found_with_switches_suggestions_and_round_choices
         page.get_by_role("button", name="+ software engineer").click()
         expect(page.locator(".word.green", has_text="software engineer")).to_be_visible()
 
+        # One or two words work best, and a long phrase is said to be one.
+        expect(page.get_by_text("One or two words work best, like “python” or “nurse”")).to_be_visible()
+        expect(page.get_by_text("Long phrases find fewer jobs")).to_have_count(0)
+        page.get_by_label("Add to: Show me jobs with these words").fill("team coordinator and co lead")
+        page.get_by_label("Add to: Show me jobs with these words").press("Enter")
+        expect(page.get_by_text("Long phrases find fewer jobs")).to_contain_text(
+            "“team coordinator and co lead”")
+
         berlin, paris = page.get_by_role("switch", name="Berlin"), page.get_by_role("switch", name="Paris")
         expect(berlin).to_be_checked()  # read off the CV
         expect(paris).not_to_be_checked()

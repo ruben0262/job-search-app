@@ -40,7 +40,6 @@ class User(Document):
     profile_files_visible: bool = False
     # Per-account overrides of `libs.limits`; a key absent here means the catalogue's default.
     limits: dict = field(default_factory=dict)
-    linkedin_interval_min: int = 240
     linkedin_next_run_at: datetime | None = None
     telegram_status: str = "unconfigured"
     telegram_chat_id: str | None = None

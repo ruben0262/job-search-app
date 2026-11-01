@@ -2652,3 +2652,11 @@ input[type="checkbox"]:disabled {
     grid-column: 1 / -1;
   }
 }
+
+/* A word that is a long phrase, said beside the words: not an error, advice. */
+.long-words {
+  margin: 0 0 0.6rem;
+  padding: 0.5rem 0.75rem;
+  border-left: 2px solid var(--made-cover);
+  color: var(--muted);
+}

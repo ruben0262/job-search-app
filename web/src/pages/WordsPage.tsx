@@ -109,13 +109,13 @@ export function WordsForm({ withIdentity = false, action, onSaved, onEdited }: {
         <p className="section-lede">
           Green words find jobs: a job shows up when one of them is in it. Red words hide a job.
         </p>
-        <Words tone="green" label="Show me jobs with these words"
-               hint="A job title you would apply for, or a skill. A job needs at least one to be shown."
+        <Words tone="green" label="Show me jobs with these words" warnLong
+               hint="One or two words work best, like “python” or “nurse”: a job title you would apply for, or a skill. A job needs at least one to be shown."
                values={section.keywords} suggested={suggestions.green}
                suggestedTitle="Suggested from your CV — tap one to add it"
                onChange={(keywords) => patch({ keywords })} />
-        <Words tone="red" label="Hide jobs with these words"
-               hint="A job with one of these in its title or company is never shown."
+        <Words tone="red" label="Hide jobs with these words" warnLong
+               hint="One or two words work best. A job with one of these in its title or company is never shown."
                values={section.exclude_keywords ?? []} suggested={suggestions.red}
                suggestedTitle="Suggested — tap one to hide those jobs"
                onChange={(exclude_keywords) => patch({ exclude_keywords })} />

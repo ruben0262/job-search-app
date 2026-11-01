@@ -118,33 +118,18 @@ def test_without_the_site_proxy_nobodys_linkedin_runs_and_it_is_said(db, monkeyp
     assert any("HARVEST_PROXY is not set" in record.getMessage() for record in caplog.records)
 
 
-def test_an_account_whose_day_is_spent_is_skipped_and_still_rescheduled(db):
-    """Its own bandwidth (`proxy_mb_per_day`), on the site's proxy: spent is spent until its midnight."""
-    from libs.db import now
-    from libs.db.models import ProxyUsage
-
-    user = _user(db, linkedin_next_run_at=None)
-    # Spent today by the real clock, which is the one the meter's day turns on.
-    insert(db, ProxyUsage(user_id=user.id, mb_used_today=200, usage_reset_at=now()))
-
-    report = linkedin.run_for_due_users(db, now=NOW, gather=lambda *a, **k: [])
-
-    assert (report.skipped_no_lease, report.ran) == (1, 0)
-    next_run = get(db, User, user.id).linkedin_next_run_at
-    assert next_run is not None
-    assert next_run > NOW
-
-
-def test_the_next_run_respects_the_interval_floor(db):
-    """A user on a fifteen-minute digest does not get LinkedIn read ninety-six times a day."""
-    from services.harvester.governor import LINKEDIN_MIN_INTERVAL_MIN
-
-    user = _user(db, linkedin_next_run_at=None, linkedin_interval_min=15)
+def test_the_next_run_is_the_accounts_own_interval(db):
+    """The `linkedin_interval_min` limit, and nothing else, decides when an account runs next."""
+    default, slower = _user(db, linkedin_next_run_at=None), _user(db, linkedin_next_run_at=None,
+                                                                 limits={"linkedin_interval_min": 120})
     linkedin.run_for_due_users(db, now=NOW, gather=lambda *a, **k: [])
 
-    gap = (get(db, User, user.id).linkedin_next_run_at - NOW).total_seconds() / 60
-    # Jitter is ±10%, so the floor is what the lower bound has to clear.
-    assert gap >= LINKEDIN_MIN_INTERVAL_MIN * 0.85
+    def gap(user):
+        return (get(db, User, user.id).linkedin_next_run_at - NOW).total_seconds() / 60
+
+    # Jitter is ±10%.
+    assert 15 * 0.9 <= gap(default) <= 15 * 1.1
+    assert 120 * 0.9 <= gap(slower) <= 120 * 1.1
 
 
 def test_one_users_failure_does_not_stop_the_pass(db):

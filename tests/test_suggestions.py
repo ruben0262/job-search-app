@@ -52,6 +52,22 @@ def test_green_is_the_titles_they_held_then_the_skills_job_titles_here_also_name
     assert "haskell" not in _terms(found, "green")
 
 
+def test_no_suggestion_is_longer_than_two_words():
+    """A board searches a phrase as one thing, so a long one finds almost nothing (owner, 2026-11-01).
+    A title naming two jobs offers both; a long one is cut to the two words that are the job."""
+    cv = ENGINEER.replace("Senior Backend Engineer, Acme Payments",
+                          "Software Engineer & Developer, Acme Payments")
+    cv = cv.replace("Backend Engineer, Globex", "Full Stack Software Engineer, Globex")
+    found = compute(read({"cv": cv.format(start="Jan 2021")}, today=date(2026, 10, 28)), config=None,
+                    titles=[], matched=["Team Coordinator And Co Lead Of Operations"] * 5, text=cv,
+                    dismissed=set())
+
+    green = _terms(found, "green")
+    assert green[:2] == ["software engineer", "developer"]
+    assert all(len(term.split()) <= 2 for term in green + _terms(found, "red")), found
+    assert "software engineer & developer" not in green
+
+
 def test_red_is_the_seniority_their_years_are_furthest_from():
     veteran = _suggest(_facts("Jan 2014"))
     newcomer = _suggest(read({"cv": "EXPERIENCE\nData Analyst, Initech\tJan 2025 – Present\n"},

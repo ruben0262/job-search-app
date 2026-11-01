@@ -1,5 +1,5 @@
 """The per-user LinkedIn pass: each person's own words, on their own schedule, through the site's one
-proxy (`libs.proxy`), within their own daily bandwidth."""
+proxy (`libs.proxy`). No bandwidth limit per person (owner, 2026-11-01)."""
 from __future__ import annotations
 
 import logging
@@ -24,15 +24,12 @@ from libs.settings import (
 from libs.settings import get as settings_get
 from libs.tenant.repository import TenantRepository
 from services.harvester.describe import describe_pending
-from services.harvester.fetch import make_client
+from services.harvester.fetch import ProxyLease, make_client
 from services.harvester.governor import (
     LINKEDIN_MAX_CONCURRENT_USERS,
-    LINKEDIN_MIN_INTERVAL_MIN,
     linkedin_enabled,
     next_linkedin_run,
-    resolve_linkedin_interval,
 )
-from services.harvester.proxy_usage import ProxyUsageRepository
 from services.harvester.query_set import build_query_set, original_terms
 from services.harvester.sources import jobspy_source
 
@@ -54,7 +51,6 @@ class LinkedInReport:
 
     considered: int = 0
     ran: int = 0
-    skipped_no_lease: int = 0
     links_found: int = 0
     new_jobs: int = 0
     described: int = 0
@@ -101,7 +97,6 @@ def run_for_due_users(db, *, now: datetime | None = None,
 
     now = now or datetime.now(UTC)
     corpus = CorpusRepository(db)
-    usage = ProxyUsageRepository(db)
     # Read once per pass rather than per user: both are platform settings, not per-account ones.
     window = freshness_hours(db, "linkedin")
     depth = results_per_query(db, "linkedin") or RESULTS_WANTED
@@ -113,19 +108,15 @@ def run_for_due_users(db, *, now: datetime | None = None,
     for user in due_users(db, now=now, limit=limit):
         report.considered += 1
         # Scheduled first, deliberately: every path below wants the same next run, success or not.
-        chosen = limits.resolve(user, "linkedin_interval_min")
-        if chosen is None:
-            chosen = user.linkedin_interval_min or LINKEDIN_MIN_INTERVAL_MIN
-        interval = chosen
         db[User.COLLECTION].update_one({"_id": user.id}, {"$set": {
-            "linkedin_next_run_at": next_linkedin_run(now, resolve_linkedin_interval(interval))}})
+            "linkedin_next_run_at": next_linkedin_run(now, limits.resolve(user, "linkedin_interval_min"))}})
 
         queries = queries_for(db, user)
         if not queries:
             continue
 
         try:
-            ran = _run_one(user, queries, corpus=corpus, usage=usage, proxy=proxy,
+            ran = _run_one(user, queries, corpus=corpus, proxy=proxy,
                            report=report, gather=gather, hours_old=window,
                            results_wanted=depth, deliverable_for=deliverable_for)
         except Exception as exc:                                    # noqa: BLE001
@@ -137,22 +128,18 @@ def run_for_due_users(db, *, now: datetime | None = None,
             report.ran += 1
 
     audit(logger, "linkedin.pass", considered=report.considered, ran=report.ran,
-          no_lease=report.skipped_no_lease, links=report.links_found, new=report.new_jobs,
+          links=report.links_found, new=report.new_jobs,
           failures=len(report.failures))
     return report
 
 
 def _run_one(user: User, queries: list[dict], *, corpus: CorpusRepository,
-             usage: ProxyUsageRepository, proxy: str,
+             proxy: str,
              report: LinkedInReport, gather, hours_old: int,
              results_wanted: int, deliverable_for: int | None = None) -> bool:
-    """One user's fetch, through the site proxy, counted against their own bandwidth."""
+    """One user's fetch, through the site proxy."""
     with redacting(proxy):
-        lease = usage.acquire_lease(user.id, proxy_url=proxy)
-        if lease is None:
-            logger.info("linkedin: %s is at its daily proxy cap — resumes tomorrow", user.id)
-            report.skipped_no_lease += 1
-            return False
+        lease = ProxyLease(user_id=user.id, proxy_url=proxy)
 
         cfg = {"queries": queries,
                # The operator's ceiling, not the constant beside it.
@@ -173,13 +160,12 @@ def _run_one(user: User, queries: list[dict], *, corpus: CorpusRepository,
                 limit=UNLIMITED_DESCRIBES if per_run is None else per_run,
                 budget_seconds=DESCRIBE_BUDGET_SECONDS,
                 max_age_hours=deliverable_for)
-            usage.record_usage(user.id, megabytes=client.megabytes_downloaded)
 
     report.links_found += len(links)
     report.new_jobs += new_jobs
     report.described += described.described
-    logger.info("linkedin: %s ran %d quer(ies), %d link(s), %d new, %d described",
-                user.id, len(queries), len(links), new_jobs, described.described)
+    logger.info("linkedin: %s ran %d quer(ies), %d link(s), %d new, %d described, %.1f MB described",
+                user.id, len(queries), len(links), new_jobs, described.described, client.megabytes_downloaded)
     return True
 
 

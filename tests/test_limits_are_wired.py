@@ -37,18 +37,6 @@ def test_every_operator_limit_is_read_by_something():
         "governs nothing is worse than an absent one, because it looks answered.")
 
 
-def test_the_linkedin_interval_floor_cannot_silently_rewrite_the_operators_value():
-    """Wiring a control is not enough if a constant outranks it."""
-    from libs.limits import BY_KEY
-    from services.harvester.governor import LINKEDIN_MIN_INTERVAL_MIN, resolve_linkedin_interval
-
-    documented = BY_KEY["linkedin_interval_min"].default
-    assert documented is not None
-    assert documented >= LINKEDIN_MIN_INTERVAL_MIN, (
-        "the floor is above the catalogue's own default, so the panel's default is unreachable")
-    assert resolve_linkedin_interval(documented) == documented
-
-
 def test_no_limit_is_read_with_an_or_fallback():
     """`None` means Unlimited, and `resolve(...) or DEFAULT` turns that choice back into a cap."""
     offenders = []

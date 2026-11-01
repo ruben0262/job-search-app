@@ -8,7 +8,6 @@ import pytest
 
 from services.harvester.fetch import (
     PROXIED_HOSTS,
-    ProxyCapExceeded,
     ProxyLease,
     is_proxied,
     make_client,
@@ -20,7 +19,7 @@ BOB_PROXY = "http://bob:secret@proxy.example:8080"
 
 
 def _lease(proxy: str = ALICE_PROXY, mb: float = 100.0, user_id=None) -> ProxyLease:
-    return ProxyLease(user_id=user_id or uuid.uuid4(), proxy_url=proxy, remaining_mb=mb)
+    return ProxyLease(user_id=user_id or uuid.uuid4(), proxy_url=proxy)
 
 
 def _transport_for(client: httpx.Client, url: str) -> httpx.BaseTransport:
@@ -116,19 +115,11 @@ def test_ambient_proxy_environment_variables_are_ignored(monkeypatch):
         assert not _has_ambient_proxy(client, "https://boards.greenhouse.io/acme/jobs/1")
 
 
-# ── budget ────────────────────────────────────────────────────────────────────────────────────
-
-def test_a_lease_cannot_be_created_without_budget():
-    """Admission, not interruption. Checked before any bytes move (`TENANT_SAFETY.md` §3)."""
-    with pytest.raises(ProxyCapExceeded):
-        ProxyLease(user_id=uuid.uuid4(), proxy_url=ALICE_PROXY, remaining_mb=0)
-    with pytest.raises(ProxyCapExceeded):
-        ProxyLease(user_id=uuid.uuid4(), proxy_url=ALICE_PROXY, remaining_mb=-5)
-
+# ── the lease ─────────────────────────────────────────────────────────────────────────────────
 
 def test_a_lease_without_a_proxy_url_authorises_nothing():
     with pytest.raises(ValueError, match="proxy_url"):
-        ProxyLease(user_id=uuid.uuid4(), proxy_url="", remaining_mb=100)
+        ProxyLease(user_id=uuid.uuid4(), proxy_url="")
 
 
 # ── metering ──────────────────────────────────────────────────────────────────────────────────

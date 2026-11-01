@@ -8,9 +8,6 @@ from datetime import datetime, timedelta
 # Global ceiling on simultaneous per-user LinkedIn loops. Becomes the `linkedin` lane's worker count.
 LINKEDIN_MAX_CONCURRENT_USERS = 4
 
-# The floor under whatever an operator sets in the admin panel.
-LINKEDIN_MIN_INTERVAL_MIN = 15
-
 # ±10% of the interval.
 LINKEDIN_JITTER_FRACTION = 0.10
 
@@ -20,20 +17,16 @@ def linkedin_enabled() -> bool:
     return os.environ.get("HARVEST_LINKEDIN_DISABLED", "").strip().lower() not in {"1", "true", "yes"}
 
 
-def resolve_linkedin_interval(notify_interval_min: int) -> int:
-    """Default the LinkedIn interval from the user's notification interval, floored at the minimum."""
-    return max(int(notify_interval_min), LINKEDIN_MIN_INTERVAL_MIN)
-
-
 def next_linkedin_run(
     now: datetime,
     interval_min: int,
     *,
     rng: random.Random | None = None,
 ) -> datetime:
-    """When this user's next LinkedIn run is due, with jitter applied."""
+    """When this user's next LinkedIn run is due, with jitter applied. The interval is the account's
+    `linkedin_interval_min` limit, whose catalogue entry holds the floor."""
     rng = rng or random
-    interval = max(int(interval_min), LINKEDIN_MIN_INTERVAL_MIN)
+    interval = int(interval_min)
     spread = interval * LINKEDIN_JITTER_FRACTION
     offset = rng.uniform(-spread, spread)
     return now + timedelta(minutes=interval + offset)

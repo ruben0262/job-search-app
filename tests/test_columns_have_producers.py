@@ -23,7 +23,6 @@ WRITTEN_ELSEWHERE = {
 KNOWN_UNWRITTEN = {
     # Deliberate, and documented at the reader.
     # A second source of truth that disagrees with the first.
-    "linkedin_interval_min": "superseded by libs.limits; field default 240 vs limit default 15",
 }
 
 

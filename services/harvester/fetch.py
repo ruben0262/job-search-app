@@ -19,24 +19,16 @@ _UA = {
 DEFAULT_TIMEOUT = 25
 
 
-class ProxyCapExceeded(RuntimeError):
-    """The user's daily proxy budget is spent."""
-
-
 @dataclass(frozen=True)
 class ProxyLease:
-    """One user's authorisation to spend their own proxy bandwidth, for the duration of one loop."""
+    """One account's LinkedIn run through the site proxy: whose words it searches, and the proxy."""
 
     user_id: UUID
     proxy_url: str
-    remaining_mb: float
 
     def __post_init__(self) -> None:
         if not self.proxy_url:
             raise ValueError("a ProxyLease without a proxy_url cannot authorise anything")
-        if self.remaining_mb <= 0:
-            raise ProxyCapExceeded(
-                f"user {self.user_id} has no proxy budget left ({self.remaining_mb:.1f} MB)")
 
 
 class TenantClient(httpx.Client):

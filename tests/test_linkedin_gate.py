@@ -5,16 +5,16 @@ import random
 import uuid
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from libs.db import insert, now
 from libs.db.models import CorpusJob, User
 from libs.matching import matching_jobs
 from libs.tenant.repository import TenantRepository
 from services.harvester.governor import (
     LINKEDIN_JITTER_FRACTION,
-    LINKEDIN_MIN_INTERVAL_MIN,
     linkedin_enabled,
     next_linkedin_run,
-    resolve_linkedin_interval,
 )
 
 
@@ -53,16 +53,19 @@ def test_linkedin_jobs_reach_everyone_their_words_match(db):
 
 # ── the governor ──────────────────────────────────────────────────────────────────────────────
 
-def test_the_floor_never_overrides_what_an_operator_asked_for():
-    """The floor was 60 and the panel's own default is 15."""
-    from libs.limits import BY_KEY
+def test_the_linkedin_interval_is_one_setting_with_its_own_floor(db):
+    """The account's `linkedin_interval_min` limit: 15 by default, and nothing under 15 can be saved.
+    An account field (240) and a scheduler constant used to answer the same question."""
+    from libs.db.models import User
+    from libs.limits import BY_KEY, set_limit
 
-    # The floor is this tier's own number — bandwidth and ban risk — not a delivery cadence.
-    assert BY_KEY["linkedin_interval_min"].default == LINKEDIN_MIN_INTERVAL_MIN
-    assert resolve_linkedin_interval(15) == 15
-    assert resolve_linkedin_interval(240) == 240
-    # Below the floor there is nothing to gain, so it still clamps.
-    assert resolve_linkedin_interval(5) == LINKEDIN_MIN_INTERVAL_MIN
+    limit = BY_KEY["linkedin_interval_min"]
+    assert (limit.default, limit.minimum, limit.allow_unlimited) == (15, 15, False)
+    assert "linkedin_interval_min" not in {f.name for f in __import__("dataclasses").fields(User)}
+    user = _user(db)
+    with pytest.raises(ValueError, match="at least 15"):
+        set_limit(db, user.id, "linkedin_interval_min", 5)
+    set_limit(db, user.id, "linkedin_interval_min", 60)
 
 
 def test_jitter_stays_within_ten_percent_and_never_goes_backwards():

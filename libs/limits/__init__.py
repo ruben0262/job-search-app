@@ -57,22 +57,19 @@ LIMITS: tuple[Limit, ...] = (
           "How much of the CVs and cover letters this account makes are kept for it to download again. "
           "When it is full, new ones are not kept until some are deleted.",
           choices=(2, 5, 10, 25, 50)),
-    Limit("proxy_mb_per_day", "LinkedIn bandwidth per day", 200, "MB",
-          "Their own residential proxy pays for this. LinkedIn is the only source that uses it.",
-          choices=(100, 200, 500, 1000, 2000)),
-    # The single biggest filter on a feed, and it was a constant nobody could see.
     Limit("applicant_cap", "Drop jobs at or above this many applicants", 200, "applicants",
           "LinkedIn only — it is the one source reporting a count, and it stops counting at 200, "
           "so a posting pinned there has 200 or more. Unlimited shows every job whatever the "
           "count.",
           choices=(10, 25, 50, 100, 150, 200)),
     # Not unlimited-able.
+    # The one answer to "how often is LinkedIn searched for this account", and its own floor: an
+    # account field and a scheduler constant used to say it too, and disagreed (240 against 15).
     Limit("linkedin_interval_min", "Minutes between LinkedIn runs", 15, "minutes",
           "How often this account's LinkedIn tier runs. Shorter means fresher and more bandwidth.",
-          allow_unlimited=False,
-          choices=(15, 30, 60, 120)),
+          allow_unlimited=False, choices=(15, 30, 60, 120), minimum=15),
     Limit("describe_per_run", "Job descriptions fetched per run", 60, "postings",
-          "Each one is a request through their proxy. The rest wait for the next cycle.",
+          "Each one is a request through the site proxy. The rest wait for the next cycle.",
           choices=(20, 40, 60, 100, 200)),
     Limit("keywords", "Search terms", 25, "terms",
           "More terms means broader collection and more proxy spend.",

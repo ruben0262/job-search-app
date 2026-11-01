@@ -79,7 +79,8 @@ export function Suggested({ tone, term, reason, onTake, onDismiss }: {
 
 /** Green words show jobs, red words hide them: the chips, the words worth adding, and a box. */
 export function Words({ tone, label, hint, values, onChange, suggested = [], suggestedTitle,
-                        placeholder = "Type a word", chipClass = "", display = (value) => value }: {
+                        placeholder = "Type a word", chipClass = "", display = (value) => value,
+                        warnLong = false }: {
   tone: Tone;
   label: string;
   hint: string;
@@ -92,6 +93,8 @@ export function Words({ tone, label, hint, values, onChange, suggested = [], sug
   chipClass?: string;
   /** How a value is shown, when that differs from what is stored (a link without its https://). */
   display?: (value: string) => string;
+  /** Say so when a word is a long phrase: a board searches it as one thing and finds little. */
+  warnLong?: boolean;
 }) {
   const [draft, setDraft] = useState("");
   // Case-insensitive: "Nurse" and "nurse" are the same word to the matcher.
@@ -117,6 +120,13 @@ export function Words({ tone, label, hint, values, onChange, suggested = [], sug
           </span>
         ))}
       </div>
+      {warnLong && values.some((value) => value.trim().split(/\s+/).length > 2) ? (
+        <p className="small long-words" role="note">
+          Long phrases find fewer jobs:{" "}
+          {values.filter((value) => value.trim().split(/\s+/).length > 2).map((value) => `“${value}”`).join(", ")}.
+          One or two words work best.
+        </p>
+      ) : null}
       {suggested.some((each) => !has(each.term)) ? (
         <div className="suggested-box">
           <p className="suggested-title">

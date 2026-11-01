@@ -37,7 +37,7 @@ def test_what_is_not_carried_over_is_dropped_and_the_rest_keeps_its_values():
         "email_verified_at": None, "full_name": None, "links": None, "processing_consent_at": None,
         "processing_consent_version": None, "onboarding_completed_at": None, "last_active_at": None,
         "timezone": "UTC", "active": True, "is_admin": False, "profile_files_visible": False,
-        "limits": {"keywords": 40, "label_pool": 300}, "linkedin_interval_min": 240,
+        "limits": {"keywords": 40, "label_pool": 300},
         "linkedin_next_run_at": None, "telegram_status": "unconfigured", "telegram_chat_id": None,
         "profile": None, "documents_changed_at": None, "processed_at": None, "hard_data_changed_at": None,
         "suggestions": None, "wrapped_dek": memoryview(b"\xde\xad"), "created_at": None, "updated_at": None})
