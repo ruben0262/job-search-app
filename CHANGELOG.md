@@ -14,6 +14,37 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-01 — the owner's review: a clearer onboarding, new tabs, kept documents, own-bot Telegram, one proxy
+
+Six steps from the owner's walk through the site, each its own commit with its tests and its reasons:
+
+1. **Look** (5f1b626): every on/off choice is a sliding switch; "How often would you go in" is round
+   buttons (they were ovals); the theme button is a circle on every page, the landing page included,
+   which gained light colours; step 2 is three titled parts with clearer links and suggestions.
+2. **Tabs** (d1afe8a): Jobs, Applied, My search, My documents, Chat, Help, Admin (admins), Settings
+   last. Applied lists every application. Help is answers plus a contact form, kept and emailed to
+   `support_email` with the person as Reply-To; the admin panel's Messages tab lists them.
+3. **Kept documents** (2d2b32e): made CVs and cover letters are kept within `document_storage_mb`
+   (5 MB by default), shown again after a refresh, in Applied and in My documents, deletable one by one
+   or all at once; a full storage says so and stops keeping new ones.
+4. **Filters** (a0e63a1): posted lately, one board, not applied yet, no CV yet, newest first. "Has a
+   salary" was left out: reading it took 554 ms per load against the 300 ms budget.
+5. **Alerts** (899a1da): Telegram is each person's own bot — a token and a press of Start, the chat
+   found by itself — and the shared platform bot is gone; a daily email of new jobs at
+   `email_digest_hour`.
+6. **Proxy** (e3f1a11): one site proxy, `HARVEST_PROXY`, for everyone's LinkedIn searches, in place of
+   a proxy of each person's own; LinkedIn jobs reach everyone; the privacy page names the site's proxy
+   provider, so AI writing asks for agreement once more.
+
+Not done here, and why: the help chat's prompt still says "My words page" for what is now My search —
+a wording change proposed to the owner, not made (CLAUDE.md §3a). The proxy is not yet tested live:
+it waits for the owner to put the link in `HARVEST_PROXY`.
+
+Gates, run locally, in this order: lint-imports 2 kept, 0 broken; ruff clean; `python -m libs.db
+--prune` on an empty database clean; contract 71 paths, current; web build; pytest 1,197 passed,
+3 skipped (the Postgres copy source, the reference checkout, one empty guard). The full copy test,
+run separately against a Postgres at the tag's schema: 2 passed.
+
 ## 2026-10-30 — the help chat opens, retention and the database budget are settings, and the leftovers go
 
 **The help chat is on.** The owner approved `libs/prompts/support.md` on 2026-10-30 (CLAUDE.md §3a), so
