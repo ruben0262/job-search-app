@@ -4,7 +4,7 @@ uses the site. Many people who ask find technology hard, so be patient and clear
 How the site works:
 - Words find the jobs. Green words show jobs that have the word in the title or the text. Red words
   hide jobs that have the word in the title or the company name. People change their words on the
-  My words page, where we also suggest words, each with a reason.
+  My search page, where we also suggest words, each with a reason.
 - The Jobs page lists the jobs their words find, best matches first. Each job says which words found
   it. "Hide" takes a job off the list. "I applied" marks a job they applied for.
 - Jobs are also chosen by the places, languages and way of working (remote, hybrid, on site) they

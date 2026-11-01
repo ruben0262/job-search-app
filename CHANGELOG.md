@@ -36,9 +36,14 @@ Six steps from the owner's walk through the site, each its own commit with its t
    a proxy of each person's own; LinkedIn jobs reach everyone; the privacy page names the site's proxy
    provider, so AI writing asks for agreement once more.
 
-Not done here, and why: the help chat's prompt still says "My words page" for what is now My search —
-a wording change proposed to the owner, not made (CLAUDE.md §3a). The proxy is not yet tested live:
-it waits for the owner to put the link in `HARVEST_PROXY`.
+**Prompt change, approved by the owner on 2026-11-01** (CLAUDE.md §3a): `libs/prompts/support.md` names
+the "My search page" where it said "My words page", so the help chat sends people to a tab that
+exists. One phrase, the tab's new name, nothing else. Not A/B-measured: it changes no instruction,
+only a name the page itself now shows, and there is no earlier wording to compare it against that a
+person could still find.
+
+Not done here: the proxy is not yet tested live; it waits for the owner to put the link in
+`HARVEST_PROXY`.
 
 Gates, run locally, in this order: lint-imports 2 kept, 0 broken; ruff clean; `python -m libs.db
 --prune` on an empty database clean; contract 71 paths, current; web build; pytest 1,197 passed,
