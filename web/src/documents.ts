@@ -50,6 +50,6 @@ export function useBuild(jobId: number, kind: Ask["kind"]) {
 
   const error = refused !== null ? REFUSED[refused] ?? "That did not work. Try again."
     : build?.state === "failed" ? "We could not make it this time. Try again."
-      : build?.state === "expired" ? "It was deleted after a while, as they all are. Make it again." : null;
+      : build?.state === "expired" ? "It was deleted. Make it again." : null;
   return { build, making, start, error, needsConsent: refused === 403 };
 }

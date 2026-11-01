@@ -238,9 +238,11 @@ def test_the_tabs_in_order_and_what_each_one_is_for(site, capsys):
         _sign_up(page, base, email, capsys)
         _onboard(page)
         tabs = page.locator("nav .places a")
-        expect(tabs).to_have_text(["Jobs", "Applied", "My search", "My documents", "Chat", "Help", "Settings"])
+        expect(tabs).to_have_text(["Jobs", "Applied", "My search", "My documents", "Chat", "Help",
+                                   "Settings"])
 
-        card = page.locator("article.job-card").filter(has=page.get_by_role("link", name=TITLES[0], exact=True))
+        card = page.locator("article.job-card").filter(
+            has=page.get_by_role("link", name=TITLES[0], exact=True))
         card.get_by_role("button", name="I applied").click()
         expect(card.get_by_role("button", name="I applied ✓")).to_be_visible()
         tabs.filter(has_text="Applied").click()
@@ -264,6 +266,44 @@ def test_the_tabs_in_order_and_what_each_one_is_for(site, capsys):
         tabs.filter(has_text="Admin").click()
         page.get_by_role("button", name="Messages").click()
         expect(page.get_by_text("My CV shows the wrong city")).to_be_visible()
+        browser.close()
+
+
+def test_a_made_cv_is_still_there_after_a_refresh_in_applied_and_in_my_documents(site, capsys):
+    """Made once, downloadable again: the card keeps its download and says a CV was made, Applied
+    offers it, and My documents lists it with the room it takes until it is cleared."""
+    base, email, _ = site
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = browser.new_context(viewport={"width": 1280, "height": 860}).new_page()
+        _sign_up(page, base, email, capsys)
+        _onboard(page)
+
+        def card():
+            return page.locator("article.job-card").filter(
+                has=page.get_by_role("link", name=TITLES[0], exact=True))
+
+        expect(card().get_by_text("CV made")).to_have_count(0)
+        card().get_by_role("button", name="Make my CV").click()
+        expect(card().get_by_role("link", name="Download your CV")).to_be_visible(timeout=60_000)
+        expect(card().get_by_text("CV made")).to_be_visible()
+
+        page.reload()
+        expect(card().get_by_role("link", name="Download your CV")).to_be_visible()
+        expect(card().get_by_text("CV made")).to_be_visible()
+        expect(card().get_by_role("button", name="Make my cover letter")).to_be_visible()
+
+        card().get_by_role("button", name="I applied").click()
+        expect(card().get_by_role("button", name="I applied ✓")).to_be_visible()
+        page.goto(f"{base}/#/applied")
+        expect(page.get_by_role("link", name="Download your CV")).to_be_visible()
+
+        page.goto(f"{base}/#/documents")
+        expect(page.get_by_text(re.compile(r"MB of 5\.0 MB used"))).to_be_visible()
+        expect(page.get_by_text(f"for {TITLES[0]}")).to_be_visible()
+        page.get_by_role("button", name="Clear all").click()
+        page.get_by_role("button", name="Yes, delete them all").click()
+        expect(page.get_by_text("None yet.")).to_be_visible()
         browser.close()
 
 

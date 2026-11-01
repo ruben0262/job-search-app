@@ -10,6 +10,14 @@ import { Banner, Error, Suggested, useAction } from "../ui";
 
 type Feed = Schema<"Feed">;
 type Job = Schema<"FeedJob">;
+type Made = Schema<"JobDocument">;
+
+/** The newest of each kind, which is the one a card offers. */
+export function latest(documents: Made[]): Partial<Record<Made["kind"], Made>> {
+  const found: Partial<Record<Made["kind"], Made>> = {};
+  for (const each of documents) found[each.kind] ??= each;
+  return found;
+}
 type Suggestions = Schema<"WordSuggestions">;
 
 /** How long a hidden job keeps its Undo before it leaves the page. */
@@ -221,6 +229,11 @@ function JobCard({ job, ai, hidden, focus = false, onMarked, onApplied }: {
   onApplied: () => void;
 }) {
   const [applied, setApplied] = useState(job.applied_at !== null);
+  // Made before (kept, so a refresh still shows it) or made now: what colours the card.
+  const [made, setMade] = useState<Set<Made["kind"]>>(() => new Set(job.documents.map((each) => each.kind)));
+  const existing = latest(job.documents);
+  const madeNow = useCallback((kind: Made["kind"]) =>
+    setMade((now) => (now.has(kind) ? now : new Set([...now, kind]))), []);
   // PUT records "I applied" or "Hide", DELETE takes it back.
   const mark = useAction(async (name: "applied" | "hidden", on: boolean) => {
     const path = `/jobs/${job.id}/${name}`;
@@ -247,7 +260,14 @@ function JobCard({ job, ai, hidden, focus = false, onMarked, onApplied }: {
   const age = ago(job.posted_at ?? job.first_seen_at);
   const when = age ? `${job.posted_at ? "Posted" : "Found"} ${age}` : null;
   return (
-    <article className={focus ? "job-card focus" : "job-card"}>
+    <article className={["job-card", focus && "focus", made.has("cv") && "made-cv", made.has("cover") && "made-cover"]
+      .filter(Boolean).join(" ")}>
+      {made.size ? (
+        <p className="made-badges">
+          {made.has("cv") ? <span className="made-badge cv">CV made</span> : null}
+          {made.has("cover") ? <span className="made-badge cover">Cover letter made</span> : null}
+        </p>
+      ) : null}
       <h3>
         <a href={job.url} target="_blank" rel="noreferrer">{job.title}</a>
       </h3>
@@ -260,8 +280,8 @@ function JobCard({ job, ai, hidden, focus = false, onMarked, onApplied }: {
         ))}
       </p>
       <div className="job-actions">
-        <MakeDocument jobId={job.id} kind="cv" ai={ai} />
-        <MakeDocument jobId={job.id} kind="cover" ai={ai} />
+        <MakeDocument jobId={job.id} kind="cv" ai={ai} existing={existing.cv} onMade={madeNow} />
+        <MakeDocument jobId={job.id} kind="cover" ai={ai} existing={existing.cover} onMade={madeNow} />
       </div>
       <div className="job-actions">
         <a className="button secondary small" href={job.url} target="_blank" rel="noreferrer">Open job</a>
@@ -279,15 +299,35 @@ function JobCard({ job, ai, hidden, focus = false, onMarked, onApplied }: {
   );
 }
 
-/** One document for one job: a button, then the words while it is made, then the download. */
-function MakeDocument({ jobId, kind, ai }: { jobId: number; kind: "cv" | "cover"; ai: boolean }) {
+/** One document for one job: a button, then the words while it is made, then the download — and
+ * the download straight away for one made before and kept. */
+function MakeDocument({ jobId, kind, ai, existing, onMade }: {
+  jobId: number;
+  kind: "cv" | "cover";
+  ai: boolean;
+  existing?: Made;
+  onMade?: (kind: Made["kind"]) => void;
+}) {
   const { build, making, start, error, needsConsent } = useBuild(jobId, kind);
   const name = kind === "cv" ? "CV" : "cover letter";
-  if (build?.state === "ready" && build.download_url) {
+  const ready = build?.state === "ready" && build.download_url ? build.download_url : null;
+  useEffect(() => {
+    if (ready) onMade?.(kind);
+  }, [ready, kind, onMade]);
+  if (ready || (!build && existing)) {
     return (
-      <a className="button" href={build.download_url} download>
-        Download your {name}
-      </a>
+      <span className="make">
+        <a className="button" href={ready ?? existing!.download_url} download>
+          Download your {name}
+        </a>
+        {build?.saved === false ? (
+          <span className="small muted">
+            Not kept: your storage is full. <a href="#/documents">Make room</a>
+          </span>
+        ) : (
+          <button type="button" className="linklike small" onClick={() => void start()}>Make it again</button>
+        )}
+      </span>
     );
   }
   return (

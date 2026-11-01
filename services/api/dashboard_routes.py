@@ -15,6 +15,7 @@ from libs.corpus import salary
 from libs.db import get, now
 from libs.db.models import CorpusJob, User, UserJobState
 from libs.db.models.tenant import record_state
+from libs.documents.saved import for_jobs
 from libs.llm import PLATFORM, ai_requests_today, resolve
 from libs.matching import Match, matching_jobs
 from libs.notify import reachable
@@ -24,6 +25,7 @@ from libs.profiles.repository import ProfileFiles
 from services.api.admin_routes import admin_emails
 from services.api.deps import current_user, get_db
 from services.api.onboarding_routes import OnboardingSteps
+from services.api.saved_routes import JobDocument, job_document
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["dashboard"])
@@ -92,6 +94,8 @@ class FeedJob(BaseModel):
     first_seen_at: datetime | None
     salary: FeedSalary | None
     applied_at: datetime | None
+    # The CVs and cover letters made for it, newest first: still downloadable after a refresh.
+    documents: list[JobDocument]
 
 
 class Feed(BaseModel):
@@ -174,19 +178,21 @@ def feed(*, db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curren
                if needle in f"{match.job.title} {match.job.company or ''} {match.job.url}".lower()
                and remote in (None, bool(match.job.is_remote))
                and job in (None, match.job.id)]
+    page = matches[offset:offset + limit]
+    documents = for_jobs(db, user_id, [match.job.id for match in page])
     return Feed(total=len(matches),
-                jobs=[_row(match, applied_at.get(match.job.id))
-                      for match in matches[offset:offset + limit]])
+                jobs=[_row(match, applied_at.get(match.job.id), documents.get(match.job.id, []))
+                      for match in page])
 
 
-def _row(match: Match, applied_at: datetime | None) -> FeedJob:
+def _row(match: Match, applied_at: datetime | None, documents: list[dict]) -> FeedJob:
     """One job, without its description: the table shows none of it but the salary."""
     job = match.job
     return FeedJob(id=job.id, title=job.title, company=job.company, location=job.location,
                    is_remote=job.is_remote, url=job.url, source=job.source, score=match.score,
                    words=list(match.words), posted_at=job.posted_at,
                    first_seen_at=job.first_seen_at, salary=salary.extract(job.description),
-                   applied_at=applied_at)
+                   applied_at=applied_at, documents=[job_document(row) for row in documents])
 
 
 class AppliedJob(BaseModel):
@@ -196,6 +202,7 @@ class AppliedJob(BaseModel):
     location: str | None
     url: str
     applied_at: datetime
+    documents: list[JobDocument]
 
 
 @router.get("/applied")
@@ -207,11 +214,13 @@ def applied(db: Database = Depends(get_db),
         {"user_id": user_id, "applied_at": {"$ne": None}}, {"job_id": 1, "applied_at": 1},
         sort=[("applied_at", -1)]))
     jobs = {doc["_id"]: doc for doc in db[CorpusJob.COLLECTION].find(
-        {"_id": {"$in": [row["job_id"] for row in rows]}}, {"title": 1, "company": 1, "location": 1, "url": 1})}
-    return [AppliedJob(id=row["job_id"], title=jobs[row["job_id"]]["title"],
-                       company=jobs[row["job_id"]].get("company"), location=jobs[row["job_id"]].get("location"),
-                       url=jobs[row["job_id"]]["url"], applied_at=row["applied_at"])
-            for row in rows if row["job_id"] in jobs]
+        {"_id": {"$in": [row["job_id"] for row in rows]}},
+        {"title": 1, "company": 1, "location": 1, "url": 1})}
+    documents = for_jobs(db, user_id, list(jobs))
+    return [AppliedJob(id=row["job_id"], title=job["title"], company=job.get("company"),
+                       location=job.get("location"), url=job["url"], applied_at=row["applied_at"],
+                       documents=[job_document(each) for each in documents.get(row["job_id"], [])])
+            for row in rows if (job := jobs.get(row["job_id"]))]
 
 
 class JobMarks(BaseModel):

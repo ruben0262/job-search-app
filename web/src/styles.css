@@ -2447,3 +2447,103 @@ input[type="checkbox"]:disabled {
 .contact textarea {
   resize: vertical;
 }
+
+/* ── documents made for a job ─────────────────────────────────────────────────────────────────
+
+   Green for a CV made, blue for a cover letter: a mark on the card's edge you can see while
+   scrolling, and a word saying which, so the colour is never the only way to tell. */
+
+:root {
+  --made-cv: var(--score);
+  --made-cover: #8ab4ff;
+}
+
+[data-theme="light"] {
+  --made-cover: #2457c5;
+}
+
+.job-card.made-cv,
+.job-card.made-cover {
+  box-shadow: inset 3px 0 0 var(--made-cv);
+}
+
+.job-card.made-cover:not(.made-cv) {
+  box-shadow: inset 3px 0 0 var(--made-cover);
+}
+
+.job-card.made-cv.made-cover {
+  box-shadow: inset 3px 0 0 var(--made-cv), inset 6px 0 0 var(--made-cover);
+}
+
+.made-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0 0 0.5rem;
+}
+
+.made-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.made-badge::before {
+  content: "";
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.made-badge.cv { color: var(--made-cv); }
+.made-badge.cover { color: var(--made-cover); }
+
+.storage {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0.25rem 0 1rem;
+}
+
+.storage-bar {
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--hairline);
+  overflow: hidden;
+}
+
+.storage-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--ink);
+  transition: width 0.4s cubic-bezier(0.22, 0.8, 0.24, 1);
+}
+
+.storage-bar span.full { background: var(--danger); }
+
+.made-list {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+}
+
+.made-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  padding: 0.65rem 0;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.made-actions {
+  display: flex;
+  gap: 0.5rem;
+}

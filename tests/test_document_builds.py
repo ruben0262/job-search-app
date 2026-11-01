@@ -226,24 +226,92 @@ def test_a_build_from_a_telegram_tap_is_refused_rather_than_lost(api):
     assert get(api.db, QueueJob, build_id).payload["refused"].startswith("documents are built")
 
 
-def test_a_built_document_is_deleted_once_it_has_been_kept_long_enough(api):
-    """D9: kept for `document_keep_hours`, downloaded or not, and the page says so afterwards."""
+def _big_pdfs(api, monkeypatch, kilobytes: int = 700) -> None:
+    """Chrome handing back PDFs this size, and an account allowed to keep 1 MB of them."""
+    from libs.db.models import User
+
+    monkeypatch.setattr("services.docgen.run.pdf.render", lambda html: b"%PDF-1.4 " + b"x" * kilobytes * 1024)
+    api.db[User.COLLECTION].update_one({"_id": api.user.id}, {"$set": {"limits": {"document_storage_mb": 1}}})
+
+
+def _make(api, kind="cv") -> dict:
+    build_id = _ask(api, kind=kind).json()["id"]
+    _work(api)
+    return _status(api, build_id)
+
+
+def test_a_made_document_is_kept_to_download_again_and_shows_on_the_jobs_it_was_for(api):
+    """After a refresh, from the Applied list, or from My documents: the same PDF, not a new one."""
+    made = _make(api)
+    assert (made["state"], made["saved"]) == ("ready", True)
+
+    api.http.put(f"/jobs/{api.job.id}/applied")
+    (applied,) = api.http.get("/applied").json()
+    (document,) = applied["documents"]
+    assert (document["kind"], document["download_url"]) == ("cv", made["download_url"])
+    assert api.http.get(document["download_url"]).content.startswith(b"%PDF")
+
+    kept = api.http.get("/saved").json()
+    assert [(each["kind"], each["job_title"]) for each in kept["documents"]] == [("cv", "Backend Engineer")]
+    assert kept["used_bytes"] == kept["documents"][0]["size"] > 0
+    assert kept["allowance_bytes"] == 5 * 1024 * 1024, "the catalogue default"
+
+
+def test_a_new_one_for_the_same_job_and_kind_replaces_the_old(api):
+    first, second = _make(api), _make(api)
+    assert first["id"] != second["id"]
+    assert [each["id"] for each in api.http.get("/saved").json()["documents"]] == [second["id"]]
+    assert api.http.get(first["download_url"]).status_code == 404
+
+
+def test_a_full_storage_keeps_nothing_new_but_it_still_downloads_and_the_person_is_told(api, monkeypatch):
+    """Their own allowance (`document_storage_mb`): what does not fit waits only for its download, as
+    every document used to (D9), and deleting one makes room again."""
     from libs.db import now
     from libs.db.models import BuiltDocument
     from services.docgen.__main__ import purge
 
-    old = _ask(api).json()["id"]
-    _work(api)
-    fresh = _ask(api, kind="cover").json()["id"]
-    _work(api)
-    api.db[BuiltDocument.COLLECTION].update_one({"_id": old},
-                                                {"$set": {"created_at": now() - timedelta(hours=2)}})
+    _big_pdfs(api, monkeypatch)
+    cv = _make(api)
+    cover = _make(api, kind="cover")
 
+    assert cv["saved"] is True and cover["saved"] is False
+    assert api.http.get(cover["download_url"]).status_code == 200, "made now, so it can be had now"
+    told = api.http.get("/notifications").json()["notifications"]
+    assert any(each["title"] == "Your document storage is full" for each in told)
+    assert [each["kind"] for each in api.http.get("/saved").json()["documents"]] == ["cv"]
+
+    api.db[BuiltDocument.COLLECTION].update_many({}, {"$set": {"created_at": now() - timedelta(hours=2)}})
     purge(api.db)
+    assert _status(api, cover["id"])["state"] == "expired", "not kept, so gone after its hour"
+    assert api.http.get(cv["download_url"]).status_code == 200, "kept, so still there"
 
-    assert _status(api, old)["state"] == "expired"
-    assert api.http.get(f"/documents/build/{old}/file").status_code == 404
-    assert _status(api, fresh)["state"] == "ready"
+    api.http.delete(f"/saved/{cv['id']}")
+    assert _make(api, kind="cover")["saved"] is True, "deleting one made room"
+
+
+def test_clearing_all_empties_the_storage(api, monkeypatch):
+    _big_pdfs(api, monkeypatch, kilobytes=300)
+    _make(api)
+    _make(api, kind="cover")
+
+    cleared = api.http.delete("/saved").json()
+
+    assert (cleared["documents"], cleared["used_bytes"]) == ([], 0)
+
+
+def test_a_kept_document_is_its_owners_alone(api):
+    from libs.auth.access import issue_access_token
+    from libs.db import insert
+    from libs.db.models import User
+
+    made = _make(api)
+    stranger = insert(api.db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active"))
+    api.http.cookies.set("access_token", issue_access_token(stranger.id, uuid.uuid4()), path="/")
+
+    assert api.http.get(made["download_url"]).status_code == 404
+    assert api.http.delete(f"/saved/{made['id']}").status_code == 404
+    assert api.http.get("/saved").json()["documents"] == []
 
 
 def _backup():
@@ -255,8 +323,8 @@ def _backup():
 
 
 def test_the_nightly_backup_does_not_keep_built_documents():
-    """Both halves of one rule: the collection says its documents are ephemeral, and the backup skips
-    such collections. A CV kept here for an hour must not be kept for thirty days in a backup."""
+    """Both halves of one rule: the collection says its PDFs are made again in seconds, and the backup
+    skips such collections. A CV a person deleted must not live on for thirty days in a backup."""
     from libs.db.models import BuiltDocument, User
 
     kept = _backup().kept()

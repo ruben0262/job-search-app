@@ -175,11 +175,8 @@ NAMESPACE_EXISTS = 48
 
 def delete_account(db: Database, user_id: Any) -> dict[str, int]:
     """Everything stored about one account, then the account: what a cascade did in Postgres."""
-    from libs.db.models import MODELS, BuiltDocument, QueueJob, User  # noqa: PLC0415 - the models import this module
+    from libs.db.models import MODELS, User  # noqa: PLC0415 - the models import this module
 
-    # Kept by the build that made them rather than by owner; they go with the account's builds.
-    db[BuiltDocument.COLLECTION].delete_many(
-        {"_id": {"$in": db[QueueJob.COLLECTION].distinct("_id", {"user_id": user_id})}})
     removed = {model.COLLECTION: db[model.COLLECTION].delete_many({model.OWNER: user_id}).deleted_count
                for model in MODELS if model.OWNER}
     removed[User.COLLECTION] = db[User.COLLECTION].delete_one({"_id": user_id}).deleted_count

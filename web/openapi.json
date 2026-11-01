@@ -293,6 +293,13 @@
             ],
             "title": "Company"
           },
+          "documents": {
+            "items": {
+              "$ref": "#/components/schemas/JobDocument"
+            },
+            "title": "Documents",
+            "type": "array"
+          },
           "id": {
             "title": "Id",
             "type": "integer"
@@ -323,7 +330,8 @@
           "company",
           "location",
           "url",
-          "applied_at"
+          "applied_at",
+          "documents"
         ],
         "title": "AppliedJob",
         "type": "object"
@@ -431,6 +439,17 @@
           "id": {
             "title": "Id",
             "type": "integer"
+          },
+          "saved": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Saved"
           },
           "state": {
             "enum": [
@@ -982,6 +1001,13 @@
             ],
             "title": "Company"
           },
+          "documents": {
+            "items": {
+              "$ref": "#/components/schemas/JobDocument"
+            },
+            "title": "Documents",
+            "type": "array"
+          },
           "first_seen_at": {
             "anyOf": [
               {
@@ -1079,7 +1105,8 @@
           "posted_at",
           "first_seen_at",
           "salary",
-          "applied_at"
+          "applied_at",
+          "documents"
         ],
         "title": "FeedJob",
         "type": "object"
@@ -1345,6 +1372,54 @@
           "full_name"
         ],
         "title": "IdentitySchema",
+        "type": "object"
+      },
+      "JobDocument": {
+        "description": "One document for one job, as a job card offers it.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "download_url": {
+            "title": "Download Url",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "cv",
+              "cover"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "instant",
+              "ai"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "saved": {
+            "title": "Saved",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "mode",
+          "saved",
+          "download_url",
+          "created_at"
+        ],
+        "title": "JobDocument",
         "type": "object"
       },
       "JobMarks": {
@@ -2105,6 +2180,120 @@
           "detail"
         ],
         "title": "Saved",
+        "type": "object"
+      },
+      "SavedDocument": {
+        "properties": {
+          "company": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "download_url": {
+            "title": "Download Url",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "job_id": {
+            "title": "Job Id",
+            "type": "integer"
+          },
+          "job_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Title"
+          },
+          "kind": {
+            "enum": [
+              "cv",
+              "cover"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "instant",
+              "ai"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "saved": {
+            "title": "Saved",
+            "type": "boolean"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "mode",
+          "saved",
+          "download_url",
+          "created_at",
+          "job_id",
+          "job_title",
+          "company",
+          "size"
+        ],
+        "title": "SavedDocument",
+        "type": "object"
+      },
+      "SavedDocuments": {
+        "properties": {
+          "allowance_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allowance Bytes"
+          },
+          "documents": {
+            "items": {
+              "$ref": "#/components/schemas/SavedDocument"
+            },
+            "title": "Documents",
+            "type": "array"
+          },
+          "used_bytes": {
+            "title": "Used Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "used_bytes",
+          "allowance_bytes",
+          "documents"
+        ],
+        "title": "SavedDocuments",
         "type": "object"
       },
       "SavedLink": {
@@ -5601,6 +5790,91 @@
         "summary": "Subscribe",
         "tags": [
           "push"
+        ]
+      }
+    },
+    "/saved": {
+      "delete": {
+        "description": "Delete every kept document, to make room.",
+        "operationId": "delete_all_saved_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedDocuments"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Delete All",
+        "tags": [
+          "documents"
+        ]
+      },
+      "get": {
+        "description": "Every kept document, newest first, and how full the storage is.",
+        "operationId": "saved_saved_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedDocuments"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Saved",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/saved/{document_id}": {
+      "delete": {
+        "description": "Delete one kept document.",
+        "operationId": "delete_one_saved__document_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedDocuments"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete One",
+        "tags": [
+          "documents"
         ]
       }
     },

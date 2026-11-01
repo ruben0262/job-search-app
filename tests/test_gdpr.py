@@ -110,6 +110,7 @@ def test_deleting_an_account_leaves_no_row_anywhere(api):
         AiRequest,
         AuthToken,
         BuiltDocument,
+        ContactMessage,
         CorpusJob,
         ProxyCredential,
         PushSubscription,
@@ -149,7 +150,10 @@ def test_deleting_an_account_leaves_no_row_anywhere(api):
             UserProfileFile(user_id=user.id, name="context.md", content="x", kind="context"),
             ProxyCredential(user_id=user.id, secret_ref=f"{user.id}:proxy"),
             AiRequest(user_id=user.id),
-            BuiltDocument(id=build.id, filename="cv.pdf", content=b"%PDF")):
+            BuiltDocument(id=build.id, user_id=user.id, job_id=job.id, kind="cv", mode="instant",
+                          filename="cv.pdf", content=b"%PDF", size=4, saved=True),
+            ContactMessage(user_id=user.id, email=user.email, subject="Hello",
+                           message="A question for you.")):
         insert(db, document)
 
     owned = [model for model in MODELS if model.OWNER]

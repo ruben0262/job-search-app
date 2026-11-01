@@ -141,7 +141,8 @@ def test_applied_lists_every_job_applied_to_newest_first_until_taken_back(api):
 
     http.put(f"/jobs/{older.id}/applied")
     http.put(f"/jobs/{newer.id}/applied")
-    db[UserJobState.COLLECTION].update_one({"job_id": older.id}, {"$set": {"applied_at": now() - timedelta(days=2)}})
+    db[UserJobState.COLLECTION].update_one({"job_id": older.id},
+                                           {"$set": {"applied_at": now() - timedelta(days=2)}})
 
     listed = http.get("/applied").json()
     assert [job["title"] for job in listed] == ["Backend Engineer", "Night Nurse"]

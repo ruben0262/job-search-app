@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { api, type Schema } from "../api";
 import { ago } from "../time";
 import { Error, useAction } from "../ui";
+import { latest } from "./JobsPage";
 
 type Applied = Schema<"AppliedJob">;
 
@@ -44,6 +45,14 @@ export function AppliedPage() {
               {[job.company, job.location, `Applied ${ago(job.applied_at)}`].filter(Boolean).join(" · ")}
             </p>
             <div className="job-actions">
+              {(["cv", "cover"] as const).map((kind) => {
+                const made = latest(job.documents)[kind];
+                return made ? (
+                  <a key={kind} className="button small" href={made.download_url} download>
+                    Download your {kind === "cv" ? "CV" : "cover letter"}
+                  </a>
+                ) : null;
+              })}
               <a className="button secondary small" href={job.url} target="_blank" rel="noreferrer">Open job</a>
               <button type="button" className="secondary small" disabled={undo.busy}
                       onClick={() => void undo.run(job.id)}>

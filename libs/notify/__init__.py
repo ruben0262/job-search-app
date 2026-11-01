@@ -43,6 +43,8 @@ PASSWORD_CHANGED = Event("account.password_changed", "warning", "Your password w
 # A build was asked for and cannot happen yet.
 DOCUMENT_NOT_READY = Event("document.not_ready", "warning", "A document could not be built",
                            "#/documents")
+# A document was made but not kept: their storage allowance (`document_storage_mb`) is full.
+STORAGE_FULL = Event("documents.storage_full", "warning", "Your document storage is full", "#/documents")
 def notify(db: Database, user_id: _uuid.UUID, event: Event, body: str = "") -> None:
     """Record one. An unread one of the same kind is brought up to date rather than repeated."""
     try:

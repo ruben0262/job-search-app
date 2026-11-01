@@ -60,7 +60,8 @@ def contact(body: ContactRequest, request: Request, db: Database = Depends(get_d
                                         message=body.message.strip()))
     reference = f"M-{message.id}"
     try:
-        send_within_cap(db, mailer, settings.get(db, "support_email"), f"[Mahoraga {reference}] {message.subject}",
+        send_within_cap(db, mailer, settings.get(db, "support_email"),
+                        f"[Mahoraga {reference}] {message.subject}",
                         f"From: {user.email}\nReference: {reference}\n\n{message.message}",
                         purpose="contact", reply_to=user.email)
         db[ContactMessage.COLLECTION].update_one({"_id": message.id}, {"$set": {"emailed_at": now()}})

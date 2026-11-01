@@ -179,7 +179,8 @@ def delete_document(document_id: int, db: Database = Depends(get_db),
 #
 # Downloaded here, rather than sent to Telegram. **The build is the docgen queue row**: its id is the
 # build's id and its state is the build's state, so there is no second record to disagree with the
-# first. The PDF waits in `built_documents` until the worker deletes it (`document_keep_hours`, D9).
+# first. The PDF is kept in `built_documents` within the person's storage allowance, or waits only for
+# its download (`document_keep_hours`, D9) when there is no room (`libs.documents.saved`).
 
 
 class BuildRequest(BaseModel):
@@ -196,6 +197,8 @@ class BuildStatus(BaseModel):
     detail: str | None = None
     # Set once `state` is "ready".
     download_url: str | None = None
+    # Once ready: whether it is kept, or only waits for its download because the storage is full.
+    saved: bool | None = None
 
 
 @router.post("/build", status_code=status.HTTP_202_ACCEPTED, response_model=BuildStatus)
@@ -248,8 +251,7 @@ def build_status(build_id: int, db: Database = Depends(get_db),
 def build_file(build_id: int, db: Database = Depends(get_db),
                user_id: _uuid.UUID = Depends(current_user)) -> Response:
     """The finished PDF, while it is kept. Scoped to the caller, like everything here."""
-    owned = db[QueueJob.COLLECTION].count_documents({"_id": build_id, "user_id": user_id}, limit=1)
-    built = get(db, BuiltDocument, build_id) if owned else None
+    built = find_one(db, BuiltDocument, {"_id": build_id, "user_id": user_id})
     if built is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND,
                             detail="this document is not ready, or was deleted — build it again")
@@ -300,8 +302,9 @@ def _status(db: Database, build: QueueJob) -> BuildStatus:
         return BuildStatus(id=build.id, state="failed", detail=refused or build.last_error)
     if build.state != "done":
         return BuildStatus(id=build.id, state="building" if build.state == "claimed" else "queued")
-    if not db[BuiltDocument.COLLECTION].count_documents({"_id": build.id}, limit=1):
+    kept = db[BuiltDocument.COLLECTION].find_one({"_id": build.id}, {"saved": 1})
+    if kept is None:
         return BuildStatus(id=build.id, state="expired",
-                           detail="this document has been deleted, as they all are after a while "
-                                  "— build it again")
-    return BuildStatus(id=build.id, state="ready", download_url=f"/documents/build/{build.id}/file")
+                           detail="this document was deleted — make it again")
+    return BuildStatus(id=build.id, state="ready", download_url=f"/documents/build/{build.id}/file",
+                       saved=kept["saved"])

@@ -1216,6 +1216,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/saved": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Saved
+         * @description Every kept document, newest first, and how full the storage is.
+         */
+        get: operations["saved_saved_get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete All
+         * @description Delete every kept document, to make room.
+         */
+        delete: operations["delete_all_saved_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/saved/{document_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete One
+         * @description Delete one kept document.
+         */
+        delete: operations["delete_one_saved__document_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/suggestions": {
         parameters: {
             query?: never;
@@ -1504,6 +1548,8 @@ export interface components {
             applied_at: string;
             /** Company */
             company: string | null;
+            /** Documents */
+            documents: components["schemas"]["JobDocument"][];
             /** Id */
             id: number;
             /** Location */
@@ -1553,6 +1599,8 @@ export interface components {
             download_url?: string | null;
             /** Id */
             id: number;
+            /** Saved */
+            saved?: boolean | null;
             /**
              * State
              * @enum {string}
@@ -1747,6 +1795,8 @@ export interface components {
             applied_at: string | null;
             /** Company */
             company: string | null;
+            /** Documents */
+            documents: components["schemas"]["JobDocument"][];
             /** First Seen At */
             first_seen_at: string | null;
             /** Id */
@@ -1856,6 +1906,33 @@ export interface components {
             full_name: string;
             /** Links */
             links?: components["schemas"]["ProfileLink"][];
+        };
+        /**
+         * JobDocument
+         * @description One document for one job, as a job card offers it.
+         */
+        JobDocument: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Download Url */
+            download_url: string;
+            /** Id */
+            id: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "cv" | "cover";
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "instant" | "ai";
+            /** Saved */
+            saved: boolean;
         };
         /** JobMarks */
         JobMarks: {
@@ -2127,6 +2204,47 @@ export interface components {
             status: string;
             /** Validated */
             validated: boolean;
+        };
+        /** SavedDocument */
+        SavedDocument: {
+            /** Company */
+            company: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Download Url */
+            download_url: string;
+            /** Id */
+            id: number;
+            /** Job Id */
+            job_id: number;
+            /** Job Title */
+            job_title: string | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "cv" | "cover";
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "instant" | "ai";
+            /** Saved */
+            saved: boolean;
+            /** Size */
+            size: number;
+        };
+        /** SavedDocuments */
+        SavedDocuments: {
+            /** Allowance Bytes */
+            allowance_bytes: number | null;
+            /** Documents */
+            documents: components["schemas"]["SavedDocument"][];
+            /** Used Bytes */
+            used_bytes: number;
         };
         /** SavedLink */
         SavedLink: {
@@ -4432,6 +4550,77 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PushStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    saved_saved_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedDocuments"];
+                };
+            };
+        };
+    };
+    delete_all_saved_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedDocuments"];
+                };
+            };
+        };
+    };
+    delete_one_saved__document_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedDocuments"];
                 };
             };
             /** @description Validation Error */

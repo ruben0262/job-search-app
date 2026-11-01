@@ -4,14 +4,14 @@ from __future__ import annotations
 import logging
 import os
 from contextlib import contextmanager
-from datetime import timedelta
 
 import httpx
 
 import libs.notify as notifylib
 from libs import settings
-from libs.db import database, ensure_schema, insert, now
-from libs.db.models import BuiltDocument, QueueJob
+from libs.db import database, ensure_schema
+from libs.db.models import QueueJob
+from libs.documents.saved import keep, purge_unsaved
 from libs.legal import has_consented
 from libs.llm import LlmError, paying_client
 from libs.obs import configure
@@ -48,7 +48,8 @@ def handle(db, job: QueueJob) -> None:
         notifylib.notify(db, job.user_id, notifylib.DOCUMENT_NOT_READY, str(exc))
         logger.info("docgen: %s cannot build yet — %s", job.user_id, exc)
         return
-    insert(db, BuiltDocument(id=job.id, filename=built.filename, content=built.pdf))
+    keep(db, build_id=job.id, user_id=job.user_id, job_id=job_id, kind=kind, mode=mode,
+         filename=built.filename, pdf=built.pdf)
 
 
 def _with_ai(db, job: QueueJob, *, job_id: int, kind: str, payer: str | None):
@@ -88,12 +89,11 @@ def _http_for(store: SecretStore, user_id):
 
 
 def purge(db) -> None:
-    """D9: a built document is deleted once it is `document_keep_hours` old, downloaded or not."""
+    """D9 for a document that was not kept: deleted once it is `document_keep_hours` old."""
     hours = settings.document_keep_hours(db)
-    gone = db[BuiltDocument.COLLECTION].delete_many(
-        {"created_at": {"$lt": now() - timedelta(hours=hours)}}).deleted_count
+    gone = purge_unsaved(db, hours)
     if gone:
-        logger.info("docgen: deleted %d built document(s) older than %d hour(s)", gone, hours)
+        logger.info("docgen: deleted %d unkept document(s) older than %d hour(s)", gone, hours)
 
 
 def main() -> int:

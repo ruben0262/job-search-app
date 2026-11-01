@@ -135,7 +135,8 @@ def test_deleting_an_account_removes_everything_it_owns_and_nothing_shared(db):
                                 text_sha256=person.email, chars=1))
         insert(db, UserJobState(user_id=person.id, job_id=job.id, applied_at=now()))
         build = insert(db, QueueJob(lane="docgen", user_id=person.id))
-        insert(db, BuiltDocument(id=build.id, filename="cv.pdf", content=b"%PDF"))
+        insert(db, BuiltDocument(id=build.id, user_id=person.id, job_id=job.id, kind="cv", mode="instant",
+                                 filename="cv.pdf", content=b"%PDF", size=4, saved=True))
 
     delete_account(db, gone.id)
 

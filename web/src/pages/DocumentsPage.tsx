@@ -60,6 +60,9 @@ export function DocumentsPage() {
       <Card title="Your CV">
         <Files kind="cv" list={list} onChanged={saved} />
       </Card>
+      <Card title="CVs and cover letters we made for you">
+        <Made />
+      </Card>
       <Card title="Cover letters and other files">
         <Files kind="cover_letter" list={list} onChanged={saved} />
       </Card>
@@ -82,6 +85,80 @@ export function DocumentsPage() {
           )}
         </p>
       ) : null}
+    </>
+  );
+}
+
+/** The documents made for jobs and kept: how full the storage is, each one to download or delete, and
+ * a way to clear them all when it is full. */
+function Made() {
+  const [kept, setKept] = useState<Schema<"SavedDocuments"> | null>(null);
+  const [sure, setSure] = useState(false);
+  useEffect(() => {
+    void api.get<Schema<"SavedDocuments">>("/saved").then(setKept).catch(() => undefined);
+  }, []);
+  const remove = useAction(async (id: number) => setKept(await api.del<Schema<"SavedDocuments">>(`/saved/${id}`)));
+  const clear = useAction(async () => {
+    setKept(await api.del<Schema<"SavedDocuments">>("/saved"));
+    setSure(false);
+  });
+
+  if (!kept) return <p className="muted small">Loading…</p>;
+  const megabytes = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  const share = kept.allowance_bytes ? Math.min(kept.used_bytes / kept.allowance_bytes, 1) : 0;
+  const full = kept.allowance_bytes !== null && share >= 0.95;
+  return (
+    <>
+      <p className="small muted">
+        Each one you make is kept here to download again, the newest for each job.
+      </p>
+      {kept.allowance_bytes !== null ? (
+        <div className="storage" role="meter" aria-label="Storage used" aria-valuemin={0}
+             aria-valuemax={kept.allowance_bytes} aria-valuenow={kept.used_bytes}>
+          <div className="storage-bar"><span style={{ width: `${share * 100}%` }} className={full ? "full" : ""} /></div>
+          <span className="small">
+            {megabytes(kept.used_bytes)} of {megabytes(kept.allowance_bytes)} used
+            {full ? " — full: new ones are not kept until you delete some" : ""}
+          </span>
+        </div>
+      ) : null}
+      {kept.documents.length === 0 ? (
+        <p className="muted">None yet. Tap “Make my CV” under a job, and it is kept here.</p>
+      ) : (
+        <ul className="made-list">
+          {kept.documents.map((each) => (
+            <li key={each.id}>
+              <span>
+                <strong>{each.kind === "cv" ? "CV" : "Cover letter"}</strong>{" "}
+                for {each.job_title ?? "a job no longer listed"}
+                {each.company ? ` at ${each.company}` : ""}
+                <span className="small muted"> · {Math.round(each.size / 1024)} KB</span>
+              </span>
+              <span className="made-actions">
+                <a className="button small" href={each.download_url} download>Download</a>
+                <button type="button" className="secondary small" disabled={remove.busy}
+                        onClick={() => void remove.run(each.id)}>
+                  Delete
+                </button>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {kept.documents.length ? (
+        sure ? (
+          <p className="row">
+            <span className="small">Delete all {kept.documents.length}?</span>
+            <button type="button" className="danger small" disabled={clear.busy} onClick={() => void clear.run()}>
+              Yes, delete them all
+            </button>
+            <button type="button" className="secondary small" onClick={() => setSure(false)}>Keep them</button>
+          </p>
+        ) : (
+          <button type="button" className="secondary small" onClick={() => setSure(true)}>Clear all</button>
+        )
+      ) : null}
+      <Error>{remove.error ?? clear.error}</Error>
     </>
   );
 }
