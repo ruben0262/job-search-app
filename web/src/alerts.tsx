@@ -1,34 +1,146 @@
-/** Alerts on your phone, each one tap: Telegram through the platform's bot, or this browser's
- * notifications. Both are optional; the site works the same without them. */
-import { useCallback, useEffect, useState } from "react";
+/** Alerts off the site: Telegram through the person's own bot, this browser's notifications, and a
+ * daily email. All optional; the site works the same without them. */
+import { useEffect, useState } from "react";
 
-import { ApiError, api, type Schema } from "./api";
+import { api, type Schema } from "./api";
 import { disablePush, enablePush, pushState } from "./push";
 import { Error, useAction } from "./ui";
 
-/** Opens Telegram at the bot with a one-time code; pressing Start there connects this account. */
-export function TelegramButton({ label = "Connect Telegram" }: { label?: string }) {
-  const [error, setError] = useState<string | null>(null);
-  const open = async () => {
-    setError(null);
-    // Opened inside the tap: a window opened after an await is one browsers block.
-    const tab = window.open("", "_blank");
-    if (tab) tab.opener = null;
-    try {
-      const { url } = await api.post<Schema<"TelegramLink">>("/telegram/link");
-      if (tab) tab.location.href = url;
-      else window.location.href = url;
-    } catch (caught) {
-      tab?.close();
-      setError(caught instanceof ApiError ? caught.detail : "Telegram is not reachable right now.");
-    }
-  };
+type Telegram = Schema<"TelegramState">;
+
+/** How often the page asks whether Start has been pressed in their bot. */
+const START_POLL_MS = 2000;
+
+/** Telegram through their own bot: three steps, and their chat found by itself once they press Start
+ * in it. Connected, it offers a test message and a way to disconnect. */
+export function TelegramSetup() {
+  const [state, setState] = useState<Telegram | null>(null);
+  const [token, setToken] = useState("");
+  const [tested, setTested] = useState(false);
+  useEffect(() => {
+    api.get<Telegram>("/telegram").then(setState).catch(() => undefined);
+  }, []);
+  // Waiting for Start, which is pressed in Telegram: asked every couple of seconds, and on coming back.
+  const waiting = state?.status === "waiting";
+  useEffect(() => {
+    if (!waiting) return;
+    const look = () => void api.post<Telegram>("/telegram/check").then(setState).catch(() => undefined);
+    const timer = window.setInterval(look, START_POLL_MS);
+    window.addEventListener("focus", look);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", look);
+    };
+  }, [waiting]);
+  const save = useAction(async () => {
+    setState(await api.put<Telegram>("/telegram/bot", { token: token.trim() }));
+    setToken("");
+  });
+  const test = useAction(async () => {
+    setState(await api.post<Telegram>("/telegram/test"));
+    setTested(true);
+  });
+  const forget = useAction(async () => {
+    setState(await api.del<Telegram>("/telegram/bot"));
+    setTested(false);
+  });
+
+  if (!state) return null;
+  if (state.status === "connected" || state.status === "broken") {
+    return (
+      <div className="telegram-on">
+        <p className="small">
+          {state.status === "broken"
+            ? `Telegram stopped taking messages from @${state.bot}. Open it, press Start, then send a test.`
+            : `Connected to @${state.bot}. New jobs arrive there.`}
+        </p>
+        <div className="row">
+          <button type="button" className="secondary small" disabled={test.busy} onClick={() => void test.run()}>
+            {test.busy ? "Sending…" : "Send a test"}
+          </button>
+          {state.status === "broken" && state.open_url ? (
+            <a className="button secondary small" href={state.open_url} target="_blank" rel="noreferrer">
+              Open @{state.bot}
+            </a>
+          ) : null}
+          <button type="button" className="secondary small" disabled={forget.busy} onClick={() => void forget.run()}>
+            Disconnect
+          </button>
+        </div>
+        {tested && !test.error ? <p className="small muted" role="status">Sent. Check Telegram.</p> : null}
+        <Error>{test.error ?? forget.error}</Error>
+      </div>
+    );
+  }
+  return (
+    <ol className="telegram-steps">
+      <li className={waiting ? "done" : ""}>
+        <span className="step-number" aria-hidden="true">1</span>
+        <div>
+          <strong>Make your bot.</strong> In Telegram, open{" "}
+          <a href="https://t.me/BotFather" target="_blank" rel="noreferrer">@BotFather</a>, send{" "}
+          <code>/newbot</code>, and give it any name. It replies with a token.
+        </div>
+      </li>
+      <li className={waiting ? "done" : ""}>
+        <span className="step-number" aria-hidden="true">2</span>
+        <div>
+          <strong>Paste the token here.</strong>
+          {waiting ? (
+            <p className="small muted">
+              Saved: @{state.bot}.{" "}
+              <button type="button" className="linklike small" onClick={() => void forget.run()}>Use another bot</button>
+            </p>
+          ) : (
+            <form className="row" onSubmit={(event) => {
+              event.preventDefault();
+              if (token.trim()) void save.run();
+            }}>
+              <input aria-label="Bot token" placeholder="123456789:AAH…" value={token} autoComplete="off"
+                     spellCheck={false} onChange={(event) => setToken(event.target.value)} />
+              <button type="submit" className="secondary small" disabled={!token.trim() || save.busy}>
+                {save.busy ? "Checking…" : "Save token"}
+              </button>
+            </form>
+          )}
+          <Error>{save.error}</Error>
+        </div>
+      </li>
+      <li>
+        <span className="step-number" aria-hidden="true">3</span>
+        <div>
+          <strong>Press Start in your bot.</strong>{" "}
+          {waiting && state.open_url ? (
+            <>
+              <a className="button small" href={state.open_url} target="_blank" rel="noreferrer">Open @{state.bot}</a>
+              <p className="small muted" role="status">Waiting for you to press Start…</p>
+            </>
+          ) : (
+            <span className="small muted">After step 2, a button here opens it. We find your chat from that.</span>
+          )}
+        </div>
+      </li>
+    </ol>
+  );
+}
+
+/** The daily email of new jobs: on or off. */
+export function EmailAlerts() {
+  const [on, setOn] = useState<boolean | null>(null);
+  useEffect(() => {
+    api.get<Schema<"AccountOut">>("/account").then((account) => setOn(account.email_alerts)).catch(() => undefined);
+  }, []);
+  const toggle = useAction(async (next: boolean) => {
+    setOn((await api.patch<{ email_alerts: boolean }>("/account", { email_alerts: next })).email_alerts);
+  });
   return (
     <>
-      <button type="button" className="secondary" onClick={() => void open()}>
-        {label}
-      </button>
-      <Error>{error}</Error>
+      <label className="pick">
+        <input type="checkbox" role="switch" checked={on === true} disabled={on === null || toggle.busy}
+               onChange={(event) => void toggle.run(event.target.checked)} />
+        <span>A summary of new jobs each morning</span>
+      </label>
+      <Error>{toggle.error}</Error>
     </>
   );
 }
@@ -73,44 +185,21 @@ export function PushButton() {
   );
 }
 
-/** Both channels with where each stands, read again whenever the tab comes back into view: Start is
- * pressed in Telegram, not here. */
+/** Every channel, each with where it stands. */
 export function Alerts() {
-  const [telegram, setTelegram] = useState<string | null>(null);
-  const read = useCallback(() => {
-    api.get<Schema<"AccountOut">>("/account").then((account) => setTelegram(account.telegram_status))
-      .catch(() => undefined);
-  }, []);
-  useEffect(() => {
-    read();
-    window.addEventListener("focus", read);
-    return () => window.removeEventListener("focus", read);
-  }, [read]);
-  const disconnect = useAction(async () => {
-    await api.del("/telegram/link");
-    read();
-  });
-
   return (
     <div className="channels">
-      <div className="channel">
+      <div className="channel stacked">
         <span className="label">Telegram</span>
-        {telegram === "connected" ? (
-          <>
-            <span className="small muted">Connected.</span>
-            <button type="button" className="secondary small" disabled={disconnect.busy}
-                    onClick={() => void disconnect.run()}>
-              Disconnect
-            </button>
-            <Error>{disconnect.error}</Error>
-          </>
-        ) : telegram ? (
-          <TelegramButton label={telegram === "broken" ? "Reconnect Telegram" : "Connect Telegram"} />
-        ) : null}
+        <TelegramSetup />
       </div>
       <div className="channel">
         <span className="label">This browser</span>
         <PushButton />
+      </div>
+      <div className="channel">
+        <span className="label">Email</span>
+        <EmailAlerts />
       </div>
     </div>
   );

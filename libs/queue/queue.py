@@ -10,10 +10,12 @@ from pymongo import ReturnDocument
 from pymongo.database import Database
 from pymongo.errors import DuplicateKeyError
 
-from libs.db import insert, now
+from libs import settings
+from libs.db import find, insert, now
 from libs.db.models import CorpusJob, LanePause, QueueJob, User
 from libs.db.models.queue import CLAIM_TIMEOUT_MIN, LANES, MAX_ATTEMPTS
 from libs.notify import reachable
+from libs.notify.digest import due
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +106,18 @@ def dispatch_due_notifications(db: Database) -> int:
     for user_id in accounts:
         if (last_run.get(user_id) is None or newest["first_seen_at"] > last_run[user_id]) and \
                 enqueue(db, "notify", user_id, dedup_key="due") is not None:
+            enqueued += 1
+    return enqueued
+
+
+def dispatch_due_digests(db: Database) -> int:
+    """Enqueue a daily email for everyone whose is due (`libs.notify.digest.due`). On the same sweep as
+    the alerts, so it has no clock of its own; the `digest` dedup key keeps it to one at a time."""
+    hour = settings.get(db, "email_digest_hour")
+    enqueued = 0
+    for user in find(db, User, {"email_alerts": True, "active": True, "status": "active"}):
+        if due(db, user, hour) and enqueue(db, "notify", user.id, payload={"digest": True},
+                                           dedup_key="digest") is not None:
             enqueued += 1
     return enqueued
 

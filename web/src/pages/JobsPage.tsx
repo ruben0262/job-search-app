@@ -2,7 +2,6 @@
  * from a CV and a cover letter made for it. Every alert lands here, on `#/feed?job=<id>`. */
 import { useCallback, useEffect, useState } from "react";
 
-import { TelegramButton } from "../alerts";
 import { api, type Ready, type Schema } from "../api";
 import { useBuild } from "../documents";
 import { ago } from "../time";
@@ -129,11 +128,10 @@ export function JobsPage({ dashboard, focus, onChanged }: {
       {dashboard.banners.map((banner) => (
         <Banner key={banner.key} level={banner.level}>
           <span>{banner.text}</span>{" "}
-          {banner.key === "telegram_broken" ? (
-            <TelegramButton label="Reconnect Telegram" />
-          ) : (
-            <a href="#/settings">{banner.key === "paused" ? "Turn them back on" : "Turn on alerts"}</a>
-          )}
+          <a href="#/settings">
+            {banner.key === "telegram_broken" ? "Fix it in Settings"
+              : banner.key === "paused" ? "Turn them back on" : "Turn on alerts"}
+          </a>
         </Banner>
       ))}
 

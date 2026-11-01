@@ -301,10 +301,10 @@ def test_a_send_that_failed_is_not_counted_against_the_cap(client, monkeypatch):
 
     outage, send = [True], mailer.send
 
-    def flaky(to, subject, body):
+    def flaky(to, subject, body, **kwargs):
         if outage[0]:
             raise MailError("smtp said no")
-        send(to, subject, body)
+        send(to, subject, body, **kwargs)
 
     monkeypatch.setattr(mailer, "send", flaky)
     before = sent_last_24h(db)

@@ -12,7 +12,7 @@ from pymongo.database import Database
 
 from libs.credentials import validate_credential
 from libs.db.models import ProxyCredential
-from libs.db.models.user import SECRET_KINDS
+from libs.db.models.user import CREDENTIAL_KINDS
 from libs.obs import audit
 from libs.secrets import SecretStore, redacting
 from services.api.deps import current_user, get_db, get_store, rate_limit
@@ -40,7 +40,7 @@ def put_credential(kind: str, body: CredentialBody, request: Request, *,
                    store: SecretStore = Depends(get_store),
                    user_id: _uuid.UUID = Depends(current_user)) -> Saved:
     """Store or replace one credential."""
-    if kind not in SECRET_KINDS:
+    if kind not in CREDENTIAL_KINDS:
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             detail=f"unknown credential {kind!r}")
     rate_limit(request, f"credential:{user_id}", limit=20, per_seconds=3600)
@@ -90,7 +90,7 @@ def list_credentials(db: Database = Depends(get_db),
             StoredCredential(kind=row.kind, last_4=row.last_4,
                              validated=row.validated_at is not None,
                              updated_at=row.updated_at.isoformat() if row.updated_at else None)
-            for row in stored])
+            for row in stored if row.kind in CREDENTIAL_KINDS])
 
 
 # The broker owns the sign-in processes; see `services/oauthbroker`.
@@ -173,7 +173,7 @@ class Removed(BaseModel):
 @router.delete("/{kind}")
 def delete_credential(kind: str, store: SecretStore = Depends(get_store),
                       user_id: _uuid.UUID = Depends(current_user)) -> Removed:
-    """Revoke one credential. Telegram is not one any more: it is linked, under `/telegram/link`."""
-    if kind not in SECRET_KINDS:
+    """Revoke one credential. A Telegram bot is not one of these: it is under `/telegram/bot`."""
+    if kind not in CREDENTIAL_KINDS:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=f"unknown credential {kind!r}")
     return Removed(status="deleted" if store.delete(user_id, kind) else "not stored")

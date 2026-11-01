@@ -1,4 +1,4 @@
-"""Single-use tokens for email verification, password reset and the Telegram connect link."""
+"""Single-use tokens for email verification and password reset."""
 from __future__ import annotations
 
 import hashlib

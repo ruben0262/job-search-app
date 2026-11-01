@@ -18,7 +18,6 @@ from tests.conftest import needs_db
 
 pytest.importorskip("pywebpush")
 
-SECRET = "webhook-secret-" + "w" * 24
 
 
 @pytest.fixture(autouse=True)
@@ -154,12 +153,12 @@ def test_somebody_never_sent_anything_gets_what_was_found_since_they_joined(db):
 @needs_db
 def test_alerts_start_when_telegram_is_connected_not_when_they_joined(db):
     """Turning alerts on weeks after joining must not fire every match still in its window at once."""
-    from libs.db.models import AuthToken
+    from libs.db.models import User
 
     user, word = _person(db, joined_minutes_ago=3 * 24 * 60)
     _posting(db, word, minutes_ago=5 * 60)  # inside every freshness window, before they connected
-    insert(db, AuthToken(id=uuid.uuid4().hex, user_id=user.id, purpose="telegram_connect",
-                         expires_at=now(), used_at=now() - timedelta(hours=1)))
+    db[User.COLLECTION].update_one({"_id": user.id},
+                                   {"$set": {"telegram_connected_at": now() - timedelta(hours=1)}})
     new = _posting(db, word, minutes_ago=10)
 
     run(db, user, Outbox())
@@ -323,7 +322,7 @@ def test_a_run_stops_before_its_claim_expires_and_queues_the_rest(db, monkeypatc
 
 
 @needs_db
-def test_a_notifier_without_the_bot_token_still_reaches_browsers_and_says_so(db, caplog):
+def test_telegram_with_no_bot_token_stored_still_reaches_browsers_and_says_so(db, caplog):
     user, word = _person(db, browsers=1)
     _posting(db, word)
     outbox = Outbox()
@@ -332,7 +331,7 @@ def test_a_notifier_without_the_bot_token_still_reaches_browsers_and_says_so(db,
         assert run(db, user, outbox, telegram=None) == 1
 
     assert outbox.telegram == [] and len(outbox.browsers) == 1
-    assert any("TELEGRAM_BOT_TOKEN" in record.getMessage() for record in caplog.records)
+    assert any("no bot token stored" in record.getMessage() for record in caplog.records)
 
 
 def test_the_push_transport_reads_404_and_410_as_gone(monkeypatch):
@@ -367,14 +366,57 @@ def test_the_push_transport_reads_404_and_410_as_gone(monkeypatch):
         notifier.push(browser, alert)
 
 
-# ── connecting, through the API ───────────────────────────────────────────────────────────────
+# ── connecting their own bot, through the API ─────────────────────────────────────────────────
+
+class FakeTelegram:
+    """Telegram's Bot API for bots made in these tests: tokens as BotFather issues them, a /start when
+    the test presses Start, and every message a bot was asked to send."""
+
+    def __init__(self):
+        self.bots: dict[str, str] = {}
+        self.updates: dict[str, list] = {}
+        self.sent: list[tuple[str, str, str]] = []
+        self.calls = 0
+
+    def make_bot(self, name="alice_jobs_bot") -> str:
+        token = f"{7000000000 + len(self.bots)}:AAH{uuid.uuid4().hex}"
+        self.bots[token], self.updates[token] = name, []
+        return token
+
+    def press_start(self, token, chat=4242):
+        self.updates[token].append({"update_id": len(self.updates[token]) + 1, "message": {
+            "message_id": 1, "text": "/start", "chat": {"id": chat, "type": "private"}}})
+
+    def post(self, url, json=None, timeout=None):
+        import httpx
+
+        self.calls += 1
+        token, method = url.split("/bot", 1)[1].split("/", 1)
+        if token not in self.bots:
+            return httpx.Response(401, json={"ok": False, "description": "Unauthorized"})
+        result = {"getMe": lambda: {"username": self.bots[token]},
+                  "getUpdates": lambda: self.updates[token],
+                  "sendMessage": lambda: self.sent.append((token, str(json["chat_id"]), json["text"])) or {},
+                  }[method]()
+        return httpx.Response(200, json={"ok": True, "result": result})
+
+
+@pytest.fixture()
+def telegram(monkeypatch):
+    from libs import telegram as bot_api
+
+    fake = FakeTelegram()
+    monkeypatch.setattr(bot_api.httpx, "post", fake.post)
+    return fake
+
 
 @pytest.fixture()
 def api(monkeypatch, db):
+    from libs.secrets import generate_key
+
     os.environ.setdefault("ACCESS_TOKEN_SECRET", "test-" + "x" * 40)
     monkeypatch.setenv("DISABLE_RATE_LIMIT", "1")
-    monkeypatch.setenv("TELEGRAM_BOT_USERNAME", "jobs_test_bot")
-    monkeypatch.setenv("TELEGRAM_WEBHOOK_SECRET", SECRET)
+    monkeypatch.setenv("SECRETS_KEK", f"k1:{generate_key()}")
     monkeypatch.setenv("VAPID_PUBLIC_KEY", "BPublicKey")
     monkeypatch.setenv("PUBLIC_URL", "https://jobs.example.com")
 
@@ -390,87 +432,118 @@ def api(monkeypatch, db):
         yield http, db, user
 
 
-def say(http, text, *, chat=4242, secret=SECRET):
-    """A message to the bot, as Telegram posts it to the webhook."""
-    return http.post("/telegram/webhook",
-                     headers={"X-Telegram-Bot-Api-Secret-Token": secret} if secret else {},
-                     json={"update_id": 1, "message": {"message_id": 1, "text": text,
-                                                       "chat": {"id": chat, "type": "private"}}})
-
-
-def _code(http) -> str:
-    return http.post("/telegram/link").json()["url"].split("start=")[1]
+def _connect(http, telegram) -> str:
+    token = telegram.make_bot()
+    http.put("/telegram/bot", json={"token": token})
+    telegram.press_start(token)
+    assert http.post("/telegram/check").json()["status"] == "connected"
+    return token
 
 
 @needs_db
-def test_telegram_connects_with_one_link_and_one_press_of_start(api):
+def test_telegram_connects_with_the_bots_token_and_one_press_of_start(api, telegram):
+    """No chat id to look up: pressing Start in their bot is how we learn it."""
     http, db, user = api
-    link = http.post("/telegram/link").json()["url"]
-    assert link.startswith("https://t.me/jobs_test_bot?start=")
+    token = telegram.make_bot()
 
-    reply = say(http, "/start " + link.split("start=")[1]).json()
+    saved = http.put("/telegram/bot", json={"token": token}).json()
+    assert saved == {"status": "waiting", "bot": "alice_jobs_bot", "open_url": "https://t.me/alice_jobs_bot"}
+    assert http.post("/telegram/check").json()["status"] == "waiting", "Start not pressed yet"
+
+    telegram.press_start(token, chat=4242)
+    assert http.post("/telegram/check").json()["status"] == "connected"
 
     account = _account(db, user)
     assert (account.telegram_status, account.telegram_chat_id) == ("connected", "4242")
-    # Carried in the answer to Telegram's own call, which is how it reaches the chat.
-    assert (reply["method"], reply["chat_id"]) == ("sendMessage", 4242)
-    assert "Connected" in reply["text"]
+    [(bot, chat, text)] = telegram.sent
+    assert (bot, chat) == (token, "4242") and "Connected" in text, "a welcome, through their own bot"
+    assert [row["kind"] for row in http.get("/credentials").json()["credentials"]] == [], (
+        "a bot token is not one of the AI keys or proxies the credentials form lists")
 
 
 @needs_db
-def test_the_webhook_refuses_a_call_without_the_platforms_secret(api, caplog):
+def test_something_that_is_not_a_bot_token_is_refused_without_asking_telegram(api, telegram):
     http, db, user = api
-    code = _code(http)
 
-    with caplog.at_level(logging.WARNING):
-        assert say(http, f"/start {code}", secret=None).status_code == 404
-        assert say(http, f"/start {code}", secret="not-the-secret").status_code == 404
+    refused = http.put("/telegram/bot", json={"token": "my telegram is @alice, thanks!"})
 
+    assert refused.status_code == 422 and "does not look like a bot token" in refused.json()["detail"]
+    assert telegram.calls == 0
     assert _account(db, user).telegram_status == "unconfigured"
-    assert any("secret header" in record.getMessage() for record in caplog.records)
 
 
 @needs_db
-def test_a_code_works_once_and_nobody_else_can_reuse_it(api):
+def test_a_token_telegram_does_not_know_is_refused_and_not_kept(api, telegram):
+    from libs.db.models import UserSecret
+
     http, db, user = api
-    code = _code(http)
-    say(http, f"/start {code}")
 
-    stranger = say(http, f"/start {code}", chat=9999).json()
+    refused = http.put("/telegram/bot", json={"token": f"7999999999:AAH{uuid.uuid4().hex}"})
 
-    assert _account(db, user).telegram_chat_id == "4242"
-    assert "expired" in stranger["text"]
-    # Tapping your own link twice is not a failure, and is not told it is one.
-    assert "already connected" in say(http, f"/start {code}").json()["text"]
+    assert refused.status_code == 422 and "did not accept" in refused.json()["detail"]
+    assert db[UserSecret.COLLECTION].count_documents({"user_id": user.id}) == 0
 
 
 @needs_db
-def test_anything_else_sent_to_the_bot_points_at_the_site(api):
+def test_a_test_message_goes_through_their_own_bot(api, telegram):
     http, _, _ = api
-    assert "https://jobs.example.com" in say(http, "hello").json()["text"]
+    token = _connect(http, telegram)
+
+    assert http.post("/telegram/test").json()["status"] == "connected"
+
+    bot, chat, text = telegram.sent[-1]
+    assert (bot, chat) == (token, "4242") and "test" in text
 
 
 @needs_db
-def test_disconnecting_stops_telegram(api):
-    from libs.db.models import User
+def test_disconnecting_forgets_the_bot_and_its_chat(api, telegram):
+    from libs.db.models import UserSecret
 
     http, db, user = api
-    db[User.COLLECTION].update_one({"_id": user.id}, {"$set": {"telegram_status": "connected",
-                                                                "telegram_chat_id": "4242"}})
+    _connect(http, telegram)
 
-    assert http.delete("/telegram/link").json() == {"status": "unconfigured"}
+    assert http.delete("/telegram/bot").json()["status"] == "unconfigured"
+
     account = _account(db, user)
-    assert (account.telegram_status, account.telegram_chat_id) == ("unconfigured", None)
+    assert (account.telegram_status, account.telegram_chat_id, account.telegram_bot_name) == (
+        "unconfigured", None, None)
+    assert db[UserSecret.COLLECTION].count_documents({"user_id": user.id}) == 0
 
 
 @needs_db
-def test_connecting_says_so_when_the_site_has_no_bot(api, monkeypatch):
+def test_the_credentials_form_cannot_store_a_bot_token(api, telegram):
+    """One way in for a bot token: the Telegram steps, which also find the chat."""
     http, _, _ = api
-    monkeypatch.delenv("TELEGRAM_BOT_USERNAME")
+    assert http.put("/credentials/telegram_bot", json={"value": telegram.make_bot(),
+                                                       "allow_unvalidated": True}).status_code == 400
 
-    response = http.post("/telegram/link")
-    assert response.status_code == 503
-    assert "not set up" in response.json()["detail"]
+
+@needs_db
+def test_the_notifier_sends_each_person_their_jobs_through_their_own_bot(api, telegram):
+    """Two people, two bots: each one's jobs leave through the token that person saved."""
+    from libs.db import insert
+    from libs.db.models import QueueJob, User, UserConfig
+    from libs.secrets import SecretStore
+    from services.notifier.__main__ import handle
+
+    http, db, user = api
+    alice_bot = _connect(http, telegram)
+    word = f"wrangler{uuid.uuid4().hex[:8]}"
+    insert(db, UserConfig(user_id=user.id, schema_version=2,
+                          config={"sections": [{"platform": "all", "keywords": [word]}]}))
+    db[User.COLLECTION].update_one({"_id": user.id}, {"$set": {
+        "active": True, "created_at": now() - timedelta(days=1),
+        "telegram_connected_at": now() - timedelta(hours=1)}})
+    bob, _ = _person(db)
+    bob_bot = telegram.make_bot("bob_jobs_bot")
+    SecretStore(db).put(bob.id, "telegram_bot", bob_bot, validated=True)
+    job = _posting(db, f"Senior {word}")
+
+    handle(db, insert(db, QueueJob(lane="notify", user_id=user.id)))
+    handle(db, insert(db, QueueJob(lane="notify", user_id=bob.id)))
+
+    alerts = [(bot, chat) for bot, chat, text in telegram.sent if job.title in text]
+    assert alerts == [(alice_bot, "4242")], "Alice's job, through Alice's bot, and nothing through Bob's"
 
 
 @needs_db
@@ -500,31 +573,3 @@ def test_a_push_endpoint_has_to_be_https(api):
     response = http.post("/push/subscribe", json={"endpoint": "http://169.254.169.254/latest",
                                                   "keys": {"p256dh": "k", "auth": "a"}})
     assert response.status_code == 422
-
-
-def test_the_webhook_script_points_telegram_at_the_route_the_api_serves(monkeypatch):
-    """Registered once on the box. A wrong address here is a bot that never hears a /start."""
-    import importlib.util
-    from pathlib import Path
-
-    import httpx
-
-    path = Path(__file__).resolve().parents[1] / "deploy" / "scripts" / "set_telegram_webhook.py"
-    spec = importlib.util.spec_from_file_location("set_telegram_webhook", path)
-    script = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(script)
-
-    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123:abc")
-    monkeypatch.setenv("TELEGRAM_WEBHOOK_SECRET", SECRET)
-    monkeypatch.setenv("PUBLIC_URL", "https://jobs.example.com/")
-    sent = {}
-
-    def post(url, **kwargs):
-        sent.update(kwargs["json"])
-        return httpx.Response(200, json={"ok": True, "result": True})
-
-    monkeypatch.setattr(script.httpx, "post", post)
-
-    assert script.main() == 0
-    assert sent == {"url": "https://jobs.example.com/telegram/webhook", "secret_token": SECRET,
-                    "allowed_updates": ["message"]}

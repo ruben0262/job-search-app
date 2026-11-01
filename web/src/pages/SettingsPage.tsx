@@ -72,8 +72,10 @@ export function SettingsPage({ dashboard, onChanged, onSignedOut }: {
       <p className="kicker">Settings</p>
       <h1>Settings</h1>
 
-      <Card title="Alerts on your phone">
-        <p className="small muted">Optional. New jobs that match your words come to your phone as they are found.</p>
+      <Card title="Alerts">
+        <p className="small muted">
+          Optional. New jobs that match your search reach you as they are found, or in one email each morning.
+        </p>
         <Alerts />
         <div className="channel">
           <span>

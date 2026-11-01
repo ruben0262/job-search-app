@@ -10,7 +10,7 @@ def _stub_telegram(monkeypatch, responses: list[int]) -> list[str]:
     """Answer each `send` call with the next status code, and record how many were made."""
     import httpx
 
-    from services.notifier import __main__ as notifier
+    from libs import telegram as notifier
 
     calls: list[str] = []
 
@@ -28,7 +28,7 @@ def _stub_telegram(monkeypatch, responses: list[int]) -> list[str]:
 
 def test_a_telegram_502_is_retried_rather_than_failing_the_job(monkeypatch):
     """The regression itself: a gateway error that clears must not cost the user their digest."""
-    from services.notifier.__main__ import send
+    from libs.telegram import send
 
     calls = _stub_telegram(monkeypatch, [502, 502, 200])
     send("token", "chat", "hello")
@@ -37,7 +37,7 @@ def test_a_telegram_502_is_retried_rather_than_failing_the_job(monkeypatch):
 
 def test_a_telegram_outage_that_does_not_end_says_it_was_an_outage(monkeypatch):
     """The message is what an operator reads at 3am, and it has to name the right suspect."""
-    from services.notifier.__main__ import SERVER_ERROR_RETRIES, send
+    from libs.telegram import SERVER_ERROR_RETRIES, send
 
     calls = _stub_telegram(monkeypatch, [502])
     with pytest.raises(RuntimeError, match="server error"):
@@ -47,7 +47,7 @@ def test_a_telegram_outage_that_does_not_end_says_it_was_an_outage(monkeypatch):
 
 def test_a_bad_request_is_not_retried(monkeypatch):
     """400 is our payload being wrong and 403 is a revoked bot."""
-    from services.notifier.__main__ import send
+    from libs.telegram import send
 
     calls = _stub_telegram(monkeypatch, [400])
     with pytest.raises(RuntimeError):
@@ -57,7 +57,7 @@ def test_a_bad_request_is_not_retried(monkeypatch):
 
 def test_rate_limits_and_outages_do_not_share_one_budget(monkeypatch):
     """Two conditions with two right answers, so two counters."""
-    from services.notifier.__main__ import RATE_LIMIT_RETRIES, SERVER_ERROR_RETRIES, send
+    from libs.telegram import RATE_LIMIT_RETRIES, SERVER_ERROR_RETRIES, send
 
     assert RATE_LIMIT_RETRIES >= 2 and SERVER_ERROR_RETRIES >= 2
     calls = _stub_telegram(monkeypatch, [429, 429, 502, 502, 200])
@@ -69,7 +69,7 @@ def test_a_flood_wait_still_obeys_telegrams_own_number(monkeypatch):
     """Unchanged behaviour, guarded because the retry loop was restructured around it."""
     import httpx
 
-    from services.notifier import __main__ as notifier
+    from libs import telegram as notifier
 
     waits: list[float] = []
     calls: list[str] = []

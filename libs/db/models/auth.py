@@ -29,7 +29,7 @@ class UserSession(Document):
     created_at: datetime = field(default_factory=now)
 
 
-TOKEN_PURPOSES = ("verify_email", "reset_password", "telegram_connect")
+TOKEN_PURPOSES = ("verify_email", "reset_password")
 
 
 @dataclass(kw_only=True)
@@ -49,7 +49,7 @@ class AuthToken(Document):
     created_at: datetime = field(default_factory=now)
 
 
-MAIL_PURPOSES = ("verify_email", "reset_password", "notice", "contact")
+MAIL_PURPOSES = ("verify_email", "reset_password", "notice", "contact", "digest")
 
 
 @dataclass(kw_only=True)

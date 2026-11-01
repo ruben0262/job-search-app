@@ -92,10 +92,10 @@ def test_the_check_can_tell_a_written_column_from_an_unwritten_one(bodies):
     Pinned to `telegram_webhook_secret`, the defect that motivated it, until that column retired with
     the per-user bot (2026-10-28) — it is in `KNOWN_UNWRITTEN` now, which the test above holds to
     having no producer. The positive half is the chat id the Telegram link writes: lose that and
-    nobody can be reached on Telegram.
+    nobody can be reached on Telegram. Since 2026-11-01 that is the Start pressed in their own bot.
     """
-    assert re.search(r"[\"']telegram_chat_id[\"']\s*:\s*str\(chat_id\)", bodies), (
-        "the Telegram link no longer records the chat it connected")
+    assert re.search(r"\btelegram_chat_id\s*=\s*chat\b", bodies), (
+        "the Telegram setup no longer records the chat it connected")
 
     # And the negative: a column name that exists nowhere must not appear written.
     assert not re.search(r"(\.nonexistent_column_xyz\s*=[^=]|\bnonexistent_column_xyz\s*=[^=])",

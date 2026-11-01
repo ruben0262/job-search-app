@@ -787,7 +787,7 @@ export interface paths {
         post?: never;
         /**
          * Delete Credential
-         * @description Revoke one credential. Telegram is not one any more: it is linked, under `/telegram/link`.
+         * @description Revoke one credential. A Telegram bot is not one of these: it is under `/telegram/bot`.
          */
         delete: operations["delete_credential_credentials__kind__delete"];
         options?: never;
@@ -1402,31 +1402,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/telegram/link": {
+    "/telegram": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * State
+         * @description Where their Telegram is.
+         */
+        get: operations["state_telegram_get"];
         put?: never;
-        /**
-         * Link
-         * @description A one-time link that opens the platform's bot carrying a code for this account.
-         */
-        post: operations["link_telegram_link_post"];
-        /**
-         * Unlink
-         * @description Stop sending to Telegram. Connecting again is the same one tap.
-         */
-        delete: operations["unlink_telegram_link_delete"];
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/telegram/webhook": {
+    "/telegram/bot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save Bot
+         * @description Check a bot token with Telegram and keep it. Their chat comes next, from pressing Start.
+         */
+        put: operations["save_bot_telegram_bot_put"];
+        post?: never;
+        /**
+         * Forget Bot
+         * @description Stop sending to Telegram and forget the bot.
+         */
+        delete: operations["forget_bot_telegram_bot_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/telegram/check": {
         parameters: {
             query?: never;
             header?: never;
@@ -1436,10 +1456,30 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Webhook
-         * @description Everything anybody sends the bot: `/start <code>` connects, anything else points at the site.
+         * Check
+         * @description Has Start been pressed in their bot? If so, that chat is theirs, and it gets a welcome.
          */
-        post: operations["webhook_telegram_webhook_post"];
+        post: operations["check_telegram_check_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/telegram/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test
+         * @description Send one message, to see that it arrives.
+         */
+        post: operations["test_telegram_test_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1458,6 +1498,8 @@ export interface components {
             consent_version: string | null;
             /** Email */
             email: string;
+            /** Email Alerts */
+            email_alerts: boolean;
             /** Telegram Status */
             telegram_status: string;
         };
@@ -1465,6 +1507,8 @@ export interface components {
         AccountPatch: {
             /** Active */
             active?: boolean | null;
+            /** Email Alerts */
+            email_alerts?: boolean | null;
         };
         /** AdminAccount */
         AdminAccount: {
@@ -1576,6 +1620,11 @@ export interface components {
             file: string;
             /** Kind */
             kind: string;
+        };
+        /** BotToken */
+        BotToken: {
+            /** Token */
+            token: string;
         };
         /** BuildRequest */
         BuildRequest: {
@@ -2421,31 +2470,17 @@ export interface components {
             /** State */
             state?: ("proposed" | "done" | "failed") | null;
         };
-        /** TelegramLink */
-        TelegramLink: {
-            /** Url */
-            url: string;
-        };
-        /**
-         * TelegramReply
-         * @description One message back to the chat, which Telegram sends for us.
-         */
-        TelegramReply: {
-            /** Chat Id */
-            chat_id: number;
+        /** TelegramState */
+        TelegramState: {
+            /** Bot */
+            bot: string | null;
+            /** Open Url */
+            open_url: string | null;
             /**
-             * Method
-             * @default sendMessage
-             * @constant
+             * Status
+             * @enum {string}
              */
-            method: "sendMessage";
-            /** Text */
-            text: string;
-        };
-        /** TelegramStatus */
-        TelegramStatus: {
-            /** Status */
-            status: string;
+            status: "unconfigured" | "waiting" | "connected" | "broken";
         };
         /**
          * UserConfigSchema
@@ -4852,7 +4887,7 @@ export interface operations {
             };
         };
     };
-    link_telegram_link_post: {
+    state_telegram_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -4867,19 +4902,23 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TelegramLink"];
+                    "application/json": components["schemas"]["TelegramState"];
                 };
             };
         };
     };
-    unlink_telegram_link_delete: {
+    save_bot_telegram_bot_put: {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BotToken"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -4887,29 +4926,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TelegramStatus"];
-                };
-            };
-        };
-    };
-    webhook_telegram_webhook_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                "x-telegram-bot-api-secret-token"?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TelegramReply"] | null;
+                    "application/json": components["schemas"]["TelegramState"];
                 };
             };
             /** @description Validation Error */
@@ -4919,6 +4936,66 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    forget_bot_telegram_bot_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TelegramState"];
+                };
+            };
+        };
+    };
+    check_telegram_check_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TelegramState"];
+                };
+            };
+        };
+    };
+    test_telegram_test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TelegramState"];
                 };
             };
         };

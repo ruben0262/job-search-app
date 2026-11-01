@@ -2571,3 +2571,56 @@ input[type="checkbox"]:disabled {
     flex: 1 1 45%;
   }
 }
+
+/* ── Telegram, step by step ─────────────────────────────────────────────────────────────────── */
+
+.channel.stacked {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.telegram-steps {
+  list-style: none;
+  margin: 0.25rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.9rem;
+}
+
+.telegram-steps li {
+  display: grid;
+  grid-template-columns: 1.75rem 1fr;
+  gap: 0.75rem;
+  align-items: start;
+  font-size: 0.9375rem;
+  line-height: 1.55;
+}
+
+.telegram-steps .step-number {
+  display: grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  border: 1px solid var(--faint);
+  font-size: 0.8rem;
+  font-weight: 650;
+}
+
+.telegram-steps li.done .step-number {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--bg);
+}
+
+.telegram-steps .row {
+  margin-top: 0.5rem;
+}
+
+.telegram-steps .button {
+  margin-top: 0.5rem;
+}
+
+.telegram-on .row {
+  margin-top: 0.5rem;
+}

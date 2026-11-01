@@ -1,104 +1,134 @@
-"""Telegram, through the platform's one bot: a link that connects in one tap, and the webhook behind it.
+"""Telegram, through the person's own bot (owner's decision, 2026-11-01): they make a bot with
+@BotFather and paste its token, then press Start in it, and we find their chat from that.
 
-The person taps a `t.me/<bot>?start=<code>` link, Telegram opens the bot, and pressing Start sends
-`/start <code>` here; redeeming the code ties that chat to their account. Every reply rides in the
-answer to Telegram's own call (the Bot API's "reply to the webhook"), so this service never holds the
-bot token and a reply cannot fail apart from the request it answers.
+Three calls, in the order the page makes them: `PUT /telegram/bot` checks and keeps the token,
+`POST /telegram/check` looks for the Start (the page asks every couple of seconds until it comes),
+and `POST /telegram/test` sends one message on demand. `DELETE /telegram/bot` forgets all of it.
 """
 from __future__ import annotations
 
-import hmac
 import logging
-import os
 import uuid as _uuid
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from pydantic import BaseModel, Field
 from pymongo.database import Database
 
-from libs.auth import consume_token, issue_token
-from libs.db import get
+from libs import telegram
+from libs.db import get, now
 from libs.db.models import User
 from libs.notify import site_url
 from libs.obs import audit
-from services.api.deps import current_user, get_db
+from libs.secrets import SecretStore, redacting
+from services.api.deps import current_user, get_db, get_store, rate_limit
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/telegram", tags=["telegram"])
 
-
-class TelegramLink(BaseModel):
-    url: str
+WELCOME = "Connected! New jobs that match your search will arrive here as they are found."
 
 
-class TelegramStatus(BaseModel):
-    status: str
+class BotToken(BaseModel):
+    token: str = Field(min_length=20, max_length=200)
 
 
-class TelegramReply(BaseModel):
-    """One message back to the chat, which Telegram sends for us."""
-
-    method: Literal["sendMessage"] = "sendMessage"
-    chat_id: int
-    text: str
-
-
-@router.post("/link")
-def link(db: Database = Depends(get_db),
-         user_id: _uuid.UUID = Depends(current_user)) -> TelegramLink:
-    """A one-time link that opens the platform's bot carrying a code for this account."""
-    bot = os.environ.get("TELEGRAM_BOT_USERNAME", "").lstrip("@")
-    if not bot:
-        logger.warning("telegram: TELEGRAM_BOT_USERNAME is not set, so %s could not connect", user_id)
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
-                            detail="Telegram is not set up on this site yet.")
-    return TelegramLink(url=f"https://t.me/{bot}?start={issue_token(db, user_id, 'telegram_connect')}")
+class TelegramState(BaseModel):
+    status: Literal["unconfigured", "waiting", "connected", "broken"]
+    # Their bot's @name, once its token is saved.
+    bot: str | None
+    # Opens their bot in Telegram, where they press Start.
+    open_url: str | None
 
 
-@router.delete("/link")
-def unlink(db: Database = Depends(get_db),
-           user_id: _uuid.UUID = Depends(current_user)) -> TelegramStatus:
-    """Stop sending to Telegram. Connecting again is the same one tap."""
-    db[User.COLLECTION].update_one({"_id": user_id}, {"$set": {"telegram_chat_id": None,
-                                                                "telegram_status": "unconfigured"}})
+def _state(user: User) -> TelegramState:
+    bot = user.telegram_bot_name
+    return TelegramState(status=user.telegram_status, bot=bot,
+                         open_url=f"https://t.me/{bot}" if bot else None)
+
+
+def _set(db: Database, user_id: _uuid.UUID, **fields) -> User:
+    db[User.COLLECTION].update_one({"_id": user_id}, {"$set": fields})
+    return get(db, User, user_id)
+
+
+@router.get("")
+def state(db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(current_user)) -> TelegramState:
+    """Where their Telegram is."""
+    return _state(get(db, User, user_id))
+
+
+@router.put("/bot")
+def save_bot(body: BotToken, request: Request, db: Database = Depends(get_db),
+             store: SecretStore = Depends(get_store),
+             user_id: _uuid.UUID = Depends(current_user)) -> TelegramState:
+    """Check a bot token with Telegram and keep it. Their chat comes next, from pressing Start."""
+    rate_limit(request, f"telegram:{user_id}", limit=20, per_seconds=3600)
+    token = body.token.strip()
+    if not telegram.BOT_TOKEN_SHAPE.match(token):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            detail="That does not look like a bot token. Copy the whole line BotFather "
+                                   "sent after “Use this token to access the HTTP API”.")
+    with redacting(token):
+        try:
+            name = telegram.bot_name(token)
+        except telegram.TelegramError as exc:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                detail=f"Telegram did not accept that token: {exc}") from exc
+        store.put(user_id, "telegram_bot", token, validated=True)
+    audit(logger, "telegram.bot_saved", user=user_id)
+    return _state(_set(db, user_id, telegram_bot_name=name, telegram_status="waiting", telegram_chat_id=None,
+                       telegram_connected_at=None))
+
+
+@router.post("/check")
+def check(db: Database = Depends(get_db), store: SecretStore = Depends(get_store),
+          user_id: _uuid.UUID = Depends(current_user)) -> TelegramState:
+    """Has Start been pressed in their bot? If so, that chat is theirs, and it gets a welcome."""
+    user = get(db, User, user_id)
+    if user.telegram_status == "connected":
+        return _state(user)
+    with store.use(user_id, "telegram_bot") as secret:
+        if secret is None:
+            raise HTTPException(status.HTTP_409_CONFLICT, detail="Add your bot's token first.")
+        token = secret.reveal()
+        try:
+            chat = telegram.started_chat(token)
+            if chat is None:
+                return _state(user)
+            telegram.send(token, chat, WELCOME)
+        except (telegram.TelegramError, RuntimeError) as exc:
+            logger.warning("telegram: could not reach %s's bot while connecting: %s", user_id, exc)
+            raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=f"Telegram said: {exc}") from exc
+    audit(logger, "telegram.connected", user=user_id)
+    return _state(_set(db, user_id, telegram_chat_id=chat, telegram_status="connected",
+                       telegram_connected_at=now()))
+
+
+@router.post("/test")
+def test(db: Database = Depends(get_db), store: SecretStore = Depends(get_store),
+         user_id: _uuid.UUID = Depends(current_user)) -> TelegramState:
+    """Send one message, to see that it arrives."""
+    user = get(db, User, user_id)
+    if user.telegram_status not in ("connected", "broken") or not user.telegram_chat_id:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="Connect your bot first.")
+    with store.use(user_id, "telegram_bot") as secret:
+        if secret is None:
+            raise HTTPException(status.HTTP_409_CONFLICT, detail="Add your bot's token first.")
+        try:
+            telegram.send(secret.reveal(), user.telegram_chat_id,
+                          f"This is a test from Mahoraga. Your jobs are at {site_url()}")
+        except RuntimeError as exc:
+            raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=f"Telegram said: {exc}") from exc
+    # A test that arrived proves a chat marked broken works again.
+    return _state(_set(db, user_id, telegram_status="connected"))
+
+
+@router.delete("/bot")
+def forget_bot(db: Database = Depends(get_db), store: SecretStore = Depends(get_store),
+               user_id: _uuid.UUID = Depends(current_user)) -> TelegramState:
+    """Stop sending to Telegram and forget the bot."""
+    store.delete(user_id, "telegram_bot")
     audit(logger, "telegram.disconnected", user=user_id)
-    return TelegramStatus(status="unconfigured")
-
-
-@router.post("/webhook")
-async def webhook(request: Request, db: Database = Depends(get_db),
-                  x_telegram_bot_api_secret_token: str | None = Header(default=None),
-                  ) -> TelegramReply | None:
-    """Everything anybody sends the bot: `/start <code>` connects, anything else points at the site."""
-    secret = os.environ.get("TELEGRAM_WEBHOOK_SECRET", "")
-    # 404 rather than 401, so a probe learns nothing; `compare_digest`, so timing tells it nothing.
-    if not (secret and x_telegram_bot_api_secret_token
-            and hmac.compare_digest(x_telegram_bot_api_secret_token, secret)):
-        logger.warning("telegram: a webhook call without the right secret header was refused")
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="not found")
-
-    message = (await request.json()).get("message") or {}
-    chat_id = (message.get("chat") or {}).get("id")
-    if chat_id is None:
-        # Not a message; Telegram only needs the 200.
-        return None
-    command, _, code = (message.get("text") or "").strip().partition(" ")
-    if command.split("@")[0] != "/start" or not code:
-        return TelegramReply(chat_id=chat_id,
-                             text=f"I send you new jobs that match you. Everything else is on {site_url()}")
-
-    user_id = consume_token(db, code.strip(), "telegram_connect")
-    user = get(db, User, user_id) if user_id else None
-    if user is None:
-        connected = db[User.COLLECTION].count_documents(
-            {"telegram_chat_id": str(chat_id), "telegram_status": "connected"}, limit=1)
-        return TelegramReply(chat_id=chat_id, text=(
-            "You are already connected. New jobs that match you arrive here." if connected else
-            f"That link has expired. Tap Connect Telegram on {site_url()} for a fresh one."))
-
-    db[User.COLLECTION].update_one({"_id": user.id}, {"$set": {"telegram_chat_id": str(chat_id),
-                                                                "telegram_status": "connected"}})
-    audit(logger, "telegram.connected", user=user.id)
-    return TelegramReply(chat_id=chat_id,
-                         text="Connected! New jobs that match you will arrive here as they are found.")
+    return _state(_set(db, user_id, telegram_status="unconfigured", telegram_chat_id=None,
+                       telegram_bot_name=None, telegram_connected_at=None))

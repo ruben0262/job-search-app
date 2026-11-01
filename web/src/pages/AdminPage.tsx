@@ -173,6 +173,8 @@ type Settings = {
   database_budget_mb: number;
   /** Where the Help page's contact form is emailed. */
   support_email: string;
+  /** The hour of each person's own day their daily email of new jobs goes out. */
+  email_digest_hour: number;
 };
 
 type Source = {
@@ -762,6 +764,23 @@ export function AdminPage() {
             </label>
           ))}
           <Error>{saveModel.error}</Error>
+
+          <p className="label" style={{ marginTop: "1.5rem" }}>Daily email goes out at</p>
+          <span className="hint">
+            The hour of each person&apos;s own day their email of new jobs is sent, for those who
+            turned it on.
+          </span>
+          <select
+            value={settings.email_digest_hour}
+            disabled={savePlatform.busy}
+            aria-label="Daily email goes out at"
+            onChange={(event) => void savePlatform.run("email_digest_hour", Number(event.target.value))}
+            style={{ maxWidth: "10rem", marginTop: "0.5rem" }}
+          >
+            {[6, 7, 8, 9, 10, 12, 18].map((n) => (
+              <option key={n} value={n}>{`${n}:00`}</option>
+            ))}
+          </select>
 
           <p className="label" style={{ marginTop: "1.5rem" }}>Support address</p>
           <span className="hint">

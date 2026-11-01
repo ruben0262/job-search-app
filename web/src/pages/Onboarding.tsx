@@ -80,10 +80,10 @@ export function Onboarding({ state, onChanged }: {
                 {finish.busy ? "Opening your jobs…" : "See my jobs"}
               </button>
               <section className="optional">
-                <h2>Get alerts on your phone</h2>
+                <h2>Get alerts</h2>
                 <p className="small muted">
-                  Optional. Turn one on, and from now on, new jobs that match your words come to your
-                  phone.
+                  Optional. Turn one on, and from now on new jobs that match your search reach you:
+                  in Telegram, in this browser, or in one email each morning.
                 </p>
                 <Alerts />
               </section>

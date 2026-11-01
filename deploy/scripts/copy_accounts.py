@@ -96,8 +96,10 @@ def converted(model: type, row: dict) -> dict | None:
     if model is User:
         # Limits the catalogue no longer has (the labeller's `label_pool`) govern nothing.
         row["limits"] = {key: value for key, value in (row["limits"] or {}).items() if key in BY_KEY}
-    if model is UserSecret and row["kind"] not in SECRET_KINDS:
-        return None  # a personal Telegram bot: delivery is the platform's bot now
+    if model is UserSecret and (row["kind"] not in SECRET_KINDS or row["kind"] == "telegram_bot"):
+        # An old personal bot's token, with no bot name and a chat Phase 8 reset: re-added in Settings
+        # in a minute (the Telegram steps there), rather than half-carried over.
+        return None
     if model is PlatformSetting and row["id"] not in DEFAULTS:
         return None  # a setting for something that no longer exists
     if model is SetupMessage and row["status"] in ("pending", "streaming", "cancelling"):

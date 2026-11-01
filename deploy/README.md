@@ -99,8 +99,7 @@ In this order:
    for the copy.
 3. **Atlas**: allow this box's public address under Network Access (and nothing wider), then add
    `MONGODB_URI` and `MONGODB_DB` to `deploy/.env` (`.env.example` says where to find them). Also the
-   Phase 8 settings: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`, `TELEGRAM_WEBHOOK_SECRET`, the
-   `VAPID_*` trio, `PUBLIC_URL`, and — for the AI allowance and the help chat — `PLATFORM_AI_PROVIDER`
+   Phase 8 settings: the `VAPID_*` trio, `PUBLIC_URL`, and — for the AI allowance and the help chat — `PLATFORM_AI_PROVIDER`
    and `PLATFORM_AI_KEY` (a **paid** key; leave both empty and only people's own keys write AI documents).
 4. **The new code, and the copy** — a dry run first; it reads and converts everything, writes nothing:
    ```bash
@@ -118,9 +117,9 @@ In this order:
 6. **Deploy**: `deploy/deploy.sh` — it builds, applies the schema (`python -m libs.db --prune`) and
    recreates. Then `sudo deploy/install-units.sh` (the backup and health units changed) and start the
    timers again.
-7. **Register the Telegram webhook** (below), then check: `/health`, `deploy/scripts/check_health.py`.
-8. **Tell the existing accounts** three things: sign in once more (sessions were not copied); press
-   **Start** in the platform bot once if they used a bot of their own; and agree once more before an AI
+7. **Check**: `/health`, `deploy/scripts/check_health.py`.
+8. **Tell the existing accounts** three things: sign in once more (sessions were not copied); connect
+   their Telegram bot again in Settings if they had one (its token was not copied); and agree once more before an AI
    document — the disclosure now names Google and OpenAI.
 9. **Afterwards**: change the Atlas database user's password (it has been shared in a chat) and update
    `deploy/.env`. After two quiet weeks, delete the old database:
@@ -212,34 +211,21 @@ set -a && . deploy/.env && set +a
 | `cloudflared` | `full` | the only way in; no inbound port is open |
 | `harvester` | `tools` | one cycle, invoked by a systemd timer |
 
-## Telegram
+## Telegram, browser notifications and email
 
-One bot for the whole platform (ROADMAP Phase 8). A person taps **Connect Telegram**, Telegram opens
-the bot carrying a one-time code, and pressing **Start** ties their chat to their account. Jobs then
-arrive as cards with two plain links, **Open job** and **Make my CV**, so no button in the chat
-depends on a webhook round trip.
+**Telegram** is each person's own bot (owner's decision, 2026-11-01), so there is nothing to set up
+here. In Settings they follow three steps: make a bot with **@BotFather**, paste its token (checked
+with Telegram's `getMe`), and press **Start** in it. The site finds their chat from that Start
+(`getUpdates`), sends a welcome, and from then on the notifier sends through their bot with the token
+decrypted under `SECRETS_KEK`. Jobs arrive as cards with two plain links, **Open job** and **Make my
+CV**, so nothing in the chat needs a webhook.
 
-1. Create the bot with **@BotFather** (`/newbot`). Put `TELEGRAM_BOT_TOKEN`,
-   `TELEGRAM_BOT_USERNAME` and a random `TELEGRAM_WEBHOOK_SECRET` in `deploy/.env`.
-2. Recreate `api` and `notifier` so they read them.
-3. Register the webhook — once, and again whenever `PUBLIC_URL` or the secret changes:
-
-   ```bash
-   set -a && . deploy/.env && set +a
-   ./.venv/bin/python deploy/scripts/set_telegram_webhook.py   # 0 registered, 1 refused, 2 unset
-   ```
-
-Telegram posts every message the bot receives to `PUBLIC_URL/telegram/webhook`, with the secret in a
-header; a call without it gets a 404 and a `WARNING`. The API replies inside that same call, so only
-the notifier ever holds the token.
-
-Browser notifications need nothing beyond the `VAPID_*` keys in `.env.example`. Generate that pair
+**Browser notifications** need nothing beyond the `VAPID_*` keys in `.env.example`. Generate that pair
 once: a new one strands every browser that subscribed with the old.
 
-**Accounts connected before 2026-10-28** used bots of their own. Their stored chat id is their
-Telegram user id, which the platform bot can message only once they have pressed Start in it; until
-then their first delivery is refused, the account reads as broken, and their bell tells them to
-connect Telegram again. Their channels are no longer used.
+**The daily email** of new jobs goes out at `email_digest_hour` (a platform setting, 8 by default) of
+each person's own day, on the notifier's minute sweep, through the same SMTP mailbox and daily cap as
+sign-up mail.
 
 ## Scheduling the harvest
 

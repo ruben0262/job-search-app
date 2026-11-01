@@ -22,6 +22,10 @@
             "title": "Email",
             "type": "string"
           },
+          "email_alerts": {
+            "title": "Email Alerts",
+            "type": "boolean"
+          },
           "telegram_status": {
             "title": "Telegram Status",
             "type": "string"
@@ -31,6 +35,7 @@
           "email",
           "active",
           "telegram_status",
+          "email_alerts",
           "consent_version"
         ],
         "title": "AccountOut",
@@ -48,6 +53,17 @@
               }
             ],
             "title": "Active"
+          },
+          "email_alerts": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Alerts"
           }
         },
         "title": "AccountPatch",
@@ -379,6 +395,21 @@
           "file"
         ],
         "title": "Body_upload_documents_post",
+        "type": "object"
+      },
+      "BotToken": {
+        "properties": {
+          "token": {
+            "maxLength": 200,
+            "minLength": 20,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "BotToken",
         "type": "object"
       },
       "BuildRequest": {
@@ -2862,55 +2893,47 @@
         "title": "SupportStep",
         "type": "object"
       },
-      "TelegramLink": {
+      "TelegramState": {
         "properties": {
-          "url": {
-            "title": "Url",
-            "type": "string"
-          }
-        },
-        "required": [
-          "url"
-        ],
-        "title": "TelegramLink",
-        "type": "object"
-      },
-      "TelegramReply": {
-        "description": "One message back to the chat, which Telegram sends for us.",
-        "properties": {
-          "chat_id": {
-            "title": "Chat Id",
-            "type": "integer"
+          "bot": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bot"
           },
-          "method": {
-            "const": "sendMessage",
-            "default": "sendMessage",
-            "title": "Method",
-            "type": "string"
+          "open_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Open Url"
           },
-          "text": {
-            "title": "Text",
-            "type": "string"
-          }
-        },
-        "required": [
-          "chat_id",
-          "text"
-        ],
-        "title": "TelegramReply",
-        "type": "object"
-      },
-      "TelegramStatus": {
-        "properties": {
           "status": {
+            "enum": [
+              "unconfigured",
+              "waiting",
+              "connected",
+              "broken"
+            ],
             "title": "Status",
             "type": "string"
           }
         },
         "required": [
-          "status"
+          "status",
+          "bot",
+          "open_url"
         ],
-        "title": "TelegramStatus",
+        "title": "TelegramState",
         "type": "object"
       },
       "UserConfigSchema": {
@@ -4758,7 +4781,7 @@
     },
     "/credentials/{kind}": {
       "delete": {
-        "description": "Revoke one credential. Telegram is not one any more: it is linked, under `/telegram/link`.",
+        "description": "Revoke one credential. A Telegram bot is not one of these: it is under `/telegram/bot`.",
         "operationId": "delete_credential_credentials__kind__delete",
         "parameters": [
           {
@@ -6251,84 +6274,68 @@
         ]
       }
     },
-    "/telegram/link": {
-      "delete": {
-        "description": "Stop sending to Telegram. Connecting again is the same one tap.",
-        "operationId": "unlink_telegram_link_delete",
+    "/telegram": {
+      "get": {
+        "description": "Where their Telegram is.",
+        "operationId": "state_telegram_get",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TelegramStatus"
+                  "$ref": "#/components/schemas/TelegramState"
                 }
               }
             },
             "description": "Successful Response"
           }
         },
-        "summary": "Unlink",
-        "tags": [
-          "telegram"
-        ]
-      },
-      "post": {
-        "description": "A one-time link that opens the platform's bot carrying a code for this account.",
-        "operationId": "link_telegram_link_post",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TelegramLink"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Link",
+        "summary": "State",
         "tags": [
           "telegram"
         ]
       }
     },
-    "/telegram/webhook": {
-      "post": {
-        "description": "Everything anybody sends the bot: `/start <code>` connects, anything else points at the site.",
-        "operationId": "webhook_telegram_webhook_post",
-        "parameters": [
-          {
-            "in": "header",
-            "name": "x-telegram-bot-api-secret-token",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Telegram-Bot-Api-Secret-Token"
-            }
-          }
-        ],
+    "/telegram/bot": {
+      "delete": {
+        "description": "Stop sending to Telegram and forget the bot.",
+        "operationId": "forget_bot_telegram_bot_delete",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/TelegramReply"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ],
-                  "title": "Response Webhook Telegram Webhook Post"
+                  "$ref": "#/components/schemas/TelegramState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Forget Bot",
+        "tags": [
+          "telegram"
+        ]
+      },
+      "put": {
+        "description": "Check a bot token with Telegram and keep it. Their chat comes next, from pressing Start.",
+        "operationId": "save_bot_telegram_bot_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BotToken"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TelegramState"
                 }
               }
             },
@@ -6345,7 +6352,51 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Webhook",
+        "summary": "Save Bot",
+        "tags": [
+          "telegram"
+        ]
+      }
+    },
+    "/telegram/check": {
+      "post": {
+        "description": "Has Start been pressed in their bot? If so, that chat is theirs, and it gets a welcome.",
+        "operationId": "check_telegram_check_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TelegramState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Check",
+        "tags": [
+          "telegram"
+        ]
+      }
+    },
+    "/telegram/test": {
+      "post": {
+        "description": "Send one message, to see that it arrives.",
+        "operationId": "test_telegram_test_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TelegramState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Test",
         "tags": [
           "telegram"
         ]

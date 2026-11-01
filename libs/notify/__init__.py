@@ -16,7 +16,6 @@ from pymongo.database import Database
 from libs import limits
 from libs.db import insert, now
 from libs.db.models import (
-    AuthToken,
     CorpusJob,
     PushSubscription,
     User,
@@ -68,7 +67,7 @@ def reachable(db: Database, only: _uuid.UUID | None = None) -> dict:
     """The accounts an alert can reach, as a filter on `users`: Telegram connected, or at least one
     browser subscribed. `only` narrows the browser lookup to one account, for a page asking about its own."""
     browsers = db[PushSubscription.COLLECTION].distinct("user_id", {} if only is None else {"user_id": only})
-    return {"$or": [{"telegram_status": "connected"}, {"_id": {"$in": browsers}}]}
+    return {"$or": [{"telegram_status": "connected"}, {"_id": {"$in": browsers}}, {"email_alerts": True}]}
 
 
 def sent_up_to(db: Database, user: User) -> datetime:
@@ -88,14 +87,11 @@ def sent_up_to(db: Database, user: User) -> datetime:
         {"$unwind": "$job"},
         {"$group": {"_id": None, "newest": {"$max": "$job.first_seen_at"}}}]))
     newest = sent[0]["newest"] if sent else None
-    # Derived, not stored: the code that linked their current Telegram chat, and their oldest browser.
-    link = db[AuthToken.COLLECTION].find_one(
-        {"user_id": user.id, "purpose": "telegram_connect", "used_at": {"$ne": None}},
-        {"used_at": 1}, sort=[("used_at", -1)]) if user.telegram_status == "connected" else None
+    # When their Telegram chat was connected, and their oldest browser.
+    chat = user.telegram_connected_at if user.telegram_status == "connected" else None
     browser = db[PushSubscription.COLLECTION].find_one(
         {"user_id": user.id}, {"created_at": 1}, sort=[("created_at", 1)])
-    turned_on = min(filter(None, (link and link["used_at"], browser and browser["created_at"])),
-                    default=None)
+    turned_on = min(filter(None, (chat, browser and browser["created_at"])), default=None)
     return max(filter(None, (newest or user.created_at, turned_on)))
 
 

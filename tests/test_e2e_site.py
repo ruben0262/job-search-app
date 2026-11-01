@@ -332,6 +332,49 @@ def test_the_jobs_filters_narrow_the_list_and_clear_back(site, capsys):
         browser.close()
 
 
+def test_telegram_is_three_steps_with_no_chat_id_and_the_email_is_one_switch(site, capsys, monkeypatch):
+    """Their own bot: paste its token, press Start in it, and the page says it is connected by itself.
+    Telegram's Bot API is the stand-in from the alerts tests; everything else is the real site."""
+    from libs import telegram as bot_api
+    from libs.secrets import generate_key
+    from tests.test_alerts import FakeTelegram
+
+    monkeypatch.setenv("SECRETS_KEK", f"k1:{generate_key()}")
+    fake = FakeTelegram()
+    monkeypatch.setattr(bot_api.httpx, "post", fake.post)
+    token = fake.make_bot("alice_jobs_bot")
+    base, email, _ = site
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = browser.new_context(viewport={"width": 390, "height": 844}).new_page()
+        _sign_up(page, base, email, capsys)
+        _onboard(page)
+        page.goto(f"{base}/#/settings")
+
+        expect(page.get_by_text("Make your bot.")).to_be_visible()
+        page.get_by_label("Bot token").fill(token)
+        page.get_by_role("button", name="Save token").click()
+        expect(page.get_by_text("Saved: @alice_jobs_bot.")).to_be_visible()
+        expect(page.get_by_role("link", name="Open @alice_jobs_bot")).to_have_attribute(
+            "href", "https://t.me/alice_jobs_bot")
+        expect(page.get_by_text("Waiting for you to press Start…")).to_be_visible()
+
+        fake.press_start(token)
+        expect(page.get_by_text("Connected to @alice_jobs_bot. New jobs arrive there.")).to_be_visible(
+            timeout=10_000)
+        page.get_by_role("button", name="Send a test").click()
+        expect(page.get_by_text("Sent. Check Telegram.")).to_be_visible()
+        assert [chat for _, chat, _ in fake.sent] == ["4242", "4242"], "the welcome, then the test"
+
+        summary = page.get_by_role("switch", name="A summary of new jobs each morning")
+        expect(summary).not_to_be_checked()
+        summary.click()
+        expect(summary).to_be_checked()
+        page.reload()
+        expect(page.get_by_role("switch", name="A summary of new jobs each morning")).to_be_checked()
+        browser.close()
+
+
 def _sign_up(page, base: str, email: str, capsys) -> None:
     """Sign up, and open the link from the email, which is printed rather than sent."""
     page.goto(f"{base}/#/signup")

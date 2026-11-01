@@ -10,7 +10,8 @@ from pymongo import IndexModel
 from libs.db import Document, now
 
 USER_STATUSES = ("pending_verification", "active", "suspended", "deleted")
-TELEGRAM_STATUSES = ("unconfigured", "connected", "broken")
+# "waiting": their bot's token is saved and nobody has pressed Start in it yet.
+TELEGRAM_STATUSES = ("unconfigured", "waiting", "connected", "broken")
 
 
 @dataclass(kw_only=True)
@@ -43,6 +44,14 @@ class User(Document):
     linkedin_next_run_at: datetime | None = None
     telegram_status: str = "unconfigured"
     telegram_chat_id: str | None = None
+    # Their own bot's @name, from Telegram when its token was saved: where the page sends them to press Start.
+    telegram_bot_name: str | None = None
+    # When their chat was connected: alerts start from then, not with every match already waiting.
+    telegram_connected_at: datetime | None = None
+    # A daily email of their new jobs (owner's decision, 2026-11-01: one summary a day, since every
+    # email shares the mailbox's daily cap with sign-up mail), and when the last one was sent.
+    email_alerts: bool = False
+    email_digest_at: datetime | None = None
     # What the person's documents say about them, read by rules (`libs.profiles`).
     profile: dict | None = None
     documents_changed_at: datetime | None = None
@@ -69,7 +78,11 @@ class UserConfig(Document):
     updated_at: datetime = field(default_factory=now)
 
 
-SECRET_KINDS = ("claude_api", "claude_oauth", "proxy", "gemini_api", "openai_api")
+# What the Settings credentials form stores: an AI key or subscription, or a proxy.
+CREDENTIAL_KINDS = ("claude_api", "claude_oauth", "proxy", "gemini_api", "openai_api")
+# Everything encrypted here: those, and the token of the person's own Telegram bot, which only the
+# Telegram setup (`services/api/telegram_routes.py`) stores.
+SECRET_KINDS = (*CREDENTIAL_KINDS, "telegram_bot")
 
 
 @dataclass(kw_only=True)

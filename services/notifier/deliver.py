@@ -54,8 +54,8 @@ def deliver(db: Database, user_id: _uuid.UUID, *,
     browsers = find(db, PushSubscription, {"user_id": user_id})
     chat = user.telegram_status == "connected" and bool(user.telegram_chat_id)
     if (chat and telegram is None) or (browsers and push is None):
-        logger.warning("notify: %s has a channel this notifier holds no key for — set "
-                       "TELEGRAM_BOT_TOKEN and the VAPID keys", user_id)
+        logger.warning("notify: %s has a channel nothing can send to — Telegram connected with no "
+                       "bot token stored, or browsers with no VAPID keys set", user_id)
     if push is None:
         browsers = []
     if not (chat and telegram) and not browsers:
