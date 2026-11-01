@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import logging
 import uuid as _uuid
-from datetime import datetime
+from collections import Counter
+from datetime import datetime, timedelta
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -13,7 +14,7 @@ from pymongo.database import Database
 from libs import limits
 from libs.corpus import salary
 from libs.db import get, now
-from libs.db.models import CorpusJob, User, UserJobState
+from libs.db.models import BuiltDocument, CorpusJob, User, UserJobState
 from libs.db.models.tenant import record_state
 from libs.documents.saved import for_jobs
 from libs.llm import PLATFORM, ai_requests_today, resolve
@@ -98,9 +99,17 @@ class FeedJob(BaseModel):
     documents: list[JobDocument]
 
 
+class FeedSource(BaseModel):
+    name: str
+    # How many of their jobs came from it, before any filter.
+    jobs: int
+
+
 class Feed(BaseModel):
     total: int
     jobs: list[FeedJob]
+    # The boards their jobs came from, for the filter that picks one.
+    sources: list[FeedSource]
 
 
 def _is_admin(user: User) -> bool:
@@ -168,21 +177,44 @@ def feed(*, db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curren
          offset: int = Query(0, ge=0),
          q: str | None = Query(None, max_length=200),
          remote: bool | None = None,
-         job: int | None = None) -> Feed:
-    """This person's matches, best first, a page at a time: searched, remote only, or one job — the
+         job: int | None = None,
+         since_hours: int | None = Query(None, ge=1, le=24 * 60),
+         source: str | None = Query(None, max_length=60),
+         applied: bool | None = None,
+         made: bool | None = None,
+         sort: Literal["best", "newest"] = "best") -> Feed:
+    """This person's matches, a page at a time, best first or newest first: searched, remote only,
+    posted lately, from one board, applied to or not, with a document made or not — or one job, the
     one an alert's link names, which is either still in their list or not."""
     dismissed, applied_at = _marks(db, user_id)
+    visible = _visible(db, get(db, User, user_id), dismissed)
+    made_for = (set(db[BuiltDocument.COLLECTION].distinct("job_id", {"user_id": user_id}))
+                if made is not None else set())
+    cutoff = now() - timedelta(hours=since_hours) if since_hours else None
     needle = (q or "").lower()
     # `None` is a filter that is off, so `x in (None, value)` reads "off, or equal".
-    matches = [match for match in _visible(db, get(db, User, user_id), dismissed)
+    matches = [match for match in visible
                if needle in f"{match.job.title} {match.job.company or ''} {match.job.url}".lower()
                and remote in (None, bool(match.job.is_remote))
-               and job in (None, match.job.id)]
+               and job in (None, match.job.id)
+               and (cutoff is None or _when(match) >= cutoff)
+               and source in (None, match.job.source)
+               and applied in (None, match.job.id in applied_at)
+               and made in (None, match.job.id in made_for)]
+    if sort == "newest":
+        matches.sort(key=_when, reverse=True)
     page = matches[offset:offset + limit]
     documents = for_jobs(db, user_id, [match.job.id for match in page])
+    boards = Counter(match.job.source for match in visible)
     return Feed(total=len(matches),
                 jobs=[_row(match, applied_at.get(match.job.id), documents.get(match.job.id, []))
-                      for match in page])
+                      for match in page],
+                sources=[FeedSource(name=name, jobs=count) for name, count in boards.most_common()])
+
+
+def _when(match: Match) -> datetime:
+    """When a job appeared: its posting date where the board gives one, else when it was found."""
+    return match.job.posted_at or match.job.first_seen_at
 
 
 def _row(match: Match, applied_at: datetime | None, documents: list[dict]) -> FeedJob:

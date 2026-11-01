@@ -931,7 +931,8 @@ export interface paths {
         };
         /**
          * Feed
-         * @description This person's matches, best first, a page at a time: searched, remote only, or one job — the
+         * @description This person's matches, a page at a time, best first or newest first: searched, remote only,
+         *     posted lately, from one board, applied to or not, with a document made or not — or one job, the
          *     one an alert's link names, which is either still in their list or not.
          */
         get: operations["feed_feed_get"];
@@ -1786,6 +1787,8 @@ export interface components {
         Feed: {
             /** Jobs */
             jobs: components["schemas"]["FeedJob"][];
+            /** Sources */
+            sources: components["schemas"]["FeedSource"][];
             /** Total */
             total: number;
         };
@@ -1831,6 +1834,13 @@ export interface components {
             period: string;
             /** Raw */
             raw: string;
+        };
+        /** FeedSource */
+        FeedSource: {
+            /** Jobs */
+            jobs: number;
+            /** Name */
+            name: string;
         };
         /** FilesFlag */
         FilesFlag: {
@@ -4062,6 +4072,11 @@ export interface operations {
                 q?: string | null;
                 remote?: boolean | null;
                 job?: number | null;
+                since_hours?: number | null;
+                source?: string | null;
+                applied?: boolean | null;
+                made?: boolean | null;
+                sort?: "best" | "newest";
             };
             header?: never;
             path?: never;

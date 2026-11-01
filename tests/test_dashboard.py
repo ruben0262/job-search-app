@@ -233,6 +233,61 @@ def test_equal_scores_are_newest_first(api):
     assert order == [rows[1].id, rows[5].id]
 
 
+def test_posted_lately_keeps_only_jobs_from_the_last_hours_asked(api):
+    """By the posting date where the board gives one, else when it was found. Within the freshness
+    window every board already has: this narrows what is shown, it never brings back older jobs."""
+    http, db, _, jobs = api
+    found_earlier = insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
+                                         title="Backend Engineer", description="x",
+                                         first_seen_at=now() - timedelta(hours=4)))
+    posted_earlier = insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
+                                          title="Backend Engineer", description="x", first_seen_at=now(),
+                                          posted_at=now() - timedelta(hours=4)))
+    earlier = {found_earlier.id, posted_earlier.id}
+
+    assert earlier <= set(_ids(http.get("/feed").json())), "the premise: both are theirs"
+    shown = set(_ids(http.get("/feed?since_hours=2").json()))
+    assert {jobs[0].id, jobs[1].id} <= shown
+    assert not shown & earlier
+
+
+def test_one_board_at_a_time_and_every_board_is_offered_with_its_count(api):
+    http, db, _, _jobs = api
+    other = insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="greenhouse",
+                                 title="Backend Engineer", description="x"))
+
+    body = http.get("/feed?source=greenhouse").json()
+
+    assert _ids(body) == [other.id]
+    assert {each["name"]: each["jobs"] for each in body["sources"]} == {"test": 2, "greenhouse": 1}, (
+        "every board, counted before the filter, so another can be picked")
+
+
+def test_not_applied_yet_and_no_document_yet_leave_out_the_ones_done(api):
+    from libs.db.models import BuiltDocument
+
+    http, db, user, jobs = api
+    http.put(f"/jobs/{jobs[0].id}/applied")
+    insert(db, BuiltDocument(id=999, user_id=user.id, job_id=jobs[1].id, kind="cv", mode="instant",
+                             filename="cv.pdf", content=b"%PDF", size=4, saved=True))
+
+    assert _ids(http.get("/feed?applied=false").json()) == [jobs[1].id]
+    assert _ids(http.get("/feed?applied=true").json()) == [jobs[0].id]
+    assert _ids(http.get("/feed?made=false").json()) == [jobs[0].id]
+    assert _ids(http.get("/feed?made=true").json()) == [jobs[1].id]
+
+
+def test_newest_first_puts_the_latest_job_on_top_whatever_its_score(api):
+    """Best first ranks a title match over a text match; newest first does not."""
+    http, db, _, _jobs = api
+    in_text = insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
+                                   title="Developer", description="a backend engineer role",
+                                   first_seen_at=now() + timedelta(minutes=5)))
+
+    assert _ids(http.get("/feed").json())[-1] == in_text.id, "a text match scores below the titles"
+    assert _ids(http.get("/feed?sort=newest").json())[0] == in_text.id
+
+
 # ── one job, hidden, applied ──────────────────────────────────────────────────────────────────
 
 def test_an_alerts_link_finds_its_job_while_it_is_still_theirs(api):

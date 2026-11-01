@@ -23,6 +23,17 @@ type Suggestions = Schema<"WordSuggestions">;
 /** How long a hidden job keeps its Undo before it leaves the page. */
 const UNDO_MS = 6000;
 
+/** "Posted": hours back, as the server's `since_hours` takes them. */
+const POSTED: [string, number | null][] = [["Any time", null], ["Last 24 hours", 24], ["Last 3 days", 72],
+                                           ["Last week", 168]];
+
+/** A board's name as people write it; anything not listed is its own name, capitalised. */
+const BOARDS: Record<string, string> = {
+  linkedin: "LinkedIn", hiringcafe: "Hiring Cafe", justjoinit: "Just Join IT", nofluffjobs: "No Fluff Jobs",
+  workingnomads: "Working Nomads", themuse: "The Muse", smartrecruiters: "SmartRecruiters",
+};
+const board = (name: string) => BOARDS[name] ?? name.charAt(0).toUpperCase() + name.slice(1);
+
 // The last answer, kept across mounts: coming back to Jobs shows the list at once.
 let cached: Feed | null = null;
 
@@ -40,6 +51,13 @@ export function JobsPage({ dashboard, focus, onChanged }: {
 }) {
   const [query, setQuery] = useState("");
   const [remote, setRemote] = useState(false);
+  const [since, setSince] = useState<number | null>(null);
+  const [source, setSource] = useState("");
+  const [newest, setNewest] = useState(false);
+  const [notApplied, setNotApplied] = useState(false);
+  const [noCv, setNoCv] = useState(false);
+  // The boards their jobs come from, kept from the first answer: a filtered answer still lists them all.
+  const [boards, setBoards] = useState<Feed["sources"]>(cached?.sources ?? []);
   const [feed, setFeed] = useState<Feed | null>(cached);
   const [failed, setFailed] = useState(false);
   // Hidden on the server but still counted in `feed.total`, so the heading subtracts them. Each keeps
@@ -47,25 +65,39 @@ export function JobsPage({ dashboard, focus, onChanged }: {
   const [hidden, setHidden] = useState<Set<number>>(new Set());
   const [gone, setGone] = useState<Set<number>>(new Set());
   const shown = (id: number) => !(hidden.has(id) && gone.has(id));
-  const filtered = query.trim() !== "" || remote;
+  const filtered = query.trim() !== "" || remote || since !== null || source !== "" || notApplied || noCv;
+  const clear = () => {
+    setQuery("");
+    setRemote(false);
+    setSince(null);
+    setSource("");
+    setNotApplied(false);
+    setNoCv(false);
+  };
 
   // A page is as long as the server's own page (`FEED_PAGE`): the next one starts where this one ends.
   const read = useCallback(async (offset: number): Promise<Feed> => {
     const params = new URLSearchParams({ offset: `${offset}` });
     if (query.trim()) params.set("q", query.trim());
     if (remote) params.set("remote", "true");
+    if (since) params.set("since_hours", `${since}`);
+    if (source) params.set("source", source);
+    if (newest) params.set("sort", "newest");
+    if (notApplied) params.set("applied", "false");
+    if (noCv) params.set("made", "false");
     return api.get<Feed>(`/feed?${params}`);
-  }, [query, remote]);
+  }, [query, remote, since, source, newest, notApplied, noCv]);
 
   const reload = useCallback(() => {
     read(0).then((body) => {
-      if (!filtered) cached = body;
+      if (!filtered && !newest) cached = body;
+      setBoards(body.sources);
       setFeed(body);
       setHidden(new Set());
       setGone(new Set());
       setFailed(false);
     }).catch(() => setFailed(true));
-  }, [read, filtered]);
+  }, [read, filtered, newest]);
 
   // Typing does not fire a request per key.
   useEffect(() => {
@@ -79,7 +111,7 @@ export function JobsPage({ dashboard, focus, onChanged }: {
     if (!feed) return;
     const next = await read(feed.jobs.filter((job) => !hidden.has(job.id)).length);
     const have = new Set(feed.jobs.map((job) => job.id));
-    setFeed({ total: next.total + hidden.size,
+    setFeed({ total: next.total + hidden.size, sources: next.sources,
               jobs: [...feed.jobs, ...next.jobs.filter((job) => !have.has(job.id))] });
   });
 
@@ -120,10 +152,31 @@ export function JobsPage({ dashboard, focus, onChanged }: {
       <div className="toolbar">
         <input type="search" placeholder="Search your jobs" aria-label="Search your jobs" value={query}
                onChange={(event) => setQuery(event.target.value)} />
-        <button type="button" className={remote ? "chip on" : "chip"} aria-pressed={remote}
-                onClick={() => setRemote(!remote)}>
-          Remote only
-        </button>
+      </div>
+      <div className="filters">
+        <select aria-label="Posted" value={since ?? ""}
+                onChange={(event) => setSince(event.target.value ? Number(event.target.value) : null)}>
+          {POSTED.map(([label, hours]) => <option key={label} value={hours ?? ""}>{label}</option>)}
+        </select>
+        <select aria-label="Job board" value={source} onChange={(event) => setSource(event.target.value)}>
+          <option value="">All boards</option>
+          {boards.map((each) => (
+            <option key={each.name} value={each.name}>{board(each.name)} ({each.jobs})</option>
+          ))}
+        </select>
+        <select aria-label="Order" value={newest ? "newest" : "best"}
+                onChange={(event) => setNewest(event.target.value === "newest")}>
+          <option value="best">Best match first</option>
+          <option value="newest">Newest first</option>
+        </select>
+        {([["Remote only", remote, setRemote], ["Not applied yet", notApplied, setNotApplied],
+           ["No CV yet", noCv, setNoCv]] as const).map(([label, on, set]) => (
+          <button key={label} type="button" className={on ? "chip on" : "chip"} aria-pressed={on}
+                  onClick={() => set(!on)}>
+            {label}
+          </button>
+        ))}
+        {filtered ? <button type="button" className="linklike small" onClick={clear}>Clear filters</button> : null}
       </div>
 
       <NewWords onAccepted={reload} />
@@ -135,7 +188,7 @@ export function JobsPage({ dashboard, focus, onChanged }: {
       {failed ? <p className="error">Your jobs did not load. Refresh the page to try again.</p> : null}
       {feed && feed.jobs.length === 0 ? (
         <p className="muted">
-          {filtered ? "Nothing matches that search." : (
+          {filtered ? "Nothing matches these filters." : (
             <>
               No jobs match your words yet. New jobs come in all day, or{" "}
               <a href="#/words">add more words</a>.

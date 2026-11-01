@@ -964,6 +964,13 @@
             "title": "Jobs",
             "type": "array"
           },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/FeedSource"
+            },
+            "title": "Sources",
+            "type": "array"
+          },
           "total": {
             "title": "Total",
             "type": "integer"
@@ -971,7 +978,8 @@
         },
         "required": [
           "total",
-          "jobs"
+          "jobs",
+          "sources"
         ],
         "title": "Feed",
         "type": "object"
@@ -1142,6 +1150,24 @@
           "raw"
         ],
         "title": "FeedSalary",
+        "type": "object"
+      },
+      "FeedSource": {
+        "properties": {
+          "jobs": {
+            "title": "Jobs",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "jobs"
+        ],
+        "title": "FeedSource",
         "type": "object"
       },
       "FilesFlag": {
@@ -5087,7 +5113,7 @@
     },
     "/feed": {
       "get": {
-        "description": "This person's matches, best first, a page at a time: searched, remote only, or one job \u2014 the\none an alert's link names, which is either still in their list or not.",
+        "description": "This person's matches, a page at a time, best first or newest first: searched, remote only,\nposted lately, from one board, applied to or not, with a document made or not \u2014 or one job, the\none an alert's link names, which is either still in their list or not.",
         "operationId": "feed_feed_get",
         "parameters": [
           {
@@ -5160,6 +5186,87 @@
                 }
               ],
               "title": "Job"
+            }
+          },
+          {
+            "in": "query",
+            "name": "since_hours",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 1440,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Since Hours"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 60,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source"
+            }
+          },
+          {
+            "in": "query",
+            "name": "applied",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Applied"
+            }
+          },
+          {
+            "in": "query",
+            "name": "made",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Made"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "best",
+              "enum": [
+                "best",
+                "newest"
+              ],
+              "title": "Sort",
+              "type": "string"
             }
           }
         ],

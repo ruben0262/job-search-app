@@ -307,6 +307,31 @@ def test_a_made_cv_is_still_there_after_a_refresh_in_applied_and_in_my_documents
         browser.close()
 
 
+def test_the_jobs_filters_narrow_the_list_and_clear_back(site, capsys):
+    base, email, _ = site
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = browser.new_context(viewport={"width": 390, "height": 844}).new_page()
+        _sign_up(page, base, email, capsys)
+        _onboard(page)
+        expect(page.get_by_role("heading", name="2 jobs match your words")).to_be_visible()
+
+        first = page.locator("article.job-card").filter(
+            has=page.get_by_role("link", name=TITLES[0], exact=True))
+        first.get_by_role("button", name="I applied").click()
+        page.get_by_role("button", name="Not applied yet").click()
+        expect(page.get_by_role("heading", name="1 job matches your search")).to_be_visible()
+        expect(page.get_by_role("link", name=TITLES[0], exact=True)).to_have_count(0)
+
+        page.get_by_role("button", name="Clear filters").click()
+        expect(page.get_by_role("heading", name="2 jobs match your words")).to_be_visible()
+        page.get_by_label("Job board").select_option(label="Test (2)")
+        expect(page.get_by_role("heading", name="2 jobs match your search")).to_be_visible()
+        page.get_by_label("Posted").select_option(label="Last 24 hours")
+        expect(page.get_by_role("heading", name="2 jobs match your search")).to_be_visible()
+        browser.close()
+
+
 def _sign_up(page, base: str, email: str, capsys) -> None:
     """Sign up, and open the link from the email, which is printed rather than sent."""
     page.goto(f"{base}/#/signup")
