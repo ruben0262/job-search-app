@@ -32,6 +32,22 @@ def _configure_logging(verbose: bool) -> None:
     configure("harvester", level="DEBUG" if verbose else "INFO")
 
 
+def source_configs_for(db) -> dict[str, dict]:
+    """What every board is asked this cycle, from the union of active users' configs (never from one
+    person's) and the operator's per-board settings. Also what `check_sources.py` asks them."""
+    return build_source_configs(
+        TenantRepository(db).active_configs(),
+        freshness={name: freshness_hours(db, name) for name in HARVEST_SOURCES},
+        results={name: results_per_query(db, name) for name in HARVEST_SOURCES
+                 if results_per_query(db, name)},
+        pages={name: pages_per_cycle(db, name) for name in HARVEST_SOURCES
+               if pages_per_cycle(db, name)},
+        # Sources that iterate their own demand rather than a planned query set read their ceiling
+        # from the config; `select_within_budget` never sees them.
+        queries={name: queries_per_cycle(db, name) for name in HARVEST_SOURCES},
+        ats_companies=ats_companies_per_cycle(db))
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run one shared harvest cycle.")
     parser.add_argument("--dry-run", action="store_true",
@@ -71,18 +87,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         db = database()
-        # Source pre-filters come from the union of active users' configs, never from one person's.
-        source_configs = build_source_configs(
-            TenantRepository(db).active_configs(),
-            freshness={name: freshness_hours(db, name) for name in HARVEST_SOURCES},
-            results={name: results_per_query(db, name) for name in HARVEST_SOURCES
-                     if results_per_query(db, name)},
-            pages={name: pages_per_cycle(db, name) for name in HARVEST_SOURCES
-                   if pages_per_cycle(db, name)},
-            # Sources that iterate their own demand rather than a planned query set read their
-            # ceiling from the config; `select_within_budget` never sees them.
-            queries={name: queries_per_cycle(db, name) for name in HARVEST_SOURCES},
-            ats_companies=ats_companies_per_cycle(db))
+        source_configs = source_configs_for(db)
         # The operator's per-source query ceilings, read where the db is.
         limits = (dict.fromkeys(HARVEST_SOURCES, args.max_queries)
                   if args.max_queries is not None
