@@ -213,14 +213,21 @@ nav a.on {
 
 /* Pushed to the end of the bar rather than given a corner of its own: it is a control, not a
    feature, and should be findable without competing with the navigation. */
+/* A circle on every page: square sides, and nothing (a flex row, the button defaults) allowed to
+   stretch one of them. It was a tall pill on the sign-in and onboarding pages. */
 .theme-toggle {
   margin-left: auto;
   background: none;
   border: 1px solid var(--faint);
   color: var(--muted);
-  border-radius: 999px;
-  width: 2rem;
-  height: 2rem;
+  border-radius: 50%;
+  width: 2.25rem;
+  height: 2.25rem;
+  min-width: 0;
+  min-height: 0;
+  aspect-ratio: 1;
+  flex: none;
+  align-self: center;
   padding: 0;
   display: grid;
   place-items: center;
@@ -240,7 +247,8 @@ nav a.on {
   top: 1rem;
   right: 1rem;
   background: var(--bg-raised);
-  z-index: 10;
+  /* Above the landing page's wheel and backdrop as well as the app's pages. */
+  z-index: 50;
 }
 
 /* ── type ────────────────────────────────────────────────────────────────────────────────── */
@@ -998,8 +1006,8 @@ td.num {
  */
 
 /* Taps, not clicks. Admin is a laptop tool and keeps its dense controls. */
-.app main:not(.admin) :is(button, .button),
-.wizard :is(button, .button) {
+.app main:not(.admin) :is(button, .button):not(.theme-toggle),
+.wizard :is(button, .button):not(.theme-toggle) {
   min-height: 2.75rem;
 }
 
@@ -1709,9 +1717,7 @@ button.making::after {
 }
 
 .switch input {
-  width: auto;
   margin: 0;
-  cursor: pointer;
 }
 
 /* Deleting an account is the one irreversible thing in this panel, so it gets the only red button
@@ -1873,8 +1879,13 @@ button.making::after {
 .pick input[type="radio"] {
   appearance: none;
   -webkit-appearance: none;
-  width: 1.05rem;
-  height: 1.05rem;
+  /* Round, not the oval the general input padding and height made of it. */
+  width: 1.25rem;
+  height: 1.25rem;
+  min-height: 0;
+  padding: 0;
+  aspect-ratio: 1;
+  flex: none;
   border: 1.5px solid var(--dim);
   border-radius: 50%;
   background: var(--bg-raised);
@@ -1885,8 +1896,8 @@ button.making::after {
 
 .pick input[type="radio"]::before {
   content: "";
-  width: 0.5rem;
-  height: 0.5rem;
+  width: 0.55rem;
+  height: 0.55rem;
   border-radius: 50%;
   transform: scale(0);
   background: var(--bg);
@@ -2230,3 +2241,167 @@ button.making::after {
 .lane-running { color: var(--ok, #6ea87f); }
 .lane-ready { color: var(--muted); }
 .lane-dead { color: var(--danger); }
+
+/* ── switches ───────────────────────────────────────────────────────────────────────────────
+
+   Every on/off choice is a switch with a knob that slides, not a tickbox. Drawn on the checkbox
+   itself (`role="switch"` in the markup), so it stays a real form control: a label still toggles it,
+   the keyboard still reaches it, and a new one anywhere gets the same look with no extra code. */
+
+:root {
+  --track-off: #232322;
+  --track-on: var(--ink);
+  --knob-off: #d8d8d5;
+  --knob-on: #0b0b0b;
+}
+
+[data-theme="light"] {
+  --track-off: #dcdcd8;
+  --track-on: var(--ink);
+  --knob-off: #ffffff;
+  --knob-on: #ffffff;
+}
+
+input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  flex: none;
+  width: 2.6rem;
+  height: 1.5rem;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--faint);
+  border-radius: 999px;
+  background: var(--track-off);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.28);
+  cursor: pointer;
+  transition:
+    background-color 0.3s cubic-bezier(0.22, 0.8, 0.24, 1),
+    border-color 0.3s cubic-bezier(0.22, 0.8, 0.24, 1);
+}
+
+/* The knob: a soft highlight on top and a shadow under it, so it reads as something you push. */
+input[type="checkbox"]::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 3px;
+  width: 1.05rem;
+  height: 1.05rem;
+  border-radius: 50%;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(0, 0, 0, 0.08)),
+    var(--knob-off);
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.28), 0 2px 6px rgba(0, 0, 0, 0.22);
+  transform: translate(0, -50%);
+  transition:
+    transform 0.3s cubic-bezier(0.22, 0.8, 0.24, 1),
+    background-color 0.3s cubic-bezier(0.22, 0.8, 0.24, 1);
+}
+
+input[type="checkbox"]:checked {
+  background: var(--track-on);
+  border-color: var(--track-on);
+}
+
+input[type="checkbox"]:checked::before {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(0, 0, 0, 0.08)),
+    var(--knob-on);
+  transform: translate(1.1rem, -50%);
+}
+
+input[type="checkbox"]:hover:not(:disabled) { border-color: var(--dim); }
+
+input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+input[type="checkbox"]:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── the review and My search: one titled block each ───────────────────────────────────────── */
+
+.form-section {
+  margin: 0 0 2.25rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--hairline);
+}
+
+.form-section:first-of-type {
+  border-top: none;
+  padding-top: 0;
+}
+
+.form-section > h2 {
+  margin: 0 0 0.3rem;
+  font-size: 1.15rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.form-section > .section-lede {
+  margin: 0 0 1.25rem;
+  font-size: 0.9375rem;
+  color: var(--muted);
+}
+
+.form-section .label {
+  font-size: 1rem;
+}
+
+.form-section .picker legend {
+  font-size: 0.9375rem;
+}
+
+.form-section .picker-hint {
+  font-size: 0.875rem;
+}
+
+.form-section .pick {
+  font-size: 0.9375rem;
+}
+
+/* Suggestions are offers, so they are said to be: a titled box apart from the words already chosen. */
+.suggested-box {
+  margin: 0.25rem 0 0.9rem;
+  padding: 0.75rem 0.9rem 0.6rem;
+  border: 1px dashed var(--faint);
+  border-radius: var(--radius);
+}
+
+.suggested-box .suggested-title {
+  margin: 0 0 0.55rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.suggested-box .suggestions {
+  margin: 0;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.suggested-box .suggestion {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.6rem;
+}
+
+.suggested-box .reason {
+  font-size: 0.85rem;
+  color: var(--dim);
+}
+
+.link-chip {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

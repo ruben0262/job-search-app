@@ -78,14 +78,20 @@ export function Suggested({ tone, term, reason, onTake, onDismiss }: {
 }
 
 /** Green words show jobs, red words hide them: the chips, the words worth adding, and a box. */
-export function Words({ tone, label, hint, values, onChange, suggested = [], placeholder = "Type a word" }: {
+export function Words({ tone, label, hint, values, onChange, suggested = [], suggestedTitle,
+                        placeholder = "Type a word", chipClass = "", display = (value) => value }: {
   tone: Tone;
   label: string;
   hint: string;
   values: string[];
   onChange: (values: string[]) => void;
   suggested?: { term: string; reason: string }[];
+  /** What the suggestions are, said above them; they are offers, not words already chosen. */
+  suggestedTitle?: string;
   placeholder?: string;
+  chipClass?: string;
+  /** How a value is shown, when that differs from what is stored (a link without its https://). */
+  display?: (value: string) => string;
 }) {
   const [draft, setDraft] = useState("");
   // Case-insensitive: "Nurse" and "nurse" are the same word to the matcher.
@@ -102,8 +108,8 @@ export function Words({ tone, label, hint, values, onChange, suggested = [], pla
       <span className="hint">{hint}</span>
       <div className="chips">
         {values.map((value) => (
-          <span key={value} className={`word ${tone}`}>
-            {value}
+          <span key={value} className={`word ${tone} ${chipClass}`.trim()} title={value}>
+            {display(value)}
             <button type="button" aria-label={`Remove ${value}`}
                     onClick={() => onChange(values.filter((each) => each !== value))}>
               ×
@@ -112,12 +118,17 @@ export function Words({ tone, label, hint, values, onChange, suggested = [], pla
         ))}
       </div>
       {suggested.some((each) => !has(each.term)) ? (
-        <ul className="suggestions">
-          {suggested.filter((each) => !has(each.term)).map((each) => (
-            <Suggested key={each.term} tone={tone} term={each.term} reason={each.reason}
-                       onTake={() => add(each.term)} />
-          ))}
-        </ul>
+        <div className="suggested-box">
+          <p className="suggested-title">
+            {suggestedTitle ?? (tone === "red" ? "Suggested — tap one to hide those jobs" : "Suggested — tap one to add it")}
+          </p>
+          <ul className="suggestions">
+            {suggested.filter((each) => !has(each.term)).map((each) => (
+              <Suggested key={each.term} tone={tone} term={each.term} reason={each.reason}
+                         onTake={() => add(each.term)} />
+            ))}
+          </ul>
+        </div>
       ) : null}
       <div className="row add-word">
         <input

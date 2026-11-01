@@ -805,6 +805,7 @@ export function AdminPage() {
                 <label className="switch" title="Operator access">
                   <input
                     type="checkbox"
+                    role="switch"
                     checked={user.is_admin}
                     disabled={toggleAdmin.busy}
                     onChange={() => void toggleAdmin.run(user)}

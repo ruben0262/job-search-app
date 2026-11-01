@@ -3,6 +3,7 @@ import { LazyMotion, domAnimation } from "framer-motion";
 import { useCallback, useEffect, useState } from "react";
 
 import "./landing.css";
+import { ThemeToggle } from "../theme";
 import BackgroundWheel from "./components/BackgroundWheel";
 import Wheel from "./components/Wheel";
 import { SECTIONS } from "./sections";
@@ -44,6 +45,8 @@ export function Landing() {
 
   return (
     <LazyMotion features={domAnimation} strict>
+      {/* Outside `.landing`, whose button reset would otherwise undo the circle. */}
+      <ThemeToggle floating />
       <div className="landing">
         <div className="landing-backdrop" aria-hidden="true" />
         <BackgroundWheel />

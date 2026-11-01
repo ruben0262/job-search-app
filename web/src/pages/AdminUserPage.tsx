@@ -117,6 +117,7 @@ export function AdminUserPage({ userId }: { userId: string }) {
       <label className="pick" style={{ marginBottom: "2rem" }}>
         <input
           type="checkbox"
+          role="switch"
           checked={user.profile_files_visible === true}
           disabled={saving === "files"}
           onChange={(event) => void setFilesVisible(event.target.checked)}

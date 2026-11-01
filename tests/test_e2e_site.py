@@ -150,6 +150,82 @@ def test_a_server_that_does_not_answer_is_said_out_loud_and_tried_again(built):
         browser.close()
 
 
+def test_the_theme_button_is_a_circle_on_every_page_and_switches_the_theme(site, capsys):
+    """Asked for on every page, the signed-out ones and onboarding included (2026-11-01). It was a tall
+    pill on sign-in and onboarding, and the landing page had none."""
+    base, email, _ = site
+
+    def check(page, where: str) -> None:
+        button = page.get_by_role("button", name=re.compile(r"^Switch to (light|dark) mode$"))
+        expect(button).to_be_visible()
+        box = button.bounding_box()
+        assert abs(box["width"] - box["height"]) < 1, f"{where}: {box['width']}x{box['height']}, not a circle"
+        theme = page.evaluate("document.documentElement.dataset.theme")
+        button.click()
+        expect(page.locator("html")).not_to_have_attribute("data-theme", theme or "")
+
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        for viewport in ({"width": 1280, "height": 800}, {"width": 390, "height": 844}):
+            page = browser.new_context(viewport=viewport).new_page()
+            for route in ("", "signin", "signup", "forgot"):
+                page.goto(f"{base}/#/{route}")
+                check(page, route or "landing")
+            page.close()
+
+        page = browser.new_context(viewport={"width": 390, "height": 844}).new_page()
+        _sign_up(page, base, email, capsys)
+        expect(page.get_by_role("heading", name="Your CV")).to_be_visible()
+        check(page, "onboarding")
+        _onboard(page)
+        check(page, "jobs")
+        browser.close()
+
+
+def test_step_two_says_what_it_found_with_switches_suggestions_and_round_choices(site, capsys):
+    """The review screen: three titled parts, places and languages as switches that turn on and off,
+    suggestions that say they are suggestions, round choices for going in — and all of it saved."""
+    from libs.db import database
+    from libs.db.models import User, UserConfig
+
+    base, email, _ = site
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = browser.new_context(viewport={"width": 390, "height": 844}).new_page()
+        _sign_up(page, base, email, capsys)
+        _upload(page)
+
+        for title in ("About you", "The jobs you want", "Where and how you work"):
+            expect(page.get_by_role("heading", name=title)).to_be_visible()
+        expect(page.get_by_text("Suggested from your CV — tap one to add it")).to_be_visible()
+        page.get_by_role("button", name="+ software engineer").click()
+        expect(page.locator(".word.green", has_text="software engineer")).to_be_visible()
+
+        berlin, paris = page.get_by_role("switch", name="Berlin"), page.get_by_role("switch", name="Paris")
+        expect(berlin).to_be_checked()  # read off the CV
+        expect(paris).not_to_be_checked()
+        paris.click()
+        expect(paris).to_be_checked()
+        berlin.click()
+        expect(berlin).not_to_be_checked()
+
+        for choice in page.get_by_role("radio").all():
+            box = choice.bounding_box()
+            assert abs(box["width"] - box["height"]) < 1, f"{box['width']}x{box['height']}, not round"
+        page.get_by_role("radio", name=re.compile("^Anything")).click()
+
+        page.get_by_role("button", name="Looks good").click()
+        expect(page.get_by_role("heading", name="You're all set")).to_be_visible()
+        browser.close()
+
+    db = database()
+    user = db[User.COLLECTION].find_one({"email": email})
+    section = db[UserConfig.COLLECTION].find_one({"user_id": user["_id"]})["config"]["sections"][0]
+    assert "software engineer" in section["keywords"]
+    assert section["locations"] == ["paris"], "what the switches said is what was saved"
+    assert section["remote_policy"] == "any"
+
+
 def _sign_up(page, base: str, email: str, capsys) -> None:
     """Sign up, and open the link from the email, which is printed rather than sent."""
     page.goto(f"{base}/#/signup")
@@ -162,16 +238,20 @@ def _sign_up(page, base: str, email: str, capsys) -> None:
     page.goto(link.group(0))
 
 
-def _onboard(page) -> None:
-    """The three screens: the CV, what was read off it, done."""
+def _upload(page) -> None:
+    """The first screen: the CV, then on to what was read off it."""
     expect(page.get_by_role("heading", name="Your CV")).to_be_visible()
     page.locator("label.drop", has_text="Upload your CV").locator("input").set_input_files(
         files=[{"name": "cv.txt", "mimeType": "text/plain", "buffer": CV.encode()}])
     expect(page.get_by_text("cv.txt")).to_be_visible()
     page.get_by_role("button", name="Next").click()
-
-    # Read off the CV by rules: their name, and the job they do as a green word.
     expect(page.get_by_role("heading", name="What we found")).to_be_visible()
+
+
+def _onboard(page) -> None:
+    """The three screens: the CV, what was read off it, done."""
+    _upload(page)
+    # Read off the CV by rules: their name, and the job they do as a green word.
     expect(page.get_by_label("Your name")).to_have_value("Jordan Ellery")
     expect(page.locator(".word.green", has_text="backend engineer").first).to_be_visible()
     page.get_by_role("button", name="Looks good").click()
