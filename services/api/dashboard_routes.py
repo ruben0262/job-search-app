@@ -13,12 +13,13 @@ from pymongo.database import Database
 
 from libs import limits
 from libs.corpus import salary
+from libs.corpus.geo import CITIES, COUNTRY_LABELS
 from libs.db import get, now
 from libs.db.models import BuiltDocument, CorpusJob, User, UserJobState
 from libs.db.models.tenant import record_state
 from libs.documents.saved import for_jobs
 from libs.llm import PLATFORM, ai_requests_today, resolve
-from libs.matching import Match, matching_jobs
+from libs.matching import Match, matching_jobs, norm
 from libs.notify import reachable
 from libs.obs import audit
 from libs.onboarding import onboarding_state
@@ -87,12 +88,12 @@ class FeedJob(BaseModel):
     title: str
     company: str | None
     location: str | None
+    # The country the place was read as, as an ISO code: what the card names first.
+    country: str | None
     is_remote: bool | None
     url: str
     source: str
-    # 75 for a green word in the title, 25 for one in the text, 100 for both.
-    score: int
-    # The green words that matched: why this job is on the page.
+    # The green words that matched, anywhere in the job: why it is on the page.
     words: list[str]
     posted_at: datetime | None
     first_seen_at: datetime | None
@@ -102,7 +103,6 @@ class FeedJob(BaseModel):
     summary: str | None
     # Whether there is more of it than the summary, to fetch from `/jobs/{id}/description`.
     more: bool
-    applied_at: datetime | None
     # The CVs and cover letters made for it, newest first: still downloadable after a refresh.
     documents: list[JobDocument]
 
@@ -113,11 +113,32 @@ class FeedSource(BaseModel):
     jobs: int
 
 
+class FeedWord(BaseModel):
+    name: str
+    # How many of their jobs have it, before any filter.
+    jobs: int
+
+
+class FeedPlace(BaseModel):
+    # A country's ISO code, or a city's slug (`libs.corpus.geo.CITIES`).
+    value: str
+    label: str
+    # How many of their jobs are there, before any filter.
+    jobs: int
+
+
 class Feed(BaseModel):
     total: int
     jobs: list[FeedJob]
     # The boards their jobs came from, for the filter that picks one.
     sources: list[FeedSource]
+    # Their words found in their jobs, most found first, for the filter that picks some.
+    words: list[FeedWord]
+    # The countries and the cities their jobs are in, most jobs first, for the filters that pick one.
+    countries: list[FeedPlace]
+    cities: list[FeedPlace]
+    # When this list was read: jobs found after it are the new ones (`found_after`).
+    as_of: datetime
 
 
 def _is_admin(user: User) -> bool:
@@ -126,17 +147,12 @@ def _is_admin(user: User) -> bool:
 
 
 def _marks(db: Database, user_id: _uuid.UUID) -> tuple[set[int], dict[int, datetime]]:
-    """The jobs this person dismissed, and when they applied to which."""
+    """The jobs this person skipped, and when they applied to which."""
     rows = list(db[UserJobState.COLLECTION].find(
         {"user_id": user_id, "$or": [{"dismissed_at": {"$ne": None}}, {"applied_at": {"$ne": None}}]},
         {"job_id": 1, "dismissed_at": 1, "applied_at": 1}))
     return ({row["job_id"] for row in rows if row["dismissed_at"]},
             {row["job_id"]: row["applied_at"] for row in rows if row["applied_at"]})
-
-
-def _visible(db: Database, user: User, dismissed: set[int]) -> list[Match]:
-    """This person's matches, minus the ones they dismissed."""
-    return [match for match in matching_jobs(db, user) if match.job.id not in dismissed]
 
 
 @router.get("/dashboard")
@@ -188,18 +204,30 @@ def feed(*, db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curren
          job: int | None = None,
          since_hours: int | None = Query(None, ge=1, le=24 * 60),
          source: str | None = Query(None, max_length=60),
-         applied: bool | None = None,
+         country: str | None = Query(None, max_length=2),
+         city: str | None = Query(None, max_length=40),
          made: bool | None = None,
+         word: list[str] = Query([], max_length=50),
+         min_words: int = Query(1, ge=1, le=50),
+         found_after: datetime | None = None,
          sort: Literal["best", "newest"] = "best") -> Feed:
-    """This person's matches, a page at a time, best first or newest first: searched, remote only,
-    posted lately, from one board, applied to or not, with a document made or not — or one job, the
-    one an alert's link names, which is either still in their list or not."""
-    dismissed, applied_at = _marks(db, user_id)
-    visible = _visible(db, get(db, User, user_id), dismissed)
+    """This person's matches, a page at a time, the most of their words first or newest first:
+    searched, remote only, posted lately, from one board, in one country or one city, with a document
+    made or not, having every word picked, or at least so many of their words — or one job, the one
+    an alert's link names, which is either still in their list or not. `found_after` keeps only the
+    jobs found since a list was read, which is how the page learns how many new ones there are
+    without reloading.
+
+    A job they skipped or applied to is gone from it for good: Applied lists the second."""
+    as_of = now()
+    skipped, applied_at = _marks(db, user_id)
+    visible = [match for match in matching_jobs(db, get(db, User, user_id), since=found_after)
+               if match.job.id not in skipped and match.job.id not in applied_at]
     made_for = (set(db[BuiltDocument.COLLECTION].distinct("job_id", {"user_id": user_id}))
                 if made is not None else set())
     cutoff = now() - timedelta(hours=since_hours) if since_hours else None
     needle = (q or "").lower()
+    picked = {norm(each) for each in word if each.strip()}
     # `None` is a filter that is off, so `x in (None, value)` reads "off, or equal".
     matches = [match for match in visible
                if needle in f"{match.job.title} {match.job.company or ''} {match.job.url}".lower()
@@ -207,17 +235,33 @@ def feed(*, db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curren
                and job in (None, match.job.id)
                and (cutoff is None or _when(match) >= cutoff)
                and source in (None, match.job.source)
-               and applied in (None, match.job.id in applied_at)
-               and made in (None, match.job.id in made_for)]
+               and country in (None, match.job.country)
+               and city in (None, match.job.city)
+               and made in (None, match.job.id in made_for)
+               and picked <= set(match.words)
+               and len(match.words) >= min_words]
     if sort == "newest":
         matches.sort(key=_when, reverse=True)
     page = matches[offset:offset + limit]
-    documents = for_jobs(db, user_id, [match.job.id for match in page])
+    ids = [match.job.id for match in page]
+    # The text of the page's jobs only: matching never brings it back.
+    texts = {row["_id"]: row.get("description") for row in db[CorpusJob.COLLECTION].find(
+        {"_id": {"$in": ids}}, {"description": 1})}
+    documents = for_jobs(db, user_id, ids)
     boards = Counter(match.job.source for match in visible)
+    words = Counter(each for match in visible for each in match.words)
+    countries = Counter(match.job.country for match in visible if match.job.country)
+    cities = Counter(match.job.city for match in visible if match.job.city)
     return Feed(total=len(matches),
-                jobs=[_row(match, applied_at.get(match.job.id), documents.get(match.job.id, []))
+                jobs=[_row(match, texts.get(match.job.id), documents.get(match.job.id, []))
                       for match in page],
-                sources=[FeedSource(name=name, jobs=count) for name, count in boards.most_common()])
+                sources=[FeedSource(name=name, jobs=count) for name, count in boards.most_common()],
+                words=[FeedWord(name=name, jobs=count) for name, count in words.most_common()],
+                countries=[FeedPlace(value=code, label=COUNTRY_LABELS.get(code, code), jobs=count)
+                           for code, count in countries.most_common()],
+                cities=[FeedPlace(value=slug, label=CITIES[slug].label if slug in CITIES else slug,
+                                  jobs=count) for slug, count in cities.most_common()],
+                as_of=as_of)
 
 
 def _when(match: Match) -> datetime:
@@ -225,14 +269,13 @@ def _when(match: Match) -> datetime:
     return match.job.posted_at or match.job.first_seen_at
 
 
-def _row(match: Match, applied_at: datetime | None, documents: list[dict]) -> FeedJob:
-    """One job, without its description: the table shows none of it but the salary."""
+def _row(match: Match, text: str | None, documents: list[dict]) -> FeedJob:
+    """One job, with the start of its text and the salary in it, not the whole of it."""
     job = match.job
     return FeedJob(id=job.id, title=job.title, company=job.company, location=job.location,
-                   is_remote=job.is_remote, url=job.url, source=job.source, score=match.score,
+                   country=job.country, is_remote=job.is_remote, url=job.url, source=job.source,
                    words=list(match.words), posted_at=job.posted_at,
-                   first_seen_at=job.first_seen_at, salary=salary.extract(job.description),
-                   **_summary(job.description), applied_at=applied_at,
+                   first_seen_at=job.first_seen_at, salary=salary.extract(text), **_summary(text),
                    documents=[job_document(row) for row in documents])
 
 
@@ -293,8 +336,9 @@ class JobMarks(BaseModel):
     hidden: bool
 
 
-# "I applied" and "Hide" — the only two things a person records about a job, and nothing else does:
-# making a document is not applying, and the model that read builds as applications is switched off.
+# "I applied" and "Skip" — the only two things a person records about a job, and nothing else does:
+# making a document is not applying. Either takes the job off their jobs page for good. Skip is
+# `hidden` here, as it was called before the page renamed it.
 _MARKS = {"applied": "applied_at", "hidden": "dismissed_at"}
 
 

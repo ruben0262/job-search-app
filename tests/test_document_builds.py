@@ -292,12 +292,22 @@ def test_a_full_storage_keeps_nothing_new_but_it_still_downloads_and_the_person_
 
 def test_clearing_all_empties_the_storage(api, monkeypatch):
     _big_pdfs(api, monkeypatch, kilobytes=300)
-    _make(api)
-    _make(api, kind="cover")
+    made = [_make(api)["id"], _make(api, kind="cover")["id"]]
 
-    cleared = api.http.delete("/saved").json()
+    assert api.http.delete("/saved").status_code == 422, "naming none deletes nothing"
+    cleared = api.http.delete("/saved", params={"ids": made}).json()
 
     assert (cleared["documents"], cleared["used_bytes"]) == ([], 0)
+
+
+def test_the_ones_picked_out_are_deleted_and_the_rest_kept(api):
+    """My documents deletes what it shows: the older ones, or the ones a search found."""
+    cv, cover = _make(api), _make(api, kind="cover")
+
+    left = api.http.delete("/saved", params={"ids": [cv["id"]]}).json()
+
+    assert [each["id"] for each in left["documents"]] == [cover["id"]]
+    assert api.http.get(cv["download_url"]).status_code == 404
 
 
 def test_a_kept_document_is_its_owners_alone(api):
@@ -311,7 +321,10 @@ def test_a_kept_document_is_its_owners_alone(api):
 
     assert api.http.get(made["download_url"]).status_code == 404
     assert api.http.delete(f"/saved/{made['id']}").status_code == 404
+    api.http.delete("/saved", params={"ids": [made["id"]]})
     assert api.http.get("/saved").json()["documents"] == []
+    api.http.cookies.set("access_token", issue_access_token(api.user.id, uuid.uuid4()), path="/")
+    assert api.http.get(made["download_url"]).status_code == 200, "a stranger's pick deletes nothing"
 
 
 def _backup():

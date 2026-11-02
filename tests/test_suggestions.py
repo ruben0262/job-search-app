@@ -183,33 +183,25 @@ def test_saving_their_search_and_editing_their_about_you_text_work_them_out_agai
 
 
 @needs_db
-def test_accepting_puts_the_word_in_their_search_and_it_stops_being_suggested(api):
-    from libs.db import find_one
-    from libs.db.models import UserConfig
+def test_a_dismissed_word_stays_dismissed_when_they_are_worked_out_again(api):
+    """Said no to in the help chat ("stop suggesting"), which is the one place left that can."""
+    from libs import suggestions
 
     http, db, user = api
     _upload(http, ENGINEER.format(start="Jan 2021"))
+    assert "python" in _terms(http.get("/suggestions").json(), "green")
 
-    assert http.post("/suggestions/accept", json={"term": "unpaid", "kind": "red"}).status_code == 409
-
-    found = http.post("/suggestions/accept", json={"term": "python", "kind": "green"}).json()
-    assert "python" not in _terms(found, "green")
-    http.post("/suggestions/accept", json={"term": "unpaid", "kind": "red"})
-
-    section = find_one(db, UserConfig, {"user_id": user.id}).config["sections"][0]
-    assert section["keywords"] == ["python"]
-    assert section["exclude_keywords"] == ["unpaid"]
+    assert "python" not in _terms(suggestions.dismiss(db, user.id, "Python"), "green")
+    _upload(http, "A cover letter. I like Python.", kind="cover_letter", name="cover.txt")
+    assert "python" not in _terms(http.get("/suggestions").json(), "green")
 
 
 @needs_db
-def test_a_dismissed_word_stays_dismissed_when_they_are_worked_out_again(api):
+def test_taking_and_dismissing_a_word_are_not_routes_any_more(api):
+    """The jobs page's suggestions went, and their two routes with them (owner, 2026-11-02)."""
     http, _, _ = api
-    _upload(http, ENGINEER.format(start="Jan 2021"))
-
-    assert "python" not in _terms(http.post("/suggestions/dismiss", json={"term": "Python"}).json(),
-                                  "green")
-    _upload(http, "A cover letter. I like Python.", kind="cover_letter", name="cover.txt")
-    assert "python" not in _terms(http.get("/suggestions").json(), "green")
+    assert http.post("/suggestions/accept", json={"term": "python", "kind": "green"}).status_code == 404
+    assert http.post("/suggestions/dismiss", json={"term": "python"}).status_code == 404
 
 
 @needs_db

@@ -1,5 +1,5 @@
 """The CVs and cover letters a person has kept: listed with the room they take, deleted one by one or
-all at once. Made by the docgen worker (`libs.documents.saved.keep`); downloaded from
+several at once. Made by the docgen worker (`libs.documents.saved.keep`); downloaded from
 `/documents/build/{id}/file`, like a document just made."""
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import uuid as _uuid
 from datetime import datetime
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from pymongo.database import Database
 
@@ -79,8 +79,10 @@ def delete_one(document_id: int, db: Database = Depends(get_db),
 
 
 @router.delete("")
-def delete_all(db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(current_user)) -> SavedDocuments:
-    """Delete every kept document, to make room."""
-    gone = db[BuiltDocument.COLLECTION].delete_many({"user_id": user_id}).deleted_count
+def delete_many(ids: list[int] = Query(min_length=1), db: Database = Depends(get_db),
+                user_id: _uuid.UUID = Depends(current_user)) -> SavedDocuments:
+    """Delete the kept documents My documents shows, to make room: the older ones, the ones a search
+    found, or all of them. Named one by one, so a call that names none deletes nothing."""
+    gone = db[BuiltDocument.COLLECTION].delete_many({"user_id": user_id, "_id": {"$in": ids}}).deleted_count
     audit(logger, "documents.cleared", user=user_id, count=gone)
     return saved(db, user_id)

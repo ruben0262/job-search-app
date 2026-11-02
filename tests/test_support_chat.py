@@ -135,6 +135,23 @@ def test_the_ai_can_only_offer_a_change_and_the_persons_tap_makes_it(api, monkey
     assert again["state"] == "done" and _words(api)[0].count("python") == 1, "one tap, one change"
 
 
+def test_a_red_word_tapped_before_any_green_one_is_refused_and_says_why(api, monkeypatch):
+    """A red word only hides what green words find: alone it would hide nothing and find nothing."""
+    from libs.db.models import UserConfig
+
+    api.db[UserConfig.COLLECTION].update_one({"user_id": api.user.id},
+                                             {"$set": {"config.sections.0.keywords": []}})
+    model = Scripted(("Let me hide those.", [("add_word", {"word": "unpaid", "kind": "red"})]),
+                     ("Tap the button to hide unpaid jobs.", []))
+    _answers(monkeypatch, model)
+
+    reply = _ask(api, "hide unpaid jobs")
+    tapped = api.http.post(f"/support/replies/{reply['id']}/steps/0").json()
+
+    assert tapped["state"] == "failed" and "pick a word for the jobs you want first" in tapped["output"]
+    assert "unpaid" not in _words(api)[1]
+
+
 def test_a_button_is_only_what_was_offered_and_only_for_whoever_asked(api, monkeypatch):
     from libs.auth.access import issue_access_token
     from libs.db import insert

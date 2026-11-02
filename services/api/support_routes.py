@@ -25,12 +25,11 @@ from libs.db import find, find_one, get, insert, now
 from libs.db.models import SetupConversation, SetupMessage, User
 from libs.legal import has_consented
 from libs.llm import PLATFORM, record_ai_request, resolve
-from libs.matching import norm
+from libs.matching import green_words, norm
 from libs.obs import audit
 from libs.tenant.repository import TenantRepository
 from services.api.deps import current_user, get_db
 from services.api.onboarding_routes import save_config
-from services.api.suggestion_routes import SuggestionPick, accept
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/support", tags=["support"])
@@ -229,7 +228,21 @@ def _event(name: str, **data) -> str:
 # ── the changes a reply can offer, made when the person taps ───────────────────────────────────
 
 def _add(db: Database, user_id: _uuid.UUID, args: dict) -> str:
-    accept(SuggestionPick(term=args["word"], kind=args["kind"]), db, user_id)
+    stored = TenantRepository(db).get_config(user_id)
+    config = migrate_config(stored) if stored else {"sections": [{"platform": "all", "keywords": []}]}
+    if args["kind"] == "red" and not green_words(config):
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            detail="pick a word for the jobs you want first — a red word only hides "
+                                   "jobs your green words find")
+    section = config["sections"][0]
+    field = "keywords" if args["kind"] == "green" else "exclude_keywords"
+    section[field] = [*(section.get(field) or []), args["word"]]
+    try:
+        search = UserConfigSchema.model_validate(config)
+    except ValidationError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            detail=f"“{args['word']}” cannot be added: {exc.errors()[0]['msg']}") from exc
+    save_config(db, user_id, search)
     return "Added."
 
 

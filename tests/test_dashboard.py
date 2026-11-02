@@ -153,7 +153,6 @@ def test_green_words_pick_the_jobs_and_each_says_why(api):
     assert set(_ids(body)) == {jobs[0].id, jobs[1].id}, "the nurse has none of the green words"
     for job in body["jobs"]:
         assert job["words"] == ["backend engineer"]
-        assert job["score"] == 75, "a green word in the title"
 
 
 def test_a_red_word_takes_a_job_off_the_page(api):
@@ -177,7 +176,7 @@ def test_a_dismissed_job_stays_off_the_page(api):
 
 
 def test_the_feed_does_not_carry_the_full_description(api):
-    """Up to 2,500 characters a job, and the list does not show it."""
+    """Up to 12,000 characters a job, and the list does not show it."""
     http, _, _, _ = api
     assert "description" not in http.get("/feed").json()["jobs"][0]
 
@@ -263,28 +262,97 @@ def test_one_board_at_a_time_and_every_board_is_offered_with_its_count(api):
         "every board, counted before the filter, so another can be picked")
 
 
-def test_not_applied_yet_and_no_document_yet_leave_out_the_ones_done(api):
+def test_no_document_yet_leaves_out_the_ones_with_a_cv_made(api):
     from libs.db.models import BuiltDocument
 
     http, db, user, jobs = api
-    http.put(f"/jobs/{jobs[0].id}/applied")
     insert(db, BuiltDocument(id=999, user_id=user.id, job_id=jobs[1].id, kind="cv", mode="instant",
                              filename="cv.pdf", content=b"%PDF", size=4, saved=True))
 
-    assert _ids(http.get("/feed?applied=false").json()) == [jobs[1].id]
-    assert _ids(http.get("/feed?applied=true").json()) == [jobs[0].id]
     assert _ids(http.get("/feed?made=false").json()) == [jobs[0].id]
     assert _ids(http.get("/feed?made=true").json()) == [jobs[1].id]
 
 
-def test_newest_first_puts_the_latest_job_on_top_whatever_its_score(api):
-    """Best first ranks a title match over a text match; newest first does not."""
+def _text(db, job, text: str) -> None:
+    db[CorpusJob.COLLECTION].update_one({"_id": job.id}, {"$set": {"description": text}})
+
+
+def _words(db, user, words: list[str]) -> None:
+    from libs.db.models import UserConfig
+
+    db[UserConfig.COLLECTION].update_one({"user_id": user.id}, {"$set": {"config": {"sections": [{
+        "platform": "all", "keywords": words}]}}})
+
+
+def test_picked_words_keep_the_jobs_that_have_every_one_and_each_word_says_how_many(api):
+    """A filter on "why": each word picked narrows the list to jobs that have all of them."""
+    http, db, user, jobs = api
+    _words(db, user, ["backend engineer", "python", "postgres"])
+    _text(db, jobs[0], "Python and Postgres")
+    _text(db, jobs[1], "Python")
+
+    body = http.get("/feed").json()
+    assert {each["name"]: each["jobs"] for each in body["words"]} == {
+        "backend engineer": 2, "python": 2, "postgres": 1}
+    assert _ids(http.get("/feed?word=python").json()) == [jobs[0].id, jobs[1].id]
+    assert _ids(http.get("/feed?word=Python&word=postgres").json()) == [jobs[0].id]
+    assert _ids(http.get("/feed?word=postgres").json()) == [jobs[0].id]
+
+
+def test_at_least_so_many_words_keeps_the_jobs_with_that_many(api):
+    http, db, user, jobs = api
+    _words(db, user, ["backend engineer", "python", "postgres"])
+    _text(db, jobs[0], "Python and Postgres")
+    _text(db, jobs[1], "Python")
+
+    assert _ids(http.get("/feed?min_words=3").json()) == [jobs[0].id]
+    assert _ids(http.get("/feed?min_words=2").json()) == [jobs[0].id, jobs[1].id]
+    assert _ids(http.get("/feed").json())[0] == jobs[0].id, "and the most words are first"
+
+
+def test_the_jobs_found_after_a_list_was_read_are_counted_as_new(api):
+    """What the "new jobs" button counts, without reloading the list under the person reading it."""
+    http, db, _, _ = api
+    as_of = http.get("/feed").json()["as_of"]
+    assert http.get("/feed", params={"found_after": as_of}).json()["total"] == 0
+
+    later = now() + timedelta(seconds=1)
+    for title in ("Backend Engineer", "Registered Nurse"):
+        insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test", title=title,
+                             description="x", first_seen_at=later))
+
+    assert http.get("/feed", params={"found_after": as_of, "limit": 1}).json()["total"] == 1
+
+
+def test_one_country_or_one_city_and_each_offered_with_its_count(api):
+    http, db, _, jobs = api
+    db[CorpusJob.COLLECTION].update_one({"_id": jobs[0].id}, {"$set": {"country": "DE", "city": "berlin"}})
+    db[CorpusJob.COLLECTION].update_one({"_id": jobs[1].id}, {"$set": {"country": "DE", "city": "munich"}})
+
+    body = http.get("/feed").json()
+    assert body["countries"] == [{"value": "DE", "label": "Germany", "jobs": 2}]
+    assert {(each["value"], each["label"]) for each in body["cities"]} == {("berlin", "Berlin"),
+                                                                          ("munich", "Munich")}
+    assert set(_ids(http.get("/feed?country=DE").json())) == {jobs[0].id, jobs[1].id}
+    assert _ids(http.get("/feed?city=munich").json()) == [jobs[1].id]
+
+
+def test_a_card_names_the_country_its_place_was_read_as(api):
+    http, db, _, jobs = api
+    db[CorpusJob.COLLECTION].update_one({"_id": jobs[0].id}, {"$set": {"country": "DE"}})
+
+    rows = {job["id"]: job for job in http.get("/feed").json()["jobs"]}
+    assert (rows[jobs[0].id]["country"], rows[jobs[1].id]["country"]) == ("DE", None)
+
+
+def test_newest_first_puts_the_latest_job_on_top_whatever_its_words(api):
+    """Best first ranks a title match over a text match with as many words; newest first does not."""
     http, db, _, _jobs = api
     in_text = insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
                                    title="Developer", description="a backend engineer role",
                                    first_seen_at=now() + timedelta(minutes=5)))
 
-    assert _ids(http.get("/feed").json())[-1] == in_text.id, "a text match scores below the titles"
+    assert _ids(http.get("/feed").json())[-1] == in_text.id, "a text match ranks below the titles"
     assert _ids(http.get("/feed?sort=newest").json())[0] == in_text.id
 
 
@@ -328,22 +396,30 @@ def test_an_alerts_link_finds_its_job_while_it_is_still_theirs(api):
     assert http.get(f"/feed?job={jobs[1].id}").json()["total"] == 0, "hidden is not in their list"
 
 
-def test_i_applied_counts_on_the_front_page_and_can_be_taken_back(api):
+def test_i_applied_counts_takes_the_job_off_the_jobs_page_and_can_be_taken_back(api):
+    """Applied to is done with: it stays in Applied and never shows on the jobs page again, so
+    nobody reads the same job twice, after a refresh or a lost connection (owner, 2026-11-02)."""
     http, db, user, jobs = api
     job = jobs[0]
+
+    def listed():
+        return {row["id"] for row in http.get("/feed").json()["jobs"]}
 
     assert http.put(f"/jobs/{job.id}/applied").json() == {
         "job_id": job.id, "applied": True, "hidden": False}
     assert http.get("/dashboard").json()["applied"] == 1
-    assert next(row for row in http.get("/feed").json()["jobs"] if row["id"] == job.id)["applied_at"]
+    assert job.id not in listed()
+    assert [row["id"] for row in http.get("/applied").json()] == [job.id]
+    assert http.get(f"/feed?job={job.id}").json()["total"] == 0, "an alert's link says it is not theirs"
 
     assert http.delete(f"/jobs/{job.id}/applied").json()["applied"] is False
     assert http.get("/dashboard").json()["applied"] == 0
+    assert job.id in listed()
     assert db[UserJobState.COLLECTION].count_documents({"user_id": user.id}) == 1, (
         "one row per person per job, however many times it is marked")
 
 
-def test_a_hidden_job_leaves_the_jobs_page_until_it_is_shown_again(api):
+def test_a_skipped_job_leaves_the_jobs_page_until_it_is_shown_again(api):
     http, _db, _user, jobs = api
     job = jobs[0]
 
