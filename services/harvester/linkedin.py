@@ -3,6 +3,7 @@ proxy (`libs.proxy`). No bandwidth limit per person (owner, 2026-11-01)."""
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
@@ -24,7 +25,7 @@ from libs.settings import (
 from libs.settings import get as settings_get
 from libs.tenant.repository import TenantRepository
 from services.harvester.describe import describe_pending
-from services.harvester.fetch import ProxyLease, make_client
+from services.harvester.fetch import ProxyLease, make_site_client
 from services.harvester.governor import (
     LINKEDIN_MAX_CONCURRENT_USERS,
     linkedin_enabled,
@@ -35,14 +36,14 @@ from services.harvester.sources import jobspy_source
 
 logger = logging.getLogger(__name__)
 
-# Postings per query.
-RESULTS_WANTED = 30
-
-# What "unlimited descriptions per run" means to a query that needs a number.
-UNLIMITED_DESCRIBES = 10_000
-
-# How long one user's describe pass may run, derived from the timer that starts it.
+# How long the pass's describing may run, derived from the timer that starts it. Once per pass, after
+# every due search: it used to be once per account, so four accounts could take four times this.
 DESCRIBE_BUDGET_SECONDS = PLATFORM_TICK_MIN * 60 * 2 / 3
+
+# LinkedIn pages fetched at once while describing. Measured through the site proxy, 2026-11-02: one at
+# a time took 1.1–1.4 s a page, four took 0.24–0.47 s and read all 50 asked, eight took 0.17–0.63 s and
+# gave up on 3 of 24 in one run. The rate limit answers 429 at any count; the retries absorb it.
+DESCRIBE_WORKERS = 4
 
 
 @dataclass
@@ -82,6 +83,22 @@ def queries_for(db, user: User) -> list[dict]:
     return queries[:queries_per_cycle(db, "linkedin")]
 
 
+def search_window(user: User, *, now: datetime, interval_min: int, most: int) -> int:
+    """How far back, in whole hours, this person's LinkedIn search reaches: to their previous search,
+    at least an hour (the finest LinkedIn's search takes here), at most `most`, the operator's window.
+
+    LinkedIn lists a query's matches by relevance, not date, and reads stop at a depth. Over the 4 hours
+    every search used to cover, "python developer" in the EU had 200+ jobs and the first 30 held 1 of
+    the 23 posted in the last hour; "software engineer" 3 of 47, "data engineer" 0 of 28 (2026-11-02).
+    A window as wide as the gap since the last search holds 23–47 a query, which a read of 50 takes
+    whole. A search that was due a while ago (the harvester was down) reaches back over the gap.
+    """
+    if user.linkedin_next_run_at is None:
+        return most
+    since_last = (now - user.linkedin_next_run_at).total_seconds() + interval_min * 60
+    return max(1, min(most, math.ceil(since_last / 3600)))
+
+
 def run_for_due_users(db, *, now: datetime | None = None,
                       limit: int = LINKEDIN_MAX_CONCURRENT_USERS,
                       gather=jobspy_source.gather_linkedin) -> LinkedInReport:
@@ -97,9 +114,10 @@ def run_for_due_users(db, *, now: datetime | None = None,
 
     now = now or datetime.now(UTC)
     corpus = CorpusRepository(db)
-    # Read once per pass rather than per user: both are platform settings, not per-account ones.
-    window = freshness_hours(db, "linkedin")
-    depth = results_per_query(db, "linkedin") or RESULTS_WANTED
+    # Read once per pass rather than per user: both are platform settings, not per-account ones. The
+    # window is the most a search reaches back (`search_window`).
+    most = freshness_hours(db, "linkedin")
+    depth = results_per_query(db, "linkedin")
     # **Not `window`.** `freshness_hours` is how far back to *search*; `job_max_age_hours` is how
     # old a posting may be and still reach anybody. Describing is bounded by the second, because a
     # row past it has already been refused by the pre-score filter and its text will never be read.
@@ -107,66 +125,72 @@ def run_for_due_users(db, *, now: datetime | None = None,
 
     for user in due_users(db, now=now, limit=limit):
         report.considered += 1
+        interval = limits.resolve(user, "linkedin_interval_min")
+        window = search_window(user, now=now, interval_min=interval, most=most)
         # Scheduled first, deliberately: every path below wants the same next run, success or not.
         db[User.COLLECTION].update_one({"_id": user.id}, {"$set": {
-            "linkedin_next_run_at": next_linkedin_run(now, limits.resolve(user, "linkedin_interval_min"))}})
+            "linkedin_next_run_at": next_linkedin_run(now, interval)}})
 
         queries = queries_for(db, user)
         if not queries:
             continue
 
         try:
-            ran = _run_one(user, queries, corpus=corpus, proxy=proxy,
-                           report=report, gather=gather, hours_old=window,
-                           results_wanted=depth, deliverable_for=deliverable_for)
+            _run_one(user, queries, corpus=corpus, proxy=proxy, report=report, gather=gather,
+                     hours_old=window, results_wanted=depth)
         except Exception as exc:                                    # noqa: BLE001
             # One user's LinkedIn failing is not the tier failing.
             report.failures[str(user.id)] = f"{type(exc).__name__}: {exc}"
             logger.warning("linkedin: user %s failed: %s", user.id, type(exc).__name__)
             continue
-        if ran:
-            report.ran += 1
+        report.ran += 1
 
+    # Every pass, whoever was due: what this pass stored and whatever an earlier one could not reach.
+    _describe(corpus, proxy, report, deliverable_for=deliverable_for)
     audit(logger, "linkedin.pass", considered=report.considered, ran=report.ran,
-          links=report.links_found, new=report.new_jobs,
+          links=report.links_found, new=report.new_jobs, described=report.described,
           failures=len(report.failures))
     return report
 
 
-def _run_one(user: User, queries: list[dict], *, corpus: CorpusRepository,
-             proxy: str,
-             report: LinkedInReport, gather, hours_old: int,
-             results_wanted: int, deliverable_for: int | None = None) -> bool:
-    """One user's fetch, through the site proxy."""
+def _run_one(user: User, queries: list[dict], *, corpus: CorpusRepository, proxy: str,
+             report: LinkedInReport, gather, hours_old: int, results_wanted: int) -> None:
+    """One user's search, through the site proxy, and what it found stored once."""
     with redacting(proxy):
         lease = ProxyLease(user_id=user.id, proxy_url=proxy)
-
         cfg = {"queries": queries,
                # The operator's ceiling, not the constant beside it.
                "results_wanted": results_wanted,
                # The operator's window, not the user's.
                "hours_old": hours_old,
-               # Never from jobspy.
+               # Never from jobspy, which would fetch every result again, the ones already held too.
                "linkedin_fetch_description": False}
         links = gather(cfg, logger, lease=lease)
-
-        # Dedup, then describe what is left — on this same lease, in this same pass.
-        new_jobs = _ingest(corpus, links)
-        with make_client(lease) as client:
-            # `None` is Unlimited.
-            per_run = limits.resolve(user, "describe_per_run")
-            described = describe_pending(
-                corpus, client, linkedin=True,
-                limit=UNLIMITED_DESCRIBES if per_run is None else per_run,
-                budget_seconds=DESCRIBE_BUDGET_SECONDS,
-                max_age_hours=deliverable_for)
-
+    new_jobs = _ingest(corpus, links)
     report.links_found += len(links)
     report.new_jobs += new_jobs
+    logger.info("linkedin: %s ran %d quer(ies) over the last %dh, %d link(s), %d new", user.id, len(queries),
+                hours_old, len(links), new_jobs)
+
+
+def _describe(corpus: CorpusRepository, proxy: str, report: LinkedInReport, *,
+              deliverable_for: int) -> None:
+    """Every LinkedIn posting still without its text, newest first, until the budget runs out.
+
+    LinkedIn's search results carry no text, so each posting is opened to read it, and until then
+    it can match on its title only. There is no count ceiling: there is no bandwidth limit to keep
+    it under (owner, 2026-11-01), and the budget is what bounds the pass. A separate catch-up pass
+    with no timer used to exist for what this missed; it never ran, and this leaves nothing for it.
+    """
+    with redacting(proxy), make_site_client(proxy) as client:
+        described = describe_pending(corpus, client, linkedin=True, limit=None,
+                                     budget_seconds=DESCRIBE_BUDGET_SECONDS,
+                                     max_age_hours=deliverable_for, workers=DESCRIBE_WORKERS)
     report.described += described.described
-    logger.info("linkedin: %s ran %d quer(ies), %d link(s), %d new, %d described, %.1f MB described",
-                user.id, len(queries), len(links), new_jobs, described.described, client.megabytes_downloaded)
-    return True
+    if described.proxy_error:
+        logger.error("linkedin: describing stopped, the site proxy failed: %s", described.proxy_error[:200])
+    logger.info("linkedin: described %d of %d posting(s), %.1f MB", described.described,
+                described.attempted, client.megabytes_downloaded)
 
 
 def _ingest(corpus: CorpusRepository, links) -> int:

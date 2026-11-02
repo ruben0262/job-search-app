@@ -118,6 +118,70 @@ def test_without_the_site_proxy_nobodys_linkedin_runs_and_it_is_said(db, monkeyp
     assert any("HARVEST_PROXY is not set" in record.getMessage() for record in caplog.records)
 
 
+class _Pages:
+    """The site proxy's client, answering every LinkedIn page with a description."""
+
+    megabytes_downloaded = 0.0
+
+    def __init__(self):
+        self.asked: list[str] = []
+
+    def __call__(self, _proxy):
+        return self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        return False
+
+    def get(self, url, **_kwargs):
+        from types import SimpleNamespace
+
+        self.asked.append(url)
+        return SimpleNamespace(status_code=200, url=url, text=(
+            '<div class="show-more-less-html__markup">' + "Build the payments API. " * 20 + "</div>"))
+
+
+def _found(count: int) -> list:
+    from services.harvester.sources.base import JobLink
+
+    return [JobLink(url=f"https://www.linkedin.com/jobs/view/{uuid.uuid4().int % 10**12}",
+                    title="Python Developer", company=f"Acme {n}", location="Budapest, Hungary",
+                    source="linkedin") for n in range(count)]
+
+
+def test_every_posting_a_pass_finds_is_described_in_that_pass(db, monkeypatch):
+    """No ceiling on how many: there is no bandwidth limit to keep under, and a posting without its
+    text matches on its title only. It stopped at 60 a run, and the rest waited for a pass that never ran."""
+    from libs.db.models import CorpusJob
+
+    pages = _Pages()
+    monkeypatch.setattr(linkedin, "make_site_client", pages)
+    _user(db, linkedin_next_run_at=None)
+
+    report = linkedin.run_for_due_users(db, now=NOW, gather=lambda *a, **k: _found(80))
+
+    assert (report.new_jobs, report.described) == (80, 80)
+    assert db[CorpusJob.COLLECTION].count_documents({"description": {"$regex": "payments API"}}) == 80
+
+
+def test_postings_an_earlier_pass_left_are_described_when_nobody_is_due(db, monkeypatch):
+    """What the unscheduled catch-up pass was for: every pass describes whatever is still waiting."""
+    from libs.corpus.repository import CorpusRepository
+
+    pages = _Pages()
+    monkeypatch.setattr(linkedin, "make_site_client", pages)
+    corpus = CorpusRepository(db)
+    waiting = [corpus.add(**link.as_corpus_row()) for link in _found(3)]
+    _user(db, linkedin_next_run_at=NOW + timedelta(hours=1))
+
+    report = linkedin.run_for_due_users(db, now=NOW, gather=lambda *a, **k: [])
+
+    assert (report.considered, report.described) == (0, 3)
+    assert not [job for job in corpus.awaiting_description(linkedin=True) if job.id in waiting]
+
+
 def test_the_next_run_is_the_accounts_own_interval(db):
     """The `linkedin_interval_min` limit, and nothing else, decides when an account runs next."""
     default, slower = _user(db, linkedin_next_run_at=None), _user(db, linkedin_next_run_at=None,
@@ -185,14 +249,14 @@ def test_a_users_locations_reach_the_board_as_place_names(db):
     """Per user, on their own proxy, and LinkedIn can genuinely filter by place."""
     user = _user(db)
     _configure(db, user, {"sections": [{"keywords": ["python developer"],
-                                             "locations": ["europe", "budapest"],
+                                             "locations": ["europe", "hungary"],
                                              "platform": "all", "remote_policy": "any",
                                              "posted_within_hours": 6}]})
 
     queries = linkedin.queries_for(db, user)
     locations = {q["location"] for q in queries}
 
-    assert locations == {"European Union", "Budapest"}
+    assert locations == {"European Union", "Hungary"}
     assert not any("_" in (loc or "") for loc in locations), "a slug reached the board"
     # One query per keyword per place, so both places are actually searched.
     assert len(queries) == 2
@@ -244,3 +308,27 @@ def test_a_country_inside_europe_does_not_widen_or_narrow_the_set(db):
                                              "posted_within_hours": 6}]})
     # Both are still asked for: LinkedIn's "European Union" geo and its "Ireland" geo differ.
     assert len(linkedin.queries_for(db, user)) == 2
+
+
+# ── how far back a search reaches (2026-11-02) ────────────────────────────────────────────────
+
+def test_a_search_reaches_back_to_the_last_one_and_reads_it_whole(db):
+    """Over 4 hours LinkedIn listed 200+ matches by relevance, and the first 30 held 1 of the 23 posted
+    in the last hour. On time, a search covers the last hour, which a read of 50 takes whole; after a
+    gap it reaches back over the gap, up to the operator's window; a first search takes the window."""
+    asked: dict[uuid.UUID, dict] = {}
+
+    def gather(cfg, _log, *, lease):
+        asked[lease.user_id] = cfg
+        return []
+
+    on_time = _user(db, linkedin_next_run_at=NOW)
+    late = _user(db, linkedin_next_run_at=NOW - timedelta(hours=2))
+    days_late = _user(db, linkedin_next_run_at=NOW - timedelta(days=2))
+    first = _user(db, linkedin_next_run_at=None)
+
+    linkedin.run_for_due_users(db, now=NOW, gather=gather)
+
+    hours = [asked[user.id]["hours_old"] for user in (on_time, late, days_late, first)]
+    assert hours == [1, 3, 4, 4], "on time 1h; 2h late plus the 15-minute interval is 3; capped at 4"
+    assert {cfg["results_wanted"] for cfg in asked.values()} == {50}

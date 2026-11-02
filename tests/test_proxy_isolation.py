@@ -12,6 +12,7 @@ from services.harvester.fetch import (
     is_proxied,
     make_client,
     make_shared_client,
+    make_site_client,
 )
 
 ALICE_PROXY = "http://alice:secret@proxy.example:8080"
@@ -69,6 +70,33 @@ def test_only_linkedin_is_proxied():
                            "https://api.lever.co/v0/postings/acme",
                            "https://remotive.com/api/remote-jobs"):
             assert _transport_for(client, direct_url) is not linkedin, direct_url
+
+
+def test_every_proxied_request_is_a_new_connection_so_a_new_address():
+    """The site proxy gives each connection its next address. One kept open held one address for a
+    whole pass, and asked a refused page again from the address that refused it (2026-11-02)."""
+    import socketserver
+    import threading
+
+    connections: list[int] = []
+
+    class Proxy(socketserver.BaseRequestHandler):
+        def handle(self) -> None:
+            connections.append(1)
+            reader = self.request.makefile("rb")
+            while reader.readline():
+                while reader.readline() not in (b"\r\n", b""):
+                    pass
+                self.request.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
+
+    with socketserver.ThreadingTCPServer(("127.0.0.1", 0), Proxy) as server:
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        with make_site_client(f"http://127.0.0.1:{server.server_address[1]}") as client:
+            for _ in range(3):
+                assert client.get("http://www.linkedin.com/jobs/view/1").text == "ok"
+        server.shutdown()
+
+    assert len(connections) == 3
 
 
 def test_linkedin_subdomains_are_proxied_too():

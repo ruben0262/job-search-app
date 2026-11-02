@@ -41,6 +41,34 @@ _LI_WORKERS = 4    # LinkedIn queries run this many at a time (rotating proxy = 
                    # lower it in config (jobspy_linkedin.concurrency) if LinkedIn starts blocking
 
 
+def new_connection_each_request() -> None:
+    """Make jobspy's LinkedIn search open a new connection for every request it sends.
+
+    Its session kept one connection for all of a query's result pages, so all of them left the site
+    proxy from one address, and LinkedIn refused that address first: two 429s in the pass of
+    2026-11-02. The proxy gives each new connection its next address, so a new connection per page
+    spreads the search over all of them, as the describe pass's reads are (`fetch._mounts`). jobspy
+    builds that session from `jobspy.linkedin.RequestsRotating`; the class put there drops its
+    connections once each answer is read. Idempotent.
+    """
+    # Here, not at the top: only the harvester's image carries jobspy.
+    from jobspy import linkedin
+
+    if getattr(linkedin.RequestsRotating, "new_connection_each_request", False):
+        return
+
+    class EachRequestAnew(linkedin.RequestsRotating):
+        new_connection_each_request = True
+
+        def request(self, *args: Any, **kwargs: Any) -> Any:
+            try:
+                return super().request(*args, **kwargs)
+            finally:
+                self.close()
+
+    linkedin.RequestsRotating = EachRequestAnew
+
+
 def _run_queries(site: str, kwargs_list: list[dict], logger, workers: int) -> list:
     """Run a site's queries. workers>1 runs them concurrently (no delay — the rotating proxy
     gives each its own IP); workers==1 keeps the old polite sequential pace."""
@@ -96,7 +124,7 @@ def _rows_to_joblinks(df, source: str) -> list[JobLink]:
             location=_safe_str(r.get("location")),
             source=source,
             date_posted=_iso_date(r.get("date_posted")),
-            snippet=_safe_str(r.get("description"))[:4000],
+            snippet=_safe_str(r.get("description")),
             is_remote=True if (rem is not None and not pd.isna(rem) and bool(rem)) else None,
             easy_apply=easy,
         ))
@@ -135,6 +163,7 @@ def gather_linkedin(cfg: dict[str, Any], logger, *, lease: ProxyLease) -> list[J
     one place a proxy URL is handed to a third-party library. That is exactly why the lease type is
     required here rather than a bare string - the value carries its owner with it.
     """
+    new_connection_each_request()
     results_wanted = cfg.get("results_wanted", 30)
     proxies = [lease.proxy_url]
     hours_old = cfg.get("hours_old")

@@ -95,7 +95,10 @@ DEFAULT_SOURCE_RESULTS_PER_QUERY: dict[str, int] = {
     "nofluffjobs": 100,
     "jobicy": 50,
     "hiringcafe": 40,
-    "linkedin": 30,
+    # A search reaches back to the last one (`services.harvester.linkedin.search_window`): an hour holds
+    # 23–47 jobs a query, measured 2026-11-02, and a query ends at its first short page, so 50 reads the
+    # hour whole for about the requests 30 took out of 4 hours.
+    "linkedin": 50,
 }
 
 # How many company boards the ATS family polls in one cycle.
@@ -118,6 +121,8 @@ DEFAULT_SOURCE_PAGES_PER_CYCLE: dict[str, int] = {
     "hiringcafe": 3,
     # Newest-first at 20 a page, and the walk stops once a page is older than the freshness window.
     "workday": 5,
+    # Newest-first at 100 a page, about ten offers an hour, and the walk stops the same way.
+    "justjoinit": 5,
 }
 
 # How many users' LinkedIn passes run in one tick.

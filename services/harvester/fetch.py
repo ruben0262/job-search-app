@@ -64,8 +64,15 @@ def _response_bytes(response: httpx.Response) -> int:
 
 def _mounts(proxy_url: str,
             direct: httpx.BaseTransport | None = None) -> dict[str, httpx.BaseTransport]:
-    """Route only `PROXIED_HOSTS` through the proxy; everything else via `direct`."""
-    proxied = httpx.HTTPTransport(proxy=proxy_url)
+    """Route only `PROXIED_HOSTS` through the proxy; everything else via `direct`.
+
+    A new connection for every proxied request. The site proxy sends each new connection out from its
+    next address (measured 2026-11-02: four, in turn), so every page, and every try again after a
+    refusal, leaves from another one, and LinkedIn's allowance per address is spent evenly. A
+    connection kept open held one address for the whole pass, and a refused page was asked again from
+    the address that had just refused it.
+    """
+    proxied = httpx.HTTPTransport(proxy=proxy_url, limits=httpx.Limits(max_keepalive_connections=0))
     mounts: dict[str, httpx.BaseTransport] = {"all://": direct or httpx.HTTPTransport()}
     for host in PROXIED_HOSTS:
         mounts[f"all://{host}"] = proxied
