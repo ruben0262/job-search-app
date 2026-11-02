@@ -46,13 +46,15 @@ def _person(db, *, telegram=True, browsers=0, joined_minutes_ago=24 * 60):
     return user, word
 
 
-def _posting(db, title, *, minutes_ago=5):
+def _posting(db, title, *, minutes_ago=5, described=True):
+    """A posting found `minutes_ago`, and described then too unless `described` is False: what a
+    board that sends the whole text gives, and what a LinkedIn posting is before it is opened."""
     from libs.db.models import CorpusJob
 
     seen = now() - timedelta(minutes=minutes_ago)
     return insert(db, CorpusJob(url=f"https://jobs.example.com/{uuid.uuid4()}", source="test", title=title,
                                 company="Acme", description="Build APIs", is_remote=True, posted_at=seen,
-                                first_seen_at=seen))
+                                first_seen_at=seen, described_at=seen if described else None))
 
 
 def _notified(db, user) -> set[int]:
@@ -124,7 +126,43 @@ def test_a_new_match_reaches_telegram_and_every_browser_once(db):
 
 
 @needs_db
-def test_only_jobs_first_seen_after_the_newest_one_sent_go_out(db):
+def test_the_telegram_card_reads_the_salary_off_the_jobs_text(db):
+    """Matching keeps the text in the database unless asked; the alert asks, or its card says
+    "not listed" for a job whose text names the pay."""
+    from libs.db.models import CorpusJob
+
+    user, word = _person(db)
+    job = _posting(db, f"Senior {word}")
+    db[CorpusJob.COLLECTION].update_one({"_id": job.id}, {"$set": {
+        "description": "Build APIs. Pays €60,000 - €80,000 per year."}})
+    outbox = Outbox()
+
+    assert run(db, user, outbox) == 1
+    [(_chat, text, _keyboard)] = outbox.telegram
+    assert "💰 not listed" not in text and "60" in text.split("💰", 1)[1].split("\n", 1)[0]
+
+
+@needs_db
+def test_a_job_is_alerted_once_it_has_its_text_not_when_it_is_found(db):
+    """A job without its description is not a whole job yet (owner, 2026-11-02). And one described
+    after a newer one was sent is still sent: the watermark is when jobs were described, not found,
+    or a LinkedIn posting found early and opened late would fall behind it for good."""
+    from libs.corpus.repository import CorpusRepository
+
+    user, word = _person(db)
+    early = _posting(db, f"Senior {word}", minutes_ago=30, described=False)
+    later = _posting(db, word, minutes_ago=10)
+
+    run(db, user, Outbox())
+    assert _notified(db, user) == {later.id}, "not the one with no text yet"
+
+    CorpusRepository(db).set_description(early.id, "The whole posting. " * 20)
+    run(db, user, Outbox())
+    assert _notified(db, user) == {later.id, early.id}
+
+
+@needs_db
+def test_only_jobs_described_after_the_newest_one_sent_go_out(db):
     from libs.db.models.tenant import record_state
 
     user, word = _person(db)

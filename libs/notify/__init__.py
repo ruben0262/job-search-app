@@ -71,21 +71,22 @@ def reachable(db: Database, only: _uuid.UUID | None = None) -> dict:
 
 
 def sent_up_to(db: Database, user: User) -> datetime:
-    """When the newest job already sent to this person was first seen — or, if later, when the alert
-    channels they have now were turned on.
+    """When the newest job already sent to this person had its whole text — or, if later, when the
+    alert channels they have now were turned on.
 
-    Every alert is a match first seen after this, so a run stopped part-way resumes where it stopped.
-    Alerts announce what is new: somebody switching them on weeks after joining, or again after
-    turning them off, gets what is found from then on, not every match still inside its freshness
-    window at once — the jobs page already shows those. Strictly after: a posting's `first_seen_at`
-    is the moment it was stored, so no unsent job shares the newest sent one's timestamp.
+    A job is alerted once it has its description, because that is a whole job (owner, 2026-11-02):
+    LinkedIn's are found without one and described minutes later. So what is new is what was
+    described after this, not what was found after it, or a job found early and described late
+    would fall behind the watermark and never be sent. Alerts announce what is new: somebody
+    switching them on weeks after joining gets what is described from then on, not every match
+    still inside its freshness window at once — the jobs page already shows those.
     """
     sent = list(db[UserJobState.COLLECTION].aggregate([
         {"$match": {"user_id": user.id, "notified_at": {"$ne": None}}},
         {"$lookup": {"from": CorpusJob.COLLECTION, "localField": "job_id", "foreignField": "_id",
-                     "pipeline": [{"$project": {"first_seen_at": 1}}], "as": "job"}},
+                     "pipeline": [{"$project": {"described_at": 1}}], "as": "job"}},
         {"$unwind": "$job"},
-        {"$group": {"_id": None, "newest": {"$max": "$job.first_seen_at"}}}]))
+        {"$group": {"_id": None, "newest": {"$max": "$job.described_at"}}}]))
     newest = sent[0]["newest"] if sent else None
     # When their Telegram chat was connected, and their oldest browser.
     chat = user.telegram_connected_at if user.telegram_status == "connected" else None
@@ -107,6 +108,14 @@ NOTIFY_SCAN = 10_000
 
 
 def owed(db: Database, user: User) -> list[Match]:
-    """The matches not yet sent to this person, oldest first — the order they are sent in."""
-    return sorted(matching_jobs(db, user, since=sent_up_to(db, user), scan=NOTIFY_SCAN),
-                  key=lambda match: match.job.first_seen_at)
+    """The matches with their whole text not yet sent to this person, in the order they had it — the
+    order they are sent in. With that text, which the Telegram card reads its salary line from.
+
+    From the watermark inclusive, and less what was sent: two jobs described in the same millisecond
+    share it, and neither may be skipped."""
+    sent = set(db[UserJobState.COLLECTION].distinct(
+        "job_id", {"user_id": user.id, "notified_at": {"$ne": None}}))
+    return sorted((match for match in matching_jobs(db, user, described_since=sent_up_to(db, user),
+                                                    scan=NOTIFY_SCAN, text=True)
+                   if match.job.id not in sent),
+                  key=lambda match: match.job.described_at)

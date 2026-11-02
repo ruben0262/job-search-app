@@ -5,6 +5,7 @@ import argparse
 import logging
 import sys
 
+from libs.corpus.terms import catch_up
 from libs.db import database, ensure_schema
 from libs.obs import configure
 from libs.secrets import install
@@ -19,8 +20,7 @@ from libs.settings import (
     results_per_query,
 )
 from libs.tenant.repository import TenantRepository
-from services.harvester.cycle import run_cycle
-from services.harvester.describe import describe_linkedin
+from services.harvester.cycle import harvest_lock, run_cycle
 from services.harvester.linkedin import run_for_due_users as run_linkedin
 from services.harvester.source_config import build_source_configs
 
@@ -57,8 +57,6 @@ def main(argv: list[str] | None = None) -> int:
                              "operator's per-source limits")
     parser.add_argument("--linkedin", action="store_true",
                         help="run the per-user LinkedIn pass for whoever is due, then stop")
-    parser.add_argument("--describe-linkedin", action="store_true",
-                        help="fill LinkedIn descriptions on each user's own proxy, then stop")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args(argv)
     _configure_logging(args.verbose)
@@ -70,14 +68,9 @@ def main(argv: list[str] | None = None) -> int:
         # Per user, on their own schedule, through the site proxy.
         db = database()
         report = run_linkedin(db, limit=linkedin_concurrent_users(db))
-        logger.info("linkedin: %d considered, %d ran, %d link(s), %d new",
-                    report.considered, report.ran, report.links_found, report.new_jobs)
-        return 0
-
-    if args.describe_linkedin:
-        # A separate pass on a slower timer, not part of the cycle.
-        db = database()
-        describe_linkedin(db)
+        logger.info("linkedin: %d considered, %d ran, %d link(s), %d new, %d described",
+                    report.considered, report.ran, report.links_found, report.new_jobs, report.described)
+        _find_words()
         return 0
 
     kwargs = {}
@@ -113,9 +106,10 @@ def main(argv: list[str] | None = None) -> int:
     for key, error in report.source_failures.items():
         logger.warning("source %s failed: %s", key, error)
 
-    # The LinkedIn tier runs on the same tick, not its own timer.
+    # The LinkedIn tier runs on the same tick, not its own timer, and then the words in what both stored.
     if not args.dry_run:
         _run_linkedin_pass()
+        _find_words()
     return 0
 
 
@@ -124,10 +118,25 @@ def _run_linkedin_pass() -> None:
     try:
         db = database()
         report = run_linkedin(db, limit=linkedin_concurrent_users(db))
-        logger.info("linkedin: %d considered, %d ran, %d link(s), %d new",
-                    report.considered, report.ran, report.links_found, report.new_jobs)
+        logger.info("linkedin: %d considered, %d ran, %d link(s), %d new, %d described",
+                    report.considered, report.ran, report.links_found, report.new_jobs, report.described)
     except Exception:
         logger.exception("the LinkedIn pass failed; the shared harvest was unaffected")
+
+
+def _find_words() -> None:
+    """Which of everyone's words the postings have (`libs.corpus.terms`), under the harvest's lock so one
+    pass at a time writes them. A failure costs speed, not jobs: matching reads what is not found yet
+    with a regex."""
+    try:
+        db = database()
+        with harvest_lock(db) as acquired:
+            if acquired:
+                catch_up(db)
+            else:
+                logger.info("terms: another harvest holds the lock; its own pass will find the words")
+    except Exception:
+        logger.exception("finding the words in the postings failed; matching reads them the slow way")
 
 
 if __name__ == "__main__":

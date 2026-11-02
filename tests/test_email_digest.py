@@ -38,7 +38,7 @@ def _posting(db, title, *, minutes_ago=5):
     seen = now() - timedelta(minutes=minutes_ago)
     return insert(db, CorpusJob(url=f"https://jobs.example.com/{uuid.uuid4()}", source="test", title=title,
                                 company="Acme", location="Berlin", description="Build APIs",
-                                first_seen_at=seen))
+                                first_seen_at=seen, described_at=seen))
 
 
 # ── when ──────────────────────────────────────────────────────────────────────────────────────

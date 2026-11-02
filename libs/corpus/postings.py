@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import html
 import json
 import logging
 import re
@@ -32,10 +33,9 @@ TERMINAL_STATUSES = frozenset({400, 404, 410})
 # Trust a source's own snippet at this length rather than spending a fetch.
 MIN_SNIPPET = 200
 
-# Cap on the stored description: enough to score and embed, and a bound on the token bill.
-MAX_DESC = 4_000
-
 _LINKEDIN_ID = re.compile(r"/jobs/view/(\d+)")
+# A No Fluff Jobs posting's slug, which its API answers for.
+_NOFLUFF_SLUG = re.compile(r"nofluffjobs\.com/(?:[a-z]{2}/)?job/([^/?#]+)")
 _LINKEDIN_HOSTS = {"linkedin.com", "www.linkedin.com"}
 
 _APPLICANTS = re.compile(r"num-applicants__caption[^>]*>\s*([^<]+)<")
@@ -64,13 +64,43 @@ _ATS_APPLY_RE = re.compile(
 
 # ── page → text ───────────────────────────────────────────────────────────────────────────────
 
+# Where the page breaks a line. Not whitespace, so folding the page's own spaces keeps it.
+_BREAK = "\0"
+# Elements set apart from what surrounds them. A list item is a line of its own, marked "•".
+_BLOCKS = ("p", "div", "section", "article", "header", "footer", "ul", "ol", "table", "tr",
+           "blockquote", "pre", "h1", "h2", "h3", "h4", "h5", "h6")
+
+
 def strip_html(text: str, selector_class: str | None = None) -> str:
-    """Visible text, optionally from one element. Falls back to a tag strip without bs4."""
+    """Visible text, optionally from one element, laid out as the page shows it: paragraphs apart,
+    each list item a "•" line. It used to be one run-on line, which is how every card read
+    (owner, 2026-11-02). Falls back to a tag strip without bs4."""
+    if "<" not in text and "&lt;" in text:
+        # Escaped markup, as some boards put it in their JSON-LD.
+        text = html.unescape(text)
+    if "<" not in text:
+        # Plain text already, whose line breaks are its layout.
+        return _layout(text.split("\n"))
     if not BeautifulSoup:
-        return re.sub(r"<[^>]+>", " ", text)
+        return _layout([re.sub(r"<[^>]+>", " ", text)])
     soup = BeautifulSoup(text, "html.parser")
-    node = soup.find(class_=re.compile(selector_class)) if selector_class else None
-    return (node or soup).get_text(" ", strip=True)
+    node = (soup.find(class_=re.compile(selector_class)) if selector_class else None) or soup
+    for br in node.find_all("br"):
+        br.replace_with(_BREAK)
+    for item in node.find_all("li"):
+        item.insert_before(_BREAK + "• ")
+    for block in node.find_all(_BLOCKS):
+        # Inside a list item it is part of that item's line.
+        if block.find_parent("li") is None:
+            block.insert_before(_BREAK * 2)
+            block.insert_after(_BREAK * 2)
+    return _layout(node.get_text().split(_BREAK))
+
+
+def _layout(lines: list[str]) -> str:
+    """Each line's spaces folded, a bullet with nothing after it dropped, one blank line at most."""
+    folded = (" ".join(line.split()) for line in lines)
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(line for line in folded if line != "•")).strip()
 
 
 def _jsonld_objects(html_text: str) -> list[dict]:
@@ -347,6 +377,9 @@ def fetch_job(url: str, *, client: httpx.Client, snippet: str = "", title: str =
     out = Posting(description="", applicants=None, reposted=None, workplace=None,
                   posted_at=None, application_url=None, easy_apply=None, accepting=None)
 
+    if (nofluff := _NOFLUFF_SLUG.search(url or "")) is not None:
+        return _fetch_nofluff(nofluff.group(1), client=client, snippet=snippet, title=title, out=out,
+                              tally=tally)
     if not job_id:
         return _fetch_board(url, client=client, snippet=snippet, title=title, out=out, tally=tally)
 
@@ -359,7 +392,7 @@ def _fetch_board(url: str, *, client: httpx.Client, snippet: str, title: str,
     """Anything that is not LinkedIn: one request, JSON-LD preferred, page strip as the fallback."""
     if len(snippet) >= MIN_SNIPPET:
         tally("snippet")
-        out["description"] = snippet[:MAX_DESC]
+        out["description"] = snippet
         return out
     try:
         if url:
@@ -370,7 +403,7 @@ def _fetch_board(url: str, *, client: httpx.Client, snippet: str, title: str,
                 out["accepting"] = False
                 tally(f"generic_http_{response.status_code}")
                 tally("closed")
-                out["description"] = (snippet or title)[:MAX_DESC]
+                out["description"] = snippet or title
                 return out
             if response.status_code == 200:
                 # Free while the page is open: the ATS link, and the JSON-LD workplace type.
@@ -381,19 +414,67 @@ def _fetch_board(url: str, *, client: httpx.Client, snippet: str, title: str,
                 text = body or strip_html(response.text)
                 if len(text) > len(snippet):
                     tally("jsonld_ok" if body else "generic_ok")
-                    out["description"] = text[:MAX_DESC]
+                    out["description"] = text
                     return out
             tally(f"generic_http_{response.status_code}")
     except Exception:
         tally("generic_error")
     tally("thin")
-    out["description"] = (snippet or title)[:MAX_DESC]
+    out["description"] = snippet or title
     return out
+
+
+def _fetch_nofluff(slug: str, *, client: httpx.Client, snippet: str, title: str,
+                   out: Posting, tally) -> Posting:
+    """No Fluff Jobs builds its pages with a script, so a page holds its menus and nothing of the job
+    ("JavaScript is required for the page…", stored as the text until 2026-11-02). Its own API holds
+    the posting: what it is, what it asks for, the daily tasks and the pay."""
+    try:
+        response = client.get(f"https://nofluffjobs.com/api/posting/{slug}")
+        if response.status_code in (404, 410):
+            out["accepting"] = False
+            tally(f"nofluff_http_{response.status_code}")
+        elif response.status_code == 200:
+            text = _nofluff_text(json.loads(response.text))
+            if len(text) > len(snippet):
+                tally("nofluff_ok")
+                out["description"] = text
+                return out
+            tally("nofluff_empty")
+        else:
+            tally(f"nofluff_http_{response.status_code}")
+    except Exception:
+        tally("nofluff_error")
+    out["description"] = snippet or title
+    return out
+
+
+def _nofluff_text(posting: dict) -> str:
+    """A No Fluff Jobs posting as one text: the pay first, so the salary is read off it, then the job,
+    what it asks for and what the days hold."""
+    def section(heading: str, items: list) -> str:
+        lines = [f"• {item}" for item in items if item]
+        return f"{heading}\n\n" + "\n".join(lines) if lines else ""
+
+    salary = (posting.get("essentials") or {}).get("originalSalary") or {}
+    pay = [f"Salary: {pay['range'][0]:g} - {pay['range'][-1]:g} {salary.get('currency', '')} per "
+           f"{str(pay.get('period') or 'month').lower()} ({kind.upper() if len(kind) <= 3 else kind})"
+           for kind, pay in (salary.get("types") or {}).items() if pay.get("range")]
+    needs = posting.get("requirements") or {}
+    return "\n\n".join(part for part in (
+        "\n".join(pay),
+        strip_html(((posting.get("details") or {}).get("description")) or ""),
+        section("Requirements:", [each.get("value") for each in needs.get("musts") or []]),
+        strip_html(needs.get("description") or ""),
+        section("Nice to have:", [each.get("value") for each in needs.get("nices") or []]),
+        section("Daily tasks:", (posting.get("specs") or {}).get("dailyTasks") or []),
+    ) if part)
 
 
 def _fetch_linkedin(job_id: str, *, client: httpx.Client, snippet: str, title: str,
                     out: Posting, tally) -> Posting:
-    """The guest endpoint, retried — each attempt goes out on a fresh residential IP."""
+    """The guest endpoint, retried — each try on a new connection, so from the site proxy's next
+    address (`services.harvester.fetch._mounts`)."""
     for _ in range(LI_RETRIES):
         try:
             response = client.get(_guest_url(job_id))
@@ -417,7 +498,7 @@ def _fetch_linkedin(job_id: str, *, client: httpx.Client, snippet: str, title: s
             text = strip_html(response.text, "show-more-less-html__markup")
             if len(text) >= 100:
                 tally("li_ok")
-                out["description"] = text[:MAX_DESC]
+                out["description"] = text
                 return out
             # A 200 with no description body is an answer, not a failure.
             tally("li_empty")
@@ -431,9 +512,12 @@ def _fetch_linkedin(job_id: str, *, client: httpx.Client, snippet: str, title: s
             break
         tally(f"li_http_{response.status_code}")
         time.sleep(LI_BACKOFF)
+    else:
+        # Every try throttled or failed in transit: no answer about the posting at all.
+        out["throttled"] = True
 
     tally("li_giveup")
-    out["description"] = (snippet or title)[:MAX_DESC]
+    out["description"] = snippet or title
     return out
 
 

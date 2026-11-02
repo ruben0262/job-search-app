@@ -6,7 +6,7 @@ their documents and credentials, the shared job corpus, and the work queue, in o
 ## Current state
 
 ✅ **Built.** One dataclass per collection in `models/`, registered in `models.MODELS`, applied by
-`ensure_schema()`. 24 collections. The switched-off model's Postgres schema is kept under the git tag
+`ensure_schema()`. 25 collections. The switched-off model's Postgres schema is kept under the git tag
 `model-on-postgres`.
 
 ## How it works

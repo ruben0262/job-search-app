@@ -40,7 +40,8 @@ def send_digest(db: Database, mailer: EmailSender, user: User) -> int:
     """Email the jobs found since the last one (a day, the first time); how many it listed. None
     found, nothing is sent. Marked sent either way, so a failure costs one day, not a retry a minute."""
     since = user.email_digest_at or now() - timedelta(days=1)
-    jobs = matching_jobs(db, user, since=since)
+    # Described since, not found since: a job is in the email once it has its whole text.
+    jobs = matching_jobs(db, user, described_since=since)
     db[User.COLLECTION].update_one({"_id": user.id}, {"$set": {"email_digest_at": now()}})
     if not jobs:
         logger.info("digest: nothing new for %s since %s", user.id, since.isoformat())

@@ -10,6 +10,8 @@ personal, and cheap to compute. This package is the shared half of that split.
 | [`keys.py`](keys.py) — `canonical_url`, `content_key` | ✅ **ported, parity-proven** | Faithful port of `job-search/pipeline/lib/store.py` |
 | [`repository.py`](repository.py) — `CorpusRepository` | ✅ **ported** | Dedup, ingest, embedding, retention. 14 behaviour tests |
 | [`ats.py`](ats.py) — `AtsRepository` | ✅ **ported** | Company tokens + ETag cache. The file lock is gone. 10 tests |
+| [`terms.py`](terms.py) — which green words each posting has | ✅ **2026-11-02** | Everyone's words, never whose: a posting stores the words, the `vocabulary` collection which were looked for. The harvester's `catch_up` is the one writer; matching is an index lookup, and reads what is not indexed yet with a regex |
+| [`geo.py`](geo.py) — the countries people pick, and the country a posting is in | ✅ **2026-11-02** | `COUNTRIES` is what My search offers; `CITIES` feeds the jobs page's city filter. `posting_country` falls back to [`places.tsv.gz`](places.tsv.gz), every town of 15,000+ from GeoNames (CC BY 4.0), rebuilt by `scripts/build_places.py` |
 | `filters/` — langfilter, workfilter, timefilter, salary | not started | Pure functions, lifted from `pipeline/lib/` |
 | Per-user stores (`applied`, `labels`, `feedback`) | ✅ **ported** | Live in [`libs/tenant`](../tenant/) — they are not corpus |
 

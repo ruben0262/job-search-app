@@ -194,20 +194,77 @@ def test_a_linkedin_url_goes_to_the_guest_endpoint():
     assert client.requested[0].endswith("/jobPosting/4321")
 
 
-def test_a_description_is_capped():
-    client = FakeClient(FakeResponse(f'<div class="show-more-less-html__markup">{"w " * 5000}</div>'))
-    result = postings.fetch_job("https://www.linkedin.com/jobs/view/1", client=client)
-    assert len(result.description) == postings.MAX_DESC
+def test_a_description_keeps_its_paragraphs_and_its_list_items():
+    """It was stored as one run-on line, and every card showed it that way (owner, 2026-11-02)."""
+    page = ('<div class="show-more-less-html__markup"><strong>About us</strong><br><br>We build\n'
+            '   things.<p>What you will do:</p><ul><li><p>Write Python</p></li><li>Ship <b>fast</b>'
+            '</li></ul><p>Apply today: we answer every application within a week.</p></div>')
+    result = postings.fetch_job("https://www.linkedin.com/jobs/view/1",
+                                client=FakeClient(FakeResponse(page)))
+
+    assert result.description == ("About us\n\nWe build things.\n\nWhat you will do:\n\n"
+                                  "• Write Python\n• Ship fast\n\n"
+                                  "Apply today: we answer every application within a week.")
+
+
+@pytest.mark.parametrize(("given", "laid_out"), [
+    # Plain text: its own line breaks are its layout, its runs of space are not.
+    ("Line one\r\n\r\n\r\nLine   two", "Line one\n\nLine two"),
+    # Escaped markup, as some boards put it in JSON-LD.
+    ("&lt;p&gt;Escaped&lt;/p&gt;&lt;ul&gt;&lt;li&gt;one&lt;/li&gt;&lt;/ul&gt;", "Escaped\n\n• one"),
+    # The page's own line breaks inside a paragraph are not breaks.
+    ("<p>We are\n looking</p>", "We are looking"),
+])
+def test_every_kind_of_description_reads_as_lines(given, laid_out):
+    assert postings.strip_html(given) == laid_out
+
+
+# The fields of a real answer from No Fluff Jobs' posting API (2026-11-02), cut down.
+NOFLUFF = json.dumps({
+    "title": "Senior PHP Software Engineer",
+    "details": {"description": "<p>Join our team and build <strong>backend</strong> services.</p>"
+                               "<p>About the project</p><ul><li>PHP 8.4</li><li>Kafka</li></ul>"},
+    "requirements": {"musts": [{"value": "PHP"}, {"value": "Symfony"}], "nices": [{"value": "MongoDB"}],
+                     "description": "<ul><li>Five years with PHP</li></ul>"},
+    "specs": {"dailyTasks": ["Designing backend services", "Code reviews"]},
+    "essentials": {"originalSalary": {"currency": "PLN", "types": {
+        "b2b": {"period": "Hour", "range": [100.0, 135.0]}}}},
+})
+
+
+def test_a_no_fluff_jobs_posting_is_read_from_its_api_not_its_script_built_page():
+    """Its page held its menus, and they were stored as the text: "JavaScript is required…"."""
+    from libs.corpus import salary
+
+    client = FakeClient(FakeResponse(NOFLUFF))
+    result = postings.fetch_job("https://nofluffjobs.com/job/senior-php-acme-wroclaw", client=client,
+                                snippet="Senior PHP Software Engineer")
+
+    assert client.requested == ["https://nofluffjobs.com/api/posting/senior-php-acme-wroclaw"]
+    assert result.description == (
+        "Salary: 100 - 135 PLN per hour (B2B)\n\n"
+        "Join our team and build backend services.\n\nAbout the project\n\n• PHP 8.4\n• Kafka\n\n"
+        "Requirements:\n\n• PHP\n• Symfony\n\n• Five years with PHP\n\n"
+        "Nice to have:\n\n• MongoDB\n\nDaily tasks:\n\n• Designing backend services\n• Code reviews")
+    assert salary.extract(result.description)["max"] == 135
+
+
+def test_a_no_fluff_jobs_posting_that_is_gone_is_said_so_by_its_api():
+    client = FakeClient(FakeResponse("", 404))
+    result = postings.fetch_job("https://nofluffjobs.com/job/gone", client=client, snippet="Senior PHP")
+    assert result["accepting"] is False
+    assert client.requested == ["https://nofluffjobs.com/api/posting/gone"], "asked once, of the API"
 
 
 def test_a_throttled_linkedin_fetch_is_retried_and_then_falls_back_to_the_snippet():
-    """A job whose fetch fails still has to be scored."""
+    """A job whose fetch fails still has to be scored, and it is said that no answer came."""
     client = FakeClient(*[FakeResponse("", 429) for _ in range(postings.LI_RETRIES)])
     stats: dict[str, int] = {}
     result = postings.fetch_job("https://www.linkedin.com/jobs/view/9", client=client,
                                 snippet="teaser", stats=stats)
 
     assert result.description == "teaser"
+    assert result.get("throttled") is True
     assert stats == {"li_http_429": postings.LI_RETRIES, "li_giveup": 1}
 
 

@@ -1,7 +1,7 @@
 """Sending a person their new matches: to their Telegram chat, and to every browser they subscribed.
 
-What is new is `libs.notify.owed` — their `libs.matching` matches first seen after the newest one
-already sent — so the alerts ask the jobs page's own question and keep no list of their own.
+What is new is `libs.notify.owed` — their `libs.matching` matches that had their whole text after
+the newest one already sent — so the alerts ask the jobs page's own question and keep no list of their own.
 """
 from __future__ import annotations
 

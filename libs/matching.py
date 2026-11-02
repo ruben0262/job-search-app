@@ -15,21 +15,17 @@ from pymongo.database import Database
 
 from libs.contracts.config import migrate_config
 from libs.corpus import salary
-from libs.db.models import CorpusJob, User
+from libs.db.models import CorpusJob, User, Word
 from libs.tenant.filters import candidate_conditions, filters_for
 from libs.tenant.repository import TenantRepository
 
 logger = logging.getLogger(__name__)
 
-# A green word in the title says far more than one in the text.
-TITLE_POINTS, TEXT_POINTS = 75, 25
-# Requirements sit at the top of a posting and boilerplate below it, so only the top is read.
-TEXT_CHARS = 2_500
-# How many of the newest candidates one call ranks.
+# How many of the newest candidates one call examines.
 SCAN = 2_000
-# What `UserFilters.unwanted` reads off a row.
-_ROW = ("title", "company", "description", "source", "applicants", "location", "is_remote",
-        "workplace", "language")
+# What `UserFilters.unwanted` reads off a row. Not the description: the working arrangement it would
+# read there was read once already, when the text was stored (`CorpusRepository.set_description`).
+_ROW = ("title", "company", "source", "applicants", "location", "is_remote", "workplace", "language")
 # PCRE's `\w` is ASCII unless told otherwise; this makes a word boundary mean what Python's does.
 _UNICODE = "(*UCP)"
 
@@ -37,9 +33,16 @@ _UNICODE = "(*UCP)"
 @dataclass(frozen=True)
 class Match:
     job: CorpusJob
-    score: int
-    # The green words found, so the page can say why a job is there.
+    # The green words found, in the title or anywhere in the text: why the job is on the page.
     words: tuple[str, ...]
+    # Those of them in the title, which says more than the text does.
+    in_title: tuple[str, ...]
+
+    @property
+    def rank(self) -> tuple[int, int]:
+        """The more of their words a job has, the better it probably is; a title that names one
+        breaks a tie (owner, 2026-11-02). Nothing is weighted or learned."""
+        return len(self.words), len(self.in_title)
 
 
 def norm(text: str) -> str:
@@ -60,13 +63,9 @@ def pattern(words: list[str]) -> re.Pattern | None:
     return re.compile(rf"(?<!\w)(?:{'|'.join(parts)})(?!\w)", re.I) if parts else None
 
 
-def score(regex: re.Pattern, title: str | None,
-          description: str | None) -> tuple[int, tuple[str, ...]]:
-    """Points for where the green words appear, and which ones; `(0, ())` for none."""
-    in_title = {norm(found) for found in regex.findall(title or "")}
-    in_text = {norm(found) for found in regex.findall((description or "")[:TEXT_CHARS])}
-    points = TITLE_POINTS * bool(in_title) + TEXT_POINTS * bool(in_text)
-    return points, tuple(sorted(in_title | in_text))
+def found(regex: re.Pattern, text: str | None) -> set[str]:
+    """The words of `regex` that `text` has, each as words are compared."""
+    return {norm(hit) for hit in regex.findall(text or "")}
 
 
 def underpaid(config: dict | None, description: str | None) -> bool:
@@ -83,42 +82,85 @@ def underpaid(config: dict | None, description: str | None) -> bool:
     return top is not None and floor is not None and top < floor
 
 
+def has_any(words: list[str]) -> dict:
+    """A query condition: the title or the description has one of these words, judged in the database."""
+    regex = _UNICODE + pattern(words).pattern
+    return {"$or": [{"title": {"$regex": regex, "$options": "i"}},
+                    {"$expr": {"$regexMatch": {"input": {"$ifNull": ["$description", ""]}, "regex": regex,
+                                               "options": "i"}}}]}
+
+
+def _hits(field: str, words: list[str]) -> dict:
+    """The words of `words` a field has, as the database finds them, each as it is written there."""
+    if not words:
+        return {"$literal": []}
+    regex = _UNICODE + pattern(words).pattern
+    found_there = {"$regexFindAll": {"input": {"$ifNull": [field, ""]}, "regex": regex, "options": "i"}}
+    return {"$map": {"input": found_there, "in": "$$this.match"}}
+
+
 def matching_jobs(db: Database, user: User, *, since: datetime | None = None,
-                  scan: int = SCAN) -> list[Match]:
-    """This person's matches, best first, then newest first."""
+                  described_since: datetime | None = None, scan: int = SCAN,
+                  text: bool = False) -> list[Match]:
+    """This person's matches, the most of their words first, then newest first. `since` keeps those
+    found after it; `described_since` those that had their whole text by it, which is what alerts send.
+
+    Each posting says which of everyone's words it has (`libs.corpus.terms`), so a match is an index
+    lookup. A posting not yet searched, and a word nobody's postings have been searched for yet, are
+    read with a regex over the whole text, so nothing waits on the index. Only the words come back,
+    unless `text` asks for the description too, for a caller that shows it (an alert's salary line).
+    """
     config = TenantRepository(db).get_config(user.id)
-    regex = pattern(green_words(config))
-    if regex is None:
+    mine = green_words(config)
+    if not mine:
         return []
 
     filters = filters_for(db, user)
     where = candidate_conditions(filters)
     if since is not None:
         where.append({"first_seen_at": {"$gt": since}})
-    # The newest `scan` candidates, then their green words judged in the database: only matches
-    # cross the network, where pulling every candidate's text would be megabytes per page.
-    in_database = _UNICODE + regex.pattern
-    head = {"$substrCP": [{"$ifNull": ["$description", ""]}, 0, TEXT_CHARS]}
-    jobs = [CorpusJob.from_doc(row) for row in db[CorpusJob.COLLECTION].aggregate([
-        {"$match": {"$and": where}},
-        {"$sort": {"first_seen_at": -1, "_id": -1}},
-        {"$limit": scan},
-        {"$match": {"$or": [
-            {"title": {"$regex": in_database, "$options": "i"}},
-            {"$expr": {"$regexMatch": {"input": head, "regex": in_database, "options": "i"}}}]}},
-    ])]
-    if since is not None and db[CorpusJob.COLLECTION].count_documents({"$and": where}, limit=scan) == scan:
-        # The caller's watermark will pass every older candidate this scan never reached.
-        logger.warning("matching: %s has at least %d new candidates since %s; only the newest %d were "
-                       "examined, so older matches will not be alerted (the jobs page still lists them)",
-                       user.id, scan, since.isoformat(), scan)
+    if described_since is not None:
+        where.append({"described_at": {"$gte": described_since}})
+    indexed = sorted(db[Word.COLLECTION].distinct("_id", {"_id": {"$in": mine}}))
+    pending = [word for word in mine if word not in indexed]
+    unsearched = {"$eq": [{"$ifNull": ["$terms_at", None]}, None]}
 
-    found = []
-    for job in jobs:
-        # Scored here to say which words, and where: the database only said that some matched.
-        points, words = score(regex, job.title, job.description)
-        if (points and not filters.unwanted({name: getattr(job, name) for name in _ROW})
+    def hits(field: str) -> dict:
+        return {"$cond": [unsearched, _hits(field, mine), _hits(field, pending)]}
+
+    newest = [{"$sort": {"first_seen_at": -1, "_id": -1}}, {"$limit": scan}]
+    if pending:
+        # Searched for by the harvester's next pass, and read as before until then: the newest
+        # candidates, by regex.
+        stages = [{"$match": {"$and": where}}, *newest,
+                  {"$addFields": {"_in_title": hits("$title"), "_in_text": hits("$description")}},
+                  {"$match": {"$or": [{"terms": {"$in": indexed}}, {"_in_title.0": {"$exists": True}},
+                                      {"_in_text.0": {"$exists": True}}]}}]
+    else:
+        # Measured 2026-11-02, 5,000 postings of real text and ten words: 101–132 ms, against 439–482 ms
+        # reading the text with a regex, and the same 1,220 jobs with the same words both ways.
+        stages = [{"$match": {"$and": [*where, {"$or": [{"terms": {"$in": mine}},
+                                                        {"terms_at": None, **has_any(mine)}]}]}},
+                  *newest, {"$addFields": {"_in_title": hits("$title"), "_in_text": hits("$description")}}]
+    # A minimum salary is read off the text, so it comes back for someone who set one.
+    if not (text or (config or {}).get("min_salary")):
+        stages.append({"$unset": "description"})
+    rows = list(db[CorpusJob.COLLECTION].aggregate(stages))
+    if (since or described_since) and len(rows) == scan:
+        # The caller's watermark will pass every older match this never reached.
+        logger.warning("matching: %s has at least %d new matches; only the newest %d were read, so older "
+                       "ones will not be alerted (the jobs page still lists them)", user.id, scan, scan)
+
+    mine_set, matches = set(mine), []
+    for row in rows:
+        searched = row.get("terms_at") is not None
+        in_title = {norm(hit) for hit in row.pop("_in_title")} | (
+            set(row.get("title_terms") or ()) & mine_set if searched else set())
+        words = in_title | {norm(hit) for hit in row.pop("_in_text")} | (
+            set(row.get("terms") or ()) & mine_set if searched else set())
+        job = CorpusJob.from_doc(row)
+        if (words and not filters.unwanted({name: getattr(job, name) for name in _ROW})
                 and not underpaid(config, job.description)):
-            found.append(Match(job, points, words))
-    # A stable sort, so equal scores keep the query's newest-first order.
-    return sorted(found, key=lambda match: match.score, reverse=True)
+            matches.append(Match(job, tuple(sorted(words)), tuple(sorted(in_title))))
+    # A stable sort, so equal ranks keep the query's newest-first order.
+    return sorted(matches, key=lambda match: match.rank, reverse=True)

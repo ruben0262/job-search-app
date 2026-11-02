@@ -40,7 +40,7 @@ from libs.db.models import SetupMessage, User
 from libs.documents.read import LANGUAGE_NAMES
 from libs.legal import has_consented
 from libs.llm import PLATFORM, LlmError, ai_requests_today, paying_client, platform_left, resolve
-from libs.matching import green_words, matching_jobs, norm, pattern, score
+from libs.matching import green_words, matching_jobs, norm
 from libs.prompts import load
 from libs.secrets import SecretStore
 from libs.tenant.repository import TenantRepository
@@ -149,12 +149,10 @@ def _why_job(db: Database, user: User, args: dict) -> str:
         return (f"No job on their list has “{' '.join(wanted)}” in its title or company. A job is "
                 "left out when a red word is in its title or company, when it is in a place, "
                 "language or way of working they did not pick, or when it is too old.")
-    in_title = pattern(green_words(_config(db, user)))
     lines = []
     for match in found[:3]:
-        titled = set(score(in_title, match.job.title, None)[1])
         lines.append(f"“{match.job.title}” at {match.job.company or 'a company with no name'}: found by "
-                     + ", ".join(f"{word} (in the {'title' if word in titled else 'text'})"
+                     + ", ".join(f"{word} (in the {'title' if word in match.in_title else 'text'})"
                                  for word in match.words))
     return "\n".join(lines)
 

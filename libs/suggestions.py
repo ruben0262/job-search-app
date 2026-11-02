@@ -22,7 +22,7 @@ from libs.corpus.geo import read_country
 from libs.db import get
 from libs.db.models import CorpusJob, User, UserDocument
 from libs.documents.read import Facts, fold, read, stem, words
-from libs.matching import SCAN, matching_jobs, norm, pattern, score
+from libs.matching import SCAN, found, matching_jobs, norm, pattern
 from libs.tenant.repository import TenantRepository
 
 logger = logging.getLogger(__name__)
@@ -101,7 +101,7 @@ def _named(facts: Facts, titles: list[str]) -> list[tuple[str, str]]:
     named: Counter[str] = Counter()
     example: dict[str, str] = {}
     for title in titles if regex else ():
-        for word in score(regex, title, None)[1]:
+        for word in sorted(found(regex, title)):
             named[word] += 1
             example.setdefault(word, title)
     return [(word, f"One of your skills, and in {count} job title{'' if count == 1 else 's'} here, "

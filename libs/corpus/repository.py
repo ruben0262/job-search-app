@@ -9,13 +9,18 @@ from pymongo.database import Database
 from pymongo.errors import DuplicateKeyError
 
 from libs.corpus import langfilter, workfilter
-from libs.corpus.geo import read_country
+from libs.corpus.geo import posting_country, read_city
 from libs.corpus.keys import canonical_url, content_key
 from libs.db import insert, now
 from libs.db.models import CorpusJob
 
 # Below this, stored text is a teaser rather than a description and the job is re-fetched from its own page.
 MIN_DESCRIPTION = 200
+
+# The most of a description kept, applied here because every description is stored here. 4,000 cut
+# a third of postings mid-sentence (389 of 1,209 locally); the whole LinkedIn text of 24 of those,
+# fetched 2026-11-02, was a median 5,831 characters and at most 10,260, so this keeps 23 of 24 whole.
+MAX_DESCRIPTION = 12_000
 
 # Consecutive failed reads before a posting is abandoned: never described, embedded or scored.
 #
@@ -144,7 +149,8 @@ class CorpusRepository:
             company=company or None,
             location=location or None,
             # Read once here, for everyone, rather than per user per query.
-            country=read_country(location, title=title),
+            country=posting_country(location, title=title),
+            city=read_city(location),
             is_remote=is_remote,
             posted_at=posted_at,
             # When the fetch found this row, so our latency is separable from the board's.
@@ -163,9 +169,10 @@ class CorpusRepository:
             return None
 
     def set_description(self, job_id: int, description: str) -> bool:
-        """Attach fetched description text."""
+        """Attach fetched description text, up to `MAX_DESCRIPTION` of it."""
+        description = description[:MAX_DESCRIPTION]
         row = self._corpus.find_one({"_id": job_id}, {"description": 1, "title": 1, "location": 1,
-                                                      "is_remote": 1, "workplace": 1})
+                                                      "is_remote": 1, "workplace": 1, "described_at": 1})
         if row is None:
             return False
         if row["description"] == description:
@@ -174,7 +181,13 @@ class CorpusRepository:
 
         changes = {"description": description, "description_fetched_at": now(),
                    # Read once here rather than per reader per pass: the language is a fact about the posting.
-                   "language": langfilter.detect_language(description)}
+                   "language": langfilter.detect_language(description),
+                   # New text, so its words are found again (`libs.corpus.terms.catch_up`); until
+                   # then matching reads it the slow way, and finds them all the same.
+                   "terms_at": None}
+        if len(description) >= MIN_DESCRIPTION and not row.get("described_at"):
+            # A whole job from now: alerts wait for this, not for the posting to be found.
+            changes["described_at"] = now()
         # Classify the working arrangement now the text exists, if nothing authoritative has.
         if row["workplace"] is None:
             changes["workplace"] = workfilter.classify(
@@ -193,7 +206,8 @@ class CorpusRepository:
     def awaiting_description(self, *, limit: int = 200, linkedin: bool | None = None,
                              min_chars: int = MIN_DESCRIPTION,
                              max_age_hours: int | None = None) -> list[CorpusJob]:
-        """Jobs whose stored text is too thin to match words against."""
+        """Jobs whose stored text is too thin to match words against, newest first. A `limit` of 0
+        is every one of them."""
         where = awaiting_description_conditions(min_chars, max_age_hours)
         if linkedin is True:
             where.append({"url": {"$regex": "/jobs/view/"}})
@@ -204,11 +218,6 @@ class CorpusRepository:
     def _jobs(self, where: dict, limit: int) -> list[CorpusJob]:
         return [CorpusJob.from_doc(row) for row in
                 self._corpus.find(where, sort=[("first_seen_at", -1)], limit=limit)]
-
-    def awaiting_metadata(self, *, limit: int = 200) -> list[CorpusJob]:
-        """LinkedIn rows whose description is fine but whose posting signals were never read."""
-        return self._jobs({"closed_at": None, "url": {"$regex": "/jobs/view/"}, "applicants": None,
-                           "posted_at": None}, limit)
 
     def record_describe_failure(self, job_id: int) -> int:
         """One more failed read. Returns the new count, so the caller can log the abandonment."""

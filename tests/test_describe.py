@@ -228,58 +228,6 @@ def test_the_refreshed_metadata_goes_back_to_the_shared_corpus(repo):
     assert get(session, CorpusJob, job.id).applicants == 12
 
 
-# ── metadata on rows that already have a description ──────────────────────────────────────────
-
-GUEST = ('<span class="num-applicants__caption"> 42 applicants </span>'
-         '<span class="posted-time-ago__text"> 3 hours ago </span>'
-         '<h1>Engineer (Hybrid)</h1>' + "x" * 300)
-
-
-def test_a_linkedin_row_with_a_description_but_no_signals_is_picked_up(repo):
-    """A different question from "is it thin", and the corpus was full of the difference."""
-    corpus, _session = repo
-    job_id = _linkedin(corpus)
-    corpus.set_description(job_id, "A genuine job description. " * 40)
-
-    assert job_id not in [job.id for job in corpus.awaiting_description(linkedin=True)]
-    assert job_id in [job.id for job in corpus.awaiting_metadata()]
-
-
-def test_the_refresh_writes_every_signal_the_page_carries(repo):
-    from services.harvester.describe import refresh_metadata
-
-    corpus, session = repo
-    job_id = _linkedin(corpus)
-    corpus.set_description(job_id, "A genuine job description. " * 40)
-
-    report = refresh_metadata(corpus, FakeClient(GUEST), limit=10)
-
-    job = get(session, CorpusJob, job_id)
-    assert report.metadata_written >= 1
-    assert (job.applicants, job.workplace) == (42, "hybrid")
-    assert job.posted_at is not None
-
-
-def test_a_row_that_was_refreshed_is_not_asked_again(repo):
-    """The "never looked" test is the absence of both signals, not a timestamp."""
-    from services.harvester.describe import refresh_metadata
-
-    corpus, _session = repo
-    job_id = _linkedin(corpus)
-    corpus.set_description(job_id, "A genuine job description. " * 40)
-
-    refresh_metadata(corpus, FakeClient(GUEST), limit=10)
-    assert job_id not in [job.id for job in corpus.awaiting_metadata()]
-
-
-def test_a_board_row_is_never_in_the_metadata_queue(repo):
-    """Only LinkedIn exposes any of these."""
-    corpus, _session = repo
-    job_id = _board(corpus)
-    corpus.set_description(job_id, "A genuine job description. " * 40)
-    assert job_id not in [job.id for job in corpus.awaiting_metadata()]
-
-
 # ── a closed posting must not reach a feed ────────────────────────────────────────────────────
 
 CLOSED_GUEST = ('<p>No longer accepting applications</p>'
@@ -288,17 +236,14 @@ CLOSED_GUEST = ('<p>No longer accepting applications</p>'
 
 def test_a_closed_posting_is_marked_and_leaves_the_queue(repo):
     """The failure the user saw."""
-    from services.harvester.describe import refresh_metadata
-
     corpus, session = repo
     job_id = _linkedin(corpus)
-    corpus.set_description(job_id, "A genuine job description. " * 40)
 
-    report = refresh_metadata(corpus, FakeClient(CLOSED_GUEST), limit=10)
+    report = describe_pending(corpus, FakeClient(CLOSED_GUEST), linkedin=True)
 
     assert report.closed == 1
     assert get(session, CorpusJob, job_id).closed_at is not None
-    assert job_id not in [job.id for job in corpus.awaiting_metadata()]
+    assert job_id not in [job.id for job in corpus.awaiting_description(linkedin=True)]
 
 
 def test_marking_closed_keeps_the_row_and_its_description(repo):
@@ -363,6 +308,67 @@ def test_no_budget_means_the_pass_runs_to_completion(repo):
 
     report = describe_pending(corpus, Fast(), linkedin=True, limit=3)
     assert report.attempted == 3
+
+
+def test_a_throttled_page_is_not_a_failed_read_and_is_asked_again(repo):
+    """Six 429s say LinkedIn was busy, not that the posting has nothing. Two such passes used to
+    abandon a live job for good."""
+    corpus, session = repo
+    job_id = _linkedin(corpus)
+
+    for _ in range(3):
+        report = describe_pending(corpus, FakeClient("", 429), linkedin=True)
+        assert (report.throttled, report.still_thin, report.abandoned) == (1, 0, 0)
+
+    assert get(session, CorpusJob, job_id).describe_failures == 0
+    assert job_id in [job.id for job in corpus.awaiting_description(linkedin=True)]
+
+
+def test_the_pass_stops_when_a_whole_round_of_readers_is_refused(repo):
+    """Each refused page was asked six times, each from another address: asking on spends the
+    allowance the next pass needs. What is left waits, and nothing is counted against it."""
+    corpus, session = repo
+    ids = [_linkedin(corpus) for _ in range(10)]
+
+    report = describe_pending(corpus, FakeClient("", 429), linkedin=True, workers=2)
+
+    assert report.throttled <= 3, "stopped after two in a row, give or take the one in flight"
+    assert sorted(job.id for job in corpus.awaiting_description(linkedin=True)) == sorted(ids)
+    assert all(get(session, CorpusJob, i).describe_failures == 0 for i in ids)
+
+
+def test_pages_are_fetched_several_at_a_time_and_every_one_is_stored(repo):
+    """Each page is a second or more through the proxy, so four go at once."""
+    import threading
+
+    corpus, session = repo
+    ids = [_linkedin(corpus) for _ in range(8)]
+    together = threading.Barrier(4, timeout=10)
+
+    class Concurrent(FakeClient):
+        def get(self, url, **kwargs):
+            # Returns only once four requests are in flight together: one at a time never gets here.
+            together.wait()
+            return super().get(url, **kwargs)
+
+    report = describe_pending(corpus, Concurrent(), linkedin=True, workers=4)
+
+    assert report.described == 8
+    assert all("A real description." in get(session, CorpusJob, i).description for i in ids)
+
+
+def test_a_description_is_kept_whole_up_to_the_ceiling(repo):
+    """4,000 characters cut a third of postings mid-sentence; the ceiling is where it is stored."""
+    from libs.corpus.repository import MAX_DESCRIPTION
+
+    corpus, session = repo
+    whole, long = "word " * 1_800, "word " * 5_000
+    kept, cut = _board(corpus), _board(corpus)
+    corpus.set_description(kept, whole)
+    corpus.set_description(cut, long)
+
+    assert get(session, CorpusJob, kept).description == whole
+    assert get(session, CorpusJob, cut).description == long[:MAX_DESCRIPTION]
 
 
 # ── a dead posting stops costing us anything (2026-08-07) ─────────────────────────────────────

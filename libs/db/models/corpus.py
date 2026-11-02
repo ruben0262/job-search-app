@@ -29,7 +29,11 @@ class CorpusJob(Document):
                IndexModel([("first_seen_at", DESCENDING)], partialFilterExpression={"closed_at": None},
                           name="open_newest"),
                IndexModel("describe_failures", partialFilterExpression={"describe_failures": {"$gt": 0}},
-                          name="describe_failures"))
+                          name="describe_failures"),
+               # A person's jobs: the postings that have one of their words (`libs.corpus.terms`).
+               IndexModel("terms", partialFilterExpression={"closed_at": None}, name="open_terms"),
+               # The postings whose words are still to be found, which matching reads the slow way.
+               IndexModel("terms_at", name="terms_at"))
 
     id: int | None = None
     url: str
@@ -42,10 +46,19 @@ class CorpusJob(Document):
     company: str | None = None
     location: str | None = None
     country: str | None = None
+    # The city it is in, as a picked place names it (`libs.corpus.geo.CITIES`), or None.
+    city: str | None = None
     is_remote: bool | None = None
     language: str | None = None
     description: str | None = None
     description_fetched_at: datetime | None = None
+    # When it first had a whole description: a job is a whole job from then, and alerts wait for it.
+    described_at: datetime | None = None
+    # Which of everyone's green words it has, anywhere and in its title (`libs.corpus.terms`), and
+    # when they were last found: None until they are, and again whenever its text changes.
+    terms: list[str] = field(default_factory=list)
+    title_terms: list[str] = field(default_factory=list)
+    terms_at: datetime | None = None
     discovered_via: str | None = None
     describe_failures: int = 0
     applicants: int | None = None
@@ -58,3 +71,16 @@ class CorpusJob(Document):
     fetched_at: datetime | None = None
     first_seen_at: datetime = field(default_factory=now)
     schema_version: int = 1
+
+
+@dataclass(kw_only=True)
+class Word(Document):
+    """A green word the postings have been searched for, so each one says whether it has it. Every
+    account's words, without their accounts: what is searched for, not who searches."""
+
+    COLLECTION = "vocabulary"
+    OWNER = None
+    BACKED_UP = False
+
+    id: str  # the word, as words are compared (`libs.matching.norm`)
+    indexed_at: datetime = field(default_factory=now)
