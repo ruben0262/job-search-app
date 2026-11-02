@@ -74,7 +74,7 @@ def test_a_word_cv_whose_bullets_lost_their_glyphs_is_read_whole():
     assert facts.name == "Jane Doe"
     assert (facts.email, facts.phone) == ("jane.doe@example.com", "+36 30 123 4567")
     assert facts.links == ("linkedin.com/in/janedoe", "github.com/janedoe")
-    assert (facts.location, facts.places) == ("Budapest, Hungary", ("budapest",))
+    assert (facts.location, facts.places) == ("Budapest, Hungary", ("hungary",))
     # German is listed at A2, which is not a language anybody can work in.
     assert facts.languages == ("hu", "en")
     assert facts.titles == ("Senior Backend Engineer", "Backend Engineer", "Junior Developer")
@@ -99,7 +99,7 @@ def test_a_two_column_pdf_is_read_although_its_sidebar_comes_first():
 
     assert facts.name == "Mary O'Brien"
     assert (facts.email, facts.phone) == ("mary.obrien@mail.ie", "087 123 4567")
-    assert facts.places == ("dublin", "ireland")
+    assert facts.places == ("ireland",)
     # Irish is hers but is not a language the platform filters on; her name is not a language.
     assert facts.languages == ("en",)
     assert facts.cv.of("languages")[0].lines == ("English (native)", "Irish (conversational)")
@@ -119,7 +119,7 @@ def test_a_pdf_with_the_dates_at_the_end_of_the_title_line():
     assert facts.name == "Carlos Mendes"
     assert facts.phone == "+351 912 345 678"
     # "the UK" in his summary is a market he sold to, not a place he lives.
-    assert facts.places == ("lisbon",)
+    assert facts.places == ("portugal",), "Lisbon, offered as the country it is in"
     assert facts.languages == ("pt", "en", "es")
     assert [(job.title, job.organisation, job.dates) for job in facts.jobs] == [
         ("Account Executive", "Salesforce", "Jan 2022 – Present"),
@@ -135,7 +135,7 @@ def test_a_linkedin_export_with_the_company_above_the_title():
 
     assert facts.name == "Anna Kovács"
     assert facts.links == ("www.linkedin.com/in/annakovacs",)
-    assert facts.places == ("budapest",)
+    assert facts.places == ("hungary",)
     # "German (Elementary)" is not a working language.
     assert facts.languages == ("hu", "en")
     assert [(job.title, job.organisation) for job in facts.jobs] == [
@@ -152,7 +152,7 @@ def test_a_cv_with_the_dates_first_and_a_letter_spaced_heading():
 
     assert facts.name == "Sophie Laurent"
     assert facts.phone == "06 12 34 56 78"
-    assert facts.places == ("paris",)
+    assert facts.places == ("france",)
     # Under "LANGUES / LANGUAGES", in French; Spanish is A1 and left out.
     assert facts.languages == ("fr", "en")
     assert [(job.title, job.organisation) for job in facts.jobs] == [

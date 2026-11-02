@@ -70,6 +70,7 @@ class ConfigChoice(BaseModel):
 
 class ConfigChoices(BaseModel):
     """What the pickers offer, labelled. Served, so a place cannot exist on one side only."""
+    # The countries, the three people pick most first.
     locations: list[ConfigChoice]
     # How many places may be picked: the schema's bound, served so the page cannot hold a copy.
     max_locations: int

@@ -87,11 +87,12 @@ def test_users_wanting_different_age_windows_share_the_coarser_fetch():
     assert next(iter(qs.values())) == frozenset({alice, bob})
 
 
-def test_the_same_term_in_two_cities_is_two_queries():
-    """Location is part of the key — these are genuinely different fetches."""
-    qs = build_query_set({_uid(): _config(["python"], ["london", "berlin"])}, ["linkedin"])
+def test_the_same_term_in_two_countries_is_two_queries():
+    """Location is part of the key — these are genuinely different fetches. A city stored before My
+    search picked countries only is searched as its country (owner, 2026-11-02)."""
+    qs = build_query_set({_uid(): _config(["python"], ["united_kingdom", "berlin"])}, ["linkedin"])
     assert len(qs) == 2
-    assert {k.location_norm for k in qs} == {"london", "berlin"}
+    assert {k.location_norm for k in qs} == {"united_kingdom", "germany"}
 
 
 def test_a_user_with_no_location_still_gets_queries():

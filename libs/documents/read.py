@@ -14,8 +14,7 @@ import unicodedata
 from dataclasses import dataclass
 from datetime import date
 
-from libs.contracts.config import Location
-from libs.corpus.geo import read_country
+from libs.corpus.geo import CITIES, CITY_COUNTRY, COUNTRIES, place_names, read_country
 
 # The names a language goes by, keyed by the platform's `Language` codes. The first is its label.
 LANGUAGE_NAMES: dict[str, tuple[str, ...]] = {
@@ -99,19 +98,6 @@ _DEGREE = re.compile(r"(?i)\b(?:bachelor|master|b\.?sc|m\.?sc|b\.?a|m\.?a|mba|ph
 # Lowercase words a title-cased line may still contain: "Head of Sales", "Ana de la Cruz".
 _SMALL = frozenset("of and the for at in on to a an & de la le van von der du da di y e und".split())  # noqa: SIM905
 
-# How people write the places the config offers, beyond each place's own name.
-_PLACE_ALIASES = {
-    "united_kingdom": ("united kingdom", "uk", "england", "scotland", "wales", "great britain",
-                       "northern ireland"),
-    "lisbon": ("lisboa",), "warsaw": ("warszawa",), "copenhagen": ("københavn",),
-    "switzerland": ("schweiz", "suisse"),
-}
-_PLACE_NAMES = {name: slug.value for slug in Location
-                for name in (slug.value.replace("_", " "), *_PLACE_ALIASES.get(slug.value, ()))}
-# Longest first, so "northern ireland" is read before "ireland" can be.
-_PLACES = re.compile(r"(?<!\w)(" + "|".join(sorted(map(re.escape, _PLACE_NAMES), key=len, reverse=True))
-                     + r")(?!\w)")
-
 # Function words, which say nothing about whether a bullet and a posting are about the same thing.
 _STOPWORDS = frozenset("""
     a an and the of to in for on with at by from as is are was were be been being our we you your will
@@ -125,6 +111,15 @@ def fold(text: str) -> str:
     """Lowercased, accents off: "Zürich" and "zurich" are one place."""
     decomposed = unicodedata.normalize("NFKD", text.casefold())
     return "".join(char for char in decomposed if not unicodedata.combining(char))
+
+
+# Every way the countries the config offers are written (`libs.corpus.geo`), folded as a line is, and
+# every city to the country it is in: a CV that says "Budapest" offers Hungary.
+_PLACE_NAMES = {fold(name): CITY_COUNTRY.get(slug, slug) for slug in (*CITIES, *COUNTRIES)
+                for name in (slug.replace("_", " "), *place_names(slug))}
+# Longest first, so "northern ireland" is read before "ireland" can be.
+_PLACES = re.compile(r"(?<!\w)(" + "|".join(sorted(map(re.escape, _PLACE_NAMES), key=len, reverse=True))
+                     + r")(?!\w)")
 
 
 def stem(word: str) -> str:

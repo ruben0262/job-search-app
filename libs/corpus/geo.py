@@ -1,7 +1,12 @@
 """What country a posting is in, and which countries a user has actually asked for."""
 from __future__ import annotations
 
+import gzip
 import re
+import unicodedata
+from dataclasses import dataclass
+from functools import cache
+from pathlib import Path
 
 # ISO 3166-1 alpha-2: a two-letter code is stable, indexable and unambiguous where a name is not.
 
@@ -11,41 +16,142 @@ EU_COUNTRIES: frozenset[str] = frozenset({
     "LV", "LT", "LU", "MT", "NL", "PL", "PT", "RO", "SK", "SI", "ES", "SE",
 })
 
-# Every city the config vocabulary offers, and the country it is in.
-_CITY_COUNTRY: dict[str, str] = {
-    "london": "GB", "berlin": "DE", "amsterdam": "NL", "dublin": "IE", "paris": "FR",
-    "madrid": "ES", "lisbon": "PT", "warsaw": "PL", "budapest": "HU", "zurich": "CH",
-    "stockholm": "SE", "copenhagen": "DK",
+@dataclass(frozen=True)
+class Place:
+    """A place a person can pick: what it is called, the countries it covers, and how else it is written."""
+
+    label: str
+    countries: frozenset[str]
+    # Other spellings, lower case, as postings and CVs write them.
+    names: tuple[str, ...] = ()
+
+
+def _one(code: str) -> frozenset[str]:
+    return frozenset({code})
+
+
+# The places on My search: countries only (owner, 2026-11-02). The slug is what a config stores, the
+# label what the page shows and the job boards are asked for. The three people pick most come first.
+COUNTRIES: dict[str, Place] = {
+    "europe": Place("European Union", EU_COUNTRIES),
+    "united_kingdom": Place("United Kingdom", _one("GB"), ("uk", "england", "scotland", "wales",
+                                                           "great britain", "northern ireland")),
+    "ireland": Place("Ireland", _one("IE")),
+    "austria": Place("Austria", _one("AT"), ("österreich",)),
+    "belgium": Place("Belgium", _one("BE")),
+    "bulgaria": Place("Bulgaria", _one("BG")),
+    "croatia": Place("Croatia", _one("HR")),
+    "cyprus": Place("Cyprus", _one("CY")),
+    "czechia": Place("Czechia", _one("CZ"), ("czech republic",)),
+    "denmark": Place("Denmark", _one("DK")),
+    "estonia": Place("Estonia", _one("EE")),
+    "finland": Place("Finland", _one("FI")),
+    "france": Place("France", _one("FR")),
+    "germany": Place("Germany", _one("DE"), ("deutschland",)),
+    "greece": Place("Greece", _one("GR")),
+    "hungary": Place("Hungary", _one("HU"), ("magyarország",)),
+    "iceland": Place("Iceland", _one("IS")),
+    "italy": Place("Italy", _one("IT")),
+    "latvia": Place("Latvia", _one("LV")),
+    "lithuania": Place("Lithuania", _one("LT")),
+    "luxembourg": Place("Luxembourg", _one("LU")),
+    "malta": Place("Malta", _one("MT")),
+    "netherlands": Place("Netherlands", _one("NL"), ("holland",)),
+    "norway": Place("Norway", _one("NO")),
+    "poland": Place("Poland", _one("PL")),
+    "portugal": Place("Portugal", _one("PT")),
+    "romania": Place("Romania", _one("RO")),
+    "serbia": Place("Serbia", _one("RS")),
+    "slovakia": Place("Slovakia", _one("SK")),
+    "slovenia": Place("Slovenia", _one("SI")),
+    "spain": Place("Spain", _one("ES")),
+    "sweden": Place("Sweden", _one("SE")),
+    "switzerland": Place("Switzerland", _one("CH"), ("schweiz", "suisse")),
+    "ukraine": Place("Ukraine", _one("UA")),
+    "united_states": Place("United States", _one("US"), ("usa",)),
+    "canada": Place("Canada", _one("CA")),
 }
 
-# Country-level slugs in the config vocabulary.
-_COUNTRY_SLUG: dict[str, str] = {
-    "united_kingdom": "GB", "ireland": "IE", "switzerland": "CH", "norway": "NO",
+# Cities a posting is read as being in, for the jobs page's city filter. Not picked on My search: a city
+# somebody picked before 2026-11-02 is read as its country (`libs.contracts.config._migrate_locations`).
+CITIES: dict[str, Place] = {
+    "amsterdam": Place("Amsterdam", _one("NL")),
+    "athens": Place("Athens", _one("GR")),
+    "barcelona": Place("Barcelona", _one("ES")),
+    "berlin": Place("Berlin", _one("DE")),
+    "brussels": Place("Brussels", _one("BE"), ("bruxelles", "brussel")),
+    "bucharest": Place("Bucharest", _one("RO"), ("bucurești", "bucuresti")),
+    "budapest": Place("Budapest", _one("HU")),
+    "cologne": Place("Cologne", _one("DE"), ("köln", "koeln")),
+    "copenhagen": Place("Copenhagen", _one("DK"), ("københavn",)),
+    "dublin": Place("Dublin", _one("IE")),
+    "edinburgh": Place("Edinburgh", _one("GB")),
+    "frankfurt": Place("Frankfurt", _one("DE")),
+    "gdansk": Place("Gdańsk", _one("PL"), ("gdansk",)),
+    "hamburg": Place("Hamburg", _one("DE")),
+    "helsinki": Place("Helsinki", _one("FI")),
+    "krakow": Place("Kraków", _one("PL"), ("krakow",)),
+    "lisbon": Place("Lisbon", _one("PT"), ("lisboa",)),
+    "london": Place("London", _one("GB")),
+    "lyon": Place("Lyon", _one("FR")),
+    "madrid": Place("Madrid", _one("ES")),
+    "manchester": Place("Manchester", _one("GB")),
+    "milan": Place("Milan", _one("IT"), ("milano",)),
+    "munich": Place("Munich", _one("DE"), ("münchen", "muenchen")),
+    "oslo": Place("Oslo", _one("NO")),
+    "paris": Place("Paris", _one("FR")),
+    "porto": Place("Porto", _one("PT")),
+    "prague": Place("Prague", _one("CZ"), ("praha",)),
+    "riga": Place("Riga", _one("LV")),
+    "rome": Place("Rome", _one("IT"), ("roma",)),
+    "rotterdam": Place("Rotterdam", _one("NL")),
+    "sofia": Place("Sofia", _one("BG")),
+    "stockholm": Place("Stockholm", _one("SE")),
+    "stuttgart": Place("Stuttgart", _one("DE")),
+    "tallinn": Place("Tallinn", _one("EE")),
+    "the_hague": Place("The Hague", _one("NL"), ("den haag",)),
+    "utrecht": Place("Utrecht", _one("NL")),
+    "valencia": Place("Valencia", _one("ES")),
+    "vienna": Place("Vienna", _one("AT"), ("wien",)),
+    "vilnius": Place("Vilnius", _one("LT")),
+    "warsaw": Place("Warsaw", _one("PL"), ("warszawa",)),
+    "wroclaw": Place("Wrocław", _one("PL"), ("wroclaw",)),
+    "zagreb": Place("Zagreb", _one("HR")),
+    "zurich": Place("Zurich", _one("CH"), ("zürich",)),
 }
 
-# The one region slug; `remote_*` is a workplace mode rather than a place, so it is absent.
-_REGION_SLUGS: dict[str, frozenset[str]] = {"europe": EU_COUNTRIES}
+# A country's name from its code, for a filter that lists the countries jobs are in.
+COUNTRY_LABELS: dict[str, str] = {next(iter(place.countries)): place.label
+                                  for place in COUNTRIES.values() if len(place.countries) == 1}
+
+# The country each city is in, by slug: what a city picked before 2026-11-02 now reads as.
+CITY_COUNTRY: dict[str, str] = {
+    city: next(slug for slug, country in COUNTRIES.items() if country.countries == place.countries)
+    for city, place in CITIES.items()}
+
+
+def place_names(slug: str) -> tuple[str, ...]:
+    """Every way a country or a city is written, lower case: its label first."""
+    place = COUNTRIES.get(slug) or CITIES[slug]
+    return (place.label.casefold(), *place.names)
 
 
 def wanted_countries(locations: list[str] | tuple[str, ...] | None) -> frozenset[str] | None:
-    """The countries a user's location selection admits."""
-    if not locations:
-        return None
-
-    allowed: set[str] = set()
-    for raw in locations:
-        slug = str(raw or "").strip().lower()
-        if not slug:
-            continue
-        if slug in _REGION_SLUGS:
-            allowed |= _REGION_SLUGS[slug]
-        elif slug in _COUNTRY_SLUG:
-            allowed.add(_COUNTRY_SLUG[slug])
-        elif slug in _CITY_COUNTRY:
-            allowed.add(_CITY_COUNTRY[slug])
-        # An unrecognised slug contributes nothing rather than widening the set.
-
+    """The countries a person picked, as ISO codes, or `None` when they picked none."""
+    allowed = {code for raw in locations or () if (place := COUNTRIES.get(str(raw or "").strip().lower()))
+               for code in place.countries}
     return frozenset(allowed) or None
+
+
+_CITY_NAMES: dict[str, str] = {name: slug for slug in CITIES for name in place_names(slug)}
+_CITY_RE = re.compile(r"(?<!\w)(" + "|".join(map(re.escape, sorted(_CITY_NAMES, key=len, reverse=True)))
+                      + r")(?!\w)")
+
+
+def read_city(location: str | None) -> str | None:
+    """The city a posting is in, as a picked place names it, or `None` when it is none of them."""
+    found = _CITY_RE.search((location or "").casefold())
+    return _CITY_NAMES[found.group(1)] if found else None
 
 
 # ── reading a country off a posting ──────────────────────────────────────────────────────────────
@@ -138,6 +244,10 @@ _US_STATES: frozenset[str] = frozenset({
     "RI", "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY",
 })
 
+# The picked cities, each name to its country, for reading a posting's country as well as its city.
+_CITY_COUNTRY: dict[str, str] = {name: next(iter(CITIES[slug].countries))
+                                 for name, slug in _CITY_NAMES.items()}
+
 # Every ISO alpha-2 code the name table above can produce.
 _ISO_CODES: frozenset[str] = frozenset(_COUNTRY_NAMES.values()) | frozenset(_CITY_COUNTRY.values())
 
@@ -191,6 +301,48 @@ def _trailing_code(location: str | None) -> str | None:
     if code in _US_STATES:
         return "US"
     return code if code in _ISO_CODES else None
+
+
+# ── the last resort for a posting: every city in the world ────────────────────────────────────────
+# Most postings name their country, or a city the tables above know. The rest name a city of their own
+# ("Białystok", "Greater Bologna Metropolitan Area") and would pass every country filter unread (owner,
+# 2026-11-02). `places.tsv.gz` is GeoNames' cities of 15,000 people and more, and every country's name,
+# built by `scripts/build_places.py`. Read for postings only: in a CV or a search word, "Nice", "Split"
+# and "Mobile" are words, not places.
+PLACES_FILE = Path(__file__).with_name("places.tsv.gz")
+
+# What a board wraps a place in: LinkedIn's "Greater Venice Metropolitan Area", "Cork Area".
+_DECORATION = re.compile(r"^greater\s+|\s+(?:metropolitan\s+)?(?:area|region)$")
+
+
+def _fold(text: str) -> str:
+    """Lower case, accents off, as `places.tsv.gz` is written."""
+    decomposed = unicodedata.normalize("NFKD", text.casefold())
+    return "".join(char for char in decomposed if not unicodedata.combining(char)).strip()
+
+
+@cache
+def _world() -> dict[str, str]:
+    """Every place name in the file, to its country. Read once, the first time a posting needs it."""
+    with gzip.open(PLACES_FILE, "rt", encoding="utf-8") as handle:
+        return dict(line.rstrip("\n").split("\t") for line in handle)
+
+
+def _world_country(location: str | None) -> str | None:
+    """The country of the first part of `location` that is a place anywhere, or `None`."""
+    for piece in re.split(r"[,;/|()]", location or ""):
+        part = piece.strip()
+        # "APAC", "EMEA": a region in capitals, never a town that shares its letters.
+        if not part or (part.isupper() and len(part) <= 5):
+            continue
+        if found := _world().get(_DECORATION.sub("", _fold(part))):
+            return found
+    return None
+
+
+def posting_country(location: str | None, *, title: str | None = None) -> str | None:
+    """The ISO country code a posting is in: `read_country`, then any city in the world."""
+    return read_country(location, title=title) or _world_country(location)
 
 
 def allows(country: str | None, wanted: frozenset[str] | None) -> bool:

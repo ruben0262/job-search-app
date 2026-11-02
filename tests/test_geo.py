@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from libs.corpus.geo import EU_COUNTRIES, allows, read_country, wanted_countries
+from libs.corpus.geo import EU_COUNTRIES, allows, posting_country, read_city, read_country, wanted_countries
 
 # ── the trick: what a region selection actually admits ───────────────────────────────────────────
 
@@ -29,15 +29,32 @@ def test_a_non_eu_european_country_has_to_be_named():
 def test_choosing_a_country_admits_that_country_and_no_other():
     """A user who said Germany means Germany."""
     assert wanted_countries(["united_kingdom"]) == frozenset({"GB"})
-    germany_only = wanted_countries(["berlin"])
-    assert germany_only == frozenset({"DE"})
+    assert wanted_countries(["germany"]) == frozenset({"DE"})
 
 
-def test_naming_a_city_admits_the_country_around_it():
-    """Somebody who asked for Budapest has plainly not ruled out Hungary."""
-    hungary = wanted_countries(["budapest"])
-    assert hungary == frozenset({"HU"})
-    assert allows("HU", hungary), "a Hungarian job must reach a user who asked for Budapest"
+def test_a_city_picked_before_cities_were_retired_reads_as_its_country():
+    """My search picks countries only (owner, 2026-11-02). A city always admitted its whole country, so
+    a config that still holds one reads as that country and nobody's jobs change."""
+    from libs.contracts.config import migrate_config
+
+    stored = {"sections": [{"keywords": ["nurse"], "locations": ["budapest", "hungary", "berlin", "zurich"]}]}
+    locations = migrate_config(stored)["sections"][0]["locations"]
+
+    assert locations == ["hungary", "germany", "switzerland"]
+    assert wanted_countries(locations) == frozenset({"HU", "DE", "CH"})
+
+
+@pytest.mark.parametrize(("location", "city"), [
+    ("Berlin, Berlin, Germany", "berlin"),
+    ("Warszawa, mazowieckie, Poland", "warsaw"),
+    ("München, Bayern", "munich"),
+    ("Greater London", "london"),
+    ("Kraków", "krakow"),
+    ("Vörstetten, Baden-Württemberg, Germany", None),
+    ("Remote", None),
+])
+def test_a_postings_city_is_read_the_way_boards_write_it(location, city):
+    assert read_city(location) == city
 
 
 def test_selections_add_up_rather_than_narrowing_each_other():
@@ -53,7 +70,7 @@ def test_remoteness_is_not_a_place_and_has_no_entry_here():
     assert wanted_countries(["remote_eu"]) is None
     assert wanted_countries(["remote_worldwide"]) is None
     # And it cannot silently widen a real selection either.
-    assert wanted_countries(["budapest", "remote_worldwide"]) == frozenset({"HU"})
+    assert wanted_countries(["hungary", "remote_worldwide"]) == frozenset({"HU"})
 
 
 def test_no_selection_at_all_is_not_a_filter():
@@ -66,7 +83,7 @@ def test_no_selection_at_all_is_not_a_filter():
 def test_an_unknown_slug_does_not_quietly_widen_the_filter():
     """A vocabulary entry added without a country belongs in this module."""
     assert wanted_countries(["atlantis"]) is None, "nothing recognised means nothing to filter on"
-    narrowed = wanted_countries(["budapest", "atlantis"])
+    narrowed = wanted_countries(["hungary", "atlantis"])
     assert narrowed == frozenset({"HU"}), "the recognised half still applies"
 
 
@@ -104,6 +121,35 @@ def test_a_bare_city_still_identifies_its_country(location, expected):
 def test_a_posting_that_names_no_country_reads_as_unknown(location):
     """Which is a pass, not a rejection — see the eligibility test below."""
     assert read_country(location) is None
+    assert posting_country(location) is None, "the world's towns do not turn a region into a country"
+
+
+@pytest.mark.parametrize(("location", "expected"), [
+    # From postings in the corpus that named no country we could read, 2026-11-02.
+    ("Białystok", "PL"),
+    ("Kielce", "PL"),
+    ("Cracow", "PL"),
+    ("Greater Bologna Metropolitan Area", "IT"),
+    ("Greater La Coruña Area", "ES"),
+    ("Cork Metropolitan Area", "IE"),
+    ("Peru", "PE"),
+    ("Hong Kong", "HK"),
+    ("Ecuador, El Salvador, Guatemala, Honduras, Nicaragua", "EC"),
+    ("APAC,  EMEA", None),
+    # A name two places share is the European one, on a European job site.
+    ("Valencia", "ES"),
+    # And a code beside it still decides first.
+    ("Toledo, OH", "US"),
+])
+def test_a_posting_that_names_only_its_city_is_still_in_a_country(location, expected):
+    """Without its country, a posting passes every country filter: a job in Kielce reached somebody who
+    asked for Ireland only (owner, 2026-11-02)."""
+    assert posting_country(location) == expected
+
+
+def test_a_city_anywhere_is_read_for_postings_only():
+    """In a CV or a search word, "Nice" and "Split" are words, not places."""
+    assert (posting_country("Split"), read_country("Split")) == ("HR", None)
 
 
 def test_a_country_word_inside_another_word_is_not_a_country():
@@ -167,6 +213,15 @@ def test_every_location_a_user_can_pick_resolves_to_countries():
         f"the picker offers {unresolved}, and `wanted_countries` cannot turn them into countries")
 
 
+def test_every_city_a_posting_is_read_in_is_named_and_in_a_country_offered():
+    """The jobs page filters by city: a city no posting can be read as being in is an empty choice, and
+    one whose country is not offered would retire into nothing."""
+    from libs.corpus.geo import CITIES, CITY_COUNTRY
+
+    assert not [slug for slug in CITIES if read_city(slug.replace("_", " ")) != slug]
+    assert set(CITY_COUNTRY) == set(CITIES)
+
+
 def test_remoteness_is_not_in_the_place_vocabulary():
     """Where and how are two questions. `remote_policy` is the second one, per section."""
     from libs.contracts.config import Location
@@ -184,7 +239,7 @@ def test_a_stored_config_from_the_old_vocabulary_still_reads():
     locations = migrate_config(old)["sections"][0]["locations"]
 
     # `european_union` and `remote_eu` both mean the union, and fold into one entry.
-    assert locations == ["europe", "united_kingdom", "budapest"]
+    assert locations == ["europe", "united_kingdom", "hungary"]
     # And what comes out is something the filter can act on.
     wanted = wanted_countries(locations)
     assert wanted is not None and "GB" in wanted and "HU" in wanted

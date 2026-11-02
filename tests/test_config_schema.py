@@ -146,7 +146,13 @@ def test_locations_are_a_picklist_not_free_text():
     """Not only a UI decision."""
     with pytest.raises(ValidationError):
         _valid(locations=["Greater London Area, United Kingdom"])
-    assert _valid(locations=["london"]).sections[0].locations == [Location.LONDON]
+    assert _valid(locations=["ireland"]).sections[0].locations == [Location.IRELAND]
+
+
+def test_a_city_sent_by_a_page_loaded_before_cities_left_my_search_is_saved_as_its_country():
+    """A tab opened before the deploy still holds "london" and would otherwise be refused on Save."""
+    assert _valid(locations=["london", "united_kingdom", "berlin"]).sections[0].locations == [
+        Location.UNITED_KINGDOM, Location.GERMANY]
 
 
 @pytest.mark.parametrize(
@@ -179,9 +185,9 @@ def test_whitespace_is_collapsed_not_rejected():
 
 
 def test_duplicate_enum_selections_collapse():
-    config = _valid(locations=["london", "london", "berlin"],
+    config = _valid(locations=["united_kingdom", "united_kingdom", "germany"],
                     seniority=["senior", "senior"], languages=["en", "en"])
-    assert config.sections[0].locations == [Location.LONDON, Location.BERLIN]
+    assert config.sections[0].locations == [Location.UNITED_KINGDOM, Location.GERMANY]
     assert config.seniority == [Seniority.SENIOR]
     assert config.languages == [Language.EN]
 
@@ -214,7 +220,7 @@ def test_a_validated_config_produces_the_expected_query_set():
     user = uuid.uuid4()
     config = UserConfigSchema(sections=[{
         "keywords": ["Python Developer", "golang"],
-        "locations": ["london", "berlin"],
+        "locations": ["united_kingdom", "germany"],
         "remote_policy": "remote_only",
         "posted_within_hours": 24}])
 
@@ -222,7 +228,7 @@ def test_a_validated_config_produces_the_expected_query_set():
 
     assert len(query_set) == 4, "2 keywords x 2 locations x 1 source"
     assert all(key.is_remote for key in query_set), "remote_only must reach the source"
-    assert {k.location_norm for k in query_set} == {"london", "berlin"}
+    assert {k.location_norm for k in query_set} == {"united_kingdom", "germany"}
     assert all(users == frozenset({user}) for users in query_set.values())
 
 

@@ -5,6 +5,8 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from libs.corpus.geo import CITY_COUNTRY, COUNTRIES
+
 # Current shape version, stored on `user_config.schema_version`.
 CONFIG_SCHEMA_VERSION = 2
 
@@ -41,45 +43,17 @@ class Seniority(StrEnum):
     MANAGER = "manager"
 
 
-class Location(StrEnum):
-    """Controlled vocabulary."""
-
-    EUROPE = "europe"
-    UNITED_KINGDOM = "united_kingdom"
-    IRELAND = "ireland"
-    SWITZERLAND = "switzerland"
-    NORWAY = "norway"
-
-    LONDON = "london"
-    BERLIN = "berlin"
-    AMSTERDAM = "amsterdam"
-    DUBLIN = "dublin"
-    PARIS = "paris"
-    MADRID = "madrid"
-    LISBON = "lisbon"
-    WARSAW = "warsaw"
-    BUDAPEST = "budapest"
-    ZURICH = "zurich"
-    STOCKHOLM = "stockholm"
-    COPENHAGEN = "copenhagen"
-
-
-# What a stored slug is called when it is handed to a job board.
-LOCATION_SEARCH_NAMES = {
-    "europe": "European Union",
-    "united_kingdom": "United Kingdom",
-    "ireland": "Ireland",
-    "switzerland": "Switzerland",
-    "norway": "Norway",
-}
+# The places a person can pick: `libs.corpus.geo`'s countries. Built from them, so a place cannot be
+# offered here and unknown there.
+Location = StrEnum("Location", {slug.upper(): slug for slug in COUNTRIES})
 
 
 def location_search_name(value: str) -> str:
-    """The name a board will recognise for a stored slug."""
+    """What a stored place is called, on the page and to a job board."""
     slug = (value or "").strip().lower()
     if not slug:
         return ""
-    return LOCATION_SEARCH_NAMES.get(slug, slug.replace("_", " ").title())
+    return COUNTRIES[slug].label if slug in COUNTRIES else slug.replace("_", " ").title()
 
 
 class Language(StrEnum):
@@ -155,6 +129,12 @@ class SearchSection(BaseModel):
     def _clean_terms(cls, terms: list[str]) -> list[str]:
         return _bounded_terms(terms)
 
+    @field_validator("locations", mode="before")
+    @classmethod
+    def _retired_locations(cls, values: list) -> list:
+        # A page loaded before a place was retired still sends it on Save: read it as its successor.
+        return _migrate_locations({"locations": values}).get("locations") or []
+
     @field_validator("locations")
     @classmethod
     def _clean_locations(cls, values: list) -> list:
@@ -212,7 +192,7 @@ def migrate_config(raw: dict) -> dict:
     return {"sections": [_migrate_locations(section)], **rest}
 
 
-# What a location slug retired on 2026-08-04 means in the vocabulary that replaced it.
+# What a retired location slug means in the vocabulary that replaced it.
 _RETIRED_LOCATIONS: dict[str, str | None] = {
     "european_union": "europe",
     "remote_eu": "europe",
@@ -221,6 +201,9 @@ _RETIRED_LOCATIONS: dict[str, str | None] = {
     "remote_us": None,
     # "Anywhere" is the absence of a place, and an empty location list already says that.
     "remote_worldwide": None,
+    # Cities, retired 2026-11-02 (owner): My search picks countries. Each always admitted its whole
+    # country, so reading it as that country changes nobody's jobs.
+    **CITY_COUNTRY,
 }
 
 

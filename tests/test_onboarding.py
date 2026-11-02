@@ -110,7 +110,7 @@ def test_the_review_arrives_filled_in_from_their_cv(api):
     section = review["config"]["sections"][0]
     assert section["keywords"] == ["backend engineer"]
     assert {"junior", "unpaid"} <= set(section["exclude_keywords"])
-    assert section["locations"] == ["budapest"]
+    assert section["locations"] == ["hungary"], "the city on the CV is offered as its country"
     assert review["config"]["languages"] == ["hu", "en"]
     assert review["found"]["titles"] == ["Senior Backend Engineer"]
     assert review["found"]["email"] == "jane.doe@example.com"
@@ -149,7 +149,10 @@ def test_the_pickers_are_served_every_place_language_and_policy_with_a_label(api
         assert [choice["value"] for choice in choices[key]] == [member.value for member in enum]
         assert all(choice["label"] for choice in choices[key]), key
     assert {"value": "hu", "label": "Hungarian", "hint": None} in choices["languages"]
-    assert {"value": "united_kingdom", "label": "United Kingdom", "hint": None} in choices["locations"]
+    # Countries only (owner, 2026-11-02), the three most picked first.
+    assert [choice["label"] for choice in choices["locations"][:3]] == [
+        "European Union", "United Kingdom", "Ireland"]
+    assert "berlin" not in [choice["value"] for choice in choices["locations"]]
 
 
 @needs_db
