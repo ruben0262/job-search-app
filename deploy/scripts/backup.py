@@ -23,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bson import json_util
 from bson.binary import UuidRepresentation
 
-from libs.corpus.archive import ACTED_ON
+from libs.corpus.archive import MARKED
 from libs.db import database
 from libs.db.models import MODELS, CorpusJob, User, UserJobState
 
@@ -52,7 +52,7 @@ def write(db, target: Path) -> dict[str, int]:
             put(name, db[name].find())
         put(COUNTERS, db[COUNTERS].find())
         put(CorpusJob.COLLECTION, db[CorpusJob.COLLECTION].find(
-            {"_id": {"$in": db[UserJobState.COLLECTION].distinct("job_id", ACTED_ON)}}))
+            {"_id": {"$in": db[UserJobState.COLLECTION].distinct("job_id", MARKED)}}))
     return counts
 
 

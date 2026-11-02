@@ -12,7 +12,7 @@ from datetime import timedelta
 
 import pytest
 
-from libs.corpus.archive import ACTED_ON, archive_expired, forget_stale_state, read_archive
+from libs.corpus.archive import MARKED, archive_expired, forget_stale_state, read_archive
 from libs.corpus.repository import CorpusRepository
 from libs.db import find_one, get, insert, now
 from libs.db.models import CorpusJob, User, UserJobState
@@ -127,15 +127,33 @@ def test_a_posting_the_user_applied_to_is_never_archived(ctx, tmp_path):
     assert s[UserJobState.COLLECTION].count_documents({"user_id": user.id, "applied_at": {"$ne": None}}) == 1
 
 
-def test_a_dismissed_posting_is_never_archived(ctx, tmp_path):
-    """Dismissing is a decision about a job, and re-delivering it would undo the decision."""
+def test_a_skipped_posting_ages_out_like_any_other(ctx, tmp_path):
+    """A skip says "never show me this", and a posting gone is never shown (owner, 2026-11-02). Kept
+    forever, the mark people use most would have kept most of the corpus."""
+    r, s = ctx
+    job_id = _aged(r, s, days=45)
+    user = _user(s)
+    record_state(s, user.id, job_id, dismissed_at=now())
+
+    result = archive_expired(s, directory=tmp_path)
+
+    assert (result.jobs, result.states) == (1, 1)
+    assert get(s, CorpusJob, job_id) is None
+    assert [row["id"] for row in read_archive(result.path)] == [job_id]
+
+
+def test_a_skip_lasts_while_the_posting_is_kept_for_somebody_else(ctx, tmp_path):
+    """Bob applied, so the posting stays; Alice skipped it, and it must not come back to her."""
     r, s = ctx
     job_id = _aged(r, s, days=200)
-    record_state(s, _user(s).id, job_id, dismissed_at=now())
+    alice, bob = _user(s), _user(s)
+    record_state(s, alice.id, job_id, dismissed_at=now())
+    record_state(s, bob.id, job_id, applied_at=now())
 
     archive_expired(s, directory=tmp_path)
 
     assert get(s, CorpusJob, job_id) is not None
+    assert _state(s, alice, job_id).dismissed_at is not None
 
 
 # ── the state that goes with it ────────────────────────────────────────────────────────────────
@@ -229,7 +247,7 @@ def test_no_state_row_outlives_retention_without_a_reason(ctx, tmp_path):
 
     live = s[CorpusJob.COLLECTION].distinct("_id", {"first_seen_at": {"$gte": now() - timedelta(days=30)}})
     assert live == [fresh]
-    leftover = s[UserJobState.COLLECTION].count_documents({"job_id": {"$nin": live}, "$nor": [ACTED_ON]})
+    leftover = s[UserJobState.COLLECTION].count_documents({"job_id": {"$nin": live}, "$nor": [MARKED]})
     assert leftover == 0, f"{leftover} state row(s) past retention record nothing and stayed anyway"
     assert s[UserJobState.COLLECTION].count_documents({}) == 4, "two actions and two fresh rows stay"
 

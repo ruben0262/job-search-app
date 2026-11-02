@@ -1,15 +1,19 @@
 """Postings that have aged out of the corpus: written to a file, then deleted.
 
 The rule: **a posting leaves whole or it does not leave.** It is written to an append-only archive
-file first, and only deleted if that write succeeded. A posting somebody **acted on** — applied, built
-a cover letter, or hid — never leaves, and that is asked of `user_job_state` itself rather than read
+file first, and only deleted if that write succeeded. A posting somebody **acted on** — applied or
+built a cover letter — never leaves, and that is asked of `user_job_state` itself rather than read
 from a flag, because a derived answer cannot drift from the thing it describes (CLAUDE.md §5).
 
+A **skipped** posting ages out like any other (owner, 2026-11-02): skipping says "never show me this",
+and a posting that is gone is never shown. It used to be kept forever, and Skip is the mark people
+use most, so most of the corpus would have been.
+
 **`user_job_state` is drained by the same pass, under one rule**: a person's row survives only while
-its posting does, or because it records something that person did. Deleting the posting takes its
-rows with it; `forget_stale_state` handles the other half — rows other accounts hold against a
-posting kept for somebody *else's* action. Without it the collection grows with accounts × kept
-postings and never shrinks.
+its posting does, or because it records something that person did (`MARKED`, a skip too). Deleting
+the posting takes its rows with it; `forget_stale_state` handles the other half — rows other accounts
+hold against a posting kept for somebody *else's* action. Without it the collection grows with
+accounts × kept postings and never shrinks.
 
 On Atlas's free tier this pass is also what keeps the platform inside 0.5 GB (ROADMAP Phase 9).
 """
@@ -50,8 +54,11 @@ class ArchiveResult:
     path: Path | None
 
 
-# A row recording something the person did, rather than something we worked out.
-ACTED_ON = {"$or": [{"applied_at": {"$ne": None}}, {"cover_built": True}, {"dismissed_at": {"$ne": None}}]}
+# A row whose posting is kept forever: the person applied, or built a cover letter for it.
+ACTED_ON = {"$or": [{"applied_at": {"$ne": None}}, {"cover_built": True}]}
+# A row recording something the person did, rather than something we worked out: kept while its posting
+# is. A skip is one, so a posting kept for somebody else's application stays skipped for this person.
+MARKED = {"$or": [*ACTED_ON["$or"], {"dismissed_at": {"$ne": None}}]}
 
 
 def _plain(value: object) -> object:
@@ -88,7 +95,8 @@ def archive_expired(db: Database, *, retention_days: int | None = None,
     states = 0
     if ids:
         path = write_archive([{"id": row.pop("_id"), **row} for row in rows], directory)
-        # Nobody acted on these postings, so every state row for them is ours to drop.
+        # Nobody applied to these postings, so every state row for them goes with them: a skip too,
+        # since there is nothing left to show.
         states = db[UserJobState.COLLECTION].delete_many({"job_id": {"$in": ids}}).deleted_count
         db[CorpusJob.COLLECTION].delete_many({"_id": {"$in": ids}})
 
@@ -111,11 +119,11 @@ def forget_stale_state(db: Database, *, cutoff: datetime, kept: list[int] | None
     kept = db[UserJobState.COLLECTION].distinct("job_id", ACTED_ON) if kept is None else kept
     old = db[CorpusJob.COLLECTION].distinct("_id", {"_id": {"$in": kept}, "first_seen_at": {"$lt": cutoff}})
     stale = [row["_id"] for row in db[UserJobState.COLLECTION].find(
-        {"job_id": {"$in": old}, "$nor": [ACTED_ON]}, {"_id": 1}, limit=limit)] if old else []
+        {"job_id": {"$in": old}, "$nor": [MARKED]}, {"_id": 1}, limit=limit)] if old else []
     if not stale:
         return 0
     # Asked again on delete: a person who acted between the read and the delete keeps their row.
-    return db[UserJobState.COLLECTION].delete_many({"_id": {"$in": stale}, "$nor": [ACTED_ON]}).deleted_count
+    return db[UserJobState.COLLECTION].delete_many({"_id": {"$in": stale}, "$nor": [MARKED]}).deleted_count
 
 
 def write_archive(rows: list, directory: Path | None = None) -> Path:
