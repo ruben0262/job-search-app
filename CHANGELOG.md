@@ -14,6 +14,409 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-02 (night, later) — LinkedIn's newest jobs, Just Join IT back, sign-in that does not wait
+
+The owner's sixth list: the app started and its way in checked, then jobs reported accurately, quickly
+and from many sites, before CV quality.
+
+**LinkedIn found almost none of its newest jobs.**
+- Every search covered the last 4 hours and read its first 30 results. LinkedIn orders a query's
+  matches by relevance, not date, and ignores `sortBy=DD` on the guest search (identical pages, both
+  ways, 2026-11-02).
+- Measured that night, of the jobs posted in the last hour, that search caught:
+  - "python developer" in the EU: 1 of 23 (200+ in the 4-hour window);
+  - "software engineer": 3 of 47;
+  - "data engineer": 0 of 28.
+- Now a search reaches back to the person's previous search (`search_window`): at least an hour, at
+  most the operator's window (4 hours) when the harvester was down. It reads up to 50
+  (`source_results_per_query`). An hour holds 23–47 jobs a query, so 50 takes it whole. A query ends
+  at its first short page, so this costs about the requests 30-of-4-hours did.
+- `RESULTS_WANTED = 30` in `linkedin.py` was a second copy of the `linkedin: 30` setting, which
+  always won. It is deleted.
+- Each search request now opens a new connection, so it leaves from the proxy's next address, as the
+  describe pass's reads already did. jobspy's session kept one connection, and so one address, for a
+  whole query's pages: two 429s in the 16:49 pass. `new_connection_each_request` swaps the class
+  jobspy's LinkedIn scraper builds its session from. A test guards that the scraper still builds it
+  by that name.
+
+**How quickly a job is found, measured (dev, jobs found after the first board sweep).** These are
+medians from posted to found:
+
+| Source | Median | 90th percentile |
+|---|---|---|
+| Greenhouse | 15 min | 1.3 h |
+| SmartRecruiters | 13 min | 0.9 h |
+| Ashby | 23 min | 0.9 h |
+| LinkedIn (before the window change) | 1.0 h | 2.0 h |
+
+Company boards are found within about one 15-minute pass of going up.
+
+**Just Join IT is back.** `api.justjoin.it` has answered 503 to everything since 2026-11-01. The site
+reads `justjoin.it/api/candidate-api/offers`: newest first, `itemsCount` a page from the cursor
+`from`, with the same records. The adapter walks page by page until an offer is older than the window,
+5 pages at most (`source_pages_per_cycle`). Live, it found 238 offers for the dev account's words in
+1.2 s.
+
+**Company names on board jobs.**
+- Ashby and Lever name no company, so cards read "Openai", "Elevenlabs", "N8N", "Blablacar".
+- `AtsToken.name` holds the name from `ats_companies.txt`. The seed script stores it, and a re-run
+  updates it. `gather_ats` fills a nameless job from it, or from the board's address in words.
+- SmartRecruiters says its own name ("Bosch Group"), and that is now used rather than the identifier
+  ("BoschGroup").
+- 111 dev boards were named; 72 Ashby and Lever jobs and 137 SmartRecruiters jobs were renamed in the
+  dev database. Production has no board jobs yet.
+
+**The owner's approved fixes from the last list.**
+- **Lever:** paging would not have helped. Its first read of a board is slow whatever its size
+  (Spotify: 22 s for 50 jobs, then 3 s for all 86; Palantir 40.9 s; Pigment 25.7 s), and it does not
+  list newest first. So Lever alone gets a 60-second read limit (`LEVER_TIMEOUT`). The `--ats ashby
+  --ats lever` re-run found 5 Lever boards that had timed out.
+- **Workable:** asked 2 boards at a time (`PLATFORM_DEFAULTS`), as Recruitee is 8. This computer is
+  still refused: it got 429 hours after the probe, so its block is long. The server has its own
+  address. `seed_ats.py --ats workable` tries it alone.
+
+**Sign-up, confirmation, sign-in and password reset**, through a real browser on the test server:
+sign up 0.52 s, open the link 0.08 s, sign in 0.61 s, forgot 0.43 s, set a new password 1.01 s, sign
+in with it 0.14 s, and the old password is refused
+(`test_sign_up_confirm_sign_in_and_reset_the_password_each_step_at_once`).
+- The verification, resend and reset emails were sent inside the request, and Zoho takes 0.4–0.8 s
+  only to log in. So sign-up waited on the mail server, and an address with an account answered
+  slower than one without: the timing told what the opaque answer hides. They are now sent once the
+  answer has gone (FastAPI `BackgroundTasks`).
+- `test_signup_and_forgot_answer_before_the_email_is_sent` runs a real server with a mail server that
+  takes 1.5 s. It fails on the old routes.
+
+**Smaller:** `check_sources.py` says what an empty answer from a company-board ATS means (no board
+changed since the last poll), where it said "listed nothing for these words". Working Nomads' feed is
+stale on its side: 35 jobs, the newest 4 days old.
+
+## 2026-11-02 (late) — 287 company boards, the readers measured, two routes gone
+
+The owner's fifth list of the day.
+
+**Company boards to poll** (owner: "a collection of companies that are valid, stored and kept").
+- The nine ATS sources poll `ats_tokens`, which only ever filled from links in postings. None of the
+  dev corpus's 1,740 postings links to a board, so those sources answered nothing every pass
+  (`empty_sources=13` of 17).
+- `deploy/scripts/seed_ats.py` looks for each company in `ats_companies.txt` (582 lines) on every ATS
+  whose board is one token. It uses the harvest's own fetch code, so a board counts here exactly when
+  the harvest could read it. A board counts only if it lists at least one job: SmartRecruiters answers
+  for any name. What answers goes into `ats_tokens`.
+- The list: well-known tech, AI, fintech, European scale-ups, engineering and hardware,
+  consultancies, agencies and software houses, smaller firms.
+- **Found, 2026-11-02:** 287 boards — Greenhouse 134, Ashby 88, SmartRecruiters 25, Lever 21,
+  Personio 9, Recruitee 8, Breezy 2. They list 30,810 jobs, and 831 of them fall in the harvest's
+  72-hour window. So a first pass takes in about 830 jobs, and after that a few hundred a day. At 4.5
+  KB a posting kept for 30 days, that is about 40 MB.
+- **Missed, and why:**
+  - Workable answered 490 "too many requests" at 16 at once, and then refused even one at a time.
+  - Lever's largest boards take longer than the 15-second read limit; Spotify took 16.6 s.
+  - Neither is fixed here. See ROADMAP Phase 8.
+- **Run again, it adds what refusals hid.** A second run stored 285 boards in the dev database:
+  Workable 3 got through, and Lever 18, because 23 timed out that time.
+- **The first harvest pass with them (dev):**
+  - It fetched 984 jobs, 738 of them new, in 34 s: Greenhouse's 134 boards in 2.7 s, 435 jobs.
+  - Sources answering nothing fell from 13 to 7.
+  - The board describe pass did its 200 (`describe_per_cycle`) in 52 s, so the first 738 take about
+    four passes. After that a pass brings a few.
+  - The whole pass took 100 s of its 15-minute tick. Workable's three boards were refused (429), as
+    the probe said they would be.
+
+**The readers, measured with a new address per request** (owner: "do the fixed numbers work?").
+- 120 pages each run, in alternating order, through the site proxy.
+- **4 readers:** 2.91 and 2.68 pages a second, 165 and 173 requests, at most 4 and 5 tries a page.
+- **8 readers:** 2.87 and 2.94 pages a second, 220 and 226 requests, and a page at the sixth try in
+  each run.
+- None was given up in either case. More readers are not faster: they spend a third more of
+  LinkedIn's allowance for the same pages. `DESCRIBE_WORKERS = 4` and `LI_RETRIES = 6` stay, now
+  measured.
+
+**Found to described** (owner: "pretty slow"). The dev harvester's last passes each found 7–31 new
+LinkedIn jobs among 130–230 results. Every one was described in the same pass, about 30 s after it
+was found: the median is 1.1 minutes. The 20-hour tail was the 223 jobs that waited through the
+afternoon's throttling. At 2.8 pages a second, the 10-minute budget reads about 1,700 pages a pass,
+50 to 200 times what one account brings in.
+
+Gates, run locally, in this order: lint-imports 2 kept, 0 broken; ruff clean; `python -m libs.db
+--prune` on an empty database clean; contract 70 paths, current; web build; pytest 1,239 passed,
+3 skipped (the same three).
+
+**Deleted, the owner's decision:** `POST /suggestions/accept` and `POST /suggestions/dismiss`. The
+jobs page's suggestions that called them went earlier today. The help chat's "add a word" now holds
+the logic it borrowed from the first, red-before-green refusal included
+(`test_a_red_word_tapped_before_any_green_one_is_refused_and_says_why`). `GET /suggestions` stays: My
+documents reads it. The contract is 70 paths.
+
+**The page.**
+- The × on a job is a circle. It was 2.25rem wide inside a page where every button is at least
+  2.75rem tall, so it was an oval; it is 2.75rem both ways.
+- The help, bell and theme icons sit together, 0.45rem apart, the same size. They were 2.2rem
+  apart because the bar's own gap fell between each.
+- On a phone the notifications panel spans the screen. Hung from the bell, it ran off the left edge.
+
+## 2026-11-02 (night) — every LinkedIn read from another address, help beside the bell, times that move
+
+The owner's fourth list of the day.
+
+**A new connection, so a new address, for every LinkedIn request** (owner: "retry with a new
+connection").
+- The site proxy gives each new connection its next exit: the owner measured 4 addresses in 5
+  connections. The client kept its connections open, so each reader held one address for the whole
+  pass, and a refused page was asked again from the address that had just refused it.
+- The proxied transport now keeps no connection open (`services/harvester/fetch.py`). Every page, and
+  every retry, leaves from another address, and LinkedIn's allowance is spent evenly across them.
+- No `-session-` username is needed. Rotation is what a public page read wants, and this gateway
+  answers 407 to that form (its username has no dash, so it is not rotproxy's parsing).
+- `test_every_proxied_request_is_a_new_connection_so_a_new_address`: three requests are three
+  connections to a stand-in proxy, where the old client made one.
+
+**The pass stops when LinkedIn refuses a whole round** ("stop once we get errors").
+- When as many pages in a row as there are readers come back refused on every try and every address,
+  the pass stops, and the rest are first in line next run. This is logged at WARNING, and nothing is
+  counted against the postings.
+- No new number: the count is `DESCRIBE_WORKERS`.
+- `test_the_pass_stops_when_a_whole_round_of_readers_is_refused` fails on the old code, which asked
+  all ten.
+
+**Measured live, through the owner's proxy, on the dev corpus:** 221 LinkedIn pages read in 89.3 s
+with 4 readers. 206 were described, 15 had closed, and none were given up. LinkedIn refused 67 tries,
+and each was asked again from another address and read. The pass before today's change did 79 pages
+in 81.5 s and gave up 16. Different hours on the same proxy, so this is one run, not a controlled
+comparison. It cost 4.6 MB.
+
+**Help is the "?" beside the bell** (owner). It opens over whatever page is open, in the same sheet as
+a whole job (`Sheet` in `ui.tsx`; `JobView` now uses it, and `.job-view` is `.sheet`). Settings no
+longer has it. The answer about Skip says "then “Skip it”", not "Undo".
+
+**Times move on a page left open** (owner: "do the times increase?").
+- Each time is a moment the server already sent, and "3h ago" was worked out once, when the page drew.
+  A refresh was right; a page left open was not.
+- One clock (`useNow` in `time.ts`) now serves every "… ago": the jobs, Applied, My documents and the
+  notifications. It wakes on the minute, and when the tab is shown again, and only while a time is on
+  screen. A label re-renders only when its minute changes, and nothing is asked of the server.
+- It reads to the minute, so a label can change up to a minute late.
+- The browser test moves the page's clock two hours on and reads "Found 2h ago" without a refresh.
+  The old page still said "Found just now".
+
+**Smaller:**
+- Pages are a little wider: 72rem, from 64.
+- Applied drops "Every job you marked “I applied”, newest first."
+
+Gates, run locally, in this order: lint-imports 2 kept, 0 broken; ruff clean; `python -m libs.db
+--prune` on an empty database clean; contract 72 paths, current; web build; pytest 1,236 passed,
+3 skipped (the same three). The three new tests each fail against the behaviour they replace.
+
+## 2026-11-02 (evening) — countries only, a Skip that asks, documents you can search
+
+The owner's third list of the day.
+
+**My search picks countries only.** The cities list added earlier today is gone. Every country is a
+button, pressed when picked: the EU, the UK and Ireland show, with any already picked, and "Show 33
+more countries" opens the rest. Cities stay where they help, on the jobs page's city filter.
+
+- **A city already in someone's search reads as its country** (`CITY_COUNTRY`, through the existing
+  `_migrate_locations`). Before today a city always admitted its whole country, so nobody's results
+  change. One thing does: LinkedIn and the other boards are now searched for "Germany" rather than
+  "Berlin" for that person.
+- A CV saying "Budapest" offers Hungary.
+- A page loaded before the deploy that still sends "london" on Save is saved as the United Kingdom,
+  not refused (a `before` validator on `SearchSection.locations`, the same map).
+- Adzuna's country list reads searches through `migrate_config` too. It read the stored slugs raw, so
+  someone who picked London would have stopped being asked about Britain. The existing
+  `test_adzuna_asks_the_countries_the_users_named` caught it.
+- `wanted_cities`, `countries_of`, `UserFilters.cities` and the city half of the place filter are
+  deleted. `libs/tenant/filters.py` is back to the last commit.
+
+**A job that names only its town is still in a country** (owner: "so the filters are not mistaken").
+A posting whose country could not be read passed every country filter, so a job in Kielce reached
+someone who asked for Ireland only.
+
+- `posting_country` reads the name tables as before, then the code beside the town ("Toledo, OH"), then
+  `libs/corpus/places.tsv.gz`: 47,177 names from GeoNames (CC BY 4.0), built by
+  `scripts/build_places.py`. These are cities of 15,000 people or more, the local names of Europe's
+  larger cities ("Napoli", "Cracow"), and every country.
+- A name two places share goes to the European one ("Valencia" is in Spain). LinkedIn's "Greater …
+  Metropolitan Area" is unwrapped, and a capitalised region ("APAC") is never read as a town.
+- It is read for postings only: in a CV or a search word, "Nice" and "Split" are words. It loads in
+  0.09 s the first time a posting needs it and takes about 4 MB.
+- Postings stored without a country are read again on the index pass (`terms._index`).
+- On the dev corpus, 69 of 1,594 postings had no country. Now 51 do: "Remote", "Europe", blank,
+  "APAC, EMEA", and one "Virgin Islands, British". The 18 read are all right: Białystok, Kielce,
+  Cracow, Cork and five Italian and Spanish "Greater … Area"s, plus Peru, Uruguay, Hong Kong and others.
+
+**Skip asks first, and a skipped job ages out** (owner).
+
+- "Skip this job? … leaves your list and is not shown to you again", then "Skip it" or "Keep it". A
+  skip that was asked about leaves at once, with no Undo. "I applied" keeps its six-second Undo.
+- Retention no longer keeps a skipped posting forever: `ACTED_ON` is applied or cover-built. A new
+  `MARKED`, which adds the skip, decides which of a person's rows survive. So a posting kept for
+  somebody else's application stays skipped for the person who skipped it
+  (`test_a_skip_lasts_while_the_posting_is_kept_for_somebody_else`). The backup keeps the postings
+  `MARKED` points at.
+- Archive files stay forever: the owner's decision, so no change.
+
+**My documents: the CVs and cover letters made, folded and searchable** (owner).
+
+- The list opens from "Show your N documents".
+- A search finds a job or company, and "Made over a week / a month / 3 months ago" picks out old ones.
+- Each line says when it was made.
+- "Delete these N" deletes exactly what is shown, after asking. `DELETE /saved` now takes the `ids`
+  and requires at least one, so a call that names none deletes nothing (it used to delete all). "Clear
+  all" is that button with nothing filtered.
+
+**A magnifier on every search box**: one rule for `input[type="search"]`. The jobs page, My documents
+and Admin's two filters are search boxes now.
+
+**The proxy, measured** (owner: "see what the limit is"). The site proxy already rotates: 40 fresh
+connections left from 4 addresses, 10 each, in turn. It takes no `-session-` usernames (407), so it
+is not the `rotproxy` in `~/projects/proxy`, whose `config.json` is still its example. It rotates per
+connection, and the client keeps its connections open, so each of the four readers holds one address.
+
+- **Short bursts of 50 pages, one try each:** from 4 to 24 at once, 54–100% answered, with no trend by
+  count. That is 6–10 pages a second at 4 and 19–40 at 24.
+- **A new connection for every page** (so a new address every time) was not better. It answered 75% on
+  average against 79% for reused connections, and cost 0.1 s more per page.
+- **Sustained, the limit showed:** after about 1,100 requests in 12 minutes, 240 pages at 8 at once got
+  111 read and 129 given up, with 880 of 991 tries refused. LinkedIn's limit is a budget per address
+  over minutes, not a count at once. Retrying a refused page six times on the same address spends
+  that budget faster.
+- **The block lifted within 25 minutes:** 10 of 12 read, one at a time.
+- `DESCRIBE_WORKERS` stays 4: see ROADMAP Phase 8 for what is proposed.
+
+Gates, run locally, in this order: lint-imports 2 kept, 0 broken; ruff clean; `python -m libs.db
+--prune` on an empty database clean; contract 72 paths, current; web build; pytest 1,234 passed,
+3 skipped (the same three). Each new test fails against the rule it replaces, put back for the
+check: no world towns, cities not retired, skips kept forever. The exception is
+`test_a_skip_lasts_while_the_posting_is_kept_for_somebody_else`, which guards the split instead. It
+passes on the old code and fails if the skip is only dropped from `ACTED_ON`.
+
+## 2026-11-02 (later) — words found by index, alerts for whole jobs, countries apart from cities
+
+The owner's second list of the day.
+
+**Finding a person's jobs is an index lookup** (`libs/corpus/terms.py`). Each posting stores which of
+everyone's green words it has (`terms`, `title_terms`), with a multikey index, and a `vocabulary`
+collection says which words have been looked for. The harvester's `catch_up`, after each run and under
+its lock, is the one writer. It looks for a new word only in postings already indexed, and lets the
+database pick those out so only matching text crosses the network. A new or re-described posting gets
+every word. Nothing waits on it: a posting not yet indexed, and a word not yet in the vocabulary, are
+read with the regex as before. Measured on 5,000 postings of real text and ten words: **101–132 ms
+against 439–482 ms**, with the same 1,220 jobs and the same words either way. The new-jobs check is
+17 ms. On the dev corpus, the first pass indexed 1,422 postings in about a second. Each word is looked
+for on its own, so "engineer" is found inside "backend engineer", which one regex of every word passed
+over.
+
+**Alerts wait for the whole job** (owner: "that is a full job"). A posting gets `described_at` the first
+time it has a description of 200 characters or more. Alerts and the daily email send only described
+jobs, and the alert watermark is when a job was described, not found. Otherwise a LinkedIn posting found
+early and described late fell behind the watermark and was never sent. It is inclusive, less what was
+already sent, so two jobs described in the same millisecond are both sent.
+`test_a_job_is_alerted_once_it_has_its_text_not_when_it_is_found` fails on the previous code.
+
+**Countries apart from cities** (owner). Superseded the same evening, before it shipped: My search now
+picks countries only (see the entry above). What stays from it: `libs.corpus.geo.COUNTRIES` and
+`CITIES` as the one place list, the config's `Location` built from it, each posting's `city`, and the
+jobs page's country and city filters.
+
+**No Fluff Jobs from its API.** Its pages are built by a script, so describing one stored its menus
+("JavaScript is required for the page…"). Its `api/posting/{slug}` gives the description, the must-have
+and nice-to-have skills, the daily tasks and the pay, which is put first so the salary is read
+(100–135 PLN an hour on the probe). Seen live on the dev harvester: `nofluff_ok`.
+
+**The site.**
+
+- One drawn arrow on every select, set in from the right, replacing the browser's own at the edge.
+- My search asks before anyone leaves with changes not saved: "Save and go", "Leave without saving"
+  or "Stay here". A link is stopped before it goes, the back button is put back while it asks, and
+  closing the tab gets the browser's own question (`web/src/leave.ts`).
+- Uploaded CVs and files are solid cards: an icon, when each was uploaded, how much was read, and
+  "In use". They sit apart from the dashed upload box, which has its own heading.
+- Applied opens a job whole, in the same pop-up as Jobs (`web/src/jobview.tsx`).
+- Every question over the page is the browser's dialog (`Prompt`). The hand-placed boxes sat under
+  the top bar: the page's fade-in leaves a transform that fixes them to the page. This covers the
+  delete-account box, Claude's sign-in step and Admin's delete box too, and `.modal` is gone.
+
+**Prompt change, approved by the owner on 2026-11-02** (CLAUDE.md §3a): `libs/prompts/support.md` says
+*"Skip" takes a job off the list for good. "I applied" does too, and keeps it in Applied.* where it named
+a "Hide" button that is gone. The wording is the one proposed in ROADMAP Phase 8, word for word. It is
+not A/B-measured: it changes what the chat says the page does, to what the page now does, and the old
+wording described a button nobody can find.
+
+Gates, run locally, in this order: lint-imports 2 kept, 0 broken; ruff clean; `python -m libs.db
+--prune` on an empty database clean; contract 72 paths, current; web build; pytest 1,217 passed,
+3 skipped (the same three). Run against the previous commit, every new test fails there, apart from
+`test_terms.py`, which cannot import the module it tests.
+
+## 2026-11-02 — every LinkedIn job described and matched on its whole text; a jobs page that keeps your place
+
+The owner's list of 2026-11-02, in three parts.
+
+**Fetching: every posting gets its text, quickly, with its layout.** LinkedIn's search results carry no
+text, so each posting is opened to read it, and until then it matches on its title only. Locally, 444
+of 804 LinkedIn postings had none.
+
+- **Once per LinkedIn pass, after every due search**, every LinkedIn posting still without text is
+  described, newest first, four pages at a time, until the pass's 10-minute budget runs out. It was
+  once per account, 60 at most, one page at a time — and four accounts could take four budgets.
+  Measured through the owner's proxy: one page at a time 1.10–1.44 s each; four at a time 0.24–0.47 s,
+  all 50 read; eight 0.17–0.63 s, and in one run 3 of 24 given up. A real pass over the dev corpus:
+  79 postings in 81.5 s, 63 described, 16 throttled and left for the next pass.
+- **A throttled read is not a failed read.** Six 429s used to count against the posting, and two such
+  passes abandoned a live job for good. Now it is asked again next pass.
+- **Deleted, the owner's decision:** `--describe-linkedin`, with `describe_linkedin`,
+  `refresh_metadata`, `awaiting_metadata` and `PROXIED_LIMIT` — no timer ever ran it, and the pass now
+  leaves it nothing. And the per-account limit `describe_per_run` ("Job descriptions fetched per run"):
+  describing is per pass, not per account, and with no bandwidth limit (2026-11-01) there is nothing
+  left for a count to protect; the budget bounds it.
+- **Text keeps its paragraphs and list items.** Every page was flattened to one line, which is how
+  every card read. `strip_html` lays it out, and every board adapter now uses it in place of a regex
+  of its own (Recruitee and Personio were storing raw HTML).
+- **12,000 characters kept, not 4,000**, which cut 389 of 1,209 local postings mid-sentence; the whole
+  LinkedIn text of 24 of those was a median 5,831 and at most 10,260. Applied once, where every
+  description is stored (`CorpusRepository.set_description`); the adapters' own 2,000 and 4,000 cuts
+  are gone.
+
+**Matching: the whole description, and more of your words first.**
+
+- Every word of the description is read (it was the first 2,500 characters), and the words found
+  are worked out in the database, so no description crosses the network unless a caller asks
+  (`text=True`: the Telegram card reads its salary line off it).
+- **Most of their words first**, a title breaking a tie, then newest (owner: "the more ANDs the
+  better"). The 75/25 points are gone, and with them `score` on each job.
+- Measured paired, three rounds, the same 5,000 postings of real text and ten words: **431–451 ms
+  finding 459 jobs, against 491–500 ms finding 400.** The new-jobs check is 20 ms. Not moved: both are
+  over the 300 ms budget at 2,000 candidates, because the regex is the cost (ROADMAP Phase 8, waiting
+  item 2).
+
+**The jobs page.**
+
+- **No word suggestions** on it. They stay on My search. `/suggestions/accept` and `/dismiss` stay too:
+  the help chat's changes run the same code.
+- **Skip and I applied take a job away for good**, each with an Undo for six seconds. "Hide" is now
+  "Skip"; "Not applied yet" went with the `applied` filter and `applied_at` on each job. A mark is kept
+  in the browser until the server has it (`web/src/marks.ts`), so a lost connection, a refresh or a
+  phone switched off loses none, and none is shown again.
+- **A tap on a job opens it whole**, over the page: its text laid out (paragraphs, lists, short
+  headings), and every button the card has. The × or a tap outside closes it. A CV made there is the
+  card's too: both read one build.
+- **Filters on "why"**: "Only jobs with" picks words, and a job must have every one picked; "At least
+  2 (3, 4) of your words". Each word says how many jobs have it.
+- **The company in bold and the country named**, as a pill, before anything else on the line.
+- **New jobs are counted, not pushed in.** Every minute — the bell's interval, not a second clock — the
+  page asks how many have been found since it loaded; "3 new jobs · Show them" shows them, and they
+  are marked New. Nothing moves under somebody reading.
+- **Telegram is folded** in Settings, its state said on the fold; it opens by itself while it waits
+  for Start, or when it has stopped working.
+
+**Not changed:** `libs/prompts/support.md` still calls Skip "Hide". A wording is proposed in ROADMAP
+Phase 8 and waits for the owner (CLAUDE.md §3a). Postings stored before today keep their one-line text
+until they age out.
+
+Gates, run locally, in this order: lint-imports 2 kept, 0 broken; ruff clean; `python -m libs.db
+--prune` on an empty database clean; contract 72 paths, current; web build; pytest 1,198 passed,
+3 skipped (the Postgres copy source, the reference checkout, one empty guard). Each new test was also
+run against the previous commit: all 18 failed there.
+
 ## 2026-11-01 — the owner's review: a clearer onboarding, new tabs, kept documents, own-bot Telegram, one proxy
 
 Six steps from the owner's walk through the site, each its own commit with its tests and its reasons:

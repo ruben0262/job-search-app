@@ -627,7 +627,9 @@ listed it as required, so every health run told an operator to re-enable the pas
 to remove. A required-timer list naming a timer the design deliberately deleted is worse than not
 checking — it trains the reader to ignore the one alarm there that has caught a real outage.
 `--describe-linkedin` survives as a manual backfill for the rows a pass could not reach (122 of
-them today); what is gone is the schedule.
+them today); what is gone is the schedule. **Deleted too, 2026-11-02** (owner's decision): no timer
+ever ran it, and each LinkedIn pass now describes every posting still waiting, four pages at a time,
+so it has nothing left to do.
 
 **2. Freshness becomes admin-set, per source** ✅ **done 2026-08-04** — and it was ticked a day early
 on 2026-08-03, which was wrong and is worth recording. The setting existed, the admin panel rendered
@@ -2986,6 +2988,9 @@ resend a verification email, the setup chat skipping consent).
 
 - **No learned model.** Jobs are filtered and ranked by rules: green words pick (title 75, text 25),
   red words veto (title or company), plus language, country, remote policy and freshness.
+  *2026-11-02, owner:* no points — the more of their words a job has, the higher it is, a title
+  breaking a tie, and the whole description is read; countries and cities are picked apart, a city
+  admitting its own jobs only.
   `libs.matching` is the one definition, behind the jobs page and the alerts. The model is switched
   off, not deleted (CLAUDE.md §3 exception, the `switched-off model` contract).
 - **Uploads are read by rules, not AI**: CVs, cover letters and a context file the person can edit,
@@ -3022,39 +3027,55 @@ resend a verification email, the setup chat skipping consent).
 5. **Documents ✅** — provider layer (own keys, allowance), instant documents wired into docgen,
    faster rendering, and consent checked wherever text leaves for a provider.
 6. **Frontend ✅** — the three screens, jobs with word chips and suggestions, downloads, settings, phones.
-7. **AI documents and support chat** — the chat port ✅ (its prompt awaits approval, shipped
-   switched off); the new shared document prompts, measured — waiting on an API key for the bench.
 
-**Done when** the `switched-off model` contract has no `ignore_imports` ✅ (2026-10-29), the six gates
-pass ✅, and a new account goes from sign-up to its first matching job in under five minutes without
-leaving the site — `tests/test_e2e_site.py` walks exactly that, to a downloaded CV, in about ten seconds.
+**The owner's review of 2026-11-02 ✅** — every LinkedIn posting described in the pass that finds it,
+four at a time, with its paragraphs and lists kept and up to 12,000 characters; matching over the whole
+description; most of your words first, and filters by which words and how many; Skip and I applied
+take a job away for good, kept in the browser until the server has them; the whole job in a window
+over the page; new jobs counted at the top, shown on a tap; Telegram folded in Settings; no word
+suggestions on the jobs page. `CHANGELOG.md` has the numbers.
 
-**Waiting on the owner** (listed 2026-10-30; the owner answered the same day, and what is settled is
-marked so):
+**Waiting on the owner (2026-11-02)**
 
-1. ~~**Help chat prompt.**~~ Approved 2026-10-30. Both defects fixed (the 8-minute takeover, the
-   writer ceiling) and `support_chat_enabled` defaults to on.
-2. **Shared CV and cover prompts.** Deferred by the owner ("later"). Blocked on an Anthropic key at
-   `certificates/anthropic.key`. Until then, new accounts get the free instant documents.
-3. **Leftovers with no consumer.** ~~The four endpoints~~ (deleted 2026-10-30). Still open: the admin
-   pages' hand-written API types. Recommendation: replace them with the generated ones.
-4. **`NOTIFY_SCAN = 10_000`** (`libs/notify`). Recommendation: leave it in code. It is a safety
-   bound, and reaching it is logged.
-5. ~~**README.**~~ Done 2026-10-30.
-6. **Push, then the switch.** `main` holds everything, committed locally. The push needs the owner's
-   GitHub sign-in, and the switch needs the VPS (checklist: `deploy/README.md`).
-7. **MongoDB credentials.** The owner keeps the password (2026-10-30). Still recommended: limit the
-   cluster's network access to the VPS and the owner's machine.
-8. **Atlas region.** The jobs page makes about five round trips to the database. Measured from the
-   owner's machine (26 ms a trip), matching took 337–451 ms against the 300 ms budget, and the query
-   itself was about 140 ms of that. Recommendation: put the cluster in the region nearest the VPS.
-   Batching the settings reads saves one trip whatever the region.
-9. ~~**Retention.**~~ A platform setting since 2026-10-30, kept at 30 days. Only postings fill the
-   database, at about 5 KB each, so the free tier holds roughly 80,000 before the 80% alert.
-   Measure what the harvester stores a day once it runs on Atlas.
-10. ~~**`DATABASE_BUDGET_BYTES`.**~~ The `database_budget_mb` setting since 2026-10-30.
-11. ~~**`ProxyCredential.daily_cap_mb`.**~~ Deleted 2026-10-30.
-12. ~~**The help chat after a deploy.**~~ Fixed 2026-10-30, with item 1.
+1. ~~**The help chat's prompt says "Hide".**~~ Approved and changed the same day.
+2. ~~**The jobs page is over its 300 ms budget.**~~ Words are stored on postings and looked up by index:
+   101–132 ms against 439–482 ms (`libs/corpus/terms.py`).
+3. ~~**No Fluff Jobs' text is its page's menus.**~~ Read from its posting API.
+4. ~~**`/suggestions/accept` and `/suggestions/dismiss` have no caller on the site.**~~ Deleted on the
+   owner's word the same night. The help chat's "add a word" holds the logic it used.
+5. ~~**LinkedIn's limit is a budget per address, and a refused page spends it faster.**~~ Decided and
+   done the same night: every LinkedIn request is a new connection, so another address, and the pass
+   stops after a whole round of readers is refused. A live pass read 221 pages and gave up none.
+   Measured after the change: 8 readers read 2.87–2.94 pages a second against 4 readers' 2.68–2.91,
+   with a third more requests, so 4 stays. Re-measure on the new proxy link when it is in the env.
+6. ~~**A skipped job is kept forever.**~~ Decided and done the same day: retention keeps applied and
+   cover-built postings, and a skip lasts as long as its posting (`MARKED`).
+7. ~~**Archive files are never deleted.**~~ The owner's decision: they stay, and the disk is the archive.
+8. **The countries are a list in code** (`libs.corpus.geo.COUNTRIES`). Adding one to My search is a
+   deploy. Reading a posting's country is not limited to it: any town in the world is read
+   (`places.tsv.gz`). Recommendation: leave it until somebody asks for a missing country.
+9. **A city in someone's search is searched as its country.** The cities left My search, and a city
+   stored before reads as its country, as it always filtered. LinkedIn is asked for "Germany" rather
+   than "Berlin" for that person, so its first results are spread over the country. Recommendation:
+   none needed unless someone asks for city-first results back.
+
+10. ~~**Workable refuses a burst, and the harvest would send one.**~~ Done (owner's yes): 2 at a time.
+    This computer was still refused hours later; probe it from the server with `seed_ats.py --ats workable`.
+11. ~~**Lever's largest boards outlast the 15-second read limit.**~~ Done (owner's yes), differently: Lever is
+    slow on its first read whatever the size, so paging would not help; it has a 60-second limit of its own.
+12. **The seed list runs on the server only when the owner runs it** (`deploy/README.md` §5). It stored
+    285 boards in the dev database; production has none until then. Its first pass brings in about
+    740 jobs, and the board describe pass reads 200 a pass (`describe_per_cycle`, in Admin), so the
+    first wave is described over about an hour. Raise the setting for that hour if it should be sooner.
+
+13. **LinkedIn searches are per person, not shared.** Two people with the same words and places run the
+    same search, each through the proxy. With the window now an hour, a pass costs about 3–5 requests a
+    query. Recommendation: none until there are enough accounts for LinkedIn's per-address allowance to
+    show in the logs; then search each distinct query once per pass, as the board tier does.
+14. **Working Nomads gives nothing.** Its feed's newest job was 4 days old on 2026-11-02, and the search
+    window is 24 hours. Recommendation: move it to `DEFERRED_SOURCES` if it is still stale in a week.
+15. **Hiring Cafe answers 403** (a bot wall), as on 2026-11-01. Recommendation: leave it off the list of
+    things to fix; the company boards it pointed at are now polled directly.
 
 ## Phase 9 — MongoDB instead of Postgres (added 2026-10-30)
 
@@ -3092,6 +3113,8 @@ their 58 migrations.
   alerts up to 10,000. Across the internet that is megabytes per page load, which breaks both the
   300 ms budget and the weekly transfer limit. The green words become one server-side regular
   expression over the title and the first 2,500 characters, and only matches come back.
+  *2026-11-02:* over the whole description, and only the words found come back, not the text
+  (431–451 ms against 491–500 ms locally, 459 jobs found against 400).
 - **Writes are explicit, with no request-wide transaction.** Each write is atomic for one document.
   The few changes that must land together use a transaction.
 - **Tests run on a local `mongod` 8.0.34**, the version Atlas runs, as a one-node replica set. They
