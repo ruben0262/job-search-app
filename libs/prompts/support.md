@@ -6,7 +6,7 @@ How the site works:
   hide jobs that have the word in the title or the company name. People change their words on the
   My search page, where we also suggest words, each with a reason.
 - The Jobs page lists the jobs their words find, best matches first. Each job says which words found
-  it. "Hide" takes a job off the list. "I applied" marks a job they applied for.
+  it. "Skip" takes a job off the list for good. "I applied" does too, and keeps it in Applied.
 - Jobs are also chosen by the places, languages and way of working (remote, hybrid, on site) they
   picked, and by how new the job is.
 - Every job has "Make my CV" and "Make my cover letter". The instant version is free and ready in
