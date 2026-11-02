@@ -1,6 +1,6 @@
 /** The handful of pieces every page needs. */
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { ApiError } from "./api";
 
@@ -49,6 +49,59 @@ export function Card({ title, children }: { title?: string; children: ReactNode 
 /** A `div`, so it can hold the button that fixes what it says. */
 export function Banner({ level, children }: { level: "error" | "warning" | "info"; children: ReactNode }) {
   return <div className={`banner ${level}`}>{children}</div>;
+}
+
+/** A question over the page that needs an answer before anything else: the browser's own dialog, which
+ * sits above everything. A box positioned by hand inside the page sat under the bar at the top, held
+ * there by the page's fade-in. Escape or a tap outside it is `onClose`, the answer that changes nothing. */
+export function Prompt({ title, onClose, dismissable = true, children }: {
+  title: string;
+  onClose: () => void;
+  /** False for one that must be answered with its own buttons: Escape and a tap outside do nothing. */
+  dismissable?: boolean;
+  children: ReactNode;
+}) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    dialog.current?.showModal();
+  }, []);
+  return (
+    <dialog ref={dialog} className="prompt" aria-label={title} onClose={onClose}
+            onCancel={(event) => {
+              if (!dismissable) event.preventDefault();
+            }}
+            onClick={(event) => {
+              if (dismissable && event.target === dialog.current) dialog.current?.close();
+            }}>
+      <div className="prompt-body">
+        <h2>{title}</h2>
+        {children}
+      </div>
+    </dialog>
+  );
+}
+
+/** A page's worth over the page: a title, a × in its corner, and closed by it, by Escape or by a tap
+ * outside. The whole job opens in one, and so does the help. */
+export function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    dialog.current?.showModal();
+  }, []);
+  return (
+    <dialog ref={dialog} className="sheet" aria-label={title} onClose={onClose}
+            // The dialog itself is only hit outside its content: that is a tap on the backdrop.
+            onClick={(event) => {
+              event.stopPropagation();
+              if (event.target === dialog.current) dialog.current?.close();
+            }}>
+      <div className="sheet-body">
+        <button type="button" className="close" aria-label="Close" onClick={() => dialog.current?.close()}>×</button>
+        <h2>{title}</h2>
+        {children}
+      </div>
+    </dialog>
+  );
 }
 
 /** Green shows jobs, red hides them, plain is anything else built one item at a time (links). */

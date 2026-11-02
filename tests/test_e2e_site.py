@@ -16,6 +16,7 @@ import socket
 import threading
 import time
 import uuid
+from datetime import timedelta
 from urllib.parse import urlparse
 
 import pytest
@@ -99,7 +100,7 @@ def test_a_new_person_goes_from_sign_up_to_a_downloaded_cv(site, capsys, tmp_pat
         cards = page.locator("article.job-card")
         expect(cards).to_have_count(2)
         for title in TITLES[:2]:
-            card = cards.filter(has=page.get_by_role("link", name=title, exact=True))
+            card = cards.filter(has=page.get_by_role("button", name=title, exact=True))
             expect(card.locator(".why")).to_have_text("Why: backend engineer")
         expect(page.get_by_text(TITLES[2])).to_have_count(0)
 
@@ -209,13 +210,16 @@ def test_step_two_says_what_it_found_with_switches_suggestions_and_round_choices
         expect(page.get_by_text("Long phrases find fewer jobs")).to_contain_text(
             "“team coordinator and co lead”")
 
-        berlin, paris = page.get_by_role("switch", name="Berlin"), page.get_by_role("switch", name="Paris")
-        expect(berlin).to_be_checked()  # read off the CV
-        expect(paris).not_to_be_checked()
-        paris.click()
-        expect(paris).to_be_checked()
-        berlin.click()
-        expect(berlin).not_to_be_checked()
+        # Read off the CV: Berlin, offered as its country. Every country a button, most folded away.
+        countries = page.get_by_role("group", name="Which countries?")
+        expect(countries.get_by_role("button", name="Germany")).to_have_attribute("aria-pressed", "true")
+        expect(countries.get_by_role("button", name="France")).to_have_count(0)
+        countries.get_by_role("button", name=re.compile(r"^Show \d+ more countries$")).click()
+        countries.get_by_role("button", name="France").click()
+        expect(countries.get_by_role("button", name="France")).to_have_attribute("aria-pressed", "true")
+        countries.get_by_role("button", name="Germany").click()
+        expect(countries.get_by_role("button", name="Germany")).to_have_attribute("aria-pressed", "false")
+        expect(page.get_by_label("Add a city")).to_have_count(0)
 
         for choice in page.get_by_role("radio").all():
             box = choice.bounding_box()
@@ -230,7 +234,7 @@ def test_step_two_says_what_it_found_with_switches_suggestions_and_round_choices
     user = db[User.COLLECTION].find_one({"email": email})
     section = db[UserConfig.COLLECTION].find_one({"user_id": user["_id"]})["config"]["sections"][0]
     assert "software engineer" in section["keywords"]
-    assert section["locations"] == ["paris"], "what the switches said is what was saved"
+    assert section["locations"] == ["france"], "what the buttons said is what was saved"
     assert section["remote_policy"] == "any"
 
 
@@ -249,15 +253,18 @@ def test_the_tabs_in_order_and_what_each_one_is_for(site, capsys):
         expect(tabs).to_have_text(["Jobs", "Applied", "My search", "My documents", "Settings"])
 
         card = page.locator("article.job-card").filter(
-            has=page.get_by_role("link", name=TITLES[0], exact=True))
+            has=page.get_by_role("button", name=TITLES[0], exact=True))
         card.get_by_role("button", name="I applied").click()
-        expect(card.get_by_role("button", name="I applied ✓")).to_be_visible()
+        expect(page.get_by_text(f"Applied: {TITLES[0]}")).to_be_visible()
         tabs.filter(has_text="Applied").click()
         expect(page.get_by_role("heading", name="You applied to 1 job")).to_be_visible()
-        expect(page.get_by_role("link", name=TITLES[0], exact=True)).to_be_visible()
+        expect(page.get_by_role("button", name=TITLES[0], exact=True)).to_be_visible()
 
+        # Help is the "?" beside the bell, over whatever page is open, and no longer in Settings.
         tabs.filter(has_text="Settings").click()
-        expect(page.get_by_role("heading", name="Help and contact")).to_be_visible()
+        expect(page.get_by_role("heading", name="Help and contact")).to_have_count(0)
+        page.get_by_role("button", name="Help and contact").click()
+        expect(page.get_by_role("dialog", name="Help and contact")).to_be_visible()
         page.get_by_text("How are my jobs chosen?").click()
         expect(page.get_by_text("A job shows up when one of your green words is in it")).to_be_visible()
         page.get_by_label("Subject").fill("My CV shows the wrong city")
@@ -276,7 +283,7 @@ def test_the_tabs_in_order_and_what_each_one_is_for(site, capsys):
 
 
 def test_job_cards_show_the_start_of_the_description_and_sit_two_to_a_row_on_a_laptop(site, capsys):
-    """One column on a phone, two on a laptop; a card opened to its whole description takes the row."""
+    """One column on a phone, two on a laptop, each with the start of its description."""
     base, email, _ = site
     with sync_api.sync_playwright() as playwright:
         browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
@@ -309,7 +316,7 @@ def test_a_made_cv_is_still_there_after_a_refresh_in_applied_and_in_my_documents
 
         def card():
             return page.locator("article.job-card").filter(
-                has=page.get_by_role("link", name=TITLES[0], exact=True))
+                has=page.get_by_role("button", name=TITLES[0], exact=True))
 
         expect(card().get_by_text("CV made")).to_have_count(0)
         card().get_by_role("button", name="Make my CV").click()
@@ -322,15 +329,16 @@ def test_a_made_cv_is_still_there_after_a_refresh_in_applied_and_in_my_documents
         expect(card().get_by_role("button", name="Make my cover letter")).to_be_visible()
 
         card().get_by_role("button", name="I applied").click()
-        expect(card().get_by_role("button", name="I applied ✓")).to_be_visible()
+        expect(page.get_by_text(f"Applied: {TITLES[0]}")).to_be_visible()
         page.goto(f"{base}/#/applied")
         expect(page.get_by_role("link", name="Download your CV")).to_be_visible()
 
         page.goto(f"{base}/#/documents")
         expect(page.get_by_text(re.compile(r"MB of 5\.0 MB used"))).to_be_visible()
+        page.get_by_text("Show your 1 document").click()
         expect(page.get_by_text(f"for {TITLES[0]}")).to_be_visible()
-        page.get_by_role("button", name="Clear all").click()
-        page.get_by_role("button", name="Yes, delete them all").click()
+        page.get_by_role("button", name="Delete this one").click()
+        page.get_by_role("dialog", name="Delete this one?").get_by_role("button", name="Delete").click()
         expect(page.get_by_text("None yet.")).to_be_visible()
         browser.close()
 
@@ -344,20 +352,183 @@ def test_the_jobs_filters_narrow_the_list_and_clear_back(site, capsys):
         _onboard(page)
         expect(page.get_by_role("heading", name="2 jobs match your words")).to_be_visible()
 
-        first = page.locator("article.job-card").filter(
-            has=page.get_by_role("link", name=TITLES[0], exact=True))
-        first.get_by_role("button", name="I applied").click()
-        page.get_by_role("button", name="Not applied yet").click()
-        expect(page.get_by_role("heading", name="1 job matches your search")).to_be_visible()
-        expect(page.get_by_role("link", name=TITLES[0], exact=True)).to_have_count(0)
-
-        page.get_by_role("button", name="Clear filters").click()
-        expect(page.get_by_role("heading", name="2 jobs match your words")).to_be_visible()
         page.get_by_label("Job board").select_option(label="Test (2)")
         expect(page.get_by_role("heading", name="2 jobs match your search")).to_be_visible()
         page.get_by_label("Posted").select_option(label="Last 24 hours")
         expect(page.get_by_role("heading", name="2 jobs match your search")).to_be_visible()
+        page.get_by_role("button", name="Remote only").click()
+        expect(page.get_by_role("heading", name="2 jobs match your search")).to_be_visible()
+
+        page.get_by_role("button", name="Clear filters").click()
+        expect(page.get_by_role("heading", name="2 jobs match your words")).to_be_visible()
+        expect(page.get_by_role("button", name="Clear filters")).to_have_count(0)
         browser.close()
+
+
+def test_a_job_opens_whole_and_skipping_survives_a_lost_connection_and_new_jobs_wait_for_a_tap(site, capsys):
+    """The company and the country stand out, and how long ago a job was found keeps moving on a page
+    left open; a tap on a job shows all of it, and its × or a tap outside closes it, with a CV made
+    inside it ready on the card; a Skip made offline is sent when the connection is back and holds
+    after a refresh; a job found meanwhile is counted, not pushed into the list, until it is asked
+    for (owner, 2026-11-02)."""
+    from libs.db import database
+
+    base, email, ids = site
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = browser.new_context(viewport={"width": 1280, "height": 860}).new_page()
+        page.clock.install()
+        _sign_up(page, base, email, capsys)
+        _onboard(page)
+        cards = page.locator("article.job-card")
+
+        def card(title):
+            return cards.filter(has=page.get_by_role("button", name=title, exact=True))
+
+        _where_and_when(page, card(TITLES[0]))
+
+        view = page.get_by_role("dialog", name=TITLES[0])
+        card(TITLES[0]).locator(".summary").click()
+        expect(view.locator(".description")).to_contain_text("Python, Postgres")
+        view.get_by_role("button", name="Close").click()
+        expect(view).to_have_count(0)
+        card(TITLES[0]).get_by_role("button", name=TITLES[0]).click()
+        expect(view).to_be_visible()
+        page.mouse.click(5, 5)
+        expect(view).to_have_count(0)
+
+        card(TITLES[0]).get_by_role("button", name=TITLES[0]).click()
+        view.get_by_role("button", name="Make my CV").click()
+        expect(view.get_by_role("link", name="Download your CV")).to_be_visible(timeout=60_000)
+        view.get_by_role("button", name="Close").click()
+        expect(card(TITLES[0]).get_by_role("link", name="Download your CV")).to_be_visible()
+        expect(card(TITLES[0]).get_by_text("CV made")).to_be_visible()
+
+        page.context.set_offline(True)
+        card(TITLES[1]).get_by_role("button", name="Skip").click()
+        page.get_by_role("dialog", name="Skip this job?").get_by_role("button", name="Skip it").click()
+        expect(card(TITLES[1])).to_have_count(0)
+        page.context.set_offline(False)
+        state = database().user_job_state
+        for _ in range(100):
+            if state.count_documents({"job_id": ids[TITLES[1]], "dismissed_at": {"$ne": None}}):
+                break
+            time.sleep(0.1)
+        else:
+            pytest.fail("the Skip made offline never reached the server")
+        page.reload()
+        expect(page.get_by_role("heading", name="1 job matches your words")).to_be_visible()
+        expect(card(TITLES[1])).to_have_count(0)
+
+        _jobs(database(), "later", ["Backend Engineer Late"])
+        page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+        expect(page.get_by_role("button", name=re.compile(r"^1 new job"))).to_be_visible()
+        expect(cards).to_have_count(1)
+        page.get_by_role("button", name=re.compile(r"^1 new job")).click()
+        expect(card("Backend Engineer Late").get_by_text("New", exact=True)).to_be_visible()
+        expect(cards).to_have_count(2)
+        browser.close()
+
+
+def test_my_search_asks_before_leaving_unsaved_and_applied_opens_the_whole_job(site, capsys):
+    """Changes not saved are not lost to a stray tap: leaving asks, and can save on the way out.
+    A job applied to opens whole from Applied too, an uploaded CV is plainly not the place to upload
+    one, and the CVs made are folded, found by a search and the old ones deleted (owner, 2026-11-02)."""
+    from libs.db import database
+
+    base, email, ids = site
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = browser.new_context(viewport={"width": 1280, "height": 860}).new_page()
+        _sign_up(page, base, email, capsys)
+        _onboard(page)
+        tabs = page.locator("nav .places a")
+
+        tabs.filter(has_text="My search").click()
+        countries = page.get_by_role("group", name="Which countries?")
+        expect(countries.get_by_role("button", name="European Union")).to_be_visible()
+        countries.get_by_role("button", name=re.compile(r"^Show \d+ more countries$")).click()
+        countries.get_by_role("button", name="Austria").click()
+
+        tabs.filter(has_text="Applied").click()
+        prompt = page.get_by_role("dialog", name="Save your changes?")
+        expect(prompt).to_be_visible()
+        prompt.get_by_role("button", name="Stay here").click()
+        expect(page.get_by_role("heading", name="What we look for")).to_be_visible()
+
+        tabs.filter(has_text="Applied").click()
+        prompt.get_by_role("button", name="Save and go").click()
+        expect(page.get_by_role("heading", name=re.compile("You applied to"))).to_be_visible()
+        user = database().users.find_one({"email": email})
+        saved = database().user_config.find_one({"user_id": user["_id"]})["config"]["sections"][0]
+        assert "austria" in saved["locations"], "saved on the way out"
+
+        tabs.filter(has_text="My search").click()
+        page.get_by_role("group", name="Which countries?").get_by_role("button", name="Austria").click()
+        tabs.filter(has_text="Jobs").click()
+        page.get_by_role("dialog", name="Save your changes?").get_by_role(
+            "button", name="Leave without saving").click()
+        expect(page.get_by_role("heading", name=re.compile("match your"))).to_be_visible()
+        saved = database().user_config.find_one({"user_id": user["_id"]})["config"]["sections"][0]
+        assert "austria" in saved["locations"], "left, and nothing saved"
+
+        card = page.locator("article.job-card").filter(
+            has=page.get_by_role("button", name=TITLES[0], exact=True))
+        card.get_by_role("button", name="I applied").click()
+        expect(page.get_by_text(f"Applied: {TITLES[0]}")).to_be_visible()
+        tabs.filter(has_text="Applied").click()
+        page.get_by_role("button", name=TITLES[0], exact=True).click()
+        view = page.get_by_role("dialog", name=TITLES[0])
+        expect(view.locator(".description")).to_contain_text("Python, Postgres")
+        view.get_by_role("button", name="Close").click()
+
+        tabs.filter(has_text="My documents").click()
+        uploaded = page.get_by_role("list", name="Uploaded")
+        expect(uploaded.get_by_text("cv.txt")).to_be_visible()
+        expect(uploaded.get_by_text("In use")).to_be_visible()
+        expect(page.get_by_text("Add another CV")).to_be_visible()
+        _made_documents(page, user["_id"], ids[TITLES[0]])
+        browser.close()
+
+
+def _where_and_when(page, card) -> None:
+    """The company and the country stand out, and a page left open keeps its times right: two hours
+    on, the card says so with no refresh (five minutes past the hour: the clock reads to the minute)."""
+    expect(card.locator(".company")).to_have_text("Acme")
+    expect(card.locator(".country")).to_have_text("Germany")
+    expect(card.locator(".job-meta").first).to_contain_text("Berlin · Remote · Found")
+    page.clock.fast_forward("02:05:00")
+    expect(card.locator(".job-meta").first).to_contain_text("Found 2h ago")
+
+
+def _made_documents(page, user_id, job_id: int) -> None:
+    """Two kept, one made 40 days ago: folded until asked for, found by a search, and the old one
+    picked out by its age and deleted while the new one stays."""
+    from libs.db import database, insert, now
+    from libs.db.models import BuiltDocument
+
+    for number, (kind, age) in enumerate((("cv", 40), ("cover", 0)), start=900_001):
+        insert(database(), BuiltDocument(id=number, user_id=user_id, job_id=job_id, kind=kind, mode="instant",
+                                         filename=f"{kind}.pdf", content=b"%PDF-", size=5, saved=True,
+                                         created_at=now() - timedelta(days=age)))
+    page.reload()
+    made = page.locator(".made-list li")
+    expect(made).to_have_count(0)
+    page.get_by_text("Show your 2 documents").click()
+    expect(made).to_have_count(2)
+    expect(made.first).to_contain_text("Made ")
+    page.get_by_label("Search your documents").fill("no such job")
+    expect(page.get_by_text("None of yours match.")).to_be_visible()
+    page.get_by_label("Search your documents").fill(TITLES[0][:7])
+    expect(made).to_have_count(2)
+    page.get_by_label("Made", exact=True).select_option(label="Made over a month ago")
+    expect(made).to_have_count(1)
+    page.get_by_role("button", name="Delete this one").click()
+    page.get_by_role("dialog", name="Delete this one?").get_by_role("button", name="Delete").click()
+    page.get_by_label("Made", exact=True).select_option(label="Made any time")
+    expect(made).to_have_count(1)
+    expect(made.first).to_contain_text("Cover letter")
+    assert database().built_documents.count_documents({"user_id": user_id}) == 1, "the old one went"
 
 
 def test_telegram_is_three_steps_with_no_chat_id_and_the_email_is_one_switch(site, capsys, monkeypatch):
@@ -379,6 +550,9 @@ def test_telegram_is_three_steps_with_no_chat_id_and_the_email_is_one_switch(sit
         _onboard(page)
         page.goto(f"{base}/#/settings")
 
+        # Folded until opened, saying where it stands.
+        expect(page.get_by_text("Make your bot.")).not_to_be_visible()
+        page.locator("summary", has_text="Telegram").click()
         expect(page.get_by_text("Make your bot.")).to_be_visible()
         page.get_by_label("Bot token").fill(token)
         page.get_by_role("button", name="Save token").click()
@@ -403,6 +577,18 @@ def test_telegram_is_three_steps_with_no_chat_id_and_the_email_is_one_switch(sit
         browser.close()
 
 
+def _emailed(capsys, route: str) -> str:
+    """The link in the email just printed. The email goes after the page has its answer, so it may be
+    a moment behind the screen that says it was sent."""
+    printed = ""
+    for _ in range(50):
+        printed += capsys.readouterr().out
+        if found := re.search(rf"http://\S+#/{route}\?token=\S+", printed):
+            return found.group(0)
+        time.sleep(0.1)
+    pytest.fail(f"no {route} link was emailed")
+
+
 def _sign_up(page, base: str, email: str, capsys) -> None:
     """Sign up, and open the link from the email, which is printed rather than sent."""
     page.goto(f"{base}/#/signup")
@@ -410,9 +596,69 @@ def _sign_up(page, base: str, email: str, capsys) -> None:
     page.get_by_label("Password").fill("correct-horse-battery-9")
     page.get_by_role("button", name="Create account").click()
     expect(page.get_by_role("heading", name="Check your email")).to_be_visible()
-    link = re.search(r"http://\S+#/verify\?token=\S+", capsys.readouterr().out)
-    assert link, "the confirmation email carries the link"
-    page.goto(link.group(0))
+    page.goto(_emailed(capsys, "verify"))
+
+
+def test_sign_up_confirm_sign_in_and_reset_the_password_each_step_at_once(site, capsys):
+    """The whole way in, as a new person goes: sign up, open the emailed link, sign out and back in,
+    forget the password, set a new one from the emailed link, and sign in with it while the old one is
+    refused. Each step answers within a second and a half (owner, 2026-11-02: "make sure it's fast")."""
+    base, _, _ = site
+    email = f"jordan.{uuid.uuid4().hex[:8]}@example.com"
+    old, new = "correct-horse-battery-9", "a-new-pass-phrase-7"
+    took: dict[str, float] = {}
+
+    def step(name: str, act, then) -> None:
+        started = time.monotonic()
+        act()
+        expect(then).to_be_visible()
+        took[name] = time.monotonic() - started
+
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        context = browser.new_context(viewport={"width": 390, "height": 844})
+        page = context.new_page()
+        mine = page.get_by_role("heading", name="Your CV")
+
+        def sign_in(password: str) -> None:
+            page.get_by_label("Email").fill(email)
+            page.get_by_label("Password").fill(password)
+            page.get_by_role("button", name="Sign in").click()
+
+        page.goto(f"{base}/#/signup")
+        page.get_by_label("Email").fill(email)
+        page.get_by_label("Password").fill(old)
+        step("sign up", lambda: page.get_by_role("button", name="Create account").click(),
+             page.get_by_role("heading", name="Check your email"))
+        step("confirm", lambda: page.goto(_emailed(capsys, "verify")), mine)
+
+        # Signed out as a new visit is: no cookies, and the page loaded afresh.
+        def fresh(route: str) -> None:
+            context.clear_cookies()
+            page.goto("about:blank")
+            page.goto(f"{base}/#/{route}")
+
+        fresh("signin")
+        step("sign in", lambda: sign_in(old), mine)
+
+        fresh("forgot")
+        page.get_by_label("Email").fill(email)
+        step("forgot", lambda: page.get_by_role("button", name="Send reset link").click(),
+             page.get_by_text("a reset link is on its way"))
+        page.goto(_emailed(capsys, "reset"))
+        page.get_by_label("New password").fill(new)
+        step("reset", lambda: page.get_by_role("button", name="Set password").click(),
+             page.get_by_role("heading", name="Password reset"))
+
+        fresh("signin")
+        sign_in(old)
+        expect(page.get_by_text("email or password is incorrect")).to_be_visible()
+        page.get_by_label("Password").fill(new)
+        step("sign in again", lambda: page.get_by_role("button", name="Sign in").click(), mine)
+        browser.close()
+
+    print("auth steps:", {name: round(seconds, 2) for name, seconds in took.items()})
+    assert all(seconds < 1.5 for seconds in took.values()), took
 
 
 def _upload(page) -> None:
@@ -438,17 +684,27 @@ def _onboard(page) -> None:
 
 
 def _marks(page) -> None:
-    """"I applied" shows as done and is counted; "Hide" leaves an Undo that brings the job back."""
+    """"I applied" takes the job away with an Undo, and is counted; "Skip" asks first. A job applied
+    to stays away after a refresh; one taken back, or not skipped after all, stays."""
     def card(title):
-        return page.locator("article.job-card").filter(has=page.get_by_role("link", name=title, exact=True))
+        return page.locator("article.job-card").filter(has=page.get_by_role("button", name=title, exact=True))
 
     card(TITLES[0]).get_by_role("button", name="I applied").click()
-    expect(card(TITLES[0]).get_by_role("button", name="I applied ✓")).to_be_visible()
+    expect(page.get_by_text(f"Applied: {TITLES[0]}")).to_be_visible()
     expect(page.get_by_text("You have applied to 1 job.")).to_be_visible()
-    card(TITLES[1]).get_by_role("button", name="Hide").click()
-    expect(page.get_by_text(f"Hidden: {TITLES[1]}")).to_be_visible()
-    page.get_by_role("button", name="Undo").click()
+    expect(page.get_by_role("heading", name="1 job matches your words")).to_be_visible()
+    card(TITLES[1]).get_by_role("button", name="Skip").click()
+    asked = page.get_by_role("dialog", name="Skip this job?")
+    expect(asked).to_contain_text(f"{TITLES[1]} leaves your list")
+    asked.get_by_role("button", name="Keep it").click()
+    expect(asked).to_have_count(0)
+    card(TITLES[1]).get_by_role("button", name="I applied").click()
+    page.locator("article.gone", has_text=f"Applied: {TITLES[1]}").get_by_role("button", name="Undo").click()
     expect(card(TITLES[1])).to_be_visible()
+
+    page.reload()
+    expect(card(TITLES[1])).to_be_visible()
+    expect(card(TITLES[0])).to_have_count(0)
 
 
 def _alert_links(page, base: str, ids: dict[str, int]) -> None:
@@ -458,7 +714,7 @@ def _alert_links(page, base: str, ids: dict[str, int]) -> None:
 
     cards = page.locator("article.job-card")
     page.goto(f"{base}/#/feed?job={ids[TITLES[1]]}")
-    expect(cards.first.get_by_role("link", name=TITLES[1], exact=True)).to_be_visible()
+    expect(cards.first.get_by_role("button", name=TITLES[1], exact=True)).to_be_visible()
     expect(cards.first).to_have_class(re.compile(r"\bfocus\b"))
     page.goto(f"{base}/#/feed?job={ids[TITLES[2]]}")
     expect(page.get_by_text("This job is not in your list any more")).to_be_visible()
@@ -492,10 +748,11 @@ def _more(page, base: str) -> None:
     _jobs(database(), "more", [f"Backend Engineer {n}" for n in range(30)])
     page.goto(f"{base}/#/")
     cards = page.locator("article.job-card")
-    expect(page.get_by_role("heading", name="32 jobs match your words")).to_be_visible()
+    # The two they matched, less the one they applied to.
+    expect(page.get_by_role("heading", name="31 jobs match your words")).to_be_visible()
     expect(cards).to_have_count(25)
     page.get_by_role("button", name="Show more jobs").click()
-    expect(cards).to_have_count(32)
+    expect(cards).to_have_count(31)
     expect(page.get_by_role("button", name="Show more jobs")).to_have_count(0)
 
 
@@ -505,7 +762,8 @@ def _jobs(db, run: str, titles) -> dict[str, int]:
 
     return {title: insert(db, CorpusJob(
                 url=f"https://jobs.example.com/{run}/{n}", source="test", title=title, company="Acme",
-                location="Berlin, Germany", is_remote=True, language="en", first_seen_at=now(),
+                location="Berlin, Germany", country="DE", city="berlin", is_remote=True, language="en",
+                first_seen_at=now(),
                 description=f"{title}. Python, Postgres, on call one week in six.")).id
             for n, title in enumerate(titles)}
 

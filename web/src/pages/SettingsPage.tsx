@@ -1,11 +1,10 @@
-/** Settings: alerts, AI writing, your account, and help with a way to write to us. */
+/** Settings: alerts, AI writing and your account. Help moved to the "?" beside the bell. */
 import { useEffect, useState } from "react";
 
 import { Alerts } from "../alerts";
 import { api, type Ready, type Schema } from "../api";
 import { ClaudeConnect } from "../components/ClaudeConnect";
-import { HelpAndContact } from "../help";
-import { Card, Error, Field, useAction } from "../ui";
+import { Card, Error, Field, Prompt, useAction } from "../ui";
 
 type Account = Schema<"AccountOut">;
 type Stored = Schema<"StoredCredential">;
@@ -137,10 +136,6 @@ export function SettingsPage({ dashboard, onChanged, onSignedOut }: {
         <Error>{signOut.error}</Error>
       </Card>
 
-      <Card title="Help and contact">
-        <HelpAndContact />
-      </Card>
-
       <p className="small">
         <a href="#/privacy">Who sees your data</a>
         {dashboard.is_admin ? <> · <a href="#/admin">Platform</a></> : null}
@@ -265,9 +260,7 @@ function DeleteAccount({ onDeleted }: { onDeleted: () => void }) {
         Delete my account
       </button>
       {asking ? (
-        <div className="modal-backdrop" onClick={() => setAsking(false)}>
-          <div className="modal" onClick={(event) => event.stopPropagation()}>
-            <h2>Delete your account?</h2>
+        <Prompt title="Delete your account?" onClose={() => setAsking(false)}>
             <p className="small muted">
               Your documents, words and keys are erased and your encryption key destroyed. This cannot
               be undone.
@@ -276,7 +269,6 @@ function DeleteAccount({ onDeleted }: { onDeleted: () => void }) {
               <input type="password" value={password} autoFocus autoComplete="current-password"
                      onChange={(event) => setPassword(event.target.value)}
                      onKeyDown={(event) => {
-                       if (event.key === "Escape") setAsking(false);
                        if (event.key === "Enter" && password && !remove.busy) void remove.run();
                      }} />
             </Field>
@@ -290,8 +282,7 @@ function DeleteAccount({ onDeleted }: { onDeleted: () => void }) {
                 {remove.busy ? "Deleting…" : "Delete it for good"}
               </button>
             </div>
-          </div>
-        </div>
+        </Prompt>
       ) : null}
     </>
   );

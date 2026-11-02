@@ -1,9 +1,9 @@
-/** Help and contact, at the end of Settings: the answers people look for first, then a form that
- * reaches a person. */
+/** Help and contact, behind the "?" beside the bell on every page (owner, 2026-11-02): the answers
+ * people look for first, then a form that reaches a person. */
 import { useEffect, useState } from "react";
 
 import { api, type Schema } from "./api";
-import { Error, Field, useAction } from "./ui";
+import { Error, Field, Sheet, useAction } from "./ui";
 
 type Receipt = Schema<"ContactReceipt">;
 
@@ -18,13 +18,33 @@ const ANSWERS: [string, string][] = [
   ["How do I get new jobs on my phone?",
    "In Settings, turn on notifications in this browser, or connect Telegram. Both are optional, and " +
    "your Jobs page fills up either way."],
+  ["How do I stop seeing a job?",
+   "Tap “Skip”, then “Skip it”. It leaves your Jobs page and does not come back, even after a refresh."],
   ["Where are the jobs I applied to?",
-   "Tap “I applied” on a job, and it is kept in Applied, even after it stops matching your search."],
+   "Tap “I applied” on a job. It leaves your Jobs page and is kept in Applied, even after it stops " +
+   "matching your search."],
   ["I forgot my password.",
    "Sign out, then tap “Forgot your password?” on the sign-in page. We email you a link to set a new one."],
 ];
 
-export function HelpAndContact() {
+/** The "?" beside the bell, and what it opens over the page. */
+export function HelpButton() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button type="button" className="bell help" aria-label="Help and contact" title="Help and contact"
+              onClick={() => setOpen(true)}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M7.8 8.6a4.2 4.2 0 1 1 6.1 3.8c-1.1.5-1.9 1.5-1.9 2.7v.7M12 20h.01" stroke="currentColor"
+                strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      {open ? <Sheet title="Help and contact" onClose={() => setOpen(false)}><HelpAndContact /></Sheet> : null}
+    </>
+  );
+}
+
+function HelpAndContact() {
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
   const [sent, setSent] = useState<Receipt | null>(null);

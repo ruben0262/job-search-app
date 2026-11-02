@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 
 import { api, type Schema } from "../api";
+import { Prompt } from "../ui";
 
 type Phase = "idle" | "starting" | "waiting" | "finishing" | "done";
 
@@ -82,27 +83,25 @@ export function ClaudeConnect({ onConnected }: { onConnected: () => void }) {
       </button>
       {error && !open ? <p className="error">{error}</p> : null}
 
-      {/* The backdrop does not close this one. */}
+      {/* Answered with its own buttons: the backdrop and Escape do not close this one. */}
       {open ? (
-        <div className="modal-backdrop">
-          <div className="modal">
+        <Prompt dismissable={false} onClose={close}
+                title={phase === "starting" ? "Opening Claude…" : phase === "done" ? "Connected"
+                  : "Finish signing in to Claude"}>
             {phase === "starting" ? (
               <>
-                <h2>Opening Claude…</h2>
                 <p className="small muted">
                   Getting your sign-in link ready. This takes a few seconds.
                 </p>
               </>
             ) : phase === "done" ? (
               <>
-                <h2>Connected</h2>
                 <p className="small muted">
                   Your Claude account is stored and encrypted. Carrying on.
                 </p>
               </>
             ) : (
               <>
-                <h2>Finish signing in to Claude</h2>
                 <p className="small muted">
                   A Claude tab opened. Approve the request there, and Claude will show you a short
                   code. Paste it below.
@@ -135,7 +134,6 @@ export function ClaudeConnect({ onConnected }: { onConnected: () => void }) {
                   onChange={(event) => setCode(event.target.value)}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") void submit();
-                    if (event.key === "Escape") close();
                   }}
                 />
                 {error ? <p className="error">{error}</p> : null}
@@ -153,8 +151,7 @@ export function ClaudeConnect({ onConnected }: { onConnected: () => void }) {
                 </div>
               </>
             )}
-          </div>
-        </div>
+        </Prompt>
       ) : null}
     </>
   );

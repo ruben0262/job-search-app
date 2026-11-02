@@ -1,15 +1,21 @@
-/** Jobs, the home page: how many match your words, words worth adding, and the jobs, each one a tap
- * from a CV and a cover letter made for it. Every alert lands here, on `#/feed?job=<id>`. */
-import { useCallback, useEffect, useState } from "react";
+/** Jobs, the home page: the jobs that match your words, each one a tap from a CV and a cover letter
+ * made for it, and a tap on it shows all of it. New ones are announced, never pushed in under the
+ * reader. Every alert lands here, on `#/feed?job=<id>`. */
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { MouseEvent, ReactNode } from "react";
 
 import { api, type Ready, type Schema } from "../api";
 import { useBuild } from "../documents";
-import { ago } from "../time";
-import { Banner, Error, Suggested, useAction } from "../ui";
+import { JobView } from "../jobview";
+import { type Mark, mark as record, send, unsent } from "../marks";
+import { POLL_MS } from "../notifications";
+import { ago, useNow } from "../time";
+import { Banner, Error, Prompt, useAction } from "../ui";
 
 type Feed = Schema<"Feed">;
 type Job = Schema<"FeedJob">;
 type Made = Schema<"JobDocument">;
+type Build = ReturnType<typeof useBuild>;
 
 /** The newest of each kind, which is the one a card offers. */
 export function latest(documents: Made[]): Partial<Record<Made["kind"], Made>> {
@@ -17,9 +23,8 @@ export function latest(documents: Made[]): Partial<Record<Made["kind"], Made>> {
   for (const each of documents) found[each.kind] ??= each;
   return found;
 }
-type Suggestions = Schema<"WordSuggestions">;
 
-/** How long a hidden job keeps its Undo before it leaves the page. */
+/** How long a job marked applied keeps its Undo before it leaves the page. */
 const UNDO_MS = 6000;
 
 /** "Posted": hours back, as the server's `since_hours` takes them. */
@@ -32,6 +37,9 @@ const BOARDS: Record<string, string> = {
   workingnomads: "Working Nomads", themuse: "The Muse", smartrecruiters: "SmartRecruiters",
 };
 const board = (name: string) => BOARDS[name] ?? name.charAt(0).toUpperCase() + name.slice(1);
+
+/** A country's name from its code, as the browser knows it in English. */
+const REGIONS = new Intl.DisplayNames(["en"], { type: "region" });
 
 // The last answer, kept across mounts: coming back to Jobs shows the list at once.
 let cached: Feed | null = null;
@@ -52,50 +60,76 @@ export function JobsPage({ dashboard, focus, onChanged }: {
   const [remote, setRemote] = useState(false);
   const [since, setSince] = useState<number | null>(null);
   const [source, setSource] = useState("");
+  const [country, setCountry] = useState("");
+  const [city, setCity] = useState("");
   const [newest, setNewest] = useState(false);
-  const [notApplied, setNotApplied] = useState(false);
   const [noCv, setNoCv] = useState(false);
-  // The boards their jobs come from, kept from the first answer: a filtered answer still lists them all.
+  const [picked, setPicked] = useState<string[]>([]);
+  const [atLeast, setAtLeast] = useState(1);
+  // The boards and words their jobs have, kept from the first answer: a filtered one still offers them all.
   const [boards, setBoards] = useState<Feed["sources"]>(cached?.sources ?? []);
+  const [words, setWords] = useState<Feed["words"]>(cached?.words ?? []);
+  const [countries, setCountries] = useState<Feed["countries"]>(cached?.countries ?? []);
+  const [cities, setCities] = useState<Feed["cities"]>(cached?.cities ?? []);
   const [feed, setFeed] = useState<Feed | null>(cached);
   const [failed, setFailed] = useState(false);
-  // Hidden on the server but still counted in `feed.total`, so the heading subtracts them. Each keeps
-  // an Undo for a moment, then is gone: held here, so a card shown again cannot forget it.
-  const [hidden, setHidden] = useState<Set<number>>(new Set());
+  // Skipped or applied here, by what: still counted in `feed.total`, so the heading subtracts them.
+  // A skip, asked about first, is gone at once; "I applied" keeps an Undo for a moment.
+  const [marked, setMarked] = useState<Map<number, Mark>>(new Map());
   const [gone, setGone] = useState<Set<number>>(new Set());
-  const shown = (id: number) => !(hidden.has(id) && gone.has(id));
-  const filtered = query.trim() !== "" || remote || since !== null || source !== "" || notApplied || noCv;
+  // How many jobs were found since this list was read, and when the one before it was read: what
+  // the "new jobs" button says, and which cards it marks new.
+  const [fresh, setFresh] = useState(0);
+  const [seenUntil, setSeenUntil] = useState<string | null>(null);
+  const shown = (id: number) => !gone.has(id);
+  const filtered = query.trim() !== "" || remote || since !== null || source !== "" || country !== ""
+    || city !== "" || noCv || picked.length > 0 || atLeast > 1;
   const clear = () => {
     setQuery("");
     setRemote(false);
     setSince(null);
     setSource("");
-    setNotApplied(false);
+    setCountry("");
+    setCity("");
     setNoCv(false);
+    setPicked([]);
+    setAtLeast(1);
   };
 
   // A page is as long as the server's own page (`FEED_PAGE`): the next one starts where this one ends.
-  const read = useCallback(async (offset: number): Promise<Feed> => {
+  const read = useCallback(async (offset: number, foundAfter?: string): Promise<Feed> => {
     const params = new URLSearchParams({ offset: `${offset}` });
     if (query.trim()) params.set("q", query.trim());
     if (remote) params.set("remote", "true");
     if (since) params.set("since_hours", `${since}`);
     if (source) params.set("source", source);
+    if (country) params.set("country", country);
+    if (city) params.set("city", city);
     if (newest) params.set("sort", "newest");
-    if (notApplied) params.set("applied", "false");
     if (noCv) params.set("made", "false");
+    for (const word of picked) params.append("word", word);
+    if (atLeast > 1) params.set("min_words", `${atLeast}`);
+    if (foundAfter) {
+      params.set("found_after", foundAfter);
+      params.set("limit", "1");
+    }
     return api.get<Feed>(`/feed?${params}`);
-  }, [query, remote, since, source, newest, notApplied, noCv]);
+  }, [query, remote, since, source, country, city, newest, noCv, picked, atLeast]);
 
   const reload = useCallback(() => {
-    read(0).then((body) => {
+    // Marks this browser still holds go first, so the answer already leaves them out.
+    void send().finally(() => read(0).then((body) => {
       if (!filtered && !newest) cached = body;
       setBoards(body.sources);
+      setWords(body.words);
+      setCountries(body.countries);
+      setCities(body.cities);
       setFeed(body);
-      setHidden(new Set());
-      setGone(new Set());
+      setMarked(new Map());
+      setGone(unsent());
+      setFresh(0);
       setFailed(false);
-    }).catch(() => setFailed(true));
+    }).catch(() => setFailed(true)));
   }, [read, filtered, newest]);
 
   // Typing does not fire a request per key.
@@ -104,25 +138,63 @@ export function JobsPage({ dashboard, focus, onChanged }: {
     return () => window.clearTimeout(timer);
   }, [reload, query]);
 
-  // Hidden jobs have left the server's list, so the next page starts that many earlier, and its
+  // New jobs are counted, not added: the list never moves under somebody reading it.
+  const asOf = feed?.as_of;
+  useEffect(() => {
+    if (!asOf) return;
+    const look = () => {
+      if (document.visibilityState === "visible") read(0, asOf).then((body) => setFresh(body.total)).catch(() => undefined);
+    };
+    const timer = window.setInterval(look, POLL_MS);
+    document.addEventListener("visibilitychange", look);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", look);
+    };
+  }, [asOf, read]);
+
+  const showNew = () => {
+    setSeenUntil(asOf ?? null);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    reload();
+  };
+
+  // Marked jobs have left the server's list, so the next page starts that many earlier, and its
   // total no longer counts them while this one does.
   const more = useAction(async () => {
     if (!feed) return;
-    const next = await read(feed.jobs.filter((job) => !hidden.has(job.id)).length);
+    const next = await read(feed.jobs.filter((job) => !marked.has(job.id)).length);
     const have = new Set(feed.jobs.map((job) => job.id));
-    setFeed({ total: next.total + hidden.size, sources: next.sources,
+    setFeed({ ...next, total: next.total + marked.size, as_of: feed.as_of,
               jobs: [...feed.jobs, ...next.jobs.filter((job) => !have.has(job.id))] });
   });
 
-  const marked = (id: number, isHidden: boolean) => {
-    setHidden((now) => toggled(now, id, isHidden));
-    setGone((now) => toggled(now, id, false));
-    if (isHidden) window.setTimeout(() => setGone((now) => toggled(now, id, true)), UNDO_MS);
+  // Off the page, sent when it can be, and kept until it is: see `marks.ts`. An Undo stops the card
+  // leaving.
+  const leaving = useRef(new Map<number, number>());
+  const onMark = (job: Job, kind: Mark, on: boolean) => {
+    setMarked((now) => {
+      const next = new Map(now);
+      if (on) next.set(job.id, kind);
+      else next.delete(job.id);
+      return next;
+    });
+    window.clearTimeout(leaving.current.get(job.id));
+    const leave = () => setGone((now) => new Set([...now, job.id]));
+    if (on && kind === "hidden") leave();
+    else if (on) leaving.current.set(job.id, window.setTimeout(leave, UNDO_MS));
+    void record(job.id, kind, on).then(() => {
+      if (kind === "applied") onChanged();
+    });
   };
 
-  const total = feed ? feed.total - hidden.size : 0;
+  const total = feed ? feed.total - marked.size : 0;
   // The AI versions only when a build would be allowed: someone can pay, and there is a profile.
   const ai = dashboard.ai.payer !== null && dashboard.ai.profile;
+  const card = (job: Job, isFocus = false) => (
+    <JobCard key={job.id} job={job} ai={ai} focus={isFocus} done={marked.get(job.id)} onMark={onMark}
+             fresh={seenUntil !== null && job.first_seen_at !== null && job.first_seen_at > seenUntil} />
+  );
   return (
     <>
       {dashboard.banners.map((banner) => (
@@ -135,6 +207,12 @@ export function JobsPage({ dashboard, focus, onChanged }: {
         </Banner>
       ))}
 
+      {fresh > 0 ? (
+        <button type="button" className="fresh-jobs" onClick={showNew}>
+          {fresh} new {fresh === 1 ? "job" : "jobs"} · Show {fresh === 1 ? "it" : "them"}
+        </button>
+      ) : null}
+
       <p className="kicker">Your jobs</p>
       <h1>
         {feed === null
@@ -143,7 +221,8 @@ export function JobsPage({ dashboard, focus, onChanged }: {
       </h1>
       {dashboard.applied ? (
         <p className="small muted">
-          You have applied to {dashboard.applied} {dashboard.applied === 1 ? "job" : "jobs"}.
+          You have applied to {dashboard.applied} {dashboard.applied === 1 ? "job" : "jobs"}.{" "}
+          <a href="#/applied">See them</a>
         </p>
       ) : null}
 
@@ -162,13 +241,35 @@ export function JobsPage({ dashboard, focus, onChanged }: {
             <option key={each.name} value={each.name}>{board(each.name)} ({each.jobs})</option>
           ))}
         </select>
+        {countries.length > 1 || country ? (
+          <select aria-label="Country" value={country} onChange={(event) => setCountry(event.target.value)}>
+            <option value="">All countries</option>
+            {countries.map((each) => (
+              <option key={each.value} value={each.value}>{each.label} ({each.jobs})</option>
+            ))}
+          </select>
+        ) : null}
+        {cities.length > 1 || city ? (
+          <select aria-label="City" value={city} onChange={(event) => setCity(event.target.value)}>
+            <option value="">All cities</option>
+            {cities.map((each) => <option key={each.value} value={each.value}>{each.label} ({each.jobs})</option>)}
+          </select>
+        ) : null}
         <select aria-label="Order" value={newest ? "newest" : "best"}
                 onChange={(event) => setNewest(event.target.value === "newest")}>
-          <option value="best">Best match first</option>
+          <option value="best">Most of your words first</option>
           <option value="newest">Newest first</option>
         </select>
-        {([["Remote only", remote, setRemote], ["Not applied yet", notApplied, setNotApplied],
-           ["No CV yet", noCv, setNoCv]] as const).map(([label, on, set]) => (
+        {words.length > 1 ? (
+          <select aria-label="How many of your words" value={atLeast}
+                  onChange={(event) => setAtLeast(Number(event.target.value))}>
+            <option value={1}>Any of your words</option>
+            {[2, 3, 4].filter((count) => count <= words.length).map((count) => (
+              <option key={count} value={count}>At least {count} of your words</option>
+            ))}
+          </select>
+        ) : null}
+        {([["Remote only", remote, setRemote], ["No CV yet", noCv, setNoCv]] as const).map(([label, on, set]) => (
           <button key={label} type="button" className={on ? "chip on" : "chip"} aria-pressed={on}
                   onClick={() => set(!on)}>
             {label}
@@ -176,11 +277,23 @@ export function JobsPage({ dashboard, focus, onChanged }: {
         ))}
         {filtered ? <button type="button" className="linklike small" onClick={clear}>Clear filters</button> : null}
       </div>
-
-      <NewWords onAccepted={reload} />
+      {words.length > 1 ? (
+        <div className="filters words-filter" role="group" aria-label="Only jobs with">
+          <span className="small muted">Only jobs with:</span>
+          {words.map((word) => {
+            const on = picked.includes(word.name);
+            return (
+              <button key={word.name} type="button" className={on ? "chip on" : "chip"} aria-pressed={on}
+                      onClick={() => setPicked(on ? picked.filter((each) => each !== word.name) : [...picked, word.name])}>
+                {word.name} <span className="count">{word.jobs}</span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
 
       {focus !== null && shown(focus) ? (
-        <Focused id={focus} ai={ai} hidden={hidden.has(focus)} onMarked={marked} onApplied={onChanged} />
+        <Focused id={focus} ai={ai} card={(job) => card(job, true)} />
       ) : null}
 
       {failed ? <p className="error">Your jobs did not load. Refresh the page to try again.</p> : null}
@@ -195,10 +308,7 @@ export function JobsPage({ dashboard, focus, onChanged }: {
         </p>
       ) : null}
       <div className="jobs">
-        {feed?.jobs.filter((job) => job.id !== focus && shown(job.id)).map((job) => (
-          <JobCard key={job.id} job={job} ai={ai} hidden={hidden.has(job.id)} onMarked={marked}
-                   onApplied={onChanged} />
-        ))}
+        {feed?.jobs.filter((job) => job.id !== focus && shown(job.id)).map((job) => card(job))}
       </div>
       {feed && feed.jobs.length < feed.total ? (
         <button type="button" className="secondary more" disabled={more.busy} onClick={() => void more.run()}>
@@ -212,180 +322,173 @@ export function JobsPage({ dashboard, focus, onChanged }: {
 
 /** The job an alert pointed at, first and marked. Gone from their list, it says so and still offers
  * the documents: the alert was for a real job, and it may be the one they want to apply to. */
-function Focused({ id, ai, hidden, onMarked, onApplied }: {
-  id: number;
-  ai: boolean;
-  hidden: boolean;
-  onMarked: (id: number, hidden: boolean) => void;
-  onApplied: () => void;
-}) {
+function Focused({ id, ai, card }: { id: number; ai: boolean; card: (job: Job) => ReactNode }) {
   const [job, setJob] = useState<Job | null | undefined>(undefined);
+  const cv = useBuild(id, "cv");
+  const cover = useBuild(id, "cover");
   useEffect(() => {
     setJob(undefined);
     api.get<Feed>(`/feed?job=${id}`).then((body) => setJob(body.jobs[0] ?? null)).catch(() => setJob(null));
   }, [id]);
 
   if (job === undefined) return null;
-  if (job) return <JobCard job={job} ai={ai} hidden={hidden} focus onMarked={onMarked} onApplied={onApplied} />;
+  if (job) return card(job);
   return (
     <article className="job-card focus">
-      <p>This job is not in your list any more. You may have hidden it, or it is too old.</p>
+      <p>This job is not in your list any more. You may have skipped it or applied, or it is too old.</p>
       <p className="small muted">You can still make your documents for it.</p>
       <div className="job-actions">
-        <MakeDocument jobId={id} kind="cv" ai={ai} />
-        <MakeDocument jobId={id} kind="cover" ai={ai} />
+        <MakeDocument doc={cv} kind="cv" ai={ai} />
+        <MakeDocument doc={cover} kind="cover" ai={ai} />
       </div>
     </article>
   );
 }
 
-/** Words their documents suggest, one tap to take or to say no to. */
-function NewWords({ onAccepted }: { onAccepted: () => void }) {
-  const [words, setWords] = useState<Suggestions | null>(null);
-  useEffect(() => {
-    api.get<Suggestions>("/suggestions").then(setWords).catch(() => undefined);
-  }, []);
-  const take = useAction(async (term: string, kind: "green" | "red") => {
-    setWords(await api.post<Suggestions>("/suggestions/accept", { term, kind }));
-    onAccepted();
-  });
-  const dismiss = useAction(async (term: string) => {
-    setWords(await api.post<Suggestions>("/suggestions/dismiss", { term }));
-  });
-
-  if (!words || words.green.length + words.red.length === 0) return null;
+/** Where a job is: its company, its country named plainly, and the rest of the place. */
+function Where({ job }: { job: Job }) {
+  const now = useNow();
+  let country: string | null = null;
+  try {
+    country = job.country ? REGIONS.of(job.country) ?? null : null;
+  } catch {
+    // A code the browser does not know: the place still says it.
+  }
+  // "Berlin, Germany" beside "Germany" says it twice.
+  const parts = (job.location ?? "").split(",").map((part) => part.trim()).filter(Boolean);
+  if (country && parts[parts.length - 1]?.toLowerCase() === country.toLowerCase()) parts.pop();
+  const rest = parts.join(", ");
+  const remote = job.is_remote && !/remote/i.test(rest) ? "Remote" : null;
+  const age = ago(job.posted_at ?? job.first_seen_at, now);
+  const when = age ? `${job.posted_at ? "Posted" : "Found"} ${age}` : null;
   return (
-    <section className="new-words">
-      <p className="small muted">New words for you: + shows more jobs with it, − hides jobs with it.</p>
-      <ul className="suggestions">
-        {(["green", "red"] as const).flatMap((tone) =>
-          words[tone].map((word) => (
-            <Suggested key={tone + word.term} tone={tone} term={word.term} reason={word.reason}
-                       onTake={() => void take.run(word.term, tone)}
-                       onDismiss={() => void dismiss.run(word.term)} />
-          )),
-        )}
-      </ul>
-      <Error>{take.error ?? dismiss.error}</Error>
-    </section>
+    <p className="job-meta">
+      {job.company ? <strong className="company">{job.company}</strong> : null}
+      {country ? <span className="country">{country}</span> : null}
+      {[rest, remote, when].filter(Boolean).join(" · ")}
+    </p>
   );
 }
 
-function JobCard({ job, ai, hidden, focus = false, onMarked, onApplied }: {
+function JobCard({ job, ai, focus, done, fresh, onMark }: {
   job: Job;
   ai: boolean;
-  hidden: boolean;
-  focus?: boolean;
-  onMarked: (id: number, hidden: boolean) => void;
-  onApplied: () => void;
+  focus: boolean;
+  /** Marked applied here, and still showing its Undo. */
+  done?: Mark;
+  /** Found since the list before this one was read. */
+  fresh: boolean;
+  onMark: (job: Job, kind: Mark, on: boolean) => void;
 }) {
-  const [applied, setApplied] = useState(job.applied_at !== null);
+  // Held here, so the card and its open view are one build each: made in one, ready in both.
+  const cv = useBuild(job.id, "cv");
+  const cover = useBuild(job.id, "cover");
+  const [open, setOpen] = useState(false);
+  // A Skip asks first: a job skipped is never shown again (owner, 2026-11-02).
+  const [skipping, setSkipping] = useState(false);
   // Made before (kept, so a refresh still shows it) or made now: what colours the card.
-  const [made, setMade] = useState<Set<Made["kind"]>>(() => new Set(job.documents.map((each) => each.kind)));
-  const existing = latest(job.documents);
-  // The whole description, fetched the first time it is asked for; `null` while folded.
-  const [full, setFull] = useState<string | null>(null);
-  const expand = useAction(async () => {
-    setFull((await api.get<Schema<"JobDescription">>(`/jobs/${job.id}/description`)).text);
-  });
-  const madeNow = useCallback((kind: Made["kind"]) =>
-    setMade((now) => (now.has(kind) ? now : new Set([...now, kind]))), []);
-  // PUT records "I applied" or "Hide", DELETE takes it back.
-  const mark = useAction(async (name: "applied" | "hidden", on: boolean) => {
-    const path = `/jobs/${job.id}/${name}`;
-    const now = await (on ? api.put<Schema<"JobMarks">>(path) : api.del<Schema<"JobMarks">>(path));
-    setApplied(now.applied);
-    onMarked(job.id, now.hidden);
-    if (name === "applied") onApplied();
-  });
+  const made = new Set(job.documents.map((each) => each.kind));
+  if (cv.build?.state === "ready") made.add("cv");
+  if (cover.build?.state === "ready") made.add("cover");
 
-  if (hidden) {
+  if (done) {
     return (
       <article className="job-card gone">
-        <span className="muted small">Hidden: {job.title}</span>
-        <button type="button" className="linklike" disabled={mark.busy}
-                onClick={() => void mark.run("hidden", false)}>
-          Undo
-        </button>
+        <span className="muted small">Applied: {job.title}</span>
+        <button type="button" className="linklike" onClick={() => onMark(job, done, false)}>Undo</button>
       </article>
     );
   }
 
-  const place = job.location && /remote/i.test(job.location) ? job.location
-    : [job.location, job.is_remote ? "Remote" : null].filter(Boolean).join(" · ");
-  const age = ago(job.posted_at ?? job.first_seen_at);
-  const when = age ? `${job.posted_at ? "Posted" : "Found"} ${age}` : null;
-  return (
-    <article className={["job-card", focus && "focus", made.has("cv") && "made-cv", made.has("cover") && "made-cover",
-                         full !== null && "open"].filter(Boolean).join(" ")}>
-      {made.size ? (
+  const existing = latest(job.documents);
+  const documents = (
+    <div className="job-actions">
+      <MakeDocument doc={cv} kind="cv" ai={ai} existing={existing.cv} />
+      <MakeDocument doc={cover} kind="cover" ai={ai} existing={existing.cover} />
+    </div>
+  );
+  const marks = (
+    <div className="job-actions">
+      <a className="button secondary small" href={job.url} target="_blank" rel="noreferrer">
+        Open on {board(job.source)}
+      </a>
+      <button type="button" className="secondary small" onClick={() => setSkipping(true)}>Skip</button>
+      <button type="button" className="secondary small" onClick={() => onMark(job, "applied", true)}>
+        I applied
+      </button>
+    </div>
+  );
+  const head = (
+    <>
+      {made.size || fresh ? (
         <p className="made-badges">
+          {fresh ? <span className="made-badge new">New</span> : null}
           {made.has("cv") ? <span className="made-badge cv">CV made</span> : null}
           {made.has("cover") ? <span className="made-badge cover">Cover letter made</span> : null}
         </p>
       ) : null}
-      <h3>
-        <a href={job.url} target="_blank" rel="noreferrer">{job.title}</a>
-      </h3>
-      <p className="job-meta">{[job.company, place, when].filter(Boolean).join(" · ")}</p>
+      <Where job={job} />
       {job.salary ? <p className="job-meta">{money(job.salary)}</p> : null}
-      {full !== null ? (
-        <div className="description">
-          <p>{full}</p>
-          <button type="button" className="linklike small" onClick={() => setFull(null)}>Show less</button>
-        </div>
-      ) : job.summary ? (
+    </>
+  );
+  const why = (
+    <p className="why">
+      Why:{" "}
+      {job.words.map((word) => <span key={word} className="word green">{word}</span>)}
+    </p>
+  );
+  // Anywhere on the card but its buttons and links opens the whole job; a click in a box it opened
+  // is that box's own.
+  const opener = (event: MouseEvent) => {
+    if (!(event.target as HTMLElement).closest("a, button, input, select, label, dialog")) setOpen(true);
+  };
+  return (
+    <article onClick={opener}
+             className={["job-card", focus && "focus", made.has("cv") && "made-cv", made.has("cover") && "made-cover"]
+               .filter(Boolean).join(" ")}>
+      <h3>
+        <button type="button" className="title" onClick={() => setOpen(true)}>{job.title}</button>
+      </h3>
+      {head}
+      {job.summary ? (
         <p className="summary">
           {job.summary}{" "}
           {job.more ? (
-            <button type="button" className="linklike small" disabled={expand.busy} onClick={() => void expand.run()}>
-              {expand.busy ? "Loading…" : "Show the full description"}
-            </button>
+            <button type="button" className="linklike small" onClick={() => setOpen(true)}>Read it all</button>
           ) : null}
         </p>
       ) : null}
-      <Error>{expand.error}</Error>
-      <p className="why">
-        Why:{" "}
-        {job.words.map((word) => (
-          <span key={word} className="word green">{word}</span>
-        ))}
-      </p>
-      <div className="job-actions">
-        <MakeDocument jobId={job.id} kind="cv" ai={ai} existing={existing.cv} onMade={madeNow} />
-        <MakeDocument jobId={job.id} kind="cover" ai={ai} existing={existing.cover} onMade={madeNow} />
-      </div>
-      <div className="job-actions">
-        <a className="button secondary small" href={job.url} target="_blank" rel="noreferrer">Open job</a>
-        <button type="button" className="secondary small" disabled={mark.busy}
-                onClick={() => void mark.run("hidden", true)}>
-          Hide
-        </button>
-        <button type="button" className={applied ? "secondary small on" : "secondary small"}
-                aria-pressed={applied} disabled={mark.busy} onClick={() => void mark.run("applied", !applied)}>
-          {applied ? "I applied ✓" : "I applied"}
-        </button>
-      </div>
-      <Error>{mark.error}</Error>
+      {why}
+      {documents}
+      {marks}
+      {open ? (
+        <JobView id={job.id} title={job.title} text={job.more ? undefined : job.summary}
+                 onClose={() => setOpen(false)}>
+          {head}
+          {why}
+          {documents}
+          {marks}
+        </JobView>
+      ) : null}
+      {skipping ? (
+        <Prompt title="Skip this job?" onClose={() => setSkipping(false)}>
+          <p className="small muted"><strong>{job.title}</strong> leaves your list and is not shown to you again.</p>
+          <div className="row">
+            <button type="button" autoFocus onClick={() => onMark(job, "hidden", true)}>Skip it</button>
+            <button type="button" className="secondary" onClick={() => setSkipping(false)}>Keep it</button>
+          </div>
+        </Prompt>
+      ) : null}
     </article>
   );
 }
 
 /** One document for one job: a button, then the words while it is made, then the download — and
  * the download straight away for one made before and kept. */
-function MakeDocument({ jobId, kind, ai, existing, onMade }: {
-  jobId: number;
-  kind: "cv" | "cover";
-  ai: boolean;
-  existing?: Made;
-  onMade?: (kind: Made["kind"]) => void;
-}) {
-  const { build, making, start, error, needsConsent } = useBuild(jobId, kind);
+function MakeDocument({ doc, kind, ai, existing }: { doc: Build; kind: "cv" | "cover"; ai: boolean; existing?: Made }) {
+  const { build, making, start, error, needsConsent } = doc;
   const name = kind === "cv" ? "CV" : "cover letter";
   const ready = build?.state === "ready" && build.download_url ? build.download_url : null;
-  useEffect(() => {
-    if (ready) onMade?.(kind);
-  }, [ready, kind, onMade]);
   if (ready || (!build && existing)) {
     return (
       <span className="make">
@@ -418,13 +521,6 @@ function MakeDocument({ jobId, kind, ai, existing, onMade }: {
       {needsConsent ? <a className="small" href="#/privacy">Read what is sent, and agree</a> : null}
     </span>
   );
-}
-
-function toggled(set: Set<number>, id: number, on: boolean): Set<number> {
-  const next = new Set(set);
-  if (on) next.add(id);
-  else next.delete(id);
-  return next;
 }
 
 /** "€60–80k a year". */

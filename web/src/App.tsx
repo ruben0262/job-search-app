@@ -1,8 +1,11 @@
 /** Routing, and the one decision the whole app hangs off: where a signed-in user belongs. */
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { ApiError, api, type Dashboard } from "./api";
+import { HelpButton } from "./help";
 import { Landing } from "./landing/Landing";
+import { stopped } from "./leave";
+import { forgetMarks } from "./marks";
 import { AdminPage } from "./pages/AdminPage";
 import { AdminUserPage } from "./pages/AdminUserPage";
 import { AppliedPage } from "./pages/AppliedPage";
@@ -20,8 +23,18 @@ import { ThemeToggle } from "./theme";
 
 function useHash(): string {
   const [hash, setHash] = useState(() => window.location.hash.slice(1) || "/");
+  const shown = useRef(hash);
   useEffect(() => {
-    const update = () => setHash(window.location.hash.slice(1) || "/");
+    const update = () => {
+      const next = window.location.hash.slice(1) || "/";
+      // The back button, while a page has changes not saved: put back while it asks (`leave.ts`).
+      if (next !== shown.current && stopped(next)) {
+        window.history.replaceState(null, "", `#${shown.current}`);
+        return;
+      }
+      shown.current = next;
+      setHash(next);
+    };
     window.addEventListener("hashchange", update);
     return () => window.removeEventListener("hashchange", update);
   }, []);
@@ -55,6 +68,7 @@ export function App() {
         // The page caches die with the session.
         clearJobsCache();
         clearAccountCache();
+        forgetMarks();
         setSession({ state: "out" });
         return;
       }
@@ -134,8 +148,11 @@ export function App() {
               </a>
             ))}
           </div>
-          <NotificationBell />
-          <ThemeToggle />
+          <div className="nav-icons">
+            <HelpButton />
+            <NotificationBell />
+            <ThemeToggle />
+          </div>
         </nav>
         {/* Keyed on the place so the fade-up replays on navigation, not only on first load. */}
         <main className={section === "admin" ? "page-in admin" : "page-in"} key={section}>

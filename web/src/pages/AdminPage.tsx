@@ -2,7 +2,7 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 
 import { api } from "../api";
-import { Error, useAction } from "../ui";
+import { Error, Prompt, useAction } from "../ui";
 
 type Alert = {
   severity: "page" | "warn";
@@ -879,9 +879,7 @@ export function AdminPage() {
 
       {/* The address has to be typed, and the server checks it too. */}
       {doomed ? (
-        <div className="modal-backdrop" onClick={() => setDoomed(null)}>
-          <div className="modal" onClick={(event) => event.stopPropagation()}>
-            <h2 style={{ marginTop: 0 }}>Delete this account?</h2>
+        <Prompt title="Delete this account?" onClose={() => setDoomed(null)}>
             <p className="facts">
               Everything belonging to <strong>{doomed.email}</strong> goes: their profile files,
               labels, documents, models and history. It happens immediately and cannot be undone.
@@ -908,8 +906,7 @@ export function AdminPage() {
               </button>
               <button className="secondary" onClick={() => setDoomed(null)}>Cancel</button>
             </div>
-          </div>
-        </div>
+        </Prompt>
       ) : null}
     </>
   );
@@ -1017,6 +1014,7 @@ function CorpusTab() {
         }}
       >
         <input
+          type="search"
           value={q}
           placeholder="Title or company"
           onChange={(event) => setQ(event.target.value)}
@@ -1103,6 +1101,7 @@ function CorpusTab() {
       </p>
 
       <input
+        type="search"
         value={termQuery}
         placeholder="Filter terms — check before adding a duplicate"
         onChange={(event) => {

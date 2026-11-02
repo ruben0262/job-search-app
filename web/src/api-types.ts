@@ -498,7 +498,7 @@ export interface paths {
         put?: never;
         /**
          * Forgot
-         * @description Email a reset link.
+         * @description Email a reset link, once the answer has gone.
          */
         post: operations["forgot_auth_forgot_post"];
         delete?: never;
@@ -638,7 +638,7 @@ export interface paths {
         put?: never;
         /**
          * Signup
-         * @description Create an unverified account and email a link.
+         * @description Create an unverified account and email a link, once the answer has gone.
          */
         post: operations["signup_auth_signup_post"];
         delete?: never;
@@ -931,9 +931,14 @@ export interface paths {
         };
         /**
          * Feed
-         * @description This person's matches, a page at a time, best first or newest first: searched, remote only,
-         *     posted lately, from one board, applied to or not, with a document made or not — or one job, the
-         *     one an alert's link names, which is either still in their list or not.
+         * @description This person's matches, a page at a time, the most of their words first or newest first:
+         *     searched, remote only, posted lately, from one board, in one country or one city, with a document
+         *     made or not, having every word picked, or at least so many of their words — or one job, the one
+         *     an alert's link names, which is either still in their list or not. `found_after` keeps only the
+         *     jobs found since a list was read, which is how the page learns how many new ones there are
+         *     without reloading.
+         *
+         *     A job they skipped or applied to is gone from it for good: Applied lists the second.
          */
         get: operations["feed_feed_get"];
         put?: never;
@@ -1252,10 +1257,11 @@ export interface paths {
         put?: never;
         post?: never;
         /**
-         * Delete All
-         * @description Delete every kept document, to make room.
+         * Delete Many
+         * @description Delete the kept documents My documents shows, to make room: the older ones, the ones a search
+         *     found, or all of them. Named one by one, so a call that names none deletes nothing.
          */
-        delete: operations["delete_all_saved_delete"];
+        delete: operations["delete_many_saved_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1295,46 +1301,6 @@ export interface paths {
         get: operations["get_suggestions_suggestions_get"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/suggestions/accept": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Accept
-         * @description Add a word to their search: green picks jobs, red hides them.
-         */
-        post: operations["accept_suggestions_accept_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/suggestions/dismiss": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Dismiss
-         * @description Never suggest this word again.
-         */
-        post: operations["dismiss_suggestions_dismiss_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1854,19 +1820,30 @@ export interface components {
         };
         /** Feed */
         Feed: {
+            /**
+             * As Of
+             * Format: date-time
+             */
+            as_of: string;
+            /** Cities */
+            cities: components["schemas"]["FeedPlace"][];
+            /** Countries */
+            countries: components["schemas"]["FeedPlace"][];
             /** Jobs */
             jobs: components["schemas"]["FeedJob"][];
             /** Sources */
             sources: components["schemas"]["FeedSource"][];
             /** Total */
             total: number;
+            /** Words */
+            words: components["schemas"]["FeedWord"][];
         };
         /** FeedJob */
         FeedJob: {
-            /** Applied At */
-            applied_at: string | null;
             /** Company */
             company: string | null;
+            /** Country */
+            country: string | null;
             /** Documents */
             documents: components["schemas"]["JobDocument"][];
             /** First Seen At */
@@ -1882,8 +1859,6 @@ export interface components {
             /** Posted At */
             posted_at: string | null;
             salary: components["schemas"]["FeedSalary"] | null;
-            /** Score */
-            score: number;
             /** Source */
             source: string;
             /** Summary */
@@ -1894,6 +1869,15 @@ export interface components {
             url: string;
             /** Words */
             words: string[];
+        };
+        /** FeedPlace */
+        FeedPlace: {
+            /** Jobs */
+            jobs: number;
+            /** Label */
+            label: string;
+            /** Value */
+            value: string;
         };
         /** FeedSalary */
         FeedSalary: {
@@ -1910,6 +1894,13 @@ export interface components {
         };
         /** FeedSource */
         FeedSource: {
+            /** Jobs */
+            jobs: number;
+            /** Name */
+            name: string;
+        };
+        /** FeedWord */
+        FeedWord: {
             /** Jobs */
             jobs: number;
             /** Name */
@@ -2059,10 +2050,9 @@ export interface components {
         LinkPlatform: "linkedin" | "github" | "gitlab" | "portfolio" | "stackoverflow" | "other";
         /**
          * Location
-         * @description Controlled vocabulary.
          * @enum {string}
          */
-        Location: "europe" | "united_kingdom" | "ireland" | "switzerland" | "norway" | "london" | "berlin" | "amsterdam" | "dublin" | "paris" | "madrid" | "lisbon" | "warsaw" | "budapest" | "zurich" | "stockholm" | "copenhagen";
+        Location: "europe" | "united_kingdom" | "ireland" | "austria" | "belgium" | "bulgaria" | "croatia" | "cyprus" | "czechia" | "denmark" | "estonia" | "finland" | "france" | "germany" | "greece" | "hungary" | "iceland" | "italy" | "latvia" | "lithuania" | "luxembourg" | "malta" | "netherlands" | "norway" | "poland" | "portugal" | "romania" | "serbia" | "slovakia" | "slovenia" | "spain" | "sweden" | "switzerland" | "ukraine" | "united_states" | "canada";
         /** LoginRequest */
         LoginRequest: {
             /**
@@ -2407,21 +2397,6 @@ export interface components {
             status: string;
             /** Truncated */
             truncated: boolean;
-        };
-        /** SuggestionDismissal */
-        SuggestionDismissal: {
-            /** Term */
-            term: string;
-        };
-        /** SuggestionPick */
-        SuggestionPick: {
-            /**
-             * Kind
-             * @enum {string}
-             */
-            kind: "green" | "red";
-            /** Term */
-            term: string;
         };
         /** SupportAi */
         SupportAi: {
@@ -4138,8 +4113,12 @@ export interface operations {
                 job?: number | null;
                 since_hours?: number | null;
                 source?: string | null;
-                applied?: boolean | null;
+                country?: string | null;
+                city?: string | null;
                 made?: boolean | null;
+                word?: string[];
+                min_words?: number;
+                found_after?: string | null;
                 sort?: "best" | "newest";
             };
             header?: never;
@@ -4693,9 +4672,11 @@ export interface operations {
             };
         };
     };
-    delete_all_saved_delete: {
+    delete_many_saved_delete: {
         parameters: {
-            query?: never;
+            query: {
+                ids: number[];
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -4709,6 +4690,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SavedDocuments"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -4760,72 +4750,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WordSuggestions"];
-                };
-            };
-        };
-    };
-    accept_suggestions_accept_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SuggestionPick"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["WordSuggestions"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    dismiss_suggestions_dismiss_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SuggestionDismissal"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["WordSuggestions"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -115,7 +115,7 @@ body {
 .centered {
   position: relative;
   z-index: 1;
-  max-width: 64rem;
+  max-width: 72rem;
   margin: 0 auto;
   padding: 1.25rem 2rem 5rem;
   /* A grid or flex child defaults to `min-width: auto` — its content width — so one wide table
@@ -348,6 +348,29 @@ textarea {
   font: inherit;
 }
 
+/* One arrow for every select, drawn here rather than left to the browser, which pins its own against
+   the very edge. Set in from the right as far as the text is from the left; a mid grey reads on both
+   themes. */
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 2.6rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8' fill='none' stroke='%238a8a87' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 1.5l5 5 5-5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 1rem center;
+  background-size: 0.7rem auto;
+  cursor: pointer;
+}
+
+/* One magnifier for every search box, in the same grey as the arrows, set in as far as they are. */
+input[type="search"] {
+  padding-left: 2.6rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%238a8a87' stroke-width='1.6' stroke-linecap='round'%3E%3Ccircle cx='7' cy='7' r='5'/%3E%3Cpath d='M11 11l3.5 3.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: left 1rem center;
+  background-size: 0.95rem auto;
+}
+
 input::placeholder,
 textarea::placeholder {
   color: var(--dim);
@@ -578,7 +601,6 @@ button[disabled] {
 
 .toolbar select {
   width: auto;
-  padding-right: 2rem;
 }
 
 /* A quiet on/off filter — mono like every other label of its kind. */
@@ -786,16 +808,22 @@ td.num {
 
 /* ── the bell ────────────────────────────────────────────────────────────────────────────── */
 
-.bell-wrap {
-  position: relative;
-  margin-left: auto;
+/* Help, the bell and the theme, together at the right: closer to each other than the bar's own gap. */
+.nav-icons {
   display: flex;
   align-items: center;
+  gap: 0.45rem;
+  margin-left: auto;
 }
 
-/* The toggle follows it, so the bell hands the auto-margin over. */
-.bell-wrap + .theme-toggle {
-  margin-left: 0.6rem;
+.nav-icons .theme-toggle {
+  margin-left: 0;
+}
+
+.bell-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
 }
 
 .bell {
@@ -804,8 +832,8 @@ td.num {
   border: 1px solid var(--faint);
   color: var(--muted);
   border-radius: 999px;
-  width: 2rem;
-  height: 2rem;
+  width: 2.25rem;
+  height: 2.25rem;
   padding: 0;
   display: grid;
   place-items: center;
@@ -1067,14 +1095,30 @@ button.main {
   line-height: 1.35;
 }
 
-.job-card h3 a {
-  color: var(--ink);
-  text-decoration: none;
+/* The title opens the whole job, as a tap anywhere else on the card does. */
+.job-card:not(.gone) {
+  cursor: pointer;
 }
 
-.job-card h3 a:hover {
+.job-card:not(.gone):hover {
+  border-color: var(--faint);
+}
+
+.job-card h3 .title {
+  display: inline;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+}
+
+.job-card h3 .title:hover {
   text-decoration: underline;
   text-underline-offset: 3px;
+  transform: none;
 }
 
 /* Where an alert landed: the one job they came for, marked in the colour that means "a match". */
@@ -1095,6 +1139,24 @@ button.main {
   margin: 0 0 0.15rem;
   color: var(--muted);
   font-size: 0.875rem;
+}
+
+/* Who and which country, seen before anything else on the line. */
+.job-meta .company {
+  margin-right: 0.5rem;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.job-meta .country {
+  display: inline-block;
+  margin-right: 0.5rem;
+  padding: 0 0.5rem;
+  border: 1px solid var(--faint);
+  border-radius: 999px;
+  color: var(--ink);
+  font-size: 0.8rem;
+  line-height: 1.5;
 }
 
 .why {
@@ -1253,10 +1315,6 @@ button.making::after {
   transform: none;
 }
 
-.new-words {
-  margin: 0.25rem 0 1.25rem;
-}
-
 .add-word {
   flex-wrap: nowrap;
 }
@@ -1326,23 +1384,65 @@ button.making::after {
   color: var(--ink);
 }
 
+/* A file that is up: a solid card, marked in the colour that means "in place". The place to add
+   more is dashed (`.drop`), so the two are not taken for each other. */
 .files {
-  list-style: none;
-  padding: 0;
+  display: grid;
+  gap: 0.6rem;
   margin: 0 0 0.5rem;
+  padding: 0;
+  list-style: none;
 }
 
-.files li {
+.files .file {
   display: flex;
-  justify-content: space-between;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.35rem 0;
-  border-bottom: 1px solid var(--hairline);
+  gap: 0.85rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--faint);
+  border-left: 3px solid var(--score);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+
+.file-icon {
+  flex: none;
+  width: 1.6rem;
+  height: 1.6rem;
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+
+.file-text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
 }
 
 .file-name {
+  font-weight: 600;
   overflow-wrap: anywhere;
+}
+
+.file-status {
+  flex: none;
+  color: var(--score);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.file-status::before {
+  content: "✓ ";
+}
+
+/* Above the dashed box once something is up: adding is a second thing to do, said as one. */
+.files-add {
+  margin: 1.25rem 0 0.5rem;
+  color: var(--muted);
+  font-size: 0.85rem;
 }
 
 /* What a save found, said where it cannot be scrolled past. */
@@ -1515,6 +1615,15 @@ button.making::after {
     stroke-width: 1.7;
     stroke-linecap: round;
     stroke-linejoin: round;
+  }
+
+  /* Across the screen under the bar: hung from the bell, it ran off the left edge. */
+  .bell-panel {
+    position: fixed;
+    top: 4.75rem;
+    left: 1rem;
+    right: 1rem;
+    width: auto;
   }
 
   .bell,
@@ -1690,7 +1799,9 @@ button.making::after {
   /* Fill the column rather than the content. Identical boxes down the list is the whole point of
      the fixed columns above. */
   width: 100%;
-  padding: 0.2rem 0.4rem;
+  padding: 0.2rem 1.6rem 0.2rem 0.5rem;
+  background-position: right 0.55rem center;
+  background-size: 0.55rem auto;
   font-size: 0.8rem;
 }
 
@@ -1742,23 +1853,26 @@ button.making::after {
   cursor: not-allowed;
 }
 
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
-  display: grid;
-  place-items: center;
-  padding: 1.5rem;
-  background: rgba(0, 0, 0, 0.6);
-  animation: page-in 0.2s var(--ease) both;
-}
-
-.modal {
-  width: min(30rem, 100%);
-  padding: 1.5rem;
+/* A question that needs an answer first (`Prompt`): the browser's dialog, above everything. */
+.prompt {
+  width: min(30rem, calc(100% - 2rem));
+  padding: 0;
   border: 1px solid var(--faint);
   border-radius: var(--radius-lg);
   background: var(--bg-raised);
+  color: var(--ink);
+}
+
+.prompt::backdrop {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.prompt-body {
+  padding: 1.5rem;
+}
+
+.prompt-body h2 {
+  margin-top: 0;
 }
 
 /* ── admin tabs ──────────────────────────────────────────────────────────────────────────────── */
@@ -1857,7 +1971,9 @@ button.making::after {
   width: auto;
   flex: none;
   min-width: 9rem;
-  padding: 0.25rem 0.5rem;
+  padding: 0.25rem 1.8rem 0.25rem 0.6rem;
+  background-position: right 0.65rem center;
+  background-size: 0.6rem auto;
   font-size: 0.85rem;
 }
 
@@ -2503,6 +2619,7 @@ input[type="checkbox"]:disabled {
 
 .made-badge.cv { color: var(--made-cv); }
 .made-badge.cover { color: var(--made-cover); }
+.made-badge.new { color: var(--ink); }
 
 .storage {
   display: grid;
@@ -2548,6 +2665,10 @@ input[type="checkbox"]:disabled {
   gap: 0.5rem;
 }
 
+.made .toolbar {
+  margin: 0.5rem 0 0.25rem;
+}
+
 /* ── the jobs page's filters ────────────────────────────────────────────────────────────────── */
 
 .filters {
@@ -2561,7 +2682,8 @@ input[type="checkbox"]:disabled {
 .filters select {
   width: auto;
   min-width: 0;
-  padding: 0.4rem 2rem 0.4rem 0.75rem;
+  padding: 0.4rem 2.4rem 0.4rem 0.95rem;
+  background-position: right 0.95rem center;
   font-size: 0.875rem;
   border-radius: 999px;
 }
@@ -2634,23 +2756,157 @@ input[type="checkbox"]:disabled {
   color: var(--muted);
 }
 
-.job-card .description p {
-  margin: 0.6rem 0 0.4rem;
-  font-size: 0.9375rem;
-  line-height: 1.6;
-  white-space: pre-line;
+/* Inside the line, not a box of its own that pushes the last line down. */
+.job-card .summary .linklike {
+  display: inline;
 }
 
-/* Two columns on a laptop, one on a phone. A card whose description is open takes the whole row,
-   so a long one reads at a comfortable width and does not stretch its neighbour. */
+/* Two columns on a laptop, one on a phone. */
 @media (min-width: 900px) {
   .jobs {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
 
-  .jobs .job-card.open {
-    grid-column: 1 / -1;
-  }
+/* The whole job, over the page: a tap outside it or the × closes it. */
+.sheet {
+  width: min(44rem, calc(100% - 2rem));
+  max-height: calc(100dvh - 2rem);
+  overflow: auto;
+  padding: 0;
+  border: 1px solid var(--faint);
+  border-radius: var(--radius-lg);
+  background: var(--bg-raised);
+  color: var(--ink);
+  cursor: auto;
+}
+
+.sheet::backdrop {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.sheet-body {
+  position: relative;
+  padding: 1.5rem 1.5rem 1.75rem;
+}
+
+.sheet h2 {
+  margin: 0 2.75rem 0.5rem 0;
+  font-size: 1.25rem;
+  line-height: 1.35;
+}
+
+/* A circle, as tall as every other button on the page is at least (2.75rem): narrower, it was an oval. */
+.sheet .close {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+  border: 1px solid var(--faint);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.sheet .close:hover {
+  border-color: var(--dim);
+  color: var(--ink);
+  transform: none;
+}
+
+/* The posting's text as it was laid out: paragraphs apart, lists as lists. */
+.sheet .description {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--hairline);
+  font-size: 0.9375rem;
+  line-height: 1.65;
+}
+
+.sheet .description p,
+.sheet .description ul {
+  margin: 0 0 0.85rem;
+}
+
+.sheet .description ul {
+  padding-left: 1.25rem;
+}
+
+.sheet .description li {
+  margin-bottom: 0.3rem;
+}
+
+.sheet .description h4 {
+  margin: 1.25rem 0 0.4rem;
+  font-size: 0.95rem;
+}
+
+/* New jobs, counted while somebody reads: one tap shows them, nothing moves until then. */
+.fresh-jobs {
+  position: fixed;
+  top: 4.5rem;
+  left: 0;
+  right: 0;
+  z-index: 30;
+  width: fit-content;
+  margin: 0 auto;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+  animation: page-in 0.2s var(--ease) both;
+}
+
+.words-filter .count {
+  opacity: 0.6;
+}
+
+/* Countries: each a button, pressed when picked. Still on hover, because thirty-six jumping buttons
+   read as a page shaking. */
+.toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+button.toggle {
+  padding: 0.5rem 1rem;
+  font-weight: 500;
+  background: transparent;
+  color: var(--muted);
+  border-color: var(--faint);
+}
+
+button.toggle:hover:not([disabled]) {
+  color: var(--ink);
+  border-color: var(--ink);
+  transform: none;
+}
+
+button.toggle[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: var(--accent);
+}
+
+/* Seen, not read out: the button's pressed state already says it to a screen reader. */
+button.toggle[aria-pressed="true"]::before {
+  content: "✓" / "";
+}
+
+.picker .more {
+  margin-top: 0.8rem;
+  font-size: 0.875rem;
+}
+
+/* Telegram, folded: its name and where it stands, and the steps once opened. */
+.telegram > summary .label {
+  color: var(--ink);
+}
+
+.telegram > summary .small {
+  margin-left: auto;
 }
 
 /* A word that is a long phrase, said beside the words: not an error, advice. */

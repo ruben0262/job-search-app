@@ -2,12 +2,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api, type Schema } from "./api";
-import { ago } from "./time";
+import { ago, useNow } from "./time";
 
 type Feed = Schema<"NotificationList">;
 type Notification = Feed["notifications"][number];
 
-const POLL_MS = 60_000;
+/** How often a page asks the server what is new: the bell, and the jobs page's count of new jobs. */
+export const POLL_MS = 60_000;
 
 export function NotificationBell() {
   const [feed, setFeed] = useState<Feed>({ unread: 0, notifications: [] });
@@ -121,7 +122,7 @@ export function NotificationBell() {
                 <button type="button" className="bell-item" onClick={() => void openOne(item)}>
                   <span className="bell-title">{item.title}</span>
                   {item.body ? <span className="bell-body">{item.body}</span> : null}
-                  <span className="bell-when">{ago(item.created_at)}</span>
+                  <When at={item.created_at} />
                 </button>
                 <button
                   type="button"
@@ -181,6 +182,12 @@ function XIcon() {
       <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
     </svg>
   );
+}
+
+/** When a notification came, kept current while the panel is open, and only then. */
+function When({ at }: { at: string | null }) {
+  const now = useNow();
+  return <span className="bell-when">{ago(at, now)}</span>;
 }
 
 function BellIcon() {

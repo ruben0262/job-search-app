@@ -988,6 +988,25 @@
       },
       "Feed": {
         "properties": {
+          "as_of": {
+            "format": "date-time",
+            "title": "As Of",
+            "type": "string"
+          },
+          "cities": {
+            "items": {
+              "$ref": "#/components/schemas/FeedPlace"
+            },
+            "title": "Cities",
+            "type": "array"
+          },
+          "countries": {
+            "items": {
+              "$ref": "#/components/schemas/FeedPlace"
+            },
+            "title": "Countries",
+            "type": "array"
+          },
           "jobs": {
             "items": {
               "$ref": "#/components/schemas/FeedJob"
@@ -1005,30 +1024,29 @@
           "total": {
             "title": "Total",
             "type": "integer"
+          },
+          "words": {
+            "items": {
+              "$ref": "#/components/schemas/FeedWord"
+            },
+            "title": "Words",
+            "type": "array"
           }
         },
         "required": [
           "total",
           "jobs",
-          "sources"
+          "sources",
+          "words",
+          "countries",
+          "cities",
+          "as_of"
         ],
         "title": "Feed",
         "type": "object"
       },
       "FeedJob": {
         "properties": {
-          "applied_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Applied At"
-          },
           "company": {
             "anyOf": [
               {
@@ -1039,6 +1057,17 @@
               }
             ],
             "title": "Company"
+          },
+          "country": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country"
           },
           "documents": {
             "items": {
@@ -1111,10 +1140,6 @@
               }
             ]
           },
-          "score": {
-            "title": "Score",
-            "type": "integer"
-          },
           "source": {
             "title": "Source",
             "type": "string"
@@ -1151,20 +1176,42 @@
           "title",
           "company",
           "location",
+          "country",
           "is_remote",
           "url",
           "source",
-          "score",
           "words",
           "posted_at",
           "first_seen_at",
           "salary",
           "summary",
           "more",
-          "applied_at",
           "documents"
         ],
         "title": "FeedJob",
+        "type": "object"
+      },
+      "FeedPlace": {
+        "properties": {
+          "jobs": {
+            "title": "Jobs",
+            "type": "integer"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "value",
+          "label",
+          "jobs"
+        ],
+        "title": "FeedPlace",
         "type": "object"
       },
       "FeedSalary": {
@@ -1216,6 +1263,24 @@
           "jobs"
         ],
         "title": "FeedSource",
+        "type": "object"
+      },
+      "FeedWord": {
+        "properties": {
+          "jobs": {
+            "title": "Jobs",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "jobs"
+        ],
+        "title": "FeedWord",
         "type": "object"
       },
       "FilesFlag": {
@@ -1620,25 +1685,43 @@
         "type": "string"
       },
       "Location": {
-        "description": "Controlled vocabulary.",
         "enum": [
           "europe",
           "united_kingdom",
           "ireland",
-          "switzerland",
+          "austria",
+          "belgium",
+          "bulgaria",
+          "croatia",
+          "cyprus",
+          "czechia",
+          "denmark",
+          "estonia",
+          "finland",
+          "france",
+          "germany",
+          "greece",
+          "hungary",
+          "iceland",
+          "italy",
+          "latvia",
+          "lithuania",
+          "luxembourg",
+          "malta",
+          "netherlands",
           "norway",
-          "london",
-          "berlin",
-          "amsterdam",
-          "dublin",
-          "paris",
-          "madrid",
-          "lisbon",
-          "warsaw",
-          "budapest",
-          "zurich",
-          "stockholm",
-          "copenhagen"
+          "poland",
+          "portugal",
+          "romania",
+          "serbia",
+          "slovakia",
+          "slovenia",
+          "spain",
+          "sweden",
+          "switzerland",
+          "ukraine",
+          "united_states",
+          "canada"
         ],
         "title": "Location",
         "type": "string"
@@ -2601,45 +2684,6 @@
           "note"
         ],
         "title": "StoredDocument",
-        "type": "object"
-      },
-      "SuggestionDismissal": {
-        "properties": {
-          "term": {
-            "maxLength": 40,
-            "minLength": 2,
-            "title": "Term",
-            "type": "string"
-          }
-        },
-        "required": [
-          "term"
-        ],
-        "title": "SuggestionDismissal",
-        "type": "object"
-      },
-      "SuggestionPick": {
-        "properties": {
-          "kind": {
-            "enum": [
-              "green",
-              "red"
-            ],
-            "title": "Kind",
-            "type": "string"
-          },
-          "term": {
-            "maxLength": 40,
-            "minLength": 2,
-            "title": "Term",
-            "type": "string"
-          }
-        },
-        "required": [
-          "term",
-          "kind"
-        ],
-        "title": "SuggestionPick",
         "type": "object"
       },
       "SupportAi": {
@@ -4289,7 +4333,7 @@
     },
     "/auth/forgot": {
       "post": {
-        "description": "Email a reset link.",
+        "description": "Email a reset link, once the answer has gone.",
         "operationId": "forgot_auth_forgot_post",
         "requestBody": {
           "content": {
@@ -4531,7 +4575,7 @@
     },
     "/auth/signup": {
       "post": {
-        "description": "Create an unverified account and email a link.",
+        "description": "Create an unverified account and email a link, once the answer has gone.",
         "operationId": "signup_auth_signup_post",
         "requestBody": {
           "content": {
@@ -5166,7 +5210,7 @@
     },
     "/feed": {
       "get": {
-        "description": "This person's matches, a page at a time, best first or newest first: searched, remote only,\nposted lately, from one board, applied to or not, with a document made or not \u2014 or one job, the\none an alert's link names, which is either still in their list or not.",
+        "description": "This person's matches, a page at a time, the most of their words first or newest first:\nsearched, remote only, posted lately, from one board, in one country or one city, with a document\nmade or not, having every word picked, or at least so many of their words \u2014 or one job, the one\nan alert's link names, which is either still in their list or not. `found_after` keeps only the\njobs found since a list was read, which is how the page learns how many new ones there are\nwithout reloading.\n\nA job they skipped or applied to is gone from it for good: Applied lists the second.",
         "operationId": "feed_feed_get",
         "parameters": [
           {
@@ -5278,18 +5322,36 @@
           },
           {
             "in": "query",
-            "name": "applied",
+            "name": "country",
             "required": false,
             "schema": {
               "anyOf": [
                 {
-                  "type": "boolean"
+                  "maxLength": 2,
+                  "type": "string"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "title": "Applied"
+              "title": "Country"
+            }
+          },
+          {
+            "in": "query",
+            "name": "city",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 40,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "City"
             }
           },
           {
@@ -5306,6 +5368,49 @@
                 }
               ],
               "title": "Made"
+            }
+          },
+          {
+            "in": "query",
+            "name": "word",
+            "required": false,
+            "schema": {
+              "default": [],
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 50,
+              "title": "Word",
+              "type": "array"
+            }
+          },
+          {
+            "in": "query",
+            "name": "min_words",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Min Words",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "found_after",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Found After"
             }
           },
           {
@@ -5998,8 +6103,23 @@
     },
     "/saved": {
       "delete": {
-        "description": "Delete every kept document, to make room.",
-        "operationId": "delete_all_saved_delete",
+        "description": "Delete the kept documents My documents shows, to make room: the older ones, the ones a search\nfound, or all of them. Named one by one, so a call that names none deletes nothing.",
+        "operationId": "delete_many_saved_delete",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "ids",
+            "required": true,
+            "schema": {
+              "items": {
+                "type": "integer"
+              },
+              "minItems": 1,
+              "title": "Ids",
+              "type": "array"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -6010,9 +6130,19 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
-        "summary": "Delete All",
+        "summary": "Delete Many",
         "tags": [
           "documents"
         ]
@@ -6098,90 +6228,6 @@
           }
         },
         "summary": "Get Suggestions",
-        "tags": [
-          "suggestions"
-        ]
-      }
-    },
-    "/suggestions/accept": {
-      "post": {
-        "description": "Add a word to their search: green picks jobs, red hides them.",
-        "operationId": "accept_suggestions_accept_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SuggestionPick"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WordSuggestions"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Accept",
-        "tags": [
-          "suggestions"
-        ]
-      }
-    },
-    "/suggestions/dismiss": {
-      "post": {
-        "description": "Never suggest this word again.",
-        "operationId": "dismiss_suggestions_dismiss_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SuggestionDismissal"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WordSuggestions"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Dismiss",
         "tags": [
           "suggestions"
         ]

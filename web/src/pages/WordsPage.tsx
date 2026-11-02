@@ -5,7 +5,8 @@
 import { useEffect, useState } from "react";
 
 import { api, type Config, type Schema } from "../api";
-import { Error, Field, Words, useAction } from "../ui";
+import { askBeforeLeaving, go } from "../leave";
+import { Error, Field, Prompt, Words, useAction } from "../ui";
 
 type Review = Schema<"ReviewPage">;
 type Section = Config["sections"][number];
@@ -17,7 +18,7 @@ export function WordsPage() {
       <p className="kicker">My search</p>
       <h1>What we look for</h1>
       <p className="lede">Green words show you jobs. Red words hide them.</p>
-      <WordsForm action="Save" onSaved={() => setSaved(true)} onEdited={() => setSaved(false)} />
+      <WordsForm action="Save" askBeforeLeaving onSaved={() => setSaved(true)} onEdited={() => setSaved(false)} />
       {saved ? <p className="saved-flash" role="status">Saved. Your jobs are updated.</p> : null}
     </>
   );
@@ -43,8 +44,10 @@ export function IdentityFields({ name, links, onName, onLinks }: {
   );
 }
 
-export function WordsForm({ withIdentity = false, action, onSaved, onEdited }: {
+export function WordsForm({ withIdentity = false, askBeforeLeaving: guarded = false, action, onSaved, onEdited }: {
   withIdentity?: boolean;
+  /** Ask, with a choice to save, before anybody leaves the page with changes not saved. */
+  askBeforeLeaving?: boolean;
   action: string;
   onSaved: () => void;
   onEdited?: () => void;
@@ -53,6 +56,13 @@ export function WordsForm({ withIdentity = false, action, onSaved, onEdited }: {
   const [config, setConfig] = useState<Config | null>(null);
   const [name, setName] = useState("");
   const [links, setLinks] = useState<string[]>([]);
+  // Changed since it was read or saved; and where somebody tried to go meanwhile, while it asks.
+  const [dirty, setDirty] = useState(false);
+  const [leaving, setLeaving] = useState<string | null>(null);
+  useEffect(() => {
+    askBeforeLeaving(guarded && dirty ? setLeaving : null);
+    return () => askBeforeLeaving(null);
+  }, [guarded, dirty]);
 
   useEffect(() => {
     void api.get<Review>("/onboarding/review").then((body) => {
@@ -64,12 +74,18 @@ export function WordsForm({ withIdentity = false, action, onSaved, onEdited }: {
     });
   }, []);
 
-  const save = useAction(async () => {
+  const store = async () => {
     if (withIdentity) {
       await api.put("/onboarding/identity", { full_name: name, links: links.map((url) => ({ url })) });
     }
     await api.put("/onboarding/config", config);
+    setDirty(false);
     onSaved();
+  };
+  const save = useAction(store);
+  const saveAndGo = useAction(async (to: string) => {
+    await store();
+    go(to);
   });
 
   if (!review || !config) return <p className="muted">Reading what we found…</p>;
@@ -78,6 +94,7 @@ export function WordsForm({ withIdentity = false, action, onSaved, onEdited }: {
   const section = config.sections[0]!;
   const edit = (next: Config) => {
     setConfig(next);
+    setDirty(true);
     onEdited?.();
   };
   const patch = (changes: Partial<Section>) =>
@@ -125,26 +142,9 @@ export function WordsForm({ withIdentity = false, action, onSaved, onEdited }: {
         <h2>Where and how you work</h2>
         <p className="section-lede">Leave a list empty and it does not narrow anything.</p>
 
-        <fieldset className="picker">
-          <legend>Where can you work?</legend>
-          <p className="picker-hint">
-            Pick nothing and we show jobs everywhere.
-            {full ? ` That is the most you can pick: ${choices.max_locations}.` : ""}
-          </p>
-          <div className="picker-grid">
-            {choices.locations.map((place) => {
-              const value = place.value as (typeof places)[number];
-              const picked = places.includes(value);
-              return (
-                <label key={place.value} className="pick">
-                  <input type="checkbox" role="switch" checked={picked} disabled={full && !picked}
-                         onChange={() => patch({ locations: toggle(places, value) })} />
-                  <span>{place.label}</span>
-                </label>
-              );
-            })}
-          </div>
-        </fieldset>
+        <Countries options={choices.locations} picked={places} full={full}
+                   onChange={(locations) => patch({ locations })} />
+        {full ? <p className="picker-hint">That is the most countries you can pick: {choices.max_locations}.</p> : null}
 
         <fieldset className="picker">
           <legend>Which languages can you work in?</legend>
@@ -190,6 +190,57 @@ export function WordsForm({ withIdentity = false, action, onSaved, onEdited }: {
       <button type="submit" className="main" disabled={!ready || save.busy}>
         {save.busy ? "Saving…" : action}
       </button>
+      {leaving !== null ? (
+        <Prompt title="Save your changes?" onClose={() => setLeaving(null)}>
+          <p className="small muted">You changed your search and did not save it. If you leave now, the changes are lost.</p>
+          <Error>{saveAndGo.error}</Error>
+          <div className="row">
+            <button type="button" disabled={!ready || saveAndGo.busy} onClick={() => void saveAndGo.run(leaving)}>
+              {saveAndGo.busy ? "Saving…" : "Save and go"}
+            </button>
+            <button type="button" className="secondary" onClick={() => go(leaving)}>Leave without saving</button>
+            <button type="button" className="linklike" onClick={() => setLeaving(null)}>Stay here</button>
+          </div>
+        </Prompt>
+      ) : null}
     </form>
+  );
+}
+
+type Choice = Review["choices"]["locations"][number];
+type Place = NonNullable<Section["locations"]>[number];
+
+/** How many countries show before the rest are opened: the three people pick most. */
+const SHOWN = 3;
+
+/** Every country a button, pressed when picked (owner, 2026-11-02). The first few show, with every one
+ * picked; the rest are folded under one button until somebody wants another. */
+function Countries({ options, picked, full, onChange }: {
+  options: Choice[];
+  picked: Place[];
+  full: boolean;
+  onChange: (picked: Place[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const on = (option: Choice) => picked.includes(option.value as Place);
+  const shown = open ? options : options.filter((option, index) => index < SHOWN || on(option));
+  return (
+    <fieldset className="picker">
+      <legend>Which countries?</legend>
+      <p className="picker-hint">Tap a country to see its jobs. Pick none, and no country is left out.</p>
+      <div className="toggles">
+        {shown.map((option) => (
+          <button key={option.value} type="button" className="toggle" aria-pressed={on(option)}
+                  disabled={full && !on(option)}
+                  onClick={() => onChange(on(option) ? picked.filter((each) => each !== option.value)
+                    : [...picked, option.value as Place])}>
+            {option.label}
+          </button>
+        ))}
+      </div>
+      <button type="button" className="linklike more" aria-expanded={open} onClick={() => setOpen(!open)}>
+        {open ? "Show fewer countries" : `Show ${options.length - shown.length} more countries`}
+      </button>
+    </fieldset>
   );
 }

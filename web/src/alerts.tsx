@@ -1,6 +1,6 @@
 /** Alerts off the site: Telegram through the person's own bot, this browser's notifications, and a
  * daily email. All optional; the site works the same without them. */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { api, type Schema } from "./api";
 import { disablePush, enablePush, pushState } from "./push";
@@ -12,7 +12,9 @@ type Telegram = Schema<"TelegramState">;
 const START_POLL_MS = 2000;
 
 /** Telegram through their own bot: three steps, and their chat found by itself once they press Start
- * in it. Connected, it offers a test message and a way to disconnect. */
+ * in it. Connected, it offers a test message and a way to disconnect. Folded away until opened, with
+ * where it stands said on the fold: it is optional, and three steps read as a chore (owner,
+ * 2026-11-02). Open by itself while it waits for Start, or when it has stopped working. */
 export function TelegramSetup() {
   const [state, setState] = useState<Telegram | null>(null);
   const [token, setToken] = useState("");
@@ -45,34 +47,40 @@ export function TelegramSetup() {
     setTested(false);
   });
 
+  // Opened by itself when it needs them, and never closed by itself: finishing must not fold it away.
+  const needed = state?.status === "broken" || waiting;
+  const fold = useCallback((node: HTMLDetailsElement | null) => {
+    if (node && needed) node.open = true;
+  }, [needed]);
+
   if (!state) return null;
-  if (state.status === "connected" || state.status === "broken") {
-    return (
-      <div className="telegram-on">
-        <p className="small">
-          {state.status === "broken"
-            ? `Telegram stopped taking messages from @${state.bot}. Open it, press Start, then send a test.`
-            : `Connected to @${state.bot}. New jobs arrive there.`}
-        </p>
-        <div className="row">
-          <button type="button" className="secondary small" disabled={test.busy} onClick={() => void test.run()}>
-            {test.busy ? "Sending…" : "Send a test"}
-          </button>
-          {state.status === "broken" && state.open_url ? (
-            <a className="button secondary small" href={state.open_url} target="_blank" rel="noreferrer">
-              Open @{state.bot}
-            </a>
-          ) : null}
-          <button type="button" className="secondary small" disabled={forget.busy} onClick={() => void forget.run()}>
-            Disconnect
-          </button>
-        </div>
-        {tested && !test.error ? <p className="small muted" role="status">Sent. Check Telegram.</p> : null}
-        <Error>{test.error ?? forget.error}</Error>
+  const said = state.status === "connected" ? `On: @${state.bot}`
+    : state.status === "broken" ? "Stopped working" : waiting ? "Waiting for you to press Start" : "Off";
+  const connected = (
+    <div className="telegram-on">
+      <p className="small">
+        {state.status === "broken"
+          ? `Telegram stopped taking messages from @${state.bot}. Open it, press Start, then send a test.`
+          : `Connected to @${state.bot}. New jobs arrive there.`}
+      </p>
+      <div className="row">
+        <button type="button" className="secondary small" disabled={test.busy} onClick={() => void test.run()}>
+          {test.busy ? "Sending…" : "Send a test"}
+        </button>
+        {state.status === "broken" && state.open_url ? (
+          <a className="button secondary small" href={state.open_url} target="_blank" rel="noreferrer">
+            Open @{state.bot}
+          </a>
+        ) : null}
+        <button type="button" className="secondary small" disabled={forget.busy} onClick={() => void forget.run()}>
+          Disconnect
+        </button>
       </div>
-    );
-  }
-  return (
+      {tested && !test.error ? <p className="small muted" role="status">Sent. Check Telegram.</p> : null}
+      <Error>{test.error ?? forget.error}</Error>
+    </div>
+  );
+  const steps = (
     <ol className="telegram-steps">
       <li className={waiting ? "done" : ""}>
         <span className="step-number" aria-hidden="true">1</span>
@@ -121,6 +129,15 @@ export function TelegramSetup() {
         </div>
       </li>
     </ol>
+  );
+  return (
+    <details ref={fold} className="fold-plain telegram">
+      <summary>
+        <span className="label">Telegram</span>
+        <span className="small muted">{said}</span>
+      </summary>
+      {state.status === "connected" || state.status === "broken" ? connected : steps}
+    </details>
   );
 }
 
@@ -190,7 +207,6 @@ export function Alerts() {
   return (
     <div className="channels">
       <div className="channel stacked">
-        <span className="label">Telegram</span>
         <TelegramSetup />
       </div>
       <div className="channel">

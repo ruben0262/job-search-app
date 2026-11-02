@@ -5,7 +5,8 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { api, type Schema } from "../api";
-import { Card, Error, Field, UploadButton, useAction } from "../ui";
+import { ago, useNow } from "../time";
+import { Card, Error, Field, Prompt, UploadButton, useAction } from "../ui";
 import { IdentityFields } from "./WordsPage";
 
 type DocumentList = Schema<"DocumentList">;
@@ -89,17 +90,25 @@ export function DocumentsPage() {
   );
 }
 
-/** The documents made for jobs and kept: how full the storage is, each one to download or delete, and
- * a way to clear them all when it is full. */
+/** "Made": how old a kept document may be and still be shown, in days. */
+const MADE: [string, number | null][] = [["Made any time", null], ["Made over a week ago", 7],
+                                         ["Made over a month ago", 30], ["Made over 3 months ago", 90]];
+
+/** The documents made for jobs and kept: how full the storage is, and the documents themselves, folded
+ * until opened (owner, 2026-11-02). A search and an age pick some out, to download or to delete: the
+ * old ones go, the newest stay. */
 function Made() {
   const [kept, setKept] = useState<Schema<"SavedDocuments"> | null>(null);
+  const [query, setQuery] = useState("");
+  const [older, setOlder] = useState<number | null>(null);
   const [sure, setSure] = useState(false);
   useEffect(() => {
     void api.get<Schema<"SavedDocuments">>("/saved").then(setKept).catch(() => undefined);
   }, []);
   const remove = useAction(async (id: number) => setKept(await api.del<Schema<"SavedDocuments">>(`/saved/${id}`)));
-  const clear = useAction(async () => {
-    setKept(await api.del<Schema<"SavedDocuments">>("/saved"));
+  const removeShown = useAction(async (ids: number[]) => {
+    const params = new URLSearchParams(ids.map((id) => ["ids", `${id}`]));
+    setKept(await api.del<Schema<"SavedDocuments">>(`/saved?${params}`));
     setSure(false);
   });
 
@@ -107,6 +116,13 @@ function Made() {
   const megabytes = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
   const share = kept.allowance_bytes ? Math.min(kept.used_bytes / kept.allowance_bytes, 1) : 0;
   const full = kept.allowance_bytes !== null && share >= 0.95;
+  const words = query.trim().toLowerCase();
+  const before = older === null ? null : Date.now() - older * 86_400_000;
+  const shown = kept.documents.filter((each) =>
+    (!words || `${each.job_title ?? ""} ${each.company ?? ""}`.toLowerCase().includes(words))
+    && (before === null || new Date(each.created_at).getTime() < before));
+  const many = shown.length === 1 ? "this one"
+    : shown.length === kept.documents.length ? `all ${shown.length}` : `these ${shown.length}`;
   return (
     <>
       <p className="small muted">
@@ -125,40 +141,63 @@ function Made() {
       {kept.documents.length === 0 ? (
         <p className="muted">None yet. Tap “Make my CV” under a job, and it is kept here.</p>
       ) : (
-        <ul className="made-list">
-          {kept.documents.map((each) => (
-            <li key={each.id}>
-              <span>
-                <strong>{each.kind === "cv" ? "CV" : "Cover letter"}</strong>{" "}
-                for {each.job_title ?? "a job no longer listed"}
-                {each.company ? ` at ${each.company}` : ""}
-                <span className="small muted"> · {Math.round(each.size / 1024)} KB</span>
-              </span>
-              <span className="made-actions">
-                <a className="button small" href={each.download_url} download>Download</a>
-                <button type="button" className="secondary small" disabled={remove.busy}
-                        onClick={() => void remove.run(each.id)}>
-                  Delete
-                </button>
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-      {kept.documents.length ? (
-        sure ? (
-          <p className="row">
-            <span className="small">Delete all {kept.documents.length}?</span>
-            <button type="button" className="danger small" disabled={clear.busy} onClick={() => void clear.run()}>
-              Yes, delete them all
+        <details className="fold-plain made">
+          <summary>
+            Show your {kept.documents.length} {kept.documents.length === 1 ? "document" : "documents"}
+          </summary>
+          <div className="toolbar">
+            <input type="search" placeholder="Search by job or company" aria-label="Search your documents"
+                   value={query} onChange={(event) => setQuery(event.target.value)} />
+            <select aria-label="Made" value={older ?? ""}
+                    onChange={(event) => setOlder(event.target.value ? Number(event.target.value) : null)}>
+              {MADE.map(([label, days]) => <option key={label} value={days ?? ""}>{label}</option>)}
+            </select>
+          </div>
+          {shown.length === 0 ? <p className="muted small">None of yours match.</p> : (
+            <ul className="made-list">
+              {shown.map((each) => (
+                <li key={each.id}>
+                  <span>
+                    <strong>{each.kind === "cv" ? "CV" : "Cover letter"}</strong>{" "}
+                    for {each.job_title ?? "a job no longer listed"}
+                    {each.company ? ` at ${each.company}` : ""}
+                    <span className="small muted">
+                      {" "}· Made {new Date(each.created_at).toLocaleDateString(undefined,
+                        { day: "numeric", month: "short", year: "numeric" })} · {Math.round(each.size / 1024)} KB
+                    </span>
+                  </span>
+                  <span className="made-actions">
+                    <a className="button small" href={each.download_url} download>Download</a>
+                    <button type="button" className="secondary small" disabled={remove.busy}
+                            onClick={() => void remove.run(each.id)}>
+                      Delete
+                    </button>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {shown.length ? (
+            <button type="button" className="secondary small" onClick={() => setSure(true)}>
+              Delete {many}
             </button>
-            <button type="button" className="secondary small" onClick={() => setSure(false)}>Keep them</button>
-          </p>
-        ) : (
-          <button type="button" className="secondary small" onClick={() => setSure(true)}>Clear all</button>
-        )
+          ) : null}
+        </details>
+      )}
+      {sure ? (
+        <Prompt title={`Delete ${many}?`} onClose={() => setSure(false)}>
+          <p className="small muted">Gone for good. You can make any of them again from its job.</p>
+          <Error>{removeShown.error}</Error>
+          <div className="row">
+            <button type="button" className="danger" disabled={removeShown.busy}
+                    onClick={() => void removeShown.run(shown.map((each) => each.id))}>
+              {removeShown.busy ? "Deleting…" : "Delete"}
+            </button>
+            <button type="button" className="secondary" onClick={() => setSure(false)}>Keep</button>
+          </div>
+        </Prompt>
       ) : null}
-      <Error>{remove.error ?? clear.error}</Error>
+      <Error>{remove.error}</Error>
     </>
   );
 }
@@ -171,6 +210,7 @@ export function Files({ kind, list, onChanged }: {
 }) {
   // Kept on screen, not flashed: it says what was left out while they can still act on it.
   const [note, setNote] = useState<string | null>(null);
+  const now = useNow();
   const upload = useAction(async (file: File) => {
     const form = new FormData();
     form.set("kind", kind);
@@ -187,13 +227,25 @@ export function Files({ kind, list, onChanged }: {
   const shown = (list?.documents ?? []).filter((document) =>
     kind === "cv" ? document.kind === "cv" : !["cv", "history"].includes(document.kind));
 
+  // What is up, as solid cards that say so, apart from the dashed place to add more: someone looking
+  // fast must not take one for the other (owner, 2026-11-02).
   return (
     <>
       {shown.length ? (
-        <ul className="files">
+        <ul className="files" aria-label="Uploaded">
           {shown.map((document) => (
-            <li key={document.id}>
-              <span className="file-name">{document.filename}</span>
+            <li key={document.id} className="file">
+              <svg className="file-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M6 3h8l4 4v14H6zM14 3v4h4M9 13h6M9 17h6" />
+              </svg>
+              <span className="file-text">
+                <span className="file-name">{document.filename}</span>
+                <span className="small muted">
+                  {[document.uploaded_at ? `Uploaded ${ago(document.uploaded_at, now)}` : null,
+                    `${document.chars.toLocaleString()} characters read`].filter(Boolean).join(" · ")}
+                </span>
+              </span>
+              <span className="file-status">In use</span>
               <button type="button" className="secondary small" disabled={remove.busy}
                       onClick={() => {
                         if (window.confirm(`Remove ${document.filename}?`)) void remove.run(document.id);
@@ -204,6 +256,7 @@ export function Files({ kind, list, onChanged }: {
           ))}
         </ul>
       ) : null}
+      {shown.length ? <p className="files-add">{kind === "cv" ? "Add another CV" : "Add another file"}</p> : null}
       <UploadButton
         label={kind === "cv" ? (shown.length ? "Upload another CV" : "Upload your CV") : "Upload a cover letter"}
         busy={upload.busy}
