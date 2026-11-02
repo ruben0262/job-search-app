@@ -200,3 +200,182 @@ def test_the_shared_jobspy_sources_take_no_lease():
 
     for adapter in (jobspy_source.gather_indeed, jobspy_source.gather_google):
         assert "lease" not in inspect.signature(adapter).parameters, adapter.__name__
+
+
+# ── company boards that are slow, or that refuse a burst (2026-11-02) ─────────────────────────
+
+def test_a_lever_board_slow_to_answer_is_read_where_other_boards_would_give_up(monkeypatch):
+    """Lever answers a board it has not served lately in up to 41 s, measured; at the 15 s every
+    board had, each such board failed every pass. Here the "server" takes 20 s."""
+    import httpx
+
+    from services.harvester.sources import ats
+
+    def slow_server(request: httpx.Request) -> httpx.Response:
+        if request.extensions["timeout"]["read"] < 20:
+            raise httpx.ReadTimeout("gave up before the board answered", request=request)
+        return httpx.Response(200, json=[{"hostedUrl": "https://jobs.lever.co/acme/1", "text": "Engineer",
+                                          "categories": {"location": "Berlin"}, "createdAt": 0}])
+
+    monkeypatch.setattr(ats, "_CLIENT", httpx.Client(transport=httpx.MockTransport(slow_server)))
+
+    jobs, _etag = ats.fetch_lever("acme")
+    assert [job.title for job in jobs] == ["Engineer"]
+    with pytest.raises(httpx.ReadTimeout):
+        ats.fetch_greenhouse("acme")
+
+
+def test_workable_is_asked_two_boards_at_a_time():
+    """Sixteen at once got 490 refusals in 555, and the harvest asked thirty."""
+    import threading
+    import time
+    import uuid
+
+    from services.harvester.source_config import build_source_configs
+    from services.harvester.sources.ats import gather_ats
+
+    class Boards:
+        def live_tokens(self, _ats):
+            return [f"company{n}" for n in range(8)]
+
+        def etags(self, _ats):
+            return {}
+
+        def names(self, _ats):
+            return {}
+
+        def record_poll(self, *_args, **_kwargs):
+            pass
+
+    lock, now, most = threading.Lock(), [0], [0]
+
+    def fetch(_token, _etag):
+        with lock:
+            now[0] += 1
+            most[0] = max(most[0], now[0])
+        time.sleep(0.05)
+        with lock:
+            now[0] -= 1
+        return [], None
+
+    cfg = build_source_configs({uuid.uuid4(): {"sections": [{"keywords": ["engineer"]}]}}, env={})["workable"]
+    gather_ats(cfg, logging.getLogger("test"), ats="workable", repo=Boards(), fetch_company=fetch)
+
+    assert most[0] == 2
+
+
+def test_each_linkedin_search_request_leaves_on_a_new_connection_so_a_new_address():
+    """jobspy's search kept one connection for all of a query's pages: one proxy address, refused
+    first. Three requests are three connections now, and the scraper builds the session that does it."""
+    import socketserver
+    import threading
+
+    linkedin = pytest.importorskip("jobspy.linkedin")
+    from services.harvester.sources.jobspy_source import new_connection_each_request
+
+    connections: list[int] = []
+
+    class Proxy(socketserver.BaseRequestHandler):
+        def handle(self) -> None:
+            connections.append(1)
+            reader = self.request.makefile("rb")
+            while reader.readline():
+                while reader.readline() not in (b"\r\n", b""):
+                    pass
+                self.request.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
+
+    class Server(socketserver.ThreadingTCPServer):
+        # A connection held open (the old way) must fail the count, not hang the shutdown.
+        daemon_threads, block_on_close = True, False
+
+    new_connection_each_request()
+    assert "RequestsRotating" in linkedin.LinkedIn.scrape.__code__.co_names, "the scraper's own session"
+    with Server(("127.0.0.1", 0), Proxy) as server:
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        session = linkedin.RequestsRotating([f"http://127.0.0.1:{server.server_address[1]}"])
+        session.verify = True
+        try:
+            for _ in range(3):
+                assert session.get("http://www.linkedin.com/jobs-guest/x").text == "ok"
+        finally:
+            session.close()
+            server.shutdown()
+
+    assert len(connections) == 3
+
+
+def test_just_join_it_is_read_page_by_page_until_its_offers_are_older_than_the_window(monkeypatch):
+    """Its old API answers 503 to everything since 2026-11-01; the site's own one lists newest first,
+    a page at a time. A page that fails keeps what was read before it."""
+    from datetime import UTC, datetime, timedelta
+
+    import httpx
+
+    from services.harvester.sources import http_apis
+
+    def offer(n: int, hours_ago: float) -> dict:
+        when = (datetime.now(UTC) - timedelta(hours=hours_ago)).isoformat()
+        return {"slug": f"acme-dev-{n}", "title": f"Python Developer {n}", "companyName": "Acme",
+                "city": "Kraków", "workplaceType": "remote", "publishedAt": when,
+                "requiredSkills": [{"name": "Python"}]}
+
+    pages = {0: [offer(1, 1), offer(2, 5)], 2: [offer(3, 20), offer(4, 30)], 4: [offer(5, 40), offer(6, 50)]}
+    asked: list[str] = []
+
+    def api(request: httpx.Request) -> httpx.Response:
+        asked.append(str(request.url))
+        assert request.url.host == "justjoin.it" and request.url.path == "/api/candidate-api/offers"
+        start = int(request.url.params["from"])
+        return httpx.Response(200, json={"data": pages[start]}) if start in pages else httpx.Response(503)
+
+    monkeypatch.setattr(http_apis, "make_shared_client",
+                        lambda **_: httpx.Client(transport=httpx.MockTransport(api)))
+    cfg = {"max_pages": 5, "per_page": 2, "max_age_hours": 24, "keywords": ["python"]}
+
+    links = http_apis.gather_justjoinit(cfg, logging.getLogger("test"))
+
+    assert [link.url.rsplit("-", 1)[1] for link in links] == ["1", "2", "3"], "within 24 hours, newest first"
+    assert len(asked) == 2, "the second page reached past the window, so no third was asked for"
+    assert links[0].is_remote is True and links[0].company == "Acme"
+
+    pages.pop(2)
+    kept = http_apis.gather_justjoinit(cfg, logging.getLogger("t"))
+    assert [link.url.rsplit("-", 1)[1] for link in kept] == ["1", "2"], "a failed page keeps the ones before"
+
+
+def test_a_job_carries_its_companys_own_name_where_the_board_does_not_say_it(monkeypatch):
+    """Ashby and Lever name no company, so cards read "Openai" and "Elevenlabs". The name the board was
+    stored with fills it; a board found from a link has its address in words. SmartRecruiters says
+    its name, and that is the one used, not the identifier in its address ("BoschGroup")."""
+    import httpx
+
+    from services.harvester.sources import ats
+
+    class Boards:
+        def live_tokens(self, _ats):
+            return ["openai", "acme-robotics"]
+
+        def etags(self, _ats):
+            return {}
+
+        def names(self, _ats):
+            return {"openai": "OpenAI"}
+
+        def record_poll(self, *_args, **_kwargs):
+            pass
+
+    def fetch(token, _etag):
+        return [JobLink(url=f"https://jobs.ashbyhq.com/{token}/1", title="Engineer", source="ashby")], None
+
+    links = ats.gather_ats({"posted_within_hours": 72}, logging.getLogger("test"), ats="ashby", repo=Boards(),
+                           fetch_company=fetch)
+    assert sorted(link.company for link in links) == ["Acme Robotics", "OpenAI"]
+
+    def smartrecruiters(_request: httpx.Request) -> httpx.Response:
+        posting = {"id": "1", "name": "Engineer", "location": {"city": "Stuttgart", "country": "de"},
+                   "company": {"identifier": "BoschGroup", "name": "Bosch Group"}}
+        return httpx.Response(200, json={"content": [posting]})
+
+    monkeypatch.setattr(ats, "_CLIENT", httpx.Client(transport=httpx.MockTransport(smartrecruiters)))
+    jobs, _ = ats.fetch_smartrecruiters("BoschGroup")
+    assert [job.company for job in jobs] == ["Bosch Group"]

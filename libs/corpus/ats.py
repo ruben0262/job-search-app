@@ -1,7 +1,7 @@
 """Shared ATS harvester state: company tokens and conditional-poll ETags."""
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 
 from pymongo import UpdateOne
 from pymongo.database import Database
@@ -24,21 +24,29 @@ class AtsRepository:
         return [row["token"] for row in self._tokens.find(
             {"ats": ats, "dead_at": None}, {"token": 1}, sort=[("first_seen_at", 1), ("token", 1)])]
 
-    def add_tokens(self, pairs: Iterable[tuple[str, str]]) -> int:
-        """Merge `(ats, token)` pairs. Returns how many were new."""
-        seen: set[tuple[str, str]] = set()
+    def add_tokens(self, pairs: Iterable[tuple[str, str]],
+                   names: Mapping[tuple[str, str], str] | None = None) -> int:
+        """Merge `(ats, token)` pairs, with the company's name where `names` has one (a stored name is
+        replaced by a newer one). Returns how many were new."""
+        seen: dict[tuple[str, str], str | None] = {}
         for ats, token in pairs:
             ats_n = (ats or "").strip().lower()
             token_n = (token or "").strip().lower()
             if ats_n and token_n:
-                seen.add((ats_n, token_n))
+                seen[(ats_n, token_n)] = (names or {}).get((ats, token))
         if not seen:
             return 0
         result = self._tokens.bulk_write([
             UpdateOne({"ats": ats, "token": token},
-                      {"$setOnInsert": {"first_seen_at": now(), "dead_at": None}}, upsert=True)
-            for ats, token in sorted(seen)], ordered=False)
+                      {"$setOnInsert": {"first_seen_at": now(), "dead_at": None},
+                       **({"$set": {"name": name}} if name else {})}, upsert=True)
+            for (ats, token), name in sorted(seen.items())], ordered=False)
         return result.upserted_count
+
+    def names(self, ats: str) -> dict[str, str]:
+        """The companies' own names for this ATS's boards, `{token: name}`, where one is known."""
+        return {row["token"]: row["name"] for row in self._tokens.find(
+            {"ats": ats, "name": {"$nin": [None, ""]}}, {"token": 1, "name": 1})}
 
     def mark_dead(self, ats: str, token: str) -> None:
         """A board that 404s. Kept, not deleted — see `live_tokens`."""

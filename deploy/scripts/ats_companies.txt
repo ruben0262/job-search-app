@@ -1,0 +1,601 @@
+# Companies to look for on the job boards they host themselves (Greenhouse, Lever, Ashby, Workable,
+# Recruitee, Personio, SmartRecruiters, Breezy). One per line; `seed_ats.py` tries each name, written
+# together and with hyphens, on every one of them, and keeps the boards that list jobs. A name that is
+# not its board's address can say which: `Name = token, token`. Lines starting with # are notes.
+# Owner, 2026-11-02: well-known firms first, then smaller businesses and agencies, tech and engineering.
+
+# ── well-known tech ──────────────────────────────────────────────────────────────────────────────
+Airbnb
+Stripe
+Dropbox
+Pinterest
+Lyft
+Reddit
+Discord
+Figma
+GitLab
+Twilio
+Cloudflare
+Datadog
+Elastic
+MongoDB
+Robinhood
+Coinbase
+Instacart
+Affirm
+Brex
+Asana
+Airtable
+Databricks
+Okta
+Samsara
+Gusto
+Squarespace
+Etsy
+Duolingo
+Grammarly
+Benchling
+Chime
+Flexport
+Gemini
+Vercel
+Anthropic
+OpenAI
+Scale AI = scaleai
+Notion
+Linear
+Ramp
+Plaid
+Spotify
+Palantir
+Atlassian
+Canva
+Miro
+Zapier
+Webflow
+HubSpot = hubspotjobs
+Intercom
+Zendesk
+Toast
+DoorDash = doordashusa
+Wealthfront
+Nextdoor
+Quora
+Yelp
+Roblox
+Unity = unity3d
+Epic Games = epicgames
+Riot Games = riotgames
+Niantic
+Snowflake
+Confluent
+HashiCorp
+Grafana Labs = grafanalabs
+Cockroach Labs = cockroachlabs
+dbt Labs = dbtlabsinc
+Fivetran
+Sentry
+PostHog
+Supabase
+Retool
+Postman
+Docker
+JetBrains
+Canonical
+Mozilla
+Wikimedia = wikimedia
+DuckDuckGo
+Proton
+1Password = 1password
+Bitwarden
+Tailscale
+Fastly
+Netlify
+DigitalOcean
+Hetzner
+OVHcloud = ovh
+Twitch
+SoundCloud
+Deezer
+Shazam
+
+# ── AI ───────────────────────────────────────────────────────────────────────────────────────────
+DeepMind
+Mistral AI = mistral
+Hugging Face = huggingface
+Cohere
+ElevenLabs
+Synthesia
+Stability AI = stabilityai
+Aleph Alpha = alephalpha
+DeepL
+Perplexity = perplexityai
+Runway = runwayml
+Weights & Biases = wandb
+Pinecone
+Weaviate
+Qdrant
+LangChain
+Replit
+Cursor = anysphere
+Harvey
+Glean
+Writer
+Jasper
+PolyAI
+Faculty = facultyai
+Wayve
+Helsing
+Tractable
+Cleo = cleoai
+Photoroom
+Lovable
+n8n
+
+# ── fintech and payments ─────────────────────────────────────────────────────────────────────────
+Wise = transferwise
+Monzo
+Revolut
+Starling Bank = starlingbank
+N26
+Klarna
+Adyen
+Mollie
+Checkout.com = checkoutcom
+GoCardless
+TrueLayer
+Thought Machine = thoughtmachine
+SumUp
+Trade Republic = traderepublicbank
+Scalable Capital = scalablecapital
+Qonto
+Pennylane
+Pleo
+Spendesk
+Payhawk
+Bunq
+Lunar
+Tink
+Zopa
+OakNorth
+Curve
+Moneybox
+Freetrade
+Kraken = kraken123
+Bitpanda
+Ledger
+Solaris = solarisgroup
+Upvest
+Raisin
+Mambu
+Paddle
+Primer
+Yapily
+Ebury
+Funding Circle = fundingcircle
+iwoca
+Marshmallow
+Onfido
+ComplyAdvantage
+Featurespace
+Hiscox
+
+# ── European scale-ups ───────────────────────────────────────────────────────────────────────────
+Deliveroo
+Bolt
+Wolt
+Glovo
+Delivery Hero = deliveryhero
+HelloFresh
+GetYourGuide
+Contentful
+Celonis
+Personio
+Babbel
+Blinkist
+Zalando
+Flix = flixbus
+Trivago
+Omio
+Sennder
+Forto
+Enpal
+1Komma5° = 1komma5grad
+Tado
+Sonnen
+Grover
+Ecosia
+Doctolib
+BlaBlaCar
+Back Market = backmarket
+Alan
+Swile
+Ledgy
+Contentsquare
+Mirakl
+Dataiku
+Algolia
+Criteo
+Vinted
+Skyscanner
+Cazoo
+Babylon
+Multiverse
+Improbable
+Darktrace
+Ocado = ocadotechnology
+Octopus Energy = octopusenergy
+Kraken Technologies = krakentechnologies
+Bulb
+Ovo Energy = ovo
+Depop
+Farfetch
+ASOS
+Gymshark
+Bloom & Wild = bloomandwild
+Trainline
+Citymapper
+What3words
+Graphcore
+Arm
+Paysafe
+Booking.com = booking
+Picnic
+Bunq
+Mews
+Productboard
+Pipedrive
+Wise
+Bolt Food = bolt
+Veriff
+Monday.com = mondaycom
+Wix
+Fiverr
+Taboola
+Payoneer
+Lemonade
+Snyk
+Wiz = wizinc
+Celonis
+Messagebird
+Bird = bird
+Elastic
+Hotjar
+Typeform
+Factorial = factorialhr
+TravelPerk
+Cabify
+Idealista
+Wallapop
+Seedtag
+Jobandtalent
+Glofox
+Intercom
+Workhuman
+Fenergo
+Wayflyer
+Flipdish
+Tines
+LetsGetChecked = letsgetchecked
+Stripe Ireland = stripe
+Toast Ireland = toast
+Brainly
+Docplanner
+Booksy
+Allegro
+LiveChat = livechatinc
+Prezi
+LogMeIn
+Shapr3D = shapr3d
+Bitrise
+Craft = craftdocs
+Superhuman
+Pitch
+Spotahome
+Usercentrics
+Mirakl
+Aircall
+PayFit
+Swan = swan
+Lydia
+Ankorstore
+Agicap
+Shift Technology = shifttechnology
+Ornikar
+Pigment
+
+# ── engineering, hardware, energy, mobility ──────────────────────────────────────────────────────
+SpaceX
+Anduril = andurilindustries
+Relativity Space = relativityspace
+Rocket Lab = rocketlab
+Waymo
+Nuro
+Zoox
+Aurora = aurorainnovation
+Joby Aviation = jobyaviation
+Archer Aviation = archer
+Lilium
+Isar Aerospace = isaraerospace
+The Exploration Company = theexplorationcompany
+Volocopter
+Vertical Aerospace = verticalaerospace
+ICEYE
+Northvolt
+Verkor
+Sila = silananotech
+Form Energy = formenergy
+Commonwealth Fusion Systems = cfsenergy
+Tokamak Energy = tokamakenergy
+Marvel Fusion = marvelfusion
+Proxima Fusion = proximafusion
+Ørsted = orsted
+Vestas
+Rivian
+Lucid Motors = lucidmotors
+Polestar
+Arrival
+Einride
+Voi
+Tier
+Lime = limebike
+Dott
+Bird Rides = birdrides
+Zipline = flyzipline
+Skydio
+Boston Dynamics = bostondynamics
+Agility Robotics = agilityrobotics
+Figure = figureai
+1X = 1x
+Neura Robotics = neurarobotics
+Wandelbots
+Franka Emika = franka
+Ocado Technology = ocadotechnology
+Formlabs
+Markforged
+Desktop Metal = desktopmetal
+Carbon = carbon
+Siemens Energy = siemensenergy
+Bosch = boschgroup
+Continental
+ABB
+Schneider Electric = schneiderelectric
+Thales
+Airbus
+Rolls-Royce = rollsroyce
+Dyson
+Babcock
+BAE Systems = baesystems
+Arup
+AECOM
+Jacobs
+WSP
+Mott MacDonald = mottmacdonald
+Atkins = atkinsrealis
+Ramboll
+Sweco
+Cognite
+Kongsberg
+Nordic Semiconductor = nordicsemi
+Infineon
+NXP
+ASML
+Tesla
+Northrop Grumman = northropgrumman
+Lockheed Martin = lockheedmartin
+
+# ── consultancies, agencies and software houses ──────────────────────────────────────────────────
+Thoughtworks
+EPAM = epamsystems
+Endava
+Globant
+Netguru
+STX Next = stxnext
+10up = 10up
+Made Tech = madetech
+Infinum
+Softwire
+Kainos
+Valtech
+Publicis Sapient = publicissapient
+ustwo
+Red Badger = redbadger
+Equal Experts = equalexperts
+Scott Logic = scottlogic
+Zühlke = zuhlke
+Netlight
+Futurice
+Reaktor
+Nortal
+Accenture Song = accenturesong
+Deloitte Digital = deloittedigital
+Capgemini
+Sopra Steria = soprasteria
+Wipro
+Toptal
+Andela
+Turing
+X-Team = xteam
+Very Good Ventures = verygoodventures
+Simform
+10Clouds = 10clouds
+Software Mind = softwaremind
+Miquido
+Polcode
+Boldare
+Brainhub
+Codete
+Monterail
+Spyrosoft
+Itransition
+SoftServe
+N-iX = nix
+Intellias
+Ciklum
+DataArt
+Grid Dynamics = griddynamics
+Luxoft
+Sigma Software = sigmasoftware
+Elastic Path = elasticpath
+Box UK = boxuk
+Clearleft
+Fantasy
+Instrument
+Huge
+R/GA = rga
+AKQA
+Work & Co = workco
+Metalab
+Pentagram
+Wieden+Kennedy = wiedenkennedy
+VML
+Dept = deptagency
+Wunderman Thompson = wundermanthompson
+Ogilvy
+Mindera
+Xebia
+Sytac
+Luminis
+Ordina
+Devoteam
+Theodo
+Ippon
+Octo Technology = octotechnology
+Zenika
+Sfeir
+BCG X = bcgx
+McKinsey Digital = mckinsey
+QuantumBlack = quantumblack
+Slalom
+Booz Allen = boozallen
+
+# ── smaller businesses and startups ──────────────────────────────────────────────────────────────
+Basecamp
+Buffer
+Doist
+Ghost
+Plausible
+Fathom
+Hotjar
+Automattic
+Gitpod
+Codesandbox
+Sourcegraph
+Zed = zedindustries
+Warp = warpdev
+Raycast
+Linear
+Cal.com = calcom
+Formbricks
+Hashnode
+Strapi
+Directus
+Appwrite
+Medusa = medusajs
+Saleor
+Mattermost
+Rocket.Chat = rocketchat
+Element
+Nextcloud
+Kinsta
+Toggl
+Hotjar
+Teamtailor
+Workable
+Recruitee
+Remote = remotecom
+Deel
+Oyster
+Velocity Global = velocityglobal
+Omnipresent
+Lano
+Factorial
+Hibob
+Leapsome
+Lattice
+Culture Amp = cultureamp
+Personio
+Peakon
+Kenjo
+Holded
+Sesame
+Bitpanda
+Paysend
+Satispay
+Scalapay
+Yuno
+Tiko
+Plum
+Chip
+Snoop
+Lightyear
+Nuri
+Vivid Money = vividmoney
+Billie
+Mondu
+Topi
+Finom
+Rydoo
+Yokoy
+Sharpist
+Taxfix
+Wefox
+Getsafe
+Clark
+Ottonova
+Feather
+Kry
+Ada Health = adahealth
+Kaia Health = kaiahealth
+Oura
+Withings
+Huel
+Too Good To Go = toogoodtogo
+Gorillas
+Flink
+Getir
+Choco
+Infarm
+Planted
+Formo
+Everdrop
+Vay
+Kittl
+Tldraw
+Miro
+Hopin
+Pitch
+Mentimeter
+Kahoot
+Sana Labs = sanalabs
+Epidemic Sound = epidemicsound
+Storytel
+Tibber
+Matsmart
+Karma
+Instabee
+Budbee
+Truecaller
+Sinch
+Mynewsdesk
+Northvolt
+Einride
+Voi
+Hemnet
+Trustly
+Zettle
+iZettle = izettle
+Tink
+Kry
+Lunar
+Pleo
+Trustpilot
+Unity Copenhagen = unity3d
+Vivino
+Too Good To Go Denmark = toogoodtogo
+Templafy
+Planday
+Peakon
+Corti
+Labster
+Zendesk Copenhagen = zendesk

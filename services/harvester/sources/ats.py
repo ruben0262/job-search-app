@@ -14,12 +14,17 @@ import httpx
 
 from libs.corpus.filters import epoch_to_iso, is_within_hours
 from libs.corpus.ats import AtsRepository
+from libs.corpus.postings import strip_html
 from services.harvester.fetch import make_shared_client
 from services.harvester.sources.base import JobLink
 
 _UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                      "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"}
 _TIMEOUT = 15
+# Lever answers a board it has not served lately slowly, whatever its size, and fast after: Palantir
+# took 40.9 s, Pigment 25.7 s, Spotify 22 s for its first 50 jobs then 3 s for all 86 (2026-11-02).
+# At 15 s every such board failed every pass. Its own limit, so no other board waits this long.
+LEVER_TIMEOUT = 60
 # The three JSON files and their lock are gone.
 
 # hiring.cafe source strings -> our ATS name (greenhouse shows as 'grnhse', lever splits eu/us).
@@ -116,6 +121,9 @@ def gather_ats(cfg: dict[str, Any], logger, *, ats: str, repo: AtsRepository,
     jf = JobFilter(cfg)
     use_cond = cfg.get("conditional", True)
     etags = _load_etags(repo, ats) if use_cond else {}
+    # For the ATS whose API names no company (Ashby, Lever): the name the board was stored with, or
+    # its address written as words.
+    names = repo.names(ats)
 
     def _one(token: str) -> tuple[str, list[JobLink] | None, str | None]:
         try:
@@ -141,6 +149,7 @@ def gather_ats(cfg: dict[str, Any], logger, *, ats: str, repo: AtsRepository,
                 unchanged += 1
                 continue
             for jl in jobs:
+                jl.company = jl.company or names.get(token) or token.replace("-", " ").title()
                 if jf.ok(jl) and jl.url and jl.url not in seen:
                     seen.add(jl.url)
                     out.append(jl)
@@ -153,9 +162,10 @@ def gather_ats(cfg: dict[str, Any], logger, *, ats: str, repo: AtsRepository,
 
 # ── per-ATS fetch: (token, prev_etag) -> (jobs|None, new_etag) ────────────
 # None means 304 Not Modified (board unchanged, skip); [] means a dead token or an empty board.
-def _conditional_get(url: str, etag: str | None) -> tuple[httpx.Response | None, str | None, str]:
+def _conditional_get(url: str, etag: str | None,
+                     timeout: float = _TIMEOUT) -> tuple[httpx.Response | None, str | None, str]:
     """Returns (response|None, new_etag, status). status in {'ok','304','dead'}."""
-    r = _http().get(url, headers={"if-none-match": etag} if etag else None)
+    r = _http().get(url, headers={"if-none-match": etag} if etag else None, timeout=timeout)
     if r.status_code == 304:
         return None, etag, "304"
     if r.status_code == 404:
@@ -193,15 +203,16 @@ def fetch_ashby(token: str, etag: str | None = None) -> tuple[list[JobLink] | No
             continue
         loc = (j.get("location") or "").strip()
         out.append(JobLink(url=url, title=(j.get("title") or "").strip(),
-                           company=token.replace("-", " ").title(), location=loc, source="ashby",
+                           company="", location=loc, source="ashby",
                            date_posted=j.get("publishedAt"),
-                           snippet=(j.get("descriptionPlain") or j.get("title") or "")[:2000],
+                           snippet=(j.get("descriptionPlain") or j.get("title") or ""),
                            is_remote=(True if (j.get("isRemote") or "remote" in loc.lower()) else None)))
     return out, new_etag
 
 
 def fetch_lever(token: str, etag: str | None = None) -> tuple[list[JobLink] | None, str | None]:
-    r, new_etag, status = _conditional_get(f"https://api.lever.co/v0/postings/{token}?mode=json", etag)
+    r, new_etag, status = _conditional_get(f"https://api.lever.co/v0/postings/{token}?mode=json", etag,
+                                           timeout=LEVER_TIMEOUT)
     if status != "ok":
         return (None if status == "304" else []), new_etag
     out = []
@@ -211,9 +222,9 @@ def fetch_lever(token: str, etag: str | None = None) -> tuple[list[JobLink] | No
             continue
         loc = ((j.get("categories") or {}).get("location") or "").strip()
         out.append(JobLink(url=url, title=(j.get("text") or "").strip(),
-                           company=token.replace("-", " ").title(), location=loc, source="lever",
+                           company="", location=loc, source="lever",
                            date_posted=epoch_to_iso(j.get("createdAt")),
-                           snippet=(j.get("descriptionPlain") or j.get("text") or "")[:2000],
+                           snippet=(j.get("descriptionPlain") or j.get("text") or ""),
                            is_remote=(True if "remote" in loc.lower() else None)))
     return out, new_etag
 
@@ -226,13 +237,15 @@ def fetch_smartrecruiters(token: str, etag: str | None = None) -> tuple[list[Job
     out = []
     for j in (r.json().get("content") or []):
         ident = ((j.get("company") or {}).get("identifier") or token).strip()
+        # Its own name ("Bosch Group"), not the identifier in its address ("BoschGroup").
+        company = ((j.get("company") or {}).get("name") or ident).strip()
         jid = (j.get("id") or "").strip()
         if not jid:
             continue
         loc = j.get("location") or {}
         loc_str = ", ".join(x for x in [loc.get("city"), (loc.get("country") or "").upper()] if x)
         out.append(JobLink(url=f"https://jobs.smartrecruiters.com/{ident}/{jid}",
-                           title=(j.get("name") or "").strip(), company=ident, location=loc_str,
+                           title=(j.get("name") or "").strip(), company=company, location=loc_str,
                            source="smartrecruiters", date_posted=j.get("releasedDate"),
                            snippet=(j.get("name") or ""),
                            is_remote=(True if (loc.get("remote") or "remote" in loc_str.lower()) else None)))
@@ -254,7 +267,7 @@ def fetch_recruitee(token: str, etag: str | None = None) -> tuple[list[JobLink] 
         out.append(JobLink(url=url, title=(j.get("title") or "").strip(),
                            company=(j.get("company_name") or token).strip(), location=loc,
                            source="recruitee", date_posted=date,
-                           snippet=(j.get("description") or j.get("title") or "")[:2000],
+                           snippet=strip_html(j.get("description") or "") or j.get("title") or "",
                            is_remote=(True if (j.get("remote") or "remote" in loc.lower()) else None)))
     return out, new_etag
 
@@ -356,14 +369,14 @@ def fetch_personio(token: str, etag: str | None = None) -> tuple[list[JobLink] |
         offices = [pos.findtext("office") or ""] + \
                   [o.text or "" for o in pos.findall("additionalOffices/office")]
         loc = ", ".join(dict.fromkeys(x.strip() for x in offices if x and x.strip()))
-        # jobDescriptions/*/value carries CDATA HTML paragraphs — strip tags for the snippet.
-        desc = re.sub(r"<[^>]+>", " ", " ".join((v.text or "") for v in pos.iter("value"))).strip()
+        # jobDescriptions/*/value carries CDATA HTML paragraphs, each its own.
+        desc = strip_html("".join(f"<div>{v.text or ''}</div>" for v in pos.iter("value")))
         hay = f"{loc} {pos.findtext('schedule') or ''}".lower()
         out.append(JobLink(url=f"https://{token}.jobs.personio.de/job/{pid}", title=title,
                            company=(pos.findtext("subcompany") or "").strip() or token,
                            location=loc, source="personio",
                            date_posted=(pos.findtext("createdAt") or "").strip() or None,
-                           snippet=f"{title}\n{desc}"[:2000],
+                           snippet=f"{title}\n{desc}",
                            is_remote=(True if "remote" in hay else None)))
     return out, new_etag
 

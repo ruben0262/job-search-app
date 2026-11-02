@@ -25,6 +25,7 @@ from libs.secrets import install
 from services.harvester import linkedin
 from services.harvester.__main__ import source_configs_for
 from services.harvester.cycle import _run_source, run_cycle
+from services.harvester.source_config import ATS_SOURCES
 from services.harvester.sources import jobspy_source
 
 
@@ -95,7 +96,11 @@ def main(argv: list[str] | None = None) -> int:
     for key in sorted(set(configs) | set(listed) | set(failed)):
         links = listed.get(key, [])
         stored = _stored(corpus, links)
-        note = failed.get(key) or ("listed nothing for these words" if not links else
+        # A company board answers "not modified" when nothing on it changed since the last poll, so
+        # nothing listed there is normal; the harvest log says how many were unchanged.
+        empty = ("no board changed since the last poll, or none answered (see the log)" if key in ATS_SOURCES
+                 else "listed nothing for these words")
+        note = failed.get(key) or (empty if not links else
                                    "" if stored == len(links) else f"{len(links) - stored} not stored")
         print(f"{key:16s} {len(links):7d} {_age(links):>8s} {stored:5d}/{len(links):<4d}  {note}")
     print(f"\ncycle: {report.queries_planned} queries, {report.links_found} links, {report.new_jobs} new, "

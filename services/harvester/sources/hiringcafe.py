@@ -102,7 +102,7 @@ def _to_joblink(hit: dict[str, Any]) -> JobLink | None:
         parts.append("Responsibilities: " + ", ".join(str(a) for a in acts[:12]))
     if isinstance(tools, list) and tools:
         parts.append("Tools: " + ", ".join(str(t) for t in tools[:20]))
-    snippet = "\n".join(p for p in parts if p)[:2000]
+    snippet = "\n".join(p for p in parts if p)
     return JobLink(url=url, title=title, company=(v5.get("company_name") or "").strip(),
                    location=loc, source=SOURCE,
                    date_posted=(v5.get("estimated_publish_date") or None), snippet=snippet,

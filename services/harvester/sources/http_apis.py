@@ -5,7 +5,7 @@ Field maps and quirks below were confirmed against the live APIs (2026-06/07):
   Source           Call                                          date field (format)           url
   ───────────────  ───────────────────────────────────────────  ────────────────────────────  ────────────────────────────────────
   Himalayas        GET  jobs/api?limit=                          pubDate (epoch s)              job["applicationLink"]  (remote-focused)
-  JustJoin.it      GET  v2 by-cursor?perPage= (newest first)     publishedAt (ISO)              justjoin.it/job-offer/slug workplaceType
+  JustJoin.it      GET  candidate-api/offers?from=&itemsCount= (newest first)  publishedAt (ISO)  justjoin.it/job-offer/slug workplaceType
   NoFluffJobs      POST search/posting (rawSearch body)          posted (epoch ms)              nofluffjobs.com/job/url fullyRemote=bool
   WorkingNomads    GET  RSS feed per category                    pubDate (RFC 2822)             <link>                  (all remote)
   Profession.hu    GET  /allasok/1,0,0,<kw>?rss (keyword RSS)    pubDate (RFC 2822)             <guid>                  (HU on-site mostly)
@@ -47,6 +47,7 @@ from urllib.parse import quote
 import httpx
 
 from libs.corpus.filters import epoch_to_iso, is_within_hours
+from libs.corpus.postings import strip_html
 from libs.settings import queries_per_cycle_default
 from services.harvester.fetch import make_shared_client
 from services.harvester.sources.base import JobLink
@@ -99,7 +100,7 @@ def gather_himalayas(cfg: dict[str, Any], logger) -> list[JobLink]:
                     continue
                 loc = j.get("locationRestrictions") or []
                 # Use the full description (HTML-stripped), not the short excerpt.
-                desc = re.sub(r"<[^>]+>", " ", j.get("description") or "").strip() or j.get("excerpt", "")
+                desc = _striptags(j.get("description")) or j.get("excerpt", "")
                 out.append(JobLink(
                     url=url, title=j.get("title", ""), company=j.get("companyName", ""),
                     location=", ".join(loc) if isinstance(loc, list) else str(loc),
@@ -112,17 +113,29 @@ def gather_himalayas(cfg: dict[str, Any], logger) -> list[JobLink]:
 # ── JustJoin.it (v2 cursor API) ──────────────────────────────────────
 
 def gather_justjoinit(cfg: dict[str, Any], logger) -> list[JobLink]:
-    endpoint = cfg.get("endpoint", "https://api.justjoin.it/v2/user-panel/offers/by-cursor")
+    """Just Join IT's own offer API, newest first, `itemsCount` a page from the cursor `from`.
+
+    Moved 2026-11-02: `api.justjoin.it/v2/user-panel/offers/by-cursor` has answered 503 to everything
+    since 2026-11-01, and the site itself reads `justjoin.it/api/candidate-api/offers`, which carries the
+    same records. About ten offers go up an hour, so the walk goes page by page until an offer is older
+    than the window, at most `max_pages` (`source_pages_per_cycle`). A page that fails keeps the ones
+    already read."""
+    endpoint = cfg.get("endpoint", "https://justjoin.it/api/candidate-api/offers")
     max_age = cfg.get("max_age_hours", 24)
     keywords = cfg.get("keywords", [])
-    params = {"orderBy": "DESC", "sortBy": "published", "perPage": cfg.get("per_page", 100)}
+    per_page = int(cfg.get("per_page", 100))
     out: list[JobLink] = []
+    data: list[dict] = []
     try:
         with make_shared_client() as client:
-            data = client.get(endpoint, params=params).json().get("data", [])
+            for page in range(int(cfg.get("max_pages", 1))):
+                batch = client.get(endpoint, params={"from": page * per_page, "itemsCount": per_page}
+                                   ).raise_for_status().json().get("data", [])
+                data += batch
+                if len(batch) < per_page or not is_within_hours(batch[-1].get("publishedAt"), max_age):
+                    break
     except Exception as exc:
-        logger.warning("justjoinit fetch failed: %s", exc)
-        return out
+        logger.warning("justjoinit fetch failed after %d offer(s): %s", len(data), exc)
     for j in data:
         posted = j.get("publishedAt") or j.get("lastPublishedAt")
         if not is_within_hours(posted, max_age):
@@ -286,13 +299,14 @@ def gather_workingnomads(cfg: dict[str, Any], logger) -> list[JobLink]:
         out.append(JobLink(
             url=url, title=title, company=(j.get("company_name") or "").strip(),
             location=(j.get("location") or "Remote").strip(), source="workingnomads",
-            date_posted=iso, snippet=desc[:4000], is_remote=True))
+            date_posted=iso, snippet=desc, is_remote=True))
     return out
 
 
 def _striptags(html: str | None) -> str:
-    """Collapse an HTML fragment to readable plain text (job descriptions come as HTML)."""
-    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html or "")).strip()
+    """An HTML fragment as readable text, its paragraphs and list items kept (job descriptions come
+    as HTML). The one way the harvester reads markup, so every board's text is laid out alike."""
+    return strip_html(html or "")
 
 
 # ── Jobicy ────────────────────────────────────────────────────────────
@@ -345,7 +359,7 @@ def gather_jobicy(cfg: dict[str, Any], logger) -> list[JobLink]:
                 out.append(JobLink(
                     url=url, title=title, company=j.get("companyName", ""),
                     location=j.get("jobGeo") or "Remote", source="jobicy",
-                    date_posted=iso, snippet=excerpt[:4000], is_remote=True,
+                    date_posted=iso, snippet=excerpt, is_remote=True,
                 ))
     return out
 
@@ -398,7 +412,7 @@ def gather_themuse(cfg: dict[str, Any], logger) -> list[JobLink]:
                 out.append(JobLink(
                     url=url, title=title, company=(j.get("company") or {}).get("name", ""),
                     location=loc_str, source="themuse", date_posted=iso,
-                    snippet=desc[:4000], is_remote=(True if remote else None),
+                    snippet=desc, is_remote=(True if remote else None),
                 ))
     return out
 
@@ -437,7 +451,7 @@ def gather_findwork(cfg: dict[str, Any], logger) -> list[JobLink]:
                 out.append(JobLink(
                     url=url, title=j.get("role", ""), company=j.get("company_name", ""),
                     location=j.get("location") or "Remote", source="findwork",
-                    date_posted=iso, snippet=_striptags(j.get("text"))[:4000],
+                    date_posted=iso, snippet=_striptags(j.get("text")),
                     is_remote=(True if j.get("remote") else None),
                 ))
     return out
@@ -528,7 +542,7 @@ def gather_adzuna(cfg: dict[str, Any], logger) -> list[JobLink]:
                     company=(j.get("company") or {}).get("display_name", ""),
                     location=(j.get("location") or {}).get("display_name", ""),
                     source="adzuna", date_posted=iso,
-                    snippet=_striptags(j.get("description"))[:4000], is_remote=None,
+                    snippet=_striptags(j.get("description")), is_remote=None,
                 ))
     return out
 
@@ -590,7 +604,7 @@ def gather_hn_hiring(cfg: dict[str, Any], logger) -> list[JobLink]:
             out.append(JobLink(
                 url=f"https://news.ycombinator.com/item?id={c.get('id')}",
                 title=title, company=company, location="Remote", source="hn_hiring",
-                date_posted=iso, snippet=text[:4000], is_remote=True,
+                date_posted=iso, snippet=text, is_remote=True,
             ))
     return out
 
@@ -669,9 +683,9 @@ def gather_profession(cfg: dict[str, Any], logger) -> list[JobLink]:
                 desc_raw = (item.findtext("description") or "").strip()
                 try:
                     bullets = json.loads(desc_raw)
-                    snippet = " • ".join(str(b) for b in bullets) if isinstance(bullets, list) else desc_raw
+                    snippet = "\n".join(f"• {b}" for b in bullets) if isinstance(bullets, list) else desc_raw
                 except Exception:
-                    snippet = re.sub(r"<[^>]+>", " ", desc_raw).strip()
+                    snippet = _striptags(desc_raw)
                 out.append(JobLink(
                     url=url, title=title, company="", location=location,
                     source="profession", date_posted=pub_date,
@@ -734,7 +748,7 @@ def gather_jooble(cfg: dict[str, Any], logger) -> list[JobLink]:
                 # Salary string (when Jooble carries one) rides in front of the snippet so the
                 # downstream salary extraction sees it even before the full JD is fetched.
                 sal = (j.get("salary") or "").strip()
-                snippet = re.sub(r"<[^>]+>", " ", j.get("snippet") or "").strip() or title
+                snippet = _striptags(j.get("snippet")) or title
                 if sal:
                     snippet = f"Salary: {sal}. {snippet}"
                 out.append(JobLink(

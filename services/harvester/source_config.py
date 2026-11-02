@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from uuid import UUID
 
+from libs.contracts.config import migrate_config
 from libs.settings import QUERY_TAKING_SOURCES
 
 # Sources needing no API key and no credential.
@@ -115,11 +116,15 @@ PLATFORM_DEFAULTS: dict[str, dict] = {
         ats: {"max_companies": 400, "posted_within_hours": 72, "use_harvested": True,
               "conditional": True}
         for ats in ("greenhouse", "ashby", "lever", "smartrecruiters", "breezy",
-                    "workday", "personio", "workable")
+                    "workday", "personio")
     },
     # Recruitee answers a burst from one IP with 429s — lower concurrency, from the reference.
     "recruitee": {"max_companies": 400, "posted_within_hours": 72, "use_harvested": True,
                   "conditional": True, "concurrency": 8},
+    # Workable more so: 16 at once got 490 refusals of 555, and then even one at a time was refused for
+    # hours (2026-11-02). The harvest asked 30 at once.
+    "workable": {"max_companies": 400, "posted_within_hours": 72, "use_harvested": True,
+                 "conditional": True, "concurrency": 2},
 }
 
 
@@ -145,11 +150,12 @@ def union_keywords(configs: Mapping[UUID, Mapping]) -> list[str]:
 
 
 def union_locations(configs: Mapping[UUID, Mapping]) -> list[str]:
-    """Every active user's locations. Same reasoning as `union_keywords`."""
+    """Every active user's locations. Same reasoning as `union_keywords`. Read as the current places
+    (`migrate_config`): a city picked before My search picked countries is its country."""
     locations = {
         str(loc).strip().lower()
         for config in configs.values()
-        for loc in _from_sections(config, "locations")
+        for loc in _from_sections(migrate_config(dict(config or {})), "locations")
         if str(loc).strip()
     }
     return sorted(locations)

@@ -185,6 +185,17 @@ curl -s https://mahoraga-app.rubenlekli.com/health          # {"status":"ok"}
 ./.venv/bin/python deploy/scripts/show_accounts.py
 ```
 
+### 5. Give the ATS tier its companies (once, then whenever the list grows)
+
+The nine company-board sources poll `ats_tokens`, and nothing fills it but links in postings. This
+looks for each company in `deploy/scripts/ats_companies.txt` on every ATS and stores the boards that
+list jobs. Run it again after adding names; boards already stored are left alone.
+
+```bash
+./.venv/bin/python -u deploy/scripts/seed_ats.py --dry-run     # what it would store
+./.venv/bin/python -u deploy/scripts/seed_ats.py
+```
+
 ### Host-side scripts need `MONGODB_URI`
 
 Nothing sets it for you. The containers get it from `compose.yml`; a shell does not, and the failure

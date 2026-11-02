@@ -303,7 +303,7 @@ def test_the_filter_reads_the_sections_a_real_config_actually_stores():
                                      "locations": ["Budapest"], "platform": "all"}]},
     }
     assert union_keywords(sectioned) == ["golang", "rust"]
-    assert union_locations(sectioned) == ["budapest"]
+    assert union_locations(sectioned) == ["hungary"], "a city stored before is read as its country"
 
     both = {uuid.uuid4(): {"keywords": ["flat"], "sections": [{"keywords": ["nested"]}]}}
     assert union_keywords(both) == ["flat", "nested"], "neither shape may shadow the other"
