@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 import uuid as _uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, EmailStr, Field
 from pymongo.database import Database
@@ -72,10 +72,10 @@ def _clear_session_cookies(response: Response) -> None:
 
 
 @router.post("/signup", status_code=status.HTTP_202_ACCEPTED)
-def signup(body: SignupRequest, request: Request,
+def signup(body: SignupRequest, request: Request, background: BackgroundTasks,
            db: Database = Depends(get_db),
            mailer: EmailSender = Depends(get_mailer)) -> dict:
-    """Create an unverified account and email a link."""
+    """Create an unverified account and email a link, once the answer has gone."""
     rate_limit(request, "signup", limit=5, per_seconds=3600)
 
     problems = password_problems(body.password, email=body.email)
@@ -93,7 +93,7 @@ def signup(body: SignupRequest, request: Request,
         return OPAQUE_SIGNUP
 
     token = issue_token(db, user.id, "verify_email")
-    _send_verification(db, mailer, email, token)
+    background.add_task(_send_verification, db, mailer, email, token)
     return OPAQUE_SIGNUP
 
 
@@ -106,8 +106,8 @@ class ResendRequest(BaseModel):
 
 
 @router.post("/resend", status_code=status.HTTP_202_ACCEPTED)
-def resend(body: ResendRequest, request: Request, db: Database = Depends(get_db),
-           mailer: EmailSender = Depends(get_mailer)) -> AuthStatus:
+def resend(body: ResendRequest, request: Request, background: BackgroundTasks,
+           db: Database = Depends(get_db), mailer: EmailSender = Depends(get_mailer)) -> AuthStatus:
     """Email a fresh verification link to an account still waiting for one. Answers the same anyway."""
     email = body.email.lower()
     rate_limit(request, f"resend:{email}", limit=3, per_seconds=3600)
@@ -115,7 +115,8 @@ def resend(body: ResendRequest, request: Request, db: Database = Depends(get_db)
     user = find_one(db, User, {"email": email})
     if user is not None and user.status == "pending_verification":
         # Issuing revokes the older links, so the newest one in the inbox is the one that works.
-        _send_verification(db, mailer, email, issue_token(db, user.id, "verify_email"))
+        background.add_task(_send_verification, db, mailer, email,
+                            issue_token(db, user.id, "verify_email"))
     else:
         logger.info("verification resend for an unknown or verified address; answering opaquely")
     return AuthStatus(**OPAQUE_SIGNUP)
@@ -150,22 +151,14 @@ class ForgotRequest(BaseModel):
 
 
 @router.post("/forgot", status_code=status.HTTP_202_ACCEPTED)
-def forgot(body: ForgotRequest, request: Request, db: Database = Depends(get_db),
-           mailer: EmailSender = Depends(get_mailer)) -> dict:
-    """Email a reset link."""
+def forgot(body: ForgotRequest, request: Request, background: BackgroundTasks,
+           db: Database = Depends(get_db), mailer: EmailSender = Depends(get_mailer)) -> dict:
+    """Email a reset link, once the answer has gone."""
     rate_limit(request, f"forgot:{body.email.lower()}", limit=3, per_seconds=3600)
 
     user = find_one(db, User, {"email": body.email.lower()})
     if user is not None and user.status not in ("suspended", "deleted"):
-        token = issue_token(db, user.id, "reset_password")
-        url = site_url(f"/#/reset?token={token}")
-        subject, mail_body = reset_email(url)
-        with redacting(token):
-            try:
-                send_within_cap(db, mailer, user.email, subject, mail_body,
-                                purpose="reset_password")
-            except MailError:
-                logger.warning("reset email failed; the user can ask again", exc_info=True)
+        background.add_task(_send_reset, db, mailer, user.email, issue_token(db, user.id, "reset_password"))
     else:
         logger.info("password reset for an unknown or inactive address; answering opaquely")
     return {"status": "check your email"}
@@ -293,6 +286,11 @@ def logout_everywhere(request: Request, response: Response,
     return {"status": "ok", "sessions_ended": revoked}
 
 
+# Every email here is sent after the answer has gone (owner, 2026-11-02: "make sure it's fast"). Sent
+# inside the request, each waited on the mail server, 0.4–0.8 s to log in to Zoho before a byte of the
+# message, and an address with an account answered that much slower than one without: the timing told
+# what the opaque answer was written to hide.
+
 def _send_verification(db: Database, mailer: EmailSender, email: str, token: str) -> None:
     """Send the link, and treat any delivery failure as recoverable."""
     # The SPA's hash route, not the API's path.
@@ -305,6 +303,16 @@ def _send_verification(db: Database, mailer: EmailSender, email: str, token: str
         except MailError:
             logger.warning("verification email to %s failed; the account still exists", email,
                            exc_info=True)
+
+
+def _send_reset(db: Database, mailer: EmailSender, email: str, token: str) -> None:
+    """Send the reset link, and treat any delivery failure as recoverable: they can ask again."""
+    subject, body = reset_email(site_url(f"/#/reset?token={token}"))
+    with redacting(token):
+        try:
+            send_within_cap(db, mailer, email, subject, body, purpose="reset_password")
+        except MailError:
+            logger.warning("reset email failed; the user can ask again", exc_info=True)
 
 
 def _owner(db: Database, session_id: _uuid.UUID) -> _uuid.UUID:

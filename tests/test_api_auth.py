@@ -429,3 +429,50 @@ def test_the_console_sender_shows_the_link_a_developer_must_click(capsys):
     sender.send("dev@example.com", "Confirm your email", "  http://localhost/#/verify?token=abc123")
     out = capsys.readouterr().out
     assert "token=abc123" in out
+
+
+def test_signup_and_forgot_answer_before_the_email_is_sent(db, monkeypatch):
+    """Through a real server: a mail server that takes its time does not keep the page waiting, and
+    an address with an account is not told apart by how long it takes (2026-11-02)."""
+    import socket
+    import threading
+    import time
+
+    import httpx
+    import uvicorn
+
+    from services.api import deps
+    from services.api.app import app
+
+    os.environ.setdefault("ACCESS_TOKEN_SECRET", "test-" + "x" * 40)
+    monkeypatch.setenv("DISABLE_RATE_LIMIT", "1")
+
+    class Slow(ConsoleSender):
+        def send(self, *args, **kwargs) -> None:
+            time.sleep(1.5)
+            super().send(*args, **kwargs)
+
+    mailer = Slow()
+    app.dependency_overrides[deps.get_mailer] = lambda: mailer
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
+    threading.Thread(target=server.run, daemon=True).start()
+    try:
+        while not server.started:
+            time.sleep(0.05)
+        email = _email()
+        with httpx.Client(base_url=f"http://127.0.0.1:{port}") as http:
+            for path, body in (("/auth/signup", {"email": email, "password": PASSWORD}),
+                               ("/auth/forgot", {"email": email})):
+                started = time.monotonic()
+                assert http.post(path, json=body).status_code == 202
+                assert time.monotonic() - started < 1.0, f"{path} waited for the mail server"
+        deadline = time.monotonic() + 5
+        while len(mailer.sent) < 2 and time.monotonic() < deadline:
+            time.sleep(0.1)
+        assert [subject for _, subject, _ in mailer.sent][:1] and len(mailer.sent) == 2, "and both went"
+    finally:
+        server.should_exit = True
+        app.dependency_overrides.clear()
