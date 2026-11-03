@@ -261,8 +261,8 @@ There is no 2 any more: it meant "no `EMBEDDER_URL`", and nothing embeds (ROADMA
 
 **A skipped tick is not a failure.** With a 15-minute timer and an occasionally slow cycle,
 treating overlap as an error would page somebody about the system working correctly. Overlap is
-prevented by a Postgres advisory lock inside the cycle rather than by systemd, so it works the same
-way when Phase 2 moves this into the queue.
+prevented by a lease in MongoDB inside the cycle (`harvest_lock`) rather than by systemd, and a cycle that
+died lets go of it before the next tick.
 
 ⚠ **`Persistent=false` in the timer, deliberately.** Catching up missed runs after downtime would
 fire several cycles back to back, each spending the full fan-out budget against sources that are

@@ -52,7 +52,9 @@ $COMPOSE build $SERVICES api
 say "Schema"
 # In the image just built, against MongoDB, **before anything restarts**: a rule or index the database
 # refuses stops the deploy here instead of a service at start-up (`libs/db/__main__.py`).
-$COMPOSE run --rm --no-deps api python -m libs.db --prune
+# `--entrypoint python`: the image's entrypoint is uvicorn, and `run api python …` handed these words to
+# uvicorn as arguments ("No such option '-m'"), stopping every deploy here (found 2026-11-03).
+$COMPOSE run --rm --no-deps --entrypoint python api -m libs.db --prune
 
 say "Recreating"
 # shellcheck disable=SC2086

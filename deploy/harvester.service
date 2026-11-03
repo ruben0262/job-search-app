@@ -1,6 +1,6 @@
 # One shared harvest cycle. Invoked by harvester.timer; exits when done.
 #
-# Overlap is handled inside the cycle by a Postgres advisory lock, not by systemd: if a tick fires
+# Overlap is handled inside the cycle by a lease in MongoDB (`harvest_lock`), not by systemd: if a tick fires
 # while the previous run is still going, the new run takes the lock, fails to get it, logs, and
 # exits 0. That is the design, not a failure - so it must not page anyone.
 [Unit]
@@ -11,7 +11,7 @@ Requires=docker.service
 [Service]
 Type=oneshot
 WorkingDirectory=/home/ruben/job-search-app
-# --no-deps so a harvest run never restarts Postgres or the embedder underneath itself.
+# --no-deps so a harvest run never starts or restarts another service underneath itself.
 ExecStart=/usr/bin/docker compose -f deploy/compose.yml run --rm --no-deps harvester
 # A cycle that overruns its own interval is a problem worth surfacing rather than letting it stack.
 TimeoutStartSec=14min

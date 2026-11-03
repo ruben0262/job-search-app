@@ -36,5 +36,5 @@ COPY services/docgen /app/services/docgen
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 
 # A generated document never touches this container's disk (D9): Chrome is handed the HTML and hands
-# back the PDF over its DevTools pipe, and the bytes wait in Postgres for their download.
+# back the PDF over its DevTools pipe, and the bytes wait in MongoDB for their download.
 ENTRYPOINT ["python", "-m", "services.docgen"]
