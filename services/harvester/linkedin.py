@@ -13,14 +13,20 @@ from __future__ import annotations
 import logging
 import math
 import random
+import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
+import httpx
+from bs4 import BeautifulSoup
+
 from libs import limits
-from libs.contracts.config import location_search_name
+from libs.contracts.config import location_search_name, migrate_config
+from libs.corpus.postings import LI_BACKOFF, LI_RETRIES
 from libs.corpus.repository import CorpusRepository
 from libs.db import find
 from libs.db.models import User
+from libs.matching import found, green_words, pattern
 from libs.obs import audit
 from libs.proxy import ENV as PROXY_ENV
 from libs.proxy import site_proxy
@@ -38,12 +44,21 @@ from services.harvester.fetch import make_site_client
 from services.harvester.governor import linkedin_enabled, next_linkedin_run
 from services.harvester.query_set import build_query_set, original_terms
 from services.harvester.sources import jobspy_source
+from services.harvester.sources.base import JobLink
 
 logger = logging.getLogger(__name__)
 
 # How long the pass's describing may run, derived from the timer that starts it. Once per pass, after
 # every due search: it used to be once per account, so four accounts could take four times this.
 DESCRIBE_BUDGET_SECONDS = PLATFORM_TICK_MIN * 60 * 2 / 3
+
+# LinkedIn's guest job list: ten jobs a page, and nothing past the thousandth.
+SWEEP_URL = "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search"
+SWEEP_PAGE, SWEEP_DEPTH = 10, 1000
+# LinkedIn answers a refusal with the same empty page as the end of its list: a sweep of Germany's last
+# hour stopped at 20 of ~300 jobs that way (2026-11-03). After a full page, an empty one is asked again,
+# each time from another of the proxy's addresses, before it counts as the end.
+EMPTY_RETRIES = 3
 
 # LinkedIn pages fetched at once while describing. Measured through the site proxy, 2026-11-02: one at
 # a time took 1.1–1.4 s a page, four took 0.24–0.47 s and read all 50 asked, eight took 0.17–0.63 s and
@@ -63,7 +78,26 @@ class LinkedInReport:
     links_found: int = 0
     new_jobs: int = 0
     described: int = 0
+    # The sweep: places read with no word, requests it took, jobs it read, and the ones it kept.
+    swept_places: int = 0
+    sweep_requests: int = 0
+    swept: int = 0
+    sweep_kept: int = 0
     failures: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class Sweep:
+    """What one sweep of one place read."""
+
+    place: str
+    requests: int = 0
+    read: int = 0
+    kept: list[JobLink] = field(default_factory=list)
+    # Stopped at LinkedIn's thousandth job: the window held more than one list can be read to.
+    truncated: bool = False
+    # Stopped on empty pages after a full one, the retries spent: the end, or LinkedIn refusing.
+    unsure_end: bool = False
 
 
 def due_users(db, *, now: datetime) -> list[User]:
@@ -111,9 +145,99 @@ def search_window(user: User, *, now: datetime, interval_min: int, most: int) ->
     return max(1, min(most, math.ceil(since_last / 3600)))
 
 
+def sweep_window(user: User, *, now: datetime, interval_min: int, most: int) -> int:
+    """How far back, in seconds, a sweep of this person's places reaches: to their previous pass and
+    one run before it, so a job listed at the edge of one window is inside the next. Measured
+    2026-11-03: a sweep missed 8 of 20 jobs listed exactly an hour before, and a wider window held all 8.
+    """
+    if user.linkedin_next_run_at is None:
+        return most * 3600
+    since_last = (now - user.linkedin_next_run_at).total_seconds() + interval_min * 60
+    return int(min(most * 3600, since_last + PLATFORM_TICK_MIN * 60))
+
+
+def sweep_places(places: dict[str, int], words: list[str], *, proxy: str) -> list[Sweep]:
+    """Every job each place listed in its window (seconds), newest first, with no search word; the ones
+    whose title has somebody's word are kept.
+
+    A word search costs a request per word and place, more with every new word. A sweep costs a request
+    per ten jobs the place lists, the same however many words there are. Measured 2026-11-03, one hour:
+    Ireland 9 jobs, the Netherlands 35, Germany ~300, the UK ~410, the EU 937+ (a list is read to 1,000).
+    Only titles come back, so a job whose title has none of anybody's words is not stored, and the word
+    searches still find the ones whose description has it: 46–54% of LinkedIn matches were description
+    only, and 88% for skills, on the 6,406 LinkedIn jobs here with a description.
+    """
+    regex = pattern(words)
+    if regex is None:
+        return []
+    with redacting(proxy), make_site_client(proxy) as client:
+        return [_sweep(client, place, seconds, regex) for place, seconds in places.items()]
+
+
+def _sweep(client, place: str, seconds: int, regex) -> Sweep:
+    sweep = Sweep(place)
+    params = {"keywords": "", "location": place, "f_TPR": f"r{seconds}", "sortBy": "DD"}
+    start = empty = 0
+    while start < SWEEP_DEPTH:
+        response = _page(client, {**params, "start": start}, sweep)
+        cards = _cards(response.text) if response is not None and response.status_code == 200 else []
+        if not cards:
+            if start and empty < EMPTY_RETRIES:
+                empty += 1
+                continue
+            sweep.unsure_end = bool(start)
+            return sweep
+        empty = 0
+        sweep.read += len(cards)
+        sweep.kept += [card for card in cards if found(regex, card.title)]
+        if len(cards) < SWEEP_PAGE:
+            return sweep
+        start += SWEEP_PAGE
+    sweep.truncated = True
+    return sweep
+
+
+def _page(client, params: dict, sweep: Sweep) -> httpx.Response | None:
+    """One page of the list, asked again after a 429, each time from the proxy's next address."""
+    response = None
+    for attempt in range(LI_RETRIES):
+        sweep.requests += 1
+        try:
+            response = client.get(SWEEP_URL, params=params)
+        except httpx.HTTPError as exc:
+            logger.warning("linkedin: a sweep page of %s could not be read: %s", sweep.place,
+                           type(exc).__name__)
+            return None
+        if response.status_code != 429:
+            return response
+        time.sleep(LI_BACKOFF * (attempt + 1))
+    return response
+
+
+def _cards(html: str) -> list[JobLink]:
+    """The jobs on one page of the list: title, company, place and day, never the description."""
+    out: list[JobLink] = []
+    for card in BeautifulSoup(html, "html.parser").find_all(class_="base-search-card"):
+        job_id = str(card.get("data-entity-urn", "")).rsplit(":", 1)[-1]
+        title = card.find("h3", class_="base-search-card__title")
+        if not job_id.isdigit() or title is None:
+            continue
+        company = card.find("h4", class_="base-search-card__subtitle")
+        where = card.find("span", class_="job-search-card__location")
+        posted = card.find("time")
+        # The address the word searches store, so one job found both ways is one job.
+        out.append(JobLink(url=f"https://www.linkedin.com/jobs/view/{job_id}",
+                           title=title.get_text(strip=True),
+                           company=company.get_text(strip=True) if company else "",
+                           location=where.get_text(strip=True) if where else "", source="linkedin",
+                           date_posted=posted.get("datetime") if posted else None, found_via="sweep"))
+    return out
+
+
 def run_for_due_users(db, *, now: datetime | None = None,
-                      gather=jobspy_source.gather_linkedin) -> LinkedInReport:
-    """One pass: the searches of everyone due, pooled, then every posting still to describe."""
+                      gather=jobspy_source.gather_linkedin, sweep=None) -> LinkedInReport:
+    """One pass: the searches of everyone due, pooled; a sweep of their places for titles with anybody's
+    words; then every posting still to describe. `sweep` is `sweep_places`, looked up when called."""
     report = LinkedInReport()
     if not linkedin_enabled():
         logger.warning("linkedin: tier disabled by HARVEST_LINKEDIN_DISABLED")
@@ -138,15 +262,21 @@ def run_for_due_users(db, *, now: datetime | None = None,
     configs: dict = {}
     budgets: dict = {}
     windows: dict = {}
+    # Each place someone due wants, and how far back its sweep reaches: the widest of theirs.
+    places: dict[str, int] = {}
     for user in due_users(db, now=now):
         report.considered += 1
         interval = limits.resolve(user, "linkedin_interval_min")
         windows[user.id] = search_window(user, now=now, interval_min=interval, most=most)
+        reach = sweep_window(user, now=now, interval_min=interval, most=most)
         # Scheduled first, deliberately: every path below wants the same next run, success or not.
         db[User.COLLECTION].update_one({"_id": user.id}, {"$set": {
             "linkedin_next_run_at": next_linkedin_run(now, interval)}})
         if config := tenants.get_config(user.id):
             configs[user.id] = config
+            for section in migrate_config(config).get("sections") or []:
+                for name in filter(None, map(location_search_name, section.get("locations") or [])):
+                    places[name] = max(places.get(name, 0), reach)
             budgets[user.id] = limits.resolve(user, "keywords")
             # `None` is Unlimited, and `build_query_set` takes it as every word the account has.
 
@@ -162,10 +292,20 @@ def run_for_due_users(db, *, now: datetime | None = None,
             report.failures["search"] = f"{type(exc).__name__}: {exc}"
             logger.warning("linkedin: the pooled search failed: %s", type(exc).__name__)
 
+    if places:
+        # Everyone's words, not only the due people's: what a sweep keeps is shared by everybody.
+        words = sorted({word for config in tenants.active_configs().values() for word in green_words(config)})
+        try:
+            _swept((sweep or sweep_places)(places, words, proxy=proxy), corpus=corpus, report=report)
+        except Exception as exc:                                    # noqa: BLE001
+            report.failures["sweep"] = f"{type(exc).__name__}: {exc}"
+            logger.warning("linkedin: the sweep failed: %s", type(exc).__name__)
+
     # Every pass, whoever was due: what this pass stored and whatever an earlier one could not reach.
     _describe(corpus, proxy, report, deliverable_for=deliverable_for)
     audit(logger, "linkedin.pass", considered=report.considered, ran=report.ran, queries=report.queries,
           shared=report.shared, links=report.links_found, new=report.new_jobs, described=report.described,
+          swept=report.swept, sweep_kept=report.sweep_kept, sweep_requests=report.sweep_requests,
           failures=len(report.failures))
     return report
 
@@ -187,6 +327,23 @@ def _search(queries: list[dict], *, corpus: CorpusRepository, proxy: str, report
     report.new_jobs += new_jobs
     logger.info("linkedin: %d distinct search(es) for %d people (%d shared), %d link(s), %d new",
                 len(queries), people, report.shared, len(links), new_jobs)
+
+
+def _swept(sweeps: list[Sweep], *, corpus: CorpusRepository, report: LinkedInReport) -> None:
+    """What the sweeps kept, stored once, and one line saying what they read."""
+    kept = [link for sweep in sweeps for link in sweep.kept]
+    new = _ingest(corpus, kept)
+    report.swept_places += len(sweeps)
+    report.sweep_requests += sum(sweep.requests for sweep in sweeps)
+    report.swept += sum(sweep.read for sweep in sweeps)
+    report.sweep_kept += len(kept)
+    report.new_jobs += new
+    logger.info("linkedin: swept %d place(s) in %d request(s): %d job(s) read, %d with somebody's word in "
+                "the title, %d new; ended on empty pages: %s", len(sweeps), report.sweep_requests,
+                report.swept, len(kept), new, [sweep.place for sweep in sweeps if sweep.unsure_end] or "none")
+    if truncated := [sweep.place for sweep in sweeps if sweep.truncated]:
+        logger.warning("linkedin: the sweep of %s reached LinkedIn's 1,000th job, so the oldest of its "
+                       "window went unread", truncated)
 
 
 def _describe(corpus: CorpusRepository, proxy: str, report: LinkedInReport, *,

@@ -66,16 +66,14 @@ HARVEST_SOURCES: tuple[str, ...] = (
 
 # The sources that take a keyword query, as opposed to serving a feed.
 QUERY_TAKING_SOURCES: frozenset[str] = frozenset(
-    {"himalayas", "hiringcafe", "nofluffjobs", "jooble"})
+    {"hiringcafe", "jooble"})
 
 # How many queries a source may be asked in one 15-minute cycle, before the operator says otherwise.
 DEFAULT_SOURCE_QUERIES_PER_CYCLE: dict[str, int] = {
     # Per user, and it was the tightest ceiling on the platform against the widest demand.
     "linkedin": 150,
     # Search-shaped boards on a shared client.
-    "himalayas": 100,
     "hiringcafe": 100,
-    "nofluffjobs": 100,
     "jooble": 50,
     # Metered by the vendor, not by politeness: the free tier is roughly 250 calls a day and the
     # cycle runs ninety-six times, so two is what stays inside it. Everything else in this map is
@@ -90,9 +88,7 @@ DEFAULT_QUERIES_PER_CYCLE = 40
 
 # How many results one query may bring back, per source.
 DEFAULT_SOURCE_RESULTS_PER_QUERY: dict[str, int] = {
-    "himalayas": 100,
     "justjoinit": 100,
-    "nofluffjobs": 100,
     "jobicy": 50,
     "hiringcafe": 40,
     # A search reaches back to the last one (`services.harvester.linkedin.search_window`): an hour holds
@@ -123,9 +119,15 @@ DEFAULT_SOURCE_PAGES_PER_CYCLE: dict[str, int] = {
     "workday": 5,
     # Newest-first at 100 a page, about ten offers an hour, and the walk stops the same way.
     "justjoinit": 5,
-    # 20 a page, in no date order: 308 pages of remote jobs, the ~38 new a day spread through them
-    # (measured 2026-11-03). Read under a key no setting wrote until then, so the panel could not reach it.
-    "themuse": 2,
+    # Newest-first at 20 a page, about 2,000 new jobs a day: five pages are its last hour, and a run comes
+    # every fifteen minutes (measured 2026-11-03). It was asked once per word, 20 jobs each.
+    "himalayas": 5,
+    # Lists in no date order, read a slice a run (`http_apis._rotation`), measured 2026-11-03. The Muse:
+    # 308 pages of 20, ~38 new a day anywhere among them; 26 a run reads it all every three hours, 104
+    # requests an hour of the 500 it allows. No Fluff Jobs: 131 pages, ~620 new a day; 33 a run reads it
+    # all every hour.
+    "themuse": 26,
+    "nofluffjobs": 33,
 }
 
 # How long a posting stays in the corpus before it is archived to a file and deleted

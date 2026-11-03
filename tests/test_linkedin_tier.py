@@ -23,8 +23,10 @@ SITE_PROXY = "http://user:pass@proxy.example:8080"
 
 @pytest.fixture(autouse=True)
 def _site_proxy(monkeypatch):
-    """The site's one proxy, set as it is on the server (`HARVEST_PROXY`)."""
+    """The site's one proxy, set as it is on the server (`HARVEST_PROXY`), and no sweep reaching
+    LinkedIn: these tests are about the word searches. The sweep's own are in `test_linkedin_sweep.py`."""
     monkeypatch.setenv("HARVEST_PROXY", SITE_PROXY)
+    monkeypatch.setattr(linkedin, "sweep_places", lambda *_args, **_kwargs: [])
 
 
 def _user(db, **kwargs) -> User:

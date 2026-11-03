@@ -31,8 +31,9 @@ DEFERRED_SOURCES = ("arbeitnow", "remotive", "remoteok", "dreamjobs",
 # other feed keeps all it reads and the words are matched here, so a word added tomorrow finds today's
 # jobs, and a feed costs the same however many words there are (2026-11-03). Just Join IT stays filtered
 # until the database has room: unfiltered it is ~2,650 jobs a day, ~330 MB over the 30 days kept,
-# against the 512 MB the Atlas plan holds (measured 2026-11-03).
-KEYWORD_FILTER_SOURCES = frozenset({"justjoinit"})
+# against the 512 MB the Atlas plan holds (measured 2026-11-03). Himalayas the same: read as a list now,
+# ~2,000 jobs a day, not a search per word; and No Fluff Jobs, its whole list read every hour.
+KEYWORD_FILTER_SOURCES = frozenset({"justjoinit", "himalayas", "nofluffjobs"})
 
 
 # Sources whose rows are dropped client-side by `ats.JobFilter` against the union's terms.
@@ -41,9 +42,7 @@ PREFILTER_SOURCES: frozenset[str] = frozenset()
 
 # The config key each adapter reads for "how many results".
 RESULT_KEYS: dict[str, str] = {
-    "himalayas": "limit",
     "justjoinit": "per_page",
-    "nofluffjobs": "page_size",
     "jobicy": "count",
     "hiringcafe": "results_wanted",
 }
@@ -81,12 +80,8 @@ class QueryShape:
 
 # Grounded in what each adapter actually sends, not in what would be tidy.
 QUERY_SHAPES: dict[str, QueryShape] = {
-    # `params["query"]`, and seniority. No location. Measured: 6 hits for a real term, 0 for noise.
-    "himalayas": QueryShape("query"),
     # The one free-tier source with a real location model: named regions plus workplace types.
     "hiringcafe": QueryShape("search_term", location_key="location", remote_key="is_remote"),
-    # `criteriaSearch.requirement`.
-    "nofluffjobs": QueryShape("keyword"),
     # POST {"keywords", "location"} — takes both. Key-gated, so unmeasured.
     "jooble": QueryShape("keywords", location_key="location"),
 }

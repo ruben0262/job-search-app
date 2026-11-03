@@ -36,6 +36,7 @@ user's proxy.
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import time
@@ -48,7 +49,8 @@ import httpx
 
 from libs.corpus.filters import epoch_to_iso, is_within_hours
 from libs.corpus.postings import strip_html
-from libs.settings import queries_per_cycle_default
+from libs.matching import pattern
+from libs.settings import PLATFORM_TICK_MIN, queries_per_cycle_default
 from services.harvester.fetch import make_shared_client
 from services.harvester.sources.base import JobLink
 
@@ -57,57 +59,73 @@ _JSON = {"Accept": "application/json"}
 _TIMEOUT = httpx.Timeout(30.0)
 
 
+def _rotation(pages: int, per_run: int, *, now: float | None = None) -> list[int]:
+    """Which pages of a list in no date order this run reads, besides its first (page 0 here), which is
+    always read and says how many there are: the next `per_run - 1` of the rest, so each is read once
+    every few runs. The run is counted on the platform's own clock (`PLATFORM_TICK_MIN`), so nothing is
+    stored and no second clock is added; a run that did not happen leaves its slice to the next round.
+    """
+    rest, take = pages - 1, max(1, per_run - 1)
+    if rest <= 0:
+        return []
+    run = int((now if now is not None else time.time()) // (PLATFORM_TICK_MIN * 60))
+    start = (run % math.ceil(rest / take)) * take
+    return list(range(1 + start, 1 + min(start + take, rest)))
+
+
 def _keyword_hit(text: str, keywords: Iterable[str]) -> bool:
-    low = text.lower()
-    return any(k.lower() in low for k in keywords)
-
-
-def _tokens(phrase: str) -> list[str]:
-    """Significant words from a query phrase (len > 2), for lenient matching."""
-    return [w for w in phrase.lower().split() if len(w) > 2]
+    """Whether the text has one of the words as the site matches them (`libs.matching`): whole words, so
+    a job kept is a job somebody is shown. A part of a word kept 53 of Himalayas' newest 100 for five
+    words, "rest" inside "interest" and "api" inside "rapid" (2026-11-03)."""
+    regex = pattern(list(keywords))
+    return bool(regex and regex.search(text))
 
 
 
 
 # ── Himalayas ────────────────────────────────────────────────────────
 
+# Himalayas answers at most 20 jobs a page, whatever `limit` asks for (measured 2026-11-03).
+HIMALAYAS_PAGE = 20
+
+
 def gather_himalayas(cfg: dict[str, Any], logger) -> list[JobLink]:
+    """Himalayas' whole list, newest first, 20 a page, until a page is older than the window or
+    `max_pages` (`source_pages_per_cycle`) are read: ~2,000 new jobs a day, so five pages are its last
+    hour (measured 2026-11-03). A search per word cost a request per word, 20 jobs each; the list costs
+    the same however many words there are. Kept: the jobs somebody's words name (`cfg["keywords"]`).
+    """
     endpoint = cfg.get("endpoint", "https://himalayas.app/jobs/api")
     max_age = cfg.get("max_age_hours", 24)
+    keywords = cfg.get("keywords", [])
     out: list[JobLink] = []
     with make_shared_client() as client:
-        for q in cfg.get("queries", []):
-            params: dict[str, Any] = {"limit": cfg.get("limit", 100)}
-            if q.get("query"):
-                params["query"] = q["query"]
-            if q.get("seniority"):
-                params["seniority"] = q["seniority"]
+        for page in range(int(cfg.get("max_pages", 1))):
             try:
-                jobs = client.get(endpoint, params=params).json().get("jobs", [])
+                jobs = client.get(endpoint, params={"limit": HIMALAYAS_PAGE, "offset": page * HIMALAYAS_PAGE}
+                                  ).json().get("jobs", [])
             except Exception as exc:
-                logger.warning("himalayas query %s failed: %s", q, exc)
-                continue
-            toks = _tokens(q.get("query", ""))
+                logger.warning("himalayas page %d failed: %s", page, exc)
+                break
             for j in jobs:
                 iso = epoch_to_iso(j.get("pubDate"))
                 if not is_within_hours(iso, max_age):
                     continue
-                # ?query= isn't always honoured server-side — enforce client-side too
-                # (lenient: keep if any significant query word appears).
-                if toks and not _keyword_hit(f"{j.get('title','')} {j.get('excerpt','')}", toks):
+                text = _striptags(j.get("description")) or j.get("excerpt", "")
+                if keywords and not _keyword_hit(f"{j.get('title', '')} {text}".lower(), keywords):
                     continue
                 url = j.get("applicationLink") or j.get("guid")
                 if not url:
                     continue
                 loc = j.get("locationRestrictions") or []
-                # Use the full description (HTML-stripped), not the short excerpt.
-                desc = _striptags(j.get("description")) or j.get("excerpt", "")
                 out.append(JobLink(
                     url=url, title=j.get("title", ""), company=j.get("companyName", ""),
                     location=", ".join(loc) if isinstance(loc, list) else str(loc),
-                    source="himalayas", date_posted=iso, snippet=desc,
+                    source="himalayas", date_posted=iso, snippet=text,
                     is_remote=True,
                 ))
+            if len(jobs) < HIMALAYAS_PAGE or not is_within_hours(epoch_to_iso(jobs[-1].get("pubDate")), max_age):
+                break
     return out
 
 
@@ -166,59 +184,63 @@ def gather_justjoinit(cfg: dict[str, Any], logger) -> list[JobLink]:
 # ── NoFluffJobs (POST search) ────────────────────────────────────────
 
 def gather_nofluffjobs(cfg: dict[str, Any], logger) -> list[JobLink]:
-    """NoFluffJobs criteria search.
+    """No Fluff Jobs' whole list: 18,221 jobs over 131 pages, ~620 new a day spread across all of them,
+    in no date order (measured 2026-11-03). A run reads the first page, which says how many there are,
+    and the next slice of the rest (`_rotation`): at 33 pages a run, the whole list every hour, the same
+    however many words there are. The page number goes in the address; in the body it is ignored.
 
-    Probed 2026-07-13: the old `rawSearch` body key is IGNORED by the API (identical
-    totalCount for any keyword) and the `region` URL param does nothing (hu == pl byte-
-    identical) — keyword filtering only works through `criteriaSearch.requirement`, and
-    geography only through `criteriaSearch.city`. Config keys: `languages` (jobLanguage
-    list, default en+pl), `cities` (optional — e.g. the HU city list for the
-    nofluffjobs_hu block), `source_label` (source name on links, default nofluffjobs).
+    It was searched per word (`criteriaSearch.requirement`), the first ~246 matches each. Every list
+    entry names its required skills (`tiles`), so the words are matched on them here as the search
+    matched them: all 220 jobs a "python" search found name python in their entry. Kept: the jobs
+    somebody's words name. Config keys: `cities` (optional), `source_label` (default nofluffjobs).
     """
     endpoint = cfg.get("endpoint", "https://nofluffjobs.com/api/search/posting")
     max_age = cfg.get("max_age_hours", 24)
-    page_size = cfg.get("page_size", 100)
-    languages = cfg.get("languages", ["en", "pl"])
+    keywords = cfg.get("keywords", [])
     cities = cfg.get("cities") or []
     label = cfg.get("source_label", "nofluffjobs")
-    url_q = {"pageTo": 1, "pageSize": page_size,
-             "salaryCurrency": cfg.get("currency", "PLN"), "salaryPeriod": "month"}
+    criteria: dict[str, Any] = {"city": [c.lower() for c in cities]} if cities else {}
     out: list[JobLink] = []
+
+    def page_of(client, page: int) -> dict:
+        try:
+            return client.post(endpoint, params={"page": page, "salaryCurrency": cfg.get("currency", "PLN"),
+                                                 "salaryPeriod": "month", "region": "pl"},
+                               json={"criteriaSearch": criteria, "page": page}).json()
+        except Exception as exc:
+            logger.warning("%s page %d failed: %s", label, page, exc)
+            return {}
+
     with make_shared_client(headers={**_JSON, "Content-Type": "application/json"}, follow_redirects=True) as client:
-        for q in cfg.get("queries", []):
-            crit: dict[str, Any] = {"jobLanguage": languages}
-            if q.get("keyword"):
-                crit["requirement"] = [q["keyword"]]
-            if cities:
-                crit["city"] = [c.lower() for c in cities]
-            body = {"criteriaSearch": crit, "page": 1}
-            try:
-                postings = client.post(endpoint, params=url_q, json=body).json().get("postings", [])
-            except Exception as exc:
-                logger.warning("%s query %s failed: %s", label, q, exc)
+        first = page_of(client, 1)
+        bodies = [first] + [page_of(client, 1 + page)
+                            for page in _rotation(int(first.get("totalPages") or 1), int(cfg.get("max_pages", 1)))]
+    seen: set[str] = set()
+    for body in bodies:
+        for j in body.get("postings") or []:
+            slug = j.get("url")
+            iso = epoch_to_iso(j.get("posted"))
+            if not slug or slug in seen or not is_within_hours(iso, max_age):
                 continue
-            for j in postings:
-                iso = epoch_to_iso(j.get("posted"))
-                if not is_within_hours(iso, max_age):
-                    continue
-                # NFJ's fullyRemote flag is unreliable (Poland-centric board), so we
-                # record it but don't hard-filter — the scoring phase judges location.
-                slug = j.get("url")
-                if not slug:
-                    continue
-                loc = j.get("location") or {}
-                places = loc.get("places", []) if isinstance(loc, dict) else []
-                city = places[0].get("city", "") if places and isinstance(places[0], dict) else ""
-                # e.g. ", Hungary" on the HU block, so the country filter can place the job.
-                if city and cfg.get("location_suffix"):
-                    city += cfg["location_suffix"]
-                out.append(JobLink(
-                    url=f"https://nofluffjobs.com/job/{slug}", title=j.get("title", ""),
-                    company=j.get("name", ""), location=city, source=label,
-                    date_posted=iso, snippet=j.get("title", ""),
-                    # fullyRemote=false could be hybrid — unknown, not on-site.
-                    is_remote=(True if j.get("fullyRemote") else None),
-                ))
+            title = j.get("title", "")
+            skills = [str(tile.get("value", "")) for tile in (j.get("tiles") or {}).get("values", [])
+                      if isinstance(tile, dict)]
+            if keywords and not _keyword_hit(" ".join([title, j.get("technology") or "", *skills]), keywords):
+                continue
+            seen.add(slug)
+            loc = j.get("location") or {}
+            places = loc.get("places", []) if isinstance(loc, dict) else []
+            city = places[0].get("city", "") if places and isinstance(places[0], dict) else ""
+            # e.g. ", Hungary" on the HU block, so the country filter can place the job.
+            if city and cfg.get("location_suffix"):
+                city += cfg["location_suffix"]
+            out.append(JobLink(
+                url=f"https://nofluffjobs.com/job/{slug}", title=title,
+                company=j.get("name", ""), location=city, source=label,
+                date_posted=iso, snippet=title,
+                # fullyRemote=false could be hybrid — unknown, not on-site.
+                is_remote=(True if j.get("fullyRemote") else None),
+            ))
     return out
 
 
@@ -357,9 +379,11 @@ def gather_jobicy(cfg: dict[str, Any], logger) -> list[JobLink]:
 def gather_themuse(cfg: dict[str, Any], logger) -> list[JobLink]:
     """The Muse public API (www.themuse.com/api/public/jobs) — free, no auth.
 
-    Requests the 'Flexible / Remote' location in every category, newest first: about 38 a day
-    (measured 2026-11-03). It asked for "Software Engineering" and "Data Science" only, so a nurse or
-    an accountant never had a Muse job. url is refs.landing_page; is_remote is set only when a location
+    Requests the 'Flexible / Remote' location in every category: about 38 new a day (measured
+    2026-11-03). It asked for "Software Engineering" and "Data Science" only, so a nurse or an
+    accountant never had a Muse job. Its list is in no date order, 6,159 jobs over 308 pages with the
+    new ones anywhere among them, so a run reads its first page and the next slice of the rest
+    (`_rotation`, `max_pages` a run). url is refs.landing_page; is_remote is set only when a location
     name actually reads Remote/Flexible (a Muse job can carry multiple locations). Every job is kept.
     """
     endpoint = cfg.get("endpoint", "https://www.themuse.com/api/public/jobs")
@@ -369,20 +393,23 @@ def gather_themuse(cfg: dict[str, Any], logger) -> list[JobLink]:
     locations: list[str] = cfg.get("locations", ["Flexible / Remote"])
     out: list[JobLink] = []
     seen: set[str] = set()
+    def page_of(client, page: int) -> dict:
+        # Repeated category=/location= params -> list of tuples (httpx encodes each).
+        params: list[tuple[str, Any]] = [("page", page), ("descending", "true")]
+        params += [("category", c) for c in categories]
+        params += [("location", loc) for loc in locations]
+        try:
+            return client.get(endpoint, params=params).json()
+        except Exception as exc:
+            logger.warning("themuse page %d failed: %s", page, exc)
+            return {}
+
     with make_shared_client() as client:
-        for page in range(1, pages + 1):
-            # Repeated category=/location= params -> list of tuples (httpx encodes each).
-            params: list[tuple[str, Any]] = [("page", page), ("descending", "true")]
-            params += [("category", c) for c in categories]
-            params += [("location", loc) for loc in locations]
-            try:
-                results = client.get(endpoint, params=params).json().get("results", [])
-            except Exception as exc:
-                logger.warning("themuse page %d failed: %s", page, exc)
-                break
-            if not results:
-                break
-            for j in results:
+        first = page_of(client, 0)
+        bodies = [first] + [page_of(client, page)
+                            for page in _rotation(int(first.get("page_count") or 1), pages)]
+        for body in bodies:
+            for j in body.get("results") or []:
                 url = ((j.get("refs") or {}).get("landing_page") or "").strip()
                 if not url or url in seen:
                     continue

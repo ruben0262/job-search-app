@@ -485,7 +485,7 @@ def _feed_job(name: str, request) -> httpx.Response:
             "url": url, "jobTitle": "Registered Nurse", "companyName": "Mercy", "jobGeo": "USA",
             "pubDate": posted.isoformat(), "jobDescription": "<p>Ward nursing, nights.</p>"}]})
     if name == "themuse":
-        return httpx.Response(200, json={"results": [{
+        return httpx.Response(200, json={"page_count": 308, "results": [{
             "refs": {"landing_page": url}, "name": "Registered Nurse", "company": {"name": "Mercy"},
             "publication_date": posted.isoformat(), "locations": [{"name": "Flexible / Remote"}],
             "contents": "<p>Ward nursing, nights.</p>"}]})
@@ -546,3 +546,125 @@ def test_the_muse_reads_the_pages_the_operator_set_in_every_job_category(monkeyp
         build_source_configs({}, env={}, pages={"themuse": 3})["themuse"], logging.getLogger("test"))
     assert len(requests) == 3
     assert not any("category" in request.url.params for request in requests)
+
+
+def _himalayas(monkeypatch, *, old_from_page: int = 99,
+               titles=("Python Developer", "Registered Nurse", "Sales Manager", "Welder")) -> list:
+    """Himalayas' list, newest first, 20 a page, every job posted an hour ago until `old_from_page`."""
+    from datetime import UTC, datetime, timedelta
+
+    from services.harvester.sources import http_apis
+
+    requests: list = []
+
+    def answer(request):
+        requests.append(request)
+        page = int(request.url.params["offset"]) // 20
+        posted = datetime.now(UTC) - timedelta(hours=1 if page < old_from_page else 500)
+        page_titles = list(titles) * (20 // len(titles))
+        return httpx.Response(200, json={"jobs": [{
+            "title": title, "companyName": f"Company {page}-{n}", "pubDate": int(posted.timestamp()),
+            "guid": f"https://himalayas.app/jobs/{page}-{n}", "description": f"<p>{title} wanted.</p>",
+            "locationRestrictions": ["Germany"]} for n, title in enumerate(page_titles)]})
+
+    monkeypatch.setattr(http_apis, "make_shared_client", lambda **_: httpx.Client(
+        transport=httpx.MockTransport(answer)))
+    return requests
+
+
+@pytest.mark.parametrize("words", [["nurse"], ["nurse", *[f"word{n}" for n in range(24)]]])
+def test_himalayas_is_read_as_its_newest_list_the_same_however_many_words(monkeypatch, words):
+    """A search per word cost a request per word, 20 jobs each; its list, newest first, costs the
+    pages the operator set, and keeps the jobs somebody's words name."""
+    from services.harvester.source_config import build_source_configs
+    from services.harvester.sources import http_apis
+
+    requests = _himalayas(monkeypatch)
+    cfg = build_source_configs({uuid.uuid4(): {"sections": [{"keywords": words}]}}, env={},
+                               pages={"himalayas": 3})["himalayas"]
+    links = http_apis.gather_himalayas(cfg, logging.getLogger("test"))
+
+    assert len(requests) == 3
+    assert {link.title for link in links} == {"Registered Nurse"}
+    assert len(links) == 15, "five nurses a page, three pages"
+
+
+def test_himalayas_stops_at_the_first_page_older_than_the_window(monkeypatch):
+    from services.harvester.source_config import build_source_configs
+    from services.harvester.sources import http_apis
+
+    requests = _himalayas(monkeypatch, old_from_page=1)
+    cfg = build_source_configs({uuid.uuid4(): {"sections": [{"keywords": ["welder"]}]}}, env={},
+                               pages={"himalayas": 5})["himalayas"]
+    links = http_apis.gather_himalayas(cfg, logging.getLogger("test"))
+
+    assert len(requests) == 2 and len(links) == 5
+
+
+def test_a_filtered_feed_keeps_a_job_only_for_a_whole_word_as_the_site_shows_it(monkeypatch):
+    """A part of a word kept 53 of Himalayas' newest 100 for five words: "rest" inside "interest", "api"
+    inside "rapid" (2026-11-03). Stored and never shown to anybody."""
+    from services.harvester.source_config import build_source_configs
+    from services.harvester.sources import http_apis
+
+    _himalayas(monkeypatch, titles=("Interest Rate Analyst", "REST API Developer", "Rapid Response Nurse",
+                                    "API Engineer"))
+    cfg = build_source_configs({uuid.uuid4(): {"sections": [{"keywords": ["rest", "api"]}]}}, env={},
+                               pages={"himalayas": 1})["himalayas"]
+    kept = {link.title for link in http_apis.gather_himalayas(cfg, logging.getLogger("test"))}
+
+    assert kept == {"REST API Developer", "API Engineer"}
+
+
+def test_a_list_in_no_date_order_is_read_whole_over_a_round_of_runs(monkeypatch):
+    """The Muse's 308 pages hold its ~38 new jobs a day anywhere among them. Each run reads its first page
+    and the next slice of the rest, counted on the platform's own clock: one round of runs reads them all."""
+    import math
+
+    from libs.settings import PLATFORM_TICK_MIN
+    from services.harvester.source_config import build_source_configs
+    from services.harvester.sources import http_apis
+
+    cfg = build_source_configs({}, env={}, pages={"themuse": 26})["themuse"]
+    requests: list = []
+    gather = _feed(monkeypatch, "themuse", requests)
+    runs = math.ceil(307 / 25)
+    for run in range(runs):
+        monkeypatch.setattr(http_apis.time, "time", lambda run=run: run * PLATFORM_TICK_MIN * 60.0)
+        gather(cfg, logging.getLogger("test"))
+
+    pages = [int(request.url.params["page"]) for request in requests]
+    assert len(pages) == runs * 26 - (runs * 25 - 307), "26 a run, the last slice shorter"
+    assert set(pages) == set(range(308)), f"{runs} runs read every page"
+
+
+@pytest.mark.parametrize("words", [["python"], ["python", *[f"word{n}" for n in range(24)]]])
+def test_no_fluff_jobs_is_read_as_its_list_and_matched_on_the_skills_each_job_requires(monkeypatch, words):
+    """A search per word matched a job's required skills, the first ~246 matches each. Every entry of
+    its list names them, so the list is read a slice a run and the words matched on them here."""
+    from datetime import UTC, datetime, timedelta
+
+    from services.harvester.source_config import build_source_configs
+    from services.harvester.sources import http_apis
+
+    posted = int((datetime.now(UTC) - timedelta(hours=1)).timestamp() * 1000)
+    requests: list = []
+
+    def answer(request):
+        requests.append(request)
+        page = request.url.params["page"]
+        return httpx.Response(200, json={"totalPages": 131, "postings": [
+            {"url": f"backend-{page}", "title": "Backend Developer", "name": "Acme", "posted": posted,
+             "technology": "Java", "tiles": {"values": [{"value": "Python", "type": "requirement"}]}},
+            {"url": f"frontend-{page}", "title": "Frontend Developer", "name": "Acme", "posted": posted,
+             "technology": "JavaScript", "tiles": {"values": [{"value": "React", "type": "requirement"}]}}]})
+
+    monkeypatch.setattr(http_apis, "make_shared_client", lambda **_: httpx.Client(
+        transport=httpx.MockTransport(answer)))
+    cfg = build_source_configs({uuid.uuid4(): {"sections": [{"keywords": words}]}}, env={},
+                               pages={"nofluffjobs": 4})["nofluffjobs"]
+    links = http_apis.gather_nofluffjobs(cfg, logging.getLogger("test"))
+
+    assert len(requests) == 4, "the pages set, however many words"
+    assert len({request.url.params["page"] for request in requests}) == 4, "the page is in the address"
+    assert {link.title for link in links} == {"Backend Developer"}, "Python is required, not in the title"

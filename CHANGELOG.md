@@ -14,6 +14,75 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-03 — Searching by place and time: LinkedIn swept, Himalayas, No Fluff Jobs and The Muse read as lists
+
+The rest of the plan (owner): each search-type source measured, and the idea applied where the numbers
+allow it. A source read as a list costs the same however many words people have; a search per word
+costs more with every new word.
+
+**Measured** (live, 2026-11-03; LinkedIn through the site proxy, ~900 requests, none refused):
+
+| Source | With no word | Verdict |
+|---|---|---|
+| LinkedIn | One hour, newest first: Ireland 9 jobs (2 requests), the Netherlands 35 (5), Germany ~300 (32), the UK ~410 (44), the EU 937+ (100, at the 1,000 a list stops). A 15-minute run is a quarter of that | **Yes, for titles** |
+| Himalayas | Newest first, 20 a page whatever `limit` says, ~2,000 a day: 5 pages are its last hour | **Yes** |
+| No Fluff Jobs | 18,221 jobs over 131 pages, ~620 new a day spread over all of them, in no date order. The page number is read from the address, not the body | **Yes, read in slices** |
+| The Muse | 6,159 remote jobs over 308 pages, in no date order, ~38 new a day | **Yes, read in slices** |
+| Adzuna, Findwork | No key on this computer | Not measured |
+| Hiring Cafe | 403 | No |
+
+**What LinkedIn showed, and what it changed:**
+- **Sweep vs word searches.** A sweep held 100% of the UK word searches for "software engineer",
+  "nurse" and "accountant". The misses elsewhere had two causes:
+  - **The window's edge:** every UK job missed was listed exactly an hour before, and a wider window held
+    all 8. So a sweep reaches back to the previous pass and one run more.
+  - **A refusal that looks like the end:** a Germany sweep stopped at 20 of ~300 jobs, on an empty page
+    after a full one. So such a page is asked again, from the next address, before it counts as the end.
+- **LinkedIn's word search is fuzzy.** "accountant" found "Sachbearbeitung Finanzen". The site shows
+  only jobs with the word, so those were stored and shown to no one.
+- **A sweep sees titles only, and half the matches are in descriptions.** On the 6,406 LinkedIn jobs here
+  with a description, 46–54% of matches were description only, and 88% for skills. So the sweep
+  finds title matches for every word, and the word searches stay for the rest (ROADMAP Phase 8, item 21).
+
+**Changed:**
+- **LinkedIn sweep** (`services/harvester/linkedin.py`). Each pass sweeps every country someone due wants:
+  no word, newest first, back to the previous pass and one run more, an empty page after a full one
+  asked again three times. It stores the jobs whose title has anybody's word, at the address the word
+  searches use, so one job found both ways is one job. Live: Germany's last 30 minutes, 284 jobs in 29
+  requests.
+- **Himalayas is read as its newest list.** Pages are `source_pages_per_cycle`, 5 by default (5
+  requests a run), instead of a search per word with 20 jobs each.
+- **No Fluff Jobs is read as its list**, a slice a run, 33 pages by default: the whole list every hour.
+  The words are matched on the skills each entry requires, as its search matched them (all 220 of a
+  "python" search's jobs name python there). Live: 33 requests, 388 jobs kept for five words. Its list of
+  languages (English and Polish only) is gone; each person's languages judge.
+- **The Muse reads the next slice of its list each run**, 26 pages by default: every page every three
+  hours, 104 requests an hour of the 500 it allows. Before, it read the same two pages every run.
+- **The slice comes from the platform's own clock** (`PLATFORM_TICK_MIN`, `_rotation`). No state is
+  stored and no second clock is added.
+- **A filtered feed keeps whole words, as the site matches** (`_keyword_hit` uses `libs.matching`).
+  Matching parts of words kept 53 of Himalayas' newest 100 for five words ("rest" in "interest"); whole
+  words keep 10.
+- **Settings:** Himalayas and No Fluff Jobs leave `QUERY_TAKING_SOURCES`, the per-source query and
+  result settings, and `QUERY_SHAPES`. They join `KEYWORD_FILTER_SOURCES` until the database has room
+  (ROADMAP item 22). `_tokens` had no reader left and is deleted.
+- **A lease let go is free in the same millisecond** (`libs.db.lease`, `$lte`). Dates are kept to the
+  millisecond, and a run starting in the one the last let go found it still held. A test file failed one
+  run in three on this; a test with the clock pinned fails every time without the fix.
+
+**Tests:**
+- The sweep: stores title matches with no word search; the same requests for 1 word or 25; asks an empty
+  page again; one job found both ways; the window; no sweep for no place; the 1,000 warning; a failing
+  sweep reported.
+- Himalayas and No Fluff Jobs: the same requests however many words; required skills matched.
+- The Muse: a round of runs reads all 308 pages.
+- Whole words only; the lease.
+
+15 of 17 fail on the previous commit. The two that pass on both are guards: nobody is swept before they
+are due, and one job found two ways is one job.
+
+Gates: lint-imports 2 kept; ruff clean; schema ok; contract current; build ✓; **1,332 passed, 3 skipped**.
+
 ## 2026-11-03 — Feeds keep every job; Profession in one request; The Muse in every category
 
 The first step of searching by place and time rather than by word (owner). The words are matched

@@ -58,8 +58,10 @@ def lease(db: Database, name: str, seconds: float) -> Iterator[bool]:
     cannot end its successor's."""
     holder = uuid.uuid4().hex
     try:
+        # At or before now: a lease let go ends at the moment it was let go, and dates are kept to the
+        # millisecond, so a run starting in that millisecond found it still held (a flaky test, 2026-11-03).
         db.locks.find_one_and_update(
-            {"_id": name, "until": {"$lt": now()}},
+            {"_id": name, "until": {"$lte": now()}},
             {"$set": {"until": now() + timedelta(seconds=seconds), "holder": holder}}, upsert=True)
         acquired = True
     except DuplicateKeyError:  # the lease exists and is still running

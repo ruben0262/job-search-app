@@ -3070,8 +3070,8 @@ suggestions on the jobs page. `CHANGELOG.md` has the numbers.
 
 13. ~~**LinkedIn searches are per person, not shared.**~~ Pooled on 2026-11-03 (owner): each distinct search
     once a pass, however many people share it.
-14. **Working Nomads gives nothing.** Its feed's newest job was 4 days old on 2026-11-02, and 4.7 days on
-    2026-11-03 (35 jobs). Recommendation: move it to `DEFERRED_SOURCES` if it is still stale on 2026-11-09.
+14. **Working Nomads gives nothing.** Its feed's newest job was 4 days old on 2026-11-02, 4.7 days on
+    2026-11-03 (35 jobs), and 5.3 days that evening. Recommendation: move it to `DEFERRED_SOURCES` if it is still stale on 2026-11-09.
 15. **Hiring Cafe answers 403** (a bot wall). Getting past it by imitating a browser is circumventing the
     site's refusal, and was not attempted. Recommendation: ask hiring.cafe for API access, or leave it off;
     the company boards it pointed at are polled directly.
@@ -3100,6 +3100,31 @@ suggestions on the jobs page. `CHANGELOG.md` has the numbers.
     `retired/` is a prompt change (CLAUDE.md §3a), so they stay until you say. Recommendation: retire
     `label.md`, `score.md` and `label_template.md`, which are the model's. Keep the other three if
     interview prep, outreach or a CV pack are coming back.
+
+**Searching by place and time, not by word (measured 2026-11-03; CHANGELOG has the numbers)**
+
+21. **A LinkedIn sweep finds titles; half of LinkedIn's matches are in the description.**
+    - Word searches stay for description matches: 46–54% of the matches on the 6,406 LinkedIn jobs here,
+      and 88% for skills such as python or sql.
+    - Replacing them means reading every swept job's description, one request each: ~410 an hour for
+      the UK, ~1,000 for the EU. That beats a place's word searches once the place has more distinct
+      searches than roughly a third of the jobs it lists in a run.
+    - Two numbers are needed first:
+      - the proxy's sustained ceiling, measured at a quiet time with your go-ahead, because finding it
+        stops LinkedIn for production for about 25 minutes;
+      - room in the database.
+
+    Recommendation: decide per place, once both are in.
+22. **What the sweeps keep waits on space.** Just Join IT, Himalayas, No Fluff Jobs and the LinkedIn
+    sweep store only the jobs somebody's words name (`KEYWORD_FILTER_SOURCES`; the sweep's title match).
+    Kept whole, a word added tomorrow finds today's jobs. Recommendation: keep them whole once the database
+    has room (`~/projects/server_db`), Just Join IT first (~330 MB over 30 days).
+23. **Per-word board searches now serve no working board.** Hiring Cafe answers 403 (item 15) and Jooble is
+    off. The query set, per-board ceilings and carry-over are now LinkedIn's alone. Recommendation: move
+    Hiring Cafe to `DEFERRED_SOURCES`, and keep the machinery for LinkedIn.
+24. **A person with no country is not swept on LinkedIn.** Every place's jobs in one window are more than a
+    list can be read to (1,000), so their word searches carry them, as before. Recommendation: none
+    unless such people find too little.
 
 ## Phase 9 — MongoDB instead of Postgres (added 2026-10-30)
 
