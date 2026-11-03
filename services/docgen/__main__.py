@@ -9,6 +9,7 @@ import httpx
 
 import libs.notify as notifylib
 from libs import settings
+from libs.corpus.postings import PAGE_HEADERS
 from libs.db import database, ensure_schema
 from libs.db.models import QueueJob
 from libs.db.models.tenant import record_state
@@ -85,7 +86,8 @@ def _http_for():
     """An HTTP client for the pre-build freshness check: through the site proxy when there is one, as
     the boards that refuse a server's address are what it most often checks."""
     proxy = site_proxy()
-    with redacting(proxy or ""), httpx.Client(timeout=25, follow_redirects=True, proxy=proxy) as client:
+    with redacting(proxy or ""), httpx.Client(headers=PAGE_HEADERS, timeout=25, follow_redirects=True,
+                                              proxy=proxy) as client:
         yield client
 
 

@@ -19,6 +19,7 @@ from pymongo.database import Database
 
 from libs.contracts.config import migrate_config
 from libs.corpus.geo import read_country
+from libs.corpus.repository import TYPED
 from libs.db import get
 from libs.db.models import CorpusJob, User, UserDocument
 from libs.documents.read import Facts, fold, read, stem, words
@@ -165,8 +166,9 @@ def refresh(db: Database, user_id: _uuid.UUID) -> dict:
     try:
         documents = documents_of(db, user_id)
         config = TenantRepository(db).get_config(user_id)
+        # Public postings' titles only: a job somebody wrote in is theirs alone.
         titles = [row["title"] for row in db[CorpusJob.COLLECTION].find(
-            {}, {"title": 1}, sort=[("first_seen_at", -1)], limit=SCAN)]
+            {"source": {"$ne": TYPED}}, {"title": 1}, sort=[("first_seen_at", -1)], limit=SCAN)]
         matched = [match.job.title for match in matching_jobs(db, user)]
         fresh = compute(read(documents), config=config, titles=titles, matched=matched,
                         text="\n".join(documents.values()), dismissed=set(dismissed))

@@ -14,6 +14,116 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-03 (evening) — tabs drawn at once, one User-Agent, the deploy checked
+
+**Switching tabs showed nothing for a moment, then the page** (owner).
+- Two causes. `<main>` was keyed on the place, so each tab replayed a 0.4 s fade-in that began fully
+  transparent. And Applied, My search and My documents read their data only once open, drawing
+  "Your applications…" or an empty card first.
+- The fade is gone from navigation. `web/src/kept.ts` keeps each page's last answer by address: a
+  page draws from it at once and is brought up to date behind it, and a page that changes its data
+  (Undo, delete, save) changes what is kept. One cache: it replaces the jobs page's and Settings'
+  own, and sign-out forgets it.
+- Once somebody is signed in, every tab's first read is asked ahead (`readAhead`), so a first visit
+  is as quick as the next. The jobs list is not, because Jobs reads it itself where everybody lands.
+  Measured on the dev database: each of those reads 2–9 ms, the jobs list 71 ms.
+- A form keeps what somebody types over a fresh read (My search, About you, name and links).
+- `test_every_tab_is_drawn_whole_the_moment_it_is_opened` slows the server to 400 ms and looks at
+  each page two frames after its tab is pressed. It fails at 2.5% opacity with the fade, and on
+  "Your applications…" with nothing kept.
+
+**One User-Agent** (owner: "fold it").
+- It was written out five times. `make_shared_client(headers=…)` replaced the shared headers, so
+  each adapter that needed one more header wrote out a User-Agent of its own. Adzuna, passing only
+  an `Accept`, went out as `python-httpx`, and Hiring Cafe's copy was used by nothing.
+- An adapter's headers now add to `PAGE_HEADERS`, the one definition in `libs`. docgen's freshness
+  check sends it too.
+- **Profession is the exception, measured:** it answers a browser's User-Agent with a 500 page and
+  serves its feed to anything else (15 items either side). Its own agent stays, named in a test.
+- No Fluff Jobs answers the same 206 postings with either.
+
+**The deploy, checked.** Docker cannot run from this machine's shell, so each image's Python was
+built as its Dockerfile builds it: a clean 3.12 venv from its own `requirements.txt` and only what it
+copies. Then its entrypoint was imported: api, docgen, notifier, oauthbroker and harvester import,
+and seed-ats runs. The site was built with `npm ci` from a clean copy.
+- **`deploy.sh` stopped every deploy at its schema step.** `compose run api python -m libs.db
+  --prune` handed those words to the image's entrypoint, uvicorn ("No such option '-m'"). It runs
+  `--entrypoint python` now. The step came with the MongoDB switch and had never run on the box.
+- `.env.example` named neither `TUNNEL_TOKEN` (cloudflared exits without it) nor `ADMIN_EMAILS`,
+  nor the Adzuna, Jooble and Findwork keys. Every variable `compose.yml` reads is in it now.
+- `.dockerignore` keeps `certificates/`, `deploy/.env` and `archive/` out of the build context.
+- Dockerfile and unit comments still said Postgres where they mean MongoDB.
+
+## 2026-11-03 (later) — add a job by its link, every board's text in paragraphs
+
+**Add a job** (owner: "if users find jobs that are outside of our search reach, users can add it").
+- The second tab of Jobs ("Your jobs · Add a job", `#/add`), not a place in the bar of its own (owner,
+  the same evening). One box, one button: paste a job's link, "Find this job".
+- **Already here** (by its address, its address with the query cut off, its apply link, or its title,
+  company and place): "We already have this job", with the card the jobs page shows, a CV a tap away.
+  Nothing is read. A LinkedIn link is one job however it was copied: `/jobs/view/<n>`, the
+  title-and-number form, `?currentJobId=` from a search or the feed (`job_link`).
+- **Not here:** read from its page by code, never AI (`libs.corpus.postings.read_link`). JSON-LD,
+  LinkedIn's job card (the guest page has no JSON-LD, so a pasted LinkedIn link used to come back
+  without a title) or No Fluff Jobs' API is *complete*, and kept in the shared corpus. From there it
+  is matched, alerted and archived like any other job, for everyone whose words it has. Source
+  `linkedin` for a LinkedIn job, `link` for anything else; `discovered_via="link"` either way.
+- **Part of it, or nothing:** a page with no JSON-LD gives a guess: its title less the site's name
+  after a "|", `og:site_name` for the company, the text of `<main>` rather than its menus. A guess
+  is shown, never kept. The person checks it, fills in what is missing and saves it
+  (`POST /jobs/link/save`). A page that refuses us (Himalayas answers a server 403) gives an empty
+  form and a link to open the page and copy from it.
+- **A job written in is the person's alone** (owner, the same evening: "so they do not ruin the
+  corpus"). Nobody checked it, so it is source `typed` and is never anybody else's match or alert
+  (`candidate_conditions`), word suggestion or company board. It has no dedup key and an address of
+  its own (`#typed-…` after the page's), so the real posting is still stored when the harvest finds
+  it (`CorpusRepository.add_typed`). No user id on the row (TENANT_SAFETY §1, rule 2): the person's
+  own `added_at` is the way to it, and bringing the link again finds theirs.
+- **Closed** (404, 410, "no longer accepting applications"): said, and nothing is kept.
+- Each job a person brings is listed for them under "Jobs you added" (`UserJobState.added_at`), whether
+  or not it has their words, until they skip it, apply, or it closes. A job they had skipped is theirs
+  again when they bring its link back.
+- Measured live from this computer, one link from each of ten boards: **0.2–1.0 s** a read.
+  - Complete: LinkedIn (through the site proxy), Lever, Ashby, Personio, Just Join IT, Jobicy, No Fluff Jobs.
+  - A guess: SmartRecruiters, a Recruitee board on its own domain, The Muse, a company careers page.
+  - Nothing: Himalayas.
+- **Safety.** Every request and redirect must go to a public address. A link to `localhost`, the
+  private ranges or `169.254.169.254` is refused before it is asked ("That link is not to a public
+  web page"), or anybody could have the server read its own network back as a job's text. 10 s a
+  read, 5 MB a page, 30 links an hour a person (`rate_limit`, as uploads and the contact form have).
+- The API image now carries `beautifulsoup4` and `langdetect`, and `HARVEST_PROXY`
+  (`deploy/compose.yml`), because the API now reads pages and stores postings. The browser headers are
+  one definition in `libs.corpus.postings.PAGE_HEADERS`, used by the harvest and the API.
+- `fetch_posting` had no caller since `/cv <link>` was deleted. It is replaced by `read_link`.
+
+**Every board's text in paragraphs** (owner: "The Muse … is one huge paragraph").
+- Text read before 2026-11-02 is one line, because the old reader flattened every page. That is
+  530 dev postings: 417 LinkedIn, 91 No Fluff Jobs, 9 of The Muse's 10, 6 Himalayas, 4 Greenhouse,
+  3 Profession. They were left to age out (up to 30 days). Re-reading them would not help:
+  The Muse's page has no JSON-LD, and re-reading LinkedIn spends the proxy.
+- Now `/jobs/{id}/description` lays out a one-line text as it is shown (`paragraphs`). A paragraph
+  ends at the sentence that takes it past 300 characters, so a heading run into its first sentence
+  ("Requisition #: … Position Summary …") stands alone, and "J. J. Keller" ends no sentence. A text
+  with any line break comes back as stored. The same covers a page whose JSON-LD has no markup
+  (Okta's Greenhouse pages).
+- **Lever** kept `descriptionPlain`, the opening paragraph alone. What the job asks for (`lists`) and
+  the closing (`additional`) were never stored, and its `&nbsp;` lines were kept as they were. Now the
+  three parts, each list a list (`_lever_text`).
+- **Ashby's** plain text made each list item a paragraph of its own (" - Ship it"); its HTML is read
+  now, so lists are lists.
+- **Jobicy** stored its 150-character excerpt ("…industry leaders&hellip;"), which counted as
+  described, so it was never read in full: 75 dev postings at 376 characters on average. Its
+  `jobDescription` is the whole text.
+- **Not changed:** the 91 old No Fluff Jobs postings are that site's menus, not a job (read from its
+  API since 2026-11-02), so laying them out does not help. They age out. Profession's feed gives only
+  a job's highlight bullets (~480 characters). They show as a list, but they are not the whole job.
+
+**Hiring Cafe.** The repository the owner linked (`umur957/hiring-cafe-job-scraper`) calls itself an
+"official API". It is not one. It POSTs to `hiring.cafe/api/search-jobs`, the site's own internal
+endpoint, with headers written to pass for Chrome (`sec-ch-ua`, `Sec-Fetch-*`, `Origin`). That is the
+browser imitation ruled out on 2026-11-03, so it was neither copied nor tried. ROADMAP Phase 8 item 15
+stands.
+
 ## 2026-11-03 — how far applications get, LinkedIn searches pooled, the company seed on the box
 
 **What happened after "I applied"** (owner: "key feedback for us").

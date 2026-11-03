@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 from libs.contracts.config import migrate_config
 from libs.corpus import langfilter, workfilter
 from libs.corpus.geo import wanted_countries
-from libs.corpus.repository import DESCRIBE_MAX_FAILURES
+from libs.corpus.repository import DESCRIBE_MAX_FAILURES, TYPED
 from libs.limits import limit_default
 from libs.settings import DEFAULT_SOURCE_MIN_AGE_HOURS, SOURCE_MIN_AGE_HOURS
 
@@ -221,4 +221,6 @@ def candidate_conditions(filters: UserFilters, *, now: datetime | None = None) -
         # A posting whose page refused to answer twice was abandoned, and its stored "description"
         # is its own title. Matching words against a sentence is worse than not matching.
         {"describe_failures": {"$lt": DESCRIBE_MAX_FAILURES}},
+        # A job somebody wrote in themselves is theirs alone, reached through their own mark (Add a job).
+        {"source": {"$ne": TYPED}},
     ]

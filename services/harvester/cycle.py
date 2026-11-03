@@ -15,7 +15,7 @@ from pymongo.errors import PyMongoError
 from libs.corpus.archive import archive_expired
 from libs.corpus.ats import AtsRepository
 from libs.corpus.ats_urls import tokens_from_urls
-from libs.corpus.repository import CorpusRepository
+from libs.corpus.repository import TYPED, CorpusRepository
 from libs.db import find, get, lease
 from libs.db.models import CorpusJob, User
 from libs.obs import Timings, audit, report_timings, timed
@@ -354,7 +354,9 @@ def _discover_ats_tokens(db, ats: AtsRepository) -> int:
     """
     since = datetime.now(UTC) - timedelta(hours=ATS_DISCOVERY_LOOKBACK_HOURS)
     urls = [row["url"] for row in db[CorpusJob.COLLECTION].find(
-        {"first_seen_at": {"$gte": since}, "url": {"$ne": None}}, {"url": 1}, limit=ATS_DISCOVERY_MAX_ROWS)]
+        # A job somebody wrote in names whatever address they typed: not a board to enrol for everyone.
+        {"first_seen_at": {"$gte": since}, "url": {"$ne": None}, "source": {"$ne": TYPED}}, {"url": 1},
+        limit=ATS_DISCOVERY_MAX_ROWS)]
 
     pairs = tokens_from_urls(urls)
     if not pairs:

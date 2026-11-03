@@ -52,7 +52,8 @@ from libs.settings import queries_per_cycle_default
 from services.harvester.fetch import make_shared_client
 from services.harvester.sources.base import JobLink
 
-_UA = {"User-Agent": "Mozilla/5.0 (job-search-pipeline)", "Accept": "application/json"}
+# What a JSON API is asked for; the rest of every request's headers is `PAGE_HEADERS` (`fetch._options`).
+_JSON = {"Accept": "application/json"}
 _TIMEOUT = httpx.Timeout(30.0)
 
 
@@ -183,7 +184,7 @@ def gather_nofluffjobs(cfg: dict[str, Any], logger) -> list[JobLink]:
     url_q = {"pageTo": 1, "pageSize": page_size,
              "salaryCurrency": cfg.get("currency", "PLN"), "salaryPeriod": "month"}
     out: list[JobLink] = []
-    with make_shared_client(headers={**_UA, "Content-Type": "application/json"}, follow_redirects=True) as client:
+    with make_shared_client(headers={**_JSON, "Content-Type": "application/json"}, follow_redirects=True) as client:
         for q in cfg.get("queries", []):
             crit: dict[str, Any] = {"jobLanguage": languages}
             if q.get("keyword"):
@@ -316,7 +317,7 @@ def gather_jobicy(cfg: dict[str, Any], logger) -> list[JobLink]:
 
     One GET per configured tag (?tag=<t>&count=<n>); jobs are all remote by definition, so
     scope is enforced on `jobGeo` (many Jobicy roles are region-locked, e.g. 'USA' only) via
-    geo_keep. Client-side recency on pubDate (ISO-8601) + keyword filter on title/excerpt.
+    geo_keep. Client-side recency on pubDate (ISO-8601) + keyword filter on title and text.
     """
     endpoint = cfg.get("endpoint", "https://jobicy.com/api/v2/remote-jobs")
     max_age = cfg.get("max_age_hours", 24)
@@ -351,15 +352,17 @@ def gather_jobicy(cfg: dict[str, Any], logger) -> list[JobLink]:
                 # Keep global-remote and EU/UK; drop region-locked (e.g. USA-only) roles.
                 if geo and geo_keep and not any(g in geo for g in geo_keep):
                     continue
-                excerpt = _striptags(j.get("jobExcerpt") or j.get("jobDescription"))
+                # The whole text: the excerpt is 150 characters, and kept as the job's text it was never
+                # read in full, as anything past `MIN_DESCRIPTION` counts as described.
+                text = _striptags(j.get("jobDescription") or j.get("jobExcerpt"))
                 title = j.get("jobTitle", "")
-                if keywords and not _keyword_hit(f"{title} {excerpt}".lower(), keywords):
+                if keywords and not _keyword_hit(f"{title} {text}".lower(), keywords):
                     continue
                 seen.add(url)
                 out.append(JobLink(
                     url=url, title=title, company=j.get("companyName", ""),
                     location=j.get("jobGeo") or "Remote", source="jobicy",
-                    date_posted=iso, snippet=excerpt, is_remote=True,
+                    date_posted=iso, snippet=text, is_remote=True,
                 ))
     return out
 
@@ -429,7 +432,7 @@ def gather_findwork(cfg: dict[str, Any], logger) -> list[JobLink]:
     endpoint = cfg.get("endpoint", "https://findwork.dev/api/jobs/")
     max_age = cfg.get("max_age_hours", 24)
     searches: list[str] = cfg.get("searches", ["python", "backend", "golang"])
-    headers = {**_UA, "Authorization": f"Token {token}"}
+    headers = {**_JSON, "Authorization": f"Token {token}"}
     out: list[JobLink] = []
     seen: set[str] = set()
     with make_shared_client(headers=headers, follow_redirects=True) as client:
@@ -513,7 +516,7 @@ def gather_adzuna(cfg: dict[str, Any], logger) -> list[JobLink]:
     max_days = max(1, round(max_age / 24))
     out: list[JobLink] = []
     seen: set[str] = set()
-    with make_shared_client(headers={"Accept": "application/json"}, follow_redirects=True) as client:
+    with make_shared_client(headers=_JSON, follow_redirects=True) as client:
         for country, term in pairs:
             base = f"https://api.adzuna.com/v1/api/jobs/{country}/search/1"
             params = {"app_id": app_id, "app_key": app_key, "results_per_page": per_page,
@@ -641,9 +644,11 @@ def gather_profession(cfg: dict[str, Any], logger) -> list[JobLink]:
     max_age = cfg.get("max_age_hours", 24)
     out: list[JobLink] = []
     seen: set[str] = set()
-    ua = {"User-Agent": "Mozilla/5.0 (compatible; job-search-bot/1.0)",
-          "Accept": "application/rss+xml, text/xml, application/xml"}
-    with make_shared_client(headers=ua, follow_redirects=True) as client:
+    # Not a browser's User-Agent: Profession answers one with a 500 page and the feed to anything else
+    # (measured 2026-11-03, 15 items either side of it). The one adapter that says who it is.
+    feed = {"User-Agent": "Mozilla/5.0 (compatible; job-search-bot/1.0)",
+            "Accept": "application/rss+xml, text/xml, application/xml"}
+    with make_shared_client(headers=feed, follow_redirects=True) as client:
         for kw in cfg.get("keywords", []):
             feed_url = base.format(kw=quote(str(kw)))
             try:
@@ -725,7 +730,7 @@ def gather_jooble(cfg: dict[str, Any], logger) -> list[JobLink]:
     suffix = cfg.get("location_suffix", "")
     out: list[JobLink] = []
     seen: set[str] = set()
-    with make_shared_client(headers={**_UA, "Content-Type": "application/json"}, follow_redirects=True) as client:
+    with make_shared_client(headers={**_JSON, "Content-Type": "application/json"}, follow_redirects=True) as client:
         for q in cfg.get("queries", []):
             body = {"keywords": q.get("keywords", ""), "location": q.get("location", ""), "page": "1"}
             try:

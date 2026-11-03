@@ -374,6 +374,25 @@ def test_a_card_gets_the_start_of_the_description_and_the_rest_on_request(api):
     assert http.get(f"/jobs/{jobs[0].id}/description").json()["text"] == long
 
 
+def test_a_description_stored_as_one_line_is_shown_in_paragraphs(api):
+    """Every description read before 2026-11-02 is one line (The Muse's were 4,000 characters of it),
+    and stays so until it ages out. A text with its own breaks comes back as it is (above)."""
+    http, db, _, jobs = api
+    heading = ("Requisition #: 20831 Functional Area: Software Development Employment Type: Full-Time "
+               "Work Options: Remote Position Summary J. J. Keller is seeking a manager who will lead, "
+               "develop and mentor a team of software engineers while ensuring the successful delivery of "
+               "technology solutions that support the objectives of the business.")
+    prose = [f"Sentence {n} says one more thing about the job, at about the length a sentence has."
+             for n in range(6)]
+    db[CorpusJob.COLLECTION].update_one({"_id": jobs[0].id},
+                                        {"$set": {"description": " ".join([heading, *prose])}})
+
+    text = http.get(f"/jobs/{jobs[0].id}/description").json()["text"]
+
+    assert text.split("\n\n") == [heading, " ".join(prose[0:4]), " ".join(prose[4:])], \
+        "a long heading run into its first sentence stands alone; \"J. J.\" ends no sentence"
+
+
 def test_a_job_not_described_yet_has_no_summary_and_no_more(api):
     http, db, _, jobs = api
     db[CorpusJob.COLLECTION].update_one({"_id": jobs[0].id}, {"$set": {"description": None}})

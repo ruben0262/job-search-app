@@ -14,6 +14,7 @@ from pymongo.database import Database
 from libs import limits
 from libs.corpus import salary
 from libs.corpus.geo import CITIES, COUNTRY_LABELS
+from libs.corpus.postings import paragraphs
 from libs.db import get, now
 from libs.db.models import BuiltDocument, CorpusJob, User, UserJobState
 from libs.db.models.tenant import record_state
@@ -254,7 +255,7 @@ def feed(*, db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curren
     countries = Counter(match.job.country for match in visible if match.job.country)
     cities = Counter(match.job.city for match in visible if match.job.city)
     return Feed(total=len(matches),
-                jobs=[_row(match, texts.get(match.job.id), documents.get(match.job.id, []))
+                jobs=[feed_row(match, texts.get(match.job.id), documents.get(match.job.id, []))
                       for match in page],
                 sources=[FeedSource(name=name, jobs=count) for name, count in boards.most_common()],
                 words=[FeedWord(name=name, jobs=count) for name, count in words.most_common()],
@@ -270,7 +271,7 @@ def _when(match: Match) -> datetime:
     return match.job.posted_at or match.job.first_seen_at
 
 
-def _row(match: Match, text: str | None, documents: list[dict]) -> FeedJob:
+def feed_row(match: Match, text: str | None, documents: list[dict]) -> FeedJob:
     """One job, with the start of its text and the salary in it, not the whole of it."""
     job = match.job
     return FeedJob(id=job.id, title=job.title, company=job.company, location=job.location,
@@ -296,11 +297,12 @@ class JobDescription(BaseModel):
 @router.get("/jobs/{job_id}/description")
 def job_description(job_id: int, db: Database = Depends(get_db),
                     _user_id: _uuid.UUID = Depends(current_user)) -> JobDescription:
-    """A posting's whole description, as stored, for a card that was asked to show it."""
+    """A posting's whole description, for a card that was asked to show it: as stored, or in paragraphs
+    if it was stored as one line (`paragraphs`)."""
     found = db[CorpusJob.COLLECTION].find_one({"_id": job_id}, {"description": 1})
     if not found or not found.get("description"):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="no description for that job")
-    return JobDescription(text=found["description"])
+    return JobDescription(text=paragraphs(found["description"]))
 
 
 class Step(BaseModel):

@@ -1,21 +1,18 @@
 /** Settings: alerts, AI writing and your account. Help moved to the "?" beside the bell. */
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { Alerts } from "../alerts";
 import { api, type Ready, type Schema } from "../api";
 import { ClaudeConnect } from "../components/ClaudeConnect";
+import { useKept } from "../kept";
 import { Card, Error, Field, Prompt, useAction } from "../ui";
 
 type Account = Schema<"AccountOut">;
 type Stored = Schema<"StoredCredential">;
 
-// The last answer, kept across mounts to kill the split-second "Loading…" on every visit.
-let cachedAccount: Account | null = null;
-
-/** Forgotten on sign-out, or the next account flashes this one's details. */
-export function clearAccountCache(): void {
-  cachedAccount = null;
-}
+/** What Settings reads, as `kept.ts` keeps it: shown at once on every visit. */
+export const ACCOUNT = "/account";
+export const CREDENTIALS = "/credentials";
 
 /** Your own key for AI-written documents: what each box is called and where the key comes from. */
 const KEYS = {
@@ -31,19 +28,15 @@ export function SettingsPage({ dashboard, onChanged, onSignedOut }: {
   onChanged: () => void;
   onSignedOut: () => void;
 }) {
-  const [account, setAccount] = useState<Account | null>(cachedAccount);
-  const [stored, setStored] = useState<Stored[]>([]);
+  const { data: account, reload: reloadAccount } = useKept<Account>(ACCOUNT);
+  const { data: credentials, reload: reloadCredentials } = useKept<Schema<"CredentialList">>(CREDENTIALS);
+  const stored: Stored[] = credentials?.credentials ?? [];
   const [provider, setProvider] = useState<keyof typeof KEYS>("claude_api");
 
   const reload = () => {
-    api.get<Account>("/account").then((fresh) => {
-      cachedAccount = fresh;
-      setAccount(fresh);
-    }).catch(() => undefined);
-    api.get<Schema<"CredentialList">>("/credentials").then((body) => setStored(body.credentials))
-      .catch(() => undefined);
+    void reloadAccount();
+    void reloadCredentials();
   };
-  useEffect(reload, []);
   // A key changes who pays for AI and a pause changes the jobs page's banner: both are the dashboard's.
   const dashboardChanged = () => {
     reload();

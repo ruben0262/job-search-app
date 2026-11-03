@@ -12,6 +12,8 @@ from urllib.parse import parse_qs, unquote, urljoin, urlparse
 
 import httpx
 
+from libs.corpus.repository import MIN_DESCRIPTION
+
 logger = logging.getLogger(__name__)
 
 
@@ -22,6 +24,14 @@ try:
     from bs4 import BeautifulSoup
 except ImportError:  # pragma: no cover - only the harvester image installs it
     BeautifulSoup = None  # type: ignore[assignment]
+
+# What a page read sends: the harvest's and a pasted link's, one definition for both services.
+PAGE_HEADERS = {
+    "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                   "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"),
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+}
 
 # LinkedIn rate-limits bulk guest fetches.
 LI_RETRIES = 6
@@ -340,29 +350,139 @@ class Posting(dict):
         return self.get("description") or ""
 
 
+# ── a link somebody pasted ────────────────────────────────────────────────────────────────────
 
-def fetch_posting(url: str, client: httpx.Client) -> dict[str, Any]:
-    """Everything about an arbitrary job URL, for `/cv <link>` — no corpus row required."""
+# Wherever LinkedIn puts a job's number in an address a person copies: `/jobs/view/<number>`,
+# `/jobs/view/<title>-at-<company>-<number>`, or `?currentJobId=<number>` from a search or the feed.
+_LINKEDIN_PASTED = re.compile(r"/jobs/view/(?:[^/?#]*-)?(\d+)|[?&]currentJobId=(\d+)")
+
+# A person waits on these, so a LinkedIn page refused is asked again at once, each time from the
+# proxy's next address, rather than after the harvest's backoff.
+LINK_TRIES = 3
+
+
+def job_link(url: str) -> str | None:
+    """A pasted address the way the corpus keeps it, or None if it is not a web address. A LinkedIn job
+    is kept as `/jobs/view/<number>`, as the harvest stores it, however it was copied."""
+    url = (url or "").strip()
+    if url and "://" not in url:
+        url = f"https://{url}"
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    if parsed.scheme not in ("http", "https") or "." not in host:
+        return None
+    pasted = _LINKEDIN_PASTED.search(url)
+    if pasted and (host == "linkedin.com" or host.endswith(".linkedin.com")):
+        return f"https://www.linkedin.com/jobs/view/{pasted.group(1) or pasted.group(2)}"
+    return url
+
+
+def read_link(url: str, client: httpx.Client) -> dict[str, Any]:
+    """What a job's own page says, for somebody who pasted its link (`job_link`): its title, company,
+    place and text, whether it has closed, and whether the page said all of that in a form code can
+    rely on (`complete`): JSON-LD, LinkedIn's job card, or No Fluff Jobs' API. Anything else is a
+    guess from the page's title and main text, for the person to look over before it is kept."""
+    found: dict[str, Any] = {"title": "", "company": "", "location": "", "description": "",
+                             "workplace": None, "posted_at": None, "closed": False, "complete": False}
     job_id = linkedin_id(url)
-    try:
-        response = client.get(_guest_url(job_id) if job_id else url)
-        html_text = response.text if response.status_code == 200 else ""
-    except Exception:
-        html_text = ""
+    nofluff = _NOFLUFF_SLUG.search(url)
+    host = urlparse(url).hostname
+    response = None
+    for _ in range(LINK_TRIES if job_id else 1):
+        try:
+            response = client.get(_guest_url(job_id) if job_id
+                                  else f"https://nofluffjobs.com/api/posting/{nofluff.group(1)}" if nofluff
+                                  else url)
+        except httpx.HTTPError as exc:
+            logger.warning("link: %s could not be read, the person fills it in: %s", host, exc)
+            return found
+        if response.status_code != 429:
+            break
+    if response.status_code in (404, 410):
+        found["closed"] = True
+        return found
+    if response.status_code != 200:
+        logger.warning("link: %s answered %d, the person fills it in", host, response.status_code)
+        return found
 
-    posting = (jsonld_posting(html_text) if html_text else None) or {
-        "title": "", "company": "", "location": "", "description": ""}
-    if len(posting.get("description") or "") < 100 and html_text:
-        posting["description"] = strip_html(
-            html_text, "show-more-less-html__markup" if job_id else None)
-    if not posting.get("title") and html_text and BeautifulSoup:
-        soup = BeautifulSoup(html_text, "html.parser")
-        meta = soup.find("meta", attrs={"property": "og:title"})
-        title = (meta.get("content") if meta else None) or (soup.title.string if soup.title else "")
-        posting["title"] = (title or "").strip()
+    structured = True
+    if nofluff:
+        found.update(_nofluff_card(response.json()))
+    elif job_id:
+        found.update(_linkedin_card(response.text), posted_at=parse_posted_at(response.text),
+                     description=strip_html(response.text, "show-more-less-html__markup"))
+    else:
+        posting = jsonld_posting(response.text)
+        structured = posting is not None
+        found.update(posting or _page_guess(response.text))
+    if not nofluff:
+        found.update(closed=not parse_accepting(response.text), workplace=parse_workplace(response.text))
+    found["complete"] = bool(structured and found["title"] and found["company"]
+                             and len(found["description"]) >= MIN_DESCRIPTION)
+    return found
 
-    host = (urlparse(url).netloc or "").lower().replace("www.", "")
-    return {"url": url, "source": host or "manual", **posting}
+
+def _linkedin_card(page: str) -> dict[str, str]:
+    """The title, company and place off LinkedIn's guest job page, which carries no JSON-LD."""
+    if not BeautifulSoup:
+        return {}
+    soup = BeautifulSoup(page, "html.parser")
+
+    def text(name: str) -> str:
+        tag = soup.find(class_=name)
+        return tag.get_text(" ", strip=True) if tag else ""
+
+    return {"title": text("topcard__title"), "company": text("topcard__org-name-link"),
+            "location": text("topcard__flavor--bullet")}
+
+
+def _nofluff_card(posting: dict) -> dict[str, Any]:
+    """A No Fluff Jobs posting from its API: its page is script and menus (`_fetch_nofluff`)."""
+    places = (posting.get("location") or {}).get("places") or []
+    place = next((each for each in places if each.get("city")), {})
+    country = place.get("country")
+    return {"title": posting.get("title") or "", "company": (posting.get("company") or {}).get("name") or "",
+            "location": ", ".join(part for part in (
+                place.get("city"), country.get("name") if isinstance(country, dict) else country) if part),
+            "description": _nofluff_text(posting), "closed": posting.get("status") not in (None, "PUBLISHED")}
+
+
+def _page_guess(page: str) -> dict[str, str]:
+    """A page with no JobPosting in it: its title less the site's name after a "|", the site's own name
+    for the company, and the text of its main part rather than its menus."""
+    if not BeautifulSoup:
+        return {"description": strip_html(page)}
+    soup = BeautifulSoup(page, "html.parser")
+
+    def meta(name: str) -> str:
+        tag = soup.find("meta", attrs={"property": name})
+        return (tag.get("content") or "").strip() if tag else ""
+
+    title = meta("og:title") or (soup.title.get_text() if soup.title else "")
+    main = soup.find("main") or soup.find("article")
+    return {"title": title.split(" | ")[0].strip(), "company": meta("og:site_name"),
+            "description": strip_html(str(main) if main else page)}
+
+
+# A sentence's end, then the next one's start.
+_SENTENCE_END = re.compile(r"(?<=[a-z0-9)][.!?])\s+(?=[A-Z\"“(•])")
+# A paragraph ends with the sentence that takes it past this: two or three sentences of a job's
+# prose, and a long heading run into its first sentence on its own.
+PARAGRAPH_CHARS = 300
+
+
+def paragraphs(text: str) -> str:
+    """A description that is one line, in paragraphs. Every one stored before 2026-11-02 was read that
+    way (The Muse's among them), and so is the odd page whose JSON-LD has no markup. A text with any
+    line break in it is laid out already, and comes back as it is."""
+    if "\n" in text:
+        return text
+    laid_out = [""]
+    for sentence in _SENTENCE_END.split(text.strip()):
+        laid_out[-1] = f"{laid_out[-1]} {sentence}".strip()
+        if len(laid_out[-1]) >= PARAGRAPH_CHARS:
+            laid_out.append("")
+    return "\n\n".join(part for part in laid_out if part)
 
 
 def fetch_job(url: str, *, client: httpx.Client, snippet: str = "", title: str = "",

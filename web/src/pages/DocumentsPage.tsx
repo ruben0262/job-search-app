@@ -2,22 +2,25 @@
  *
  * `Files` and `AboutYou` are also onboarding's first screen.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { api, type Schema } from "../api";
+import { useKept } from "../kept";
 import { ago, useNow } from "../time";
 import { Card, Error, Field, Prompt, UploadButton, useAction } from "../ui";
 import { IdentityFields } from "./WordsPage";
 
 type DocumentList = Schema<"DocumentList">;
 
-/** Their documents, read once per page and again after every change. */
+/** What this page reads, as `kept.ts` keeps it: shown at once on every visit. */
+export const DOCUMENTS = "/documents";
+export const SAVED = "/saved";
+export const HISTORY = "/onboarding/history";
+export const IDENTITY = "/onboarding/identity";
+
+/** Their documents, as last read, read again on every visit and after every change. */
 export function useDocuments() {
-  const [list, setList] = useState<DocumentList | null>(null);
-  const reload = useCallback(() => api.get<DocumentList>("/documents").then(setList).catch(() => undefined), []);
-  useEffect(() => {
-    void reload();
-  }, [reload]);
+  const { data: list, reload } = useKept<DocumentList>(DOCUMENTS);
   return { list, reload };
 }
 
@@ -98,17 +101,18 @@ const MADE: [string, number | null][] = [["Made any time", null], ["Made over a 
  * until opened (owner, 2026-11-02). A search and an age pick some out, to download or to delete: the
  * old ones go, the newest stay. */
 function Made() {
-  const [kept, setKept] = useState<Schema<"SavedDocuments"> | null>(null);
+  const { data: kept, set } = useKept<Schema<"SavedDocuments">>(SAVED);
   const [query, setQuery] = useState("");
   const [older, setOlder] = useState<number | null>(null);
   const [sure, setSure] = useState(false);
-  useEffect(() => {
-    void api.get<Schema<"SavedDocuments">>("/saved").then(setKept).catch(() => undefined);
-  }, []);
-  const remove = useAction(async (id: number) => setKept(await api.del<Schema<"SavedDocuments">>(`/saved/${id}`)));
+  const remove = useAction(async (id: number) => {
+    const left = await api.del<Schema<"SavedDocuments">>(`/saved/${id}`);
+    set(() => left);
+  });
   const removeShown = useAction(async (ids: number[]) => {
     const params = new URLSearchParams(ids.map((id) => ["ids", `${id}`]));
-    setKept(await api.del<Schema<"SavedDocuments">>(`/saved?${params}`));
+    const left = await api.del<Schema<"SavedDocuments">>(`/saved?${params}`);
+    set(() => left);
     setSure(false);
   });
 
@@ -273,12 +277,14 @@ export function Files({ kind, list, onChanged }: {
 
 /** The text about themselves they can always edit: what a CV leaves out. */
 export function AboutYou({ onSaved }: { onSaved: () => void }) {
-  const [text, setText] = useState<string | null>(null);
-  useEffect(() => {
-    void api.get<Schema<"HistoryText">>("/onboarding/history").then((body) => setText(body.text));
-  }, []);
+  const { data, reload } = useKept<Schema<"HistoryText">>(HISTORY);
+  // What they typed, until it is saved: a fresh read never writes over it.
+  const [typed, setText] = useState<string | null>(null);
+  const text = typed ?? data?.text ?? null;
   const save = useAction(async () => {
-    await api.put("/onboarding/history", { text });
+    await api.put(HISTORY, { text });
+    await reload();
+    setText(null);
     onSaved();
   });
 
@@ -303,21 +309,22 @@ export function AboutYou({ onSaved }: { onSaved: () => void }) {
 }
 
 function Identity() {
-  const [name, setName] = useState<string | null>(null);
-  const [links, setLinks] = useState<string[]>([]);
+  const { data, reload } = useKept<Schema<"NameAndLinks">>(IDENTITY);
+  // What they typed, until it is saved: a fresh read never writes over it.
+  const [typed, setTyped] = useState<{ name: string; links: string[] } | null>(null);
   const [done, setDone] = useState(false);
-  useEffect(() => {
-    void api.get<Schema<"NameAndLinks">>("/onboarding/identity").then((body) => {
-      setName(body.full_name ?? "");
-      setLinks(body.links.map((link) => link.url));
-    });
-  }, []);
+  const name = typed?.name ?? data?.full_name ?? "";
+  const links = typed?.links ?? data?.links.map((link) => link.url) ?? [];
+  const setName = (value: string) => setTyped({ name: value, links });
+  const setLinks = (value: string[]) => setTyped({ name, links: value });
   const save = useAction(async () => {
-    await api.put("/onboarding/identity", { full_name: name, links: links.map((url) => ({ url })) });
+    await api.put(IDENTITY, { full_name: name, links: links.map((url) => ({ url })) });
+    await reload();
+    setTyped(null);
     setDone(true);
   });
 
-  if (name === null) return null;
+  if (!data) return null;
   return (
     <form
       onSubmit={(event) => {

@@ -7,17 +7,19 @@ import { Landing } from "./landing/Landing";
 import { stopped } from "./leave";
 import { forgetMarks } from "./marks";
 import { AdminPage } from "./pages/AdminPage";
+import { forgetKept, readAhead } from "./kept";
+import { ADDED, AddJobPage } from "./pages/AddJobPage";
 import { AdminUserPage } from "./pages/AdminUserPage";
-import { AppliedPage } from "./pages/AppliedPage";
-import { DocumentsPage } from "./pages/DocumentsPage";
-import { JobsPage, clearJobsCache } from "./pages/JobsPage";
+import { APPLIED, AppliedPage } from "./pages/AppliedPage";
+import { DOCUMENTS, DocumentsPage, HISTORY, IDENTITY, SAVED } from "./pages/DocumentsPage";
+import { JobsPage } from "./pages/JobsPage";
 import { Onboarding } from "./pages/Onboarding";
 import { PrivacyPage } from "./pages/PrivacyPage";
 import { ForgotPassword, ResetPassword } from "./pages/ResetPassword";
-import { SettingsPage, clearAccountCache } from "./pages/SettingsPage";
+import { ACCOUNT, CREDENTIALS, SettingsPage } from "./pages/SettingsPage";
 import { SignIn } from "./pages/SignIn";
 import { Verify } from "./pages/Verify";
-import { WordsPage } from "./pages/WordsPage";
+import { REVIEW, WordsPage } from "./pages/WordsPage";
 import { NotificationBell } from "./notifications";
 import { ThemeToggle } from "./theme";
 
@@ -65,9 +67,8 @@ export function App() {
     } catch (error) {
       // 401 is the ordinary signed-out case — `request` has already tried a refresh.
       if (error instanceof ApiError && error.status === 401) {
-        // The page caches die with the session.
-        clearJobsCache();
-        clearAccountCache();
+        // What the pages kept dies with the session.
+        forgetKept();
         forgetMarks();
         setSession({ state: "out" });
         return;
@@ -91,6 +92,14 @@ export function App() {
     window.addEventListener("focus", again);
     return () => window.removeEventListener("focus", again);
   }, [signedIn, reload]);
+
+  // Every other tab's first read, once, so the first visit to each draws at once too. Not the jobs
+  // list: Jobs is where everybody lands, and it reads that itself (measured locally: 71 ms, the rest
+  // under 10 ms each).
+  const ready = session.state === "in" && session.dashboard.stage === "ready";
+  useEffect(() => {
+    if (ready) readAhead([ADDED, APPLIED, REVIEW, DOCUMENTS, SAVED, HISTORY, IDENTITY, ACCOUNT, CREDENTIALS]);
+  }, [ready]);
 
   // Public, and reachable signed out: signup links it before anybody has an account.
   if (hash.startsWith("/privacy")) return <PrivacyPage />;
@@ -154,9 +163,13 @@ export function App() {
             <ThemeToggle />
           </div>
         </nav>
-        {/* Keyed on the place so the fade-up replays on navigation, not only on first load. */}
-        <main className={section === "admin" ? "page-in admin" : "page-in"} key={section}>
-          {section === "applied" ? (
+        {/* No fade between places: it began each one invisible, and switching tabs showed nothing for
+            a moment (owner, 2026-11-03). Each page draws at once from what it read last (`kept.ts`). */}
+        <main className={section === "admin" ? "admin" : undefined}>
+          {path?.startsWith("/add") ? (
+            // The second tab of Jobs, not a place of its own.
+            <AddJobPage dashboard={dashboard} onChanged={reload} />
+          ) : section === "applied" ? (
             <AppliedPage />
           ) : section === "words" ? (
             <WordsPage />

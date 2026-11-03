@@ -989,6 +989,69 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/jobs/added": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Added
+         * @description The jobs this person brought here by their links, the latest first, until they skip one, apply
+         *     to it, or it closes.
+         */
+        get: operations["added_jobs_added_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/jobs/link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Find By Link
+         * @description A pasted link: the job, if it is here; else read from its page and kept, if the page said all of
+         *     it; else what the page did say, for the person to finish and keep (`POST /jobs/link/save`).
+         */
+        post: operations["find_by_link_jobs_link_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/jobs/link/save": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Save Typed
+         * @description A job the person wrote in, kept for them alone (`CorpusRepository.add_typed`); or the public one,
+         *     if it is here already under this address or this title, company and place.
+         */
+        post: operations["save_typed_jobs_link_save_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/jobs/{job_id}/description": {
         parameters: {
             query?: never;
@@ -998,7 +1061,8 @@ export interface paths {
         };
         /**
          * Job Description
-         * @description A posting's whole description, as stored, for a card that was asked to show it.
+         * @description A posting's whole description, for a card that was asked to show it: as stored, or in paragraphs
+         *     if it was stored as one line (`paragraphs`).
          */
         get: operations["job_description_jobs__job_id__description_get"];
         put?: never;
@@ -1864,6 +1928,22 @@ export interface components {
             /** Uploaded At */
             uploaded_at: string | null;
         };
+        /**
+         * Draft
+         * @description What the page said, for the person to finish: every field, empty where it said nothing.
+         */
+        Draft: {
+            /** Company */
+            company: string;
+            /** Description */
+            description: string;
+            /** Location */
+            location: string;
+            /** Title */
+            title: string;
+            /** Url */
+            url: string;
+        };
         /** Feed */
         Feed: {
             /**
@@ -2088,12 +2168,27 @@ export interface components {
             /** Value */
             value?: number | null;
         };
+        /** LinkAnswer */
+        LinkAnswer: {
+            draft?: components["schemas"]["Draft"] | null;
+            job?: components["schemas"]["FeedJob"] | null;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "known" | "added" | "closed" | "draft";
+        };
         /**
          * LinkPlatform
          * @description What kind of link it is. `OTHER` is the escape hatch, not a failure.
          * @enum {string}
          */
         LinkPlatform: "linkedin" | "github" | "gitlab" | "portfolio" | "stackoverflow" | "other";
+        /** LinkRequest */
+        LinkRequest: {
+            /** Url */
+            url: string;
+        };
         /**
          * Location
          * @enum {string}
@@ -2573,6 +2668,25 @@ export interface components {
              * @enum {string}
              */
             status: "unconfigured" | "waiting" | "connected" | "broken";
+        };
+        /**
+         * TypedJob
+         * @description A job as the person wrote it in, where its page would not say all of it.
+         */
+        TypedJob: {
+            /** Company */
+            company: string;
+            /** Description */
+            description: string;
+            /**
+             * Location
+             * @default
+             */
+            location: string;
+            /** Title */
+            title: string;
+            /** Url */
+            url: string;
         };
         /**
          * UserConfigSchema
@@ -4273,6 +4387,92 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    added_jobs_added_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedJob"][];
+                };
+            };
+        };
+    };
+    find_by_link_jobs_link_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LinkRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LinkAnswer"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_typed_jobs_link_save_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TypedJob"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LinkAnswer"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

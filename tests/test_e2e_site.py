@@ -238,6 +238,81 @@ def test_step_two_says_what_it_found_with_switches_suggestions_and_round_choices
     assert section["remote_policy"] == "any"
 
 
+def test_a_job_found_somewhere_else_is_brought_in_by_its_link(site, capsys):
+    """Add a job, on a phone: a link to a job already here shows it ready for a CV, though it has none
+    of their words, and it stays listed there; a link into this server's own network is refused in
+    words, and never requested."""
+    from libs.db import database
+    from libs.db.models import CorpusJob
+
+    base, email, ids = site
+    nurse = database()[CorpusJob.COLLECTION].find_one({"_id": ids[TITLES[2]]})["url"]
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = browser.new_context(viewport={"width": 390, "height": 844}).new_page()
+        _sign_up(page, base, email, capsys)
+        _onboard(page)
+        # A tab of Jobs, not a place of its own: Jobs stays the place lit in the bar.
+        page.get_by_role("navigation", name="Jobs").get_by_role("link", name="Add a job").click()
+        expect(page.get_by_role("heading", name="Found a job somewhere else?")).to_be_visible()
+        expect(page.locator("nav .places a[aria-current=page]")).to_have_text("Jobs")
+
+        page.get_by_label("The job's link").fill(nurse)
+        page.get_by_role("button", name="Find this job").click()
+        expect(page.get_by_text("We already have this job. Here it is.")).to_be_visible()
+        card = page.locator("article.job-card").filter(
+            has=page.get_by_role("button", name=TITLES[2], exact=True))
+        expect(card.get_by_role("button", name="Make my CV")).to_be_visible()
+        expect(card.locator(".why")).to_have_count(0)
+
+        page.get_by_label("The job's link").fill("http://127.0.0.1:9/jobs/1")
+        page.get_by_role("button", name="Find this job").click()
+        expect(page.get_by_text("That link is not to a public web page.")).to_be_visible()
+
+        page.reload()
+        expect(page.get_by_role("heading", name="Jobs you added")).to_be_visible()
+        expect(page.get_by_role("button", name=TITLES[2], exact=True)).to_be_visible()
+        browser.close()
+
+
+def test_every_tab_is_drawn_whole_the_moment_it_is_opened(site, capsys):
+    """Switching tabs showed nothing for a moment, then the page (owner, 2026-11-03): each began
+    invisible and faded in, and read its data only once it was open. Here the server takes 400 ms to
+    answer, and each page is looked at two frames after its tab is pressed."""
+    base, email, _ = site
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = browser.new_context(viewport={"width": 1280, "height": 860}).new_page()
+        _sign_up(page, base, email, capsys)
+        _onboard(page)
+        expect(page.get_by_role("heading", name="2 jobs match your words")).to_be_visible()
+        page.wait_for_load_state("networkidle")
+
+        def slow(route):
+            time.sleep(0.4)
+            route.continue_()
+
+        page.route(re.compile(r"/(applied|jobs/added|onboarding/\w+|documents|saved|account|credentials|feed)"),
+                   slow)
+        for tab, drawn in (("Applied", "You applied to 0 jobs"), ("My search", "The jobs you want"),
+                           ("My documents", "Each one you make is kept here"), ("Settings", email),
+                           ("Jobs", "2 jobs match your words"), ("Add a job", "Found a job somewhere else?")):
+            seen = page.evaluate("""(tab) => new Promise((done) => {
+                const links = [...document.querySelectorAll("nav a")];
+                links.find((link) => link.textContent.trim() === tab).click();
+                const look = () => {
+                    const main = document.querySelector("main");
+                    done({text: main.innerText, opacity: getComputedStyle(main).opacity});
+                };
+                requestAnimationFrame(() => requestAnimationFrame(look));
+            })""", tab)
+            assert seen["opacity"] == "1", f"{tab} faded in"
+            assert drawn in seen["text"], f"{tab} was not drawn at once: {seen['text'][:120]!r}"
+            for waiting in ("Loading…", "Reading what we found…", "Your applications…", "Finding your jobs…"):
+                assert waiting not in seen["text"], f"{tab} drew {waiting!r} first"
+        browser.close()
+
+
 def test_the_tabs_in_order_and_what_each_one_is_for(site, capsys):
     """Settings last; Applied keeps what was applied to; help and the contact form are in Settings;
     Admin is there for an admin only, and shows what was sent from Settings."""

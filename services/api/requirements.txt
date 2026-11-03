@@ -2,6 +2,7 @@
 #
 # No numpy, no sklearn, no scraping stack: the API reads and writes rows and sends email. Keeping
 # it that light is what makes it fast to rebuild and safe to run at the front of the request path.
+# The one page it reads is a job's, when somebody pastes its link (`link_routes`).
 fastapi>=0.115
 uvicorn[standard]>=0.32
 pydantic[email]>=2.10
@@ -13,3 +14,5 @@ httpx>=0.28              # libs/credentials: the API validates a credential by c
 python-multipart>=0.0.20  # multipart uploads; FastAPI needs it for File()/Form()
 pypdf>=5.1                # extracting text from an uploaded CV
 python-docx>=1.1          # same, for .docx
+beautifulsoup4>=4.12     # libs/corpus/postings: a pasted job's page, its JSON-LD and its text
+langdetect>=1.0.9        # libs/corpus/langfilter: a kept job's language, read where its text is stored

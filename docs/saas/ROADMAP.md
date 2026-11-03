@@ -3075,9 +3075,23 @@ suggestions on the jobs page. `CHANGELOG.md` has the numbers.
 15. **Hiring Cafe answers 403** (a bot wall). Getting past it by imitating a browser is circumventing the
     site's refusal, and was not attempted. Recommendation: ask hiring.cafe for API access, or leave it off;
     the company boards it pointed at are polled directly.
+    *2026-11-03:* the scraper the owner linked (`umur957/hiring-cafe-job-scraper`) is the same thing. It
+    sends headers forged to look like Chrome to the site's internal `/api/search-jobs`. It is not an API
+    the site offers, so nothing changes here.
 16. **Outcomes need people to say them.** Admin › Outcomes is empty until applications are marked.
     Recommendation: none yet; once there are a few hundred, read interview rate by CV kind and by the ATS
     verdict before changing the CV prompts.
+17. ~~**A job written in by hand is shown to everyone it suits.**~~ Decided and done the same evening
+    (owner): a typed job is the person's alone, and stands in for no real posting (`add_typed`).
+18. **The text stored before 2026-11-02 is laid out when it is shown, not read again.** That is 530 dev
+    postings, and on the server everything it found before the 2026-11-02 deploy. They are shown in
+    paragraphs of sentences. Their headings stay run into the text, and The Muse's stay cut at 4,000
+    characters. Recommendation: leave it; they age out within 30 days. Re-reading LinkedIn's would spend
+    the proxy for text that is already readable.
+19. **Old No Fluff Jobs text is the site's menus, and Profession's is its highlights only.** The first
+    ages out (read from the API since 2026-11-02). The second is all Profession's feed gives, and its pages
+    have no JSON-LD. Recommendation: leave Profession unless its jobs matter to someone; reading its pages
+    would store their menus.
 
 ## Phase 9 — MongoDB instead of Postgres (added 2026-10-30)
 

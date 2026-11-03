@@ -994,6 +994,40 @@
         "title": "DocumentRow",
         "type": "object"
       },
+      "Draft": {
+        "description": "What the page said, for the person to finish: every field, empty where it said nothing.",
+        "properties": {
+          "company": {
+            "title": "Company",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "location": {
+            "title": "Location",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "title",
+          "company",
+          "location",
+          "description"
+        ],
+        "title": "Draft",
+        "type": "object"
+      },
       "Feed": {
         "properties": {
           "as_of": {
@@ -1679,6 +1713,45 @@
         "title": "LimitPatch",
         "type": "object"
       },
+      "LinkAnswer": {
+        "properties": {
+          "draft": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Draft"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "job": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FeedJob"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "outcome": {
+            "enum": [
+              "known",
+              "added",
+              "closed",
+              "draft"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          }
+        },
+        "required": [
+          "outcome"
+        ],
+        "title": "LinkAnswer",
+        "type": "object"
+      },
       "LinkPlatform": {
         "description": "What kind of link it is. `OTHER` is the escape hatch, not a failure.",
         "enum": [
@@ -1691,6 +1764,21 @@
         ],
         "title": "LinkPlatform",
         "type": "string"
+      },
+      "LinkRequest": {
+        "properties": {
+          "url": {
+            "maxLength": 2000,
+            "minLength": 4,
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "title": "LinkRequest",
+        "type": "object"
       },
       "Location": {
         "enum": [
@@ -3100,6 +3188,48 @@
           "open_url"
         ],
         "title": "TelegramState",
+        "type": "object"
+      },
+      "TypedJob": {
+        "description": "A job as the person wrote it in, where its page would not say all of it.",
+        "properties": {
+          "company": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Company",
+            "type": "string"
+          },
+          "description": {
+            "maxLength": 48000,
+            "title": "Description",
+            "type": "string"
+          },
+          "location": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Location",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "url": {
+            "maxLength": 2000,
+            "minLength": 4,
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "title",
+          "company",
+          "description"
+        ],
+        "title": "TypedJob",
         "type": "object"
       },
       "UserConfigSchema": {
@@ -5595,9 +5725,119 @@
         "summary": "Health"
       }
     },
+    "/jobs/added": {
+      "get": {
+        "description": "The jobs this person brought here by their links, the latest first, until they skip one, apply\nto it, or it closes.",
+        "operationId": "added_jobs_added_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FeedJob"
+                  },
+                  "title": "Response Added Jobs Added Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Added",
+        "tags": [
+          "links"
+        ]
+      }
+    },
+    "/jobs/link": {
+      "post": {
+        "description": "A pasted link: the job, if it is here; else read from its page and kept, if the page said all of\nit; else what the page did say, for the person to finish and keep (`POST /jobs/link/save`).",
+        "operationId": "find_by_link_jobs_link_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LinkRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LinkAnswer"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Find By Link",
+        "tags": [
+          "links"
+        ]
+      }
+    },
+    "/jobs/link/save": {
+      "post": {
+        "description": "A job the person wrote in, kept for them alone (`CorpusRepository.add_typed`); or the public one,\nif it is here already under this address or this title, company and place.",
+        "operationId": "save_typed_jobs_link_save_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TypedJob"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LinkAnswer"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save Typed",
+        "tags": [
+          "links"
+        ]
+      }
+    },
     "/jobs/{job_id}/description": {
       "get": {
-        "description": "A posting's whole description, as stored, for a card that was asked to show it.",
+        "description": "A posting's whole description, for a card that was asked to show it: as stored, or in paragraphs\nif it was stored as one line (`paragraphs`).",
         "operationId": "job_description_jobs__job_id__description_get",
         "parameters": [
           {

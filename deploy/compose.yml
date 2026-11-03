@@ -193,6 +193,8 @@ services:
       PUBLIC_URL: ${PUBLIC_URL:?the verification and reset emails are built from it}
       # The public push key.
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      # A pasted LinkedIn link is read through the site's proxy, as the harvest reads LinkedIn.
+      HARVEST_PROXY: ${HARVEST_PROXY:-}
       LOG_DIR: /var/log/jobsearch
     volumes:
       - ../logs:/var/log/jobsearch

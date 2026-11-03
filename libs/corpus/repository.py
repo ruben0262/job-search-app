@@ -1,6 +1,7 @@
 """The shared corpus repository — the storage half of the `store.py` port."""
 from __future__ import annotations
 
+import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -21,6 +22,10 @@ MIN_DESCRIPTION = 200
 # a third of postings mid-sentence (389 of 1,209 locally); the whole LinkedIn text of 24 of those,
 # fetched 2026-11-02, was a median 5,831 characters and at most 10,260, so this keeps 23 of 24 whole.
 MAX_DESCRIPTION = 12_000
+
+# The source of a job somebody wrote in themselves (Add a job): theirs alone, never anybody else's match
+# (owner, 2026-11-03). Read by `libs.tenant.filters.candidate_conditions`, which every match asks.
+TYPED = "typed"
 
 # Consecutive failed reads before a posting is abandoned: never described, embedded or scored.
 #
@@ -167,6 +172,22 @@ class CorpusRepository:
             return insert(self._db, job).id
         except DuplicateKeyError:
             return None
+
+    def add_typed(self, *, url: str, title: str, company: str, location: str, description: str) -> int:
+        """A job a person wrote in, kept for them alone: their own mark on it (`added_at`) is the only way
+        to it. Not a public posting, so nothing about it may stand in for one:
+        - no dedup key, or the harvest would take the real posting for it and never store it;
+        - its own address, as an address is stored once and the real posting may come to have this one.
+          The page's address with `#typed-…` after it, which still opens the page;
+        - no candidate for anybody's words, alerts included (`TYPED`).
+        It holds nobody's name: whose it is lives on their own row (TENANT_SAFETY §1, rule 2)."""
+        job = CorpusJob(url=f"{url.split('#', 1)[0]}#typed-{secrets.token_hex(6)}", source=TYPED, title=title,
+                        company=company or None, location=location or None,
+                        country=posting_country(location, title=title), city=read_city(location),
+                        discovered_via=TYPED)
+        job_id = insert(self._db, job).id
+        self.set_description(job_id, description)
+        return job_id
 
     def set_description(self, job_id: int, description: str) -> bool:
         """Attach fetched description text, up to `MAX_DESCRIPTION` of it."""

@@ -49,9 +49,6 @@ SOURCE = "hiringcafe"
 _TIMEOUT = 40
 _MAX_PAGES = 3            # bound bandwidth: hiring.cafe is relevance-sorted, so we scan the top few
 _POSTED_WITHIN_DAYS = 21  # default freshness window (by POSTING date) — override via config
-_UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                     "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-       "accept-language": "en-GB,en;q=0.9"}
 _NEXT_DATA = re.compile(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', re.S)
 _PAGE_SIZE = 40
 

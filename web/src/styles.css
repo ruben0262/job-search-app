@@ -594,7 +594,8 @@ button[disabled] {
   margin: 1.25rem 0 1rem;
 }
 
-.toolbar input[type="search"] {
+.toolbar input[type="search"],
+.toolbar input[type="url"] {
   flex: 1 1 10rem;
   min-width: 10rem;
 }
@@ -1894,6 +1895,7 @@ button.making::after {
 
 .tab {
   display: inline-flex;
+  text-decoration: none;
   align-items: center;
   gap: 0.5rem;
   background: none;

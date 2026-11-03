@@ -22,6 +22,7 @@ from services.api.contact_routes import router as contact_router
 from services.api.credential_routes import router as credential_router
 from services.api.dashboard_routes import router as dashboard_router
 from services.api.document_routes import router as document_router
+from services.api.link_routes import router as link_router
 from services.api.notification_routes import router as notification_router
 from services.api.onboarding_routes import router as onboarding_router
 from services.api.push_routes import router as push_router
@@ -55,6 +56,7 @@ app.include_router(onboarding_router)
 app.include_router(push_router)
 app.include_router(saved_router)
 app.include_router(dashboard_router)
+app.include_router(link_router)
 app.include_router(notification_router)
 app.include_router(suggestion_router)
 app.include_router(support_router)

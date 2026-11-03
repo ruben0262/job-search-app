@@ -24,6 +24,9 @@ class UserJobState(Document):
     applied_at: datetime | None = None
     cover_built: bool = False
     dismissed_at: datetime | None = None
+    # When this person brought the job here by its link (Add a job), found or newly stored: what lists it
+    # for them there, whether or not it has their words.
+    added_at: datetime | None = None
     created_at: datetime = field(default_factory=now)
     # What happened after "I applied", in the person's own words, each `{"stage": ..., "at": ...}`
     # (`libs.tenant.applications`). The last is where the application stands.

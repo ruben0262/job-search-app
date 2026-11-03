@@ -381,3 +381,90 @@ def test_a_job_carries_its_companys_own_name_where_the_board_does_not_say_it(mon
     jobs, _ = ats.fetch_smartrecruiters("BoschGroup")
     assert [job.company for job in jobs] == ["Bosch Group"]
 
+
+# ── each board's text, laid out as it laid it out (2026-11-03) ────────────────────────────────
+
+def test_a_lever_job_is_kept_whole_its_lists_as_lists(monkeypatch):
+    """`descriptionPlain` is Lever's opening paragraph alone: what the job asks for, in `lists`, and the
+    closing were never kept, and its `&nbsp;` lines were stored as they were."""
+    import httpx
+
+    from services.harvester.sources import ats
+
+    posting = {"hostedUrl": "https://jobs.lever.co/acme/1", "text": "Engineer", "createdAt": 0,
+               "categories": {"location": "Paris"},
+               "descriptionPlain": "We build things.\n\u00a0\n",
+               "description": "<div><span>We build things.</span></div><div><br></div>",
+               "lists": [{"text": "What you will do", "content": "<li>Ship the ledger</li><li>Own it</li>"},
+                         {"text": "What you bring", "content": "<li>Python &amp; Postgres</li>"}],
+               "additional": "<div><b>Why join</b></div><div>Good people.</div>"}
+    monkeypatch.setattr(ats, "_CLIENT", httpx.Client(transport=httpx.MockTransport(
+        lambda _request: httpx.Response(200, json=[posting]))))
+
+    (job,), _etag = ats.fetch_lever("acme")
+
+    assert job.snippet == ("We build things.\n\nWhat you will do\n\n• Ship the ledger\n• Own it\n\n"
+                           "What you bring\n\n• Python & Postgres\n\nWhy join\n\nGood people.")
+
+
+def test_an_ashby_jobs_lists_are_lists_not_a_paragraph_each(monkeypatch):
+    import httpx
+
+    from services.harvester.sources import ats
+
+    job = {"jobUrl": "https://jobs.ashbyhq.com/acme/1", "title": "Engineer", "location": "London",
+           "descriptionPlain": "About the role\n\n - Ship it\n\n - Own it",
+           "descriptionHtml": "<p><strong>About the role</strong></p>"
+                              "<ul><li>Ship it</li><li>Own it</li></ul>"}
+    monkeypatch.setattr(ats, "_CLIENT", httpx.Client(transport=httpx.MockTransport(
+        lambda _request: httpx.Response(200, json={"jobs": [job]}))))
+
+    (link,), _etag = ats.fetch_ashby("acme")
+
+    assert link.snippet == "About the role\n\n• Ship it\n• Own it"
+
+
+def test_a_jobicy_job_is_kept_whole_not_its_teaser(monkeypatch):
+    """The 150-character excerpt counted as described (past `MIN_DESCRIPTION`), so it was never read in
+    full: every Jobicy card ended "industry leaders&hellip;"."""
+    from datetime import UTC, datetime
+
+    import httpx
+
+    from services.harvester.sources import http_apis
+
+    job = {"url": "https://jobicy.com/jobs/1-engineer", "jobTitle": "Go Engineer", "companyName": "Canonical",
+           "jobGeo": "Anywhere", "pubDate": datetime.now(UTC).isoformat(),
+           "jobExcerpt": "Canonical is a leading provider&hellip;",
+           "jobDescription": "<p>Canonical is a leading provider of open source software.</p>"
+                             "<ul><li>Go</li></ul>"}
+    monkeypatch.setattr(http_apis, "make_shared_client", lambda **_: httpx.Client(
+        transport=httpx.MockTransport(lambda _request: httpx.Response(200, json={"jobs": [job]}))))
+
+    (link,) = http_apis.gather_jobicy({"max_age_hours": 24}, logging.getLogger("test"))
+
+    assert link.snippet == "Canonical is a leading provider of open source software.\n\n• Go"
+
+
+# ── one set of headers (2026-11-03) ───────────────────────────────────────────────────────────
+
+def test_an_adapter_adds_to_the_page_headers_rather_than_replacing_them():
+    """`headers=` used to throw the shared ones away, so adapters wrote out a User-Agent of their own,
+    and Adzuna, passing only an `Accept`, went out as `python-httpx`."""
+    from libs.corpus.postings import PAGE_HEADERS
+    from services.harvester.fetch import make_shared_client
+
+    with make_shared_client(headers={"Accept": "application/json"}) as client:
+        assert client.headers["User-Agent"] == PAGE_HEADERS["User-Agent"]
+        assert client.headers["Accept"] == "application/json"
+
+
+def test_a_user_agent_is_written_in_one_place_and_profession_s_own_beside_it():
+    """Five were written out across the services. Profession is the one source that must not look like
+    a browser: it answers one with a 500 page, and the feed to anything else (measured 2026-11-03)."""
+    root = HARVESTER.parents[1]
+    written = {path.relative_to(root).as_posix() for base in ("libs", "services")
+               for path in (root / base).rglob("*.py")
+               if "__pycache__" not in path.parts and path.name != "port_from_reference.py"
+               and re.search(r"[\"']User-Agent[\"']\s*:", path.read_text(encoding="utf-8"))}
+    assert written == {"libs/corpus/postings.py", "services/harvester/sources/http_apis.py"}

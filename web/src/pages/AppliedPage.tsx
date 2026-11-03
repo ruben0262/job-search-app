@@ -1,11 +1,12 @@
 /** Applied: every job you said you applied to, newest first — the ones that no longer match your
  * search included — with the way back to each, and a tap on one shows all of it. Each says how far it
  * got, in your words (owner, 2026-11-03): an interview, an offer, the job, or not this time. */
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { MouseEvent } from "react";
 
 import { api, type Schema } from "../api";
 import { JobView } from "../jobview";
+import { useKept } from "../kept";
 import { ago, useNow } from "../time";
 import { Error, useAction } from "../ui";
 import { latest } from "./JobsPage";
@@ -39,12 +40,11 @@ function tally(jobs: Applied[]): string {
     .map(([count, one, many]) => `${count} ${count === 1 ? one : many}`).join(" · ");
 }
 
+/** The applications, as `kept.ts` keeps them. */
+export const APPLIED = "/applied";
+
 export function AppliedPage() {
-  const [jobs, setJobs] = useState<Applied[] | null>(null);
-  const [failed, setFailed] = useState(false);
-  useEffect(() => {
-    api.get<Applied[]>("/applied").then(setJobs).catch(() => setFailed(true));
-  }, []);
+  const { data: jobs, set: setJobs, failed } = useKept<Applied[]>(APPLIED);
   const undo = useAction(async (id: number) => {
     await api.del(`/jobs/${id}/applied`);
     setJobs((now) => now?.filter((job) => job.id !== id) ?? null);

@@ -7,6 +7,7 @@ import type { MouseEvent, ReactNode } from "react";
 import { api, type Ready, type Schema } from "../api";
 import { useBuild } from "../documents";
 import { JobView } from "../jobview";
+import { keep, peek } from "../kept";
 import { type Mark, mark as record, send, unsent } from "../marks";
 import { POLL_MS } from "../notifications";
 import { ago, useNow } from "../time";
@@ -35,18 +36,28 @@ const POSTED: [string, number | null][] = [["Any time", null], ["Last 24 hours",
 const BOARDS: Record<string, string> = {
   linkedin: "LinkedIn", hiringcafe: "Hiring Cafe", justjoinit: "Just Join IT", nofluffjobs: "No Fluff Jobs",
   workingnomads: "Working Nomads", themuse: "The Muse", smartrecruiters: "SmartRecruiters",
+  link: "Added by link",
 };
 const board = (name: string) => BOARDS[name] ?? name.charAt(0).toUpperCase() + name.slice(1);
 
 /** A country's name from its code, as the browser knows it in English. */
 const REGIONS = new Intl.DisplayNames(["en"], { type: "region" });
 
-// The last answer, kept across mounts: coming back to Jobs shows the list at once.
-let cached: Feed | null = null;
+/** The list as it first opens, kept (`kept.ts`): coming back to Jobs shows it at once. */
+export const FEED = "/feed?offset=0";
 
-/** Forgotten on sign-out, or the next account flashes this one's jobs. */
-export function clearJobsCache(): void {
-  cached = null;
+/** Jobs has two tabs: the jobs that match your words, and one brought in by its link. */
+export function JobsTabs({ on }: { on: "list" | "add" }) {
+  return (
+    <nav className="tabs" aria-label="Jobs">
+      <a className={on === "list" ? "tab on" : "tab"} href="#/" aria-current={on === "list" ? "page" : undefined}>
+        Your jobs
+      </a>
+      <a className={on === "add" ? "tab on" : "tab"} href="#/add" aria-current={on === "add" ? "page" : undefined}>
+        Add a job
+      </a>
+    </nav>
+  );
 }
 
 export function JobsPage({ dashboard, focus, onChanged }: {
@@ -66,6 +77,7 @@ export function JobsPage({ dashboard, focus, onChanged }: {
   const [noCv, setNoCv] = useState(false);
   const [picked, setPicked] = useState<string[]>([]);
   const [atLeast, setAtLeast] = useState(1);
+  const cached = peek<Feed>(FEED);
   // The boards and words their jobs have, kept from the first answer: a filtered one still offers them all.
   const [boards, setBoards] = useState<Feed["sources"]>(cached?.sources ?? []);
   const [words, setWords] = useState<Feed["words"]>(cached?.words ?? []);
@@ -119,7 +131,7 @@ export function JobsPage({ dashboard, focus, onChanged }: {
   const reload = useCallback(() => {
     // Marks this browser still holds go first, so the answer already leaves them out.
     void send().finally(() => read(0).then((body) => {
-      if (!filtered && !newest) cached = body;
+      if (!filtered && !newest) keep(FEED, body);
       setBoards(body.sources);
       setWords(body.words);
       setCountries(body.countries);
@@ -197,6 +209,7 @@ export function JobsPage({ dashboard, focus, onChanged }: {
   );
   return (
     <>
+      <JobsTabs on="list" />
       {dashboard.banners.map((banner) => (
         <Banner key={banner.key} level={banner.level}>
           <span>{banner.text}</span>{" "}
@@ -370,7 +383,7 @@ function Where({ job }: { job: Job }) {
   );
 }
 
-function JobCard({ job, ai, focus, done, fresh, onMark }: {
+export function JobCard({ job, ai, focus, done, fresh, onMark }: {
   job: Job;
   ai: boolean;
   focus: boolean;
@@ -410,7 +423,7 @@ function JobCard({ job, ai, focus, done, fresh, onMark }: {
   const marks = (
     <div className="job-actions">
       <a className="button secondary small" href={job.url} target="_blank" rel="noreferrer">
-        Open on {board(job.source)}
+        {job.source === "link" || job.source === "typed" ? "Open the job" : `Open on ${board(job.source)}`}
       </a>
       <button type="button" className="secondary small" onClick={() => setSkipping(true)}>Skip</button>
       <button type="button" className="secondary small" onClick={() => onMark(job, "applied", true)}>
@@ -431,7 +444,8 @@ function JobCard({ job, ai, focus, done, fresh, onMark }: {
       {job.salary ? <p className="job-meta">{money(job.salary)}</p> : null}
     </>
   );
-  const why = (
+  // A job somebody added by its link is on the page for that, not for their words.
+  const why = job.words.length > 0 && (
     <p className="why">
       Why:{" "}
       {job.words.map((word) => <span key={word} className="word green">{word}</span>)}

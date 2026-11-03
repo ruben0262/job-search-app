@@ -11,15 +11,11 @@ from typing import Any
 
 import httpx
 
+from libs.corpus.postings import PAGE_HEADERS
+
 # Residential bandwidth is metered per GB, so only hosts that refuse datacenter IPs go through it.
 PROXIED_HOSTS = ("linkedin.com",)
 
-_UA = {
-    "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                   "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"),
-    "Accept-Language": "en-US,en;q=0.9",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-}
 DEFAULT_TIMEOUT = 25
 
 
@@ -67,9 +63,12 @@ def _mounts(proxy_url: str,
 
 
 def _options(kwargs: dict[str, Any]) -> dict[str, Any]:
+    # Every request carries `PAGE_HEADERS`, and an adapter passes only what it adds: a JSON `Accept`, a
+    # token. `headers=` used to replace them, so four adapters wrote out a User-Agent of their own.
+    headers = {**PAGE_HEADERS, **kwargs.pop("headers", {})}
     # `trust_env=False`: a stray HTTP_PROXY on the box must not route the boards through anything.
-    return {"headers": _UA, "timeout": DEFAULT_TIMEOUT, "follow_redirects": True, "trust_env": False,
-            **kwargs}
+    return {"timeout": DEFAULT_TIMEOUT, "follow_redirects": True, "trust_env": False, **kwargs,
+            "headers": headers}
 
 
 def make_shared_client(**kwargs: Any) -> MeteredClient:

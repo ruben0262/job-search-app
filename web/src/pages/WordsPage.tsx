@@ -5,6 +5,7 @@
 import { useEffect, useState } from "react";
 
 import { api, type Config, type Schema } from "../api";
+import { useKept } from "../kept";
 import { askBeforeLeaving, go } from "../leave";
 import { Error, Field, Prompt, Words, useAction } from "../ui";
 
@@ -44,6 +45,9 @@ export function IdentityFields({ name, links, onName, onLinks }: {
   );
 }
 
+/** What the form reads, as `kept.ts` keeps it. */
+export const REVIEW = "/onboarding/review";
+
 export function WordsForm({ withIdentity = false, askBeforeLeaving: guarded = false, action, onSaved, onEdited }: {
   withIdentity?: boolean;
   /** Ask, with a choice to save, before anybody leaves the page with changes not saved. */
@@ -52,10 +56,11 @@ export function WordsForm({ withIdentity = false, askBeforeLeaving: guarded = fa
   onSaved: () => void;
   onEdited?: () => void;
 }) {
-  const [review, setReview] = useState<Review | null>(null);
-  const [config, setConfig] = useState<Config | null>(null);
-  const [name, setName] = useState("");
-  const [links, setLinks] = useState<string[]>([]);
+  // What was read last time at once (`kept.ts`), then what is read now, unless they have started editing.
+  const { data: review, reload } = useKept<Review>(REVIEW);
+  const [config, setConfig] = useState<Config | null>(() => (review?.config as Config | undefined) ?? null);
+  const [name, setName] = useState(() => review?.identity.full_name ?? "");
+  const [links, setLinks] = useState<string[]>(() => review?.identity.links.map((link) => link.url) ?? []);
   // Changed since it was read or saved; and where somebody tried to go meanwhile, while it asks.
   const [dirty, setDirty] = useState(false);
   const [leaving, setLeaving] = useState<string | null>(null);
@@ -65,14 +70,13 @@ export function WordsForm({ withIdentity = false, askBeforeLeaving: guarded = fa
   }, [guarded, dirty]);
 
   useEffect(() => {
-    void api.get<Review>("/onboarding/review").then((body) => {
-      setReview(body);
-      // Theirs, or filled in from their CV until they save their own.
-      setConfig(body.config as Config);
-      setName(body.identity.full_name ?? "");
-      setLinks(body.identity.links.map((link) => link.url));
-    });
-  }, []);
+    if (!review || dirty) return;
+    // Theirs, or filled in from their CV until they save their own.
+    setConfig(review.config as Config);
+    setName(review.identity.full_name ?? "");
+    setLinks(review.identity.links.map((link) => link.url));
+    // Only a new answer resets the form, never an edit.
+  }, [review]);
 
   const store = async () => {
     if (withIdentity) {
@@ -81,6 +85,8 @@ export function WordsForm({ withIdentity = false, askBeforeLeaving: guarded = fa
     await api.put("/onboarding/config", config);
     setDirty(false);
     onSaved();
+    // What is kept for next time is what was saved.
+    void reload();
   };
   const save = useAction(store);
   const saveAndGo = useAction(async (to: string) => {

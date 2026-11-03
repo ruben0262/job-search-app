@@ -1,6 +1,7 @@
 """Direct company ATS job boards — real company postings, not aggregators."""
 from __future__ import annotations
 
+import html
 import os
 import re
 import threading
@@ -18,8 +19,6 @@ from libs.corpus.postings import strip_html
 from services.harvester.fetch import make_shared_client
 from services.harvester.sources.base import JobLink
 
-_UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                     "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"}
 _TIMEOUT = 15
 # Lever answers a board it has not served lately slowly, whatever its size, and fast after: Palantir
 # took 40.9 s, Pigment 25.7 s, Spotify 22 s for its first 50 jobs then 3 s for all 86 (2026-11-02).
@@ -43,7 +42,7 @@ def _http() -> httpx.Client:
         with _CLIENT_LOCK:
             if _CLIENT is None:
                 _CLIENT = make_shared_client(
-                    headers=_UA, timeout=_TIMEOUT, follow_redirects=True,
+                    timeout=_TIMEOUT, follow_redirects=True,
                     limits=httpx.Limits(max_connections=60, max_keepalive_connections=30))
     return _CLIENT
 
@@ -205,7 +204,9 @@ def fetch_ashby(token: str, etag: str | None = None) -> tuple[list[JobLink] | No
         out.append(JobLink(url=url, title=(j.get("title") or "").strip(),
                            company="", location=loc, source="ashby",
                            date_posted=j.get("publishedAt"),
-                           snippet=(j.get("descriptionPlain") or j.get("title") or ""),
+                           # The HTML, whose lists are lists: the plain text makes each item a paragraph.
+                           snippet=(strip_html(j.get("descriptionHtml") or "") or j.get("descriptionPlain")
+                                    or j.get("title") or ""),
                            is_remote=(True if (j.get("isRemote") or "remote" in loc.lower()) else None)))
     return out, new_etag
 
@@ -224,9 +225,19 @@ def fetch_lever(token: str, etag: str | None = None) -> tuple[list[JobLink] | No
         out.append(JobLink(url=url, title=(j.get("text") or "").strip(),
                            company="", location=loc, source="lever",
                            date_posted=epoch_to_iso(j.get("createdAt")),
-                           snippet=(j.get("descriptionPlain") or j.get("text") or ""),
+                           snippet=_lever_text(j) or j.get("text") or "",
                            is_remote=(True if "remote" in loc.lower() else None)))
     return out, new_etag
+
+
+def _lever_text(posting: dict) -> str:
+    """A Lever posting whole: its opening, each of its lists under its heading (what you will do, what
+    you bring), and its closing. `descriptionPlain` is the opening alone, which is all that was kept
+    until 2026-11-03."""
+    lists = "".join(f"<h4>{html.escape(each.get('text') or '')}</h4><ul>{each.get('content') or ''}</ul>"
+                    for each in posting.get("lists") or [])
+    return strip_html(f"<div>{posting.get('description') or ''}</div>{lists}"
+                      f"<div>{posting.get('additional') or ''}</div>")
 
 
 def fetch_smartrecruiters(token: str, etag: str | None = None) -> tuple[list[JobLink] | None, str | None]:
