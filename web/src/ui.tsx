@@ -154,6 +154,7 @@ export function Words({ tone, label, hint, values, onChange, suggested = [], sug
   warnLong?: boolean;
 }) {
   const [draft, setDraft] = useState("");
+  const box = useRef<HTMLInputElement>(null);
   // Case-insensitive: "Nurse" and "nurse" are the same word to the matcher.
   const has = (word: string) => values.some((each) => each.toLowerCase() === word.toLowerCase());
   const add = (word: string) => {
@@ -199,6 +200,7 @@ export function Words({ tone, label, hint, values, onChange, suggested = [], sug
       ) : null}
       <div className="row add-word">
         <input
+          ref={box}
           value={draft}
           aria-label={`Add to: ${label}`}
           placeholder={placeholder}
@@ -210,8 +212,11 @@ export function Words({ tone, label, hint, values, onChange, suggested = [], sug
             }
           }}
         />
-        <button type="button" className="secondary" disabled={!draft.trim()} onClick={() => add(draft)}>
-          Add
+        {/* Never greyed out: a button that looks dead does not say "you can add your own". Empty, it
+            puts the cursor in the box. */}
+        <button type="button" className={`add ${tone}`}
+                onClick={() => (draft.trim() ? add(draft) : box.current?.focus())}>
+          + Add
         </button>
       </div>
     </div>

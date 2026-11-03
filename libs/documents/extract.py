@@ -100,23 +100,75 @@ def _pdf(data: bytes) -> str:
             raise UnsupportedDocument(
                 "this PDF is password-protected — save an unprotected copy and upload that") from exc
 
-    return "\n".join(page.extract_text() or "" for page in reader.pages)
+    text = "\n".join(page.extract_text() or "" for page in reader.pages)
+    # A link behind a word ("LinkedIn", "Portfolio") is an annotation: its address is not in the text.
+    targets = [action["/URI"] for page in reader.pages for annotation in page.get("/Annots") or []
+               if isinstance(action := annotation.get_object().get("/A"), dict) and "/URI" in action]
+    return _with_links(text, targets)
 
 
 def _docx(data: bytes) -> str:
+    """Everything a reader sees, top to bottom. A CV template puts the name and contact details in the
+    page header, a layout table or a text box, and the links behind words: reading only the body's
+    paragraphs, and its tables after them, found no name in two of four Word layouts (2026-11-03)."""
     import io  # noqa: PLC0415
 
     import docx  # noqa: PLC0415
+    from docx.opc.constants import RELATIONSHIP_TYPE  # noqa: PLC0415
 
     document = docx.Document(io.BytesIO(data))
-    parts = [paragraph.text for paragraph in document.paragraphs]
-    # Tables carry real content in a CV, and reading only paragraphs silently drops them.
-    for table in document.tables:
-        for row in table.rows:
-            cells = [cell.text.strip() for cell in row.cells if cell.text.strip()]
-            if cells:
-                parts.append(" | ".join(cells))
-    return "\n".join(parts)
+    section = document.sections[0]
+    parts = [section.first_page_header] if section.different_first_page_header_footer else []
+    parts += [section.header, section.footer]
+    lines = [line for part in [*parts, document] for line in _blocks(part)]
+    targets = [rel.target_ref for part in [*parts, document] for rel in part.part.rels.values()
+               if rel.reltype == RELATIONSHIP_TYPE.HYPERLINK and rel.is_external]
+    return _with_links("\n".join(lines), targets)
+
+
+# Word's text boxes come twice, once for new Word and once as a fallback for old: the fallback is skipped.
+_FALLBACK = "{http://schemas.openxmlformats.org/markup-compatibility/2006}Fallback"
+
+
+def _blocks(container) -> list[str]:
+    """A header, footer or body's lines in the order they are laid out, text boxes included."""
+    from docx.oxml.ns import qn  # noqa: PLC0415
+    from docx.table import Table  # noqa: PLC0415
+    from docx.text.paragraph import Paragraph  # noqa: PLC0415
+
+    out: list[str] = []
+    for block in container.iter_inner_content():
+        if isinstance(block, Table):
+            out += _table(block)
+            continue
+        for box in block._p.iter(qn("w:txbxContent")):
+            if not any(ancestor.tag == _FALLBACK for ancestor in box.iterancestors()):
+                out += [Paragraph(each, block).text for each in box.iter(qn("w:p"))]
+        out.append(block.text)
+    return out
+
+
+def _table(table) -> list[str]:
+    """A row of short cells is one line, "Python | 5 years". A layout table, a cell of several lines
+    each (a name over a title, an address over a phone number), is read a cell at a time."""
+    out: list[str] = []
+    for row in table.rows:
+        # A merged cell is listed once per column it spans.
+        cells = list({id(cell._tc): cell for cell in row.cells}.values())
+        texts = [cell.text.strip() for cell in cells if cell.text.strip()]
+        out += [line for text in texts for line in text.splitlines()] if any(
+            "\n" in text for text in texts) else ([" | ".join(texts)] if texts else [])
+    return out
+
+
+def _with_links(text: str, targets: list[str]) -> str:
+    """The text, with the addresses behind its links that it does not already show on a line first."""
+    shown = text.casefold()
+    extra = list(dict.fromkeys(
+        target.removeprefix("mailto:").strip() for target in targets
+        if isinstance(target, str) and target.startswith(("http://", "https://", "mailto:"))
+        and target.removeprefix("mailto:").strip().casefold() not in shown))
+    return "\n".join([" · ".join(extra), text]) if extra else text
 
 
 def _normalise(text: str) -> str:

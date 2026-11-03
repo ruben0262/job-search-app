@@ -260,7 +260,7 @@ def read_cv(text: str) -> CV:
     if not any(_name_like(line) for line, _ in header):
         for _, kind, body in sections:
             at = next((index for index, (line, _) in enumerate(body)
-                       if kind not in ("experience", "education") and _name_like(line)
+                       if kind not in ("experience", "education") and _name_like(line, places=True)
                        and _agrees(line, local)), None)
             if at is not None:
                 header[:0] = body[at:]
@@ -398,7 +398,7 @@ def read(documents: Mapping[str, str | Sequence[str]], *, today: date | None = N
     zone = [line for line, kind in flat if kind in ("header", "contact")]
     email = _email(list(cv.header), [(section.kind, list(section.lines)) for section in cv.sections])
     local = fold((email or "@").split("@")[0])
-    names = [line for line in cv.header if _name_like(line)]
+    names = _names(cv)
     prose = texts(documents, "cover_letter", "history")
     prose_lines = [line for text in prose for line in text.splitlines()]
 
@@ -412,8 +412,10 @@ def read(documents: Mapping[str, str | Sequence[str]], *, today: date | None = N
               for found in _STATED_YEARS.findall(text) if int(found) <= 50]
 
     return Facts(
-        name=_title_case(next((line for line in names if _agrees(line, local)), names[0]))
-        if names else None,
+        # The one their email agrees with; else the first that is not also a place ("Lima" is both).
+        name=_title_case(next((line for line in names if _agrees(line, local)),
+                              next((line for line in names if not _is_place(_name_part(line))), "")))
+        or None,
         email=(email or _first(EMAIL, prose_lines) or "").lower() or None,
         phone=_phone(zone) or _phone([line for line, _ in flat if _PHONE_LABEL.search(line)])
         or _phone([line for line in prose_lines if _PHONE_LABEL.search(line)]),
@@ -465,14 +467,37 @@ def _name_part(line: str) -> str:
     return re.split(rf"\s+[{_DASH}|·•]\s+|,\s*|\s*\|\s*", line)[0].strip()
 
 
-def _name_like(line: str) -> bool:
+def _names(cv: CV) -> list[str]:
+    """The header's name-shaped lines, in order, each place-shaped one included for `read` to weigh.
+
+    Also a name set in big letters over two lines, a word each ("JORDAN" / "PETERSON"), and a name
+    on the line of the job title beside it ("Florence Adeyemi Mechanical Design Engineer"): cut where
+    every word left is one the CV's own sections use, which a surname seldom is.
+    """
+    body = words(" ".join(line for section in cv.sections for line in section.lines))
+    header = list(cv.header)
+    found: list[str] = []
+    for at, line in enumerate(header):
+        following = header[at + 1] if at + 1 < len(header) else ""
+        if len(line.split()) == 1 and len(following.split()) == 1:
+            found.append(f"{line} {following}")
+        found.append(line)
+        tokens = _name_part(line).split()
+        if _has_title_word(line):
+            found += [" ".join(tokens[:cut]) for cut in range(2, min(len(tokens), 5))
+                      if words(" ".join(tokens[cut:])) <= body][:1]
+    return [each for each in found if _name_like(each, places=True)]
+
+
+def _name_like(line: str, *, places: bool = False) -> bool:
+    """Shaped like a name. `places` lets one that is also a place through: "Sofia Lima" is both."""
     part = _name_part(line)
     tokens = part.split()
     big = [token for token in tokens if token.casefold() not in _SMALL]
     return (2 <= len(tokens) <= 5 and 2 <= len(big) <= 4
             and all(token[0].isupper() and re.fullmatch(r"[^\W\d_]+(?:['’.-][^\W\d_]*)*", token)  # noqa: RUF001
                     for token in big)
-            and not _has_title_word(part) and heading_kind(part) is None and not _is_place(part)
+            and not _has_title_word(part) and heading_kind(part) is None and (places or not _is_place(part))
             and fold(part) not in ("curriculum vitae", "resume", "résumé"))
 
 

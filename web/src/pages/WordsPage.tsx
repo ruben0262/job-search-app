@@ -34,11 +34,11 @@ export function IdentityFields({ name, links, onName, onLinks }: {
 }) {
   return (
     <>
-      <Field label="Your name" hint="Exactly as it should appear at the top of your CV.">
+      <Field label="Your name">
         <input value={name} autoComplete="name" onChange={(event) => onName(event.target.value)} />
       </Field>
       <Words tone="plain" label="Your links" chipClass="link-chip"
-             hint="Shown under your name on every CV we make, so an employer can look you up. Add your LinkedIn, GitHub or a portfolio, or leave this empty."
+             hint="LinkedIn, GitHub or a portfolio. Optional."
              placeholder="linkedin.com/in/you" values={links} onChange={onLinks}
              display={(url) => url.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")} />
     </>
@@ -122,23 +122,21 @@ export function WordsForm({ withIdentity = false, askBeforeLeaving: guarded = fa
       {withIdentity ? (
         <section className="form-section">
           <h2>About you</h2>
-          <p className="section-lede">This goes at the top of every CV and cover letter we make for you.</p>
+          <p className="section-lede">On top of every CV we make.</p>
           <IdentityFields name={name} links={links} onName={setName} onLinks={setLinks} />
         </section>
       ) : null}
 
       <section className="form-section">
         <h2>The jobs you want</h2>
-        <p className="section-lede">
-          Green words find jobs: a job shows up when one of them is in it. Red words hide a job.
-        </p>
+        <p className="section-lede">Green words find jobs. Red words hide them.</p>
         <Words tone="green" label="Show me jobs with these words" warnLong
-               hint="One or two words work best, like “python” or “nurse”: a job title you would apply for, or a skill. A job needs at least one to be shown."
+               hint="One or two words, like “nurse” or “python”." placeholder="Add a job title or skill"
                values={section.keywords} suggested={suggestions.green}
                suggestedTitle="Suggested from your CV — tap one to add it"
                onChange={(keywords) => patch({ keywords })} />
         <Words tone="red" label="Hide jobs with these words" warnLong
-               hint="One or two words work best. A job with one of these in its title or company is never shown."
+               hint="Like “senior” or “sales”. Optional." placeholder="Add a word to hide"
                values={section.exclude_keywords ?? []} suggested={suggestions.red}
                suggestedTitle="Suggested — tap one to hide those jobs"
                onChange={(exclude_keywords) => patch({ exclude_keywords })} />
@@ -146,7 +144,7 @@ export function WordsForm({ withIdentity = false, askBeforeLeaving: guarded = fa
 
       <section className="form-section">
         <h2>Where and how you work</h2>
-        <p className="section-lede">Leave a list empty and it does not narrow anything.</p>
+        <p className="section-lede">Pick none to see all.</p>
 
         <Countries options={choices.locations} picked={places} full={full}
                    onChange={(locations) => patch({ locations })} />
@@ -154,7 +152,6 @@ export function WordsForm({ withIdentity = false, askBeforeLeaving: guarded = fa
 
         <fieldset className="picker">
           <legend>Which languages can you work in?</legend>
-          <p className="picker-hint">A job written in another language is not shown. Pick nothing to see all.</p>
           <div className="picker-grid">
             {choices.languages.map((language) => {
               const value = language.value as NonNullable<Config["languages"]>[number];
@@ -172,7 +169,6 @@ export function WordsForm({ withIdentity = false, askBeforeLeaving: guarded = fa
 
         <fieldset className="picker">
           <legend>How do you want to work?</legend>
-          <p className="picker-hint">Switch on every way that suits you. Switch none on to see all.</p>
           <div className="picker-grid">
             {choices.workplaces.map((way) => {
               const value = way.value as NonNullable<Section["workplaces"]>[number];
@@ -238,7 +234,6 @@ function Countries({ options, picked, full, onChange }: {
   return (
     <fieldset className="picker">
       <legend>Which countries?</legend>
-      <p className="picker-hint">Tap a country to see its jobs. Pick none, and no country is left out.</p>
       <div className="toggles">
         {shown.map((option) => (
           <button key={option.value} type="button" className="toggle" aria-pressed={on(option)}

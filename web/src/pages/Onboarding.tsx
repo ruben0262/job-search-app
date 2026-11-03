@@ -9,6 +9,9 @@ import { Error, useAction } from "../ui";
 import { AboutYou, Files, useDocuments } from "./DocumentsPage";
 import { WordsForm } from "./WordsPage";
 
+/** The three steps, as the bar over each screen names them. */
+const STEPS = [["documents", "Your CV"], ["review", "Your search"], ["done", "Done"]] as const;
+
 export function Onboarding({ state, onChanged }: {
   state: Schema<"OnboardingSteps">;
   onChanged: () => void;
@@ -29,6 +32,7 @@ export function Onboarding({ state, onChanged }: {
   };
   // The server's rule for "this screen is done", not a second one made up here.
   const hasCv = state.pages.find((page) => page.key === "documents")?.complete ?? false;
+  const at = Math.max(0, STEPS.findIndex(([key]) => key === current));
 
   return (
     <>
@@ -40,15 +44,23 @@ export function Onboarding({ state, onChanged }: {
         </nav>
 
         <div className="step page-in" key={current}>
-          <p className="kicker">Step {current === "documents" ? 1 : current === "review" ? 2 : 3} of 3</p>
+          {/* Said on every screen: this is setting up their profile, and their jobs come after it. */}
+          <p className="kicker">Set up your profile</p>
+          <ol className="setup-steps" aria-label="Set up your profile">
+            {STEPS.map(([key, label], index) => (
+              <li key={key} className={index < at ? "done" : index === at ? "now" : ""}
+                  aria-current={index === at ? "step" : undefined}>
+                {label}
+              </li>
+            ))}
+          </ol>
           {current === "documents" ? (
             <>
               <h1>Your CV</h1>
-              <p className="lede">We read it and fill in the next screen for you.</p>
+              <p className="lede">We read it and fill in your profile. Then you see your jobs.</p>
               <Files kind="cv" list={list} onChanged={changed} />
               <details className="fold-plain">
                 <summary>Add more (optional)</summary>
-                <p className="small muted">A cover letter you wrote, so yours sound like you.</p>
                 <Files kind="cover_letter" list={list} onChanged={changed} />
                 <AboutYou onSaved={changed} />
               </details>
@@ -62,7 +74,7 @@ export function Onboarding({ state, onChanged }: {
                 ← Your CV
               </button>
               <h1>What we found</h1>
-              <p className="lede">We filled this in from your CV. Change anything that is wrong.</p>
+              <p className="lede">Read from your CV. Fix anything wrong.</p>
               <WordsForm withIdentity action="Looks good" onSaved={() => {
                 setViewing(null);
                 onChanged();
@@ -81,10 +93,7 @@ export function Onboarding({ state, onChanged }: {
               </button>
               <section className="optional">
                 <h2>Get alerts</h2>
-                <p className="small muted">
-                  Optional. Turn one on, and from now on new jobs that match your search reach you:
-                  in Telegram, in this browser, or in one email each morning.
-                </p>
+                <p className="small muted">Optional. New jobs by Telegram, in this browser, or by email.</p>
                 <Alerts />
               </section>
             </>

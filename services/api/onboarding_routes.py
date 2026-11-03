@@ -32,6 +32,10 @@ from services.api.deps import current_user, get_db, rate_limit
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/onboarding", tags=["onboarding"])
 
+# How many green words a new search starts with, from their CV: one alone did not read as a list
+# anybody could add to (owner, 2026-11-03).
+PREFILLED_GREEN = 2
+
 # What each way of working is called on the page. Job sites' own names for them are
 # `libs.corpus.workfilter.NAMES`.
 _WORKPLACES = {"remote": ("Remote", "From home, every day"),
@@ -245,13 +249,14 @@ def _identity(user: User, facts: Facts) -> dict:
 
 
 def _prefill(facts: Facts, found: dict) -> dict:
-    """A search filled in from their documents, for them to correct before saving: their latest job
-    title as the green word, the red words suggested, and the places and languages their CV names.
+    """A search filled in from their documents, for them to correct before saving: two green words
+    from their CV (their latest job title first), so the list is plainly theirs to change; the red
+    words suggested; and the places and languages their CV names.
 
     Built with the schema's own defaults, not a copy of them; validated when they save it.
     """
     section = SearchSection.model_construct(
-        keywords=[each["term"] for each in found.get("green", [])[:1]],
+        keywords=[each["term"] for each in found.get("green", [])[:PREFILLED_GREEN]],
         exclude_keywords=[each["term"] for each in found.get("red", [])],
         locations=list(facts.places)[:MAX_LOCATIONS_PER_USER])
     return UserConfigSchema.model_construct(

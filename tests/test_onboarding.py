@@ -2,7 +2,9 @@
 # ruff: noqa: RUF001 - CVs are written with en dashes, and the fixtures are written like CVs
 from __future__ import annotations
 
+import json
 import os
+import pathlib
 import uuid
 
 import pytest
@@ -319,3 +321,50 @@ def test_saving_your_search_settings_marks_the_profile_files_as_behind(api):
     http.put("/onboarding/config", json=CONFIG)
 
     assert get(db, User, user.id).hard_data_changed_at is not None
+
+
+CVS = pathlib.Path(__file__).parent / "fixtures" / "cvs"
+
+
+@needs_db
+@pytest.mark.parametrize("filename", sorted(json.loads((CVS / "expected.json").read_text(encoding="utf-8"))))
+def test_a_cv_in_any_common_layout_fills_in_the_name_and_links(api, filename):
+    """Word templates put the name in the page header, a layout table or a text box, and links behind
+    the word "LinkedIn"; designed PDFs set the name over two lines, letter-spaced, beside the job title
+    or under a sidebar. Uploaded in onboarding, every one fills in "What we found": in nine such
+    files, three did before (2026-11-03). `make.py` beside them says how each was built."""
+    expected = json.loads((CVS / "expected.json").read_text(encoding="utf-8"))[filename]
+    http, _, _ = api
+    uploaded = http.post("/documents", data={"kind": "cv"},
+                         files={"file": (filename, (CVS / filename).read_bytes())})
+    assert uploaded.status_code == 201, uploaded.text
+
+    review = http.get("/onboarding/review").json()
+    assert review["identity"]["full_name"] == expected["name"]
+    assert [link["url"] for link in review["identity"]["links"]] == [
+        url if "://" in url else f"https://{url}" for url in expected["links"]]
+    assert (review["found"]["email"], review["found"]["phone"]) == (expected["email"], expected["phone"])
+    offered = {each["term"] for each in review["suggestions"]["green"]}
+    assert {"design engineer", "mechanical engineer"} <= offered, "its job titles, whatever the file"
+
+
+@needs_db
+@pytest.mark.parametrize("filename", ["letter.docx", "letter.pdf"])
+def test_a_cover_letter_alone_suggests_the_job_titles_it_names_that_boards_use(api, filename):
+    """A letter has no dated jobs or skills list: the roles are in its sentences. Each title boards
+    here use (three postings or more) is offered; one too rare to search for is not."""
+    from libs.db import insert
+    from libs.db.models import CorpusJob
+
+    http, db, _ = api
+    boards = ["Product Designer", "Senior UX Designer", "Graphic Designer (m/w/d)"] * 3
+    for title in [*boards, "Studio Manager"]:
+        insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test", title=title))
+    uploaded = http.post("/documents", data={"kind": "cover_letter"},
+                         files={"file": (filename, (CVS / filename).read_bytes())})
+    assert uploaded.status_code == 201, uploaded.text
+
+    green = [each["term"] for each in http.get("/suggestions").json()["green"]]
+    expected = json.loads((CVS / "letters.json").read_text(encoding="utf-8"))[filename]["titles"]
+    assert set(expected) <= set(green), green
+    assert "studio manager" not in green

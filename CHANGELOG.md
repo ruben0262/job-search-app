@@ -14,6 +14,48 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-03 — Names, links and words read from any CV or cover letter; onboarding says it is setup
+
+**People uploaded CVs and onboarding filled in nothing** (owner). Measured on nine sample files built
+the way people's tools build them (`tests/fixtures/cvs/make.py`): **3 of 9** gave the right name,
+email, phone and links before this change; **9 of 9** now.
+- **Word** (`extract.py`): the page header and footer, text boxes, and layout tables are now read in
+  the order they appear; before, tables were read after all paragraphs. A text box Word stores twice
+  is read once. The addresses behind linked words ("LinkedIn") are read too.
+- **PDF**: the addresses behind linked words, from the link annotations.
+- **The reader** (`read.py`) now also finds:
+  - a name set over two lines, one word each ("JORDAN" / "PETERSON");
+  - a name on the job title's line, cut where the rest are words the CV's own sections use;
+  - a name that is also a place (Sofia Lima, Jordan Peterson), but only when the email agrees.
+- **Already-uploaded files are not re-read.** The files themselves are never kept, only their text, so
+  an account whose name was missed needs to upload its CV again.
+
+**Suggested words from any upload** (owner). Every sample CV, Word or PDF, now gives its job titles as
+suggestions. A cover letter alone gave none: it has no dated jobs and no skills list. Now job titles
+that boards here use (three postings or more) are found in the person's own text and offered
+(`_written`, up to 3), so a letter naming "the Product Designer role" offers "product designer".
+
+**Not built: reading a CV with AI as a fallback** (the owner suggested Gemini). Three reasons:
+- Rules now read all nine layouts.
+- CLAUDE.md §0 keeps CV reading to code.
+- A CV would go to a third party before the person has agreed to AI use, and it would mean a new prompt.
+
+It can be added behind consent if a layout turns up that rules cannot read.
+
+**Onboarding says it is setup** (owner):
+- A "Set up your profile" bar over each step: Your CV, Your search, Done.
+- A new search starts with **two** green words from the CV (`PREFILLED_GREEN`), so the list reads as
+  filters to add to.
+- Each word list has a coloured **+ Add** button that is never greyed out; empty, it puts the cursor
+  in the box.
+- Hints cut to a few words each.
+
+Tests: each sample uploaded through the real routes fills in "What we found" and offers its titles; a
+Word and a PDF cover letter each offer the titles boards use, and not one too rare to search for (8 of
+these 11 fail on the previous commit); the browser test walks the setup bar, the two words and "+ Add".
+
+Gates: lint-imports 2 kept; ruff clean; schema ok; contract current; build ✓; **1,309 passed, 3 skipped**.
+
 ## 2026-11-03 — The sign-up link reached nothing; every deploy now opens it
 
 **Nobody could verify a sign-up** (owner): the emailed link said "This site can't be reached". It is

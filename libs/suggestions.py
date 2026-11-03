@@ -28,8 +28,9 @@ from libs.tenant.repository import TenantRepository
 
 logger = logging.getLogger(__name__)
 
-# How many of each are offered at once: titles held, skills, and words their matches drag in.
-HELD_TITLES, SKILLS_OFFERED, DRIFT_WORDS = 3, 5, 5
+# How many of each are offered at once: titles held, skills, job titles their own words use, and
+# words their matches drag in.
+HELD_TITLES, SKILLS_OFFERED, WRITTEN_TITLES, DRIFT_WORDS = 3, 5, 3, 5
 # Under FEW_YEARS of experience senior roles are a long shot; from MANY_YEARS junior ones are behind them.
 FEW_YEARS, MANY_YEARS = 3, 5
 # How many of their matches a word must turn up in before it "keeps appearing".
@@ -78,7 +79,8 @@ def compute(facts: Facts, *, config: dict | None, titles: list[str], matched: li
                 out.append({"term": term, "reason": reason})
         return out
 
-    green = take(_held(facts), HELD_TITLES) + take(_named(facts, titles), SKILLS_OFFERED)
+    green = (take(_held(facts), HELD_TITLES) + take(_named(facts, titles), SKILLS_OFFERED)
+             + take(_written(text, titles), WRITTEN_TITLES))
     greens = have_green | {each["term"] for each in green}
     red = (take(_seniority(facts, greens)) + take(_PAY.items())
            + take(_dragged_in(matched, text, greens), DRIFT_WORDS))
@@ -107,6 +109,21 @@ def _named(facts: Facts, titles: list[str]) -> list[tuple[str, str]]:
             example.setdefault(word, title)
     return [(word, f"One of your skills, and in {count} job title{'' if count == 1 else 's'} here, "
                    f"like “{example[word]}”") for word, count in named.most_common()]
+
+
+def _written(text: str, titles: list[str]) -> list[tuple[str, str]]:
+    """Job titles boards here use, found in their own words: "the Mechanical Design Engineer role" in a
+    cover letter, which has no dated jobs or skills list to read titles off. A title counts once at
+    least `DRIFT_MIN` postings here use it, the most used first."""
+    used = Counter(term for title in titles
+                   if 1 <= len((term := norm(_plain_title(title))).split()) <= MAX_WORDS
+                   and term not in _NOT_THE_WORK)
+    common = [term for term, count in used.items() if count >= DRIFT_MIN]
+    # Longest first, so "design engineer" is found where "engineer" also would be.
+    regex = pattern(sorted(common, key=len, reverse=True))
+    mine = found(regex, text) if regex else set()
+    return [(term, f"In your documents, and in {used[term]} job titles here")
+            for term in sorted(mine, key=lambda term: -used[term])]
 
 
 def _seniority(facts: Facts, greens: set[str]) -> list[tuple[str, str]]:

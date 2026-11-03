@@ -1,0 +1,64 @@
+{
+  "word-header.docx": {
+    "name": "Priya Raman",
+    "email": "priya.raman@example.com",
+    "phone": "+44 7700 900456",
+    "links": []
+  },
+  "word-table.docx": {
+    "name": "Tomás Novak",
+    "email": "tomas.novak@example.cz",
+    "phone": "+420 601 234 567",
+    "links": [
+      "linkedin.com/in/tomasnovak"
+    ]
+  },
+  "word-textbox.docx": {
+    "name": "Grace Okafor",
+    "email": "grace.okafor@example.ng",
+    "phone": "+234 803 123 4567",
+    "links": []
+  },
+  "word-hyperlinks.docx": {
+    "name": "Liam Byrne",
+    "email": "liam.byrne@example.ie",
+    "phone": null,
+    "links": [
+      "https://www.linkedin.com/in/liambyrne/",
+      "https://github.com/liambyrne"
+    ]
+  },
+  "pdf-split-name.pdf": {
+    "name": "Jordan Peterson",
+    "email": "jordan.p@example.co.uk",
+    "phone": "+44 7700 900789",
+    "links": []
+  },
+  "pdf-letter-spaced.pdf": {
+    "name": "Maria Garcia",
+    "email": "hola@mariagarcia.es",
+    "phone": "+34 612 345 678",
+    "links": []
+  },
+  "pdf-name-beside-title.pdf": {
+    "name": "Florence Adeyemi",
+    "email": "florence@adeyemi.dev",
+    "phone": "+44 7700 900321",
+    "links": []
+  },
+  "pdf-hyperlinks.pdf": {
+    "name": "Sofia Lima",
+    "email": "sofia@example.pt",
+    "phone": null,
+    "links": [
+      "https://www.linkedin.com/in/sofialima",
+      "https://sofialima.design/"
+    ]
+  },
+  "pdf-sidebar.pdf": {
+    "name": "Chen Wei",
+    "email": "chen.wei@example.com",
+    "phone": "+31 6 1234 5678",
+    "links": []
+  }
+}

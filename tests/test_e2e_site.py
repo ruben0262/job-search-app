@@ -183,9 +183,10 @@ def test_the_theme_button_is_a_circle_on_every_page_and_switches_the_theme(site,
         browser.close()
 
 
-def test_step_two_says_what_it_found_with_switches_suggestions_and_round_choices(site, capsys):
-    """The review screen: three titled parts, places and languages as switches that turn on and off,
-    suggestions that say they are suggestions, round choices for going in — and all of it saved."""
+def test_step_two_says_what_it_found_with_its_words_ready_and_a_plain_way_to_add_more(site, capsys):
+    """The review screen: said to be setting up their profile, three titled parts, two of their own
+    words already filtering, a "+ Add" that always answers, places as buttons, ways of working as
+    switches — and all of it saved."""
     from libs.db import database
     from libs.db.models import User, UserConfig
 
@@ -196,14 +197,28 @@ def test_step_two_says_what_it_found_with_switches_suggestions_and_round_choices
         _sign_up(page, base, email, capsys)
         _upload(page)
 
+        # Said to be setting up their profile, with the steps left before their jobs.
+        steps = page.get_by_role("list", name="Set up your profile")
+        expect(steps.get_by_role("listitem")).to_have_text(["Your CV", "Your search", "Done"])
+        expect(steps.locator("[aria-current=step]")).to_have_text("Your search")
         for title in ("About you", "The jobs you want", "Where and how you work"):
             expect(page.get_by_role("heading", name=title)).to_be_visible()
-        expect(page.get_by_text("Suggested from your CV — tap one to add it")).to_be_visible()
-        page.get_by_role("button", name="+ software engineer").click()
-        expect(page.locator(".word.green", has_text="software engineer")).to_be_visible()
+        # Two of their own job titles are filters already, so the list reads as one they can add to.
+        for word in ("backend engineer", "software engineer"):
+            expect(page.locator(".word.green", has_text=word)).to_be_visible()
+
+        # "+ Add" is never greyed out: empty, it puts the cursor in the box; with a word, it adds it.
+        add = page.get_by_label("Add to: Show me jobs with these words").locator("..").get_by_role(
+            "button", name="+ Add")
+        expect(add).to_be_enabled()
+        add.click()
+        expect(page.get_by_label("Add to: Show me jobs with these words")).to_be_focused()
+        page.get_by_label("Add to: Show me jobs with these words").fill("golang")
+        add.click()
+        expect(page.locator(".word.green", has_text="golang")).to_be_visible()
 
         # One or two words work best, and a long phrase is said to be one.
-        expect(page.get_by_text("One or two words work best, like “python” or “nurse”")).to_be_visible()
+        expect(page.get_by_text("One or two words, like “nurse” or “python”.")).to_be_visible()
         expect(page.get_by_text("Long phrases find fewer jobs")).to_have_count(0)
         page.get_by_label("Add to: Show me jobs with these words").fill("team coordinator and co lead")
         page.get_by_label("Add to: Show me jobs with these words").press("Enter")
@@ -232,7 +247,7 @@ def test_step_two_says_what_it_found_with_switches_suggestions_and_round_choices
     db = database()
     user = db[User.COLLECTION].find_one({"email": email})
     section = db[UserConfig.COLLECTION].find_one({"user_id": user["_id"]})["config"]["sections"][0]
-    assert "software engineer" in section["keywords"]
+    assert {"backend engineer", "software engineer", "golang"} <= set(section["keywords"])
     assert section["locations"] == ["france"], "what the buttons said is what was saved"
     assert section["workplaces"] == ["remote", "hybrid", "onsite"]
 

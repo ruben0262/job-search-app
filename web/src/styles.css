@@ -1327,6 +1327,45 @@ button.making::after {
   min-width: 0;
 }
 
+/* "+ Add" in the colour of the words it adds: plainly a button, plainly for this list. */
+.add-word .add {
+  flex: none;
+  font-weight: 600;
+  color: var(--ink);
+  border: 1px solid var(--faint);
+  background: var(--bg-raised);
+}
+.add-word .add.green {
+  border-color: color-mix(in srgb, var(--score) 70%, transparent);
+  background: color-mix(in srgb, var(--score) 22%, transparent);
+}
+.add-word .add.red {
+  border-color: color-mix(in srgb, var(--danger) 70%, transparent);
+  background: color-mix(in srgb, var(--danger) 22%, transparent);
+}
+
+/* Onboarding's three steps as a bar: where they are, what is done, what is left before their jobs. */
+.setup-steps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.4rem;
+  margin: 0.25rem 0 1.25rem;
+  padding: 0;
+  list-style: none;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.setup-steps li {
+  padding-top: 0.45rem;
+  border-top: 3px solid var(--faint);
+}
+.setup-steps li.done { border-top-color: var(--score); }
+.setup-steps li.now {
+  border-top-color: var(--ink);
+  color: var(--ink);
+  font-weight: 600;
+}
+
 /* One big target for a file: tap it, or drop the file on it. */
 .drop {
   position: relative;
