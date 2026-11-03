@@ -14,6 +14,31 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-03 (late night) — the first deploy to the new server: the sign-in broker on Python 3.12
+
+**`oauthbroker` restarted forever on the new server.**
+- Its image was `node:22-slim` with Debian's own `python3`, which is 3.11. The shared code is written
+  for 3.12 (`def insert[D: Document]`), so the broker died on import: "SyntaxError: expected '('".
+- Every other image was `python:3.12-slim`. The image check of the night before missed it, because it
+  built every service's Python as 3.12 rather than as each Dockerfile does.
+- The broker is `python:3.12-slim` now, with `node` and `npm` copied from the official Node image for
+  the Claude CLI.
+  - Checked without Docker by laying out that image's `/usr/local` from the official Node 22 tarball
+    (checksum verified): npm installs `@anthropic-ai/claude-code@2.1.220`, and `claude --version`
+    answers.
+- `test_every_image_runs_the_python_the_code_is_written_for` holds every image's final stage to
+  `pyproject.toml`'s target. It fails on the old Dockerfile.
+- **The same gap on the host:** the health and backup timers run from the VM's `.venv`, and Debian
+  12's Python is 3.11. `SERVER.md` says how to get 3.12 there (`uv`), and `install-units.sh` refuses
+  an older one rather than install timers that fail every run.
+
+**`deploy.sh` sent a crash to the wrong cure.** A service that is not running was told to "rebuild it
+without cache", which builds the same thing again. That advice is for a service running other code
+than this commit's. A service that is not running is now pointed at its log, shown 12 lines deep.
+
+**`sudo`**: Debian without it, and Proxmox's container templates, are covered in `SERVER.md`. Only
+installing and the timers need root. `deploy.sh` and `compose.sh` need the `docker` group.
+
 ## 2026-11-03 (night) — the tree holds what runs, settings in certificates/, the Proxmox server
 
 **What no longer runs is in `retired/`** (owner: "so we can see what we are using").

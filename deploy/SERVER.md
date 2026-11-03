@@ -47,7 +47,15 @@ storage:
 - **Network:** bridge `vmbr0`, model *VirtIO*.
 
 Install Ubuntu with the OpenSSH server, and an account for yourself (the examples say `ruben`). Give
-the VM a fixed address on your network (a DHCP reservation in the router is simplest). Then, on it:
+the VM a fixed address on your network (a DHCP reservation in the router is simplest).
+
+**`sudo`** is for the few things only root may do: installing packages and Docker, joining the
+`docker` group, the swap, and installing the timers. Ubuntu Server has it. Debian leaves it out when
+root is given a password at install, and Proxmox's container templates log in as root without it.
+There, once, as root: `apt install -y sudo && usermod -aG sudo ruben`, then log in again as `ruben`.
+`deploy.sh` and `compose.sh` never need it: they need the `docker` group, below.
+
+Then, on it:
 
 ```bash
 sudo apt update && sudo apt full-upgrade -y
@@ -99,6 +107,14 @@ cd ~/job-search-app
 
 # For the scripts that run on the VM itself: the health check, the backup, the account tools.
 python3 -m venv .venv && .venv/bin/pip install -r services/api/requirements.txt
+```
+
+That `.venv` needs **Python 3.12 or newer**, as the code is written for it: `python3 --version`.
+Ubuntu 24.04's is 3.12. Debian 12's is 3.11, and there `uv` fetches a 3.12 instead:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh && . ~/.local/bin/env
+uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -r services/api/requirements.txt
 ```
 
 ## 4. The settings: `certificates/server.env`

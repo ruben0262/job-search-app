@@ -54,3 +54,16 @@ def test_no_running_code_or_config_reads_settings_from_deploy():
     offenders = [path.relative_to(ROOT).as_posix() for path in [*code, ROOT / "pyproject.toml"]
                  if "deploy/.env" in path.read_text(encoding="utf-8")]
     assert offenders == []
+
+
+def test_every_image_runs_the_python_the_code_is_written_for():
+    """The sign-in broker's image was `node:22-slim` with Debian's own python3, which is 3.11. The code
+    is written for 3.12 (`def insert[D: Document]`), so on the first deploy to the new server it
+    crashed on import and restarted forever (2026-11-03). Every image ends on the one Python."""
+    target = re.search(r'target-version = "py3(\d+)"', (ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    python = f"python:3.{target.group(1)}-slim"
+    dockerfiles = sorted((DEPLOY / "docker").glob("Dockerfile.*"))
+    assert len(dockerfiles) >= 6, [path.name for path in dockerfiles]
+    for dockerfile in dockerfiles:
+        stages = re.findall(r"^FROM\s+(\S+)", dockerfile.read_text(encoding="utf-8"), re.MULTILINE)
+        assert stages[-1] == python, f"{dockerfile.name} runs on {stages[-1]}, not {python}"

@@ -62,6 +62,10 @@ OWNER_HOME="$(getent passwd "$OWNER" | cut -d: -f6)"
 for need in "$REPO/certificates/server.env" "$REPO/.venv/bin/python"; do
   [[ -e "$need" ]] || { echo "missing $need: see deploy/SERVER.md" >&2; exit 1; }
 done
+# The health and backup timers run the shared code from .venv, written for 3.12: on 3.11 they would
+# fail on import every run, as the sign-in broker's image did (2026-11-03).
+"$REPO/.venv/bin/python" -c 'import sys; sys.exit(sys.version_info < (3, 12))' \
+  || { echo "$REPO/.venv is $("$REPO/.venv/bin/python" --version); it needs 3.12: see deploy/SERVER.md" >&2; exit 1; }
 render() { sed -e "s#@REPO@#$REPO#g" -e "s#@USER@#$OWNER#g" -e "s#@HOME@#$OWNER_HOME#g" "$1" > "$2"; chmod 0644 "$2"; }
 
 # Prune first, so a unit being replaced by a different mechanism cannot fire once more between the

@@ -4,11 +4,21 @@
 # this image needs it at runtime rather than at build time, which is the opposite of the API image
 # (there node builds the SPA and is thrown away). Keeping that in one small service is most of the
 # reason this is a service.
-FROM node:22-slim
+#
+# **Python 3.12, as every other image; node copied in from the official image.** This was
+# `node:22-slim` with Debian's own python3, which is 3.11, and the shared libs are written for 3.12
+# (`def insert[D: Document]`): on the first deploy to the new server it crashed on import and
+# restarted forever (2026-11-03). tests/test_deploy_config.py holds every image to the one Python.
+FROM node:22-slim AS node
 
-RUN apt-get update \
- && apt-get install -y --no-install-recommends python3 python3-pip python3-venv ca-certificates \
- && rm -rf /var/lib/apt/lists/*
+FROM python:3.12-slim
+
+# node itself and npm, which is a script beside it: the CLI below is an npm package.
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+ && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
+ && node --version && npm --version
 
 # **Pinned, and the pin is load-bearing.** This service scrapes two things out of the CLI's output:
 # the authorization URL it prints, and the prompt it blocks on. Both are prose a release is free to
@@ -34,8 +44,8 @@ COPY services/oauthbroker /app/services/oauthbroker
 # sign-in were dropped: `libs.obs` warns that the directory is unwritable and carries on to the
 # console, so the service looked healthy while the one record of who connected what went nowhere.
 #
-# Set by `deploy/compose.sh` to the uid that owns the checkout. `--non-unique`, because this base image
-# already has `node` at 1000, which is also the first account on a fresh server.
+# Set by `deploy/compose.sh` to the uid that owns the checkout. `--non-unique`, so it may share a uid
+# with an account the base image already has.
 ARG BROKER_UID=1001
 RUN useradd --non-unique --create-home --uid ${BROKER_UID} broker && chown -R broker /app /home/broker
 USER broker

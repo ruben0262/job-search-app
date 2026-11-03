@@ -97,7 +97,8 @@ for f in sorted(pathlib.Path('libs').rglob('*.py')):
 print(h.hexdigest()[:12])")
 echo "libs $EXPECTED"
 
-failed=0
+# `down`: a service that is not running. `stale`: one running other code than this commit's.
+failed=0 down=0 stale=0
 for service in $SERVICES; do
   # **Running, before anything else.** A container that is restart-looping still has the right
   # files on disk, so the hash below would have called `oauthbroker` correct while it crashed on
@@ -112,7 +113,7 @@ for service in $SERVICES; do
     else
       printf '  %-12s [31mrunning %s, expected %s[0m
 ' "$service" "$running" "$COMMIT"
-      failed=1
+      failed=1 stale=1
     fi
     continue
   fi
@@ -120,8 +121,8 @@ for service in $SERVICES; do
   state=$($COMPOSE ps "$service" --format '{{.State}}' 2>/dev/null | head -1)
   if [ "$state" != "running" ]; then
     printf '  %-12s \033[31mnot running (%s)\033[0m\n' "$service" "${state:-absent}"
-    $COMPOSE logs --tail 5 "$service" 2>&1 | sed 's/^/      /'
-    failed=1
+    $COMPOSE logs --tail 12 "$service" 2>&1 | sed 's/^/      /'
+    failed=1 down=1
     continue
   fi
   running=$($COMPOSE exec -T "$service" python -c "$HASH" 2>/dev/null | tr -d '
@@ -131,7 +132,7 @@ for service in $SERVICES; do
     printf '  %-12s %s\n' "$service" "ok"
   else
     printf '  %-12s \033[31mrunning %s, expected %s\033[0m\n' "$service" "$running" "$COMMIT"
-    failed=1
+    failed=1 stale=1
   fi
 done
 
@@ -141,13 +142,19 @@ if [ "$tunnel" = "running" ]; then
 else
   printf '  %-12s \033[31mnot running (%s)\033[0m: is TUNNEL_TOKEN set in certificates/server.env?\n' \
     "cloudflared" "${tunnel:-absent}"
-  failed=1
+  failed=1 down=1
 fi
 
 if [ "$failed" -ne 0 ]; then
   echo
-  echo "A service is not running the commit you deployed. Rebuild it without cache:"
-  echo "  $COMPOSE build --no-cache <service> && $COMPOSE up -d --force-recreate <service>"
+  # Not running is its own code failing, said in the log lines above; a rebuild would build the same.
+  if [ "$down" -ne 0 ]; then
+    echo "A service is not running: why is in its log above (the rest: $COMPOSE logs <service>)."
+  fi
+  if [ "$stale" -ne 0 ]; then
+    echo "A service is not running the commit you deployed. Rebuild it without cache:"
+    echo "  $COMPOSE build --no-cache <service> && $COMPOSE up -d --force-recreate <service>"
+  fi
   exit 1
 fi
 
