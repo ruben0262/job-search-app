@@ -33,8 +33,11 @@ COPY services/oauthbroker /app/services/oauthbroker
 # **The uid matches the host account that owns ../logs.** At 10001 the audit lines for every
 # sign-in were dropped: `libs.obs` warns that the directory is unwritable and carries on to the
 # console, so the service looked healthy while the one record of who connected what went nowhere.
+#
+# Set by `deploy/compose.sh` to the uid that owns the checkout. `--non-unique`, because this base image
+# already has `node` at 1000, which is also the first account on a fresh server.
 ARG BROKER_UID=1001
-RUN useradd --create-home --uid ${BROKER_UID} broker && chown -R broker /app /home/broker
+RUN useradd --non-unique --create-home --uid ${BROKER_UID} broker && chown -R broker /app /home/broker
 USER broker
 ENV HOME=/home/broker
 

@@ -8,10 +8,12 @@ Description=job-search-app shared harvest cycle (one-shot)
 After=docker.service
 Requires=docker.service
 
+# @REPO@ is filled in by deploy/install-units.sh: the checkout it is run from.
 [Service]
 Type=oneshot
-WorkingDirectory=/home/ruben/job-search-app
-# --no-deps so a harvest run never starts or restarts another service underneath itself.
-ExecStart=/usr/bin/docker compose -f deploy/compose.yml run --rm --no-deps harvester
+WorkingDirectory=@REPO@
+# --no-deps so a harvest run never starts or restarts another service underneath itself. Through the
+# wrapper, so it reads certificates/server.env like every other compose command.
+ExecStart=@REPO@/deploy/compose.sh run --rm --no-deps harvester
 # A cycle that overruns its own interval is a problem worth surfacing rather than letting it stack.
 TimeoutStartSec=14min

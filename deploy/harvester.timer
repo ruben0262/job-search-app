@@ -1,8 +1,4 @@
-# Shared harvest, every 15 minutes. Install alongside harvester.service:
-#
-#   sudo cp deploy/harvester.{service,timer} /etc/systemd/system/
-#   sudo systemctl daemon-reload && sudo systemctl enable --now harvester.timer
-#   systemctl list-timers harvester.timer
+# Shared harvest, every 15 minutes. Installed with harvester.service by deploy/install-units.sh.
 #
 # A timer rather than a daemon with a sleep: a crashed one-shot is a run that did not happen, and
 # the next tick starts clean. A long-lived loop that dies stops harvesting silently.

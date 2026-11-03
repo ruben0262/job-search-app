@@ -19,7 +19,7 @@ for need in .venv/bin/uvicorn web/node_modules "$MONGOD"; do
   [ -e "$need" ] || { echo "missing $need — see the README, \"Run it on your computer\"" >&2; exit 1; }
 done
 
-# Keys for this computer only, made once. The server's are in deploy/.env and never come here.
+# Keys for this computer only, made once. The server's are its own certificates/server.env.
 if [ ! -e certificates/dev.env ]; then
   mkdir -p certificates
   (umask 077; .venv/bin/python - > certificates/dev.env <<EOF

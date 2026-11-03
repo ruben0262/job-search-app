@@ -14,6 +14,72 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-03 (night) — the tree holds what runs, settings in certificates/, the Proxmox server
+
+**What no longer runs is in `retired/`** (owner: "so we can see what we are using").
+- Found by walking the imports from every entry point (the five services, the schema tool, every
+  deploy and dev script). 23 tracked modules in `libs/` and `services/` were reached by none, or by
+  tests only:
+  - the embedder service, with its compose file and Dockerfile;
+  - `libs/contracts/embedder.py`, `libs/corpus/embedtext.py` with its five tests;
+  - `libs/contracts/profile.py`, which only a docgen test still built, for a name;
+  - `port_from_reference.py`, the one-time adapter port.
+- Moved with `git mv`, so each file's history follows it. `retired/README.md` says what each was and
+  why it stopped. Nothing there is imported, built, linted or tested.
+- Not `archive/`: that folder is where retention writes old postings on the server (`ARCHIVE_DIR`).
+- Nine folders in `libs/` and `services/` held nothing but bytecode of modules deleted on 2026-10-30
+  (scorer, trainer, labeller, capture, setupagent, scoring, labels, feedback, agents). Untracked,
+  and removed.
+- Settings with no consumer, deleted:
+  - `services.embedder` in the import contract;
+  - lint rules for `status_routes.py`, `libs/db/session.py` and the Alembic migrations, none of which
+    exist;
+  - CI's embedder job.
+- **Not moved: the prompts** (CLAUDE.md §3a). Five seeded files and one template may have no reader
+  (ROADMAP Phase 8, item 20).
+
+**The server's settings are `certificates/server.env`**, beside a laptop's `dev.env` (owner).
+- `deploy/compose.sh` hands that file to compose, and every compose command goes through it:
+  `deploy.sh`, the harvest timer, anything typed by hand. The health and backup timers read it as
+  their `EnvironmentFile`.
+- The template is `deploy/server.env.example`. It stays in git: a file inside an ignored
+  `certificates/` cannot be tracked without loosening the rule that keeps every secret out.
+- Values with `&`, `$` or spaces go in single quotes, which compose, systemd and bash all take
+  literally. Checked with `docker compose config`: an Atlas address keeps its `&`, and a password's
+  `$` stays a `$`.
+- The units named `/home/ruben/...` and `User=ruben`, one box's layout. They carry `@REPO@`,
+  `@USER@` and `@HOME@` now, which `install-units.sh` fills from the checkout and its owner. It
+  refuses to install without `certificates/server.env` and `.venv`.
+
+**Found getting it ready for a new server.**
+- **Every full deploy started a harvest and a whole company-board seed.** `up -d --force-recreate`
+  was given the one-shots too, and naming a service to `up` starts it. That is a quarter of an hour
+  of probing every ATS, on every deploy. One-shots are only built now; their next run uses the new
+  image.
+- `deploy.sh` never started the tunnel, so a fresh server came up unreachable. It brings
+  `cloudflared` up without recreating it unless its settings changed, and checks it is running.
+- `deploy.sh` hashed with the host's `.venv`, which a fresh server does not have yet; it uses
+  `python3`. It makes `logs/` and `archive/` as the deploying account, where Docker made them root's.
+- The sign-in broker runs as the checkout owner's uid (`BROKER_UID`, set by `compose.sh`), so it can
+  write to `logs/`. `useradd --non-unique`, because its base image already has `node` at 1000, the
+  first account on a fresh server.
+
+**`deploy/SERVER.md`: the Proxmox server, from nothing to the site answering.**
+- The VM: 4 vCPU, 8 GB, 4 GB swap, 64 GB disk; a VM rather than LXC; one VM rather than one per
+  service. Measured by PSS for it: the API with 4 workers, 324 MB after 240 requests; docgen with
+  Chrome, 560 MB at its peak over 10 CVs.
+- Docker with bounded logs, a read-only deploy key, the settings, Atlas's address list.
+- The tunnel: a new one for the new server, never the old token twice, because two connectors split
+  the visitors. Its service is `http://platform-api:8000`, tried on a test name, then the real name
+  moved over.
+- `deploy/README.md` is day-to-day running now. Moving the accounts off the old VPS is adapted to a
+  new server: carry `SECRETS_KEK` across.
+- `tests/test_deploy_config.py`:
+  - every setting compose reads is in the template (it names `TUNNEL_TOKEN` when that is left out);
+  - every compose command goes through the wrapper;
+  - the units hold only the placeholders the installer fills;
+  - no code reads settings from `deploy/`.
+
 ## 2026-11-03 (evening) — tabs drawn at once, one User-Agent, the deploy checked
 
 **Switching tabs showed nothing for a moment, then the page** (owner).

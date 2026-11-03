@@ -1,12 +1,9 @@
-# Nightly backup at 03:20 local. Install alongside backup.service:
-#
-#   sudo cp deploy/backup.{service,timer} /etc/systemd/system/
-#   sudo systemctl daemon-reload && sudo systemctl enable --now backup.timer
+# Nightly backup at 03:20 local. Installed with backup.service by deploy/install-units.sh.
 #
 # 03:20 rather than 03:00: every cron on every box fires on the hour, and a dump competing with
 # whatever else woke up is a dump that takes twice as long for no reason.
 [Unit]
-Description=job-search-app nightly Postgres backup
+Description=job-search-app nightly MongoDB backup
 
 [Timer]
 OnCalendar=*-*-* 03:20:00

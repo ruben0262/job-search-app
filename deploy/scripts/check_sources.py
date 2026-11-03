@@ -5,7 +5,7 @@ its newest posting was, and how many of those postings are now in the corpus (by
 duplicate check the harvest stores with). With `--linkedin EMAIL`, that person's LinkedIn run too,
 through the site proxy. A board that lists nothing, fails, or leaves postings out is named.
 
-    set -a; . certificates/dev.env; set +a          # or deploy/.env on the box
+    set -a; . certificates/dev.env; set +a          # or certificates/server.env on the server
     python deploy/scripts/check_sources.py [--linkedin you@example.com]
 """
 from __future__ import annotations

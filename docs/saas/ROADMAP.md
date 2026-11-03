@@ -3093,6 +3093,14 @@ suggestions on the jobs page. `CHANGELOG.md` has the numbers.
     have no JSON-LD. Recommendation: leave Profession unless its jobs matter to someone; reading its pages
     would store their menus.
 
+20. **Prompt files that may have no reader** (found 2026-11-03, sorting what runs from what does not).
+    `libs/profiles` seeds every new account with `label.md`, `score.md`, `interview.md`, `outreach.md`
+    and `build_cvs.md`. No CV or cover letter reads them: `GENERATION_FILES` names four others. And
+    `libs/prompts` names `label_template.md` in `LABEL_TEMPLATE`, which nothing reads. Moving them to
+    `retired/` is a prompt change (CLAUDE.md §3a), so they stay until you say. Recommendation: retire
+    `label.md`, `score.md` and `label_template.md`, which are the model's. Keep the other three if
+    interview prep, outreach or a CV pack are coming back.
+
 ## Phase 9 — MongoDB instead of Postgres (added 2026-10-30)
 
 **Why.** The owner's decision: users, their logins and everything stored about them live in MongoDB

@@ -1,8 +1,4 @@
-# Platform health, every 15 minutes. Install alongside health.service:
-#
-#   sudo cp deploy/health.{service,timer} /etc/systemd/system/
-#   sudo systemctl daemon-reload && sudo systemctl enable --now health.timer
-#   systemctl list-timers health.timer
+# Platform health, every 15 minutes. Installed with health.service by deploy/install-units.sh.
 #
 # Fifteen minutes because that is the harvest interval: a check that runs less often than the thing
 # it watches can miss a whole cycle's worth of failure, and one that runs more often finds the same

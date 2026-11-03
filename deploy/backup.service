@@ -10,11 +10,13 @@ Description=job-search-app nightly MongoDB backup (one-shot)
 Wants=network-online.target
 After=network-online.target
 
+# @REPO@, @USER@ and @HOME@ are filled in by deploy/install-units.sh: the checkout, the account owning
+# it, and that account's home.
 [Service]
 Type=oneshot
-User=ruben
-WorkingDirectory=/home/ruben/job-search-app
-EnvironmentFile=/home/ruben/job-search-app/deploy/.env
-ExecStart=/home/ruben/job-search-app/.venv/bin/python deploy/scripts/backup.py --out /home/ruben/backups --archive /home/ruben/job-search-app/archive
+User=@USER@
+WorkingDirectory=@REPO@
+EnvironmentFile=@REPO@/certificates/server.env
+ExecStart=@REPO@/.venv/bin/python deploy/scripts/backup.py --out @HOME@/backups --archive @REPO@/archive
 # A backup that cannot finish in fifteen minutes at this size is a symptom, not a slow link.
 TimeoutStartSec=15min

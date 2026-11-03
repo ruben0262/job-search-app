@@ -15,16 +15,17 @@ Description=job-search-app platform health check (one-shot)
 Wants=network-online.target
 After=network-online.target
 
+# @REPO@ and @USER@ are filled in by deploy/install-units.sh: the checkout, and the account owning it.
 [Service]
 Type=oneshot
-User=ruben
-WorkingDirectory=/home/ruben/job-search-app
+User=@USER@
+WorkingDirectory=@REPO@
 # Reads SECRETS_KEK, the SMTP settings, ADMIN_EMAILS and MONGODB_URI. Same file the stack uses, so
 # there is one place to change a password rather than two that drift. MONGODB_URI is a whole value
 # in that file, so nothing here has to assemble one — which is how this unit once spent a fortnight
 # authenticating with the literal string `${POSTGRES_PASSWORD}`.
-EnvironmentFile=/home/ruben/job-search-app/deploy/.env
-ExecStart=/home/ruben/job-search-app/.venv/bin/python deploy/scripts/check_health.py --email-on page
+EnvironmentFile=@REPO@/certificates/server.env
+ExecStart=@REPO@/.venv/bin/python deploy/scripts/check_health.py --email-on page
 # A check that cannot finish in a minute is itself a symptom.
 TimeoutStartSec=60
 # So a warning (3) does not mark the unit failed and start a restart storm. A page (2) IS a unit

@@ -55,6 +55,15 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
+# The units name the checkout, its owner and the owner's home as @REPO@, @USER@ and @HOME@, filled in
+# here: they were `/home/ruben/...`, which is one box's layout, and a new server is another.
+OWNER="$(stat -c %U "$REPO")"
+OWNER_HOME="$(getent passwd "$OWNER" | cut -d: -f6)"
+for need in "$REPO/certificates/server.env" "$REPO/.venv/bin/python"; do
+  [[ -e "$need" ]] || { echo "missing $need: see deploy/SERVER.md" >&2; exit 1; }
+done
+render() { sed -e "s#@REPO@#$REPO#g" -e "s#@USER@#$OWNER#g" -e "s#@HOME@#$OWNER_HOME#g" "$1" > "$2"; chmod 0644 "$2"; }
+
 # Prune first, so a unit being replaced by a different mechanism cannot fire once more between the
 # two steps.
 for unit in "${RETIRED[@]}"; do
@@ -67,7 +76,7 @@ for unit in "${RETIRED[@]}"; do
 done
 
 for unit in "${TIMERS[@]}"; do
-  install -m 0644 "$REPO/deploy/$unit.service" "$UNIT_DIR/$unit.service"
+  render "$REPO/deploy/$unit.service" "$UNIT_DIR/$unit.service"
   install -m 0644 "$REPO/deploy/$unit.timer" "$UNIT_DIR/$unit.timer"
 done
 

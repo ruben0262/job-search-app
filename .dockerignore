@@ -42,4 +42,3 @@ archive/
 
 # Credentials. No image copies them, and the build context has no reason to carry them either.
 certificates/
-deploy/.env

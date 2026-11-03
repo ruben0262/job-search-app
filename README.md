@@ -21,40 +21,26 @@ night and a rule in a document is a suggestion. Full layout and reasoning in
 
 ## Where the project is
 
-Live on the VPS, with its data in MongoDB Atlas. [`CHANGELOG.md`](CHANGELOG.md) is the history and
-[`docs/saas/ROADMAP.md`](docs/saas/ROADMAP.md) the plan, including what is waiting on the owner.
+Runs on a Proxmox VM, set up from [`deploy/SERVER.md`](deploy/SERVER.md), with its data in MongoDB
+Atlas. [`CHANGELOG.md`](CHANGELOG.md) is the history and [`docs/saas/ROADMAP.md`](docs/saas/ROADMAP.md)
+the plan, including what is waiting on the owner.
 
 ## Components
 
-### [`services/embedder/`](services/embedder/) — shared embedding service ✅ deployed
+Each part is its own container, so one can be rebuilt or restarted while the others keep running
+([`deploy/compose.yml`](deploy/compose.yml)):
 
-One resident copy of BGE serves every tenant's scoring **and** training over HTTP, instead of each
-stack loading its own ~1.5GB copy. HuggingFace TEI behind a thin FastAPI gateway that provides two
-priority lanes (fast scoring vs bulk training), a backend-verified version contract, and bounded
-queues.
+| Folder | Container | What it does |
+|---|---|---|
+| [`services/api/`](services/api/) and [`web/`](web/) | `api` | the site and its API, on one origin |
+| [`services/harvester/`](services/harvester/) | `harvester`, `seed-ats` | finds postings every 15 minutes; finds the company boards to poll |
+| [`services/docgen/`](services/docgen/) | `docgen` | makes CVs and cover letters; the only one with Chrome |
+| [`services/notifier/`](services/notifier/) | `notifier` | Telegram, browser and email alerts |
+| [`services/oauthbroker/`](services/oauthbroker/) | `oauthbroker` | Claude sign-in sessions |
+| — | `cloudflared` | the Cloudflare Tunnel, the only way in |
 
-Run it from its own directory — the compose project name is pinned to `job-search-app`, so it
-matters neither where the repo lives nor where in the tree this directory sits. That pin is what
-let it move from `embedder/` to `services/embedder/` without touching the running containers,
-volumes, or network:
-
-```bash
-cd services/embedder
-docker compose up -d --build
-curl -s http://127.0.0.1:8080/health
-```
-
-Full design in [`services/embedder/docs/PLAN.md`](services/embedder/docs/PLAN.md), operations and
-the pre-deploy gates in [`services/embedder/README.md`](services/embedder/README.md).
-
-**Consumers:** `job-search` is migrated (scorer-service dropped from ~1.9GB to ~165MB, no model
-resident). `andras-job-search` is next.
-
-### The other services
-
-`api` (the site's backend), `harvester` (fetches postings), `notifier` (Telegram and browser
-alerts), `docgen` (CVs and cover letters, the only one with Chrome) and `oauthbroker`. Shared code
-is in `libs/`; the deployed stack is [`deploy/compose.yml`](deploy/compose.yml).
+Shared code is in [`libs/`](libs/). What the project no longer runs is in [`retired/`](retired/),
+out of the way of what it does.
 
 ## [`docs/saas/`](docs/saas/) — platform plans
 
@@ -66,8 +52,6 @@ one index, so it cannot go stale in two places.
 
 ⚠ These were copied from `job-search/docs/saas/`, which still has its own copies. Treat **this** as
 the source of truth going forward and let the ones in `job-search` go stale, or they will drift.
-The embedder's maintained design is [`services/embedder/docs/PLAN.md`](services/embedder/docs/PLAN.md),
-kept current against the running service.
 
 ## Run it on your computer
 
@@ -93,7 +77,7 @@ The checks to run before a push are in [`CLAUDE.md`](CLAUDE.md) §7.
 
 ## Conventions
 
-The embedder establishes the pattern worth repeating:
+The patterns worth repeating, first set by the embedder (now in `retired/`):
 
 - **A service owns its Dockerfile, `requirements.txt`, tests, and docs.** Per-service dependencies
   are why `docgen` can carry Chrome without making `api` slow to rebuild.
@@ -101,9 +85,8 @@ The embedder establishes the pattern worth repeating:
   folder must never orphan a volume or rename a container.
 - **Services verify their own claims.** `/health` reports what a live probe confirmed, not what the
   config file asserts; callers assert compatibility before trusting a result and fail closed.
-- **Gates before cutover.** Anything a consumer depends on gets measured on the real box first —
-  see [`services/embedder/tests/README.md`](services/embedder/tests/README.md) for how those are
-  structured.
+- **Gates before cutover.** Anything a consumer depends on gets measured on the real box first
+  (CLAUDE.md §7 lists the gates).
 - **New file → a module docstring explaining why it exists**, not what it does. Non-trivial change
   → CHANGELOG entry. Major change → update the relevant doc in the same commit.
 - **Generation prompts are SACRED.** No edit without explicit approval, A/B measured, changelogged.

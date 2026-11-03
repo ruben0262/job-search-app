@@ -18,7 +18,8 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-COMPOSE="docker compose -f deploy/compose.yml -p job-search-platform"
+# Every compose command through the one wrapper, which reads certificates/server.env.
+COMPOSE="deploy/compose.sh"
 
 # Every service, named. `up -d` with no arguments skips anything behind a profile, which is how four
 # workers stayed on old images while reporting healthy.
@@ -42,6 +43,8 @@ BEFORE=$(git rev-parse HEAD)
 git pull --ff-only
 COMMIT=$(git rev-parse --short HEAD)
 echo "at $COMMIT"
+# Made by the account deploying, so the services can write them; left to Docker, they are root's.
+mkdir -p logs archive
 
 say "Building"
 # `api` always, whatever is being deployed: the schema step below runs in it, and it must be this
@@ -57,8 +60,23 @@ say "Schema"
 $COMPOSE run --rm --no-deps --entrypoint python api -m libs.db --prune
 
 say "Recreating"
-# shellcheck disable=SC2086
-$COMPOSE up -d --force-recreate $SERVICES
+# The services that stay up. A one-shot is only built: its next run (the timer's, or deploy's seed
+# below) uses the new image. Named to `up`, each was started there and then, so every full deploy ran
+# a harvest and a whole company-board seed, a quarter of an hour of asking every ATS (found 2026-11-03).
+RUNNING=""
+for service in $SERVICES; do
+  [[ " $ONE_SHOT_SERVICES " == *" $service "* ]] || RUNNING="$RUNNING $service"
+done
+if [ -n "$RUNNING" ]; then
+  # shellcheck disable=SC2086
+  $COMPOSE up -d --force-recreate $RUNNING
+fi
+
+# The tunnel: started if it is not running, recreated only if its settings changed (a new token), and
+# otherwise left alone. Restarting it would drop the site's only way in for nothing: none of its code
+# is this repository's.
+say "Tunnel"
+$COMPOSE up -d --no-deps cloudflared
 
 say "Verifying"
 # **The step that would have caught all four.** A container that starts is not a container running
@@ -71,7 +89,7 @@ h=hashlib.sha256()
 for f in sorted(pathlib.Path("/app/libs").rglob("*.py")):
     h.update(f.read_bytes())
 print(h.hexdigest()[:12])'
-EXPECTED=$(.venv/bin/python -c "
+EXPECTED=$(python3 -c "
 import hashlib,pathlib
 h=hashlib.sha256()
 for f in sorted(pathlib.Path('libs').rglob('*.py')):
@@ -116,6 +134,15 @@ for service in $SERVICES; do
     failed=1
   fi
 done
+
+tunnel=$($COMPOSE ps cloudflared --format '{{.State}}' 2>/dev/null | head -1)
+if [ "$tunnel" = "running" ]; then
+  printf '  %-12s %s\n' "cloudflared" "ok (running)"
+else
+  printf '  %-12s \033[31mnot running (%s)\033[0m: is TUNNEL_TOKEN set in certificates/server.env?\n' \
+    "cloudflared" "${tunnel:-absent}"
+  failed=1
+fi
 
 if [ "$failed" -ne 0 ]; then
   echo

@@ -1,13 +1,11 @@
-# The platform stack. Deployed on the VPS; `docker compose up -d` from this directory.
+# The platform stack, one container per part, so each is rebuilt and restarted alone
+# (`deploy/deploy.sh docgen`) while the rest keep running. Run through `deploy/compose.sh`, which
+# reads the settings from certificates/server.env (deploy/SERVER.md).
 #
 # The database is MongoDB Atlas, outside this stack (ROADMAP Phase 9): every service reads
-# `MONGODB_URI` from deploy/.env and nothing here stores data of its own. Each service gets its own
-# Dockerfile under docker/ rather than sharing a base image — that split is what lets docgen carry
-# Chrome without making api slow to rebuild (CODE_STRUCTURE.md §5).
-#
-# services/embedder/ keeps its OWN compose file and is not folded in here. It predates the
-# platform, is deployed, and serves the two single-tenant stacks; disturbing it to tidy the tree
-# would be a service migration dressed up as a refactor.
+# `MONGODB_URI` and nothing here stores data of its own. Each service gets its own Dockerfile under
+# docker/ rather than sharing a base image — that split is what lets docgen carry Chrome without
+# making api slow to rebuild (CODE_STRUCTURE.md §5).
 
 name: job-search-platform          # pinned — never let the dir name own the volume
 
@@ -21,7 +19,7 @@ services:
       dockerfile: deploy/docker/Dockerfile.harvester
     profiles: ["tools"]
     environment:
-      MONGODB_URI: ${MONGODB_URI:?set it in deploy/.env — see .env.example}
+      MONGODB_URI: ${MONGODB_URI:?set it in certificates/server.env — see deploy/server.env.example}
       MONGODB_DB: ${MONGODB_DB:-mahoraga}
       # The site's one proxy (`libs.proxy`), which LinkedIn is searched and described through for
       # everyone. Unset, LinkedIn is skipped and the log says so; every other board carries on.
@@ -68,7 +66,7 @@ services:
       dockerfile: deploy/docker/Dockerfile.seed-ats
     profiles: ["tools"]
     environment:
-      MONGODB_URI: ${MONGODB_URI:?set it in deploy/.env — see .env.example}
+      MONGODB_URI: ${MONGODB_URI:?set it in certificates/server.env — see deploy/server.env.example}
       MONGODB_DB: ${MONGODB_DB:-mahoraga}
       LOG_DIR: /var/log/jobsearch
     volumes:
@@ -102,7 +100,7 @@ services:
       dockerfile: deploy/docker/Dockerfile.docgen
     profiles: ["full"]
     environment:
-      MONGODB_URI: ${MONGODB_URI:?set it in deploy/.env — see .env.example}
+      MONGODB_URI: ${MONGODB_URI:?set it in certificates/server.env — see deploy/server.env.example}
       MONGODB_DB: ${MONGODB_DB:-mahoraga}
       SECRETS_KEK: ${SECRETS_KEK:?docgen decrypts the key that pays for an AI-written document}
       # The freshness check before a build goes through the site proxy when there is one.
@@ -126,7 +124,7 @@ services:
       dockerfile: deploy/docker/Dockerfile.notifier
     profiles: ["full"]
     environment:
-      MONGODB_URI: ${MONGODB_URI:?set it in deploy/.env — see .env.example}
+      MONGODB_URI: ${MONGODB_URI:?set it in certificates/server.env — see deploy/server.env.example}
       MONGODB_DB: ${MONGODB_DB:-mahoraga}
       # Each person's own Telegram bot token is decrypted here, to send through it.
       SECRETS_KEK: ${SECRETS_KEK:?the notifier sends through each person's own Telegram bot}
@@ -172,7 +170,7 @@ services:
           # caller keeps working and the two names can be switched over independently.
           - platform-api
     environment:
-      MONGODB_URI: ${MONGODB_URI:?set it in deploy/.env — see .env.example}
+      MONGODB_URI: ${MONGODB_URI:?set it in certificates/server.env — see deploy/server.env.example}
       MONGODB_DB: ${MONGODB_DB:-mahoraga}
       SECRETS_KEK: ${SECRETS_KEK:?the API writes the credential store}
       # Read where an AI document is requested, to decide who pays (`libs.llm.resolve`).
@@ -216,6 +214,9 @@ services:
     build:
       context: ..
       dockerfile: deploy/docker/Dockerfile.oauthbroker
+      args:
+        # The account that owns logs/, so the broker's audit lines are written (deploy/compose.sh).
+        BROKER_UID: ${BROKER_UID:-1001}
     profiles: ["full"]
     environment:
       LOG_DIR: /var/log/jobsearch
