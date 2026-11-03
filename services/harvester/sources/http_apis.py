@@ -273,11 +273,10 @@ def gather_workingnomads(cfg: dict[str, Any], logger) -> list[JobLink]:
     and no longer parse. `GET /api/exposed_jobs/` returns the full current listing (~44 jobs) as a
     JSON array — no auth. Field map: `url` (direct), `title`, `company_name`, `description` (HTML),
     `tags` (comma string), `location` (free text, e.g. "REMOTE, Canada"/"Germany"/"Global"),
-    `pub_date` ISO-8601 with tz offset. Keyword-filtered client-side on title+description+tags;
-    recency on pub_date. is_remote=True (remote-only board)."""
+    `pub_date` ISO-8601 with tz offset. Every job is kept, its words matched here; recency on
+    pub_date. is_remote=True (remote-only board)."""
     endpoint = cfg.get("endpoint", "https://www.workingnomads.com/api/exposed_jobs/")
     max_age = cfg.get("max_age_hours", 24)
-    kws = [k.lower() for k in cfg.get("keywords", [])]
     out: list[JobLink] = []
     try:
         with make_shared_client() as client:
@@ -291,9 +290,6 @@ def gather_workingnomads(cfg: dict[str, Any], logger) -> list[JobLink]:
             continue
         title = (j.get("title") or "").strip()
         desc = _striptags(j.get("description"))
-        hay = f"{title} {desc} {j.get('tags', '')}".lower()
-        if kws and not any(k in hay for k in kws):
-            continue
         url = (j.get("url") or "").strip()
         if not url:
             continue
@@ -315,20 +311,15 @@ def _striptags(html: str | None) -> str:
 def gather_jobicy(cfg: dict[str, Any], logger) -> list[JobLink]:
     """Jobicy public JSON API (jobicy.com/api/v2/remote-jobs) — free, no auth, all remote.
 
-    One GET per configured tag (?tag=<t>&count=<n>); jobs are all remote by definition, so
-    scope is enforced on `jobGeo` (many Jobicy roles are region-locked, e.g. 'USA' only) via
-    geo_keep. Client-side recency on pubDate (ISO-8601) + keyword filter on title and text.
+    One GET per configured tag (?tag=<t>&count=<n>), the newest first: 100 reach back about six hours
+    (measured 2026-11-03). Every job is kept. Where it may be done (`jobGeo`, "USA" or "Anywhere") is
+    its location, which each person's countries judge: a fixed list of regions to keep, the reference
+    instance's own Europe and Hungary, dropped every other person's.
     """
     endpoint = cfg.get("endpoint", "https://jobicy.com/api/v2/remote-jobs")
     max_age = cfg.get("max_age_hours", 24)
     count = int(cfg.get("count", 50))
-    keywords: list[str] = cfg.get("keywords", [])
     tags: list[str] = cfg.get("tags", []) or [""]
-    # jobGeo substrings that are in-scope for a UK/EU-based remote candidate. 'anywhere'/
-    # 'worldwide' are global-remote; region names cover EU/UK. A US-only remote role is dropped.
-    geo_keep = [g.lower() for g in cfg.get("geo_keep", [
-        "anywhere", "worldwide", "global", "europe", "emea", "european",
-        "united kingdom", "uk", "eu", "hungary"])]
     out: list[JobLink] = []
     seen: set[str] = set()
     with make_shared_client() as client:
@@ -348,16 +339,10 @@ def gather_jobicy(cfg: dict[str, Any], logger) -> list[JobLink]:
                 iso = j.get("pubDate")
                 if not is_within_hours(iso, max_age):
                     continue
-                geo = (j.get("jobGeo") or "").lower()
-                # Keep global-remote and EU/UK; drop region-locked (e.g. USA-only) roles.
-                if geo and geo_keep and not any(g in geo for g in geo_keep):
-                    continue
                 # The whole text: the excerpt is 150 characters, and kept as the job's text it was never
                 # read in full, as anything past `MIN_DESCRIPTION` counts as described.
                 text = _striptags(j.get("jobDescription") or j.get("jobExcerpt"))
                 title = j.get("jobTitle", "")
-                if keywords and not _keyword_hit(f"{title} {text}".lower(), keywords):
-                    continue
                 seen.add(url)
                 out.append(JobLink(
                     url=url, title=title, company=j.get("companyName", ""),
@@ -372,16 +357,16 @@ def gather_jobicy(cfg: dict[str, Any], logger) -> list[JobLink]:
 def gather_themuse(cfg: dict[str, Any], logger) -> list[JobLink]:
     """The Muse public API (www.themuse.com/api/public/jobs) — free, no auth.
 
-    Requests the 'Flexible / Remote' location across the configured categories/pages. url is
-    refs.landing_page; is_remote is set only when a location name actually reads Remote/Flexible
-    (a Muse job can carry multiple locations). Client-side recency on publication_date (ISO 'Z').
+    Requests the 'Flexible / Remote' location in every category, newest first: about 38 a day
+    (measured 2026-11-03). It asked for "Software Engineering" and "Data Science" only, so a nurse or
+    an accountant never had a Muse job. url is refs.landing_page; is_remote is set only when a location
+    name actually reads Remote/Flexible (a Muse job can carry multiple locations). Every job is kept.
     """
     endpoint = cfg.get("endpoint", "https://www.themuse.com/api/public/jobs")
     max_age = cfg.get("max_age_hours", 24)
-    pages = int(cfg.get("pages", 2))
-    categories: list[str] = cfg.get("categories", ["Software Engineering", "Data Science"])
+    pages = int(cfg.get("max_pages", 1))
+    categories: list[str] = cfg.get("categories", [])
     locations: list[str] = cfg.get("locations", ["Flexible / Remote"])
-    keywords: list[str] = cfg.get("keywords", [])
     out: list[JobLink] = []
     seen: set[str] = set()
     with make_shared_client() as client:
@@ -409,8 +394,6 @@ def gather_themuse(cfg: dict[str, Any], logger) -> list[JobLink]:
                 remote = any("remote" in l.lower() or "flexible" in l.lower() for l in locs)
                 title = j.get("name", "")
                 desc = _striptags(j.get("contents"))
-                if keywords and not _keyword_hit(f"{title} {desc}".lower(), keywords):
-                    continue
                 seen.add(url)
                 out.append(JobLink(
                     url=url, title=title, company=(j.get("company") or {}).get("name", ""),
@@ -627,12 +610,13 @@ _HU_CITIES = {
 }
 
 def gather_profession(cfg: dict[str, Any], logger) -> list[JobLink]:
-    """Profession.hu keyword RSS feeds — the dominant Hungarian general job board.
+    """Profession.hu's RSS feed — the dominant Hungarian general job board.
 
-    Probed 2026-07-13: `/allasok/1,0,0,<keyword>?rss` returns a keyword-scoped RSS 2.0
-    feed of the ~15 newest matching ads (roughly newest-first; the page number in the
-    URL is ignored, so there is no pagination — this is a fresh-catcher, which suits
-    the 15-min watcher). Field map: <guid> is the clean ad URL (the <link> variant
+    `/allasok/1,0,0,<keyword>?rss` is an RSS 2.0 feed of the 15 newest ads with that word, and with
+    no word, of the 15 newest ads of every kind: they reach back about three hours (measured
+    2026-11-03), and a run comes every fifteen minutes. So one request a run reads all of it, where a
+    request per word read only the words somebody had, and cost more with every new one. There is no
+    pagination: the page number in the URL is ignored. Field map: <guid> is the clean ad URL (the <link> variant
     carries `?utm_source=rss` plus a trailing space — use guid); <pubDate> is RFC 2822;
     <description> is a JSON array of highlight bullets. The feed has NO company field —
     company stays empty and the description fetch at scoring time fills the JD.
@@ -648,56 +632,55 @@ def gather_profession(cfg: dict[str, Any], logger) -> list[JobLink]:
     # (measured 2026-11-03, 15 items either side of it). The one adapter that says who it is.
     feed = {"User-Agent": "Mozilla/5.0 (compatible; job-search-bot/1.0)",
             "Accept": "application/rss+xml, text/xml, application/xml"}
-    with make_shared_client(headers=feed, follow_redirects=True) as client:
-        for kw in cfg.get("keywords", []):
-            feed_url = base.format(kw=quote(str(kw)))
-            try:
-                resp = client.get(feed_url)
-            except Exception as exc:
-                logger.warning("profession feed %r failed: %s", kw, exc)
-                continue
-            root = _rss_root(resp, feed_url, logger, "profession")
-            if root is None:
-                continue
-            for item in root.findall(".//item"):
-                url = (item.findtext("guid") or item.findtext("link") or "").strip()
-                url = url.split("?", 1)[0]
-                if not url or url in seen:
-                    continue
-                pub_date = _rss_date_to_iso(item.findtext("pubDate"))
-                if not is_within_hours(pub_date, max_age):
-                    continue
-                seen.add(url)
-                title = (item.findtext("title") or "").strip()
-                low = title.lower()
-                # Slug shape: .../allas/<title-company>-<city>-<id>[/pro] — city precedes the
-                # numeric id; some ads append a trailing "/pro" segment, so scan path segments
-                # for the one that ends in the id. The token is only a city if it's a known HU
-                # city — otherwise it's usually the company-name tail (fails open to "Hungary").
-                city = ""
-                for seg in reversed(url.rstrip("/").split("/")):
-                    tokens = seg.split("-")
-                    if len(tokens) >= 2 and tokens[-1].isdigit():
-                        if tokens[-2] in _HU_CITIES:
-                            city = tokens[-2].capitalize()
-                        break
-                location = f"{city}, Hungary" if city else "Hungary"
-                if "hibrid" in low or "hybrid" in low:
-                    location += " (Hybrid)"
-                # Description is a JSON array of highlight bullets.
-                desc_raw = (item.findtext("description") or "").strip()
-                try:
-                    bullets = json.loads(desc_raw)
-                    snippet = "\n".join(f"• {b}" for b in bullets) if isinstance(bullets, list) else desc_raw
-                except Exception:
-                    snippet = _striptags(desc_raw)
-                out.append(JobLink(
-                    url=url, title=title, company="", location=location,
-                    source="profession", date_posted=pub_date,
-                    snippet=snippet or title,
-                    # Explicit remote word only; absence is unknown, and unknown is kept.
-                    is_remote=(True if ("remote" in low or "távmunka" in low) else None),
-                ))
+    feed_url = base.format(kw="")
+    try:
+        with make_shared_client(headers=feed, follow_redirects=True) as client:
+            resp = client.get(feed_url)
+    except Exception as exc:
+        logger.warning("profession feed failed: %s", exc)
+        return out
+    root = _rss_root(resp, feed_url, logger, "profession")
+    if root is None:
+        return out
+    for item in root.findall(".//item"):
+        url = (item.findtext("guid") or item.findtext("link") or "").strip()
+        url = url.split("?", 1)[0]
+        if not url or url in seen:
+            continue
+        pub_date = _rss_date_to_iso(item.findtext("pubDate"))
+        if not is_within_hours(pub_date, max_age):
+            continue
+        seen.add(url)
+        title = (item.findtext("title") or "").strip()
+        low = title.lower()
+        # Slug shape: .../allas/<title-company>-<city>-<id>[/pro] — city precedes the
+        # numeric id; some ads append a trailing "/pro" segment, so scan path segments
+        # for the one that ends in the id. The token is only a city if it's a known HU
+        # city — otherwise it's usually the company-name tail (fails open to "Hungary").
+        city = ""
+        for seg in reversed(url.rstrip("/").split("/")):
+            tokens = seg.split("-")
+            if len(tokens) >= 2 and tokens[-1].isdigit():
+                if tokens[-2] in _HU_CITIES:
+                    city = tokens[-2].capitalize()
+                break
+        location = f"{city}, Hungary" if city else "Hungary"
+        if "hibrid" in low or "hybrid" in low:
+            location += " (Hybrid)"
+        # Description is a JSON array of highlight bullets.
+        desc_raw = (item.findtext("description") or "").strip()
+        try:
+            bullets = json.loads(desc_raw)
+            snippet = "\n".join(f"• {b}" for b in bullets) if isinstance(bullets, list) else desc_raw
+        except Exception:
+            snippet = _striptags(desc_raw)
+        out.append(JobLink(
+            url=url, title=title, company="", location=location,
+            source="profession", date_posted=pub_date,
+            snippet=snippet or title,
+            # Explicit remote word only; absence is unknown, and unknown is kept.
+            is_remote=(True if ("remote" in low or "távmunka" in low) else None),
+        ))
     return out
 
 

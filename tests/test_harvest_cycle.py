@@ -373,7 +373,8 @@ def test_a_job_a_board_returned_survives_every_enabled_source_s_own_filtering():
 
 
 def test_a_keyword_filtered_source_keeps_what_matches_and_judges_nothing_else():
-    """The six sources that filter on keywords do it over the whole posting."""
+    """A source still filtering on keywords (Just Join IT, until the database has room) is given every
+    person's words, and nothing else to judge a posting on."""
     from services.harvester.source_config import (
         KEYWORD_FILTER_SOURCES,
         build_source_configs,

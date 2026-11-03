@@ -27,10 +27,12 @@ DEFERRED_SOURCES = ("arbeitnow", "remotive", "remoteok", "dreamjobs",
                     "consider", "getro", "nofluffjobs_hu", "weworkremotely")
 
 
-# Adapters that read `cfg["keywords"]` themselves and filter on title + description + tags.
-KEYWORD_FILTER_SOURCES = frozenset({
-    "jobicy", "justjoinit", "workingnomads", "themuse", "profession",
-})
+# Adapters that keep only the jobs somebody's words name, reading `cfg["keywords"]` themselves. Every
+# other feed keeps all it reads and the words are matched here, so a word added tomorrow finds today's
+# jobs, and a feed costs the same however many words there are (2026-11-03). Just Join IT stays filtered
+# until the database has room: unfiltered it is ~2,650 jobs a day, ~330 MB over the 30 days kept,
+# against the 512 MB the Atlas plan holds (measured 2026-11-03).
+KEYWORD_FILTER_SOURCES = frozenset({"justjoinit"})
 
 
 # Sources whose rows are dropped client-side by `ats.JobFilter` against the union's terms.

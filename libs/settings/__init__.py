@@ -123,6 +123,9 @@ DEFAULT_SOURCE_PAGES_PER_CYCLE: dict[str, int] = {
     "workday": 5,
     # Newest-first at 100 a page, about ten offers an hour, and the walk stops the same way.
     "justjoinit": 5,
+    # 20 a page, in no date order: 308 pages of remote jobs, the ~38 new a day spread through them
+    # (measured 2026-11-03). Read under a key no setting wrote until then, so the panel could not reach it.
+    "themuse": 2,
 }
 
 # How long a posting stays in the corpus before it is archived to a file and deleted

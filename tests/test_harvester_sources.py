@@ -4,8 +4,10 @@ from __future__ import annotations
 import ast
 import logging
 import re
+import uuid
 from pathlib import Path
 
+import httpx
 import pytest
 
 from services.harvester.sources import (
@@ -467,3 +469,80 @@ def test_a_user_agent_is_written_in_one_place_and_profession_s_own_beside_it():
                if "__pycache__" not in path.parts
                and re.search(r"[\"']User-Agent[\"']\s*:", path.read_text(encoding="utf-8"))}
     assert written == {"libs/corpus/postings.py", "services/harvester/sources/http_apis.py"}
+
+
+# ── feeds keep every job; the words are matched here (2026-11-03) ─────────────────────────────
+
+def _feed_job(name: str, request) -> httpx.Response:
+    """One "Registered Nurse" job, posted an hour ago, in the shape each feed answers with."""
+    from datetime import UTC, datetime, timedelta
+
+    posted = datetime.now(UTC) - timedelta(hours=1)
+    page = dict(request.url.params).get("page", "1")
+    url = f"https://example.com/{name}/nurse-{page}"
+    if name == "jobicy":
+        return httpx.Response(200, json={"jobs": [{
+            "url": url, "jobTitle": "Registered Nurse", "companyName": "Mercy", "jobGeo": "USA",
+            "pubDate": posted.isoformat(), "jobDescription": "<p>Ward nursing, nights.</p>"}]})
+    if name == "themuse":
+        return httpx.Response(200, json={"results": [{
+            "refs": {"landing_page": url}, "name": "Registered Nurse", "company": {"name": "Mercy"},
+            "publication_date": posted.isoformat(), "locations": [{"name": "Flexible / Remote"}],
+            "contents": "<p>Ward nursing, nights.</p>"}]})
+    if name == "workingnomads":
+        return httpx.Response(200, json=[{
+            "url": url, "title": "Registered Nurse", "company_name": "Mercy", "location": "Remote",
+            "pub_date": posted.isoformat(), "description": "<p>Ward nursing, nights.</p>"}])
+    return httpx.Response(200, headers={"Content-Type": "application/rss+xml"}, text=(
+        "<rss><channel><item><title>Registered Nurse</title>"
+        f"<guid>https://www.profession.hu/allas/apolo-mercy-budapest-12345</guid>"
+        f"<pubDate>{posted.strftime('%a, %d %b %Y %H:%M:%S +0000')}</pubDate>"
+        "<description>[\"Ward nursing\"]</description></item></channel></rss>"))
+
+
+def _feed(monkeypatch, name: str, requests: list):
+    from services.harvester.sources import http_apis
+
+    def answer(request):
+        requests.append(request)
+        return _feed_job(name, request)
+
+    monkeypatch.setattr(http_apis, "make_shared_client", lambda **_: httpx.Client(
+        transport=httpx.MockTransport(answer)))
+    return getattr(http_apis, f"gather_{name}")
+
+
+@pytest.mark.parametrize("name", ["jobicy", "themuse", "workingnomads", "profession"])
+def test_a_feed_keeps_a_job_nobody_has_a_word_for_yet(monkeypatch, name):
+    """The word added tomorrow finds today's jobs: a feed no longer drops what today's words miss.
+    A Jobicy job only open in the USA is kept too: where it may be done is each person's countries'
+    to judge, not a list of regions the first account wanted."""
+    from services.harvester.source_config import build_source_configs
+
+    cfg = build_source_configs({uuid.uuid4(): {"sections": [{"keywords": ["software engineer"]}]}},
+                               env={})[name]
+    links = _feed(monkeypatch, name, [])(cfg, logging.getLogger("test"))
+    assert [link.title for link in links][:1] == ["Registered Nurse"]
+
+
+def test_profession_is_read_in_one_request_however_many_words_people_have(monkeypatch):
+    """Its newest fifteen reach back about three hours, and a run comes every fifteen minutes."""
+    from services.harvester.source_config import build_source_configs
+
+    words = [{"keywords": ["software engineer", "nurse", "könyvelő"]}]
+    configs = {uuid.uuid4(): {"sections": words} for _ in range(3)}
+    requests: list = []
+    links = _feed(monkeypatch, "profession", requests)(
+        build_source_configs(configs, env={})["profession"], logging.getLogger("test"))
+    assert len(requests) == 1 and len(links) == 1
+
+
+def test_the_muse_reads_the_pages_the_operator_set_in_every_job_category(monkeypatch):
+    """It read a key no setting wrote, and asked for software and data jobs only."""
+    from services.harvester.source_config import build_source_configs
+
+    requests: list = []
+    _feed(monkeypatch, "themuse", requests)(
+        build_source_configs({}, env={}, pages={"themuse": 3})["themuse"], logging.getLogger("test"))
+    assert len(requests) == 3
+    assert not any("category" in request.url.params for request in requests)

@@ -14,6 +14,47 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-03 — Feeds keep every job; Profession in one request; The Muse in every category
+
+The first step of searching by place and time rather than by word (owner). The words are matched
+here, so a feed that keeps everything costs the same however many words people have, and a word added
+tomorrow finds today's jobs.
+
+**Measured first** (each feed read with no word filter, 2026-11-03):
+
+| Feed | New jobs a day | Kept before | Storage kept whole, 30 days |
+|---|---|---|---|
+| Jobicy | ~380 (100 newest reach back ~6 h) | about half | ~38 MB |
+| The Muse | ~38 remote, every category | software and data only | small |
+| Profession | ~110 (15 newest reach back ~3 h) | 15 per word, one request per word | ~13 MB |
+| Working Nomads | 0: its newest job is 5 days old | — | — |
+| Just Join IT | ~2,650 distinct | about a third | **~330 MB** |
+
+Stored jobs measure 1.3–8.5 KB each (Just Join IT 4.2 KB), against the 512 MB the Atlas plan holds.
+
+**Changed:**
+- Jobicy, The Muse, Working Nomads and Profession keep every job (`KEYWORD_FILTER_SOURCES` holds
+  Just Join IT alone).
+- Jobicy no longer drops jobs outside the regions the reference instance wanted (Europe, the UK,
+  Hungary): each person's countries judge where a job may be done.
+- The Muse asks every job category. Its page count is now read from `source_pages_per_cycle` (2 by
+  default), the key the panel writes; before, it read a key nothing wrote.
+- Profession is read in one request a run, with no word, instead of one request per word.
+
+**Not changed, with the reason:**
+- **Just Join IT stays filtered** until the database has room. That is the self-hosted MongoDB (the
+  owner's `server_db`).
+- **The Muse's pages are in no date order.** Its 6,159 remote jobs are spread over 308 pages, new ones
+  anywhere among them, and 2 pages a run finds a few of its ~38 a day. Reading a different slice each
+  run, so that every page is read once a day, needs a little saved state. It is proposed, not built.
+
+Tests: each of the four feeds keeps a job nobody has a word for; Profession is one request with three
+people's words; The Muse reads the pages set, in every category. Five of these six fail on the
+previous commit; the sixth (Profession keeping the job) passes on both, because the fake feed ignores
+the word, and the one-request test covers it.
+
+Gates: lint-imports 2 kept; ruff clean; schema ok; contract current; build ✓; **1,315 passed, 3 skipped**.
+
 ## 2026-11-03 — Names, links and words read from any CV or cover letter; onboarding says it is setup
 
 **People uploaded CVs and onboarding filled in nothing** (owner). Measured on nine sample files built
