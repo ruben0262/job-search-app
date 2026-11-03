@@ -89,14 +89,18 @@ export function Sheet({ title, onClose, children }: { title: string; onClose: ()
     dialog.current?.showModal();
   }, []);
   return (
+    // × and a tap outside close it themselves: the page that opened it takes it away, and an open
+    // dialog taken out of the page is closed. Through the browser's own `close` event, the page was
+    // not always told: after a CV was made in it, the sheet shut and stayed mounted, so tapping the
+    // job again opened nothing (2026-11-03). Escape still closes it the browser's way.
     <dialog ref={dialog} className="sheet" aria-label={title} onClose={onClose}
             // The dialog itself is only hit outside its content: that is a tap on the backdrop.
             onClick={(event) => {
               event.stopPropagation();
-              if (event.target === dialog.current) dialog.current?.close();
+              if (event.target === dialog.current) onClose();
             }}>
       <div className="sheet-body">
-        <button type="button" className="close" aria-label="Close" onClick={() => dialog.current?.close()}>×</button>
+        <button type="button" className="close" aria-label="Close" onClick={onClose}>×</button>
         <h2>{title}</h2>
         {children}
       </div>

@@ -6,7 +6,7 @@ import { HelpButton } from "./help";
 import { Landing } from "./landing/Landing";
 import { stopped } from "./leave";
 import { forgetMarks } from "./marks";
-import { AdminPage } from "./pages/AdminPage";
+import { ADMIN_READS, AdminPage, CORPUS_FIRST, LATENCY_FIRST } from "./pages/AdminPage";
 import { forgetKept, readAhead } from "./kept";
 import { ADDED, AddJobPage } from "./pages/AddJobPage";
 import { AdminUserPage } from "./pages/AdminUserPage";
@@ -97,9 +97,14 @@ export function App() {
   // list: Jobs is where everybody lands, and it reads that itself (measured locally: 71 ms, the rest
   // under 10 ms each).
   const ready = session.state === "in" && session.dashboard.stage === "ready";
+  const admin = ready && session.dashboard.is_admin;
   useEffect(() => {
     if (ready) readAhead([ADDED, APPLIED, REVIEW, DOCUMENTS, SAVED, HISTORY, IDENTITY, ACCOUNT, CREDENTIALS]);
   }, [ready]);
+  // And Admin's, for whoever sees it: its first open draws at once too.
+  useEffect(() => {
+    if (admin) readAhead([...ADMIN_READS, CORPUS_FIRST, LATENCY_FIRST]);
+  }, [admin]);
 
   // Public, and reachable signed out: signup links it before anybody has an account.
   if (hash.startsWith("/privacy")) return <PrivacyPage />;

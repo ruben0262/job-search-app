@@ -171,7 +171,9 @@ nav {
    `z-index: 20`, which is the dark box in the corner of an otherwise empty screen.
    Opaque where it does apply: the dot-grid backdrop is fixed, so a translucent bar shows the page
    sliding underneath it, legible for a moment and then not. */
-.app nav {
+/* The top bar alone (`> nav`): a tab row inside a page is a `nav` too, and took this, so the Jobs
+   tabs sat over the notifications panel (2026-11-03). */
+.app > nav {
   position: sticky;
   top: 0;
   z-index: 20;

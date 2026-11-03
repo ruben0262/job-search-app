@@ -29,10 +29,8 @@ from libs.limits import all_for, describe, set_limit
 from libs.obs import audit
 from libs.ops import evaluate, platform_health, render
 from libs.ops.latency import (
-    lane_timings,
-    latency_series,
+    latency_report,
     pipeline_latency,
-    stage_breakdown,
     stage_detail,
 )
 from libs.ops.pipeline import pipeline
@@ -49,6 +47,7 @@ from libs.settings import (
     put,
     queries_per_cycle,
     results_per_query,
+    snapshot,
     source_min_ages,
 )
 from libs.tenant import applications
@@ -304,26 +303,28 @@ def sources(db: Database = Depends(get_db), admin: User = Depends(require_admin)
     # One number per query-taking source: a source is asked once per distinct keyword.
     wanted = len(distinct_keywords(TenantRepository(db).active_configs()))
     asked = QUERY_TAKING_SOURCES | {"linkedin"}
-    floors = source_min_ages(db)
+    # Every setting below, from one read of them (`settings.snapshot`).
+    stored = snapshot(db)
+    floors = source_min_ages(stored)
     return {
         "sources": [{"name": name,
-                     "hours": freshness_hours(db, name),
+                     "hours": freshness_hours(stored, name),
                      # Its twin, shown beside it: `hours` is how far back the source is asked,
                      # this is how long what it returned stays deliverable. They were set in two
                      # different places, and only this one had no control at all — so widening a
                      # source's harvest window did nothing an operator could see if the floor
                      # below was discarding the result.
                      "min_age_hours": floors.get(name, DEFAULT_SOURCE_MIN_AGE_HOURS),
-                     "queries_per_cycle": queries_per_cycle(db, name),
+                     "queries_per_cycle": queries_per_cycle(stored, name),
                      # `None` where the source has no result cap to set at all.
-                     "results_per_query": results_per_query(db, name),
+                     "results_per_query": results_per_query(stored, name),
                      # `None` for a source that fetches one response rather than walking pages.
-                     "pages_per_cycle": pages_per_cycle(db, name),
+                     "pages_per_cycle": pages_per_cycle(stored, name),
                      "wanted": wanted if name in asked else 0}
                     for name in HARVEST_SOURCES],
         # The ATS ceiling, with the number it is a ceiling on.
         "ats": {
-            "companies_per_cycle": ats_companies_per_cycle(db),
+            "companies_per_cycle": ats_companies_per_cycle(stored),
             "companies_held": db[AtsToken.COLLECTION].count_documents({}),
         },
     }
@@ -529,14 +530,8 @@ def latency(db: Database = Depends(get_db), admin: User = Depends(require_admin)
     """The drill-down: the spans, then where the time actually went, then when."""
     window = max(1, min(hours, 24 * 7))
     audit(logger, "admin.latency", user=admin.id, hours=window)
-    return {
-        "window_hours": window,
-        # One row per zone the posting crosses, in pipeline order.
-        "stages": stage_breakdown(db, hours=window),
-        "spans": pipeline_latency(db, hours=window),
-        "lanes": lane_timings(db, hours=window),
-        "series": latency_series(db, hours=window),
-    }
+    # One row per zone the posting crosses, in pipeline order; the end-to-end span; the lanes; by hour.
+    return latency_report(db, hours=window)
 
 
 @router.get("/latency/{key}")

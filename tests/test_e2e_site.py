@@ -313,6 +313,31 @@ def test_every_tab_is_drawn_whole_the_moment_it_is_opened(site, capsys):
         browser.close()
 
 
+def test_the_notifications_open_over_the_jobs_tabs(site, capsys):
+    """The Jobs tab row is a `nav`, and the top bar's rule (sticky, opaque, over the page) caught it, so
+    it sat across the open notifications (owner's screenshot, 2026-11-03). What is on top at the panel's
+    middle row must be the panel."""
+    base, email, _ = site
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = browser.new_context(viewport={"width": 1490, "height": 860}).new_page()
+        _sign_up(page, base, email, capsys)
+        _onboard(page)
+        expect(page.get_by_role("navigation", name="Jobs")).to_be_visible()
+        page.get_by_role("button", name="Notifications").click()
+        panel = page.get_by_role("dialog", name="Notifications")
+        expect(panel).to_be_visible()
+        covered = page.evaluate("""() => {
+            const box = document.querySelector(".bell-panel").getBoundingClientRect();
+            const y = box.top + box.height / 2;
+            return [0.1, 0.3, 0.5, 0.7, 0.9].map((at) => box.left + box.width * at)
+              .filter((x) => !document.elementFromPoint(x, y).closest(".bell-panel"))
+              .map((x) => document.elementFromPoint(x, y).outerHTML.slice(0, 80));
+        }""")
+        assert covered == [], f"over the notifications: {covered}"
+        browser.close()
+
+
 def test_the_tabs_in_order_and_what_each_one_is_for(site, capsys):
     """Settings last; Applied keeps what was applied to; help and the contact form are in Settings;
     Admin is there for an admin only, and shows what was sent from Settings."""
@@ -478,6 +503,7 @@ def test_a_job_opens_whole_and_skipping_survives_a_lost_connection_and_new_jobs_
         view.get_by_role("button", name="Close").click()
         expect(card(TITLES[0]).get_by_role("link", name="Download your CV")).to_be_visible()
         expect(card(TITLES[0]).get_by_text("CV made")).to_be_visible()
+        _closes_for_good(page, card(TITLES[0]), view)
 
         page.context.set_offline(True)
         card(TITLES[1]).get_by_role("button", name="Skip").click()
@@ -851,6 +877,15 @@ def _more(page, base: str) -> None:
     page.get_by_role("button", name="Show more jobs").click()
     expect(cards).to_have_count(31)
     expect(page.get_by_role("button", name="Show more jobs")).to_have_count(0)
+
+
+def _closes_for_good(page, card, view) -> None:
+    """Closed, not shut and left in the page: the job opens again when tapped (2026-11-03)."""
+    expect(page.locator("dialog.sheet")).to_have_count(0)
+    card.locator("h3 button.title").click()
+    expect(view).to_be_visible()
+    view.get_by_role("button", name="Close").click()
+    expect(page.locator("dialog.sheet")).to_have_count(0)
 
 
 def _jobs(db, run: str, titles) -> dict[str, int]:

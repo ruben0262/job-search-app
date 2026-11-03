@@ -1,7 +1,8 @@
 /** One account, for an operator. */
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { api } from "../api";
+import { useKept } from "../kept";
 import type { components } from "../api-types";
 
 type LimitSpec = {
@@ -18,22 +19,14 @@ type LimitSpec = {
 type UserDetail = components["schemas"]["AdminAccountDetail"];
 
 export function AdminUserPage({ userId }: { userId: string }) {
-  const [detail, setDetail] = useState<UserDetail | null>(null);
-  const [specs, setSpecs] = useState<LimitSpec[]>([]);
+  // Drawn from what was read last time (or read ahead from the list) at once, and kept current.
+  const account = useKept<UserDetail>(`/admin/users/${userId}`);
+  const catalogue = useKept<{ limits: LimitSpec[] }>("/admin/limits");
+  const detail = account.data;
+  const specs = catalogue.data?.limits ?? [];
+  const setDetail = (change: (current: UserDetail | null) => UserDetail | null) => account.set(change);
   const [saving, setSaving] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    Promise.all([
-      api.get<UserDetail>(`/admin/users/${userId}`),
-      api.get<{ limits: LimitSpec[] }>("/admin/limits"),
-    ])
-      .then(([body, catalogue]) => {
-        setDetail(body);
-        setSpecs(catalogue.limits);
-      })
-      .catch(() => setFailed(true));
-  }, [userId]);
+  const failed = account.failed && !detail;
 
   // The catalogue drives the form, so adding a ceiling is one entry in `libs.limits` rather than an entry.
   const save = async (key: string, raw: string) => {
@@ -66,7 +59,7 @@ export function AdminUserPage({ userId }: { userId: string }) {
   const { user, setup, counts } = detail;
 
   return (
-    <div className="page-in">
+    <div>
       <p className="kicker">Operator</p>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
         <h1 style={{ marginBottom: 0 }}>{user.email}</h1>

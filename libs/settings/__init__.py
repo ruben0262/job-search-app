@@ -224,7 +224,7 @@ SOURCE_MIN_AGE_HOURS: dict[str, int] = {
 DEFAULT_SOURCE_MIN_AGE_HOURS = 24
 
 
-def source_min_ages(db: Database) -> dict[str, int]:
+def source_min_ages(db: Database | Snapshot) -> dict[str, int]:
     """The delivery floor per source, with the operator's overrides applied over the measured map.
 
     The twin of `freshness_hours`, and it needed to become one. That setting says how far back a
@@ -289,17 +289,33 @@ DEFAULTS: dict[str, object] = {
 }
 
 
-def get(db: Database, key: str) -> object:
+class Snapshot(dict):
+    """Every stored setting, read in one query, for a caller about to ask many. Pass it wherever a
+    getter here takes `db`: the answers are the same, and the database is asked once, not once a
+    question. `/admin/sources` asked 85 times, 2.7 s against Atlas (2026-11-03). Made per request, so
+    it is never older than the request that made it."""
+
+
+def snapshot(db: Database) -> Snapshot:
+    rows = db[PlatformSetting.COLLECTION].find({}, {"value": 1})
+    return Snapshot({row["_id"]: row["value"] for row in rows})
+
+
+def get(db: Database | Snapshot, key: str) -> object:
     """One setting, or its default."""
     if key not in DEFAULTS:
         raise KeyError(f"unknown platform setting {key!r}; known: {sorted(DEFAULTS)}")
-    stored = db[PlatformSetting.COLLECTION].find_one({"_id": key}, {"value": 1})
-    return DEFAULTS[key] if stored is None or stored["value"] is None else stored["value"]
+    if isinstance(db, Snapshot):
+        value = db.get(key)
+    else:
+        stored = db[PlatformSetting.COLLECTION].find_one({"_id": key}, {"value": 1})
+        value = None if stored is None else stored["value"]
+    return DEFAULTS[key] if value is None else value
 
 
 def all_settings(db: Database) -> dict[str, object]:
     """Every setting with its current value — what the admin panel renders."""
-    stored = {row["_id"]: row["value"] for row in db[PlatformSetting.COLLECTION].find({}, {"value": 1})}
+    stored = snapshot(db)
     return {key: stored.get(key, default) for key, default in DEFAULTS.items()}
 
 
@@ -323,7 +339,7 @@ def queries_per_cycle_default(source: str) -> int:
     return DEFAULT_SOURCE_QUERIES_PER_CYCLE.get(source, DEFAULT_QUERIES_PER_CYCLE)
 
 
-def queries_per_cycle(db: Database, source: str) -> int:
+def queries_per_cycle(db: Database | Snapshot, source: str) -> int:
     """How many queries this source may be asked this cycle."""
     per_source = get(db, "source_queries_per_cycle") or {}
     if source in per_source:
@@ -333,7 +349,7 @@ def queries_per_cycle(db: Database, source: str) -> int:
     return DEFAULT_QUERIES_PER_CYCLE
 
 
-def pages_per_cycle(db: Database, source: str) -> int | None:
+def pages_per_cycle(db: Database | Snapshot, source: str) -> int | None:
     """How many pages this source may walk in one cycle, or `None` when it does not paginate."""
     stored = get(db, "source_pages_per_cycle") or {}
     if source in stored:
@@ -341,7 +357,7 @@ def pages_per_cycle(db: Database, source: str) -> int | None:
     return DEFAULT_SOURCE_PAGES_PER_CYCLE.get(source)
 
 
-def results_per_query(db: Database, source: str) -> int | None:
+def results_per_query(db: Database | Snapshot, source: str) -> int | None:
     """How deep one query to this source may reach, or `None` when the source has no such control."""
     stored = get(db, "source_results_per_query") or {}
     if source in stored:
@@ -349,7 +365,7 @@ def results_per_query(db: Database, source: str) -> int | None:
     return DEFAULT_SOURCE_RESULTS_PER_QUERY.get(source)
 
 
-def ats_companies_per_cycle(db: Database) -> int:
+def ats_companies_per_cycle(db: Database | Snapshot) -> int:
     """How many company boards the ATS family polls in one cycle."""
     return int(get(db, "ats_companies_per_cycle") or DEFAULT_ATS_COMPANIES_PER_CYCLE)
 
@@ -380,7 +396,7 @@ def database_budget_bytes(db: Database) -> int:
     return int(get(db, "database_budget_mb")) * 1024**2
 
 
-def freshness_hours(db: Database, source: str) -> int:
+def freshness_hours(db: Database | Snapshot, source: str) -> int:
     """How fresh a posting from this source must be."""
     per_source = get(db, "source_freshness_hours") or {}
     if source in per_source:

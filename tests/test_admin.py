@@ -262,6 +262,57 @@ def test_the_source_list_names_every_board_with_its_window(api):
     assert next(row for row in body if row["name"] == "linkedin")["hours"] == 4
 
 
+
+def test_the_source_list_shows_each_setting_as_it_is_set_from_one_read_of_them(api):
+    """It asked the database once a number: 85 reads, 2.7 s against Atlas (2026-11-03). Now one read
+    of every setting answers them all, and each answer is the one the setting gives on its own."""
+    from pymongo import MongoClient, monitoring
+
+    from libs import settings
+    from services.api.app import app
+    from services.api.deps import get_db
+
+    http, db, operator, _ordinary, sign_in = api
+    sign_in(http, operator)
+    settings.put(db, "source_freshness_hours", {"himalayas": 7})
+    settings.put(db, "source_queries_per_cycle", {"linkedin": 3})
+    settings.put(db, "source_min_age_hours", {"jobicy": 11})
+    settings.put(db, "ats_companies_per_cycle", 123)
+
+    class Count(monitoring.CommandListener):
+        reads = 0
+
+        def started(self, event):
+            Count.reads += event.command_name in ("find", "aggregate", "count", "distinct")
+
+        def succeeded(self, event):
+            pass
+
+        def failed(self, event):
+            pass
+
+    # A client of its own, made with the counter: a listener registered later never sees an existing one.
+    counted = MongoClient(os.environ["MONGODB_URI"], uuidRepresentation="standard", tz_aware=True,
+                          event_listeners=[Count()])[db.name]
+    app.dependency_overrides[get_db] = lambda: counted
+    try:
+        body = http.get("/admin/sources").json()
+    finally:
+        app.dependency_overrides.pop(get_db)
+        counted.client.close()
+    asked = Count.reads
+    assert asked > 0, "the counter saw nothing: it is not measuring the route"
+
+    rows = {row["name"]: row for row in body["sources"]}
+    assert (rows["himalayas"]["hours"], rows["linkedin"]["queries_per_cycle"]) == (7, 3)
+    assert rows["jobicy"]["min_age_hours"] == 11 and body["ats"]["companies_per_cycle"] == 123
+    for name, row in rows.items():
+        assert row["hours"] == settings.freshness_hours(db, name)
+        assert row["queries_per_cycle"] == settings.queries_per_cycle(db, name)
+        assert row["results_per_query"] == settings.results_per_query(db, name)
+        assert row["pages_per_cycle"] == settings.pages_per_cycle(db, name)
+    assert asked <= 10, f"{asked} reads for one page of settings"
+
 # ── per-user ceilings ─────────────────────────────────────────────────────────────────────────
 
 def test_a_limit_is_absent_default_or_unlimited_and_they_are_three_things(api):

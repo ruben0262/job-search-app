@@ -2,6 +2,7 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 
 import { api, type Schema } from "../api";
+import { keep, peek, readAhead, useKept } from "../kept";
 import { Error, Prompt, useAction } from "../ui";
 
 type Alert = {
@@ -264,17 +265,36 @@ function lastActive(iso: string | null): string {
   return days === 1 ? "1 day" : `${days} days`;
 }
 
+/** What Admin reads on arrival, as `kept.ts` keeps it, and read ahead for an admin once signed in. */
+export const ADMIN_READS = ["/admin/health", "/admin/users", "/admin/settings", "/admin/sources",
+                            "/admin/outcomes", "/admin/contact", "/admin/keywords"];
+
 export function AdminPage() {
-  const [health, setHealth] = useState<Health | null>(null);
-  const [users, setUsers] = useState<AdminUser[] | null>(null);
-  const [settings, setSettings] = useState<Settings | null>(null);
-  const [sources, setSources] = useState<Source[] | null>(null);
-  const [ats, setAts] = useState<AtsInfo | null>(null);
+  // Each part draws from what was read last time at once, and each as soon as its own read is back:
+  // the page waited for all four, the slowest 2.7 s (2026-11-03).
+  const kept = {
+    health: useKept<Health>("/admin/health"),
+    users: useKept<{ users: AdminUser[] }>("/admin/users"),
+    settings: useKept<{ settings: Settings }>("/admin/settings"),
+    sources: useKept<{ sources: Source[]; ats: AtsInfo }>("/admin/sources"),
+  };
+  const health = kept.health.data;
+  const users = kept.users.data?.users ?? null;
+  const settings = kept.settings.data?.settings ?? null;
+  const sources = kept.sources.data?.sources ?? null;
+  const ats = kept.sources.data?.ats ?? null;
+  const setHealth = (next: Health) => kept.health.set(() => next);
+  const setUsers = (next: AdminUser[]) => kept.users.set(() => ({ users: next }));
+  const setSettings = (next: Settings) => kept.settings.set(() => ({ settings: next }));
+  const setSources = (change: (rows: Source[] | null) => Source[] | null) =>
+    kept.sources.set((now) => now && { ...now, sources: change(now.sources) ?? now.sources });
+  const setAts = (change: (row: AtsInfo | null) => AtsInfo | null) =>
+    kept.sources.set((now) => now && { ...now, ats: change(now.ats) ?? now.ats });
   // The account being deleted, held until the typed address matches. `null` closes the dialog.
   const [doomed, setDoomed] = useState<AdminUser | null>(null);
   const [typed, setTyped] = useState("");
   const [tab, setTab] = useState<Tab>("health");
-  const [failed, setFailed] = useState(false);
+  const failed = (kept.health.failed && !health) || (kept.users.failed && !users);
 
   // One source, one number.
   const savePlatform = useAction(async (key: string, value: number) => {
@@ -383,23 +403,6 @@ export function AdminPage() {
   const openUser = useAction(async (id: string) => {
     window.location.hash = `/admin/users/${id}`;
   });
-
-  useEffect(() => {
-    Promise.all([
-      api.get<Health>("/admin/health"),
-      api.get<{ users: AdminUser[] }>("/admin/users"),
-      api.get<{ settings: Settings }>("/admin/settings"),
-      api.get<{ sources: Source[]; ats: AtsInfo }>("/admin/sources"),
-    ])
-      .then(([h, u, s, src]) => {
-        setHealth(h);
-        setUsers(u.users);
-        setSettings(s.settings);
-        setSources(src.sources);
-        setAts(src.ats);
-      })
-      .catch(() => setFailed(true));
-  }, []);
 
   if (failed) return <p className="error">Could not read the platform state.</p>;
   if (!health || !users) return <p className="muted">Loading…</p>;
@@ -819,7 +822,9 @@ export function AdminPage() {
         <tbody>
           {users.map((user) => (
             // The whole row opens the account.
-            <tr key={user.id} className="row-link" onClick={() => void openUser.run(user.id)}>
+            // Its page is read while the pointer rests on the row, so it opens drawn.
+            <tr key={user.id} className="row-link" onClick={() => void openUser.run(user.id)}
+                onPointerEnter={() => readAhead([`/admin/users/${user.id}`, "/admin/limits"])}>
               <td>{user.email}</td>
               <td className="job-sub">
                 {user.status}
@@ -908,10 +913,7 @@ function Stat({ value, label }: { value: string; label: string }) {
 /** What people say happened after they applied, by the CV that went with it: whether the CVs made here,
  * and passing the ATS check, get people interviews (owner, 2026-11-03). */
 function OutcomesTab() {
-  const [rows, setRows] = useState<Schema<"OutcomeRow">[] | null>(null);
-  useEffect(() => {
-    void api.get<Schema<"OutcomeRow">[]>("/admin/outcomes").then(setRows);
-  }, []);
+  const { data: rows } = useKept<Schema<"OutcomeRow">[]>("/admin/outcomes");
   if (rows === null) return <p className="muted">Loading outcomes…</p>;
   if (rows.length === 0) return <p className="muted">Nobody has marked a job applied yet.</p>;
   const rate = (part: number, whole: number) => (whole ? `${Math.round((part / whole) * 100)}%` : "–");
@@ -945,10 +947,7 @@ function OutcomesTab() {
 
 /** What people wrote on the Help page, newest first, and whether each reached the support inbox. */
 function MessagesTab() {
-  const [rows, setRows] = useState<ContactRow[] | null>(null);
-  useEffect(() => {
-    void api.get<ContactRow[]>("/admin/contact").then(setRows);
-  }, []);
+  const { data: rows } = useKept<ContactRow[]>("/admin/contact");
   if (rows === null) return <p className="muted">Loading messages…</p>;
   if (rows.length === 0) return <p className="muted">Nobody has written yet.</p>;
   return (
@@ -972,9 +971,13 @@ function MessagesTab() {
   );
 }
 
+/** The corpus tab as it opens: no search, the last 30 days, the first page. */
+export const CORPUS_FIRST = `/admin/corpus?${new URLSearchParams({ q: "", source: "", days: "30", offset: "0" })}`;
+
 function CorpusTab() {
-  const [page, setPage] = useState<CorpusPage | null>(null);
-  const [keywords, setKeywords] = useState<Keywords | null>(null);
+  // The unsearched first page, and the terms, drawn from last time at once (`kept.ts`).
+  const [page, setPage] = useState<CorpusPage | null>(() => peek<CorpusPage>(CORPUS_FIRST));
+  const [keywords, setKeywords] = useState<Keywords | null>(() => peek<Keywords>("/admin/keywords"));
   const [q, setQ] = useState("");
   const [source, setSource] = useState("");
   const [term, setTerm] = useState("");
@@ -986,9 +989,16 @@ function CorpusTab() {
 
   const load = async (offset = 0) => {
     const query = new URLSearchParams({ q, source, days: "30", offset: String(offset) });
-    setPage(await api.get<CorpusPage>(`/admin/corpus?${query}`));
+    const path = `/admin/corpus?${query}`;
+    const body = await api.get<CorpusPage>(path);
+    if (path === CORPUS_FIRST) keep(path, body);
+    setPage(body);
   };
-  const loadKeywords = async () => setKeywords(await api.get<Keywords>("/admin/keywords"));
+  const loadKeywords = async () => {
+    const body = await api.get<Keywords>("/admin/keywords");
+    keep("/admin/keywords", body);
+    setKeywords(body);
+  };
 
   useEffect(() => {
     void load().catch(() => setFailed("Could not read the corpus."));
@@ -1358,9 +1368,12 @@ function PipelineTab() {
   );
 }
 
+/** The latency tab as it opens: the last 24 hours. */
+export const LATENCY_FIRST = "/admin/latency?hours=24";
+
 function LatencyTab() {
-  const [report, setReport] = useState<LatencyReport | null>(null);
   const [hours, setHours] = useState(24);
+  const [report, setReport] = useState<LatencyReport | null>(() => peek<LatencyReport>(LATENCY_FIRST));
   // One row open at a time.
   const [open, setOpen] = useState<string | null>(null);
   // Kept per stage after the first fetch.
@@ -1368,12 +1381,17 @@ function LatencyTab() {
   const [failed, setFailed] = useState<string | null>(null);
 
   useEffect(() => {
-    setReport(null);
+    const path = `/admin/latency?hours=${hours}`;
+    // Last time's numbers for this window at once, if there are any; the fresh ones behind them.
+    setReport(peek<LatencyReport>(path));
     setDetails({});
     setOpen(null);
     void api
-      .get<LatencyReport>(`/admin/latency?hours=${hours}`)
-      .then(setReport)
+      .get<LatencyReport>(path)
+      .then((body) => {
+        keep(path, body);
+        setReport(body);
+      })
       .catch(() => setFailed("Could not read the pipeline timings."));
   }, [hours]);
 

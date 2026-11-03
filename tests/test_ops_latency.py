@@ -223,6 +223,24 @@ def test_each_zone_reports_its_own_minutes_rather_than_the_whole_journey(db):
     assert pipeline_latency(db, hours=24)["found_to_delivered"]["p50"] == 40.0
 
 
+
+def test_the_drill_down_read_once_is_the_same_as_its_parts_read_apart(db):
+    """`latency_report` reads each zone once; the route read found → delivered three times."""
+    from libs.ops import latency
+
+    job, found = _posting(db, minutes_ago=120, described_after=10, fetched_before=0.5, posted_before=30.5)
+    _delivered(db, job, found + timedelta(minutes=40))
+    _delivered(db, job, found + timedelta(minutes=70))
+
+    report = latency.latency_report(db, hours=24)
+
+    assert report["stages"] == latency.stage_breakdown(db, hours=24)
+    assert report["spans"] == latency.pipeline_latency(db, hours=24)
+    assert report["lanes"] == latency.lane_timings(db, hours=24)
+    delivered = latency._spans(db, latency._BY_KEY["found_to_delivered"], hours=24)
+    assert report["series"] == latency._hourly(delivered) and report["series"], "one hour, two deliveries"
+    assert report["spans"]["found_to_delivered"]["samples"] == 2
+
 def test_the_backlog_counts_what_has_not_got_through_rather_than_what_has(db):
     """The percentiles describe what already completed."""
     from libs.ops.latency import stage_detail

@@ -188,10 +188,23 @@ def _hourly(spans: list[tuple[datetime, float]]) -> list[dict]:
 
 def pipeline_latency(db: Database, *, hours: int = WINDOW_HOURS) -> dict:
     """What the person waited, end to end — the span the health summary judges."""
-    found_to_delivered = _judged("found_to_delivered", _measure(
-        [minutes for _, minutes in _spans(db, _BY_KEY["found_to_delivered"], hours=hours)]))
+    return _delivered(_spans(db, _BY_KEY["found_to_delivered"], hours=hours), hours=hours)
+
+
+def _delivered(spans: list[tuple[datetime, float]], *, hours: int) -> dict:
+    found_to_delivered = _judged("found_to_delivered", _measure([minutes for _, minutes in spans]))
     return {"window_hours": hours, "found_to_delivered": found_to_delivered,
             "verdict": found_to_delivered["verdict"]}
+
+
+def latency_report(db: Database, *, hours: int = WINDOW_HOURS) -> dict:
+    """The drill-down whole: each zone, the end-to-end span, the lanes and the hourly series, from one
+    read of each zone's spans. Found → delivered was read three times for it, once for each part
+    that shows it (2026-11-03): the same numbers, three round trips to Atlas."""
+    spans = {stage.key: _spans(db, stage, hours=hours) for stage in STAGES}
+    return {"window_hours": hours, "stages": _breakdown(spans),
+            "spans": _delivered(spans["found_to_delivered"], hours=hours),
+            "lanes": lane_timings(db, hours=hours), "series": _hourly(spans["found_to_delivered"])}
 
 
 def lane_timings(db: Database, *, hours: int = WINDOW_HOURS) -> list[dict]:
@@ -214,16 +227,15 @@ def lane_timings(db: Database, *, hours: int = WINDOW_HOURS) -> list[dict]:
             for lane in sorted(waits)]
 
 
-def latency_series(db: Database, *, hours: int = WINDOW_HOURS) -> list[dict]:
-    """Found → delivered per hour."""
-    return _hourly(_spans(db, _BY_KEY["found_to_delivered"], hours=hours))
-
-
 def stage_breakdown(db: Database, *, hours: int = WINDOW_HOURS) -> list[dict]:
     """Every zone, in pipeline order, with the numbers a collapsed row shows."""
+    return _breakdown({stage.key: _spans(db, stage, hours=hours) for stage in STAGES})
+
+
+def _breakdown(spans: dict[str, list[tuple[datetime, float]]]) -> list[dict]:
     rows = []
     for stage in STAGES:
-        measured = _measure([minutes for _, minutes in _spans(db, stage, hours=hours)])
+        measured = _measure([minutes for _, minutes in spans[stage.key]])
         judged = stage.key in THRESHOLDS
         rows.append({
             "key": stage.key, "label": stage.label, "zone": stage.zone, "what": stage.what,

@@ -14,6 +14,44 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-03 (on the server) — Admin opens at once, the notifications over the Jobs tabs, a job view that closes
+
+**Admin said "Loading…" for 2–3 seconds** (owner). Measured against Atlas, each admin read:
+- `/admin/sources`: **2,748 ms and 87 queries**. It asked the settings collection once per number,
+  four numbers for each of 21 sources, all from the same few documents. `libs.settings.snapshot` reads
+  every setting in one query per request. Each getter takes it where it takes `db`, and gives the same
+  answer, never older than the request. Now **168 ms, 5 queries**.
+  - `all_settings` reads through it too, so one function reads them all.
+  - `test_the_source_list_shows_each_setting_as_it_is_set_from_one_read_of_them` compares each number
+    with its getter's own answer, and counts the reads on a client of its own. 88 reads on the old
+    route; at most 10 now.
+- `/admin/latency`: 679 ms. Found → delivered was read three times, once for each part that shows it.
+  `latency_report` reads each zone once and builds all four parts from that. Now 476 ms.
+  `latency_series` had no other caller and is gone. A test holds the report equal to its parts read
+  apart.
+- The page waited for all four of its first reads together (`Promise.all`), so for the slowest. Each
+  part now draws as soon as its own read is back, and every admin read is in `kept.ts`: a return
+  visit draws at once.
+- Admin's reads are fetched ahead once an admin is signed in, the first views of Corpus and Latency
+  included. An account's page is fetched while the pointer rests on its row, and no longer fades in.
+- Not changed: `/admin/health` (323 ms, 10 queries) is the slowest left. It is read ahead, so only a
+  cold first visit waits on it.
+
+**The notifications opened under the Jobs tabs** (owner's screenshot). The top bar's rule was
+`.app nav`, which reaches every `nav` in the app. The Jobs tab row (and Admin's) became sticky, opaque
+and above the page, across the open panel. It is `.app > nav` now, the top bar alone.
+`test_the_notifications_open_over_the_jobs_tabs` reads what is on top across the open panel. It fails
+on the old rule.
+
+**A job's view, closed after a CV was made in it, could not be opened again.** Found by the browser
+test of skipping and refreshing, which failed the same way at the previous commit.
+- × and a tap outside shut the `<dialog>` and left it to the browser's `close` event to tell the card.
+  After a build, that event did not reach the card, so the sheet stayed mounted, shut. The card still
+  counted it open, and tapping the job did nothing.
+- `Sheet` now calls `onClose` itself, and the card takes it away (an open dialog removed from the
+  page is closed). Escape still goes the browser's way.
+- The test now checks that no sheet is left in the page and that the job opens again.
+
 ## 2026-11-03 (late night) — the first deploy to the new server: the sign-in broker on Python 3.12
 
 **`oauthbroker` restarted forever on the new server.**
