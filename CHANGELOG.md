@@ -14,6 +14,26 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-03 — The sign-up link reached nothing; every deploy now opens it
+
+**Nobody could verify a sign-up** (owner): the emailed link said "This site can't be reached". It is
+built from `PUBLIC_URL`, and `deploy/SERVER.md` said to set it to `https://mahoraga-app.rubenlekli.com`.
+That was the old VPS's name, and it no longer resolves. The site is `https://mahoraga.rubenlekli.com`.
+The guide is corrected; the server's value is changed by hand (no code reads a fixed address).
+
+It is the second wrong `PUBLIC_URL` on this server in a day (the first was the tunnel's internal
+`http://platform-api:8000`), and both failed only in a stranger's inbox. So:
+- `/health` reports `public_url`, the address the site builds its links from.
+- `deploy/reach.sh <address>` opens `<address>/health` from the internet. It passes only if the site
+  answering reports that same address, so the old VPS still answering at an old name does not count.
+- `deploy.sh` runs it with the running site's own value, and a failure fails the deploy.
+- Tests: `reach.sh` against a local site (passes), a site reporting another address (fails), and
+  nothing listening (fails). The sign-up link is on the address `/health` reports, and following it
+  verifies the account.
+
+Gates: lint-imports 2 kept; ruff clean; schema ok; contract regenerated; build ✓; **1,298 passed,
+3 skipped**.
+
 ## 2026-11-03 — Several CVs and cover letters, each switched on or off; workplace switches; "Just arrived first"
 
 **Every CV and cover letter a person uploads is used, and each has a switch** (owner). Someone

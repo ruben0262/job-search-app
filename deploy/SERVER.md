@@ -137,7 +137,7 @@ Each setting says in the file what it is and how to make it. In short:
 | `MONGODB_DB` | `mahoraga` |
 | `SECRETS_KEK` | **The old server's value**, if you are bringing its accounts (step 9): their saved keys open with it and nothing else. Otherwise a new one: `.venv/bin/python -c "from libs.secrets import generate_key; print('k0:' + generate_key())"`. Keep a copy in your password manager too |
 | `ACCESS_TOKEN_SECRET` | `python3 -c "import secrets; print(secrets.token_urlsafe(48))"` |
-| `PUBLIC_URL` | `https://mahoraga-app.rubenlekli.com`: what emails and alerts link to |
+| `PUBLIC_URL` | `https://mahoraga.rubenlekli.com`, the address people open the site at: every sign-up, reset and alert link starts with it. The deploy checks it reaches this server (`deploy/reach.sh`) |
 | `ADMIN_EMAILS` | `lekliruben@gmail.com` |
 | `TUNNEL_TOKEN` | Step 6 |
 | `SMTP_PASSWORD` | The Zoho mailbox's password (an app password, with 2FA) |
@@ -175,11 +175,14 @@ would reach the old server.
    - That address is the API's name on the containers' own network. Not `localhost`: the tunnel runs
      in a container beside the API, and the API opens no port on the VM.
    - Not `api:8000` either: `compose.yml` explains the name clash it avoids.
-4. Once the test name works (step 7), move the real name:
-   - in the **old** tunnel's Public Hostnames, delete `mahoraga-app.rubenlekli.com`;
+   `PUBLIC_URL` must be a name this tunnel serves, or the emails' links land nowhere: while you test,
+   the test name; after step 4, the real one. Every deploy checks it (`deploy/reach.sh`).
+4. Once the test name works (step 7), move the real name, `mahoraga.rubenlekli.com`:
+   - in the **old** tunnel's Public Hostnames, delete it;
    - in the **new** one, add it with the same `HTTP` and `platform-api:8000`. If Cloudflare says a DNS
      record already exists, delete that `CNAME` under DNS first.
-   - Stop the old server's stack, and delete the test name.
+   - Set `PUBLIC_URL=https://mahoraga.rubenlekli.com`, run `deploy/deploy.sh api notifier`, then stop
+     the old server's stack and delete the test name.
 
 If a token ever leaks: the tunnel's page → *Refresh token*, put the new one in `server.env`, then
 `deploy/compose.sh up -d cloudflared` (it is recreated with the new token).

@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 
 from libs import assistant
 from libs.db import ensure_schema
+from libs.notify import site_url
 from libs.obs import configure
 from libs.secrets import install
 from services.api.account_routes import router as account_router
@@ -65,8 +66,9 @@ app.include_router(telegram_router)
 
 @app.get("/health")
 def health() -> dict:
-    """Liveness only."""
-    return {"status": "ok"}
+    """Liveness, and the address this site's emails link to: `deploy/reach.sh` asks for it through
+    that address, so a link that would land on nothing, or on another server, fails the deploy."""
+    return {"status": "ok", "public_url": site_url()}
 
 
 # The SPA is served by this process, from `/app/web` in the image.

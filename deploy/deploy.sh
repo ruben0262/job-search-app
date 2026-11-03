@@ -145,6 +145,11 @@ else
   failed=1 down=1
 fi
 
+# The address the emails link to, as the running site has it, opened from the internet. Not reaching
+# it is a failed deploy: nobody can verify a sign-up or reset a password (found 2026-11-03).
+deploy/reach.sh "$($COMPOSE exec -T api python -c 'from libs.notify import site_url; print(site_url())')" \
+  || failed=1
+
 if [ "$failed" -ne 0 ]; then
   echo
   # Not running is its own code failing, said in the log lines above; a rebuild would build the same.

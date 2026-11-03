@@ -5779,7 +5779,7 @@
     },
     "/health": {
       "get": {
-        "description": "Liveness only.",
+        "description": "Liveness, and the address this site's emails link to: `deploy/reach.sh` asks for it through\nthat address, so a link that would land on nothing, or on another server, fails the deploy.",
         "operationId": "health_health_get",
         "responses": {
           "200": {

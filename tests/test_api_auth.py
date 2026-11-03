@@ -357,6 +357,23 @@ def test_the_emailed_links_point_at_the_spa_routes_not_the_api(client):
     assert "/#/reset?token=" in mailer.sent[-1][2]
 
 
+def test_the_sign_up_link_is_on_the_address_the_site_says_it_is_at(client, monkeypatch):
+    """`deploy/reach.sh` opens `/health` through `public_url` to prove the links work, so the link in
+    the email must be built from that same address, and followed, it must verify the account."""
+    import re
+
+    http, _db, mailer = client
+    monkeypatch.setenv("PUBLIC_URL", "https://mahoraga.rubenlekli.com/")
+    _signup(http, email := _email())
+
+    site = http.get("/health").json()["public_url"]
+    assert site == "https://mahoraga.rubenlekli.com"
+    link = re.search(r"https://\S+", mailer.sent[-1][2]).group(0)
+    assert link.startswith(f"{site}/#/verify?token=")
+    assert http.post("/auth/verify", json={"token": link.split("token=")[1]}).status_code == 200
+    assert http.post("/auth/login", json={"email": email, "password": PASSWORD}).status_code == 200
+
+
 def test_reset_sets_the_password_ends_every_session_and_does_not_log_in(client):
     http, db, mailer = client
     email, _ = _logged_in(http, mailer)

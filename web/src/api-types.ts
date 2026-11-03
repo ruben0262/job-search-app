@@ -983,7 +983,8 @@ export interface paths {
         };
         /**
          * Health
-         * @description Liveness only.
+         * @description Liveness, and the address this site's emails link to: `deploy/reach.sh` asks for it through
+         *     that address, so a link that would land on nothing, or on another server, fails the deploy.
          */
         get: operations["health_health_get"];
         put?: never;

@@ -67,3 +67,72 @@ def test_every_image_runs_the_python_the_code_is_written_for():
     for dockerfile in dockerfiles:
         stages = re.findall(r"^FROM\s+(\S+)", dockerfile.read_text(encoding="utf-8"), re.MULTILINE)
         assert stages[-1] == python, f"{dockerfile.name} runs on {stages[-1]}, not {python}"
+
+
+def _site(health: dict | None):
+    """A web server on a free local port answering `/health` with `health` (`None`: its own address)."""
+    import http.server
+    import json
+    import threading
+
+    class Health(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            url = f"http://127.0.0.1:{self.server.server_port}"
+            body = json.dumps(health or {"status": "ok", "public_url": url}, separators=(",", ":"))
+            self.send_response(200 if self.path == "/health" else 404)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(body.encode())
+
+        def log_message(self, *_args):
+            pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Health)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server
+
+
+def _reach(url: str):
+    import os
+    import subprocess
+
+    return subprocess.run(["bash", str(DEPLOY / "reach.sh"), url], capture_output=True, text=True,  # noqa: S603, S607 - our own script
+                          env={**os.environ, "REACH_TRIES": "1"}, timeout=30, check=False)
+
+
+def test_the_deploy_passes_when_the_emails_address_reaches_this_site():
+    server = _site(None)
+    try:
+        result = _reach(f"http://127.0.0.1:{server.server_port}/")
+    finally:
+        server.shutdown()
+    assert result.returncode == 0, result.stdout
+    assert "the links in emails work" in result.stdout
+
+
+def test_the_deploy_fails_when_the_emails_address_reaches_another_server():
+    """The old VPS still answering at the old name: up, healthy, and not where the accounts are."""
+    server = _site({"status": "ok"})
+    try:
+        result = _reach(f"http://127.0.0.1:{server.server_port}")
+    finally:
+        server.shutdown()
+    assert result.returncode == 1
+    assert "does not reach this site" in result.stdout and "PUBLIC_URL" in result.stdout
+
+
+def test_the_deploy_fails_when_the_emails_address_reaches_nothing():
+    """`https://mahoraga-app…` once the old tunnel let it go: "This site can't be reached"."""
+    server = _site(None)
+    port = server.server_port
+    server.shutdown()
+    server.server_close()
+    result = _reach(f"http://127.0.0.1:{port}")
+    assert result.returncode == 1
+    assert "does not reach this site" in result.stdout
+
+
+def test_every_deploy_checks_the_emails_address():
+    """A check nobody runs is no check: `deploy.sh` runs it with the address the running site uses."""
+    text = (DEPLOY / "deploy.sh").read_text(encoding="utf-8")
+    assert re.search(r"^deploy/reach\.sh .*site_url", text, re.MULTILINE)

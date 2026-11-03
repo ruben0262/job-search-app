@@ -68,7 +68,7 @@ deploy/compose.sh stop notifier                        # pause alerts; `up -d no
 deploy/compose.sh run --rm --no-deps harvester         # one harvest now
 deploy/compose.sh run --rm seed-ats --dry-run          # what the company seed would store
 deploy/compose.sh run --rm seed-ats --ats workable     # one ATS again, e.g. after it refused a burst
-curl -s https://mahoraga-app.rubenlekli.com/health     # {"status":"ok"}
+deploy/reach.sh https://mahoraga.rubenlekli.com      # do the emails' links reach this site?
 ```
 
 The scripts in `scripts/` run on the VM itself, from `.venv`, with the settings loaded:

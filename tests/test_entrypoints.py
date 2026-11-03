@@ -55,7 +55,7 @@ def test_the_api_serves_the_site_without_swallowing_its_own_routes(tmp_path):
     try:
         with TestClient(app_module.app) as http:
             assert http.get("/").status_code == 200, "the site is served at the root"
-            assert http.get("/health").json() == {"status": "ok"}, "and the API still answers"
+            assert http.get("/health").json()["status"] == "ok", "and the API still answers"
             assert http.get("/legal/privacy").status_code == 200
     finally:
         os.environ.pop("WEB_DIR", None)
