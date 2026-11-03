@@ -24,6 +24,7 @@ from libs.notify import reachable
 from libs.obs import audit
 from libs.onboarding import onboarding_state
 from libs.profiles.repository import ProfileFiles
+from libs.tenant import applications
 from services.api.admin_routes import admin_emails
 from services.api.deps import current_user, get_db
 from services.api.onboarding_routes import OnboardingSteps
@@ -302,6 +303,12 @@ def job_description(job_id: int, db: Database = Depends(get_db),
     return JobDescription(text=found["description"])
 
 
+class Step(BaseModel):
+    """One thing that happened after "I applied", in the person's own words."""
+    stage: Literal["interview", "offer", "hired", "rejected"]
+    at: datetime
+
+
 class AppliedJob(BaseModel):
     id: int
     title: str
@@ -310,6 +317,8 @@ class AppliedJob(BaseModel):
     url: str
     applied_at: datetime
     documents: list[JobDocument]
+    # Oldest first; the last is where the application stands, and none means it is waiting.
+    progress: list[Step]
 
 
 @router.get("/applied")
@@ -318,7 +327,7 @@ def applied(db: Database = Depends(get_db),
     """Every job this person said they applied to, the latest first, whether or not it still matches
     their words. Retention keeps these postings (`libs.corpus.archive.ACTED_ON`)."""
     rows = list(db[UserJobState.COLLECTION].find(
-        {"user_id": user_id, "applied_at": {"$ne": None}}, {"job_id": 1, "applied_at": 1},
+        {"user_id": user_id, "applied_at": {"$ne": None}}, {"job_id": 1, "applied_at": 1, "progress": 1},
         sort=[("applied_at", -1)]))
     jobs = {doc["_id"]: doc for doc in db[CorpusJob.COLLECTION].find(
         {"_id": {"$in": [row["job_id"] for row in rows]}},
@@ -326,8 +335,34 @@ def applied(db: Database = Depends(get_db),
     documents = for_jobs(db, user_id, list(jobs))
     return [AppliedJob(id=row["job_id"], title=job["title"], company=job.get("company"),
                        location=job.get("location"), url=job["url"], applied_at=row["applied_at"],
-                       documents=[job_document(each) for each in documents.get(row["job_id"], [])])
+                       documents=[job_document(each) for each in documents.get(row["job_id"], [])],
+                       progress=row.get("progress") or [])
             for row in rows if (job := jobs.get(row["job_id"]))]
+
+
+class StepRequest(BaseModel):
+    stage: Literal["interview", "offer", "hired", "rejected"]
+
+
+# Before `/jobs/{job_id}/{mark}`, which would otherwise take "progress" for a mark and refuse it.
+@router.put("/jobs/{job_id}/progress")
+def advance(job_id: int, body: StepRequest, db: Database = Depends(get_db),
+            user_id: _uuid.UUID = Depends(current_user)) -> list[Step]:
+    """Say what happened next with an application: an interview, an offer, the job, or not this time."""
+    try:
+        progress = applications.advance(db, user_id, job_id, body.stage)
+    except applications.StepRefused as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    audit(logger, "application.progressed", user=user_id, job=job_id, stage=body.stage)
+    return progress
+
+
+@router.delete("/jobs/{job_id}/progress")
+def step_back(job_id: int, db: Database = Depends(get_db),
+              user_id: _uuid.UUID = Depends(current_user)) -> list[Step]:
+    """Take the last step back, for a tap made by mistake."""
+    audit(logger, "application.stepped_back", user=user_id, job=job_id)
+    return applications.step_back(db, user_id, job_id)
 
 
 class JobMarks(BaseModel):

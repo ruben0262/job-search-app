@@ -14,6 +14,53 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-03 — how far applications get, LinkedIn searches pooled, the company seed on the box
+
+**What happened after "I applied"** (owner: "key feedback for us").
+- Applied shows each application as four steps (Applied, Interview, Offer, Got the job) with one
+  question and two answers at a time: "Heard back?" → "I got an interview" / "Not this time", and so
+  on. "Not this time" ends it from wherever it stands, a step may be skipped, and Undo takes the last
+  one back. The page's top line adds them up ("2 interviews · 1 offer").
+- Each step is kept with its time on the person's row for the job (`UserJobState.progress`,
+  `libs/tenant/applications.py`): `PUT` / `DELETE /jobs/{id}/progress`.
+- **Admin › Outcomes** counts how far applications got, all together and by the CV that went with them:
+  none made here, instant, AI-written, passed or flagged by the ATS check.
+  - The verdict was only logged before; `BuiltDocument.ats_ok` keeps it now.
+  - The CV is the newest one still kept for the job, so one deleted counts as none made here.
+- **Found by the screenshots:** every row saved before today has no `progress` field, and the
+  double-tap guard (`$size`) never matches a field that is not there. Every first answer was refused
+  as "changed meanwhile". The guard reads a missing list as empty, with a test on a row saved the old
+  way.
+- **Found on the way:** `cover_built` had nothing that wrote it. Only tests set it, and the producer
+  check counted the archive's query as a write. So retention kept postings people applied to, never
+  ones they had written a cover letter for. docgen sets it now.
+
+**LinkedIn searches are pooled** (owner: "scale with keywords, not users").
+- Everyone due in a pass has their searches folded into the distinct (words, place, remote) queries
+  they make (`build_query_set`, as the board tier always did). Each is asked once, reaching back as far
+  as its furthest person's gap. The most-shared go first, up to `queries_per_cycle`, and among equals
+  the order changes each pass, so a search left out once is not always the one left out.
+- **Deleted with the per-person search, as no longer meaning anything:**
+  - the `linkedin_concurrent_users` setting and its Admin control ("LinkedIn accounts per tick");
+  - `LINKEDIN_MAX_CONCURRENT_USERS`;
+  - `ProxyLease`, with the lease side of the client (`MeteredClient`, `make_shared_client`,
+    `make_site_client`). The site has had one proxy for everyone since 2026-11-01.
+
+**The company seed on the box.**
+- `seed-ats` is a one-shot service in `deploy/compose.yml` (profile `tools`) with its own
+  `deploy/docker/Dockerfile.seed-ats`, on the harvester's requirements.
+- `deploy.sh` builds and verifies it with every service. Whenever a deploy brings a change to
+  `ats_companies.txt` (the first one with it, too), it starts a run in the background. The run writes
+  its report to `logs/seed_ats.log`.
+- The README's table of services was still listing Postgres and five switched-off ML services; it
+  lists what `compose.yml` runs now. Each service is its own container from its own Dockerfile, so one
+  can be rebuilt alone (`./deploy/deploy.sh docgen`).
+
+**Hiring Cafe** still answers 403. Probing it by imitating a browser's TLS was refused by the
+assistant's safety check as getting round a bot wall, and was not tried another way. The companies it
+pointed at are polled directly now (285 boards). **Working Nomads**, checked 2026-11-03: 35 jobs, the
+newest 4.7 days old.
+
 ## 2026-11-02 (night, later) — LinkedIn's newest jobs, Just Join IT back, sign-in that does not wait
 
 The owner's sixth list: the app started and its way in checked, then jobs reported accurately, quickly

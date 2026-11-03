@@ -43,6 +43,8 @@ class Built:
     # Counted because every revision is a second model call and a second render: if this is
     # common, the fix belongs in the prompt rather than in the loop that cleans up after it.
     revised: bool = False
+    # Whether the PDF passed the ATS check; kept with the document (`BuiltDocument.ats_ok`).
+    ats_ok: bool | None = None
 
 
 def run_instant(db, user_id: _uuid.UUID, job_id: int, *, kind: str) -> Built:
@@ -112,7 +114,7 @@ def _done(db, user: User, job: CorpusJob, *, kind: str, mode: str, document: byt
           pages=report.pages, calls=calls, revised=calls > 1, ats_ok=report.ats_ok,
           chars=report.chars)
     return Built(_filename(user.full_name, kind), document, report.pages, calls,
-                 revised=calls > 1)
+                 revised=calls > 1, ats_ok=report.ats_ok)
 
 
 def _cover(client, context: str, *, model: str, base_cv: str, grounding: str | None,

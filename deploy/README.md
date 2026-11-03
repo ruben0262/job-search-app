@@ -185,15 +185,18 @@ curl -s https://mahoraga-app.rubenlekli.com/health          # {"status":"ok"}
 ./.venv/bin/python deploy/scripts/show_accounts.py
 ```
 
-### 5. Give the ATS tier its companies (once, then whenever the list grows)
+### 5. The ATS tier's companies
 
-The nine company-board sources poll `ats_tokens`, and nothing fills it but links in postings. This
-looks for each company in `deploy/scripts/ats_companies.txt` on every ATS and stores the boards that
-list jobs. Run it again after adding names; boards already stored are left alone.
+The nine company-board sources poll `ats_tokens`, and nothing else fills it but links in postings.
+The `seed-ats` one-shot looks for each company in `deploy/scripts/ats_companies.txt` on every ATS and
+stores the boards that list jobs, with the company's own name. **`deploy.sh` runs it by itself**, in
+the background, whenever a deploy brings a change to the list (the first deploy with the list, too),
+and writes its report to `logs/seed_ats.log`. To add companies, add lines and deploy. To run it by
+hand, for instance after an ATS refused a burst:
 
 ```bash
-./.venv/bin/python -u deploy/scripts/seed_ats.py --dry-run     # what it would store
-./.venv/bin/python -u deploy/scripts/seed_ats.py
+docker compose -f deploy/compose.yml run --rm seed-ats --dry-run      # what it would store
+docker compose -f deploy/compose.yml run --rm seed-ats --ats workable # one ATS again
 ```
 
 ### Host-side scripts need `MONGODB_URI`
@@ -208,19 +211,19 @@ set -a && . deploy/.env && set +a
 
 ### What runs where
 
+Each service is its own container from its own Dockerfile, with its own memory ceiling, so one can be
+rebuilt or restarted while the rest keep running: `./deploy/deploy.sh docgen` builds, recreates and
+verifies `docgen` alone. The database is MongoDB Atlas, outside this stack.
+
 | Service | Profile | What it does |
 |---|---|---|
-| `postgres` | default | everything: corpus, per-user tail, credentials, queue |
-| `capture` | `ml` | switched off — `process` lane, documents to a draft profile |
-| `setupagent` | `ml` | switched off — `setup` lane, the setup chat's agents |
-| `labeller` | `ml` | switched off — `label` lane, relabel and cold start |
-| `scorer` | `ml` | switched off — `score` lane, corpus rows to per-user scores |
-| `trainer` | `ml` | switched off — `train` lane, fits a user's model |
+| `api` | `full` | the JSON API **and the site**, on one origin |
 | `notifier` | `full` | `notify` lane — **messages real people** |
 | `docgen` | `full` | `docgen` lane — builds CVs and cover letters for download; **the only image with Chrome** |
-| `api` | `full` | the JSON API **and the site**, on one origin |
+| `oauthbroker` | `full` | Claude sign-in sessions; exactly one replica |
 | `cloudflared` | `full` | the only way in; no inbound port is open |
 | `harvester` | `tools` | one cycle, invoked by a systemd timer |
+| `seed-ats` | `tools` | the company boards from `ats_companies.txt`, run by `deploy.sh` when the list changes |
 
 ## Telegram, browser notifications and email
 

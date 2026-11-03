@@ -25,6 +25,9 @@ class UserJobState(Document):
     cover_built: bool = False
     dismissed_at: datetime | None = None
     created_at: datetime = field(default_factory=now)
+    # What happened after "I applied", in the person's own words, each `{"stage": ..., "at": ...}`
+    # (`libs.tenant.applications`). The last is where the application stands.
+    progress: list[dict] = field(default_factory=list)
 
 
 def record_state(db: Database, user_id: uuid.UUID, job_id: int, **fields) -> UserJobState:

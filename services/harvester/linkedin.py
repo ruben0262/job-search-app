@@ -1,9 +1,18 @@
-"""The per-user LinkedIn pass: each person's own words, on their own schedule, through the site's one
-proxy (`libs.proxy`). No bandwidth limit per person (owner, 2026-11-01)."""
+"""The LinkedIn pass: everyone's words, each distinct search asked once, through the site's one proxy
+(`libs.proxy`), then every new posting described. No bandwidth limit per person (owner, 2026-11-01).
+
+**Searches are pooled, not per person** (owner, 2026-11-03). Each account still has its own schedule
+(`linkedin_interval_min`), but the searches of everyone due in a pass are folded into the distinct
+(words, place, remote) queries they make (`build_query_set`) and each is asked once, however many
+people share it. The cost of a pass follows the distinct searches, which repeat as people share their
+fields, not the number of accounts; the corpus is shared, so a job one search finds reaches everyone
+whose words it has.
+"""
 from __future__ import annotations
 
 import logging
 import math
+import random
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
@@ -25,12 +34,8 @@ from libs.settings import (
 from libs.settings import get as settings_get
 from libs.tenant.repository import TenantRepository
 from services.harvester.describe import describe_pending
-from services.harvester.fetch import ProxyLease, make_site_client
-from services.harvester.governor import (
-    LINKEDIN_MAX_CONCURRENT_USERS,
-    linkedin_enabled,
-    next_linkedin_run,
-)
+from services.harvester.fetch import make_site_client
+from services.harvester.governor import linkedin_enabled, next_linkedin_run
 from services.harvester.query_set import build_query_set, original_terms
 from services.harvester.sources import jobspy_source
 
@@ -52,35 +57,42 @@ class LinkedInReport:
 
     considered: int = 0
     ran: int = 0
+    # Distinct searches asked, and how many of them more than one person wanted.
+    queries: int = 0
+    shared: int = 0
     links_found: int = 0
     new_jobs: int = 0
     described: int = 0
     failures: dict[str, str] = field(default_factory=dict)
 
 
-def due_users(db, *, now: datetime, limit: int) -> list[User]:
+def due_users(db, *, now: datetime) -> list[User]:
     """Active users whose LinkedIn run is due, soonest first."""
     # Ascending puts an empty `linkedin_next_run_at` first: never run is the most overdue.
     return find(db, User, {"active": True, "status": "active",
                            "$or": [{"linkedin_next_run_at": None}, {"linkedin_next_run_at": {"$lte": now}}]},
-                sort=[("linkedin_next_run_at", 1)], limit=limit)
+                sort=[("linkedin_next_run_at", 1)])
 
 
-def queries_for(db, user: User) -> list[dict]:
-    """This user's own LinkedIn queries — their keywords, nobody else's."""
-    config = TenantRepository(db).get_config(user.id)
-    if not config:
-        return []
+def pooled_queries(configs: dict, *, budgets: dict, windows: dict[object, int], cap: int,
+                   rng: random.Random | None = None) -> list[dict]:
+    """Every distinct search the due people's configs make, once each, however many share it.
 
-    keys = build_query_set({user.id: config}, sources=("linkedin",),
-                           budgets={user.id: limits.resolve(user, "keywords")})
-    terms = original_terms({user.id: config})
-    queries = [{"search_term": terms.get(key.keyword_norm, key.keyword_norm),
-                # The board wants a place name, not the slug we store.
-                "location": location_search_name(key.location_norm) or None,
-                "is_remote": key.is_remote, "hours_old": key.max_age_hours}
-               for key in keys]
-    return queries[:queries_per_cycle(db, "linkedin")]
+    Each reaches back as far as the widest of its people's windows (`search_window`), so nobody's gap is
+    left unsearched. The most-shared go first; among equals the order is new each pass, so a search left
+    out by `cap` (`queries_per_cycle`) one pass is not the one left out every pass.
+    """
+    keys = list(build_query_set(configs, sources=("linkedin",), budgets=budgets).items())
+    (rng or random).shuffle(keys)
+    keys.sort(key=lambda item: -len(item[1]))
+    terms = original_terms(configs)
+    return [{"search_term": terms.get(key.keyword_norm, key.keyword_norm),
+             # The board wants a place name, not the slug we store.
+             "location": location_search_name(key.location_norm) or None,
+             "is_remote": key.is_remote,
+             "hours_old": max(windows[user] for user in users),
+             "people": len(users)}
+            for key, users in keys[:cap]]
 
 
 def search_window(user: User, *, now: datetime, interval_min: int, most: int) -> int:
@@ -100,9 +112,8 @@ def search_window(user: User, *, now: datetime, interval_min: int, most: int) ->
 
 
 def run_for_due_users(db, *, now: datetime | None = None,
-                      limit: int = LINKEDIN_MAX_CONCURRENT_USERS,
                       gather=jobspy_source.gather_linkedin) -> LinkedInReport:
-    """One pass over the users whose LinkedIn run is due."""
+    """One pass: the searches of everyone due, pooled, then every posting still to describe."""
     report = LinkedInReport()
     if not linkedin_enabled():
         logger.warning("linkedin: tier disabled by HARVEST_LINKEDIN_DISABLED")
@@ -123,54 +134,59 @@ def run_for_due_users(db, *, now: datetime | None = None,
     # row past it has already been refused by the pre-score filter and its text will never be read.
     deliverable_for = int(settings_get(db, "job_max_age_hours"))
 
-    for user in due_users(db, now=now, limit=limit):
+    tenants = TenantRepository(db)
+    configs: dict = {}
+    budgets: dict = {}
+    windows: dict = {}
+    for user in due_users(db, now=now):
         report.considered += 1
         interval = limits.resolve(user, "linkedin_interval_min")
-        window = search_window(user, now=now, interval_min=interval, most=most)
+        windows[user.id] = search_window(user, now=now, interval_min=interval, most=most)
         # Scheduled first, deliberately: every path below wants the same next run, success or not.
         db[User.COLLECTION].update_one({"_id": user.id}, {"$set": {
             "linkedin_next_run_at": next_linkedin_run(now, interval)}})
+        if config := tenants.get_config(user.id):
+            configs[user.id] = config
+            budgets[user.id] = limits.resolve(user, "keywords")
+            # `None` is Unlimited, and `build_query_set` takes it as every word the account has.
 
-        queries = queries_for(db, user)
-        if not queries:
-            continue
-
+    queries = pooled_queries(configs, budgets=budgets, windows=windows,
+                             cap=queries_per_cycle(db, "linkedin"))
+    if queries:
         try:
-            _run_one(user, queries, corpus=corpus, proxy=proxy, report=report, gather=gather,
-                     hours_old=window, results_wanted=depth)
+            _search(queries, corpus=corpus, proxy=proxy, report=report, gather=gather,
+                    results_wanted=depth, people=len(configs))
+            report.ran = len(configs)
         except Exception as exc:                                    # noqa: BLE001
-            # One user's LinkedIn failing is not the tier failing.
-            report.failures[str(user.id)] = f"{type(exc).__name__}: {exc}"
-            logger.warning("linkedin: user %s failed: %s", user.id, type(exc).__name__)
-            continue
-        report.ran += 1
+            # The search failing is not the describing failing: what earlier passes stored still waits.
+            report.failures["search"] = f"{type(exc).__name__}: {exc}"
+            logger.warning("linkedin: the pooled search failed: %s", type(exc).__name__)
 
     # Every pass, whoever was due: what this pass stored and whatever an earlier one could not reach.
     _describe(corpus, proxy, report, deliverable_for=deliverable_for)
-    audit(logger, "linkedin.pass", considered=report.considered, ran=report.ran,
-          links=report.links_found, new=report.new_jobs, described=report.described,
+    audit(logger, "linkedin.pass", considered=report.considered, ran=report.ran, queries=report.queries,
+          shared=report.shared, links=report.links_found, new=report.new_jobs, described=report.described,
           failures=len(report.failures))
     return report
 
 
-def _run_one(user: User, queries: list[dict], *, corpus: CorpusRepository, proxy: str,
-             report: LinkedInReport, gather, hours_old: int, results_wanted: int) -> None:
-    """One user's search, through the site proxy, and what it found stored once."""
+def _search(queries: list[dict], *, corpus: CorpusRepository, proxy: str, report: LinkedInReport,
+            gather, results_wanted: int, people: int) -> None:
+    """The pooled searches, through the site proxy, and what they found stored once."""
     with redacting(proxy):
-        lease = ProxyLease(user_id=user.id, proxy_url=proxy)
         cfg = {"queries": queries,
                # The operator's ceiling, not the constant beside it.
                "results_wanted": results_wanted,
-               # The operator's window, not the user's.
-               "hours_old": hours_old,
                # Never from jobspy, which would fetch every result again, the ones already held too.
                "linkedin_fetch_description": False}
-        links = gather(cfg, logger, lease=lease)
+        links = gather(cfg, logger, proxy=proxy)
     new_jobs = _ingest(corpus, links)
+    report.queries = len(queries)
+    report.shared = sum(1 for query in queries if query["people"] > 1)
     report.links_found += len(links)
     report.new_jobs += new_jobs
-    logger.info("linkedin: %s ran %d quer(ies) over the last %dh, %d link(s), %d new", user.id, len(queries),
-                hours_old, len(links), new_jobs)
+    logger.info("linkedin: %d distinct search(es) for %d people (%d shared), %d link(s), %d new",
+                len(queries), people, report.shared, len(links), new_jobs)
 
 
 def _describe(corpus: CorpusRepository, proxy: str, report: LinkedInReport, *,

@@ -14,7 +14,6 @@ from libs.settings import (
     ats_companies_per_cycle,
     describe_per_cycle,
     freshness_hours,
-    linkedin_concurrent_users,
     pages_per_cycle,
     queries_per_cycle,
     results_per_query,
@@ -65,11 +64,11 @@ def main(argv: list[str] | None = None) -> int:
     ensure_schema()
 
     if args.linkedin:
-        # Per user, on their own schedule, through the site proxy.
-        db = database()
-        report = run_linkedin(db, limit=linkedin_concurrent_users(db))
-        logger.info("linkedin: %d considered, %d ran, %d link(s), %d new, %d described",
-                    report.considered, report.ran, report.links_found, report.new_jobs, report.described)
+        # Everyone due, their searches pooled, through the site proxy.
+        report = run_linkedin(database())
+        logger.info("linkedin: %d considered, %d searched for, %d distinct search(es), %d link(s), %d new, "
+                    "%d described", report.considered, report.ran, report.queries, report.links_found,
+                    report.new_jobs, report.described)
         _find_words()
         return 0
 
@@ -114,12 +113,12 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _run_linkedin_pass() -> None:
-    """The per-user LinkedIn tier."""
+    """The LinkedIn tier: everyone due, their searches pooled."""
     try:
-        db = database()
-        report = run_linkedin(db, limit=linkedin_concurrent_users(db))
-        logger.info("linkedin: %d considered, %d ran, %d link(s), %d new, %d described",
-                    report.considered, report.ran, report.links_found, report.new_jobs, report.described)
+        report = run_linkedin(database())
+        logger.info("linkedin: %d considered, %d searched for, %d distinct search(es), %d link(s), %d new, "
+                    "%d described", report.considered, report.ran, report.queries, report.links_found,
+                    report.new_jobs, report.described)
     except Exception:
         logger.exception("the LinkedIn pass failed; the shared harvest was unaffected")
 

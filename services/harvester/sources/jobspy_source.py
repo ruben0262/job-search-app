@@ -33,7 +33,6 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
-from services.harvester.fetch import ProxyLease
 from services.harvester.sources.base import JobLink
 
 _DELAY_S = 2       # politeness pause between successive queries (sequential mode only)
@@ -150,22 +149,17 @@ def _run_one(site: str, kwargs: dict[str, Any], logger) -> list[JobLink]:
     return links
 
 
-def gather_linkedin(cfg: dict[str, Any], logger, *, lease: ProxyLease) -> list[JobLink]:
-    """The one per-user source. **Its proxy comes from a lease, never from config.**
+def gather_linkedin(cfg: dict[str, Any], logger, *, proxy: str) -> list[JobLink]:
+    """LinkedIn's search, through the site's proxy (`libs.proxy`), never one from config: `proxy` is
+    keyword-only and required, so nothing reaches LinkedIn from this box's own address.
 
-    The reference read `cfg["proxy"]`, which is correct with one tenant and wrong with many: a
-    credential arriving through a config dict has no verified owner, so nothing distinguishes "this
-    user's proxy" from "whichever proxy was in the config". Requiring a `ProxyLease` makes the owner
-    explicit at the only place LinkedIn is ever fetched, and `lease` is keyword-only and mandatory so
-    it cannot be omitted or positionally confused with `cfg` (D3, `HARVESTER_PLAN.md` §5).
-
-    jobspy opens its own HTTP connections and cannot be routed through `make_client`, so this is the
-    one place a proxy URL is handed to a third-party library. That is exactly why the lease type is
-    required here rather than a bare string - the value carries its owner with it.
+    jobspy opens its own HTTP connections and cannot be routed through `fetch`, so this is the one
+    place a proxy URL is handed to a third-party library. Each query reaches back its own `hours_old`
+    (`linkedin.search_window`), else the config's.
     """
     new_connection_each_request()
     results_wanted = cfg.get("results_wanted", 30)
-    proxies = [lease.proxy_url]
+    proxies = [proxy]
     hours_old = cfg.get("hours_old")
     fetch_desc = cfg.get("linkedin_fetch_description", False)
     workers = int(cfg.get("concurrency", _LI_WORKERS))
@@ -176,8 +170,8 @@ def gather_linkedin(cfg: dict[str, Any], logger, *, lease: ProxyLease) -> list[J
             location=q.get("location"), results_wanted=results_wanted,
             linkedin_fetch_description=fetch_desc,
         )
-        if hours_old:
-            kwargs["hours_old"] = hours_old
+        if q.get("hours_old") or hours_old:
+            kwargs["hours_old"] = q.get("hours_old") or hours_old
         if q.get("is_remote"):
             kwargs["is_remote"] = True
         if q.get("easy_apply"):

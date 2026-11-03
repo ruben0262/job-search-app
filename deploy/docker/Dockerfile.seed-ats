@@ -1,0 +1,23 @@
+# The company-board seed (`deploy/scripts/seed_ats.py`): each company in `ats_companies.txt` looked for
+# on every ATS the harvester reads, and the boards that list jobs stored in `ats_tokens` for the harvest
+# to poll. A one-shot: `deploy.sh` runs it when a deploy changes the list, and anyone can run it again
+# (`docker compose run --rm seed-ats --ats workable`).
+#
+# Its own image, as every service has, so building or running it never touches another one. It reads
+# boards with the harvester's own fetch code, so it installs the harvester's requirements: the same
+# first layers, which Docker builds once for both.
+FROM python:3.12-slim
+
+WORKDIR /app
+
+COPY services/harvester/requirements.txt /app/services/harvester/requirements.txt
+RUN pip install --no-cache-dir -r /app/services/harvester/requirements.txt
+
+COPY libs /app/libs
+COPY services/__init__.py /app/services/__init__.py
+COPY services/harvester /app/services/harvester
+COPY deploy/scripts/seed_ats.py deploy/scripts/ats_companies.txt /app/deploy/scripts/
+
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+
+ENTRYPOINT ["python", "deploy/scripts/seed_ats.py"]

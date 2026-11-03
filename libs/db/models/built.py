@@ -33,4 +33,7 @@ class BuiltDocument(Document):
     content: bytes
     size: int
     saved: bool
+    # Whether the PDF passed the ATS check (`services.docgen.pdf`: one column, its text read in order);
+    # kept so the outcomes people report can say whether passing it helps them hear back.
+    ats_ok: bool | None = None
     created_at: datetime = field(default_factory=now)

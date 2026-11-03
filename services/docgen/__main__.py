@@ -11,6 +11,7 @@ import libs.notify as notifylib
 from libs import settings
 from libs.db import database, ensure_schema
 from libs.db.models import QueueJob
+from libs.db.models.tenant import record_state
 from libs.documents.saved import keep, purge_unsaved
 from libs.legal import has_consented
 from libs.llm import LlmError, paying_client
@@ -50,7 +51,11 @@ def handle(db, job: QueueJob) -> None:
         logger.info("docgen: %s cannot build yet — %s", job.user_id, exc)
         return
     keep(db, build_id=job.id, user_id=job.user_id, job_id=job_id, kind=kind, mode=mode,
-         filename=built.filename, pdf=built.pdf)
+         filename=built.filename, pdf=built.pdf, ats_ok=built.ats_ok)
+    if kind == "cover":
+        # What retention keeps a posting for (`libs.corpus.archive.ACTED_ON`). Nothing set it before
+        # 2026-11-03, so a posting somebody wrote a cover letter for aged out like any other.
+        record_state(db, job.user_id, job_id, cover_built=True)
 
 
 def _with_ai(db, job: QueueJob, *, job_id: int, kind: str, payer: str | None):

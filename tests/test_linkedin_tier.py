@@ -1,5 +1,5 @@
-"""The per-user LinkedIn pass: who runs, through the site proxy, within whose bandwidth, and when
-they run next."""
+"""The LinkedIn pass: who is due, their searches pooled into distinct ones asked once, through the
+site proxy, and when each account runs next."""
 from __future__ import annotations
 
 import uuid
@@ -38,50 +38,73 @@ def _configure(db, user, config: dict) -> None:
     db[UserConfig.COLLECTION].update_one({"user_id": user.id}, {"$set": {"config": config}})
 
 
+def _searched(db, now=NOW) -> list[dict]:
+    """The searches one pass asks LinkedIn, in the order it asks them."""
+    asked: list[dict] = []
+
+    def gather(cfg, _log, *, proxy):
+        asked.extend(cfg["queries"])
+        return []
+
+    linkedin.run_for_due_users(db, now=now, gather=gather)
+    return asked
+
+
 # ── who is due ────────────────────────────────────────────────────────────────────────────────
 
 def test_a_user_who_has_never_run_is_due(db):
     """`NULL` means never, and never is exactly who should go next."""
     user = _user(db, linkedin_next_run_at=None)
-    assert user.id in [u.id for u in linkedin.due_users(db, now=NOW, limit=10)]
+    assert user.id in [u.id for u in linkedin.due_users(db, now=NOW)]
 
 
 def test_a_user_scheduled_for_later_is_not_due(db):
     user = _user(db, linkedin_next_run_at=NOW + timedelta(hours=2))
-    assert user.id not in [u.id for u in linkedin.due_users(db, now=NOW, limit=10)]
+    assert user.id not in [u.id for u in linkedin.due_users(db, now=NOW)]
 
 
 def test_an_inactive_user_is_never_due(db):
     """A paused account must not spend its own proxy bandwidth."""
     user = _user(db, linkedin_next_run_at=None, active=False)
-    assert user.id not in [u.id for u in linkedin.due_users(db, now=NOW, limit=10)]
+    assert user.id not in [u.id for u in linkedin.due_users(db, now=NOW)]
 
 
-def test_the_pass_is_bounded_by_the_concurrency_ceiling(db):
-    """The governor's ceiling exists so a hundred accounts do not hit LinkedIn at once from a hundred."""
-    for _ in range(6):
+# ── pooled searches (owner, 2026-11-03) ───────────────────────────────────────────────────────
+
+def test_a_pass_asks_each_distinct_search_once_however_many_people_share_it(db):
+    """The cost of a pass follows the distinct searches, not the accounts: three people with the same
+    two words in the same place are two searches, not six. The most-shared go first."""
+    for _ in range(3):
         _user(db, linkedin_next_run_at=None)
-    assert len(linkedin.due_users(db, now=NOW, limit=4)) == 4
+    welder = _user(db, linkedin_next_run_at=None)
+    _configure(db, welder, {"sections": [{"keywords": ["welder"], "locations": ["norway"],
+                                          "platform": "all", "remote_policy": "any",
+                                          "posted_within_hours": 24}]})
+
+    asked = _searched(db)
+
+    assert sorted((q["search_term"], q["location"], q["people"]) for q in asked) == [
+        ("backend engineer", "Hungary", 3), ("python developer", "Hungary", 3), ("welder", "Norway", 1)]
+    assert asked[-1]["search_term"] == "welder", "the shared searches first"
 
 
-# ── whose queries ─────────────────────────────────────────────────────────────────────────────
+def test_the_searches_a_pass_asks_are_bounded_by_the_query_ceiling_shared_first(db):
+    """`queries_per_cycle` bounds a pass now, not a count of accounts."""
+    from libs import settings
 
-def test_the_queries_are_this_users_own(db):
-    """The shared cycle folds everyone's terms because the corpus is shared."""
-    mine = _user(db)
-    other = _user(db)
-    _configure(db, other, {"sections": [{"keywords": ["welder"], "locations": ["oslo"],
-                                             "platform": "all", "remote_policy": "any",
-                                             "posted_within_hours": 24}]})
+    settings.put(db, "source_queries_per_cycle", {"linkedin": 2})
+    for _ in range(2):
+        _user(db, linkedin_next_run_at=None)
+    loner = _user(db, linkedin_next_run_at=None)
+    _configure(db, loner, {"sections": [{"keywords": ["welder"], "platform": "all"}]})
 
-    terms = {q["search_term"] for q in linkedin.queries_for(db, mine)}
-    assert terms and not any("welder" in term for term in terms)
+    assert {q["search_term"] for q in _searched(db)} == {"backend engineer", "python developer"}
 
 
-def test_a_user_with_no_config_contributes_no_queries(db):
-    user = insert(db, User(email=f"{uuid.uuid4()}@example.test", password_hash="x", status="active",
-                           active=True))
-    assert linkedin.queries_for(db, user) == []
+def test_a_user_with_no_config_contributes_no_searches(db):
+    insert(db, User(email=f"{uuid.uuid4()}@example.test", password_hash="x", status="active",
+                    active=True))
+    assert _searched(db) == []
 
 
 # ── what happens when it runs ─────────────────────────────────────────────────────────────────
@@ -90,15 +113,15 @@ def test_everyone_due_runs_through_the_site_proxy_with_none_of_their_own(db):
     """Nobody brings a proxy any more (owner's decision, 2026-11-01): the site's carries everyone's."""
     from libs.db.models import UserSecret
 
-    users = [_user(db, linkedin_next_run_at=None) for _ in range(2)]
-    leases = []
+    for _ in range(2):
+        _user(db, linkedin_next_run_at=None)
+    proxies = []
 
     report = linkedin.run_for_due_users(db, now=NOW,
-                                        gather=lambda cfg, log, *, lease: leases.append(lease) or [])
+                                        gather=lambda cfg, log, *, proxy: proxies.append(proxy) or [])
 
     assert report.ran == 2
-    assert sorted((str(lease.user_id), lease.proxy_url) for lease in leases) == sorted(
-        (str(user.id), SITE_PROXY) for user in users)
+    assert proxies == [SITE_PROXY], "one pooled search, through the site's proxy"
     assert db[UserSecret.COLLECTION].count_documents({}) == 0, "and no credential of anybody's was read"
 
 
@@ -196,8 +219,10 @@ def test_the_next_run_is_the_accounts_own_interval(db):
     assert 120 * 0.9 <= gap(slower) <= 120 * 1.1
 
 
-def test_one_users_failure_does_not_stop_the_pass(db):
-    """One account's LinkedIn breaking is not the tier breaking."""
+def test_a_failed_search_is_reported_and_the_pass_goes_on_to_describe(db, monkeypatch):
+    """LinkedIn refusing the search is not the tier breaking: what earlier passes stored still waits."""
+    described = []
+    monkeypatch.setattr(linkedin, "_describe", lambda *a, **k: described.append(True))
     for _ in range(2):
         _user(db, linkedin_next_run_at=None)
 
@@ -206,7 +231,7 @@ def test_one_users_failure_does_not_stop_the_pass(db):
 
     report = linkedin.run_for_due_users(db, now=NOW, gather=explode)
     assert report.considered == 2
-    assert len(report.failures) == 2, "the second account ran after the first one failed"
+    assert list(report.failures) == ["search"] and described == [True]
 
 
 def test_the_tier_can_be_killed_globally(db, monkeypatch):
@@ -228,7 +253,7 @@ def test_every_keyword_a_user_has_is_searched(db):
                                              "platform": "all", "remote_policy": "any",
                                              "posted_within_hours": 6}]})
 
-    queries = linkedin.queries_for(db, user)
+    queries = _searched(db)
     # Every term is searched, in every place the user asked for.
     assert {q["search_term"] for q in queries} == set(wanted), "every term reaches the board"
     assert len(queries) == len(wanted) * 4, "each term in each of the four places"
@@ -241,19 +266,19 @@ def test_a_board_gets_the_phrase_the_user_typed(db):
                                              "locations": ["europe"], "platform": "all",
                                              "remote_policy": "any", "posted_within_hours": 6}]})
 
-    terms = {q["search_term"] for q in linkedin.queries_for(db, user)}
+    terms = {q["search_term"] for q in _searched(db)}
     assert terms == {"stress engineer", "szoftverfejlesztő"}
 
 
 def test_a_users_locations_reach_the_board_as_place_names(db):
-    """Per user, on their own proxy, and LinkedIn can genuinely filter by place."""
+    """LinkedIn can genuinely filter by place, so it is asked by place name."""
     user = _user(db)
     _configure(db, user, {"sections": [{"keywords": ["python developer"],
                                              "locations": ["europe", "hungary"],
                                              "platform": "all", "remote_policy": "any",
                                              "posted_within_hours": 6}]})
 
-    queries = linkedin.queries_for(db, user)
+    queries = _searched(db)
     locations = {q["location"] for q in queries}
 
     assert locations == {"European Union", "Hungary"}
@@ -281,7 +306,7 @@ def test_choosing_the_eu_and_a_country_searches_both_without_repeating_one(db):
                                              "posted_within_hours": 6}]})
 
     # One query per place, none repeated.
-    places = [q["location"] for q in linkedin.queries_for(db, user)]
+    places = [q["location"] for q in _searched(db)]
     assert sorted(places) == ["European Union", "Switzerland", "United Kingdom"]
     assert len(places) == len(set(places)), "the same place asked for twice is a wasted fetch"
 
@@ -307,7 +332,7 @@ def test_a_country_inside_europe_does_not_widen_or_narrow_the_set(db):
                                              "platform": "all", "remote_policy": "any",
                                              "posted_within_hours": 6}]})
     # Both are still asked for: LinkedIn's "European Union" geo and its "Ireland" geo differ.
-    assert len(linkedin.queries_for(db, user)) == 2
+    assert len(_searched(db)) == 2
 
 
 # ── how far back a search reaches (2026-11-02) ────────────────────────────────────────────────
@@ -316,19 +341,28 @@ def test_a_search_reaches_back_to_the_last_one_and_reads_it_whole(db):
     """Over 4 hours LinkedIn listed 200+ matches by relevance, and the first 30 held 1 of the 23 posted
     in the last hour. On time, a search covers the last hour, which a read of 50 takes whole; after a
     gap it reaches back over the gap, up to the operator's window; a first search takes the window."""
-    asked: dict[uuid.UUID, dict] = {}
+    configs: list = []
 
-    def gather(cfg, _log, *, lease):
-        asked[lease.user_id] = cfg
+    def gather(cfg, _log, *, proxy):
+        configs.append(cfg)
         return []
 
-    on_time = _user(db, linkedin_next_run_at=NOW)
-    late = _user(db, linkedin_next_run_at=NOW - timedelta(hours=2))
-    days_late = _user(db, linkedin_next_run_at=NOW - timedelta(days=2))
-    first = _user(db, linkedin_next_run_at=None)
+    people = {"on time": NOW, "late": NOW - timedelta(hours=2), "days late": NOW - timedelta(days=2),
+              "first": None}
+    for word, due in people.items():
+        user = _user(db, linkedin_next_run_at=due)
+        _configure(db, user, {"sections": [{"keywords": [word], "platform": "all"}]})
 
     linkedin.run_for_due_users(db, now=NOW, gather=gather)
 
-    hours = [asked[user.id]["hours_old"] for user in (on_time, late, days_late, first)]
-    assert hours == [1, 3, 4, 4], "on time 1h; 2h late plus the 15-minute interval is 3; capped at 4"
-    assert {cfg["results_wanted"] for cfg in asked.values()} == {50}
+    hours = {q["search_term"]: q["hours_old"] for q in configs[0]["queries"]}
+    assert hours == {"on time": 1, "late": 3, "days late": 4, "first": 4}, "2h late + the 15-minute interval"
+    assert configs[0]["results_wanted"] == 50
+
+
+def test_a_shared_search_reaches_back_as_far_as_its_furthest_person(db):
+    """Pooled, a search covers the widest gap among the people who share it: nobody's is left unread."""
+    _user(db, linkedin_next_run_at=NOW)
+    _user(db, linkedin_next_run_at=NOW - timedelta(hours=2))
+
+    assert {q["hours_old"] for q in _searched(db)} == {3}

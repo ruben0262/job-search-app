@@ -1,9 +1,13 @@
-"""The only place the harvester builds an HTTP client."""
+"""The only place the harvester builds an HTTP client: a plain one for the boards, and one with the
+site's proxy for LinkedIn (`libs.proxy`).
+
+There is no per-person client any more. Each account once paid for its own proxy, and a `ProxyLease`
+said whose a client carried; since the site has one proxy for everyone (owner, 2026-11-01) and the
+LinkedIn search is pooled across people (2026-11-03), nothing is fetched on one person's behalf.
+"""
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
-from uuid import UUID
 
 import httpx
 
@@ -19,30 +23,12 @@ _UA = {
 DEFAULT_TIMEOUT = 25
 
 
-@dataclass(frozen=True)
-class ProxyLease:
-    """One account's LinkedIn run through the site proxy: whose words it searches, and the proxy."""
+class MeteredClient(httpx.Client):
+    """An `httpx.Client` that counts what it has downloaded, for the log."""
 
-    user_id: UUID
-    proxy_url: str
-
-    def __post_init__(self) -> None:
-        if not self.proxy_url:
-            raise ValueError("a ProxyLease without a proxy_url cannot authorise anything")
-
-
-class TenantClient(httpx.Client):
-    """An `httpx.Client` that knows whose credential it carries, and how much it has spent."""
-
-    def __init__(self, *, lease: ProxyLease | None, **kwargs: Any):
+    def __init__(self, **kwargs: Any):
         super().__init__(**kwargs)
-        self.lease = lease
         self.bytes_downloaded = 0
-
-    @property
-    def owner(self) -> UUID | None:
-        """The user this client may fetch for. `None` means the shared, unproxied loop."""
-        return self.lease.user_id if self.lease else None
 
     @property
     def megabytes_downloaded(self) -> float:
@@ -80,30 +66,23 @@ def _mounts(proxy_url: str,
     return mounts
 
 
-def make_client(lease: ProxyLease | None = None, **kwargs: Any) -> TenantClient:
-    """The only HTTP client factory in the harvester."""
-    opts: dict[str, Any] = {
-        "headers": _UA, "timeout": DEFAULT_TIMEOUT, "follow_redirects": True,
-        "trust_env": False, **kwargs}
-    if lease is None:
-        return TenantClient(lease=None, **opts)
+def _options(kwargs: dict[str, Any]) -> dict[str, Any]:
+    # `trust_env=False`: a stray HTTP_PROXY on the box must not route the boards through anything.
+    return {"headers": _UA, "timeout": DEFAULT_TIMEOUT, "follow_redirects": True, "trust_env": False,
+            **kwargs}
+
+
+def make_shared_client(**kwargs: Any) -> MeteredClient:
+    """The boards' client: every request direct."""
+    return MeteredClient(**_options(kwargs))
+
+
+def make_site_client(proxy_url: str, **kwargs: Any) -> MeteredClient:
+    """A client with the site proxy for `PROXIED_HOSTS` and every other host direct: describing the
+    LinkedIn postings the searches stored."""
+    opts = _options(kwargs)
     direct = opts.pop("transport", None)
-    return TenantClient(lease=lease, mounts=_mounts(lease.proxy_url, direct), **opts)
-
-
-def make_site_client(proxy_url: str, **kwargs: Any) -> TenantClient:
-    """A client with the site proxy for `PROXIED_HOSTS`, for work no one account owns: describing the
-    LinkedIn postings everyone's searches stored."""
-    opts: dict[str, Any] = {
-        "headers": _UA, "timeout": DEFAULT_TIMEOUT, "follow_redirects": True,
-        "trust_env": False, **kwargs}
-    direct = opts.pop("transport", None)
-    return TenantClient(lease=None, mounts=_mounts(proxy_url, direct), **opts)
-
-
-def make_shared_client(**kwargs: Any) -> TenantClient:
-    """The shared harvest loop's client."""
-    return make_client(lease=None, **kwargs)
+    return MeteredClient(mounts=_mounts(proxy_url, direct), **opts)
 
 
 def is_proxied(url: str) -> bool:

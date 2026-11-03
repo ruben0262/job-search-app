@@ -331,6 +331,13 @@
             ],
             "title": "Location"
           },
+          "progress": {
+            "items": {
+              "$ref": "#/components/schemas/Step"
+            },
+            "title": "Progress",
+            "type": "array"
+          },
           "title": {
             "title": "Title",
             "type": "string"
@@ -347,7 +354,8 @@
           "location",
           "url",
           "applied_at",
-          "documents"
+          "documents",
+          "progress"
         ],
         "title": "AppliedJob",
         "type": "object"
@@ -2033,6 +2041,45 @@
         "title": "OnboardingSteps",
         "type": "object"
       },
+      "OutcomeRow": {
+        "description": "How far a group of applications got; a stage counts every one that reached it or went past it.",
+        "properties": {
+          "applied": {
+            "title": "Applied",
+            "type": "integer"
+          },
+          "group": {
+            "title": "Group",
+            "type": "string"
+          },
+          "hired": {
+            "title": "Hired",
+            "type": "integer"
+          },
+          "interview": {
+            "title": "Interview",
+            "type": "integer"
+          },
+          "offer": {
+            "title": "Offer",
+            "type": "integer"
+          },
+          "rejected": {
+            "title": "Rejected",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "group",
+          "applied",
+          "interview",
+          "offer",
+          "hired",
+          "rejected"
+        ],
+        "title": "OutcomeRow",
+        "type": "object"
+      },
       "PasswordChange": {
         "properties": {
           "current_password": {
@@ -2602,6 +2649,51 @@
           "password"
         ],
         "title": "SignupRequest",
+        "type": "object"
+      },
+      "Step": {
+        "description": "One thing that happened after \"I applied\", in the person's own words.",
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "stage": {
+            "enum": [
+              "interview",
+              "offer",
+              "hired",
+              "rejected"
+            ],
+            "title": "Stage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stage",
+          "at"
+        ],
+        "title": "Step",
+        "type": "object"
+      },
+      "StepRequest": {
+        "properties": {
+          "stage": {
+            "enum": [
+              "interview",
+              "offer",
+              "hired",
+              "rejected"
+            ],
+            "title": "Stage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stage"
+        ],
+        "title": "StepRequest",
         "type": "object"
       },
       "StoredCredential": {
@@ -3758,6 +3850,32 @@
           }
         },
         "summary": "Limit Catalogue",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/outcomes": {
+      "get": {
+        "description": "What people say happened after they applied, by the CV they sent (`libs.tenant.applications`).",
+        "operationId": "outcomes_admin_outcomes_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OutcomeRow"
+                  },
+                  "title": "Response Outcomes Admin Outcomes Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Outcomes",
         "tags": [
           "admin"
         ]
@@ -5515,6 +5633,108 @@
           }
         },
         "summary": "Job Description",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
+    "/jobs/{job_id}/progress": {
+      "delete": {
+        "description": "Take the last step back, for a tap made by mistake.",
+        "operationId": "step_back_jobs__job_id__progress_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Step"
+                  },
+                  "title": "Response Step Back Jobs  Job Id  Progress Delete",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Step Back",
+        "tags": [
+          "dashboard"
+        ]
+      },
+      "put": {
+        "description": "Say what happened next with an application: an interview, an offer, the job, or not this time.",
+        "operationId": "advance_jobs__job_id__progress_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StepRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Step"
+                  },
+                  "title": "Response Advance Jobs  Job Id  Progress Put",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Advance",
         "tags": [
           "dashboard"
         ]

@@ -242,6 +242,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/outcomes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Outcomes
+         * @description What people say happened after they applied, by the CV they sent (`libs.tenant.applications`).
+         */
+        get: operations["outcomes_admin_outcomes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/pipeline": {
         parameters: {
             query?: never;
@@ -989,6 +1009,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/jobs/{job_id}/progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Advance
+         * @description Say what happened next with an application: an interview, an offer, the job, or not this time.
+         */
+        put: operations["advance_jobs__job_id__progress_put"];
+        post?: never;
+        /**
+         * Step Back
+         * @description Take the last step back, for a tap made by mistake.
+         */
+        delete: operations["step_back_jobs__job_id__progress_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/jobs/{job_id}/{mark}": {
         parameters: {
             query?: never;
@@ -1585,6 +1629,8 @@ export interface components {
             id: number;
             /** Location */
             location: string | null;
+            /** Progress */
+            progress: components["schemas"]["Step"][];
             /** Title */
             title: string;
             /** Url */
@@ -2158,6 +2204,24 @@ export interface components {
             /** Pages */
             pages: components["schemas"]["OnboardingPage"][];
         };
+        /**
+         * OutcomeRow
+         * @description How far a group of applications got; a stage counts every one that reached it or went past it.
+         */
+        OutcomeRow: {
+            /** Applied */
+            applied: number;
+            /** Group */
+            group: string;
+            /** Hired */
+            hired: number;
+            /** Interview */
+            interview: number;
+            /** Offer */
+            offer: number;
+            /** Rejected */
+            rejected: number;
+        };
         /** PasswordChange */
         PasswordChange: {
             /** Current Password */
@@ -2373,6 +2437,30 @@ export interface components {
             email: string;
             /** Password */
             password: string;
+        };
+        /**
+         * Step
+         * @description One thing that happened after "I applied", in the person's own words.
+         */
+        Step: {
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /**
+             * Stage
+             * @enum {string}
+             */
+            stage: "interview" | "offer" | "hired" | "rejected";
+        };
+        /** StepRequest */
+        StepRequest: {
+            /**
+             * Stage
+             * @enum {string}
+             */
+            stage: "interview" | "offer" | "hired" | "rejected";
         };
         /** StoredCredential */
         StoredCredential: {
@@ -2999,6 +3087,26 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    outcomes_admin_outcomes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OutcomeRow"][];
                 };
             };
         };
@@ -4187,6 +4295,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobDescription"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    advance_jobs__job_id__progress_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StepRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Step"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    step_back_jobs__job_id__progress_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Step"][];
                 };
             };
             /** @description Validation Error */

@@ -28,16 +28,17 @@ COMPOSE="docker compose -f deploy/compose.yml -p job-search-platform"
 # so it was left out of this list — and every full deploy then rebuilt eight services and silently
 # left the one that does the collecting on old code. It ran for hours without `fetched_at` after the
 # column shipped, reporting healthy cycles the whole time.
-ALL_SERVICES="api oauthbroker notifier docgen harvester"
+ALL_SERVICES="api oauthbroker notifier docgen harvester seed-ats"
 
 # The one-shots. They exit when their work is done, so "is it running" and `exec` are the wrong
 # questions — verification runs a fresh container instead.
-ONE_SHOT_SERVICES="harvester"
+ONE_SHOT_SERVICES="harvester seed-ats"
 SERVICES="${*:-$ALL_SERVICES}"
 
 say() { printf '\n\033[1m== %s\033[0m\n' "$1"; }
 
 say "Pulling"
+BEFORE=$(git rev-parse HEAD)
 git pull --ff-only
 COMMIT=$(git rev-parse --short HEAD)
 echo "at $COMMIT"
@@ -119,6 +120,15 @@ if [ "$failed" -ne 0 ]; then
   echo "A service is not running the commit you deployed. Rebuild it without cache:"
   echo "  $COMPOSE build --no-cache <service> && $COMPOSE up -d --force-recreate <service>"
   exit 1
+fi
+
+# The company list changed in what was just pulled (or arrived with it): look for its boards again. In
+# the background, because a full run asks eight ATS about every name and takes a quarter of an hour;
+# it writes only `ats_tokens`, so nothing waits on it. Its report is logs/seed_ats.log.
+if [[ " $SERVICES " == *" seed-ats "* ]] \
+    && ! git diff --quiet "$BEFORE" "$COMMIT" -- deploy/scripts/ats_companies.txt; then
+  say "The company list changed: seeding its boards in the background"
+  $COMPOSE run -d --rm --no-deps seed-ats
 fi
 
 say "Deployed $COMMIT"

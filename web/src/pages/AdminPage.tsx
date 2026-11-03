@@ -1,7 +1,7 @@
 /** The operator panel — what needs a person, and who the accounts are. */
 import { Fragment, useEffect, useRef, useState } from "react";
 
-import { api } from "../api";
+import { api, type Schema } from "../api";
 import { Error, Prompt, useAction } from "../ui";
 
 type Alert = {
@@ -163,7 +163,6 @@ type Settings = {
   source_pages_per_cycle: Record<string, number>;
   ats_companies_per_cycle: number;
   describe_per_cycle: number;
-  linkedin_concurrent_users: number;
   /** Per provider: `anthropic`, `gemini`, `openai`. */
   document_models: Record<string, string>;
   document_keep_hours: number;
@@ -204,10 +203,11 @@ const TABS: [Tab, string][] = [
   ["pipeline", "Pipeline"],
   ["latency", "Latency"],
   ["accounts", "Accounts"],
+  ["outcomes", "Outcomes"],
   ["messages", "Messages"],
 ];
 
-type Tab = "health" | "settings" | "corpus" | "pipeline" | "latency" | "accounts" | "messages";
+type Tab = "health" | "settings" | "corpus" | "pipeline" | "latency" | "accounts" | "outcomes" | "messages";
 
 /** One message from the Help page's contact form. */
 type ContactRow = { reference: string; email: string; subject: string; message: string; created_at: string;
@@ -706,26 +706,6 @@ export function AdminPage() {
             ))}
           </select>
 
-          <p className="label" style={{ marginTop: "1.5rem" }}>LinkedIn accounts per tick</p>
-          <span className="hint">
-            How many users&apos; LinkedIn passes run at once, through the site proxy. Not a per-user
-            setting — this is the platform not issuing hundreds of LinkedIn requests simultaneously. At this rate a full rotation of every account takes{" "}
-            {Math.ceil((users?.length ?? 1) / Math.max(settings.linkedin_concurrent_users, 1))}{" "}
-            tick(s).
-          </span>
-          <select
-            value={settings.linkedin_concurrent_users}
-            disabled={savePlatform.busy}
-            aria-label="LinkedIn accounts per tick"
-            onChange={(event) =>
-              void savePlatform.run("linkedin_concurrent_users", Number(event.target.value))}
-            style={{ maxWidth: "10rem", marginTop: "0.5rem" }}
-          >
-            {[2, 4, 8, 16, 32].map((n) => (
-              <option key={n} value={n}>{n}</option>
-            ))}
-          </select>
-
           <p className="label" style={{ marginTop: "1.5rem" }}>Built documents kept for</p>
           <span className="hint">
             How long a CV or cover letter waits to be downloaded before it is deleted (D9). Longer
@@ -818,6 +798,7 @@ export function AdminPage() {
       {tab === "corpus" ? <CorpusTab /> : null}
       {tab === "pipeline" ? <PipelineTab /> : null}
       {tab === "latency" ? <LatencyTab /> : null}
+      {tab === "outcomes" ? <OutcomesTab /> : null}
       {tab === "messages" ? <MessagesTab /> : null}
 
       {tab === "accounts" ? <>      <p className="kicker" style={{ marginTop: "2.5rem" }}>
@@ -924,6 +905,44 @@ function Stat({ value, label }: { value: string; label: string }) {
 
 
 /** What the shared corpus actually holds, and the terms filling it. */
+/** What people say happened after they applied, by the CV that went with it: whether the CVs made here,
+ * and passing the ATS check, get people interviews (owner, 2026-11-03). */
+function OutcomesTab() {
+  const [rows, setRows] = useState<Schema<"OutcomeRow">[] | null>(null);
+  useEffect(() => {
+    void api.get<Schema<"OutcomeRow">[]>("/admin/outcomes").then(setRows);
+  }, []);
+  if (rows === null) return <p className="muted">Loading outcomes…</p>;
+  if (rows.length === 0) return <p className="muted">Nobody has marked a job applied yet.</p>;
+  const rate = (part: number, whole: number) => (whole ? `${Math.round((part / whole) * 100)}%` : "–");
+  return (
+    <>
+      <p className="small muted">
+        Each stage counts every application that reached it or went past it, as people mark them on
+        Applied. The CV is the newest one still kept for the job, so one deleted counts as none made here.
+      </p>
+      <div className="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Applications</th><th>Applied</th><th>Interview</th><th>Offer</th><th>Got the job</th>
+              <th>Not this time</th><th>Interview rate</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.group}>
+                <td>{row.group}</td><td>{row.applied}</td><td>{row.interview}</td><td>{row.offer}</td>
+                <td>{row.hired}</td><td>{row.rejected}</td><td>{rate(row.interview, row.applied)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
 /** What people wrote on the Help page, newest first, and whether each reached the support inbox. */
 function MessagesTab() {
   const [rows, setRows] = useState<ContactRow[] | null>(null);

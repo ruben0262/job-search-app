@@ -1,12 +1,9 @@
-"""Global controls for the per-user LinkedIn tier."""
+"""Global controls for the LinkedIn tier."""
 from __future__ import annotations
 
 import os
 import random
 from datetime import datetime, timedelta
-
-# Global ceiling on simultaneous per-user LinkedIn loops. Becomes the `linkedin` lane's worker count.
-LINKEDIN_MAX_CONCURRENT_USERS = 4
 
 # ±10% of the interval.
 LINKEDIN_JITTER_FRACTION = 0.10

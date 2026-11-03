@@ -57,6 +57,25 @@ services:
     mem_limit: 1g
     cpus: 2
 
+  # The company boards the ATS sources poll: each company in deploy/scripts/ats_companies.txt looked for
+  # on every ATS, and the boards that list jobs stored in `ats_tokens`. A one-shot behind `tools`, like
+  # the harvester: `deploy.sh` runs it in the background when a deploy changes the list, and
+  # `docker compose -f deploy/compose.yml run --rm seed-ats --ats workable` tries one ATS again. Writes
+  # nothing but `ats_tokens`, so it can run beside everything else; its report is logs/seed_ats.log.
+  seed-ats:
+    build:
+      context: ..
+      dockerfile: deploy/docker/Dockerfile.seed-ats
+    profiles: ["tools"]
+    environment:
+      MONGODB_URI: ${MONGODB_URI:?set it in deploy/.env — see .env.example}
+      MONGODB_DB: ${MONGODB_DB:-mahoraga}
+      LOG_DIR: /var/log/jobsearch
+    volumes:
+      - ../logs:/var/log/jobsearch
+    mem_limit: 512m
+    cpus: 1
+
   # ── the rest of the platform ────────────────────────────────────────────────────────────────
   #
   # All under the `full` profile, so a bare `docker compose up -d` brings up nothing at all.

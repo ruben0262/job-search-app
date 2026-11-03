@@ -84,12 +84,12 @@ def main(argv: list[str] | None = None) -> int:
         db.users.update_one({"_id": user["_id"]}, {"$set": {"linkedin_next_run_at": None}})
         found: list = []
 
-        def gather(cfg, log, *, lease):
-            links = jobspy_source.gather_linkedin(cfg, log, lease=lease)
+        def gather(cfg, log, *, proxy):
+            links = jobspy_source.gather_linkedin(cfg, log, proxy=proxy)
             found.extend(links)
             return links
 
-        linkedin.run_for_due_users(db, gather=gather, limit=10_000)
+        linkedin.run_for_due_users(db, gather=gather)
         listed["linkedin"] = found
 
     print(f"\n{'board':16s} {'listed':>7s} {'newest':>8s} {'in corpus':>10s}  note")

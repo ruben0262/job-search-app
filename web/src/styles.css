@@ -2916,3 +2916,85 @@ button.toggle[aria-pressed="true"]::before {
   border-left: 2px solid var(--made-cover);
   color: var(--muted);
 }
+
+/* ── how far an application got (Applied) ───────────────────────────────────────────────────── */
+
+/* Four steps in a row, joined by a line: green as far as it got, a ring where it stands now. */
+.progress ol {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  margin: 1rem 0 0.75rem;
+  padding: 0;
+}
+
+.progress li {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  text-align: center;
+  color: var(--dim);
+}
+
+/* The line from the step before, drawn behind the dot. */
+.progress li + li::before {
+  content: "";
+  position: absolute;
+  top: 0.45rem;
+  right: 50%;
+  width: 100%;
+  height: 2px;
+  background: var(--faint);
+}
+
+.progress .dot {
+  position: relative;
+  width: 0.95rem;
+  height: 0.95rem;
+  border: 2px solid var(--faint);
+  border-radius: 50%;
+  background: var(--bg-raised);
+}
+
+.progress li.done {
+  color: var(--ink);
+}
+
+.progress li.done .dot,
+.progress li.done::before {
+  background: var(--score);
+  border-color: var(--score);
+}
+
+.progress li[aria-current="step"] .dot {
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--score) 25%, transparent);
+}
+
+/* Ended without the job: the steps it never reached fade, and the note says so in red. */
+.progress.ended li:not(.done) {
+  opacity: 0.45;
+}
+
+.progress-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.6rem;
+  margin-bottom: 0.9rem;
+}
+
+.progress-note {
+  font-size: 0.9rem;
+  font-weight: 550;
+}
+
+.progress-note.yes {
+  color: var(--score);
+}
+
+.progress-note.no {
+  color: var(--danger);
+}

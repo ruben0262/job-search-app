@@ -1,26 +1,23 @@
-"""T13 — a proxy credential is used only for its owner's fetches, and only where it is needed."""
-from __future__ import annotations
+"""The site proxy carries LinkedIn and nothing else, a new connection for every request; the boards'
+client carries no proxy at all, not even one from the box's environment; and both count what they
+download.
 
-import uuid
+There is no per-person client to test any more: the per-person lease went when the LinkedIn search
+was pooled (2026-11-03), the site having had one proxy for everyone since 2026-11-01.
+"""
+from __future__ import annotations
 
 import httpx
 import pytest
 
 from services.harvester.fetch import (
     PROXIED_HOSTS,
-    ProxyLease,
     is_proxied,
-    make_client,
     make_shared_client,
     make_site_client,
 )
 
-ALICE_PROXY = "http://alice:secret@proxy.example:8080"
-BOB_PROXY = "http://bob:secret@proxy.example:8080"
-
-
-def _lease(proxy: str = ALICE_PROXY, mb: float = 100.0, user_id=None) -> ProxyLease:
-    return ProxyLease(user_id=user_id or uuid.uuid4(), proxy_url=proxy)
+SITE_PROXY = "http://site:secret@proxy.example:8080"
 
 
 def _transport_for(client: httpx.Client, url: str) -> httpx.BaseTransport:
@@ -28,42 +25,11 @@ def _transport_for(client: httpx.Client, url: str) -> httpx.BaseTransport:
     return client._transport_for_url(httpx.URL(url))
 
 
-# ── whose credential is this? ─────────────────────────────────────────────────────────────────
-
-def test_a_client_knows_which_user_it_may_fetch_for():
-    """The property that turns "we only use a credential for its owner" into an assertion."""
-    alice = uuid.uuid4()
-    with make_client(_lease(user_id=alice)) as client:
-        assert client.owner == alice
-
-
-def test_the_shared_client_cannot_hold_a_credential_at_all():
-    """Structural, not conventional: `make_shared_client` takes no lease parameter."""
-    with make_shared_client() as client:
-        assert client.owner is None
-        assert client.lease is None
-
-    with pytest.raises(TypeError):
-        make_shared_client(_lease())            # type: ignore[misc]
-
-
-def test_two_users_clients_carry_different_credentials():
-    """Credentials are never pooled or rotated across users (D3)."""
-    alice, bob = uuid.uuid4(), uuid.uuid4()
-    with make_client(_lease(ALICE_PROXY, user_id=alice)) as a, \
-            make_client(_lease(BOB_PROXY, user_id=bob)) as b:
-        assert a.owner == alice
-        assert b.owner == bob
-        assert a.lease.proxy_url != b.lease.proxy_url
-        assert _transport_for(a, "https://www.linkedin.com/jobs/view/1") is not \
-            _transport_for(b, "https://www.linkedin.com/jobs/view/1")
-
-
 # ── what actually goes through the proxy ──────────────────────────────────────────────────────
 
 def test_only_linkedin_is_proxied():
     """Residential bandwidth is metered per GB."""
-    with make_client(_lease()) as client:
+    with make_site_client(SITE_PROXY) as client:
         linkedin = _transport_for(client, "https://www.linkedin.com/jobs/view/123")
         for direct_url in ("https://boards.greenhouse.io/acme/jobs/1",
                            "https://jobs.ashbyhq.com/acme/x",
@@ -100,7 +66,7 @@ def test_every_proxied_request_is_a_new_connection_so_a_new_address():
 
 
 def test_linkedin_subdomains_are_proxied_too():
-    with make_client(_lease()) as client:
+    with make_site_client(SITE_PROXY) as client:
         base = _transport_for(client, "https://linkedin.com/x")
         assert _transport_for(client, "https://www.linkedin.com/x") is base
         assert _transport_for(client, "https://uk.linkedin.com/x") is base
@@ -108,14 +74,14 @@ def test_linkedin_subdomains_are_proxied_too():
 
 def test_a_redirect_out_of_linkedin_is_not_proxied():
     """Per-host mounts resolve per request URL, so a redirect to an ATS board goes direct."""
-    with make_client(_lease()) as client:
+    with make_site_client(SITE_PROXY) as client:
         proxied = _transport_for(client, "https://www.linkedin.com/jobs/view/1")
         assert _transport_for(client, "https://boards.greenhouse.io/acme/jobs/1") is not proxied
 
 
 def test_is_proxied_agrees_with_the_routing_it_describes():
     """A helper that disagreed with the mounts would make cost estimates confidently wrong."""
-    with make_client(_lease()) as client:
+    with make_site_client(SITE_PROXY) as client:
         for url in ("https://www.linkedin.com/jobs/view/1", "https://linkedin.com/x",
                     "https://boards.greenhouse.io/a", "https://example.test/x"):
             routed_via_proxy = _transport_for(client, url) is _transport_for(
@@ -138,28 +104,21 @@ def test_ambient_proxy_environment_variables_are_ignored(monkeypatch):
     with make_shared_client() as client:
         assert not _has_ambient_proxy(client, "https://boards.greenhouse.io/acme/jobs/1")
 
-    # And a leased client's direct route must stay direct too.
-    with make_client(_lease()) as client:
+    # And the site client's direct route must stay direct too.
+    with make_site_client(SITE_PROXY) as client:
         assert not _has_ambient_proxy(client, "https://boards.greenhouse.io/acme/jobs/1")
-
-
-# ── the lease ─────────────────────────────────────────────────────────────────────────────────
-
-def test_a_lease_without_a_proxy_url_authorises_nothing():
-    with pytest.raises(ValueError, match="proxy_url"):
-        ProxyLease(user_id=uuid.uuid4(), proxy_url="")
 
 
 # ── metering ──────────────────────────────────────────────────────────────────────────────────
 
-# Metering lives in `TenantClient.send` and so applies to every response regardless of route.
+# Metering lives in `MeteredClient.send` and so applies to every response regardless of route.
 DIRECT_URL = "https://boards.greenhouse.io/acme/jobs/1"
 
 
 def _metered_client(body: bytes, status: int = 200):
     transport = httpx.MockTransport(
         lambda request: httpx.Response(status, content=body, headers={"x-test": "1"}))
-    return make_client(_lease(), transport=transport)
+    return make_site_client(SITE_PROXY, transport=transport)
 
 
 def test_bytes_are_counted_on_every_response():
@@ -183,13 +142,3 @@ def test_headers_are_included_in_the_estimate():
     with _metered_client(b"") as client:
         client.get(DIRECT_URL)
     assert client.bytes_downloaded > 0
-
-
-def test_a_leased_client_still_meters_and_still_knows_its_owner():
-    """Metering and attribution are independent of which transport answered."""
-    alice = uuid.uuid4()
-    transport = httpx.MockTransport(lambda r: httpx.Response(200, content=b"y" * 1024))
-    with make_client(_lease(user_id=alice), transport=transport) as client:
-        client.get(DIRECT_URL)
-        assert client.owner == alice
-        assert client.bytes_downloaded >= 1024

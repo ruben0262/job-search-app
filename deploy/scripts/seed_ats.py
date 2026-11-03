@@ -1,7 +1,12 @@
 """Company job boards from a list: each company looked for on every ATS we read, kept if it lists jobs.
 
-    set -a; . certificates/dev.env; set +a          # or deploy/.env on the box
+    set -a; . certificates/dev.env; set +a          # on this computer
     python deploy/scripts/seed_ats.py [--dry-run] [--ats workable ...]
+
+    docker compose -f deploy/compose.yml run --rm seed-ats [--ats workable]    # on the box
+
+On the box `deploy.sh` runs it, in the background, whenever a deploy brings a change to the list; its
+report is in `logs/seed_ats.log`.
 
 The owner asked for it on 2026-11-02. The ATS tier polls the boards in `ats_tokens`, and those only
 ever came from links in postings we already held. None of the dev corpus's 1,740 postings links to
@@ -23,6 +28,7 @@ again after it refused a burst.
 from __future__ import annotations
 
 import argparse
+import logging
 import re
 import sys
 import unicodedata
@@ -35,8 +41,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from libs.corpus.ats import AtsRepository
 from libs.corpus.filters.timefilter import is_within_hours
 from libs.db import database
+from libs.obs import configure
 from services.harvester.source_config import PLATFORM_DEFAULTS
 from services.harvester.sources import ats
+
+logger = logging.getLogger("seed_ats")
 
 COMPANIES = Path(__file__).with_name("ats_companies.txt")
 FETCHERS = {"greenhouse": ats.fetch_greenhouse, "lever": ats.fetch_lever, "ashby": ats.fetch_ashby,
@@ -77,6 +86,7 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true", help="report the boards, store nothing")
     parser.add_argument("--ats", action="append", choices=sorted(FETCHERS), help="only these ATS")
     args = parser.parse_args()
+    configure("seed_ats")
 
     lines = [line.strip() for line in COMPANIES.read_text(encoding="utf-8").splitlines()]
     # Each token to the name of the first line that asks for it.
@@ -93,22 +103,23 @@ def main() -> None:
             every = list(pool.map(lambda token, b=board: probe(b, token), names))
         answers = [answer for answer in every if answer[2]]
         failed = Counter(answer[4] for answer in every if answer[4])
-        print(f"{board:16s} {len(answers):4d} board(s) of {len(names)} names, "
-              f"{sum(a[2] for a in answers):6d} jobs listed, {sum(a[3] for a in answers):5d} recent"
-              f"{f', failed {dict(failed)}' if failed else ''}", flush=True)
+        logger.info("%s: %d board(s) of %d names, %d jobs listed, %d recent%s", board, len(answers),
+                    len(names), sum(a[2] for a in answers), sum(a[3] for a in answers),
+                    f", failed {dict(failed)}" if failed else "")
         found += answers
 
-    print(f"\n{len(found)} boards from {sum(1 for line in lines if line and not line.startswith('#'))} "
-          f"lines: {dict(Counter(board for board, *_ in found))}")
+    logger.info("%d boards from %d lines: %s", len(found),
+                sum(1 for line in lines if line and not line.startswith("#")),
+                dict(Counter(board for board, *_ in found)))
     for board, token, listed, recent, _ in sorted(found, key=lambda answer: -answer[2])[:40]:
-        print(f"  {board:16s} {token:28s} {listed:5d} listed {recent:4d} recent")
+        logger.info("  %-16s %-28s %5d listed %4d recent", board, token, listed, recent)
     if args.dry_run:
-        print("\n--dry-run: nothing stored")
+        logger.info("--dry-run: nothing stored")
         return
     added = AtsRepository(database()).add_tokens(
         [(board, token) for board, token, *_ in found],
         names={(board, token): labels[token] for board, token, *_ in found})
-    print(f"\nstored {added} new board(s); {len(found) - added} were already there")
+    logger.info("stored %d new board(s); %d were already there", added, len(found) - added)
 
 
 if __name__ == "__main__":

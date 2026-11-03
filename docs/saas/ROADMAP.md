@@ -3068,14 +3068,16 @@ suggestions on the jobs page. `CHANGELOG.md` has the numbers.
     740 jobs, and the board describe pass reads 200 a pass (`describe_per_cycle`, in Admin), so the
     first wave is described over about an hour. Raise the setting for that hour if it should be sooner.
 
-13. **LinkedIn searches are per person, not shared.** Two people with the same words and places run the
-    same search, each through the proxy. With the window now an hour, a pass costs about 3–5 requests a
-    query. Recommendation: none until there are enough accounts for LinkedIn's per-address allowance to
-    show in the logs; then search each distinct query once per pass, as the board tier does.
-14. **Working Nomads gives nothing.** Its feed's newest job was 4 days old on 2026-11-02, and the search
-    window is 24 hours. Recommendation: move it to `DEFERRED_SOURCES` if it is still stale in a week.
-15. **Hiring Cafe answers 403** (a bot wall), as on 2026-11-01. Recommendation: leave it off the list of
-    things to fix; the company boards it pointed at are now polled directly.
+13. ~~**LinkedIn searches are per person, not shared.**~~ Pooled on 2026-11-03 (owner): each distinct search
+    once a pass, however many people share it.
+14. **Working Nomads gives nothing.** Its feed's newest job was 4 days old on 2026-11-02, and 4.7 days on
+    2026-11-03 (35 jobs). Recommendation: move it to `DEFERRED_SOURCES` if it is still stale on 2026-11-09.
+15. **Hiring Cafe answers 403** (a bot wall). Getting past it by imitating a browser is circumventing the
+    site's refusal, and was not attempted. Recommendation: ask hiring.cafe for API access, or leave it off;
+    the company boards it pointed at are polled directly.
+16. **Outcomes need people to say them.** Admin › Outcomes is empty until applications are marked.
+    Recommendation: none yet; once there are a few hundred, read interview rate by CV kind and by the ATS
+    verdict before changing the CV prompts.
 
 ## Phase 9 — MongoDB instead of Postgres (added 2026-10-30)
 

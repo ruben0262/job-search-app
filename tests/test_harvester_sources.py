@@ -179,16 +179,17 @@ def test_every_adapter_module_imports(path):
     importlib.import_module(f"services.harvester.sources.{path.stem}")
 
 
-def test_linkedin_cannot_be_gathered_without_a_lease():
-    """The reference read `cfg["proxy"]`."""
+def test_linkedin_is_only_gathered_through_the_proxy_it_is_handed():
+    """The reference read `cfg["proxy"]`. The site's proxy is handed in by the pass, keyword-only and
+    required, so nothing reaches LinkedIn from the box's own address or from a config."""
     import inspect
 
     sig = inspect.signature(jobspy_source.gather_linkedin)
-    lease = sig.parameters.get("lease")
-    assert lease is not None, "gather_linkedin must take a lease"
-    assert lease.kind is inspect.Parameter.KEYWORD_ONLY, \
+    proxy = sig.parameters.get("proxy")
+    assert proxy is not None, "gather_linkedin must be handed the proxy"
+    assert proxy.kind is inspect.Parameter.KEYWORD_ONLY, \
         "keyword-only, so it cannot be positionally confused with cfg"
-    assert lease.default is inspect.Parameter.empty, "mandatory, so it cannot be omitted"
+    assert proxy.default is inspect.Parameter.empty, "mandatory, so it cannot be omitted"
 
     with pytest.raises(TypeError):
         jobspy_source.gather_linkedin({}, logging.getLogger("test"))
@@ -379,3 +380,4 @@ def test_a_job_carries_its_companys_own_name_where_the_board_does_not_say_it(mon
     monkeypatch.setattr(ats, "_CLIENT", httpx.Client(transport=httpx.MockTransport(smartrecruiters)))
     jobs, _ = ats.fetch_smartrecruiters("BoschGroup")
     assert [job.company for job in jobs] == ["Bosch Group"]
+

@@ -481,6 +481,7 @@ def test_my_search_asks_before_leaving_unsaved_and_applied_opens_the_whole_job(s
         view = page.get_by_role("dialog", name=TITLES[0])
         expect(view.locator(".description")).to_contain_text("Python, Postgres")
         view.get_by_role("button", name="Close").click()
+        _how_far_it_got(page)
 
         tabs.filter(has_text="My documents").click()
         uploaded = page.get_by_role("list", name="Uploaded")
@@ -499,6 +500,27 @@ def _where_and_when(page, card) -> None:
     expect(card.locator(".job-meta").first).to_contain_text("Berlin · Remote · Found")
     page.clock.fast_forward("02:05:00")
     expect(card.locator(".job-meta").first).to_contain_text("Found 2h ago")
+
+
+def _how_far_it_got(page) -> None:
+    """On Applied, each job says how far it got, in the person's words (owner, 2026-11-03): one question
+    and two answers at a time, the steps lit as far as it went, and Undo for a mistaken tap."""
+    card = page.locator("article.job-card").first
+    steps = card.get_by_role("list", name="Where this application stands")
+    expect(steps.locator("li.done")).to_have_text(["Applied"])
+    expect(card.get_by_text("Heard back?")).to_be_visible()
+
+    card.get_by_role("button", name="I got an interview").click()
+    expect(steps.locator("li.done")).to_have_text(["Applied", "Interview"])
+    expect(page.get_by_text("1 interview")).to_be_visible()
+    card.get_by_role("button", name="Not this time").click()
+    expect(card.get_by_text("Not this time. On to the next one.")).to_be_visible()
+    expect(card.get_by_role("button", name="I got an offer")).to_have_count(0)
+
+    card.get_by_role("button", name="Undo").click()
+    expect(card.get_by_role("button", name="I got an offer")).to_be_visible()
+    page.reload()  # and it is kept on the server
+    expect(steps.locator("li.done")).to_have_text(["Applied", "Interview"])
 
 
 def _made_documents(page, user_id, job_id: int) -> None:

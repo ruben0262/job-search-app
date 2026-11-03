@@ -257,6 +257,25 @@ def test_a_made_document_is_kept_to_download_again_and_shows_on_the_jobs_it_was_
     assert kept["allowance_bytes"] == 5 * 1024 * 1024, "the catalogue default"
 
 
+def test_a_cover_letter_built_keeps_its_posting_and_every_document_its_ats_verdict(api):
+    """Retention keeps a posting somebody wrote a cover letter for (`ACTED_ON`), but nothing said they
+    had until 2026-11-03. And each document keeps whether it passed the ATS check, so outcomes can say
+    whether passing it helps people hear back."""
+    from libs.db import find_one
+    from libs.db.models import BuiltDocument, UserJobState
+
+    _make(api)
+    before = find_one(api.db, UserJobState, {"user_id": api.user.id, "job_id": api.job.id})
+    assert before is None or before.cover_built is False, "a CV alone is not a cover letter"
+
+    _make(api, kind="cover")
+
+    state = find_one(api.db, UserJobState, {"user_id": api.user.id, "job_id": api.job.id})
+    assert state.cover_built is True
+    documents = api.db[BuiltDocument.COLLECTION].find({"user_id": api.user.id})
+    assert {document["ats_ok"] for document in documents} == {True}
+
+
 def test_a_new_one_for_the_same_job_and_kind_replaces_the_old(api):
     first, second = _make(api), _make(api)
     assert first["id"] != second["id"]

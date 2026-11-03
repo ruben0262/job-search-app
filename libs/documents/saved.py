@@ -33,7 +33,7 @@ def used_bytes(db: Database, user_id: _uuid.UUID) -> int:
 
 
 def keep(db: Database, *, build_id: int, user_id: _uuid.UUID, job_id: int, kind: str, mode: str,
-         filename: str, pdf: bytes) -> bool:
+         filename: str, pdf: bytes, ats_ok: bool | None = None) -> bool:
     """Store a finished document, kept if it fits, and say whether it was. A newer one for the same job
     and kind replaces the older, so the room it frees counts. When it does not fit, it waits for its
     download as every document used to, and the person is told their storage is full."""
@@ -50,7 +50,7 @@ def keep(db: Database, *, build_id: int, user_id: _uuid.UUID, job_id: int, kind:
                       "New CVs and cover letters are not being kept. Delete some in My documents to "
                       "make room; until then each one can be downloaded for a short while after it is made.")
     insert(db, BuiltDocument(id=build_id, user_id=user_id, job_id=job_id, kind=kind, mode=mode,
-                             filename=filename, content=pdf, size=len(pdf), saved=saved))
+                             filename=filename, content=pdf, size=len(pdf), saved=saved, ats_ok=ats_ok))
     return saved
 
 

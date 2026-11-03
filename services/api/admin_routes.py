@@ -51,6 +51,7 @@ from libs.settings import (
     results_per_query,
     source_min_ages,
 )
+from libs.tenant import applications
 from libs.tenant.repository import TenantRepository
 from services.api.deps import current_user, get_db
 
@@ -93,6 +94,22 @@ def health(db: Database = Depends(get_db), admin: User = Depends(require_admin))
             for alert in alerts],
         "summary": render(alerts),
     }
+
+
+class OutcomeRow(BaseModel):
+    """How far a group of applications got; a stage counts every one that reached it or went past it."""
+    group: str
+    applied: int
+    interview: int
+    offer: int
+    hired: int
+    rejected: int
+
+
+@router.get("/outcomes")
+def outcomes(db: Database = Depends(get_db), admin: User = Depends(require_admin)) -> list[OutcomeRow]:
+    """What people say happened after they applied, by the CV they sent (`libs.tenant.applications`)."""
+    return [OutcomeRow(**row) for row in applications.outcomes(db)]
 
 
 @router.get("/users")

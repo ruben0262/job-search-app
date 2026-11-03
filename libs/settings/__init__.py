@@ -125,9 +125,6 @@ DEFAULT_SOURCE_PAGES_PER_CYCLE: dict[str, int] = {
     "justjoinit": 5,
 }
 
-# How many users' LinkedIn passes run in one tick.
-DEFAULT_LINKEDIN_CONCURRENT_USERS = 4
-
 # How long a posting stays in the corpus before it is archived to a file and deleted
 # (`libs.corpus.archive`). Thirty days, set by the owner 2026-08-11; a setting since 2026-10-30,
 # because on Atlas the corpus is what decides whether the database fits its tier.
@@ -282,7 +279,6 @@ DEFAULTS: dict[str, object] = {
     "source_pages_per_cycle": DEFAULT_SOURCE_PAGES_PER_CYCLE,
     "ats_companies_per_cycle": DEFAULT_ATS_COMPANIES_PER_CYCLE,
     "describe_per_cycle": DEFAULT_DESCRIBE_PER_CYCLE,
-    "linkedin_concurrent_users": DEFAULT_LINKEDIN_CONCURRENT_USERS,
     "document_models": DEFAULT_DOCUMENT_MODELS,
     "document_keep_hours": DEFAULT_DOCUMENT_KEEP_HOURS,
     "support_chat_enabled": DEFAULT_SUPPORT_CHAT_ENABLED,
@@ -361,11 +357,6 @@ def ats_companies_per_cycle(db: Database) -> int:
 def describe_per_cycle(db: Database) -> int:
     """How many postings the shared cycle fetches descriptions for in one pass."""
     return int(get(db, "describe_per_cycle") or DEFAULT_DESCRIBE_PER_CYCLE)
-
-
-def linkedin_concurrent_users(db: Database) -> int:
-    """How many users' LinkedIn passes run in one tick."""
-    return int(get(db, "linkedin_concurrent_users") or DEFAULT_LINKEDIN_CONCURRENT_USERS)
 
 
 def document_model(db: Database, provider: str) -> str:
