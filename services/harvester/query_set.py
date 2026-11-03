@@ -107,7 +107,7 @@ def build_query_set(
             budget -= len(keywords)
 
             locations = list(section.get("locations") or []) or [""]
-            remote_policy = section.get("remote_policy") or "remote_or_hybrid"
+            remote_only = section.get("workplaces") == ["remote"]
             age = bucket_age_hours(int(section.get("posted_within_hours") or 24))
 
             # A section naming a platform emits queries for that source only; `all` emits for every source.
@@ -120,8 +120,8 @@ def build_query_set(
                     continue
                 for location in locations:
                     location_norm = str(location or "").strip().lower()
-                    # `remote_only` filters server-side; the others do not, the flag being unreliable.
-                    is_remote = remote_policy == "remote_only" or location_norm.startswith("remote")
+                    # Remote alone filters server-side; anything wider does not, the flag being unreliable.
+                    is_remote = remote_only or location_norm.startswith("remote")
                     for source in section_sources:
                         # Per axis, per source: a board with no geography is asked once per keyword.
                         group = (source,

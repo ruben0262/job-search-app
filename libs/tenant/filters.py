@@ -9,6 +9,7 @@ from libs.contracts.config import migrate_config
 from libs.corpus import langfilter, workfilter
 from libs.corpus.geo import wanted_countries
 from libs.corpus.repository import DESCRIBE_MAX_FAILURES, TYPED
+from libs.db.models.corpus import WORKPLACES
 from libs.limits import limit_default
 from libs.settings import DEFAULT_SOURCE_MIN_AGE_HOURS, SOURCE_MIN_AGE_HOURS
 
@@ -16,15 +17,11 @@ from libs.settings import DEFAULT_SOURCE_MIN_AGE_HOURS, SOURCE_MIN_AGE_HOURS
 CATALOGUE_APPLICANT_CAP = limit_default("applicant_cap")
 
 
-# What each answer to "how often would you go in" accepts. Where a posting is, is the country filter's job.
-_ACCEPTS = {"remote_only": {"remote"}, "remote_or_hybrid": {"remote", "hybrid"},
-            "any": {"remote", "hybrid", "onsite"}}
-
-
-def _widest_policy(sections: list[dict]) -> str:
-    """The most permissive policy across sections, so no section narrows another one's feed."""
-    asked = {section.get("remote_policy") or "remote_or_hybrid" for section in sections} or {"any"}
-    return next(policy for policy in ("any", "remote_or_hybrid", "remote_only") if policy in asked)
+def _workplaces(sections: list[dict]) -> frozenset[str]:
+    """Every way of working switched on in any section, so no section narrows another one's feed. A
+    section with none switched on narrows nothing. Where a posting is, is the country filter's job."""
+    switched = [set(section.get("workplaces") or WORKPLACES) for section in sections]
+    return frozenset().union(*switched) if switched else frozenset(WORKPLACES)
 
 
 def applicant_glut(*, source: str | None, applicants: int | None, cap: int) -> bool:
@@ -47,8 +44,8 @@ class UserFilters:
     exclude: tuple[str, ...] = field(default_factory=tuple)
     # Everything below used to live in `services.notifier.eligibility` and run at send time.
     applicant_cap: int = 0
-    # Their answer to "how often would you go in": remote_only, remote_or_hybrid or any.
-    remote_policy: str = "any"
+    # The ways of working they switched on: remote, hybrid, onsite. All three is anything.
+    workplaces: frozenset[str] = frozenset(WORKPLACES)
     languages: frozenset[str] = field(default_factory=frozenset)
     # How long a posting from each source stays deliverable. The operator's, via platform
     # settings, with the measured map as the default — `filters_for` resolves it. Held here rather
@@ -83,7 +80,7 @@ class UserFilters:
                 if term and term.strip()),
             # An operator ceiling rather than a search preference, so it comes from `libs.limits`.
             applicant_cap=0 if applicant_cap is None else int(applicant_cap),
-            remote_policy=_widest_policy(sections),
+            workplaces=_workplaces(sections),
             # An empty set means no opinion and admits every language.
             languages=frozenset(str(code).lower() for code in config.get("languages") or []),
             source_min_ages=source_min_ages,
@@ -111,13 +108,13 @@ class UserFilters:
                           cap=self.applicant_cap):
             return "applicant_glut"
 
-        # "Anything" accepts every mode, so the classifier — the costliest check here — is skipped.
-        # `explicit=` is the tag parsed off the posting's own page, and it beats every heuristic.
-        mode = None if self.remote_policy == "any" else workfilter.classify(
+        # All three switched on accepts every mode, so the classifier — the costliest check here — is
+        # skipped. `explicit=` is the tag parsed off the posting's own page, and it beats every heuristic.
+        mode = None if self.workplaces >= set(WORKPLACES) else workfilter.classify(
             row.get("title") or "", row.get("location") or "", row.get("description"),
             row.get("is_remote"), explicit=row.get("workplace"))
-        # Unknown is kept under every policy: absence of a signal is not evidence of on-site.
-        if mode and mode not in _ACCEPTS[self.remote_policy]:
+        # Unknown is kept whatever is switched on: absence of a signal is not evidence of on-site.
+        if mode and mode not in self.workplaces:
             return "workplace"
 
         # The stored code, detected once at describe time rather than per reader per pass.

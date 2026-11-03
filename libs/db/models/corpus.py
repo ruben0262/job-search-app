@@ -8,7 +8,8 @@ from pymongo import DESCENDING, IndexModel
 
 from libs.db import Document, now
 
-WORKPLACES = ("remote", "hybrid", "onsite", None)
+# How a posting is worked, and the switches My search offers for it. `None` on a posting is unknown.
+WORKPLACES = ("remote", "hybrid", "onsite")
 
 
 @dataclass(kw_only=True)
@@ -19,7 +20,7 @@ class CorpusJob(Document):
     BACKED_UP = False
     OWNER = None
     SEQUENCE = True
-    CHOICES = {"workplace": WORKPLACES}  # noqa: RUF012
+    CHOICES = {"workplace": (*WORKPLACES, None)}  # noqa: RUF012
     INDEXES = (IndexModel("url", unique=True, name="url_unique"),
                IndexModel("canonical_url", name="canonical_url"),
                IndexModel("content_key", name="content_key"),

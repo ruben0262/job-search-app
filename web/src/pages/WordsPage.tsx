@@ -171,18 +171,23 @@ export function WordsForm({ withIdentity = false, askBeforeLeaving: guarded = fa
         </fieldset>
 
         <fieldset className="picker">
-          <legend>How often would you go in?</legend>
+          <legend>How do you want to work?</legend>
+          <p className="picker-hint">Switch on every way that suits you. Switch none on to see all.</p>
           <div className="picker-grid">
-            {choices.remote_policies.map((policy) => (
-              <label key={policy.value} className="pick">
-                <input type="radio" name="remote_policy" checked={section.remote_policy === policy.value}
-                       onChange={() => patch({ remote_policy: policy.value as Section["remote_policy"] })} />
-                <span>
-                  {policy.label}
-                  <span className="pick-hint">{policy.hint}</span>
-                </span>
-              </label>
-            ))}
+            {choices.workplaces.map((way) => {
+              const value = way.value as NonNullable<Section["workplaces"]>[number];
+              const chosen = section.workplaces ?? [];
+              return (
+                <label key={way.value} className="pick">
+                  <input type="checkbox" role="switch" checked={chosen.includes(value)}
+                         onChange={() => patch({ workplaces: toggle(chosen, value) })} />
+                  <span>
+                    {way.label}
+                    <span className="pick-hint">{way.hint}</span>
+                  </span>
+                </label>
+              );
+            })}
           </div>
         </fieldset>
       </section>

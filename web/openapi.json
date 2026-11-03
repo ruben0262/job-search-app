@@ -559,11 +559,11 @@
             "title": "Max Locations",
             "type": "integer"
           },
-          "remote_policies": {
+          "workplaces": {
             "items": {
               "$ref": "#/components/schemas/ConfigChoice"
             },
-            "title": "Remote Policies",
+            "title": "Workplaces",
             "type": "array"
           }
         },
@@ -571,7 +571,7 @@
           "locations",
           "max_locations",
           "languages",
-          "remote_policies"
+          "workplaces"
         ],
         "title": "ConfigChoices",
         "type": "object"
@@ -963,6 +963,10 @@
             "title": "Id",
             "type": "integer"
           },
+          "in_use": {
+            "title": "In Use",
+            "type": "boolean"
+          },
           "kind": {
             "title": "Kind",
             "type": "string"
@@ -989,9 +993,23 @@
           "filename",
           "chars",
           "preview",
+          "in_use",
           "uploaded_at"
         ],
         "title": "DocumentRow",
+        "type": "object"
+      },
+      "DocumentUse": {
+        "properties": {
+          "in_use": {
+            "title": "In Use",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "in_use"
+        ],
+        "title": "DocumentUse",
         "type": "object"
       },
       "Draft": {
@@ -2363,15 +2381,6 @@
         "title": "ReadyDashboard",
         "type": "object"
       },
-      "RemotePolicy": {
-        "enum": [
-          "remote_only",
-          "remote_or_hybrid",
-          "any"
-        ],
-        "title": "RemotePolicy",
-        "type": "string"
-      },
       "Removed": {
         "properties": {
           "status": {
@@ -2665,9 +2674,12 @@
             "title": "Posted Within Hours",
             "type": "integer"
           },
-          "remote_policy": {
-            "$ref": "#/components/schemas/RemotePolicy",
-            "default": "remote_or_hybrid"
+          "workplaces": {
+            "items": {
+              "$ref": "#/components/schemas/Workplace"
+            },
+            "title": "Workplaces",
+            "type": "array"
           }
         },
         "required": [
@@ -3379,6 +3391,15 @@
         ],
         "title": "WordSuggestions",
         "type": "object"
+      },
+      "Workplace": {
+        "enum": [
+          "remote",
+          "hybrid",
+          "onsite"
+        ],
+        "title": "Workplace",
+        "type": "string"
       }
     }
   },
@@ -5454,11 +5475,62 @@
         "tags": [
           "documents"
         ]
+      },
+      "patch": {
+        "description": "Switch one document on or off: off, it is kept but nothing is made or suggested from it.",
+        "operationId": "use_document_documents__document_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentUse"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentRow"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Use Document",
+        "tags": [
+          "documents"
+        ]
       }
     },
     "/feed": {
       "get": {
-        "description": "This person's matches, a page at a time, the most of their words first or newest first:\nsearched, remote only, posted lately, from one board, in one country or one city, with a document\nmade or not, having every word picked, or at least so many of their words \u2014 or one job, the one\nan alert's link names, which is either still in their list or not. `found_after` keeps only the\njobs found since a list was read, which is how the page learns how many new ones there are\nwithout reloading.\n\nA job they skipped or applied to is gone from it for good: Applied lists the second.",
+        "description": "This person's matches, a page at a time: the most of their words first, the newest posted\nfirst, or the ones that arrived here last first:\nsearched, remote only, posted lately, from one board, in one country or one city, with a document\nmade or not, having every word picked, or at least so many of their words \u2014 or one job, the one\nan alert's link names, which is either still in their list or not. `found_after` keeps only the\njobs found since a list was read, which is how the page learns how many new ones there are\nwithout reloading.\n\nA job they skipped or applied to is gone from it for good: Applied lists the second.",
         "operationId": "feed_feed_get",
         "parameters": [
           {
@@ -5669,7 +5741,8 @@
               "default": "best",
               "enum": [
                 "best",
-                "newest"
+                "newest",
+                "arrived"
               ],
               "title": "Sort",
               "type": "string"

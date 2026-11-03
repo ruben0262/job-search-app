@@ -13,16 +13,16 @@ from libs.contracts.config import (
     Language,
     Location,
     Platform,
-    RemotePolicy,
     SearchSection,
     Seniority,
     UserConfigSchema,
+    Workplace,
     migrate_config,
 )
 from services.harvester.query_set import HARVEST_MAX_QUERIES_PER_USER, build_query_set
 
 # Which overrides belong to a search section and which to the account.
-SECTION_FIELDS = {"platform", "keywords", "exclude_keywords", "locations", "remote_policy",
+SECTION_FIELDS = {"platform", "keywords", "exclude_keywords", "locations", "workplaces",
                   "posted_within_hours"}
 
 
@@ -52,7 +52,7 @@ def test_a_single_keyword_is_enough():
     section = _valid().sections[0]
     assert section.keywords == ["python developer"]
     assert section.platform == Platform.ALL, "one section, targeting everything, is the default"
-    assert section.remote_policy == RemotePolicy.REMOTE_OR_HYBRID
+    assert section.workplaces == [Workplace.REMOTE, Workplace.HYBRID], "as the question it replaced"
     assert section.posted_within_hours == 24, "24h steady state; cold start widens it once"
 
 
@@ -158,7 +158,7 @@ def test_a_city_sent_by_a_page_loaded_before_cities_left_my_search_is_saved_as_i
 @pytest.mark.parametrize(
     ("field", "bad"),
     [("seniority", ["overlord"]), ("languages", ["klingon"]),
-     ("remote_policy", "whenever"), ("salary_currency", "DOGE")])
+     ("workplaces", ["whenever"]), ("salary_currency", "DOGE")])
 def test_every_enum_field_refuses_values_outside_its_vocabulary(field, bad):
     with pytest.raises(ValidationError):
         _valid(**{field: bad})

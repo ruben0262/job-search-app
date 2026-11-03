@@ -100,11 +100,11 @@ sections:
   - platform: all            # the default; most users never add another
     keywords: [...]
     locations: [...]
-    remote_policy: remote_or_hybrid
+    workplaces: [remote, hybrid]
     posted_within_hours: 24
   - platform: linkedin       # optional, added from a dropdown
     keywords: [...]
-    remote_policy: remote_only
+    workplaces: [remote]
 ```
 
 This fits the harvester rather than fighting it: `QueryKey` already carries `source`, so a section

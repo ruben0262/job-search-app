@@ -106,7 +106,7 @@ def test_remote_only_drops_jobs_known_to_be_on_site_but_keeps_unknown_ones(accou
 
     db, user = account
     _search(db, user, {"sections": [{"platform": "all", "keywords": ["backend engineer"],
-                                     "remote_policy": "remote_only"}]})
+                                     "workplaces": ["remote"]}]})
     _jobs(db, ("Backend Engineer A", "", False, 1), ("Backend Engineer B", "", None, 2))
 
     assert [m.job.title for m in matching_jobs(db, user)] == ["Backend Engineer B"]
@@ -207,7 +207,7 @@ def test_a_country_shows_every_job_in_it_and_an_old_city_reads_as_its_country(ac
 
     def shown(*places: str) -> set[int]:
         _search(db, user, {"sections": [{"platform": "all", "keywords": ["backend engineer"],
-                                         "locations": list(places), "remote_policy": "any"}]})
+                                         "locations": list(places), "workplaces": []}]})
         return {match.job.id for match in matching_jobs(db, user)}
 
     assert shown("germany") == {berlin, munich, nowhere}, "a job that names no place is never ruled out"

@@ -14,6 +14,51 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-03 — Several CVs and cover letters, each switched on or off; workplace switches; "Just arrived first"
+
+**Every CV and cover letter a person uploads is used, and each has a switch** (owner). Someone
+applying as a mechanical engineer and as a design engineer keeps a CV for each, and both inform the
+suggested words and the instant CVs and letters.
+- `UserDocument.in_use`, set by `PATCH /documents/{id}` from a switch on each file. A file switched
+  off stays listed. A row stored before the switch has no value and counts as on (`$ne: False`), so
+  no data change is needed. Uploading a file again switches it back on.
+- `libs.suggestions.documents_of` is still the one place documents are read from, by suggestions,
+  onboarding and the instant builder. It now reads only switched-on files and returns each text on
+  its own, rather than every file of a kind joined into one.
+- `libs.documents.read` reads each CV on its own, then combines them. Joined into one text, a second
+  CV's name and contact line were read as lines of the first CV's last section, its
+  "Certifications". This happened before with a CV plus a LinkedIn export, too.
+- The instant CV shows a job both CVs list once (same organisation and months). It uses the title
+  closer to the posting and picks from the bullets of both. It uses one summary, the closer one; a
+  section both have (e.g. "Certifications") is shown once; a line both have appears once.
+- **Unchanged:** AI-written documents still write from the person's writing profile
+  (`base_cv.html`), not from the uploads. Changing what they read is a prompt change (CLAUDE.md §3a).
+
+**"How often would you go in?" is now three switches: Remote, Hybrid, On-site** (owner).
+- Switches are an "or": any switched on admits a job. None switched on narrows nothing, like
+  countries and languages. "Anything" is gone; people switch on all three.
+- `SearchSection.workplaces` replaces `remote_policy`. A stored answer is read as the switches that
+  admit the same jobs: remote only → remote; remote or hybrid, or no answer → remote and hybrid;
+  anything → all three. This happens in `migrate_config`, which every reader uses, and in the schema,
+  for a page loaded before the deploy. No stored row is rewritten.
+- `libs.corpus.workfilter.NAMES` is the one list of what job sites call each way of working. It now
+  includes the Spanish and Polish words boards use (híbrido, remoto, teletrabajo, zdalna) and
+  "on site" / "in office". Measured on the 8,896 local postings: **18 change**, all from unknown to
+  the right answer (10 remote, 8 hybrid), and **no posting with an answer changes**. A bare "office"
+  is left out: it is in 31 titles such as "Front Office Supervisor".
+- `WORKPLACES` is defined once, on the posting model, and imported by the classifier and the config.
+- The radio style in `styles.css` is removed: no radio button is left on the site.
+
+**Jobs: "Just arrived first"** (owner): sorts by when a job arrived here (`first_seen_at`). A job a
+board dated a week ago and found a minute ago is new to the person. "Newest first" is renamed
+"Newest posted first". The word-count filter now reads "Any word" and "2+ words".
+
+Tests assert behaviour, and each new one fails on the previous commit. The one exception is the test
+that a search saved before the switches keeps its jobs: it guards what must not change.
+
+Gates: lint-imports 2 kept; ruff clean; schema applied to an empty database; contract regenerated;
+build ✓; **1,293 passed, 3 skipped** (copy_accounts, dedup_parity, prompt_templates, as always).
+
 ## 2026-11-03 (on the server) — Admin opens at once, the notifications over the Jobs tabs, a job view that closes
 
 **Admin said "Loading…" for 2–3 seconds** (owner). Measured against Atlas, each admin read:

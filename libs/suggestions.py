@@ -22,7 +22,7 @@ from libs.corpus.geo import read_country
 from libs.corpus.repository import TYPED
 from libs.db import get
 from libs.db.models import CorpusJob, User, UserDocument
-from libs.documents.read import Facts, fold, read, stem, words
+from libs.documents.read import Facts, fold, read, stem, texts, words
 from libs.matching import SCAN, found, matching_jobs, norm, pattern
 from libs.tenant.repository import TenantRepository
 
@@ -145,13 +145,16 @@ def _plain_title(title: str) -> str:
     return " ".join(words_)
 
 
-def documents_of(db: Database, user_id: _uuid.UUID) -> dict[str, str]:
-    """Their documents' text by kind, newest first where they have several of one kind."""
+def documents_of(db: Database, user_id: _uuid.UUID) -> dict[str, list[str]]:
+    """The text of each document they have switched on, by kind, newest first. Every CV and cover
+    letter switched on is used, each read on its own: a mechanical engineer's CV and a design
+    engineer's are both theirs, for different jobs. A row from before the switch has none: it is on."""
     texts: dict[str, list[str]] = {}
-    for row in db[UserDocument.COLLECTION].find({"user_id": user_id}, {"kind": 1, "text": 1},
+    for row in db[UserDocument.COLLECTION].find({"user_id": user_id, "in_use": {"$ne": False}},
+                                                {"kind": 1, "text": 1},
                                                 sort=[("uploaded_at", -1), ("_id", -1)]):
         texts.setdefault(row["kind"], []).append(row["text"])
-    return {kind: "\n\n".join(parts) for kind, parts in texts.items()}
+    return texts
 
 
 def refresh(db: Database, user_id: _uuid.UUID) -> dict:
@@ -171,7 +174,7 @@ def refresh(db: Database, user_id: _uuid.UUID) -> dict:
             {"source": {"$ne": TYPED}}, {"title": 1}, sort=[("first_seen_at", -1)], limit=SCAN)]
         matched = [match.job.title for match in matching_jobs(db, user)]
         fresh = compute(read(documents), config=config, titles=titles, matched=matched,
-                        text="\n".join(documents.values()), dismissed=set(dismissed))
+                        text="\n".join(texts(documents, *documents)), dismissed=set(dismissed))
     except Exception:  # see the docstring: the save that triggered this must survive it
         logger.exception("suggestions: could not work them out for user %s; the previous ones stand",
                          user_id)

@@ -36,7 +36,7 @@ from pymongo.errors import PyMongoError
 from libs import limits, settings, suggestions
 from libs.contracts.config import location_search_name, migrate_config
 from libs.db import database, get, now
-from libs.db.models import SetupMessage, User
+from libs.db.models import WORKPLACES, SetupMessage, User
 from libs.documents.read import LANGUAGE_NAMES
 from libs.legal import has_consented
 from libs.llm import PLATFORM, LlmError, ai_requests_today, paying_client, platform_left, resolve
@@ -129,14 +129,14 @@ def _words(db: Database, user: User, _args: dict) -> str:
     config = _config(db, user)
     places = {location_search_name(place) for section in config["sections"]
               for place in section.get("locations") or []}
-    ways = {(section.get("remote_policy") or "").replace("_", " ") for section in config["sections"]}
+    ways = {way for section in config["sections"] for way in section.get("workplaces") or WORKPLACES}
     return "\n".join([
         f"Green words, which find jobs: {', '.join(green_words(config)) or 'none yet'}",
         f"Red words, which hide jobs: {', '.join(_red(config)) or 'none'}",
         f"Places: {', '.join(sorted(places)) or 'anywhere'}",
         "Languages: " + (", ".join(LANGUAGE_NAMES.get(code, (code,))[0]
                                    for code in config.get("languages") or []) or "any"),
-        f"Way of working: {', '.join(sorted(ways - {''})) or 'any'}"])
+        f"Way of working: {', '.join(sorted(ways)) if ways < set(WORKPLACES) else 'any'}"])
 
 
 def _why_job(db: Database, user: User, args: dict) -> str:

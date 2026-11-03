@@ -20,9 +20,9 @@ def _uid() -> uuid.UUID:
     return uuid.uuid4()
 
 
-def _config(keywords, locations=(), posted_within_hours=72, remote_policy="remote_or_hybrid"):
+def _config(keywords, locations=(), posted_within_hours=72, workplaces=("remote", "hybrid")):
     return {"keywords": list(keywords), "locations": list(locations),
-            "posted_within_hours": posted_within_hours, "remote_policy": remote_policy}
+            "posted_within_hours": posted_within_hours, "workplaces": list(workplaces)}
 
 
 # ── normalisation ─────────────────────────────────────────────────────────────────────────────
@@ -114,11 +114,11 @@ def test_the_per_user_keyword_cap_is_enforced_at_the_fold():
 
 def test_remote_only_marks_the_query_remote():
     qs = build_query_set(
-        {_uid(): _config(["python"], ["london"], remote_policy="remote_only")}, ["linkedin"])
+        {_uid(): _config(["python"], ["london"], workplaces=["remote"])}, ["linkedin"])
     assert next(iter(qs)).is_remote is True
 
     qs = build_query_set(
-        {_uid(): _config(["python"], ["london"], remote_policy="any")}, ["linkedin"])
+        {_uid(): _config(["python"], ["london"], workplaces=["remote", "hybrid", "onsite"])}, ["linkedin"])
     assert next(iter(qs)).is_remote is False
 
 

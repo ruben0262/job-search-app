@@ -939,7 +939,11 @@ export interface paths {
         delete: operations["delete_document_documents__document_id__delete"];
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Use Document
+         * @description Switch one document on or off: off, it is kept but nothing is made or suggested from it.
+         */
+        patch: operations["use_document_documents__document_id__patch"];
         trace?: never;
     };
     "/feed": {
@@ -951,7 +955,8 @@ export interface paths {
         };
         /**
          * Feed
-         * @description This person's matches, a page at a time, the most of their words first or newest first:
+         * @description This person's matches, a page at a time: the most of their words first, the newest posted
+         *     first, or the ones that arrived here last first:
          *     searched, remote only, posted lately, from one board, in one country or one city, with a document
          *     made or not, having every word picked, or at least so many of their words — or one job, the one
          *     an alert's link names, which is either still in their list or not. `found_after` keeps only the
@@ -1773,8 +1778,8 @@ export interface components {
             locations: components["schemas"]["ConfigChoice"][];
             /** Max Locations */
             max_locations: number;
-            /** Remote Policies */
-            remote_policies: components["schemas"]["ConfigChoice"][];
+            /** Workplaces */
+            workplaces: components["schemas"]["ConfigChoice"][];
         };
         /** ConsentBody */
         ConsentBody: {
@@ -1921,12 +1926,19 @@ export interface components {
             filename: string;
             /** Id */
             id: number;
+            /** In Use */
+            in_use: boolean;
             /** Kind */
             kind: string;
             /** Preview */
             preview: string;
             /** Uploaded At */
             uploaded_at: string | null;
+        };
+        /** DocumentUse */
+        DocumentUse: {
+            /** In Use */
+            in_use: boolean;
         };
         /**
          * Draft
@@ -2392,11 +2404,6 @@ export interface components {
              */
             stage: "ready";
         };
-        /**
-         * RemotePolicy
-         * @enum {string}
-         */
-        RemotePolicy: "remote_only" | "remote_or_hybrid" | "any";
         /** Removed */
         Removed: {
             /** Status */
@@ -2508,8 +2515,8 @@ export interface components {
              * @default 24
              */
             posted_within_hours: number;
-            /** @default remote_or_hybrid */
-            remote_policy: components["schemas"]["RemotePolicy"];
+            /** Workplaces */
+            workplaces?: components["schemas"]["Workplace"][];
         };
         /**
          * Seniority
@@ -2736,6 +2743,11 @@ export interface components {
             /** Red */
             red: components["schemas"]["WordSuggestion"][];
         };
+        /**
+         * Workplace
+         * @enum {string}
+         */
+        Workplace: "remote" | "hybrid" | "onsite";
     };
     responses: never;
     parameters: never;
@@ -4325,6 +4337,41 @@ export interface operations {
             };
         };
     };
+    use_document_documents__document_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DocumentUse"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentRow"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     feed_feed_get: {
         parameters: {
             query?: {
@@ -4341,7 +4388,7 @@ export interface operations {
                 word?: string[];
                 min_words?: number;
                 found_after?: string | null;
-                sort?: "best" | "newest";
+                sort?: "best" | "newest" | "arrived";
             };
             header?: never;
             path?: never;

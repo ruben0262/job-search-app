@@ -40,6 +40,11 @@ const BOARDS: Record<string, string> = {
 };
 const board = (name: string) => BOARDS[name] ?? name.charAt(0).toUpperCase() + name.slice(1);
 
+/** The orders the list comes in: its words, when the board says it was posted, when it arrived here. */
+const ORDERS = [["best", "Most of your words first"], ["newest", "Newest posted first"],
+                ["arrived", "Just arrived first"]] as const;
+type Order = (typeof ORDERS)[number][0];
+
 /** A country's name from its code, as the browser knows it in English. */
 const REGIONS = new Intl.DisplayNames(["en"], { type: "region" });
 
@@ -73,7 +78,7 @@ export function JobsPage({ dashboard, focus, onChanged }: {
   const [source, setSource] = useState("");
   const [country, setCountry] = useState("");
   const [city, setCity] = useState("");
-  const [newest, setNewest] = useState(false);
+  const [order, setOrder] = useState<Order>("best");
   const [noCv, setNoCv] = useState(false);
   const [picked, setPicked] = useState<string[]>([]);
   const [atLeast, setAtLeast] = useState(1);
@@ -117,7 +122,7 @@ export function JobsPage({ dashboard, focus, onChanged }: {
     if (source) params.set("source", source);
     if (country) params.set("country", country);
     if (city) params.set("city", city);
-    if (newest) params.set("sort", "newest");
+    if (order !== "best") params.set("sort", order);
     if (noCv) params.set("made", "false");
     for (const word of picked) params.append("word", word);
     if (atLeast > 1) params.set("min_words", `${atLeast}`);
@@ -126,12 +131,12 @@ export function JobsPage({ dashboard, focus, onChanged }: {
       params.set("limit", "1");
     }
     return api.get<Feed>(`/feed?${params}`);
-  }, [query, remote, since, source, country, city, newest, noCv, picked, atLeast]);
+  }, [query, remote, since, source, country, city, order, noCv, picked, atLeast]);
 
   const reload = useCallback(() => {
     // Marks this browser still holds go first, so the answer already leaves them out.
     void send().finally(() => read(0).then((body) => {
-      if (!filtered && !newest) keep(FEED, body);
+      if (!filtered && order === "best") keep(FEED, body);
       setBoards(body.sources);
       setWords(body.words);
       setCountries(body.countries);
@@ -142,7 +147,7 @@ export function JobsPage({ dashboard, focus, onChanged }: {
       setFresh(0);
       setFailed(false);
     }).catch(() => setFailed(true)));
-  }, [read, filtered, newest]);
+  }, [read, filtered, order]);
 
   // Typing does not fire a request per key.
   useEffect(() => {
@@ -268,17 +273,15 @@ export function JobsPage({ dashboard, focus, onChanged }: {
             {cities.map((each) => <option key={each.value} value={each.value}>{each.label} ({each.jobs})</option>)}
           </select>
         ) : null}
-        <select aria-label="Order" value={newest ? "newest" : "best"}
-                onChange={(event) => setNewest(event.target.value === "newest")}>
-          <option value="best">Most of your words first</option>
-          <option value="newest">Newest first</option>
+        <select aria-label="Order" value={order} onChange={(event) => setOrder(event.target.value as Order)}>
+          {ORDERS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
         {words.length > 1 ? (
           <select aria-label="How many of your words" value={atLeast}
                   onChange={(event) => setAtLeast(Number(event.target.value))}>
-            <option value={1}>Any of your words</option>
+            <option value={1}>Any word</option>
             {[2, 3, 4].filter((count) => count <= words.length).map((count) => (
-              <option key={count} value={count}>At least {count} of your words</option>
+              <option key={count} value={count}>{count}+ words</option>
             ))}
           </select>
         ) : null}

@@ -139,13 +139,13 @@ def test_the_pickers_are_served_every_place_language_and_policy_with_a_label(api
     ConfigStep read `stored.schema`, which this route stopped sending on 2026-08-11, through a
     response type written by hand, so nothing failed and every list rendered empty.
     """
-    from libs.contracts.config import Language, Location, RemotePolicy
+    from libs.contracts.config import Language, Location, Workplace
 
     http, _, _ = api
     choices = http.get("/onboarding/review").json()["choices"]
 
     for key, enum in (("locations", Location), ("languages", Language),
-                      ("remote_policies", RemotePolicy)):
+                      ("workplaces", Workplace)):
         assert [choice["value"] for choice in choices[key]] == [member.value for member in enum]
         assert all(choice["label"] for choice in choices[key]), key
     assert {"value": "hu", "label": "Hungarian", "hint": None} in choices["languages"]

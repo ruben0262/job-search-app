@@ -221,10 +221,9 @@ def test_step_two_says_what_it_found_with_switches_suggestions_and_round_choices
         expect(countries.get_by_role("button", name="Germany")).to_have_attribute("aria-pressed", "false")
         expect(page.get_by_label("Add a city")).to_have_count(0)
 
-        for choice in page.get_by_role("radio").all():
-            box = choice.bounding_box()
-            assert abs(box["width"] - box["height"]) < 1, f"{box['width']}x{box['height']}, not round"
-        page.get_by_role("radio", name=re.compile("^Anything")).click()
+        # Remote and hybrid are on to begin with; one more switch, and on-site jobs are theirs too.
+        expect(page.get_by_role("switch", name=re.compile("^Hybrid"))).to_be_checked()
+        page.get_by_role("switch", name=re.compile("^On-site")).click()
 
         page.get_by_role("button", name="Looks good").click()
         expect(page.get_by_role("heading", name="You're all set")).to_be_visible()
@@ -235,7 +234,7 @@ def test_step_two_says_what_it_found_with_switches_suggestions_and_round_choices
     section = db[UserConfig.COLLECTION].find_one({"user_id": user["_id"]})["config"]["sections"][0]
     assert "software engineer" in section["keywords"]
     assert section["locations"] == ["france"], "what the buttons said is what was saved"
-    assert section["remote_policy"] == "any"
+    assert section["workplaces"] == ["remote", "hybrid", "onsite"]
 
 
 def test_a_job_found_somewhere_else_is_brought_in_by_its_link(site, capsys):
@@ -585,12 +584,25 @@ def test_my_search_asks_before_leaving_unsaved_and_applied_opens_the_whole_job(s
         _how_far_it_got(page)
 
         tabs.filter(has_text="My documents").click()
-        uploaded = page.get_by_role("list", name="Uploaded")
-        expect(uploaded.get_by_text("cv.txt")).to_be_visible()
-        expect(uploaded.get_by_text("In use")).to_be_visible()
+        _switched_off_and_on(page, user["_id"])
         expect(page.get_by_text("Add another CV")).to_be_visible()
         _made_documents(page, user["_id"], ids[TITLES[0]])
         browser.close()
+
+
+def _switched_off_and_on(page, user_id) -> None:
+    """An uploaded CV is in use; switched off it stays listed and says it is not used, in the
+    database too; switched on again, it is in use."""
+    from libs.db import database
+
+    uploaded = page.get_by_role("list", name="Uploaded")
+    expect(uploaded.get_by_text("cv.txt")).to_be_visible()
+    expect(uploaded.get_by_text("In use")).to_be_visible()
+    uploaded.get_by_role("switch", name="Use cv.txt").click()
+    expect(uploaded.get_by_text("Not used")).to_be_visible()
+    assert database().user_documents.find_one({"user_id": user_id})["in_use"] is False
+    uploaded.get_by_role("switch", name="Use cv.txt").click()
+    expect(uploaded.get_by_text("In use")).to_be_visible()
 
 
 def _where_and_when(page, card) -> None:

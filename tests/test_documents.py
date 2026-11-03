@@ -249,3 +249,59 @@ def test_uploading_requires_signing_in(api):
     http, _, _ = api
     http.cookies.clear()
     assert _upload(http).status_code == 401
+
+
+@needs_db
+def test_a_cv_switched_off_is_kept_but_nothing_is_made_from_it_until_it_is_switched_on(api):
+    """Two CVs for two kinds of role are both used; one switched off stays listed and leaves the CVs
+    made for jobs, and switched on again it is back in them."""
+    from types import SimpleNamespace
+
+    from libs.documents.instant import render
+    from libs.suggestions import documents_of
+
+    http, db, users = api
+    _upload(http, name="mechanical.txt",
+            body=b"Alice Example\nEXPERIENCE\nMechanical Engineer, Acme\t2019 - 2024\n"
+                 b"- Ran thermal tests on pump housings")
+    design = _upload(http, name="design.txt",
+                     body=b"Alice Example\nEXPERIENCE\nDesign Engineer, Globex\t2015 - 2019\n"
+                          b"- Drew CAD models of gearboxes in SolidWorks").json()["id"]
+    job = SimpleNamespace(title="Mechanical Design Engineer", company="Initech", location="", url="",
+                          description="CAD, SolidWorks, thermal testing")
+
+    def made() -> str:
+        return render("cv", documents=documents_of(db, users[0].id), identity={}, job=job)
+
+    assert "pump housings" in made() and "gearboxes" in made(), "both CVs are used"
+
+    switched = http.patch(f"/documents/{design}", json={"in_use": False})
+    assert switched.status_code == 200 and switched.json()["in_use"] is False
+    listed = {row["filename"]: row["in_use"] for row in http.get("/documents").json()["documents"]}
+    assert listed == {"mechanical.txt": True, "design.txt": False}, "kept and listed, said to be off"
+    assert "pump housings" in made() and "gearboxes" not in made()
+
+    http.patch(f"/documents/{design}", json={"in_use": True})
+    assert "gearboxes" in made()
+
+
+@needs_db
+def test_uploading_a_switched_off_file_again_switches_it_back_on(api):
+    http, _, _ = api
+    stored = _upload(http).json()["id"]
+    http.patch(f"/documents/{stored}", json={"in_use": False})
+    _upload(http)
+    assert http.get("/documents").json()["documents"][0]["in_use"] is True
+
+
+@needs_db
+def test_one_user_cannot_switch_anothers_document(api):
+    from libs.db import get, insert
+    from libs.db.models import UserDocument
+
+    http, db, users = api
+    other = insert(db, UserDocument(user_id=users[1].id, kind="cv", filename="theirs.txt",
+                                    text="not yours", text_sha256="b" * 64, chars=9))
+
+    assert http.patch(f"/documents/{other.id}", json={"in_use": False}).status_code == 404
+    assert get(db, UserDocument, other.id).in_use is True

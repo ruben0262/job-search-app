@@ -212,8 +212,9 @@ def feed(*, db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curren
          word: list[str] = Query([], max_length=50),
          min_words: int = Query(1, ge=1, le=50),
          found_after: datetime | None = None,
-         sort: Literal["best", "newest"] = "best") -> Feed:
-    """This person's matches, a page at a time, the most of their words first or newest first:
+         sort: Literal["best", "newest", "arrived"] = "best") -> Feed:
+    """This person's matches, a page at a time: the most of their words first, the newest posted
+    first, or the ones that arrived here last first:
     searched, remote only, posted lately, from one board, in one country or one city, with a document
     made or not, having every word picked, or at least so many of their words — or one job, the one
     an alert's link names, which is either still in their list or not. `found_after` keeps only the
@@ -244,6 +245,10 @@ def feed(*, db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curren
                and len(match.words) >= min_words]
     if sort == "newest":
         matches.sort(key=_when, reverse=True)
+    elif sort == "arrived":
+        # When it came in here, whatever date the board puts on it: a job posted a week ago and found
+        # an hour ago is new to them.
+        matches.sort(key=lambda match: (match.job.first_seen_at, match.job.id), reverse=True)
     page = matches[offset:offset + limit]
     ids = [match.job.id for match in page]
     # The text of the page's jobs only: matching never brings it back.

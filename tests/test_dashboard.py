@@ -356,6 +356,21 @@ def test_newest_first_puts_the_latest_job_on_top_whatever_its_words(api):
     assert _ids(http.get("/feed?sort=newest").json())[0] == in_text.id
 
 
+def test_just_arrived_first_puts_the_job_found_last_on_top_whatever_date_the_board_gives_it(api):
+    """A job posted hours ago and found a minute ago is new to them; newest posted first puts it last."""
+    http, db, _, _jobs = api
+    found_last = insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
+                                      title="Backend Engineer", posted_at=now() - timedelta(hours=3),
+                                      first_seen_at=now() + timedelta(minutes=5)))
+    posted_last = insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
+                                       title="Backend Engineer", posted_at=now() + timedelta(minutes=1),
+                                       first_seen_at=now() - timedelta(hours=2)))
+
+    assert _ids(http.get("/feed?sort=arrived").json())[0] == found_last.id
+    assert _ids(http.get("/feed?sort=newest").json())[0] == posted_last.id
+    assert _ids(http.get("/feed?sort=newest").json())[-1] == found_last.id
+
+
 def test_a_card_gets_the_start_of_the_description_and_the_rest_on_request(api):
     """A summary cut at a word, said to have more; the whole text from its own endpoint, so the list
     stays light."""

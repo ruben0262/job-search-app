@@ -13,9 +13,9 @@ from libs.contracts.config import (
     MAX_LOCATIONS_PER_USER,
     Language,
     Location,
-    RemotePolicy,
     SearchSection,
     UserConfigSchema,
+    Workplace,
     location_search_name,
     migrate_config,
 )
@@ -32,10 +32,11 @@ from services.api.deps import current_user, get_db, rate_limit
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/onboarding", tags=["onboarding"])
 
-# What each answer to "how often would you go in" is called on the page.
-_POLICIES = {"remote_only": ("Remote only", "Never asks you to come in"),
-             "remote_or_hybrid": ("Remote or hybrid", "Some days at home is fine"),
-             "any": ("Anything", "Including full-time on site")}
+# What each way of working is called on the page. Job sites' own names for them are
+# `libs.corpus.workfilter.NAMES`.
+_WORKPLACES = {"remote": ("Remote", "From home, every day"),
+               "hybrid": ("Hybrid", "Some days at home, some in"),
+               "onsite": ("On-site", "In the workplace every day")}
 
 
 class OnboardingPage(BaseModel):
@@ -75,7 +76,7 @@ class ConfigChoices(BaseModel):
     # How many places may be picked: the schema's bound, served so the page cannot hold a copy.
     max_locations: int
     languages: list[ConfigChoice]
-    remote_policies: list[ConfigChoice]
+    workplaces: list[ConfigChoice]
 
 
 class WordSuggestion(BaseModel):
@@ -264,8 +265,8 @@ def _choices() -> dict:
         "max_locations": MAX_LOCATIONS_PER_USER,
         "languages": [{"value": code.value, "label": LANGUAGE_NAMES[code.value][0]}
                       for code in Language],
-        "remote_policies": [{"value": policy.value, "label": _POLICIES[policy.value][0],
-                             "hint": _POLICIES[policy.value][1]} for policy in RemotePolicy],
+        "workplaces": [{"value": way.value, "label": _WORKPLACES[way.value][0],
+                        "hint": _WORKPLACES[way.value][1]} for way in Workplace],
     }
 
 

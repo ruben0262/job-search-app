@@ -29,4 +29,6 @@ class UserDocument(Document):
     text: str
     text_sha256: str
     chars: int
+    # Switched off by its owner: kept, listed, and left out of everything made from their documents.
+    in_use: bool = True
     uploaded_at: datetime = field(default_factory=now)

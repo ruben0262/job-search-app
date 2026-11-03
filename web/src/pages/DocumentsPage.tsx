@@ -226,6 +226,10 @@ export function Files({ kind, list, onChanged }: {
     await api.del(`/documents/${id}`);
     onChanged();
   });
+  const use = useAction(async (id: number, inUse: boolean) => {
+    await api.patch(`/documents/${id}`, { in_use: inUse });
+    onChanged();
+  });
 
   // The "About you" text is a document too, edited in its own box.
   const shown = (list?.documents ?? []).filter((document) =>
@@ -236,9 +240,12 @@ export function Files({ kind, list, onChanged }: {
   return (
     <>
       {shown.length ? (
+        <p className="small muted">We use every file that is switched on. Switch one off to keep it without using it.</p>
+      ) : null}
+      {shown.length ? (
         <ul className="files" aria-label="Uploaded">
           {shown.map((document) => (
-            <li key={document.id} className="file">
+            <li key={document.id} className={document.in_use ? "file" : "file off"}>
               <svg className="file-icon" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M6 3h8l4 4v14H6zM14 3v4h4M9 13h6M9 17h6" />
               </svg>
@@ -249,7 +256,12 @@ export function Files({ kind, list, onChanged }: {
                     `${document.chars.toLocaleString()} characters read`].filter(Boolean).join(" · ")}
                 </span>
               </span>
-              <span className="file-status">In use</span>
+              <label className="file-use">
+                <input type="checkbox" role="switch" aria-label={`Use ${document.filename}`}
+                       checked={document.in_use} disabled={use.busy}
+                       onChange={(event) => void use.run(document.id, event.target.checked)} />
+                <span className="file-status">{document.in_use ? "In use" : "Not used"}</span>
+              </label>
               <button type="button" className="secondary small" disabled={remove.busy}
                       onClick={() => {
                         if (window.confirm(`Remove ${document.filename}?`)) void remove.run(document.id);
@@ -270,7 +282,7 @@ export function Files({ kind, list, onChanged }: {
         onFile={(file) => void upload.run(file)}
       />
       {note ? <p className="upload-note">{note}</p> : null}
-      <Error>{upload.error ?? remove.error}</Error>
+      <Error>{upload.error ?? remove.error ?? use.error}</Error>
     </>
   );
 }

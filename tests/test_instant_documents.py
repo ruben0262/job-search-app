@@ -186,6 +186,60 @@ def test_a_nurse_gets_one_built_from_a_two_column_pdf_too():
     assert "Certifications" in nodes
 
 
+# The same person's CV for another kind of role: the same job told as design work, and one more.
+DESIGN_CV = """JANE DOE
+Budapest, Hungary | jane.doe@example.com | +36 30 123 4567
+PROFILE
+Systems designer who makes payment flows people can reason about.
+EXPERIENCE
+Payments Systems Designer, Acme Payments\tJan 2021 – Present
+• Designed the ledger data model every product team builds on
+• Led the architecture reviews for the settlement redesign
+Freelance Systems Designer, Self-employed\tJan 2015 – Feb 2017
+• Designed booking systems for three hotel chains
+SKILLS
+System design, Event sourcing, Go
+"""
+BOTH = {"cv": [CV, DESIGN_CV]}
+DESIGN_JOB = SimpleNamespace(title="Payments Systems Designer", company="Ledgerly",
+                             description="Own the ledger data model and the architecture reviews. "
+                                         "System design and event sourcing experience.",
+                             location="Budapest", url="https://example.com/jobs/2")
+
+
+def test_two_cvs_make_one_with_each_job_once_under_the_title_closer_to_the_posting():
+    """A job both CVs tell is shown once, under the title the posting is about, with the bullets of
+    both to pick from; the jobs only one CV has are there too."""
+    nodes = _text(render("cv", documents=BOTH, identity=IDENTITY, job=DESIGN_JOB))
+    acme = [node for node in nodes if "Acme Payments" in node]
+    assert acme == ["Payments Systems Designer — Acme Payments"], acme
+    assert "Designed the ledger data model every product team builds on" in nodes
+    assert "Designed the settlement service in Go, processing 2M transactions a day" in nodes, \
+        "the other CV's bullets for the same job are still there to pick from"
+    assert any("Globex" in node for node in nodes) and any("Self-employed" in node for node in nodes)
+
+    for_python = [node for node in _text(render("cv", documents=BOTH, identity=IDENTITY, job=JOB))
+                  if "Acme Payments" in node]
+    assert for_python == ["Senior Backend Engineer — Acme Payments"]
+
+
+def test_a_second_cvs_header_is_read_as_its_header_not_as_the_first_ones_last_section():
+    """Joined into one text, the second CV's name and contact line became lines of the first one's
+    "Certifications". Each CV is read on its own."""
+    nodes = _text(render("cv", documents=BOTH, identity=IDENTITY, job=JOB))
+    assert [node for node in nodes if "jane.doe@example.com" in node] == ["jane.doe@example.com"], \
+        "the contact line once, in the header"
+    assert "JANE DOE" not in nodes
+
+
+def test_two_cvs_give_one_summary_the_one_closer_to_the_posting():
+    for job, summary, other in ((DESIGN_JOB, "Systems designer", "Backend engineer"),
+                                (JOB, "Backend engineer", "Systems designer")):
+        nodes = _text(render("cv", documents=BOTH, identity=IDENTITY, job=job))
+        assert any(node.startswith(summary) for node in nodes)
+        assert not any(node.startswith(other) for node in nodes)
+
+
 def test_only_a_cv_or_a_cover_letter_can_be_asked_for():
     with pytest.raises(ValueError, match="cv"):
         render("letter", documents=DOCUMENTS, identity=IDENTITY, job=JOB)

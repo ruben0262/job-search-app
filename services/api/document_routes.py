@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import uuid as _uuid
+from dataclasses import replace
 from typing import Literal
 
 from fastapi import (
@@ -56,12 +57,17 @@ class DocumentRow(BaseModel):
     filename: str
     chars: int
     preview: str
+    in_use: bool
     uploaded_at: str | None
 
 
 class DocumentList(BaseModel):
     documents: list[DocumentRow]
     supported: list[str]
+
+
+class DocumentUse(BaseModel):
+    in_use: bool
 
 
 def _stored(status_word: str, document_id: int, extracted) -> dict:
@@ -110,7 +116,8 @@ async def upload(request: Request, kind: str = Form(...), file: UploadFile = Fil
     documents = db[UserDocument.COLLECTION]
     stored = find_one(db, UserDocument, {"user_id": user_id, "text_sha256": extracted.sha256})
     if stored is not None:
-        documents.update_one({"_id": stored.id}, {"$set": {"kind": kind,
+        # Uploading it again is wanting it, so a copy switched off is switched back on.
+        documents.update_one({"_id": stored.id}, {"$set": {"kind": kind, "in_use": True,
                                                            "filename": file.filename or stored.filename}})
         _documents_changed(db, user_id)
         audit(logger, "document.replaced", user=user_id, kind=kind, chars=extracted.chars,
@@ -152,14 +159,26 @@ def list_documents(db: Database = Depends(get_db),
                    user_id: _uuid.UUID = Depends(current_user)) -> dict:
     """What the user has uploaded."""
     rows = find(db, UserDocument, {"user_id": user_id}, sort=[("uploaded_at", 1), ("_id", 1)])
-    return {
-        "documents": [
-            {"id": row.id, "kind": row.kind, "filename": row.filename, "chars": row.chars,
-             "preview": row.text[:200],
-             "uploaded_at": row.uploaded_at.isoformat() if row.uploaded_at else None}
-            for row in rows],
-        "supported": list(SUPPORTED),
-    }
+    return {"documents": [_row(row) for row in rows], "supported": list(SUPPORTED)}
+
+
+@router.patch("/{document_id}", response_model=DocumentRow)
+def use_document(document_id: int, body: DocumentUse, db: Database = Depends(get_db),
+                 user_id: _uuid.UUID = Depends(current_user)) -> dict:
+    """Switch one document on or off: off, it is kept but nothing is made or suggested from it."""
+    document = find_one(db, UserDocument, {"_id": document_id, "user_id": user_id})
+    if document is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="no such document")
+    db[UserDocument.COLLECTION].update_one({"_id": document.id}, {"$set": {"in_use": body.in_use}})
+    _documents_changed(db, user_id)
+    audit(logger, "document.switched", user=user_id, kind=document.kind, in_use=body.in_use)
+    return _row(replace(document, in_use=body.in_use))
+
+
+def _row(row: UserDocument) -> dict:
+    return {"id": row.id, "kind": row.kind, "filename": row.filename, "chars": row.chars,
+            "preview": row.text[:200], "in_use": row.in_use,
+            "uploaded_at": row.uploaded_at.isoformat() if row.uploaded_at else None}
 
 
 @router.delete("/{document_id}")

@@ -3,9 +3,10 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from libs.corpus.geo import CITY_COUNTRY, COUNTRIES
+from libs.db.models.corpus import WORKPLACES
 
 # Current shape version, stored on `user_config.schema_version`.
 CONFIG_SCHEMA_VERSION = 2
@@ -26,10 +27,12 @@ class Platform(StrEnum):
     GOOGLE = "google"
 
 
-class RemotePolicy(StrEnum):
-    REMOTE_ONLY = "remote_only"
-    REMOTE_OR_HYBRID = "remote_or_hybrid"
-    ANY = "any"
+# The ways of working a person can switch on: remote, hybrid, on site. More than one is either of them.
+Workplace = StrEnum("Workplace", {name.upper(): name for name in WORKPLACES})
+
+# What each answer to the retired "how often would you go in" question switches on.
+_POLICY_WORKPLACES = {"remote_only": ["remote"], "remote_or_hybrid": ["remote", "hybrid"],
+                      "any": list(WORKPLACES)}
 
 
 class Seniority(StrEnum):
@@ -120,7 +123,9 @@ class SearchSection(BaseModel):
     exclude_keywords: list[str] = Field(default_factory=list, max_length=MAX_KEYWORDS_PER_USER)
     locations: list[Location] = Field(default_factory=list,
                                   max_length=MAX_LOCATIONS_PER_USER)
-    remote_policy: RemotePolicy = RemotePolicy.REMOTE_OR_HYBRID
+    # Switched on, any of them admits a job; none switched on narrows nothing. Remote or hybrid by
+    # default, as the question it replaced was.
+    workplaces: list[Workplace] = Field(default_factory=lambda: list(_POLICY_WORKPLACES["remote_or_hybrid"]))
     # 24 hours by default.
     posted_within_hours: int = Field(default=24, ge=1, le=168)
 
@@ -128,6 +133,17 @@ class SearchSection(BaseModel):
     @classmethod
     def _clean_terms(cls, terms: list[str]) -> list[str]:
         return _bounded_terms(terms)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _retired_answers(cls, values):
+        # A page loaded before the switches still sends the old answer on Save.
+        return _migrate_section(values) if isinstance(values, dict) else values
+
+    @field_validator("workplaces")
+    @classmethod
+    def _clean_workplaces(cls, values: list) -> list:
+        return _deduplicate(values)
 
     @field_validator("locations", mode="before")
     @classmethod
@@ -182,14 +198,14 @@ def migrate_config(raw: dict) -> dict:
     # Deleted 2026-10-28: nothing read it — the daily cap is `libs.limits`' `notifications_per_day`.
     raw = {key: value for key, value in raw.items() if key != "max_notifications_per_day"}
     if "sections" in raw:
-        return {**raw, "sections": [_migrate_locations(s) for s in raw.get("sections") or []]}
+        return {**raw, "sections": [_migrate_section(s) for s in raw.get("sections") or []]}
 
-    section_fields = ("keywords", "exclude_keywords", "locations", "remote_policy",
+    section_fields = ("keywords", "exclude_keywords", "locations", "remote_policy", "workplaces",
                       "posted_within_hours")
     section = {key: raw[key] for key in section_fields if key in raw}
     section["platform"] = Platform.ALL.value
     rest = {key: value for key, value in raw.items() if key not in section_fields}
-    return {"sections": [_migrate_locations(section)], **rest}
+    return {"sections": [_migrate_section(section)], **rest}
 
 
 # What a retired location slug means in the vocabulary that replaced it.
@@ -205,6 +221,20 @@ _RETIRED_LOCATIONS: dict[str, str | None] = {
     # country, so reading it as that country changes nobody's jobs.
     **CITY_COUNTRY,
 }
+
+
+def _migrate_section(section: dict) -> dict:
+    """One stored section in the current shape: its places, and its ways of working as switches.
+
+    A section saved before the switches has the answer they replaced, or none, which was read as
+    remote or hybrid; each becomes the switches that admit the same jobs."""
+    section = _migrate_locations(section)
+    if not section:
+        return section
+    switched = _POLICY_WORKPLACES.get(section.get("remote_policy")) or _POLICY_WORKPLACES["remote_or_hybrid"]
+    current = {key: value for key, value in section.items() if key != "remote_policy"}
+    current.setdefault("workplaces", list(switched))
+    return current
 
 
 def _migrate_locations(section: dict) -> dict:

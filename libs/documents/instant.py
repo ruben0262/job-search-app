@@ -8,9 +8,10 @@ scaffold itself is a prompt file and is never written to (CLAUDE.md §3a).
 from __future__ import annotations
 
 import re
+from dataclasses import replace
 from html import escape
 
-from libs.documents.read import Entry, Facts, fold, read, words
+from libs.documents.read import Entry, Facts, fold, read, texts, words
 from libs.templates import SCAFFOLD_CV, load, split_style
 
 # How much the CV keeps: the most relevant jobs, the most relevant bullets of each.
@@ -22,16 +23,16 @@ _LETTER_STYLE = ("<style>body { font-size: 10.5pt; line-height: 1.45; } "
                  ".letter p, .letter ul { margin: 0 0 9pt 0; } .letter ul { padding-left: 14pt; }</style>")
 
 
-def render(kind: str, *, documents: dict[str, str], identity: dict, job) -> str:
+def render(kind: str, *, documents: dict[str, list[str]], identity: dict, job) -> str:
     """A complete HTML document for one job: `kind` is "cv" or "cover".
 
-    `documents` maps a document kind to its text, `identity` carries `full_name` and `links`, and
-    `job` has `title`, `company`, `description`, `location` and `url`.
+    `documents` maps a document kind to its texts, every CV switched on among them; `identity`
+    carries `full_name` and `links`, and `job` has `title`, `company`, `description`, `location` and `url`.
     """
     facts = read(documents)
     asked = words(f"{getattr(job, 'title', '') or ''} {getattr(job, 'description', '') or ''}")
     if kind == "cv":
-        return _cv(facts, identity, job, asked, mine=words("\n".join(documents.values())))
+        return _cv(facts, identity, job, asked, mine=words("\n".join(texts(documents, *documents))))
     if kind == "cover":
         return _cover(facts, identity, job, asked)
     raise ValueError(f"unknown document kind {kind!r}: expected 'cv' or 'cover'")
@@ -42,7 +43,8 @@ def _cv(facts: Facts, identity: dict, job, asked: set[str], *, mine: set[str]) -
     title = _bare(getattr(job, "title", "") or "")
     # Their title mirrors the posting's only when every word of it is already in their documents.
     headline = title if title and words(title) <= mine else (facts.titles[0] if facts.titles else "")
-    summary = " ".join(line for section in facts.cv.of("profile") for line in section.lines)
+    # One CV's summary, the one closest to the posting: two CVs' summaries run together say it twice.
+    summary = max(facts.profiles, key=lambda text: _shared(text, asked), default="")
     parts = [header]
     parts += [f'<p class="profile"><strong>{escape(text)}</strong></p>' if bold
               else f'<p class="profile">{escape(text)}</p>'
@@ -50,13 +52,13 @@ def _cv(facts: Facts, identity: dict, job, asked: set[str], *, mine: set[str]) -
 
     # Relevance decides which jobs make the cut; the ones kept stay newest first, as a recruiter and
     # an ATS read a CV. Inside each job its most relevant bullets lead.
-    jobs = sorted(sorted(enumerate(_once(facts.jobs)), key=lambda pair: (
+    jobs = sorted(sorted(enumerate(_once(facts.jobs, asked)), key=lambda pair: (
         -_shared(" ".join((pair[1].heading, *pair[1].bullets)), asked), pair[0]))[:ENTRIES_SHOWN])
     parts.append(_section("Experience", [_entry(entry, _relevant(entry.bullets, asked)[:BULLETS_SHOWN])
                                          for _, entry in jobs]
                           or _plain(facts, "experience")))
     parts.append(_section("Education", [_entry(entry, entry.bullets[:2]) for entry in _once(
-        entry for section in facts.cv.of("education") for entry in section.entries)]
+        (entry for section in facts.cv.of("education") for entry in section.entries), asked)]
                           or _plain(facts, "education")))
 
     wanted = [skill for skill in facts.skills if words(skill) and words(skill) <= asked]
@@ -64,8 +66,12 @@ def _cv(facts: Facts, identity: dict, job, asked: set[str], *, mine: set[str]) -
         escape(skill) for skill in facts.skills if skill not in wanted]
     parts.append(_section("Skills", [f'<p class="entry-desc">{" · ".join(skills)}</p>'] if skills else []))
     parts.append(_section("Languages", _plain(facts, "languages")))
-    parts += [_section(section.heading.title() if section.heading.isupper() else section.heading,
-                       [_list(section.lines[:6])]) for section in facts.cv.of("other")]
+    # A section two CVs both have ("Certifications") once, with the lines of both.
+    others: dict[str, tuple[str, list[str]]] = {}
+    for section in facts.cv.of("other"):
+        others.setdefault(fold(section.heading), (section.heading, []))[1].extend(section.lines)
+    parts += [_section(heading.title() if heading.isupper() else heading,
+                       [_list(list(dict.fromkeys(lines))[:6])]) for heading, lines in others.values()]
     return _page(f"{name}, CV", "\n".join(part for part in parts if part))
 
 
@@ -73,7 +79,7 @@ def _cover(facts: Facts, identity: dict, job, asked: set[str]) -> str:
     name, header = _header(facts, identity)
     role = _bare(getattr(job, "title", "") or "")
     company = (getattr(job, "company", "") or "").strip()
-    bullets = [bullet for entry in facts.jobs for bullet in entry.bullets]
+    bullets = list(dict.fromkeys(bullet for entry in facts.jobs for bullet in entry.bullets))
     # The most relevant first, and between equals the one with a number in it: an achievement.
     best = sorted(enumerate(bullets), key=lambda pair: (
         -_shared(pair[1], asked), not re.search(r"\d", pair[1]), pair[0]))[:ACHIEVEMENTS]
@@ -132,7 +138,7 @@ def _list(lines, *, plain: bool = True) -> str:
 
 def _plain(facts: Facts, kind: str) -> list[str]:
     """A section with no dated entries, as the lines they wrote."""
-    lines = [line for section in facts.cv.of(kind) for line in section.lines]
+    lines = list(dict.fromkeys(line for section in facts.cv.of(kind) for line in section.lines))
     return [_list(lines)] if lines else []
 
 
@@ -146,12 +152,22 @@ def _shared(text: str, asked: set[str]) -> int:
     return len(words(text) & asked)
 
 
-def _once(entries) -> list[Entry]:
-    """Each entry once: two uploads of one CV list every job twice."""
-    seen: dict[tuple[str, str], Entry] = {}
+def _once(entries, asked: set[str]) -> list[Entry]:
+    """Each job once, where it first comes. Two CVs often tell one job for two kinds of role, under a
+    title each: it is shown under the title closer to the posting, with every bullet either has.
+
+    One job is one organisation over the same months; without both, the heading and dates as written."""
+    same: dict[tuple, list[Entry]] = {}
     for entry in entries:
-        seen.setdefault((fold(entry.heading), entry.dates), entry)
-    return list(seen.values())
+        key = ((fold(entry.organisation), entry.start, entry.end) if entry.organisation and entry.start
+               else (fold(entry.heading), entry.dates))
+        same.setdefault(key, []).append(entry)
+    shown = []
+    for copies in same.values():
+        best = max(copies, key=lambda each: _shared(each.heading, asked))
+        bullets = dict.fromkeys(bullet for each in (best, *copies) for bullet in each.bullets)
+        shown.append(replace(best, bullets=tuple(bullets)))
+    return shown
 
 
 def _bare(title: str) -> str:

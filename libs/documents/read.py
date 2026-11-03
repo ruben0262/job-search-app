@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 
@@ -184,6 +185,8 @@ class Facts:
     languages: tuple[str, ...]
     # Experience entries, most recent first.
     jobs: tuple[Entry, ...]
+    # Each CV's own summary of them, one per CV that has one: a CV for each kind of role says it twice.
+    profiles: tuple[str, ...]
     skills: tuple[str, ...]
     years: int | None
     cv: CV
@@ -371,14 +374,24 @@ def _is_place(text: str) -> bool:
 
 # ── the facts ────────────────────────────────────────────────────────────────────────────────
 
-def read(documents: dict[str, str], *, today: date | None = None) -> Facts:
+def texts(documents: Mapping[str, str | Sequence[str]], *kinds: str) -> list[str]:
+    """Every document of these kinds, each apart. A kind holds one text or several."""
+    found = [documents.get(kind) or () for kind in kinds]
+    return [text for each in found for text in ((each,) if isinstance(each, str) else each) if text]
+
+
+def read(documents: Mapping[str, str | Sequence[str]], *, today: date | None = None) -> Facts:
     """Everything their documents say about them, keyed by document kind (`cv`, `cover_letter`, ...).
 
-    The CV and a LinkedIn export are read in full. A cover letter and their own "about you" text only
-    fill in contact details the CV lacks, and say how many years they have worked: their prose
-    mentions places and languages for every reason except to say where they are or what they speak.
+    The CVs and a LinkedIn export are read in full, each on its own and then together: joined into
+    one text, a second CV's name and phone number read as lines of the first one's last section. A
+    cover letter and their own "about you" text only fill in contact details the CV lacks, and say how
+    many years they have worked: their prose mentions places and languages for every reason except to
+    say where they are or what they speak.
     """
-    cv = read_cv("\n\n".join(documents.get(kind) or "" for kind in ("cv", "linkedin")))
+    cvs = [read_cv(text) for text in texts(documents, "cv", "linkedin")]
+    cv = CV(header=tuple(line for each in cvs for line in each.header),
+            sections=tuple(section for each in cvs for section in each.sections))
     flat = [(line, "header") for line in cv.header] + [
         (line, section.kind) for section in cv.sections for line in section.lines]
     # Who and where they are: the header, and a contact section if the CV has one.
@@ -386,7 +399,7 @@ def read(documents: dict[str, str], *, today: date | None = None) -> Facts:
     email = _email(list(cv.header), [(section.kind, list(section.lines)) for section in cv.sections])
     local = fold((email or "@").split("@")[0])
     names = [line for line in cv.header if _name_like(line)]
-    prose = [documents.get(kind) or "" for kind in ("cover_letter", "history")]
+    prose = texts(documents, "cover_letter", "history")
     prose_lines = [line for text in prose for line in text.splitlines()]
 
     inline = {kind: [match.group(2) for line, _ in flat
@@ -412,6 +425,7 @@ def read(documents: dict[str, str], *, today: date | None = None) -> Facts:
         places=_unique(_PLACE_NAMES[found] for line in zone for found in _PLACES.findall(fold(line))),
         languages=_languages([*_lines_of(cv, "languages"), *inline["languages"]]),
         jobs=tuple(jobs),
+        profiles=tuple(summary for each in cvs if (summary := " ".join(_lines_of(each, "profile")))),
         skills=_skills([*_lines_of(cv, "skills"), *inline["skills"]]),
         years=max([*stated, *_experience_years(jobs, today or date.today())], default=None),
         cv=cv,

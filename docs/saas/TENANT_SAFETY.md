@@ -126,7 +126,7 @@ by making invalid states unrepresentable rather than by validating free text.
 | `keywords` | list[str] | 1–5 items, 2–40 chars each | Tag input with counter |
 | `exclude_keywords` | list[str] | 0–10 | Tag input |
 | `locations` | list[enum] | 0–5, from a **controlled vocabulary** | Picklist (never free text — this is also what makes harvest dedup work, `HARVESTER_PLAN.md` §2) |
-| `remote_policy` | enum | `remote_only` \| `remote_or_hybrid` \| `any` | Radio |
+| `workplaces` | enum set | `remote`, `hybrid`, `onsite`; several are either, none is all | Switches |
 | `seniority` | enum set | from a fixed list | Checkboxes |
 | `min_salary` | int \| null | 0–500,000, currency from a picklist | Slider + "no minimum" |
 | `languages` | enum set | ISO codes offered | Checkboxes |

@@ -82,24 +82,68 @@ def test_an_account_that_never_stated_a_language_keeps_everything():
     assert drops(Item(language="de"), UserFilters.from_config({}, max_age_hours=24)) is None
 
 
-def policy(name: str) -> UserFilters:
-    return filters(sections=[{"keywords": ["backend engineer"], "remote_policy": name}])
+def switched(*ways: str) -> UserFilters:
+    return filters(sections=[{"keywords": ["backend engineer"], "workplaces": list(ways)}])
 
 
-def test_remote_or_hybrid_drops_an_explicit_onsite_job_wherever_it_is():
+def test_remote_and_hybrid_drop_an_explicit_onsite_job_wherever_it_is():
     """Was: on-site allowed only in Hungary, the reference owner's default, for every account."""
     for place in ("Budapest, Hungary", "Dublin, Ireland"):
-        assert drops(Item(workplace="onsite", location=place), policy("remote_or_hybrid")) == "workplace"
+        assert drops(Item(workplace="onsite", location=place), switched("remote", "hybrid")) == "workplace"
 
 
-def test_anything_keeps_an_onsite_job_anywhere_and_place_is_the_country_filter_s_job():
-    assert drops(Item(workplace="onsite", location="Dublin, Ireland"), policy("any")) is None
+def test_every_switch_on_keeps_an_onsite_job_anywhere_and_place_is_the_country_filter_s_job():
+    assert drops(Item(workplace="onsite", location="Dublin, Ireland"),
+                 switched("remote", "hybrid", "onsite")) is None
 
 
-def test_remote_only_drops_hybrid_but_never_a_job_whose_workplace_is_unknown():
+def test_remote_alone_drops_hybrid_but_never_a_job_whose_workplace_is_unknown():
     """The filter only ever drops an *explicit* signal. Everything else fails open."""
-    assert drops(Item(workplace="hybrid"), policy("remote_only")) == "workplace"
-    assert drops(Item(workplace=None), policy("remote_only")) is None
+    assert drops(Item(workplace="hybrid"), switched("remote")) == "workplace"
+    assert drops(Item(workplace=None), switched("remote")) is None
+
+
+def test_two_switches_on_keep_a_job_that_is_either_and_drop_the_third():
+    """Switches are an "or": hybrid and on-site on is a job that is hybrid or on site, never remote."""
+    rules = switched("hybrid", "onsite")
+    kept = {way for way in ("remote", "hybrid", "onsite") if drops(Item(workplace=way), rules) is None}
+    assert kept == {"hybrid", "onsite"}
+
+
+def test_no_switch_on_narrows_nothing():
+    """Like an empty country or language list: nothing picked is nothing ruled out."""
+    assert all(drops(Item(workplace=way), switched()) is None for way in ("remote", "hybrid", "onsite"))
+
+
+def test_a_search_saved_before_the_switches_admits_the_same_jobs():
+    """Its stored answer is read as the switches that admit what it did, and no answer was remote or
+    hybrid. Nobody's feed changes on the day the question did."""
+    def kept(section: dict) -> set[str]:
+        rules = filters(sections=[{"keywords": ["backend engineer"], **section}])
+        return {way for way in ("remote", "hybrid", "onsite") if drops(Item(workplace=way), rules) is None}
+
+    assert kept({"remote_policy": "remote_only"}) == {"remote"}
+    assert kept({"remote_policy": "remote_or_hybrid"}) == {"remote", "hybrid"}
+    assert kept({"remote_policy": "any"}) == {"remote", "hybrid", "onsite"}
+    assert kept({}) == {"remote", "hybrid"}
+
+
+def test_each_sections_switches_add_up_rather_than_narrow_each_other():
+    rules = filters(sections=[{"platform": "linkedin", "keywords": ["go"], "workplaces": ["remote"]},
+                              {"platform": "all", "keywords": ["rust"], "workplaces": ["onsite"]}])
+    assert drops(Item(workplace="onsite"), rules) is None
+    assert drops(Item(workplace="hybrid"), rules) == "workplace"
+
+
+def test_a_job_site_s_own_words_for_a_way_of_working_are_read_as_it():
+    """Boards name them in their own words and languages. A job titled in Spanish as hybrid is hybrid,
+    and a remote one remote, for someone who switched on only on-site work — and a word that also
+    names something else ("Front Office") is not read as one."""
+    rules = switched("onsite")
+    assert drops(Item(title=".NET Developer – Madrid (Híbrido)", location="Spain"), rules) == "workplace"  # noqa: RUF001
+    assert drops(Item(title="Backend Engineer (100% remoto)", location="Spain"), rules) == "workplace"
+    assert drops(Item(title="Android Developer (praca zdalna)", location="Wrocław"), rules) == "workplace"
+    assert drops(Item(title="Front Office Supervisor", location="Sligo, Ireland"), switched("remote")) is None
 
 
 def test_a_linkedin_listing_at_the_display_cap_is_dropped_as_stale():

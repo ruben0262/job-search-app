@@ -1441,6 +1441,19 @@ button.making::after {
   content: "✓ ";
 }
 
+.file-use {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+/* Kept but not used: no green edge, no tick. */
+.files .file.off { border-left-color: var(--faint); }
+.file.off .file-status { color: var(--muted); }
+.file.off .file-status::before { content: none; }
+
 /* Above the dashed box once something is up: adding is a second thing to do, said as one. */
 .files-add {
   margin: 1.25rem 0 0.5rem;
@@ -2000,52 +2013,6 @@ button.making::after {
 .back:hover { color: var(--ink); }
 .back svg { transition: transform 0.15s ease; }
 .back:hover svg { transform: translateX(-3px); }
-
-/* **Radios drawn rather than accented.** `accent-color: var(--ink)` paints the selected dot in the
-   foreground colour, which in dark mode is near-white on a near-white control: the filled state was
-   there and invisible. Checkboxes survived it because a tick reads as a shape even at low contrast;
-   a dot does not. Drawn here so the selected one is unmistakable in either theme. */
-.pick input[type="radio"] {
-  appearance: none;
-  -webkit-appearance: none;
-  /* Round, not the oval the general input padding and height made of it. */
-  width: 1.25rem;
-  height: 1.25rem;
-  min-height: 0;
-  padding: 0;
-  aspect-ratio: 1;
-  flex: none;
-  border: 1.5px solid var(--dim);
-  border-radius: 50%;
-  background: var(--bg-raised);
-  display: grid;
-  place-content: center;
-  transition: border-color var(--fade) var(--ease), background var(--fade) var(--ease);
-}
-
-.pick input[type="radio"]::before {
-  content: "";
-  width: 0.55rem;
-  height: 0.55rem;
-  border-radius: 50%;
-  transform: scale(0);
-  background: var(--bg);
-  transition: transform var(--fade) var(--ease);
-}
-
-.pick input[type="radio"]:checked {
-  border-color: var(--ink);
-  background: var(--ink);
-}
-
-.pick input[type="radio"]:checked::before { transform: scale(1); }
-
-.pick:hover input[type="radio"]:not(:checked) { border-color: var(--muted); }
-
-.pick input[type="radio"]:focus-visible {
-  outline: 2px solid var(--ink);
-  outline-offset: 2px;
-}
 
 /* A ticked option should look ticked from across the room, not only by its label shade. */
 .pick:has(input:checked) { font-weight: 500; }
