@@ -24,7 +24,7 @@ commit if any of them is ever brought back as a pure feed.
 --- ported from the reference instance, 2026-07-27 ---
 
 Lifted from `job-search/pipeline/sources/http_apis.py` by
-`services/harvester/sources/port_from_reference.py`. Parsing, pagination and per-source quirks are
+`retired/services/harvester/sources/port_from_reference.py`. Parsing, pagination and per-source quirks are
 unchanged on purpose — they are the tuned part, and a faithful copy stays diffable against the
 original.
 

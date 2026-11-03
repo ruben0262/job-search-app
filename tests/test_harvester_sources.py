@@ -21,8 +21,7 @@ from services.harvester.sources import (
 from services.harvester.sources.base import JobLink
 
 HARVESTER = Path(__file__).resolve().parents[1] / "services" / "harvester"
-ADAPTERS = sorted(p for p in (HARVESTER / "sources").glob("*.py")
-                  if p.name != "port_from_reference.py")
+ADAPTERS = sorted((HARVESTER / "sources").glob("*.py"))
 
 
 # ── the one-factory rule ──────────────────────────────────────────────────────────────────────
@@ -31,7 +30,7 @@ def test_no_adapter_builds_its_own_http_client():
     """The rule the whole fetch layer rests on."""
     offenders = [
         f"{path.relative_to(HARVESTER)}:{i}"
-        for path in HARVESTER.rglob("*.py") if path.name != "port_from_reference.py"
+        for path in HARVESTER.rglob("*.py")
         for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
         if re.search(r"\bhttpx\.Client\(", line)
     ]
@@ -465,6 +464,6 @@ def test_a_user_agent_is_written_in_one_place_and_profession_s_own_beside_it():
     root = HARVESTER.parents[1]
     written = {path.relative_to(root).as_posix() for base in ("libs", "services")
                for path in (root / base).rglob("*.py")
-               if "__pycache__" not in path.parts and path.name != "port_from_reference.py"
+               if "__pycache__" not in path.parts
                and re.search(r"[\"']User-Agent[\"']\s*:", path.read_text(encoding="utf-8"))}
     assert written == {"libs/corpus/postings.py", "services/harvester/sources/http_apis.py"}

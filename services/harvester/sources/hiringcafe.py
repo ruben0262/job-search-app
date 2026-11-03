@@ -22,7 +22,7 @@ non-en/hu descriptions are acceptable here per Ruben.
 --- ported from the reference instance, 2026-07-27 ---
 
 Lifted from `job-search/pipeline/sources/hiringcafe.py` by
-`services/harvester/sources/port_from_reference.py`. Parsing, pagination and per-source quirks are
+`retired/services/harvester/sources/port_from_reference.py`. Parsing, pagination and per-source quirks are
 unchanged on purpose — they are the tuned part, and a faithful copy stays diffable against the
 original.
 

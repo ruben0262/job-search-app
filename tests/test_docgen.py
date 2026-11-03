@@ -8,7 +8,6 @@ import uuid
 
 import pytest
 
-from libs.contracts.profile import ProfileSchema
 from libs.templates import SCAFFOLD_CV, load
 from services.docgen import build, pdf, run
 
@@ -21,18 +20,6 @@ def base_document() -> str:
     """
     return load(SCAFFOLD_CV)
 
-
-PROFILE = ProfileSchema.model_validate({
-    "identity": {"name": "Alice Example", "location": "Berlin, Germany",
-                 "links": {"portfolio": "https://alice.dev"}},
-    "experience": [{"role": "Backend Engineer", "org": "Northwind", "start": "2021",
-                    "end": "present", "bullets": ["Built the billing service"],
-                    "stack": ["Python"]}],
-    "skills": {"languages": ["Python", "Go"]},
-    "targets": {"role_types": ["backend engineer"], "seniority": "Senior"},
-    "constraints": {"languages": ["English (Native)"]},
-    "confirmed": True,
-})
 
 # The invisible character these tests are about, named and escaped.
 ZERO_WIDTH = "\u200b"
@@ -360,14 +347,12 @@ BSc Computer Science, TU Berlin    2017
 """
 
 
-def _session(monkeypatch, *, profile=PROFILE, description="Backend role. Python.",
+def _session(monkeypatch, *, description="Backend role. Python.",
              profile_files=DEFAULT_FILES, documents=None):
     """The build's two reads — the account and the posting — and its config read, with no database."""
-    # `full_name` is where the document's filename comes from — the name the user typed at signup,
-    # not `profile.identity.name`. The schema was a second copy of the same fact and it was the last
-    # thing in a build still reading `user.profile`.
-    user = type("U", (), {"id": uuid.uuid4(), "profile": profile.model_dump(),
-                          "full_name": profile.identity.name, "links": [],
+    # `full_name` is where the document's filename comes from — the name the user typed at signup.
+    # The profile schema was a second copy of the same fact; nothing reads it, and it is retired.
+    user = type("U", (), {"id": uuid.uuid4(), "full_name": "Alice Example", "links": [],
                           "facts_md": "# Facts about Alice Example"})()
     job = FakeJob(description=description)
     state = type("S", (), {"applied_at": None})()

@@ -7,34 +7,28 @@ requirement, and it constrains the contracts between them.
 
 ## Current state
 
-| Service | State | Restart blast radius |
+| Service | Container | Restart blast radius |
 |---|---|---|
-| [`embedder/`](embedder/) | ✅ **built + deployed** | Scoring and training pause, failing **closed** |
-| [`harvester/`](harvester/) | empty | New jobs stop arriving; existing feeds unaffected |
-| [`api/`](api/) | empty | Users cannot log in or edit config; pipeline keeps running |
-| [`scorer/`](scorer/) | empty | New jobs queue unscored, drain on restart |
-| [`trainer/`](trainer/) | empty | Retrains queue up |
-| [`notifier/`](notifier/) | empty | Deliveries queue up, `next_run_at` re-armed |
-| [`docgen/`](docgen/) | built, not deployed | CV builds queue up |
-| [`capture/`](capture/) | empty | Onboarding capture unavailable; manual entry is the fallback |
+| [`api/`](api/) | `api` | The site is away for the seconds it takes to start; everything else carries on |
+| [`harvester/`](harvester/) | `harvester`, `seed-ats` (one-shots) | New jobs stop arriving until the next tick; existing feeds unaffected |
+| [`docgen/`](docgen/) | `docgen` | CV builds queue up and are made when it is back |
+| [`notifier/`](notifier/) | `notifier` | Alerts queue up, `next_run_at` re-armed |
+| [`oauthbroker/`](oauthbroker/) | `oauthbroker` | A Claude sign-in under way has to start again |
 
-Each empty package's `__init__.py` records why it exists and what constraint it carries. They fill in
-during Phases 1–3 — `harvester` is next (Phase 1 step 4).
+What no longer runs (the embedder, the scorer, trainer, labeller, capture and setup agents) is in
+[`retired/`](../retired/) or in git under the tag `model-on-postgres`.
 
 ## Deploying one service
 
 ```bash
-git pull
-docker compose build api
-docker compose up -d --no-deps api     # --no-deps: touch nothing else
+deploy/deploy.sh docgen
 ```
 
-`--no-deps` is the flag that makes this true. Without it Compose helpfully recreates linked services
-and the blast radius is the whole stack again.
+It pulls, builds, applies the schema, restarts that one service and checks it runs the new code,
+touching nothing else (`deploy/README.md`).
 
 **Build coupling and deploy coupling are different problems.** A change in `libs/corpus` means every
-service importing it gets a new image — fine, images are cheap and CI rebuilds all of them. Deploying
-is still exactly one container.
+service importing it gets a new image. Deploying is still exactly the containers named.
 
 ## What makes a one-service restart safe
 
@@ -42,7 +36,7 @@ Three things, all non-negotiable:
 
 1. **Versioned contracts, fail closed.** Every service serves `/health` with a version; callers
    assert compatibility and 503 rather than guessing. A version mismatch is never a best-effort
-   degraded answer. The embedder already does this and is the model to copy.
+   degraded answer.
 2. **Restart-safe workers.** A job is claimed transactionally and an unfinished claim expires back
    into the queue, so killing a worker mid-job costs a retry — never a lost or duplicated
    user-visible action.
@@ -50,12 +44,11 @@ Three things, all non-negotiable:
 
 ## Per-service dependencies stay per-service
 
-Each service owns its `requirements.txt` and Dockerfile. `docgen` is the only image with Chrome;
-`trainer`/`scorer` the only ones with scikit-learn; `harvester` the only one with jobspy. `api` and
-`notifier` stay small — which matters, because they are what gets restarted most.
+Each service owns its `requirements.txt` and Dockerfile. `docgen` is the only image with Chrome and
+`harvester` the only one with jobspy. `api` and `notifier` stay small, which matters, because they are
+what gets restarted most.
 
 ## Compose profiles
 
-Always-on services start with a bare `up`; one-shot tools sit behind `profiles: ["tools"]`. That
-split exists because a no-arg `up` once launched a trainer beside the scorer and loaded a second
-model into RAM.
+The services that stay up are in the `full` profile; the one-shots (`harvester`, `seed-ats`) sit
+behind `tools`, so a bare `up` never starts a harvest that would then sit there.

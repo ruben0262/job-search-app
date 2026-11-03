@@ -54,7 +54,7 @@ operating point.
 | Doc | Status |
 |---|---|
 | [MODEL_SELECTION_RESEARCH.md](MODEL_SELECTION_RESEARCH.md) | **Current.** Model/pricing ladder for scoring vs writing. Unchanged by the multi-tenant design |
-| [`services/embedder/docs/PLAN.md`](../../services/embedder/docs/PLAN.md) | **Current and maintained.** The embedder's real design — measured numbers, the bge-small → bge-base reversal, and the corrections the VPS run forced. The service is built and deployed |
+| [`services/embedder/docs/PLAN.md`](../../retired/services/embedder/docs/PLAN.md) | **Current and maintained.** The embedder's real design — measured numbers, the bge-small → bge-base reversal, and the corrections the VPS run forced. The service is built and deployed |
 | [SAAS_PLATFORM_PLAN.md](SAAS_PLATFORM_PLAN.md) | **Partly superseded.** §4's Model 1 (one container stack per user) is **rejected** — see `PLATFORM_ARCHITECTURE.md` §2 for the measured reasons. §7's open decisions are resolved. §5a (legal/ToS), §5f (operational burden), §5g (framework constraints) still stand |
 
 ## Decisions resolved 2026-07-26

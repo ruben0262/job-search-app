@@ -18,35 +18,43 @@ for a service's session, no knowing which container it runs in.
 
 ## Current state
 
-| Package | State | What it is |
-|---|---|---|
-| [`auth/`](auth/) | ✅ **built** | argon2id, hashed email tokens, rotating refresh sessions (`AUTH_REUSE.md` design port) |
-| [`obs/`](obs/) | ✅ **built** | One logging configuration for every process: rotating file per service, redaction on every handler |
-| [`mail/`](mail/) | ✅ **built** | Gmail SMTP sender + plain-text templates; prints instead of sending when unconfigured |
-| [`db/`](db/) | ✅ **built** | SQLAlchemy models + Alembic migrations. 11 tables, 3 revisions, applied to the live database |
-| [`corpus/`](corpus/) | ✅ **built** | Dedup keys (T2-pinned), corpus repository, ATS token/ETag state |
-| [`tenant/`](tenant/) | ✅ **built** | Per-user repository: job state, applied log, labels, feedback. **T1 green** |
-| [`contracts/`](contracts/) | ✅ **built** | `UserConfigSchema` (server validation + JSON Schema for the form) and the embedder client contract. **T9 green** |
-| [`credentials/`](credentials/) | ✅ **built** | Validate a credential at save — one cheap call per kind |
-| [`auth/`](auth/) | ✅ **built** | argon2id, hashed email tokens, rotating refresh sessions |
-| [`secrets/`](secrets/) | ✅ **built** | Envelope encryption (KEK/DEK), credential store, log redaction. **T4 green** |
-| [`scoring/`](scoring/) | ✅ **built** | Rubric render + `profile_version`, and the per-user feature extractor |
-| [`queue/`](queue/) | ✅ **built** | Four-lane claim protocol + the worker loop. **T5/T6/T7 green** |
-| [`prompts/`](prompts/) | partial | `label_template.md` (SACRED) + the loader. Generation prompts land with docgen |
+What is here is what runs: what the platform no longer uses is in [`retired/`](../retired/) (2026-11-03).
 
-Empty packages are not placeholders for their own sake — each `__init__.py` records why the package
-exists and which constraints it carries, so the tree is navigable before it is populated, and so the
-boundary contract covers a package the moment it has code in it.
+| Package | What it is |
+|---|---|
+| [`assistant/`](assistant/) | The help chat: a reply written by an AI on the key that pays, streamed into its row |
+| [`auth/`](auth/) | Password hashing, verification tokens and refresh sessions |
+| [`claudeauth/`](claudeauth/) | Driving `claude setup-token` on a person's behalf (the `oauthbroker` service) |
+| [`contracts/`](contracts/) | Pydantic models shared between services: the search config and onboarding |
+| [`corpus/`](corpus/) | The shared job corpus: dedup keys, storage, places, salaries, reading a job's page |
+| [`credentials/`](credentials/) | Checking a credential the moment it is saved |
+| [`db/`](db/) | MongoDB: one client per process, and every collection's fields and indexes |
+| [`documents/`](documents/) | Uploaded documents as text, and the CVs and cover letters kept |
+| [`harvest/`](harvest/) | Vocabulary the harvest and the admin panel both need |
+| [`legal/`](legal/) | The disclosures, and whether a person agreed to them |
+| [`limits/`](limits/) | Every ceiling on one account, and who may change it |
+| [`llm/`](llm/) | The one seam to the AI providers: Anthropic, Google and OpenAI |
+| [`mail/`](mail/) | Transactional email |
+| [`notify/`](notify/) | In-app notifications, and the new matches owed to a person off the site |
+| [`obs/`](obs/) | Logging for every process |
+| [`onboarding/`](onboarding/) | What a new account must supply before it has jobs |
+| [`ops/`](ops/) | Seeing the platform, and being told when it needs a person |
+| [`profiles/`](profiles/) | A person's profile as files, and what a document is grounded on |
+| [`prompts/`](prompts/), [`scaffolds/`](scaffolds/) | The generation prompts, and the files a new account starts from (SACRED, below) |
+| [`queue/`](queue/) | The job queue: claim, retry, dead-letter |
+| [`secrets/`](secrets/) | Envelope encryption for each person's credentials (KEK/DEK), and log redaction |
+| [`settings/`](settings/) | The operator's settings and their defaults |
+| [`templates/`](templates/) | The CV layout, and its loader |
+| [`tenant/`](tenant/) | Per-user data: job marks, applications, config |
+| `matching.py` | Which jobs a person sees: their green words pick them, their red words veto them |
+| `proxy.py` | The site's one proxy |
+| `suggestions.py` | The green and red words a person might want, with the reason. No AI |
+| `telegram.py` | Telegram's Bot API, for a person's own bot |
 
-## The two that carry special rules
+## The rule that carries special weight
 
-**`scoring/features.py` must never be duplicated.** `services/trainer` and `services/scorer` are
-separate containers that must agree byte-for-byte on feature construction. Two copies that drift do
-not crash — they silently score against different semantics, which is worse than an outage because
-nothing reports it. See `docs/saas/CODE_STRUCTURE.md` §4.
-
-**`prompts/` is SACRED.** No edit without explicit approval, A/B measured, changelogged. That now
-also covers `label_template.md`, because editing it re-versions *every* user at once.
+**`prompts/` is SACRED**, and so is `scaffolds/` (CLAUDE.md §3a). No edit without explicit approval,
+A/B measured, changelogged.
 
 **`secrets/` never gains a method that returns a plaintext to a response.** Reads return `Secret`,
 which does not stringify; the API layer's only read path is
