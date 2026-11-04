@@ -20,7 +20,7 @@ from libs.db.models import BuiltDocument, CorpusJob, User, UserJobState
 from libs.db.models.tenant import record_state
 from libs.documents.saved import for_jobs
 from libs.llm import PLATFORM, ai_requests_today, resolve
-from libs.matching import Match, matching_jobs, norm
+from libs.matching import Match, marks, norm, their_jobs
 from libs.notify import reachable
 from libs.obs import audit
 from libs.onboarding import onboarding_state
@@ -148,20 +148,16 @@ def _is_admin(user: User) -> bool:
     return bool(user.is_admin) or user.email.lower() in admin_emails()
 
 
-def _marks(db: Database, user_id: _uuid.UUID) -> tuple[set[int], dict[int, datetime]]:
-    """The jobs this person skipped, and when they applied to which."""
-    rows = list(db[UserJobState.COLLECTION].find(
-        {"user_id": user_id, "$or": [{"dismissed_at": {"$ne": None}}, {"applied_at": {"$ne": None}}]},
-        {"job_id": 1, "dismissed_at": 1, "applied_at": 1}))
-    return ({row["job_id"] for row in rows if row["dismissed_at"]},
-            {row["job_id"]: row["applied_at"] for row in rows if row["applied_at"]})
-
-
 @router.get("/dashboard")
 def dashboard(db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(current_user)
               ) -> OnboardingDashboard | ReadyDashboard:
-    """Everything the front page shows, in one call."""
+    """Everything the front page shows, in one call. Opening the site is being online: the time is
+    kept to the minute, for the admin's account page."""
     user = get(db, User, user_id)
+    db[User.COLLECTION].update_one(
+        {"_id": user_id, "$or": [{"last_active_at": None},
+                                 {"last_active_at": {"$lt": now() - timedelta(minutes=1)}}]},
+        {"$set": {"last_active_at": now()}})
     state = onboarding_state(db, user_id)
     # Finished once is not enough: a search saved before the minimums (owner, 2026-11-04) is finished on
     # its page, since without a country no job comes in for it.
@@ -171,7 +167,7 @@ def dashboard(db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curr
         return OnboardingDashboard(stage="onboarding", is_admin=_is_admin(user),
                                    onboarding=OnboardingSteps(**state.as_dict()))
 
-    _, applied = _marks(db, user_id)
+    _, applied = marks(db, user_id)
     return ReadyDashboard(stage="ready", is_admin=_is_admin(user), applied=len(applied),
                           banners=_banners(db, user), ai=_ai(db, user))
 
@@ -227,9 +223,7 @@ def feed(*, db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curren
 
     A job they skipped or applied to is gone from it for good: Applied lists the second."""
     as_of = now()
-    skipped, applied_at = _marks(db, user_id)
-    visible = [match for match in matching_jobs(db, get(db, User, user_id), since=found_after)
-               if match.job.id not in skipped and match.job.id not in applied_at]
+    visible = their_jobs(db, get(db, User, user_id), since=found_after)
     made_for = (set(db[BuiltDocument.COLLECTION].distinct("job_id", {"user_id": user_id}))
                 if made is not None else set())
     cutoff = now() - timedelta(hours=since_hours) if since_hours else None

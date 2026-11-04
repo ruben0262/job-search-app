@@ -73,7 +73,7 @@ def test_the_front_page_counts_applications_and_never_runs_the_match(api, monkey
     def no_match(*_args, **_kwargs):
         raise AssertionError("the dashboard ran the match")
 
-    monkeypatch.setattr("services.api.dashboard_routes.matching_jobs", no_match)
+    monkeypatch.setattr("libs.matching.matching_jobs", no_match)
     front = http.get("/dashboard").json()
     assert front["stage"] == "ready"
     assert front["applied"] == 1

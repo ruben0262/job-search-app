@@ -18,6 +18,21 @@ type LimitSpec = {
 
 type UserDetail = components["schemas"]["AdminAccountDetail"];
 
+/** A date and the time of day, and how long ago: "Tue 4 Nov 2026, 14:32 (2 hours ago)". */
+function when(iso: string | null | undefined): string {
+  if (!iso) return "never";
+  const at = new Date(iso);
+  const minutes = Math.round((Date.now() - at.getTime()) / 60_000);
+  const ago = minutes < 1 ? "just now" : minutes < 60 ? `${minutes} min ago`
+    : minutes < 48 * 60 ? `${Math.round(minutes / 60)} hours ago` : `${Math.round(minutes / 1440)} days ago`;
+  return `${at.toLocaleString([], { weekday: "short", day: "numeric", month: "short", year: "numeric",
+                                    hour: "2-digit", minute: "2-digit" })} (${ago})`;
+}
+
+function list(values: string[]): string {
+  return values.length ? values.join(", ") : "none";
+}
+
 export function AdminUserPage({ userId }: { userId: string }) {
   // Drawn from what was read last time (or read ahead from the list) at once, and kept current.
   const account = useKept<UserDetail>(`/admin/users/${userId}`);
@@ -42,21 +57,10 @@ export function AdminUserPage({ userId }: { userId: string }) {
     }
   };
 
-  const setFilesVisible = async (visible: boolean) => {
-    setSaving("files");
-    try {
-      await api.put(`/admin/users/${userId}/files`, { visible });
-      setDetail((current) =>
-        current ? { ...current, user: { ...current.user, profile_files_visible: visible } } : current);
-    } finally {
-      setSaving(null);
-    }
-  };
-
   if (failed) return <p className="error">Could not read that account.</p>;
   if (!detail) return <p className="muted">Loading…</p>;
 
-  const { user, setup, counts } = detail;
+  const { user, usage } = detail;
 
   return (
     <div>
@@ -67,60 +71,45 @@ export function AdminUserPage({ userId }: { userId: string }) {
       </div>
       <p className="facts">
         {user.status}
-        {user.active ? "" : " · delivery paused"} · telegram {user.telegram}
-        {user.last_active_at
-          ? ` · last active ${new Date(user.last_active_at).toLocaleDateString()}`
-          : ""}
+        {user.active ? "" : " · delivery paused"} · last online {when(user.last_active_at)}
       </p>
 
       <dl className="stats">
-        <div className="stat">
-          <dt>{counts.applied.toLocaleString()}</dt>
-          <dd>applied</dd>
-        </div>
-        <div className="stat">
-          <dt>{counts.notified.toLocaleString()}</dt>
-          <dd>delivered</dd>
-        </div>
-      </dl>
-
-      <h2>Setup</h2>
-      {setup.missing.length ? (
-        <p className="error">
-          Incomplete, {setup.missing.length} file(s) missing or unfilled:{" "}
-          {setup.missing.join(", ")}.
-        </p>
-      ) : (
-        <p className="facts" style={{ color: "var(--score)" }}>
-          Complete, every required profile file is written.
-        </p>
-      )}
-      <div className="sources">
-        {setup.files.map((file) => (
-          <div key={file.name} className="source-row">
-            <span className="source-name">{file.name}</span>
-            <span className="small" style={{ color: file.filled ? "var(--score)" : "var(--dim)" }}>
-              {file.filled ? "written" : "empty"}
-            </span>
+        {([[usage.jobs, "jobs waiting"], [usage.new_jobs, "new since last here"], [usage.applied, "applied"],
+           [usage.skipped, "skipped"], [usage.made, "CVs and letters made"],
+           [usage.delivered, "sent by alerts"]] as const).map(([value, label]) => (
+          <div key={label} className="stat">
+            <dt>{value.toLocaleString()}</dt>
+            <dd>{label}</dd>
           </div>
         ))}
-      </div>
-      {/* Whether the user may open the files listed directly above. Per account, and closed until
-          somebody opens it — it was its own heading further up, with nothing else under it. */}
-      <label className="pick" style={{ marginBottom: "2rem" }}>
-        <input
-          type="checkbox"
-          role="switch"
-          checked={user.profile_files_visible === true}
-          disabled={saving === "files"}
-          onChange={(event) => void setFilesVisible(event.target.checked)}
-        />
-        <span>
-          {user.profile_files_visible
-            ? "Open, this user can read and correct the files written about them"
-            : "Closed, the tiles are shown but cannot be opened"}
-        </span>
-      </label>
+      </dl>
+
+      {/* What they told us and how they use the site, for working out what to improve. */}
+      <h2>Their account</h2>
+      <dl className="facts-list">
+        <dt>Signed up</dt>
+        <dd>{when(user.created_at)}</dd>
+        <dt>Finished setting up</dt>
+        <dd>{user.onboarding_completed_at ? when(user.onboarding_completed_at) : "not yet"}</dd>
+        <dt>Green words</dt>
+        <dd>{list(usage.green_words)}</dd>
+        <dt>Red words</dt>
+        <dd>{list(usage.red_words)}</dd>
+        <dt>Countries</dt>
+        <dd>{list(usage.countries)}</dd>
+        <dt>How they work</dt>
+        <dd>{list(usage.workplaces)}</dd>
+        <dt>Languages</dt>
+        <dd>{list(usage.languages)}</dd>
+        <dt>Uploaded</dt>
+        <dd>
+          {usage.cvs} CV{usage.cvs === 1 ? "" : "s"} ({usage.cvs_in_use} in use), {usage.cover_letters} cover
+          letter{usage.cover_letters === 1 ? "" : "s"}
+        </dd>
+        <dt>Alerts</dt>
+        <dd>{usage.alerts.length ? usage.alerts.join(", ") : "none"} · Telegram {user.telegram}</dd>
+      </dl>
 
       {/* Set here, and nowhere the user can reach. */}
       <h2>Limits</h2>

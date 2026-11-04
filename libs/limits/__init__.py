@@ -72,7 +72,7 @@ LIMITS: tuple[Limit, ...] = (
           "More terms means broader collection and more proxy spend.",
           choices=(10, 25, 50, 100)),
     Limit("documents", "Uploaded documents", 25, "files",
-          "CVs, references, diplomas — what the setup agent reads from.",
+          "The CVs and cover letters they upload, which their suggestions and documents are read from.",
           choices=(10, 25, 50, 100)),
     # Every CV and cover letter asked for, instant or AI, counted at the one place they are asked
     # for (`POST /documents/build`). Generous, because an instant one is a render: fifty is

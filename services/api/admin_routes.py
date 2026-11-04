@@ -14,18 +14,24 @@ from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 from pymongo.database import Database
 
+from libs.contracts.config import WORKPLACE_NAMES, location_search_name, migrate_config
 from libs.db import delete_account, find, find_one, get, insert
 from libs.db.models import (
     AtsToken,
+    BuiltDocument,
     CorpusJob,
     OperatorKeyword,
+    PushSubscription,
     QueueJob,
     User,
     UserConfig,
+    UserDocument,
     UserJobState,
 )
+from libs.documents.read import LANGUAGE_NAMES
 from libs.harvest import distinct_keywords
 from libs.limits import all_for, describe, set_limit
+from libs.matching import green_words, their_jobs
 from libs.obs import audit
 from libs.ops import evaluate, platform_health, render
 from libs.ops.latency import (
@@ -34,7 +40,6 @@ from libs.ops.latency import (
     stage_detail,
 )
 from libs.ops.pipeline import pipeline
-from libs.profiles.repository import ProfileFiles
 from libs.settings import (
     DEFAULT_SOURCE_MIN_AGE_HOURS,
     DEFAULTS,
@@ -146,63 +151,92 @@ class AdminAccount(BaseModel):
     status: str
     active: bool
     telegram: str
-    profile_files_visible: bool
     onboarded: bool
     created_at: datetime | None
+    onboarding_completed_at: datetime | None
+    # When they last opened the site, to the minute (`/dashboard`).
     last_active_at: datetime | None
 
 
-class AdminProfileFile(BaseModel):
-    name: str
-    kind: str
-    filled: bool
-
-
-class AdminSetup(BaseModel):
-    missing: list[str]
-    files: list[AdminProfileFile]
-
-
-class AdminCounts(BaseModel):
+class AdminUsage(BaseModel):
+    """What an account does with the site, for working out what to improve."""
+    # What their Jobs page lists now, and how many of those came in since they were last on the site.
+    jobs: int
+    new_jobs: int
     applied: int
-    notified: int
+    skipped: int
+    # Sent to them by an alert.
+    delivered: int
+    # CVs and cover letters made for a job.
+    made: int
+    cvs: int
+    cvs_in_use: int
+    cover_letters: int
+    green_words: list[str]
+    red_words: list[str]
+    countries: list[str]
+    workplaces: list[str]
+    languages: list[str]
+    # How they hear of new jobs.
+    alerts: list[str]
 
 
 class AdminAccountDetail(BaseModel):
     user: AdminAccount
-    setup: AdminSetup
+    usage: AdminUsage
     # `None` is unlimited and is a real value, not a missing one.
     limits: dict[str, int | None]
-    counts: AdminCounts
 
 
 @router.get("/users/{user_id}")
 def user_detail(user_id: _uuid.UUID, db: Database = Depends(get_db),
                 admin: User = Depends(require_admin)) -> AdminAccountDetail:
-    """One account, for the two questions an operator actually has."""
+    """One account: who it is, when it was last here, and what it does with the site."""
     user = get(db, User, user_id)
     if user is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="no such user")
 
-    files = ProfileFiles(db, user_id)
     audit(logger, "admin.user_detail", user=admin.id, subject=user_id)
     return AdminAccountDetail(
         user=AdminAccount(
             id=str(user.id), email=user.email, status=user.status, active=user.active,
-            telegram=user.telegram_status,
-            profile_files_visible=bool(user.profile_files_visible),
-            onboarded=user.onboarding_completed_at is not None,
-            created_at=user.created_at, last_active_at=user.last_active_at),
-        setup=AdminSetup(
-            missing=files.missing_setup(),
-            files=[AdminProfileFile(name=row["name"], kind=row["kind"], filled=row["filled"])
-                   for row in files.listing()]),
-        limits=all_for(user),
-        counts=AdminCounts(
-            applied=db[UserJobState.COLLECTION].count_documents(
-                {"user_id": user_id, "applied_at": {"$ne": None}}),
-            notified=db[UserJobState.COLLECTION].count_documents(
-                {"user_id": user_id, "notified_at": {"$ne": None}})))
+            telegram=user.telegram_status, onboarded=user.onboarding_completed_at is not None,
+            created_at=user.created_at, onboarding_completed_at=user.onboarding_completed_at,
+            last_active_at=user.last_active_at),
+        usage=_usage(db, user),
+        limits=all_for(user))
+
+
+def _usage(db: Database, user: User) -> AdminUsage:
+    jobs = their_jobs(db, user)
+    since = user.last_active_at
+    config = migrate_config(TenantRepository(db).get_config(user.id) or {})
+    sections = config.get("sections") or []
+
+    def each(field: str) -> list[str]:
+        return list(dict.fromkeys(value for section in sections for value in section.get(field) or []))
+
+    def count(collection: str, **where) -> int:
+        return db[collection].count_documents({"user_id": user.id, **where})
+
+    documents = list(db[UserDocument.COLLECTION].find({"user_id": user.id}, {"kind": 1, "in_use": 1}))
+    cvs = [row for row in documents if row["kind"] == "cv"]
+    alerts = [name for name, on in (("email", user.email_alerts),
+                                    ("Telegram", user.telegram_status == "connected"),
+                                    ("browser", count(PushSubscription.COLLECTION) > 0)) if on]
+    return AdminUsage(
+        jobs=len(jobs), new_jobs=sum(1 for match in jobs if since and match.job.first_seen_at > since),
+        applied=count(UserJobState.COLLECTION, applied_at={"$ne": None}),
+        skipped=count(UserJobState.COLLECTION, dismissed_at={"$ne": None}),
+        delivered=count(UserJobState.COLLECTION, notified_at={"$ne": None}),
+        made=count(BuiltDocument.COLLECTION),
+        cvs=len(cvs), cvs_in_use=sum(1 for row in cvs if row.get("in_use", True)),
+        cover_letters=sum(1 for row in documents if row["kind"] == "cover_letter"),
+        green_words=green_words(config), red_words=each("exclude_keywords"),
+        countries=[location_search_name(slug) for slug in each("locations")],
+        workplaces=[WORKPLACE_NAMES.get(way, (way,))[0] for way in each("workplaces")],
+        languages=[LANGUAGE_NAMES.get(code, (code,))[0] for code in config.get("languages") or []],
+        alerts=alerts)
 
 
 class SettingPatch(BaseModel):
@@ -231,23 +265,6 @@ def write_setting(key: str, body: SettingPatch, db: Database = Depends(get_db),
 
 class AdminFlag(BaseModel):
     is_admin: bool
-
-
-class FilesFlag(BaseModel):
-    visible: bool
-
-
-@router.put("/users/{user_id}/files")
-def set_files_visible(user_id: _uuid.UUID, body: FilesFlag, db: Database = Depends(get_db),
-                      admin: User = Depends(require_admin)) -> dict:
-    """Open or close this account's profile files to the person they are about."""
-    target = get(db, User, user_id)
-    if target is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="no such account")
-    db[User.COLLECTION].update_one({"_id": user_id}, {"$set": {"profile_files_visible": body.visible}})
-    audit(logger, "admin.files_visibility_changed", user=admin.id, subject=user_id,
-          visible=body.visible)
-    return {"status": "saved", "profile_files_visible": body.visible}
 
 
 @router.put("/users/{user_id}/admin")

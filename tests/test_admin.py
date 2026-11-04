@@ -48,19 +48,55 @@ def test_an_operator_sees_the_platform_and_its_alerts(api):
     assert isinstance(body["alerts"], list)
 
 
-def test_an_account_page_shows_what_happened_to_it_and_no_model(api):
-    """Applications and deliveries, in numbers. The model history went with the model."""
-    from libs.db.models import CorpusJob, UserJobState
+def test_an_account_page_says_what_they_do_with_the_site_and_nothing_of_the_setup_files(api):
+    """For working out what to improve (owner, 2026-11-04): the jobs waiting for them and how many came
+    in since they were last here, what they did with them, their search, their files and their alerts.
+    The setup agents' files went with the agents, and an incomplete list of them read as an error."""
+    from datetime import timedelta
+
+    from libs.db.models import CorpusJob, UserConfig, UserDocument, UserJobState
+    from libs.tenant.repository import TenantRepository
 
     http, db, operator, ordinary, sign_in = api
     sign_in(http, operator)
-    job = insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test", title="Engineer"))
-    insert(db, UserJobState(user_id=ordinary.id, job_id=job.id, applied_at=now(), notified_at=now()))
+    TenantRepository(db).save_config(ordinary.id, {"languages": ["en", "de"], "sections": [
+        {"platform": "all", "keywords": ["nurse", "midwife", "carer"], "exclude_keywords": ["night"],
+         "locations": ["germany"], "workplaces": ["onsite"]}]})
+    _change(db, ordinary, last_active_at=now() - timedelta(hours=2), email_alerts=True)
+    jobs = [insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test", title=title,
+                                 location="Berlin, Germany", country="DE", description="A ward job. " * 30,
+                                 first_seen_at=now() - timedelta(hours=hours)))
+            for title, hours in (("Nurse", 5), ("Midwife", 1), ("Carer", 1), ("Nurse Lead", 1))]
+    insert(db, UserJobState(user_id=ordinary.id, job_id=jobs[0].id, applied_at=now(), notified_at=now()))
+    insert(db, UserJobState(user_id=ordinary.id, job_id=jobs[3].id, dismissed_at=now()))
+    insert(db, UserDocument(user_id=ordinary.id, kind="cv", filename="cv.pdf", text="x", text_sha256="1",
+                            chars=1))
 
     body = http.get(f"/admin/users/{ordinary.id}").json()
-    assert body["user"]["email"] == ordinary.email
-    assert body["counts"] == {"applied": 1, "notified": 1}
-    assert "models" not in body
+
+    assert body["user"]["email"] == ordinary.email and "setup" not in body
+    usage = body["usage"]
+    assert (usage["jobs"], usage["new_jobs"]) == (2, 2), "skipped and applied are gone from their list"
+    assert (usage["applied"], usage["skipped"], usage["delivered"]) == (1, 1, 1)
+    assert (usage["green_words"], usage["red_words"]) == (["carer", "midwife", "nurse"], ["night"])
+    assert (usage["countries"], usage["workplaces"], usage["languages"]) == (
+        ["Germany"], ["On-site"], ["English", "German"])
+    assert (usage["cvs"], usage["cvs_in_use"], usage["alerts"]) == (1, 1, ["email"])
+    assert db[UserConfig.COLLECTION].count_documents({"user_id": ordinary.id}) == 1
+
+
+def test_opening_the_site_is_when_they_were_last_online(api):
+    """It moved only when somebody signed in, and a session lasts for weeks: an account used every day
+    read as last active a month ago."""
+    from datetime import timedelta
+
+    http, db, _operator, ordinary, sign_in = api
+    _change(db, ordinary, last_active_at=now() - timedelta(days=30))
+    sign_in(http, ordinary)
+
+    http.get("/dashboard")
+
+    assert now() - get(db, User, ordinary.id).last_active_at < timedelta(minutes=1)
 
 
 def test_an_ordinary_user_gets_a_404_not_a_403(api):

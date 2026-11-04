@@ -12,6 +12,7 @@ from libs import limits, suggestions
 from libs.contracts.config import (
     MAX_LOCATIONS_PER_USER,
     MIN_GREEN_WORDS,
+    WORKPLACE_NAMES,
     Language,
     Location,
     SearchSection,
@@ -38,11 +39,6 @@ router = APIRouter(prefix="/onboarding", tags=["onboarding"])
 # first thing a person does is add a word of their own.
 PREFILLED_GREEN = 2
 
-# What each way of working is called on the page. Job sites' own names for them are
-# `libs.corpus.workfilter.NAMES`.
-_WORKPLACES = {"remote": ("Remote", "From home, every day"),
-               "hybrid": ("Hybrid", "Some days at home, some in"),
-               "onsite": ("On-site", "In the workplace every day")}
 
 
 class OnboardingPage(BaseModel):
@@ -275,8 +271,8 @@ def _choices() -> dict:
         "min_words": MIN_GREEN_WORDS,
         "languages": [{"value": code.value, "label": LANGUAGE_NAMES[code.value][0]}
                       for code in Language],
-        "workplaces": [{"value": way.value, "label": _WORKPLACES[way.value][0],
-                        "hint": _WORKPLACES[way.value][1]} for way in Workplace],
+        "workplaces": [{"value": way.value, "label": WORKPLACE_NAMES[way.value][0],
+                        "hint": WORKPLACE_NAMES[way.value][1]} for way in Workplace],
     }
 
 

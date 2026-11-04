@@ -14,6 +14,37 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-04 — An account's page says what they do with the site; "last online" is when they were
+
+The owner: per-account stats on the admin page, mainly to work out what to improve; last online as a
+date and a time; and the red "Setup … missing" line gone.
+
+- **"Last online" was the last sign-in.** `last_active_at` was written only by signing in, and a
+  session lasts weeks, so an account used every day read as last active a month ago. Opening the site
+  (`/dashboard`) now writes it, once a minute at most. It is the server's record, not a cookie: a
+  cookie lives in the person's browser, where the admin cannot read it.
+- **The account page** (`/admin/users/{id}`, `AdminUserPage.tsx`) shows:
+  - jobs waiting on their Jobs page, and how many came in since they were last here;
+  - jobs applied to and skipped, CVs and letters made, and jobs sent by alerts;
+  - when they signed up and finished setting up, and last online to the minute, with how long ago;
+  - their green and red words, countries, ways of working and languages;
+  - CVs (and how many in use) and cover letters uploaded;
+  - how they hear of new jobs.
+- **"Their jobs" is one function** (`libs.matching.their_jobs`: their matches, less what they skipped or
+  applied to), read by the Jobs page and this page alike.
+- **Deleted: the setup files list, its "Incomplete, 10 file(s) missing" line and the switch under it.**
+  The files were the setup agents', which are gone; the switch (`profile_files_visible`) was read by
+  nothing once the file tiles left the site. Its field is retired (`Document.RETIRED`: a stored account
+  still loads, and the deploy's prune removes it), with `ProfileFiles.listing`, `missing_setup` and the
+  `/admin/users/{id}/files` route.
+- **A pressed button's label vanished under the pointer** (a country on My search, a range in Admin):
+  the hover painted the label in the page's ink on an ink background. Fixed in `styles.css`.
+
+Tests (each fails on the previous commit): the account page's numbers and lists, with skipped and
+applied jobs gone from the waiting count; opening the site moves "last online"; in the browser, a
+pressed button's label is readable under the pointer, and the account page shows "just now" and no
+setup section.
+
 ## 2026-11-04 — A search always has three green words, a country, a way of working and a language
 
 The owner: onboarding does not finish until each of these is set, a check always runs, and no part can

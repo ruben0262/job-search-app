@@ -111,9 +111,17 @@
             "title": "Onboarded",
             "type": "boolean"
           },
-          "profile_files_visible": {
-            "title": "Profile Files Visible",
-            "type": "boolean"
+          "onboarding_completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Onboarding Completed At"
           },
           "status": {
             "title": "Status",
@@ -130,9 +138,9 @@
           "status",
           "active",
           "telegram",
-          "profile_files_visible",
           "onboarded",
           "created_at",
+          "onboarding_completed_at",
           "last_active_at"
         ],
         "title": "AdminAccount",
@@ -140,9 +148,6 @@
       },
       "AdminAccountDetail": {
         "properties": {
-          "counts": {
-            "$ref": "#/components/schemas/AdminCounts"
-          },
           "limits": {
             "additionalProperties": {
               "anyOf": [
@@ -157,8 +162,8 @@
             "title": "Limits",
             "type": "object"
           },
-          "setup": {
-            "$ref": "#/components/schemas/AdminSetup"
+          "usage": {
+            "$ref": "#/components/schemas/AdminUsage"
           },
           "user": {
             "$ref": "#/components/schemas/AdminAccount"
@@ -166,29 +171,10 @@
         },
         "required": [
           "user",
-          "setup",
-          "limits",
-          "counts"
+          "usage",
+          "limits"
         ],
         "title": "AdminAccountDetail",
-        "type": "object"
-      },
-      "AdminCounts": {
-        "properties": {
-          "applied": {
-            "title": "Applied",
-            "type": "integer"
-          },
-          "notified": {
-            "title": "Notified",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "applied",
-          "notified"
-        ],
-        "title": "AdminCounts",
         "type": "object"
       },
       "AdminFlag": {
@@ -204,51 +190,106 @@
         "title": "AdminFlag",
         "type": "object"
       },
-      "AdminProfileFile": {
+      "AdminUsage": {
+        "description": "What an account does with the site, for working out what to improve.",
         "properties": {
-          "filled": {
-            "title": "Filled",
-            "type": "boolean"
-          },
-          "kind": {
-            "title": "Kind",
-            "type": "string"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          }
-        },
-        "required": [
-          "name",
-          "kind",
-          "filled"
-        ],
-        "title": "AdminProfileFile",
-        "type": "object"
-      },
-      "AdminSetup": {
-        "properties": {
-          "files": {
-            "items": {
-              "$ref": "#/components/schemas/AdminProfileFile"
-            },
-            "title": "Files",
-            "type": "array"
-          },
-          "missing": {
+          "alerts": {
             "items": {
               "type": "string"
             },
-            "title": "Missing",
+            "title": "Alerts",
+            "type": "array"
+          },
+          "applied": {
+            "title": "Applied",
+            "type": "integer"
+          },
+          "countries": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Countries",
+            "type": "array"
+          },
+          "cover_letters": {
+            "title": "Cover Letters",
+            "type": "integer"
+          },
+          "cvs": {
+            "title": "Cvs",
+            "type": "integer"
+          },
+          "cvs_in_use": {
+            "title": "Cvs In Use",
+            "type": "integer"
+          },
+          "delivered": {
+            "title": "Delivered",
+            "type": "integer"
+          },
+          "green_words": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Green Words",
+            "type": "array"
+          },
+          "jobs": {
+            "title": "Jobs",
+            "type": "integer"
+          },
+          "languages": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Languages",
+            "type": "array"
+          },
+          "made": {
+            "title": "Made",
+            "type": "integer"
+          },
+          "new_jobs": {
+            "title": "New Jobs",
+            "type": "integer"
+          },
+          "red_words": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Red Words",
+            "type": "array"
+          },
+          "skipped": {
+            "title": "Skipped",
+            "type": "integer"
+          },
+          "workplaces": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Workplaces",
             "type": "array"
           }
         },
         "required": [
-          "missing",
-          "files"
+          "jobs",
+          "new_jobs",
+          "applied",
+          "skipped",
+          "delivered",
+          "made",
+          "cvs",
+          "cvs_in_use",
+          "cover_letters",
+          "green_words",
+          "red_words",
+          "countries",
+          "workplaces",
+          "languages",
+          "alerts"
         ],
-        "title": "AdminSetup",
+        "title": "AdminUsage",
         "type": "object"
       },
       "AiWriting": {
@@ -1346,19 +1387,6 @@
           "jobs"
         ],
         "title": "FeedWord",
-        "type": "object"
-      },
-      "FilesFlag": {
-        "properties": {
-          "visible": {
-            "title": "Visible",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "visible"
-        ],
-        "title": "FilesFlag",
         "type": "object"
       },
       "ForgotRequest": {
@@ -4360,7 +4388,7 @@
         ]
       },
       "get": {
-        "description": "One account, for the two questions an operator actually has.",
+        "description": "One account: who it is, when it was last here, and what it does with the site.",
         "operationId": "user_detail_admin_users__user_id__get",
         "parameters": [
           {
@@ -4453,62 +4481,6 @@
           }
         },
         "summary": "Set Admin",
-        "tags": [
-          "admin"
-        ]
-      }
-    },
-    "/admin/users/{user_id}/files": {
-      "put": {
-        "description": "Open or close this account's profile files to the person they are about.",
-        "operationId": "set_files_visible_admin_users__user_id__files_put",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "user_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "User Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/FilesFlag"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Set Files Visible Admin Users  User Id  Files Put",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Set Files Visible",
         "tags": [
           "admin"
         ]
@@ -5223,7 +5195,7 @@
     },
     "/dashboard": {
       "get": {
-        "description": "Everything the front page shows, in one call.",
+        "description": "Everything the front page shows, in one call. Opening the site is being online: the time is\nkept to the minute, for the admin's account page.",
         "operationId": "dashboard_dashboard_get",
         "responses": {
           "200": {

@@ -115,12 +115,6 @@ def stale_after(written: dict[str, object], changed_at) -> list[str]:
                   and written[name] < changed_at)
 
 
-def missing_setup(files: dict[str, str]) -> list[str]:
-    """Which setup files are absent or still a scaffold."""
-    return [name for name in setup_files()
-            if name not in files or not is_filled(files[name])]
-
-
 def is_filled(content: str) -> bool:
     """Whether a file has been populated, by the same test `/setup` applies to itself."""
     return bool(content.strip()) and not any(m in content for m in PLACEHOLDER_MARKERS)

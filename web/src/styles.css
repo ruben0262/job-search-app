@@ -2211,6 +2211,21 @@ button.making::after {
   fill: var(--muted);
 }
 
+/* An account's facts on the admin's account page: what, then its answer, a row each. */
+.facts-list {
+  display: grid;
+  grid-template-columns: minmax(8rem, 12rem) minmax(0, 1fr);
+  gap: 0.45rem 1.25rem;
+  margin: 0 0 2rem;
+}
+.facts-list dt {
+  color: var(--muted);
+}
+.facts-list dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 /* The per-source table in Settings: name, freshness, query ceiling, and what that source is
    currently asking for. Four columns rather than two, because a ceiling means nothing until you can
    see the demand beside it. */
@@ -2888,7 +2903,8 @@ button.toggle {
   border-color: var(--faint);
 }
 
-button.toggle:hover:not([disabled]) {
+/* Not a pressed one: its ink is the page's background colour, and the hover's ink made its label vanish. */
+button.toggle:hover:not([disabled]):not([aria-pressed="true"]) {
   color: var(--ink);
   border-color: var(--ink);
   transform: none;

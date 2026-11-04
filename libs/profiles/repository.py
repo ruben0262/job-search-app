@@ -12,27 +12,12 @@ from libs.db.models import User, UserProfileFile
 from libs.profiles import (
     grounding,
     is_filled,
-    missing_setup,
-    scaffold,
     seed_files,
     ships_usable,
     stale_after,
 )
 
 logger = logging.getLogger(__name__)
-
-
-def _personalised(name: str, content: str | None) -> bool:
-    """Whether this file has been written for this person, rather than left as it shipped.
-
-    A file with no scaffold of its own has nothing to differ from, so it counts as personalised
-    the moment it has content — the question only means anything for the ones that ship usable.
-    """
-    try:
-        base = scaffold(name)
-    except (FileNotFoundError, KeyError, ValueError):
-        return bool((content or "").strip())
-    return (content or "").strip() != (base or "").strip()
 
 
 class ProfileFiles:
@@ -51,23 +36,6 @@ class ProfileFiles:
     def read(self, name: str) -> str | None:
         row = self._files.find_one({"user_id": self._user, "name": name}, {"content": 1})
         return row["content"] if row else None
-
-    def listing(self) -> list[dict]:
-        """What the setup agent and the file panel both need: names, kinds, filled state.
-
-        `personalised` answers a question `filled` cannot. Some files ship usable — the writing
-        prompts are complete documents carrying `<<NAME>>` markers that are substituted at build
-        time — so `filled` is True for them from the moment an account is seeded, whether or not
-        anybody has written a word for that person.
-
-        Comparing against the shipped scaffold separates the two. Measured 2026-08-09: one
-        account's `tailor_cover.md` was byte-identical to the default while every check reported
-        it complete, so it had been reporting a personalised cover-letter prompt it did not have.
-        """
-        rows = self._files.find({"user_id": self._user}, sort=[("name", 1)])
-        return [{"name": row["name"], "kind": row["kind"], "filled": row["filled"],
-                 "personalised": _personalised(row["name"], row["content"]),
-                 "updated_at": row["updated_at"]} for row in rows]
 
     def write(self, name: str, content: str, *, kind: str | None = None) -> None:
         """Store a file."""
@@ -136,10 +104,6 @@ class ProfileFiles:
         if self._db[User.COLLECTION].count_documents({"_id": self._user}, limit=1) == 0:
             return f"no such user: {self._user}"
         return None
-
-    def missing_setup(self) -> list[str]:
-        """Setup files still absent or unfilled."""
-        return missing_setup(self.all())
 
     def stale_setup(self) -> list[str]:
         """Setup files written before the user last changed what they typed.

@@ -15,7 +15,7 @@ from pymongo.database import Database
 
 from libs.contracts.config import migrate_config
 from libs.corpus import salary
-from libs.db.models import CorpusJob, User, Word
+from libs.db.models import CorpusJob, User, UserJobState, Word
 from libs.tenant.filters import candidate_conditions, filters_for
 from libs.tenant.repository import TenantRepository
 
@@ -164,3 +164,20 @@ def matching_jobs(db: Database, user: User, *, since: datetime | None = None,
             matches.append(Match(job, tuple(sorted(words)), tuple(sorted(in_title))))
     # A stable sort, so equal ranks keep the query's newest-first order.
     return sorted(matches, key=lambda match: match.rank, reverse=True)
+
+
+def marks(db: Database, user_id) -> tuple[set[int], dict[int, datetime]]:
+    """The jobs this person skipped, and when they applied to which."""
+    rows = list(db[UserJobState.COLLECTION].find(
+        {"user_id": user_id, "$or": [{"dismissed_at": {"$ne": None}}, {"applied_at": {"$ne": None}}]},
+        {"job_id": 1, "dismissed_at": 1, "applied_at": 1}))
+    return ({row["job_id"] for row in rows if row["dismissed_at"]},
+            {row["job_id"]: row["applied_at"] for row in rows if row["applied_at"]})
+
+
+def their_jobs(db: Database, user: User, *, since: datetime | None = None) -> list[Match]:
+    """What this person's Jobs page lists: their matches, less a job they skipped or applied to, which is
+    gone from it for good."""
+    skipped, applied = marks(db, user.id)
+    return [match for match in matching_jobs(db, user, since=since)
+            if match.job.id not in skipped and match.job.id not in applied]

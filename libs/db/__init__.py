@@ -88,13 +88,16 @@ class Document:
     # Whether the nightly backup keeps it. False for what rebuilds itself or expires: postings are
     # collected again within hours, and a backup is not where a session or a built PDF should live.
     BACKED_UP: ClassVar[bool] = True
+    # Fields this class no longer declares and stored documents may still carry: read past, and removed
+    # from the stored documents by the deploy's prune.
+    RETIRED: ClassVar[tuple[str, ...]] = ()
 
     @classmethod
     def from_doc(cls, doc: dict | None) -> Self | None:
         """The document as this class, or None. A field the class does not declare is an error."""
         if doc is None:
             return None
-        data = dict(doc)
+        data = {name: value for name, value in doc.items() if name not in cls.RETIRED}
         key = data.pop("_id", None)
         if "id" in cls.__dataclass_fields__:
             data["id"] = key
@@ -157,6 +160,11 @@ def ensure_schema(db: Database | None = None, *, prune: bool = False) -> None:
             else:
                 logger.warning("schema: %s.%s is not declared by this code; left for the deploy's prune",
                                model.COLLECTION, index["name"])
+        if prune and model.RETIRED:
+            removed = collection.update_many({"$or": [{name: {"$exists": True}} for name in model.RETIRED]},
+                                             {"$unset": dict.fromkeys(model.RETIRED, "")}).modified_count
+            if removed:
+                logger.info("schema: removed %s from %d %s", model.RETIRED, removed, model.COLLECTION)
 
 
 def _create(db: Database, name: str, rules: dict) -> None:

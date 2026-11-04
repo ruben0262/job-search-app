@@ -234,6 +234,7 @@ def test_step_two_says_what_it_found_with_its_words_ready_and_a_plain_way_to_add
         countries.get_by_role("button", name=re.compile(r"^Show \d+ more countries$")).click()
         countries.get_by_role("button", name="France").click()
         expect(countries.get_by_role("button", name="France")).to_have_attribute("aria-pressed", "true")
+        _readable_under_the_pointer(countries.get_by_role("button", name="France"))
         countries.get_by_role("button", name="Germany").click()
         expect(countries.get_by_role("button", name="Germany")).to_have_attribute("aria-pressed", "false")
         expect(page.get_by_label("Add a city")).to_have_count(0)
@@ -254,6 +255,14 @@ def test_step_two_says_what_it_found_with_its_words_ready_and_a_plain_way_to_add
     assert section["locations"] == ["france"], "what the buttons said is what was saved"
     assert section["workplaces"] == ["remote", "hybrid", "onsite"]
     assert db[UserConfig.COLLECTION].find_one({"user_id": user["_id"]})["config"]["languages"] == ["en"]
+
+
+def _readable_under_the_pointer(button) -> None:
+    """A pressed button's label is the page's background colour on the ink: the hover painted it in ink as
+    well, and the label vanished (2026-11-04)."""
+    button.hover()
+    ink, ground = button.evaluate("b => [getComputedStyle(b).color, getComputedStyle(b).backgroundColor]")
+    assert ink != ground, f"the label is {ink} on {ground}"
 
 
 def _the_last_one_stays_on(page, countries) -> None:
@@ -410,6 +419,15 @@ def test_the_tabs_in_order_and_what_each_one_is_for(site, capsys):
         tabs.filter(has_text="Admin").click()
         page.get_by_role("button", name="Messages").click()
         expect(page.get_by_text("My CV shows the wrong city")).to_be_visible()
+
+        # Their own account, as an operator sees it: online now, and what they do with the site.
+        page.get_by_role("button", name="Accounts").click()
+        page.get_by_role("cell", name=email, exact=True).click()
+        expect(page.get_by_text(re.compile(r"last online .*\(just now\)"))).to_be_visible()
+        expect(page.get_by_role("heading", name="Their account")).to_be_visible()
+        expect(page.get_by_role("heading", name="Setup")).to_have_count(0)
+        if shot := os.environ.get("E2E_SHOT"):
+            page.screenshot(path=shot, full_page=True)
         browser.close()
 
 

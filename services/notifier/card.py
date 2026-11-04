@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import html
 
+from libs.contracts.config import WORKPLACE_NAMES
 from libs.corpus import salary as salarylib
 from libs.corpus.filters import age_label
 from libs.corpus.workfilter import classify
@@ -13,7 +14,9 @@ from libs.notify import site_url
 APPLICANT_BUCKETS = (10, 50, 200)
 APPLICANT_DOTS = ("🟢", "🟡", "🟠", "🔴")
 
-WORKPLACE_LABELS = {"remote": "🌍 Remote", "hybrid": "🏠 Hybrid", "onsite": "🏢 On-site"}
+# Each way of working's name, after a mark that reads at a glance in a chat.
+WORKPLACE_LABELS = {way: f"{mark} {WORKPLACE_NAMES[way][0]}"
+                    for way, mark in (("remote", "🌍"), ("hybrid", "🏠"), ("onsite", "🏢"))}
 
 
 def applicant_bucket(count: int) -> int:

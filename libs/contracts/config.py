@@ -36,6 +36,12 @@ class Platform(StrEnum):
 # The ways of working a person can switch on: remote, hybrid, on site. More than one is either of them.
 Workplace = StrEnum("Workplace", {name.upper(): name for name in WORKPLACES})
 
+# What each is called, wherever a person reads it (My search, an alert, the admin), and what it means.
+# Job sites' own names for them are `libs.corpus.workfilter.NAMES`.
+WORKPLACE_NAMES = {"remote": ("Remote", "From home, every day"),
+                   "hybrid": ("Hybrid", "Some days at home, some in"),
+                   "onsite": ("On-site", "In the workplace every day")}
+
 # What each answer to the retired "how often would you go in" question switches on.
 _POLICY_WORKPLACES = {"remote_only": ["remote"], "remote_or_hybrid": ["remote", "hybrid"],
                       "any": list(WORKPLACES)}

@@ -22,6 +22,9 @@ class User(Document):
     INDEXES = (IndexModel("email", unique=True, name="email_unique"),
                IndexModel("linkedin_next_run_at", partialFilterExpression={"active": True},
                           name="linkedin_due"))
+    # Whether the person could open the profile files the setup agents wrote: nothing read it once the
+    # file tiles left the site, and the admin's switch for it went on 2026-11-04.
+    RETIRED = ("profile_files_visible",)
 
     id: uuid.UUID = field(default_factory=uuid.uuid4)
     email: str
@@ -37,7 +40,6 @@ class User(Document):
     timezone: str = "UTC"
     active: bool = False
     is_admin: bool = False
-    profile_files_visible: bool = False
     # Per-account overrides of `libs.limits`; a key absent here means the catalogue's default.
     limits: dict = field(default_factory=dict)
     linkedin_next_run_at: datetime | None = None

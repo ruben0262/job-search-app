@@ -411,7 +411,7 @@ export interface paths {
         };
         /**
          * User Detail
-         * @description One account, for the two questions an operator actually has.
+         * @description One account: who it is, when it was last here, and what it does with the site.
          */
         get: operations["user_detail_admin_users__user_id__get"];
         put?: never;
@@ -439,26 +439,6 @@ export interface paths {
          * @description Grant or revoke operator access.
          */
         put: operations["set_admin_admin_users__user_id__admin_put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/admin/users/{user_id}/files": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Set Files Visible
-         * @description Open or close this account's profile files to the person they are about.
-         */
-        put: operations["set_files_visible_admin_users__user_id__files_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -824,7 +804,8 @@ export interface paths {
         };
         /**
          * Dashboard
-         * @description Everything the front page shows, in one call.
+         * @description Everything the front page shows, in one call. Opening the site is being online: the time is
+         *     kept to the minute, for the admin's account page.
          */
         get: operations["dashboard_dashboard_get"];
         put?: never;
@@ -1624,8 +1605,8 @@ export interface components {
             last_active_at: string | null;
             /** Onboarded */
             onboarded: boolean;
-            /** Profile Files Visible */
-            profile_files_visible: boolean;
+            /** Onboarding Completed At */
+            onboarding_completed_at: string | null;
             /** Status */
             status: string;
             /** Telegram */
@@ -1633,41 +1614,53 @@ export interface components {
         };
         /** AdminAccountDetail */
         AdminAccountDetail: {
-            counts: components["schemas"]["AdminCounts"];
             /** Limits */
             limits: {
                 [key: string]: number | null;
             };
-            setup: components["schemas"]["AdminSetup"];
+            usage: components["schemas"]["AdminUsage"];
             user: components["schemas"]["AdminAccount"];
-        };
-        /** AdminCounts */
-        AdminCounts: {
-            /** Applied */
-            applied: number;
-            /** Notified */
-            notified: number;
         };
         /** AdminFlag */
         AdminFlag: {
             /** Is Admin */
             is_admin: boolean;
         };
-        /** AdminProfileFile */
-        AdminProfileFile: {
-            /** Filled */
-            filled: boolean;
-            /** Kind */
-            kind: string;
-            /** Name */
-            name: string;
-        };
-        /** AdminSetup */
-        AdminSetup: {
-            /** Files */
-            files: components["schemas"]["AdminProfileFile"][];
-            /** Missing */
-            missing: string[];
+        /**
+         * AdminUsage
+         * @description What an account does with the site, for working out what to improve.
+         */
+        AdminUsage: {
+            /** Alerts */
+            alerts: string[];
+            /** Applied */
+            applied: number;
+            /** Countries */
+            countries: string[];
+            /** Cover Letters */
+            cover_letters: number;
+            /** Cvs */
+            cvs: number;
+            /** Cvs In Use */
+            cvs_in_use: number;
+            /** Delivered */
+            delivered: number;
+            /** Green Words */
+            green_words: string[];
+            /** Jobs */
+            jobs: number;
+            /** Languages */
+            languages: string[];
+            /** Made */
+            made: number;
+            /** New Jobs */
+            new_jobs: number;
+            /** Red Words */
+            red_words: string[];
+            /** Skipped */
+            skipped: number;
+            /** Workplaces */
+            workplaces: string[];
         };
         /**
          * AiWriting
@@ -2046,11 +2039,6 @@ export interface components {
             jobs: number;
             /** Name */
             name: string;
-        };
-        /** FilesFlag */
-        FilesFlag: {
-            /** Visible */
-            visible: boolean;
         };
         /** ForgotRequest */
         ForgotRequest: {
@@ -3520,43 +3508,6 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["AdminFlag"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    set_files_visible_admin_users__user_id__files_put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                user_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["FilesFlag"];
             };
         };
         responses: {
