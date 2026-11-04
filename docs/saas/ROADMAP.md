@@ -3172,6 +3172,17 @@ work, or opening and closing sessions faster, would help):
 
     Expected together: 10–30% more pages read. More exits are what scale past that.
 
+**At full size (measured 2026-11-04 on 1.5 million jobs; CHANGELOG, "Matching at full size")**
+
+34. **The Jobs page is ~450 ms at a month of the EU and the UK, against its 300 ms target.** A match reads
+    whole jobs, ~4.7 KB each and mostly description, where it needs the title, company, place and words.
+    Proposed: the descriptions in a collection of their own, read only for the page's 20 jobs, a job
+    being opened, a CV, and the words search. What a match reads would be ~8× smaller. To measure first
+    with `scripts/scale_probe.py` before building: it touches every reader of a description.
+35. **server_db's VM: 8 GB of memory, 3.5 GB of it MongoDB's cache.** The jobs a match reads, the last 8
+    days, are ~1.9 GB: in a 1.5 GB cache they are read from disk every time (median ~550 ms against
+    ~450). `~/projects/server_db/DESIGN.md`, "Speed".
+
 ## Phase 9 — MongoDB instead of Postgres (added 2026-10-30)
 
 **Why.** The owner's decision: users, their logins and everything stored about them live in MongoDB
