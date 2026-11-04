@@ -1779,6 +1779,8 @@ export interface components {
             locations: components["schemas"]["ConfigChoice"][];
             /** Max Locations */
             max_locations: number;
+            /** Min Words */
+            min_words: number;
             /** Workplaces */
             workplaces: components["schemas"]["ConfigChoice"][];
         };

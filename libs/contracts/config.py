@@ -3,7 +3,8 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+from pydantic_core import PydanticCustomError
 
 from libs.corpus.geo import CITY_COUNTRY, COUNTRIES
 from libs.db.models.corpus import WORKPLACES
@@ -16,6 +17,11 @@ MAX_KEYWORDS_PER_USER = 25
 
 # Queries are keywords x locations x sources, so the keyword cap applies before the cross product.
 MAX_LOCATIONS_PER_USER = 12
+
+# The least a search may have (owner, 2026-11-04): three green words, and at least one country, one way
+# of working and one language. Jobs are fetched country by country and the words matched here, so a
+# search with no country has no jobs coming in; three words are what make a list worth reading.
+MIN_GREEN_WORDS = 3
 
 
 class Platform(StrEnum):
@@ -123,8 +129,8 @@ class SearchSection(BaseModel):
     exclude_keywords: list[str] = Field(default_factory=list, max_length=MAX_KEYWORDS_PER_USER)
     locations: list[Location] = Field(default_factory=list,
                                   max_length=MAX_LOCATIONS_PER_USER)
-    # Switched on, any of them admits a job; none switched on narrows nothing. Remote or hybrid by
-    # default, as the question it replaced was.
+    # Switched on, any of them admits a job; at least one is on. Remote or hybrid by default, as the
+    # question it replaced was.
     workplaces: list[Workplace] = Field(default_factory=lambda: list(_POLICY_WORKPLACES["remote_or_hybrid"]))
     # 24 hours by default.
     posted_within_hours: int = Field(default=24, ge=1, le=168)
@@ -155,6 +161,14 @@ class SearchSection(BaseModel):
     @classmethod
     def _clean_locations(cls, values: list) -> list:
         return _deduplicate(values)
+
+    @model_validator(mode="after")
+    def _somewhere_somehow(self) -> SearchSection:
+        if not self.locations:
+            raise PydanticCustomError("no_country", "pick at least one country")
+        if not self.workplaces:
+            raise PydanticCustomError("no_workplace", "switch on at least one way of working")
+        return self
 
 
 class UserConfigSchema(BaseModel):
@@ -191,6 +205,24 @@ class UserConfigSchema(BaseModel):
             # Two sections for one platform is a mistake, and the fold would silently merge them.
             raise ValueError("each platform may appear in at most one section")
         return sections
+
+    @model_validator(mode="after")
+    def _enough_to_search(self) -> UserConfigSchema:
+        if not self.languages:
+            raise PydanticCustomError("no_language", "pick at least one language")
+        if len({word.lower() for section in self.sections for word in section.keywords}) < MIN_GREEN_WORDS:
+            raise PydanticCustomError("few_words", "add at least {least} green words",
+                                      {"least": MIN_GREEN_WORDS})
+        return self
+
+
+def complete_search(config: dict | None) -> bool:
+    """Whether a stored search has what a search saved today must: one rule, the schema's."""
+    try:
+        UserConfigSchema.model_validate(migrate_config(config or {}))
+    except ValidationError:
+        return False
+    return True
 
 
 def migrate_config(raw: dict) -> dict:

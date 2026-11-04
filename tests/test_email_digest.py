@@ -140,9 +140,14 @@ def api(db, monkeypatch):
     from fastapi.testclient import TestClient
 
     from libs.auth.access import issue_access_token
+    from libs.db.models import UserConfig
     from services.api.app import app
 
-    user, _ = _person(db, email_alerts=False, onboarding_completed_at=now())
+    user, word = _person(db, email_alerts=False, onboarding_completed_at=now(), full_name="Ada Example")
+    # A finished account's search: the jobs page waits for one missing a part.
+    db[UserConfig.COLLECTION].update_one({"user_id": user.id}, {"$set": {"config": {
+        "languages": ["en"], "sections": [{"platform": "all", "keywords": [word, "golang", "sql"],
+                                           "locations": ["germany"]}]}}})
     with TestClient(app, base_url="https://testserver") as http:
         http.cookies.set("access_token", issue_access_token(user.id, uuid.uuid4()), path="/")
         yield http

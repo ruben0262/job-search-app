@@ -14,6 +14,29 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-04 — A search always has three green words, a country, a way of working and a language
+
+The owner: onboarding does not finish until each of these is set, a check always runs, and no part can
+be left empty. Three green words is the least; more is recommended.
+
+- **One rule, the schema's** (`libs/contracts/config.py`). A search is refused, with what to add, when it
+  has fewer than `MIN_GREEN_WORDS` (3) different green words, no country, no way of working or no
+  language. Every save goes through it: the form, and the help chat's word buttons.
+- **The page says what is missing before Save does** (`WordsPage.tsx`): "To go on: add 1 more green
+  word, pick a country." The number comes from the server (`choices.min_words`), so the page holds no
+  copy. The last country, language or way of working switched on cannot be switched off.
+- **Onboarding's search page is done only when the schema would accept the search** (`libs/onboarding`).
+- **A finished account whose search predates this is sent back to that page** (`/dashboard`), because
+  jobs are about to be fetched country by country and a search with no country would get none. Their
+  CV and the rest stay as they were.
+- The search still starts with two green words read off the CV, one fewer than it takes, so the first
+  thing a person does is add one of their own.
+
+Tests (each fails on the previous commit): the four refusals and what each says; a word twice counts
+once; a stored search missing a part reads as incomplete and reopens its page for a finished account;
+the page is served the minimum; and in the browser, two words keep "Looks good" greyed with the reason
+shown, and the last country and language cannot be switched off.
+
 ## 2026-11-03 — Searching by place and time: LinkedIn swept, Himalayas, No Fluff Jobs and The Muse read as lists
 
 The rest of the plan (owner): each search-type source measured, and the idea applied where the numbers

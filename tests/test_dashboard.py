@@ -13,8 +13,9 @@ from libs.db.models import CorpusJob, User, UserJobState
 pytest.importorskip("fastapi")
 
 # A stored config as accounts actually have them, retired field and all.
-CONFIG = {"sections": [{"platform": "all", "keywords": ["backend engineer"]}],
-          "max_notifications_per_day": 20}
+CONFIG = {"sections": [{"platform": "all", "keywords": ["backend engineer", "golang", "postgres"],
+                        "locations": ["germany"]}],
+          "languages": ["en"], "max_notifications_per_day": 20}
 
 
 @pytest.fixture()

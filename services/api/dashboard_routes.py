@@ -162,10 +162,14 @@ def dashboard(db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curr
               ) -> OnboardingDashboard | ReadyDashboard:
     """Everything the front page shows, in one call."""
     user = get(db, User, user_id)
-    if user.onboarding_completed_at is None:
+    state = onboarding_state(db, user_id)
+    # Finished once is not enough: a search saved before the minimums (owner, 2026-11-04) is finished on
+    # its page, since without a country no job comes in for it.
+    unfinished = {page.key for page in state.pages if not page.complete}
+    if user.onboarding_completed_at is None or "review" in unfinished:
         # Nothing below is meaningful yet, and empty panels read as a broken product.
         return OnboardingDashboard(stage="onboarding", is_admin=_is_admin(user),
-                                   onboarding=OnboardingSteps(**onboarding_state(db, user_id).as_dict()))
+                                   onboarding=OnboardingSteps(**state.as_dict()))
 
     _, applied = _marks(db, user_id)
     return ReadyDashboard(stage="ready", is_admin=_is_admin(user), applied=len(applied),

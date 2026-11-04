@@ -9,6 +9,7 @@ from pydantic import ValidationError
 from libs.contracts.config import (
     CONFIG_SCHEMA_VERSION,
     MAX_KEYWORDS_PER_USER,
+    MIN_GREEN_WORDS,
     Currency,
     Language,
     Location,
@@ -17,6 +18,7 @@ from libs.contracts.config import (
     Seniority,
     UserConfigSchema,
     Workplace,
+    complete_search,
     migrate_config,
 )
 from services.harvester.query_set import HARVEST_MAX_QUERIES_PER_USER, build_query_set
@@ -26,9 +28,14 @@ SECTION_FIELDS = {"platform", "keywords", "exclude_keywords", "locations", "work
                   "posted_within_hours"}
 
 
+# The least a search takes: three green words, a country, a way of working (on by default), a language.
+WORDS = ["python developer", "golang", "sql"]
+LEAST = {"keywords": WORDS, "locations": ["germany"]}
+
+
 def _valid(**overrides) -> UserConfigSchema:
-    section = {"keywords": ["python developer"]}
-    account = {}
+    section = dict(LEAST)
+    account = {"languages": ["en"]}
     for key, value in overrides.items():
         (section if key in SECTION_FIELDS else account)[key] = value
     return UserConfigSchema(sections=[section], **account)
@@ -47,13 +54,39 @@ def _keyword_cap() -> int:
 
 # ── the minimum viable config ─────────────────────────────────────────────────────────────────
 
-def test_a_single_keyword_is_enough():
-    """Onboarding must not demand a fully-specified config before showing anything."""
+def test_three_words_a_country_and_a_language_are_enough():
+    """The least a search takes (owner, 2026-11-04); the way of working starts switched on."""
     section = _valid().sections[0]
-    assert section.keywords == ["python developer"]
+    assert section.keywords == WORDS
     assert section.platform == Platform.ALL, "one section, targeting everything, is the default"
     assert section.workplaces == [Workplace.REMOTE, Workplace.HYBRID], "as the question it replaced"
     assert section.posted_within_hours == 24, "24h steady state; cold start widens it once"
+
+
+@pytest.mark.parametrize(("change", "said"), [
+    ({"keywords": WORDS[:MIN_GREEN_WORDS - 1]}, f"add at least {MIN_GREEN_WORDS} green words"),
+    ({"locations": []}, "pick at least one country"),
+    ({"workplaces": []}, "switch on at least one way of working"),
+    ({"languages": []}, "pick at least one language"),
+])
+def test_a_search_missing_any_part_is_refused_and_says_what_to_add(change, said):
+    """Without a country no job comes in for it: jobs are fetched country by country."""
+    with pytest.raises(ValidationError) as exc:
+        _valid(**change)
+    assert exc.value.errors()[0]["msg"] == said
+
+
+def test_the_same_word_twice_is_one_word_towards_the_three():
+    with pytest.raises(ValidationError, match="green words"):
+        UserConfigSchema(languages=["en"], sections=[
+            {"platform": "all", "keywords": ["golang", "sql"], "locations": ["germany"]},
+            {"platform": "linkedin", "keywords": ["SQL"], "locations": ["germany"]}])
+
+
+def test_a_stored_search_saved_before_the_minimums_reads_as_incomplete():
+    assert complete_search({"sections": [{"keywords": WORDS, "locations": ["germany"]}], "languages": ["en"]})
+    assert not complete_search({"sections": [{"keywords": WORDS}], "languages": ["en"]})
+    assert not complete_search(None)
 
 
 def test_a_config_with_no_keywords_is_rejected():
@@ -77,16 +110,17 @@ def test_the_cap_spans_sections_rather_than_applying_to_each():
     """Per-section caps would let five sections buy five times the fan-out budget - silently."""
     half = MAX_KEYWORDS_PER_USER // 2 + 1
     with pytest.raises(ValidationError, match="exceeds the limit"):
-        UserConfigSchema(sections=[
-            {"platform": "all", "keywords": [f"a{i}" for i in range(half)]},
-            {"platform": "linkedin", "keywords": [f"b{i}" for i in range(half)]}])
+        UserConfigSchema(languages=["en"], sections=[
+            {"platform": "all", "keywords": [f"a{i}" for i in range(half)], "locations": ["germany"]},
+            {"platform": "linkedin", "keywords": [f"b{i}" for i in range(half)], "locations": ["germany"]}])
 
 
 def test_one_platform_cannot_have_two_sections():
     """The fold would merge them, so the user would see terms they believed they had kept separate."""
     with pytest.raises(ValidationError, match="at most one section"):
-        UserConfigSchema(sections=[{"platform": "linkedin", "keywords": ["go"]},
-                                   {"platform": "linkedin", "keywords": ["rust"]}])
+        UserConfigSchema(languages=["en"], sections=[
+            {"platform": "linkedin", "keywords": WORDS, "locations": ["germany"]},
+            {"platform": "linkedin", "keywords": ["rust"], "locations": ["germany"]}])
 
 
 @pytest.mark.parametrize("bad", ["a", " x ", "z" * 41])
@@ -127,8 +161,9 @@ def test_as_many_red_words_as_the_form_offers_are_accepted():
 
 def test_a_stored_config_with_the_retired_daily_cap_still_reads():
     """`max_notifications_per_day` had no reader and is gone; rows that carry it must not break."""
-    stored = {"sections": [{"platform": "all", "keywords": ["go"]}], "max_notifications_per_day": 20}
-    assert UserConfigSchema.model_validate(migrate_config(stored)).sections[0].keywords == ["go"]
+    stored = {"sections": [{"platform": "all", **LEAST}], "languages": ["en"],
+              "max_notifications_per_day": 20}
+    assert UserConfigSchema.model_validate(migrate_config(stored)).sections[0].keywords == WORDS
 
 
 def test_too_many_locations_is_rejected():
@@ -174,14 +209,14 @@ def test_unknown_fields_are_refused():
 
 def test_duplicate_keywords_collapse_case_insensitively():
     """Two spellings of one term become two entries in the query set and spend the budget twice."""
-    config = _valid(keywords=["Python Developer", "python developer", "PYTHON DEVELOPER"])
-    assert config.sections[0].keywords == ["Python Developer"]
+    config = _valid(keywords=["Python Developer", "python developer", "PYTHON DEVELOPER", "go", "sql"])
+    assert config.sections[0].keywords == ["Python Developer", "go", "sql"]
 
 
 def test_whitespace_is_collapsed_not_rejected():
     """Users paste. Being strict about incidental whitespace is hostility, not validation."""
-    assert _valid(keywords=["  python   developer  "]).sections[0].keywords == \
-        ["python developer"]
+    assert _valid(keywords=["  python   developer  ", "go", "sql"]).sections[0].keywords == \
+        ["python developer", "go", "sql"]
 
 
 def test_duplicate_enum_selections_collapse():
@@ -218,15 +253,15 @@ def test_a_validated_config_produces_the_expected_query_set():
     import uuid
 
     user = uuid.uuid4()
-    config = UserConfigSchema(sections=[{
-        "keywords": ["Python Developer", "golang"],
+    config = UserConfigSchema(languages=["en"], sections=[{
+        "keywords": ["Python Developer", "golang", "sql"],
         "locations": ["united_kingdom", "germany"],
         "remote_policy": "remote_only",
         "posted_within_hours": 24}])
 
     query_set = build_query_set({user: config.model_dump()}, ["linkedin"])
 
-    assert len(query_set) == 4, "2 keywords x 2 locations x 1 source"
+    assert len(query_set) == 6, "3 keywords x 2 locations x 1 source"
     assert all(key.is_remote for key in query_set), "remote_only must reach the source"
     assert {k.location_norm for k in query_set} == {"united_kingdom", "germany"}
     assert all(users == frozenset({user}) for users in query_set.values())
@@ -253,9 +288,9 @@ def test_a_platform_section_only_reaches_that_platform():
     import uuid
 
     user = uuid.uuid4()
-    config = UserConfigSchema(sections=[
-        {"platform": "all", "keywords": ["golang"]},
-        {"platform": "linkedin", "keywords": ["rust"]}])
+    config = UserConfigSchema(languages=["en"], sections=[
+        {"platform": "all", "keywords": ["golang", "sql", "go"], "locations": ["germany"]},
+        {"platform": "linkedin", "keywords": ["rust"], "locations": ["germany"]}])
 
     query_set = build_query_set({user: config.model_dump()}, ["indeed", "google", "linkedin"])
     by_term = {}
@@ -271,7 +306,7 @@ def test_a_v1_config_still_folds_exactly_as_it_did():
     import uuid
 
     user = uuid.uuid4()
-    v1 = {"keywords": ["python developer"], "locations": ["london"],
+    v1 = {"keywords": WORDS, "locations": ["london"], "languages": ["en"],
           "remote_policy": "remote_only", "posted_within_hours": 48}
 
     migrated = migrate_config(v1)
@@ -279,7 +314,7 @@ def test_a_v1_config_still_folds_exactly_as_it_did():
     assert UserConfigSchema.model_validate(migrated).sections[0].posted_within_hours == 48
 
     query_set = build_query_set({user: v1}, ["indeed", "google"])
-    assert len(query_set) == 2, "one keyword, one location, two sources - unchanged from v1"
+    assert len(query_set) == 6, "three keywords, one location, two sources - unchanged from v1"
     assert all(key.is_remote for key in query_set)
 
 

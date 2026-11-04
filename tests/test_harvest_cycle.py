@@ -613,7 +613,8 @@ def test_an_account_may_ask_for_a_window_as_tight_as_the_reference_watcher():
     """The reference's frequent loop runs at two hours."""
     from libs.contracts.config import SearchSection
 
-    assert SearchSection(keywords=["python"], posted_within_hours=2).posted_within_hours == 2
+    section = SearchSection(keywords=["python"], locations=["germany"], posted_within_hours=2)
+    assert section.posted_within_hours == 2
 
 
 def test_the_operators_result_and_company_ceilings_reach_the_adapters():

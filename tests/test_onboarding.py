@@ -64,8 +64,8 @@ def api(db, monkeypatch):
         yield http, db, user
 
 
-CONFIG = {"sections": [{"platform": "all", "keywords": ["backend engineer"],
-                        "locations": ["europe"]}]}
+CONFIG = {"sections": [{"platform": "all", "keywords": ["backend engineer", "golang", "postgres"],
+                        "locations": ["europe"]}], "languages": ["en"]}
 
 CV = """JANE DOE
 Budapest, Hungary | jane.doe@example.com | github.com/janedoe
@@ -169,15 +169,15 @@ def test_the_place_limit_the_page_is_served_is_the_one_a_save_enforces(api):
     assert len(places) > most, "the limit can be reached, or it would not need serving"
 
     def save(count: int) -> int:
-        return http.put("/onboarding/config", json={"sections": [{
-            "platform": "all", "keywords": ["nurse"], "locations": places[:count]}]}).status_code
+        return http.put("/onboarding/config", json={**CONFIG, "sections": [{
+            **CONFIG["sections"][0], "locations": places[:count]}]}).status_code
 
     assert save(most) == 200
     assert save(most + 1) == 422
 
 
 @needs_db
-def test_finishing_needs_a_cv_a_name_and_one_green_word_and_nothing_else(api):
+def test_finishing_needs_a_cv_a_name_and_a_whole_search_and_nothing_else(api):
     """No Telegram, no Claude key, no proxy: none of them is needed to see a matching job."""
     from libs.db import get
     from libs.db.models import User, UserSecret
@@ -196,6 +196,58 @@ def test_finishing_needs_a_cv_a_name_and_one_green_word_and_nothing_else(api):
     assert stored.onboarding_completed_at is not None
     assert db[UserSecret.COLLECTION].count_documents({"user_id": user.id}) == 0
     assert stored.telegram_status == "unconfigured"
+
+
+@needs_db
+@pytest.mark.parametrize(("change", "said"), [
+    ({"keywords": ["backend engineer", "golang"]}, "add at least 3 green words"),
+    ({"locations": []}, "pick at least one country"),
+    ({"workplaces": []}, "switch on at least one way of working"),
+    ({"languages": []}, "pick at least one language"),
+])
+def test_a_search_missing_a_part_is_not_saved_and_onboarding_does_not_finish(api, change, said):
+    """At least three green words, one country, one way of working and one language (owner, 2026-11-04):
+    jobs come in country by country, so a search with no country would have none."""
+    http, _, _ = api
+    _upload_cv(http)
+    http.put("/onboarding/identity", json={"full_name": "Jane Doe"})
+    section, account = dict(CONFIG["sections"][0]), {"languages": CONFIG["languages"]}
+    (account if "languages" in change else section).update(change)
+
+    response = http.put("/onboarding/config", json={"sections": [section], **account})
+
+    assert response.status_code == 422
+    assert said in response.text
+    assert http.post("/onboarding/complete").status_code == 409
+
+
+@needs_db
+def test_a_search_saved_before_the_minimums_reopens_its_page_even_once_finished(api):
+    """Saved with one word and no country, and finished then: until it has the rest, the jobs page
+    waits, and the page that asks for them opens."""
+    from libs.db import insert, now
+    from libs.db.models import User, UserConfig
+
+    http, db, user = api
+    _upload_cv(http)
+    http.put("/onboarding/identity", json={"full_name": "Jane Doe"})
+    insert(db, UserConfig(user_id=user.id, config={"sections": [{"platform": "all", "keywords": ["nurse"]}]}))
+    db[User.COLLECTION].update_one({"_id": user.id}, {"$set": {"onboarding_completed_at": now()}})
+
+    body = http.get("/dashboard").json()
+    assert (body["stage"], body["onboarding"]["next_page"]) == ("onboarding", "review")
+    assert "3 green words, a country" in body["onboarding"]["pages"][1]["detail"]
+
+    http.put("/onboarding/config", json=CONFIG)
+    assert http.get("/dashboard").json()["stage"] == "ready"
+
+
+@needs_db
+def test_the_page_is_served_the_least_number_of_words_a_save_takes(api):
+    from libs.contracts.config import MIN_GREEN_WORDS
+
+    http, _, _ = api
+    assert http.get("/onboarding/review").json()["choices"]["min_words"] == MIN_GREEN_WORDS == 3
 
 
 @needs_db
@@ -247,7 +299,8 @@ def test_the_about_you_text_replaces_rather_than_accumulates(api):
 def test_the_config_is_validated_server_side(api):
     """The form is the usability layer; a write path that bypassed it must not bypass the bounds."""
     http, _, _ = api
-    over_cap = {"sections": [{"platform": "all", "keywords": [f"term {n}" for n in range(30)]}]}
+    words = [f"term {n}" for n in range(30)]
+    over_cap = {**CONFIG, "sections": [{**CONFIG["sections"][0], "keywords": words}]}
     assert http.put("/onboarding/config", json=over_cap).status_code == 422
 
 

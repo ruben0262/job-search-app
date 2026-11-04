@@ -109,8 +109,18 @@ export function WordsForm({ withIdentity = false, askBeforeLeaving: guarded = fa
     list.includes(value) ? list.filter((each) => each !== value) : [...list, value];
   const places = section.locations ?? [];
   const full = places.length >= choices.max_locations;
-  // Without one green word no job can match, and without a name there is nothing to put on a CV.
-  const ready = section.keywords.length > 0 && (!withIdentity || name.trim() !== "");
+  const languages = config.languages ?? [];
+  const ways = section.workplaces ?? [];
+  // What the server refuses to save, said before Save: the least a search takes, and a name for the CV.
+  const short = choices.min_words - section.keywords.length;
+  const missing = [
+    short > 0 ? `add ${short} more green word${short === 1 ? "" : "s"}` : null,
+    places.length ? null : "pick a country",
+    ways.length ? null : "pick how you work",
+    languages.length ? null : "pick a language",
+    withIdentity && !name.trim() ? "type your name" : null,
+  ].filter(Boolean);
+  const ready = missing.length === 0;
 
   return (
     <form
@@ -131,7 +141,8 @@ export function WordsForm({ withIdentity = false, askBeforeLeaving: guarded = fa
         <h2>The jobs you want</h2>
         <p className="section-lede">Green words find jobs. Red words hide them.</p>
         <Words tone="green" label="Show me jobs with these words" warnLong
-               hint="One or two words, like “nurse” or “python”." placeholder="Add a job title or skill"
+               hint={`At least ${choices.min_words}, more is better. Like “nurse” or “python”.`}
+               placeholder="Add a job title or skill"
                values={section.keywords} suggested={suggestions.green}
                suggestedTitle="Suggested from your CV — tap one to add it"
                onChange={(keywords) => patch({ keywords })} />
@@ -144,7 +155,7 @@ export function WordsForm({ withIdentity = false, askBeforeLeaving: guarded = fa
 
       <section className="form-section">
         <h2>Where and how you work</h2>
-        <p className="section-lede">Pick none to see all.</p>
+        <p className="section-lede">At least one of each.</p>
 
         <Countries options={choices.locations} picked={places} full={full}
                    onChange={(locations) => patch({ locations })} />
@@ -155,11 +166,11 @@ export function WordsForm({ withIdentity = false, askBeforeLeaving: guarded = fa
           <div className="picker-grid">
             {choices.languages.map((language) => {
               const value = language.value as NonNullable<Config["languages"]>[number];
-              const chosen = config.languages ?? [];
               return (
                 <label key={language.value} className="pick">
-                  <input type="checkbox" role="switch" checked={chosen.includes(value)}
-                         onChange={() => edit({ ...config, languages: toggle(chosen, value) })} />
+                  <input type="checkbox" role="switch" checked={languages.includes(value)}
+                         disabled={last(languages, value)}
+                         onChange={() => edit({ ...config, languages: toggle(languages, value) })} />
                   <span>{language.label}</span>
                 </label>
               );
@@ -172,11 +183,11 @@ export function WordsForm({ withIdentity = false, askBeforeLeaving: guarded = fa
           <div className="picker-grid">
             {choices.workplaces.map((way) => {
               const value = way.value as NonNullable<Section["workplaces"]>[number];
-              const chosen = section.workplaces ?? [];
               return (
                 <label key={way.value} className="pick">
-                  <input type="checkbox" role="switch" checked={chosen.includes(value)}
-                         onChange={() => patch({ workplaces: toggle(chosen, value) })} />
+                  <input type="checkbox" role="switch" checked={ways.includes(value)}
+                         disabled={last(ways, value)}
+                         onChange={() => patch({ workplaces: toggle(ways, value) })} />
                   <span>
                     {way.label}
                     <span className="pick-hint">{way.hint}</span>
@@ -189,11 +200,7 @@ export function WordsForm({ withIdentity = false, askBeforeLeaving: guarded = fa
       </section>
 
       <Error>{save.error}</Error>
-      {!ready ? (
-        <p className="small muted">
-          {section.keywords.length ? "Type your name to go on." : "Add at least one green word to go on."}
-        </p>
-      ) : null}
+      {!ready ? <p className="small muted">To go on: {missing.join(", ")}.</p> : null}
       <button type="submit" className="main" disabled={!ready || save.busy}>
         {save.busy ? "Saving…" : action}
       </button>
@@ -213,6 +220,10 @@ export function WordsForm({ withIdentity = false, askBeforeLeaving: guarded = fa
     </form>
   );
 }
+
+/** The only one switched on, which stays on: a search always has a country, a way of working and a
+ * language (the server refuses one without). */
+const last = <T,>(chosen: T[], value: T) => chosen.length === 1 && chosen[0] === value;
 
 type Choice = Review["choices"]["locations"][number];
 type Place = NonNullable<Section["locations"]>[number];
@@ -237,7 +248,7 @@ function Countries({ options, picked, full, onChange }: {
       <div className="toggles">
         {shown.map((option) => (
           <button key={option.value} type="button" className="toggle" aria-pressed={on(option)}
-                  disabled={full && !on(option)}
+                  disabled={(full && !on(option)) || last(picked, option.value as Place)}
                   onClick={() => onChange(on(option) ? picked.filter((each) => each !== option.value)
                     : [...picked, option.value as Place])}>
             {option.label}

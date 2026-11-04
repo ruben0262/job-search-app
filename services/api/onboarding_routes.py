@@ -11,6 +11,7 @@ from pymongo.database import Database
 from libs import limits, suggestions
 from libs.contracts.config import (
     MAX_LOCATIONS_PER_USER,
+    MIN_GREEN_WORDS,
     Language,
     Location,
     SearchSection,
@@ -33,7 +34,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/onboarding", tags=["onboarding"])
 
 # How many green words a new search starts with, from their CV: one alone did not read as a list
-# anybody could add to (owner, 2026-11-03).
+# anybody could add to (owner, 2026-11-03). One fewer than a search takes (`MIN_GREEN_WORDS`), so the
+# first thing a person does is add a word of their own.
 PREFILLED_GREEN = 2
 
 # What each way of working is called on the page. Job sites' own names for them are
@@ -77,8 +79,10 @@ class ConfigChoices(BaseModel):
     """What the pickers offer, labelled. Served, so a place cannot exist on one side only."""
     # The countries, the three people pick most first.
     locations: list[ConfigChoice]
-    # How many places may be picked: the schema's bound, served so the page cannot hold a copy.
+    # How many places may be picked, and how few green words: the schema's bounds, served so the page
+    # cannot hold a copy.
     max_locations: int
+    min_words: int
     languages: list[ConfigChoice]
     workplaces: list[ConfigChoice]
 
@@ -268,6 +272,7 @@ def _choices() -> dict:
         "locations": [{"value": place.value, "label": location_search_name(place.value)}
                       for place in Location],
         "max_locations": MAX_LOCATIONS_PER_USER,
+        "min_words": MIN_GREEN_WORDS,
         "languages": [{"value": code.value, "label": LANGUAGE_NAMES[code.value][0]}
                       for code in Language],
         "workplaces": [{"value": way.value, "label": _WORKPLACES[way.value][0],

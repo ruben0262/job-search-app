@@ -10,9 +10,9 @@ from dataclasses import dataclass
 
 from pymongo.database import Database
 
+from libs.contracts.config import MIN_GREEN_WORDS, complete_search
 from libs.db import get
 from libs.db.models import User, UserDocument
-from libs.matching import green_words
 from libs.tenant.repository import TenantRepository
 
 
@@ -65,8 +65,9 @@ def onboarding_state(db: Database, user_id: _uuid.UUID) -> OnboardingState:
             "documents", "Your CV", has_cv,
             "Upload your CV. A cover letter and a few words about yourself are optional."),
         PageState(
-            # One green word is what makes a job appear (`libs.matching`); without one there are none.
-            "review", "What we found", bool(user.full_name) and bool(green_words(config)),
-            "Check your name and pick at least one word for the jobs you want."),
+            # The schema's own rule, so a search the page would refuse to save is never "done" here.
+            "review", "What we found", bool(user.full_name) and complete_search(config),
+            f"Check your name. Pick at least {MIN_GREEN_WORDS} green words, a country, a way of working "
+            "and a language."),
     )
     return OnboardingState(pages=pages, completed_at=user.onboarding_completed_at)

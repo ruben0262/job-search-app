@@ -174,7 +174,9 @@ def test_saving_their_search_and_editing_their_about_you_text_work_them_out_agai
     assert "sales" not in _terms(http.get("/suggestions").json(), "red")
 
     # Their green word now finds three sales jobs: "sales" is worth hiding.
-    http.put("/onboarding/config", json={"sections": [{"platform": "all", "keywords": ["engineer"]}]})
+    assert http.put("/onboarding/config", json={"languages": ["en"], "sections": [{
+        "platform": "all", "keywords": ["engineer", "falconry", "beekeeping"], "locations": ["germany"]}]}
+    ).status_code == 200
     assert "sales" in _terms(http.get("/suggestions").json(), "red")
 
     # Until their own words say they sell: then it is not foreign to them at all.

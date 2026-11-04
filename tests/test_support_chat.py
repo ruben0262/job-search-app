@@ -22,8 +22,8 @@ import pytest
 pytest.importorskip("fastapi")
 
 PLATFORM_KEY = "AIzaPlatformKey-" + "p" * 24
-CONFIG = {"sections": [{"platform": "all", "keywords": ["data engineer"],
-                        "exclude_keywords": ["senior"]}]}
+CONFIG = {"sections": [{"platform": "all", "keywords": ["data engineer", "airflow", "dbt"],
+                        "exclude_keywords": ["senior"], "locations": ["germany"]}], "languages": ["en"]}
 
 
 class Scripted:

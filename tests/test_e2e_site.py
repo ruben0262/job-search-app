@@ -207,6 +207,8 @@ def test_step_two_says_what_it_found_with_its_words_ready_and_a_plain_way_to_add
         for word in ("backend engineer", "software engineer"):
             expect(page.locator(".word.green", has_text=word)).to_be_visible()
 
+        _one_word_short(page)
+
         # "+ Add" is never greyed out: empty, it puts the cursor in the box; with a word, it adds it.
         add = page.get_by_label("Add to: Show me jobs with these words").locator("..").get_by_role(
             "button", name="+ Add")
@@ -218,7 +220,7 @@ def test_step_two_says_what_it_found_with_its_words_ready_and_a_plain_way_to_add
         expect(page.locator(".word.green", has_text="golang")).to_be_visible()
 
         # One or two words work best, and a long phrase is said to be one.
-        expect(page.get_by_text("One or two words, like “nurse” or “python”.")).to_be_visible()
+        expect(page.get_by_text("At least 3, more is better. Like “nurse” or “python”.")).to_be_visible()
         expect(page.get_by_text("Long phrases find fewer jobs")).to_have_count(0)
         page.get_by_label("Add to: Show me jobs with these words").fill("team coordinator and co lead")
         page.get_by_label("Add to: Show me jobs with these words").press("Enter")
@@ -235,6 +237,7 @@ def test_step_two_says_what_it_found_with_its_words_ready_and_a_plain_way_to_add
         countries.get_by_role("button", name="Germany").click()
         expect(countries.get_by_role("button", name="Germany")).to_have_attribute("aria-pressed", "false")
         expect(page.get_by_label("Add a city")).to_have_count(0)
+        _the_last_one_stays_on(page, countries)
 
         # Remote and hybrid are on to begin with; one more switch, and on-site jobs are theirs too.
         expect(page.get_by_role("switch", name=re.compile("^Hybrid"))).to_be_checked()
@@ -250,6 +253,20 @@ def test_step_two_says_what_it_found_with_its_words_ready_and_a_plain_way_to_add
     assert {"backend engineer", "software engineer", "golang"} <= set(section["keywords"])
     assert section["locations"] == ["france"], "what the buttons said is what was saved"
     assert section["workplaces"] == ["remote", "hybrid", "onsite"]
+    assert db[UserConfig.COLLECTION].find_one({"user_id": user["_id"]})["config"]["languages"] == ["en"]
+
+
+def _the_last_one_stays_on(page, countries) -> None:
+    """The last country picked stays picked: a search always has one. So does the last language."""
+    expect(countries.get_by_role("button", name="France")).to_be_disabled()
+    page.get_by_role("switch", name="German").click()
+    expect(page.get_by_role("switch", name="English")).to_be_disabled()
+
+
+def _one_word_short(page) -> None:
+    """Two words is one short of a search, and the page says so before Save does."""
+    expect(page.get_by_role("button", name="Looks good")).to_be_disabled()
+    expect(page.get_by_text("To go on: add 1 more green word.")).to_be_visible()
 
 
 def test_a_job_found_somewhere_else_is_brought_in_by_its_link(site, capsys):
@@ -827,6 +844,9 @@ def _onboard(page) -> None:
     # Read off the CV by rules: their name, and the job they do as a green word.
     expect(page.get_by_label("Your name")).to_have_value("Jordan Ellery")
     expect(page.locator(".word.green", has_text="backend engineer").first).to_be_visible()
+    # A third green word: a search takes at least three.
+    page.get_by_label("Add to: Show me jobs with these words").fill("golang")
+    page.get_by_label("Add to: Show me jobs with these words").press("Enter")
     page.get_by_role("button", name="Looks good").click()
 
     expect(page.get_by_role("heading", name="You're all set")).to_be_visible()
