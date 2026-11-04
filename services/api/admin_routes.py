@@ -317,9 +317,10 @@ def delete_user(user_id: _uuid.UUID, body: DeleteConfirmation, db: Database = De
 @router.get("/sources")
 def sources(db: Database = Depends(get_db), admin: User = Depends(require_admin)) -> dict:
     """Every source the harvester collects from, with the freshness window each one is using."""
-    # One number per query-taking source: a source is asked once per distinct keyword.
+    # One number per query-taking source: a source is asked once per distinct keyword. LinkedIn is
+    # asked for none since 2026-11-04: it is read country by country.
     wanted = len(distinct_keywords(TenantRepository(db).active_configs()))
-    asked = QUERY_TAKING_SOURCES | {"linkedin"}
+    asked = QUERY_TAKING_SOURCES
     # Every setting below, from one read of them (`settings.snapshot`).
     stored = snapshot(db)
     floors = source_min_ages(stored)

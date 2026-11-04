@@ -65,7 +65,6 @@ def test_a_limit_that_cannot_be_unlimited_says_so():
     """A dropdown offering Unlimited for a value that has no unlimited meaning invites somebody to switch."""
     from libs.limits import BY_KEY
 
-    assert BY_KEY["linkedin_interval_min"].allow_unlimited is False
     assert BY_KEY["send_gap_seconds"].allow_unlimited is False
     # And the ones where unlimited is a real, useful answer keep it.
     assert BY_KEY["notifications_per_day"].allow_unlimited is True

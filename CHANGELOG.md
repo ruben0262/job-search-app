@@ -14,6 +14,67 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-04 — Every source read whole on every run; LinkedIn by country, every job described
+
+The owner: no word goes to a source and no title is filtered. Every source is read for everything new,
+at most every 30 minutes, every job stored, and people's words matched on the stored jobs, title and
+text. LinkedIn is read country by country and every job's description fetched. Each run must finish
+inside its 15-minute tick. **Not to be deployed before the database moves to `~/projects/server_db`**
+(ROADMAP Phase 8, item 22): Atlas's 512 MB would fill in a day or two.
+
+**Measured** (live, 2026-11-04; LinkedIn through the site proxy, with the owner's go-ahead):
+
+| | |
+|---|---|
+| LinkedIn jobs per 15 minutes, no word, 09:50 | EU 659, Spain 111, France 110, Germany 104, UK 87, Italy 78, Netherlands 59, Belgium 24, Sweden 19, Ireland 18, Austria 18, Poland 9, Portugal 9, Hungary 7 |
+| The same at ~11:00, 25-minute windows | UK 643, Germany 358, France 332, Netherlands 260, Spain 245, Italy 179: ~1,500 per 15 minutes for the EU and the UK |
+| The proxy, one job page per request | 30, 45, 60 and 90 a minute for 41 minutes: 2,040 of 2,040 answered. 150 a minute: 744 of 747. 240: ~180 a minute got through. 360: 8 of 360 by the second minute. Answered again a minute after stopping |
+| A pass, EU and UK, 11:06 | 28 countries, 501 list pages, 4,064 jobs listed, 1,801 new, 1,427 described (492 tries refused and asked again), 19 MB, in its 11 minutes |
+| The boards beside it | 152 s and 169 s a run (Lever 29 s, The Muse 36 s, the rest under 7 s) |
+| No Fluff Jobs | Listed newest first by when each posting went up or was renewed: everything renewed in the last hour on the first 4 of 130 pages; the whole list in 36 s |
+| The Muse | Answers no page past the 100th ("Value `page` is too high"), whatever it says it has: 2,000 of its 6,174 remote jobs |
+
+**Changed:**
+- **LinkedIn** (`services/harvester/linkedin.py`, rewritten). Each run sweeps every country any active
+  person picked, with no word, newest first, four countries at once. A region is read as its countries:
+  the EU's list stops at 1,000 jobs, and its 30 minutes held ~1,300. Each country reaches back to its
+  last sweep read to the end, plus one run (`swept_places`), and the operator's 4 hours the first time.
+  Every job is stored, then every job without its text is described, newest first, until the pass's
+  budget is spent; what is left is first next run. A lease stops two passes reading at once.
+- **The boards and LinkedIn run side by side** (`services/harvester/__main__.py`). One after the other, a
+  long LinkedIn pass pushed the boards and the words past the unit's 14 minutes. Each has the same
+  budget (`HARVEST_CYCLE_BUDGET_SECONDS`, 11 minutes); the words are found after both.
+- **No board filters by word.** Just Join IT, Himalayas and No Fluff Jobs keep every job in their window.
+  Adzuna asks each country's newest jobs with no word, two countries a run (its free tier). Findwork
+  reads its newest list instead of "python", "backend" and "golang" (no key here, so unmeasured).
+- **No Fluff Jobs is read newest first**, until a page has nothing renewed inside its 2-hour window, at
+  most 10 pages: about 4 a run, against 33 for an hourly slice of its whole list.
+- **The Muse reads the 100 pages it serves, every run**: 400 requests an hour of its 500. Its rotation
+  asked pages it does not serve and read nothing in two runs of three (found by this measurement).
+- **Every company board is polled.** A run polled the first `max_companies` boards of each ATS, every
+  run, and never the rest; now the next ones each run (`sources.base.turn`, on the platform clock).
+
+**Deleted:**
+- LinkedIn's word searches: the pooled query set, `search_window`, jobspy's LinkedIn search and its
+  connection patch, the per-user `jobspy_linkedin` source and `PER_USER` tier.
+- Each account's own LinkedIn schedule: the `linkedin_interval_min` limit, `next_linkedin_run` and its
+  jitter, and `users.linkedin_next_run_at` with its index. A field a model drops can be named in
+  `RETIRED`: stored documents still load, and the deploy's prune removes it.
+- `KEYWORD_FILTER_SOURCES`, `PREFILTER_SOURCES`, `ats.JobFilter`'s word and place filters, and
+  `_keyword_hit`. The LinkedIn query and result ceilings in settings had no reader left.
+- The admin panel no longer offers LinkedIn a query ceiling.
+
+Kept: Hiring Cafe, the one board still asked for words, because it can be asked nothing else; it
+answers 403 to everything (item 23, for the owner).
+
+Tests (each fails on the previous commit, or guards a relationship): every job a country lists stored
+and described whoever has a word for it; the same cost for 1 person or 5 with 125 words; a region read
+as its countries, each once; only active people's countries; each country's window back to its last
+complete sweep and one run, further after a refused one; two passes never at once; a stored account
+with the retired field loads and the prune removes it; LinkedIn beside the boards with the words after
+both; No Fluff Jobs stops at the first page with nothing new; The Muse never asked a page it does not
+serve; every company board polled over a round; Adzuna asked no word. Removed with what they tested:
+the pooled-search, per-user schedule and jitter tests.
 ## 2026-11-05 — Jobs are kept for 15 days, and moved to the archive fast enough to keep up
 
 The owner: retire every job older than 15 days (21 at most) to the compressed archive, daily, reliably;

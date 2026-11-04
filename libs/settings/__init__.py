@@ -11,7 +11,8 @@ PLATFORM_TICK_MIN = 15
 
 # How fresh a posting must be, per source, in hours.
 DEFAULT_SOURCE_FRESHNESS_HOURS: dict[str, int] = {
-    # Per-user, proxied, lists within minutes: a wide window is mostly re-reading jobs already seen.
+    # The furthest a sweep of a place reaches back: a place nobody has swept yet, or one not swept since
+    # (`services.harvester.linkedin.sweep_window`).
     "linkedin": 4,
     "indeed": 6,
     "google": 6,
@@ -28,9 +29,11 @@ DEFAULT_SOURCE_FRESHNESS_HOURS: dict[str, int] = {
     "workingnomads": 24,
     "jobicy": 24,
     "themuse": 24,
+    # Newest first by when a posting went up or was renewed: everything renewed in the last hour is on its
+    # first four pages, and a run walks until a page has nothing inside the window (measured 2026-11-04).
+    "nofluffjobs": 2,
     # Search-shaped boards, relevance-sorted rather than date-sorted.
     "hiringcafe": 48,
-    "nofluffjobs": 48,
     "profession": 24,
     # Company boards, reached when our token list gets there.
     "greenhouse": 72, "ashby": 72, "lever": 72, "smartrecruiters": 72,
@@ -70,15 +73,12 @@ QUERY_TAKING_SOURCES: frozenset[str] = frozenset(
 
 # How many queries a source may be asked in one 15-minute cycle, before the operator says otherwise.
 DEFAULT_SOURCE_QUERIES_PER_CYCLE: dict[str, int] = {
-    # Per user, and it was the tightest ceiling on the platform against the widest demand.
-    "linkedin": 150,
     # Search-shaped boards on a shared client.
     "hiringcafe": 100,
     "jooble": 50,
     # Metered by the vendor, not by politeness: the free tier is roughly 250 calls a day and the
-    # cycle runs ninety-six times, so two is what stays inside it. Everything else in this map is
-    # a rate-limit guess; this one is an allowance. Raising it in the panel spends real quota, and
-    # the sweep it implies is why `adzuna` carries a 48-hour window rather than a live one.
+    # cycle runs ninety-six times, so two is what stays inside it: two countries a run, each at its
+    # newest. Everything else in this map is a rate-limit guess; this one is an allowance.
     "adzuna": 2,
 }
 
@@ -91,10 +91,6 @@ DEFAULT_SOURCE_RESULTS_PER_QUERY: dict[str, int] = {
     "justjoinit": 100,
     "jobicy": 50,
     "hiringcafe": 40,
-    # A search reaches back to the last one (`services.harvester.linkedin.search_window`): an hour holds
-    # 23–47 jobs a query, measured 2026-11-02, and a query ends at its first short page, so 50 reads the
-    # hour whole for about the requests 30 took out of 4 hours.
-    "linkedin": 50,
 }
 
 # How many company boards the ATS family polls in one cycle.
@@ -122,12 +118,14 @@ DEFAULT_SOURCE_PAGES_PER_CYCLE: dict[str, int] = {
     # Newest-first at 20 a page, about 2,000 new jobs a day: five pages are its last hour, and a run comes
     # every fifteen minutes (measured 2026-11-03). It was asked once per word, 20 jobs each.
     "himalayas": 5,
-    # Lists in no date order, read a slice a run (`http_apis._rotation`), measured 2026-11-03. The Muse:
-    # 308 pages of 20, ~38 new a day anywhere among them; 26 a run reads it all every three hours, 104
-    # requests an hour of the 500 it allows. No Fluff Jobs: 131 pages, ~620 new a day; 33 a run reads it
-    # all every hour.
-    "themuse": 26,
-    "nofluffjobs": 33,
+    # In no date order, ~38 new a day anywhere among them (measured 2026-11-03), and no page served past
+    # the 100th (2026-11-04): 100 a run read all it serves, 400 requests an hour of the 500 it allows.
+    "themuse": 100,
+    # Newest first, and the walk stops at a page with nothing new: four pages hold the last hour
+    # (measured 2026-11-04). The most a run walks, if the harvest was down a while.
+    "nofluffjobs": 10,
+    # Newest first, unmeasured (no key here); the walk stops once a page is older than the window.
+    "findwork": 5,
 }
 
 # How long a posting stays in the corpus before it is archived to a file and deleted
@@ -205,8 +203,8 @@ SOURCE_MIN_AGE_HOURS: dict[str, int] = {
     "himalayas": 6,         # 1 at 1h, 42 at 6h
     "justjoinit": 6,        # 4 at 1h, 20 at 6h
     "profession": 12,       # 6 at 6h, 23 at 12h
-    # The board APIs, matched to the window they are actually fetched over.
-    "nofluffjobs": 48,      # 17 at 6h, 87 at 48h, and 48h is what the cycle asks for
+    # The board APIs.
+    "nofluffjobs": 48,      # 17 at 6h, 87 at 48h
     # Bounded by our own sweep rather than by the board: see the note in the harvest windows above.
     # A floor below the harvest window discards what the cycle just paid to fetch.
     "adzuna": 48,

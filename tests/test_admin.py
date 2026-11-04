@@ -311,7 +311,7 @@ def test_the_source_list_shows_each_setting_as_it_is_set_from_one_read_of_them(a
     http, db, operator, _ordinary, sign_in = api
     sign_in(http, operator)
     settings.put(db, "source_freshness_hours", {"himalayas": 7})
-    settings.put(db, "source_queries_per_cycle", {"linkedin": 3})
+    settings.put(db, "source_queries_per_cycle", {"hiringcafe": 3})
     settings.put(db, "source_min_age_hours", {"jobicy": 11})
     settings.put(db, "ats_companies_per_cycle", 123)
 
@@ -340,7 +340,7 @@ def test_the_source_list_shows_each_setting_as_it_is_set_from_one_read_of_them(a
     assert asked > 0, "the counter saw nothing: it is not measuring the route"
 
     rows = {row["name"]: row for row in body["sources"]}
-    assert (rows["himalayas"]["hours"], rows["linkedin"]["queries_per_cycle"]) == (7, 3)
+    assert (rows["himalayas"]["hours"], rows["hiringcafe"]["queries_per_cycle"]) == (7, 3)
     assert rows["jobicy"]["min_age_hours"] == 11 and body["ats"]["companies_per_cycle"] == 123
     for name, row in rows.items():
         assert row["hours"] == settings.freshness_hours(db, name)

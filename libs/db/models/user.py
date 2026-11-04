@@ -19,12 +19,11 @@ class User(Document):
     COLLECTION = "users"
     OWNER = None
     CHOICES = {"status": USER_STATUSES, "telegram_status": TELEGRAM_STATUSES}  # noqa: RUF012
-    INDEXES = (IndexModel("email", unique=True, name="email_unique"),
-               IndexModel("linkedin_next_run_at", partialFilterExpression={"active": True},
-                          name="linkedin_due"))
+    INDEXES = (IndexModel("email", unique=True, name="email_unique"),)
     # Whether the person could open the profile files the setup agents wrote: nothing read it once the
-    # file tiles left the site, and the admin's switch for it went on 2026-11-04.
-    RETIRED = ("profile_files_visible",)
+    # file tiles left the site, and the admin's switch for it went on 2026-11-04. And when the account's
+    # own LinkedIn search was next due: LinkedIn is read for everybody at once since 2026-11-04.
+    RETIRED = ("profile_files_visible", "linkedin_next_run_at")
 
     id: uuid.UUID = field(default_factory=uuid.uuid4)
     email: str
@@ -42,7 +41,6 @@ class User(Document):
     is_admin: bool = False
     # Per-account overrides of `libs.limits`; a key absent here means the catalogue's default.
     limits: dict = field(default_factory=dict)
-    linkedin_next_run_at: datetime | None = None
     telegram_status: str = "unconfigured"
     telegram_chat_id: str | None = None
     # Their own bot's @name, from Telegram when its token was saved: where the page sends them to press Start.

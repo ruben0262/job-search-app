@@ -86,6 +86,19 @@ class CorpusJob(Document):
 
 
 @dataclass(kw_only=True)
+class SweptPlace(Document):
+    """When the LinkedIn pass last read a place's new jobs to the end (`services.harvester.linkedin`), so
+    the next sweep of it reaches back to there."""
+
+    COLLECTION = "swept_places"
+    OWNER = None
+    BACKED_UP = False
+
+    id: str  # LinkedIn's name for the place
+    swept_at: datetime
+
+
+@dataclass(kw_only=True)
 class Word(Document):
     """A green word the postings have been searched for, so each one says whether it has it. Every
     account's words, without their accounts: what is searched for, not who searches."""

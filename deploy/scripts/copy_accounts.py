@@ -52,7 +52,7 @@ TABLES: list[tuple[type, str]] = [
     (User, """SELECT id, email, password_hash, status, email_verified_at, full_name, links,
                      processing_consent_at, processing_consent_version, onboarding_completed_at,
                      last_active_at, timezone, active, is_admin, limits,
-                     linkedin_next_run_at, telegram_status, telegram_chat_id,
+                     telegram_status, telegram_chat_id,
                      profile, documents_changed_at, processed_at, hard_data_changed_at, suggestions,
                      wrapped_dek, created_at, updated_at FROM users"""),
     (UserConfig, "SELECT user_id, config, schema_version, updated_at FROM user_config"),

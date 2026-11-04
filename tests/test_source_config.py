@@ -8,12 +8,10 @@ from __future__ import annotations
 
 # ── Adzuna: a general board that was searching only for software ──────────────────────────────
 
-def test_adzuna_searches_for_what_the_users_actually_want():
-    """The adapter had its own keyword list, so the credential alone would have changed nothing.
-
-    `adzuna` is in none of the keyword-passing sets, so `cfg["keywords"]` was never set and the
-    adapter fell back to `["python developer", "backend engineer"]` in `gb`. It was added to widen
-    a corpus that was 97% software, and it would have searched for software.
+def test_adzuna_is_asked_for_no_word_only_the_countries_people_picked():
+    """The adapter had its own keyword list, `["python developer", "backend engineer"]` in `gb`: it was
+    added to widen a corpus that was 97% software, and it would have searched for software. Then it was
+    asked everybody's words; now it is asked for none (owner, 2026-11-04), its newest jobs read whole.
     """
     import uuid
 
@@ -25,8 +23,8 @@ def test_adzuna_searches_for_what_the_users_actually_want():
     cfg = build_source_configs(
         configs, env={"ADZUNA_APP_ID": "x", "ADZUNA_APP_KEY": "y"})["adzuna"]
 
-    assert "mechanical design engineer" in cfg["keywords"]
-    assert "python developer" not in cfg["keywords"]
+    assert "keywords" not in cfg
+    assert cfg["countries"] == ["gb"]
 
 
 def test_adzuna_asks_the_countries_the_users_named():
@@ -65,10 +63,11 @@ def test_adzuna_is_not_asked_for_remote_work_on_everybody_s_behalf():
 def test_a_rotated_source_is_asked_for_a_window_its_sweep_can_cover():
     """The defect that made Adzuna return nothing on its first live day.
 
-    Adzuna is metered by the vendor, so the cycle asks a slice of the (country x keyword) grid and
-    advances it. With 243 pairs at two a cycle the grid takes about thirty hours to sweep — and it
-    was being asked for jobs posted in the last **six**. Every query wanted postings from a window
-    that opened and closed while we were looking somewhere else, so three cycles produced one row.
+    Adzuna is metered by the vendor, so the cycle asks a slice of its demand and advances it. With 243
+    (country x keyword) pairs at two a cycle the grid took about thirty hours to sweep — and it was being
+    asked for jobs posted in the last **six**: every query wanted postings from a window that opened and
+    closed while we were looking somewhere else, so three cycles produced one row. It is asked by country
+    alone now.
 
     A source whose demand is rotated must be asked for at least as long a window as one full sweep
     takes, or the gap is silent and permanent. Nothing errors: the board answers, correctly, that
@@ -79,9 +78,10 @@ def test_a_rotated_source_is_asked_for_a_window_its_sweep_can_cover():
         PLATFORM_TICK_MIN,
         queries_per_cycle_default,
     )
+    from services.harvester.sources.http_apis import ADZUNA_COUNTRIES
 
-    # The live union on 2026-08-10. Two accounts is already this many; it does not shrink.
-    pairs = 243
+    # Every country Adzuna serves, the most anybody's countries can ask of it.
+    pairs = len(ADZUNA_COUNTRIES)
     per_cycle = queries_per_cycle_default("adzuna")
     cycles_per_sweep = -(-pairs // per_cycle)
     sweep_hours = cycles_per_sweep * PLATFORM_TICK_MIN / 60

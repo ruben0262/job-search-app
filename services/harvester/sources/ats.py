@@ -17,7 +17,7 @@ from libs.corpus.filters import epoch_to_iso, is_within_hours
 from libs.corpus.ats import AtsRepository
 from libs.corpus.postings import strip_html
 from services.harvester.fetch import make_shared_client
-from services.harvester.sources.base import JobLink
+from services.harvester.sources.base import JobLink, turn
 
 _TIMEOUT = 15
 # Lever answers a board it has not served lately slowly, whatever its size, and fast after: Palantir
@@ -74,37 +74,7 @@ def _load_etags(repo: AtsRepository, ats: str) -> dict[str, str]:
     return repo.etags(ats)
 
 
-# ── generic gather: poll all companies, filter, dedup ────────────────────
-def _match(text: str, needles: list[str]) -> bool:
-    low = (text or "").lower()
-    return any(n in low for n in needles)
-
-
-# Location strings carrying no usable location: Workday aggregates multi-site postings like this.
-_AGGREGATE_LOC = re.compile(r"^\s*(\d+\s+locations?|multiple locations?)?\s*$", re.I)
-
-
-class JobFilter:
-    """Title/exclude/location/recency relevance pre-filter built from a source's config block."""
-
-    def __init__(self, cfg: dict[str, Any]):
-        self.keywords = [k.lower() for k in (cfg.get("keywords") or [])]
-        self.excludes = [k.lower() for k in (cfg.get("title_exclude") or [])]
-        self.loc_kw = [k.lower() for k in (cfg.get("location_keywords") or [])]
-        self.max_age = int(cfg.get("posted_within_hours", 0)) or int(cfg.get("max_age_hours", 24))
-
-    def ok(self, jl: JobLink) -> bool:
-        if self.keywords and not _match(jl.title, self.keywords):
-            return False
-        if self.excludes and _match(jl.title, self.excludes):
-            return False
-        # Location passes on a keyword match, a remote flag when remote is accepted, or an aggregate.
-        if self.loc_kw and not _match(jl.location, self.loc_kw) \
-                and not (jl.is_remote and "remote" in self.loc_kw) \
-                and not _AGGREGATE_LOC.match(jl.location or ""):
-            return False
-        return is_within_hours(jl.date_posted, self.max_age)
-
+# ── generic gather: poll the companies, keep what is recent, dedup ────────────────────
 
 def gather_ats(cfg: dict[str, Any], logger, *, ats: str, repo: AtsRepository,
                fetch_company: Callable[[str, str | None], tuple[list[JobLink] | None, str | None]]
@@ -114,10 +84,12 @@ def gather_ats(cfg: dict[str, Any], logger, *, ats: str, repo: AtsRepository,
     companies = list(dict.fromkeys(
         seed + (load_harvested(repo, ats) if cfg.get("use_harvested", True) else [])))
     if cap := int(cfg.get("max_companies", 0)):
-        companies = companies[:cap]
+        # The next `cap` a run, so every board is polled every few runs. The first `cap` used to be
+        # polled every run and the rest never.
+        companies = [companies[index] for index in turn(len(companies), cap)]
     if not companies:
         return []
-    jf = JobFilter(cfg)
+    max_age = int(cfg.get("posted_within_hours", 0)) or int(cfg.get("max_age_hours", 24))
     use_cond = cfg.get("conditional", True)
     etags = _load_etags(repo, ats) if use_cond else {}
     # For the ATS whose API names no company (Ashby, Lever): the name the board was stored with, or
@@ -149,7 +121,7 @@ def gather_ats(cfg: dict[str, Any], logger, *, ats: str, repo: AtsRepository,
                 continue
             for jl in jobs:
                 jl.company = jl.company or names.get(token) or token.replace("-", " ").title()
-                if jf.ok(jl) and jl.url and jl.url not in seen:
+                if is_within_hours(jl.date_posted, max_age) and jl.url and jl.url not in seen:
                     seen.add(jl.url)
                     out.append(jl)
     if use_cond:

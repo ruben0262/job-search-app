@@ -1,12 +1,12 @@
 """Is every board's latest work reaching us? One real harvest cycle, then an account of each board.
 
-For every board the harvester has enabled: what it listed for everyone's words this cycle, how fresh
-its newest posting was, and how many of those postings are now in the corpus (by the same four-layer
-duplicate check the harvest stores with). With `--linkedin EMAIL`, that person's LinkedIn run too,
-through the site proxy. A board that lists nothing, fails, or leaves postings out is named.
+For every board the harvester has enabled: what it listed this cycle, how fresh its newest posting
+was, and how many of those postings are now in the corpus (by the same four-layer duplicate check the
+harvest stores with). With `--linkedin`, the LinkedIn pass too, through the site proxy. A board that
+lists nothing, fails, or leaves postings out is named.
 
     set -a; . certificates/dev.env; set +a          # or certificates/server.env on the server
-    python deploy/scripts/check_sources.py [--linkedin you@example.com]
+    python deploy/scripts/check_sources.py [--linkedin]
 """
 from __future__ import annotations
 
@@ -26,7 +26,6 @@ from services.harvester import linkedin
 from services.harvester.__main__ import source_configs_for
 from services.harvester.cycle import _run_source, run_cycle
 from services.harvester.source_config import ATS_SOURCES
-from services.harvester.sources import jobspy_source
 
 
 def _age(links) -> str:
@@ -51,7 +50,7 @@ def _stored(corpus: CorpusRepository, links) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--linkedin", metavar="EMAIL", help="also run this person's LinkedIn search")
+    parser.add_argument("--linkedin", action="store_true", help="also run the LinkedIn pass")
     args = parser.parse_args(argv)
     configure("check_sources")
     install()
@@ -77,19 +76,14 @@ def main(argv: list[str] | None = None) -> int:
     failed.update({key: str(error)[:120] for key, error in report.source_failures.items()})
 
     if args.linkedin:
-        user = db.users.find_one({"email": args.linkedin.lower()}, {"_id": 1})
-        if user is None:
-            print(f"no such account: {args.linkedin}", file=sys.stderr)
-            return 2
-        db.users.update_one({"_id": user["_id"]}, {"$set": {"linkedin_next_run_at": None}})
         found: list = []
 
-        def gather(cfg, log, *, proxy):
-            links = jobspy_source.gather_linkedin(cfg, log, proxy=proxy)
-            found.extend(links)
-            return links
+        def sweep(places, *, proxy):
+            sweeps = linkedin.sweep_places(places, proxy=proxy)
+            found.extend(job for each in sweeps for job in each.jobs)
+            return sweeps
 
-        linkedin.run_for_due_users(db, gather=gather)
+        linkedin.run_pass(db, sweep=sweep)
         listed["linkedin"] = found
 
     print(f"\n{'board':16s} {'listed':>7s} {'newest':>8s} {'in corpus':>10s}  note")
@@ -99,7 +93,7 @@ def main(argv: list[str] | None = None) -> int:
         # A company board answers "not modified" when nothing on it changed since the last poll, so
         # nothing listed there is normal; the harvest log says how many were unchanged.
         empty = ("no board changed since the last poll, or none answered (see the log)" if key in ATS_SOURCES
-                 else "listed nothing for these words")
+                 else "listed nothing new")
         note = failed.get(key) or (empty if not links else
                                    "" if stored == len(links) else f"{len(links) - stored} not stored")
         print(f"{key:16s} {len(links):7d} {_age(links):>8s} {stored:5d}/{len(links):<4d}  {note}")

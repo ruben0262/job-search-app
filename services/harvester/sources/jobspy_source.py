@@ -1,4 +1,5 @@
-"""Tier 1 — LinkedIn, Indeed, Google Jobs via the python-jobspy library.
+"""Indeed and Google Jobs via the python-jobspy library. LinkedIn is read without it
+(`services.harvester.linkedin`).
 
 jobspy + pandas are imported lazily inside the functions so this module still
 imports on a Python where jobspy isn't installed (e.g. local 3.13 HTTP-only
@@ -8,7 +9,6 @@ Confirmed against jobspy 1.1.82 (2026-06):
   • scrape_jobs returns a pandas DataFrame; the canonical link is `job_url`.
   • `date_posted` is a datetime.date (or NaT); `is_remote` is numpy bool_;
     missing scalars come back as pandas NaN.
-  • LinkedIn  — needs the DataImpulse proxy; hours_old + is_remote can combine.
   • Indeed    — no proxy; requires country_indeed; hours_old and is_remote are
                 split across separate config queries (can't combine) — dedup
                 handles the overlap downstream.
@@ -36,36 +36,6 @@ from typing import Any
 from services.harvester.sources.base import JobLink
 
 _DELAY_S = 2       # politeness pause between successive queries (sequential mode only)
-_LI_WORKERS = 4    # LinkedIn queries run this many at a time (rotating proxy = fresh IP each);
-                   # lower it in config (jobspy_linkedin.concurrency) if LinkedIn starts blocking
-
-
-def new_connection_each_request() -> None:
-    """Make jobspy's LinkedIn search open a new connection for every request it sends.
-
-    Its session kept one connection for all of a query's result pages, so all of them left the site
-    proxy from one address, and LinkedIn refused that address first: two 429s in the pass of
-    2026-11-02. The proxy gives each new connection its next address, so a new connection per page
-    spreads the search over all of them, as the describe pass's reads are (`fetch._mounts`). jobspy
-    builds that session from `jobspy.linkedin.RequestsRotating`; the class put there drops its
-    connections once each answer is read. Idempotent.
-    """
-    # Here, not at the top: only the harvester's image carries jobspy.
-    from jobspy import linkedin
-
-    if getattr(linkedin.RequestsRotating, "new_connection_each_request", False):
-        return
-
-    class EachRequestAnew(linkedin.RequestsRotating):
-        new_connection_each_request = True
-
-        def request(self, *args: Any, **kwargs: Any) -> Any:
-            try:
-                return super().request(*args, **kwargs)
-            finally:
-                self.close()
-
-    linkedin.RequestsRotating = EachRequestAnew
 
 
 def _run_queries(site: str, kwargs_list: list[dict], logger, workers: int) -> list:
@@ -147,38 +117,6 @@ def _run_one(site: str, kwargs: dict[str, Any], logger) -> list[JobLink]:
     for link in links:
         link.found_via = label
     return links
-
-
-def gather_linkedin(cfg: dict[str, Any], logger, *, proxy: str) -> list[JobLink]:
-    """LinkedIn's search, through the site's proxy (`libs.proxy`), never one from config: `proxy` is
-    keyword-only and required, so nothing reaches LinkedIn from this box's own address.
-
-    jobspy opens its own HTTP connections and cannot be routed through `fetch`, so this is the one
-    place a proxy URL is handed to a third-party library. Each query reaches back its own `hours_old`
-    (`linkedin.search_window`), else the config's.
-    """
-    new_connection_each_request()
-    results_wanted = cfg.get("results_wanted", 30)
-    proxies = [proxy]
-    hours_old = cfg.get("hours_old")
-    fetch_desc = cfg.get("linkedin_fetch_description", False)
-    workers = int(cfg.get("concurrency", _LI_WORKERS))
-    kwargs_list: list[dict[str, Any]] = []
-    for q in cfg.get("queries", []):
-        kwargs: dict[str, Any] = dict(
-            site_name=["linkedin"], search_term=q["search_term"],
-            location=q.get("location"), results_wanted=results_wanted,
-            linkedin_fetch_description=fetch_desc,
-        )
-        if q.get("hours_old") or hours_old:
-            kwargs["hours_old"] = q.get("hours_old") or hours_old
-        if q.get("is_remote"):
-            kwargs["is_remote"] = True
-        if q.get("easy_apply"):
-            kwargs["easy_apply"] = True
-        kwargs["proxies"] = proxies
-        kwargs_list.append(kwargs)
-    return _run_queries("linkedin", kwargs_list, logger, workers)
 
 
 def gather_indeed(cfg: dict[str, Any], logger) -> list[JobLink]:

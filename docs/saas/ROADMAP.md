@@ -3101,30 +3101,35 @@ suggestions on the jobs page. `CHANGELOG.md` has the numbers.
     `label.md`, `score.md` and `label_template.md`, which are the model's. Keep the other three if
     interview prep, outreach or a CV pack are coming back.
 
-**Searching by place and time, not by word (measured 2026-11-03; CHANGELOG has the numbers)**
+**Reading every source whole, words matched here (owner, 2026-11-03 and 2026-11-04; CHANGELOG has the
+numbers)**
 
-21. **A LinkedIn sweep finds titles; half of LinkedIn's matches are in the description.**
-    - Word searches stay for description matches: 46–54% of the matches on the 6,406 LinkedIn jobs here,
-      and 88% for skills such as python or sql.
-    - Replacing them means reading every swept job's description, one request each: ~410 an hour for
-      the UK, ~1,000 for the EU. That beats a place's word searches once the place has more distinct
-      searches than roughly a third of the jobs it lists in a run.
-    - Two numbers are needed first:
-      - the proxy's sustained ceiling, measured at a quiet time with your go-ahead, because finding it
-        stops LinkedIn for production for about 25 minutes;
-      - room in the database.
-
-    Recommendation: decide per place, once both are in.
-22. **What the sweeps keep waits on space.** Just Join IT, Himalayas, No Fluff Jobs and the LinkedIn
-    sweep store only the jobs somebody's words name (`KEYWORD_FILTER_SOURCES`; the sweep's title match).
-    Kept whole, a word added tomorrow finds today's jobs. Recommendation: keep them whole once the database
-    has room (`~/projects/server_db`), Just Join IT first (~330 MB over 30 days).
-23. **Per-word board searches now serve no working board.** Hiring Cafe answers 403 (item 15) and Jooble is
-    off. The query set, per-board ceilings and carry-over are now LinkedIn's alone. Recommendation: move
-    Hiring Cafe to `DEFERRED_SOURCES`, and keep the machinery for LinkedIn.
-24. **A person with no country is not swept on LinkedIn.** Every place's jobs in one window are more than a
-    list can be read to (1,000), so their word searches carry them, as before. Recommendation: none
-    unless such people find too little.
+21. **Done 2026-11-04: LinkedIn is read country by country, every job stored and described.** No word is
+    asked of LinkedIn and no title is filtered: every country an active person picked is swept each run,
+    and every job's text is read in the same pass. Words are matched on the stored jobs, title and text.
+22. **The database must have room before this is deployed** (branch `harvest-everything`). Every board's
+    whole window is kept now. LinkedIn alone, for the EU and the UK, listed 750–1,500 jobs per 15 minutes
+    (09:50 and 11:00, 2026-11-04): 40,000–70,000 a day at ~5 KB each, 0.2–0.4 GB a day. Atlas's 512 MB
+    fills in a day or two, and a full Atlas refuses every write, logins included. Recommendation: move to
+    `~/projects/server_db` first, then merge and deploy.
+23. **Per-word board searches now serve one board, and it is blocked.** Hiring Cafe can only be asked for
+    words and answers 403 (item 15); Jooble is off. The query set, per-board ceilings and carry-over in
+    the shared cycle serve nothing that works. Recommendation: move Hiring Cafe to `DEFERRED_SOURCES`
+    and delete the query machinery with it.
+24. **The Muse serves 2,000 of its 6,174 remote jobs.** It answers no page past the 100th, whatever it
+    says it has. All 100 are read every run. Reaching the rest would mean splitting its list by category,
+    one more request per category. It lists ~38 new jobs a day, mostly in the US. Recommendation: leave
+    it as it is, or drop it.
+25. **Adzuna's free tier cannot read a country whole.** About 250 calls a day: two countries a run, the
+    newest 50 jobs each. Unmeasured, with no key here. Recommendation: keep it as a sample, or pay for
+    a tier that reads a country's day.
+26. **Four proxy exits carry the whole EU and the UK at peak, with nothing to spare.** Measured
+    2026-11-04: ~150 LinkedIn pages a minute answered whole, 240 asked got ~180 through, 360 almost none,
+    recovered a minute after. At 11:00 the EU and the UK listed ~1,500 jobs per 15 minutes; a pass read
+    501 list pages and described 1,427 of 1,801 new jobs in its 11 minutes. A backlog drains only off
+    peak, and production shares the exits. Each exit adds ~40 pages a minute. Recommendation: four more
+    exits before the whole EU is anybody's search; a few countries need none. ~13 KB a description,
+    ~1–2 GB a day for the EU and the UK.
 
 ## Phase 9 — MongoDB instead of Postgres (added 2026-10-30)
 

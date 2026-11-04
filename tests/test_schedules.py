@@ -70,18 +70,16 @@ def test_the_python_tick_matches_the_unit_files():
         f"the fetch tick must be the platform tick: {sorted(on_the_tick)}")
 
 
-def test_the_linkedin_pass_fits_inside_the_harvest_tick_it_now_rides_on():
-    """The LinkedIn pass runs on the back of the harvest tick."""
-    from libs.settings import PLATFORM_TICK_MIN
-    from services.harvester.linkedin import DESCRIBE_BUDGET_SECONDS
-
-    assert PLATFORM_TICK_MIN * 60 > DESCRIBE_BUDGET_SECONDS, (
-        "a pass must not outlive the tick that started it")
+def test_the_boards_and_linkedin_side_by_side_fit_inside_the_harvest_tick():
+    """The boards and the LinkedIn pass run side by side on the harvest tick, then the words: each has
+    the same budget, and the unit's timeout must leave room after it, or the run is killed part-way with
+    no summary and the next tick finds it still running."""
+    from libs.settings import HARVEST_CYCLE_BUDGET_SECONDS, PLATFORM_TICK_MIN
+    from services.harvester.linkedin import PASS_BUDGET_SECONDS
 
     timeout = seconds(directive(UNITS / "harvester.service", "TimeoutStartSec"))
-    assert timeout > DESCRIBE_BUDGET_SECONDS, (
-        f"the harvest unit allows {timeout}s and the LinkedIn pass inside it may take "
-        f"{DESCRIBE_BUDGET_SECONDS}s, so the run would be killed part-way with no summary")
+    assert PASS_BUDGET_SECONDS == HARVEST_CYCLE_BUDGET_SECONDS, "one budget for the two sides of one tick"
+    assert PASS_BUDGET_SECONDS < timeout < PLATFORM_TICK_MIN * 60
 
 
 def test_a_new_words_search_stops_in_time_for_the_run_to_end_inside_its_unit():

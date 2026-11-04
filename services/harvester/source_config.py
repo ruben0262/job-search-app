@@ -9,14 +9,16 @@ from uuid import UUID
 from libs.contracts.config import migrate_config
 from libs.settings import QUERY_TAKING_SOURCES
 
-# Sources needing no API key and no credential.
+# Sources needing no API key and no credential. Each is read whole, every job in its window kept, and
+# people's words are matched on the stored jobs (owner, 2026-11-04).
 DEFAULT_ENABLED = (
-    # Remote-work aggregators that filter on what we ask for.
+    # Remote-work aggregators.
     "himalayas", "workingnomads", "jobicy",
     # ATS boards: employers posting directly. Gated on `ats_tokens` having rows.
     "greenhouse", "ashby", "lever", "smartrecruiters",
     "recruitee", "breezy", "workday", "personio", "workable",
-    # VC and aggregator boards the reference runs.
+    # Aggregators. Hiring Cafe is the one board still asked for words: it can be asked nothing else, and
+    # it has answered 403 to every request since 2026-11-02 (ROADMAP Phase 8, for the owner).
     "hiringcafe", "themuse",
     # European boards, which is where this platform's users actually are.
     "nofluffjobs", "profession", "justjoinit",
@@ -25,19 +27,6 @@ DEFAULT_ENABLED = (
 # Removed 2026-08-04, with the measurement that removed them.
 DEFERRED_SOURCES = ("arbeitnow", "remotive", "remoteok", "dreamjobs",
                     "consider", "getro", "nofluffjobs_hu", "weworkremotely")
-
-
-# Adapters that keep only the jobs somebody's words name, reading `cfg["keywords"]` themselves. Every
-# other feed keeps all it reads and the words are matched here, so a word added tomorrow finds today's
-# jobs, and a feed costs the same however many words there are (2026-11-03). Just Join IT stays filtered
-# until the database has room: unfiltered it is ~2,650 jobs a day, ~330 MB over the 30 days kept,
-# against the 512 MB the Atlas plan holds (measured 2026-11-03). Himalayas the same: read as a list now,
-# ~2,000 jobs a day, not a search per word; and No Fluff Jobs, its whole list read every hour.
-KEYWORD_FILTER_SOURCES = frozenset({"justjoinit", "himalayas", "nofluffjobs"})
-
-
-# Sources whose rows are dropped client-side by `ats.JobFilter` against the union's terms.
-PREFILTER_SOURCES: frozenset[str] = frozenset()
 
 
 # The config key each adapter reads for "how many results".
@@ -206,19 +195,14 @@ def build_source_configs(
         page_depth = (pages or {}).get(source)
         if page_depth:
             cfg["max_pages"] = int(page_depth)
-        # Two different consumers of the same word, and only one of them is safe.
-        if keywords and (source in KEYWORD_FILTER_SOURCES or source in PREFILTER_SOURCES):
-            cfg["keywords"] = keywords
-        if locations and source in PREFILTER_SOURCES:
-            cfg["location_keywords"] = locations
         if source in QUERY_TAKING_SOURCES:
             cfg["queries"] = _queries_for(source, keywords)
         if source == "adzuna":
-            _shape_adzuna(cfg, keywords=keywords, locations=locations,
-                          # `queries_per_cycle`, not `results_per_query`: this is how many calls
-                          # the source may make, which is what the free tier meters. Wiring it to
-                          # the results knob meant the panel's queries control did nothing here.
-                          max_queries=(queries or {}).get("adzuna"))
+            cfg["countries"] = adzuna_countries(locations)
+            # `queries_per_cycle`, not `results_per_query`: this is how many calls the source may make,
+            # which is what the free tier meters.
+            if max_queries := (queries or {}).get("adzuna"):
+                cfg["max_queries"] = int(max_queries)
         out[source] = cfg
     return out
 
@@ -234,20 +218,6 @@ def _apply_window(cfg: dict, window: int) -> None:
     # And HiringCafe counts in days.
     if "posted_within_days" in cfg:
         cfg["posted_within_days"] = max(1, -(-window // 24))
-
-
-def _shape_adzuna(cfg: dict, *, keywords: list[str], locations: list[str],
-                  max_queries: int | None) -> None:
-    """Adzuna iterates (country x keyword) itself rather than a query set, and was given neither.
-
-    So it fell back to its own hardcoded `["python developer", "backend engineer"]` in `gb` with
-    `where="remote"` — a source added to widen the corpus beyond software would have searched only
-    for remote software. The adapter's defaults are gone; this is where it gets its demand.
-    """
-    cfg["keywords"] = keywords
-    cfg["countries"] = adzuna_countries(locations)
-    if max_queries:
-        cfg["max_queries"] = int(max_queries)
 
 
 def adzuna_countries(locations: list[str]) -> list[str]:

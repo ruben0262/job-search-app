@@ -36,51 +36,28 @@ user's proxy.
 from __future__ import annotations
 
 import json
-import math
 import os
 import re
-import time
 import defusedxml.ElementTree as ET   # not stdlib ET: these parse third-party feeds
 from email.utils import parsedate_to_datetime
-from typing import Any, Iterable
+from typing import Any
 from urllib.parse import quote
 
 import httpx
 
 from libs.corpus.filters import epoch_to_iso, is_within_hours
 from libs.corpus.postings import strip_html
-from libs.matching import pattern
-from libs.settings import PLATFORM_TICK_MIN, queries_per_cycle_default
+from libs.settings import queries_per_cycle_default
 from services.harvester.fetch import make_shared_client
-from services.harvester.sources.base import JobLink
+from services.harvester.sources.base import JobLink, turn
 
 # What a JSON API is asked for; the rest of every request's headers is `PAGE_HEADERS` (`fetch._options`).
 _JSON = {"Accept": "application/json"}
 _TIMEOUT = httpx.Timeout(30.0)
 
 
-def _rotation(pages: int, per_run: int, *, now: float | None = None) -> list[int]:
-    """Which pages of a list in no date order this run reads, besides its first (page 0 here), which is
-    always read and says how many there are: the next `per_run - 1` of the rest, so each is read once
-    every few runs. The run is counted on the platform's own clock (`PLATFORM_TICK_MIN`), so nothing is
-    stored and no second clock is added; a run that did not happen leaves its slice to the next round.
-    """
-    rest, take = pages - 1, max(1, per_run - 1)
-    if rest <= 0:
-        return []
-    run = int((now if now is not None else time.time()) // (PLATFORM_TICK_MIN * 60))
-    start = (run % math.ceil(rest / take)) * take
-    return list(range(1 + start, 1 + min(start + take, rest)))
-
-
-def _keyword_hit(text: str, keywords: Iterable[str]) -> bool:
-    """Whether the text has one of the words as the site matches them (`libs.matching`): whole words, so
-    a job kept is a job somebody is shown. A part of a word kept 53 of Himalayas' newest 100 for five
-    words, "rest" inside "interest" and "api" inside "rapid" (2026-11-03)."""
-    regex = pattern(list(keywords))
-    return bool(regex and regex.search(text))
-
-
+# Every board here is read whole: each job it lists in its window is kept, and people's words are matched
+# on the stored jobs, title and text (owner, 2026-11-04). None is asked for a word or filtered by one.
 
 
 # ── Himalayas ────────────────────────────────────────────────────────
@@ -92,12 +69,11 @@ HIMALAYAS_PAGE = 20
 def gather_himalayas(cfg: dict[str, Any], logger) -> list[JobLink]:
     """Himalayas' whole list, newest first, 20 a page, until a page is older than the window or
     `max_pages` (`source_pages_per_cycle`) are read: ~2,000 new jobs a day, so five pages are its last
-    hour (measured 2026-11-03). A search per word cost a request per word, 20 jobs each; the list costs
-    the same however many words there are. Kept: the jobs somebody's words name (`cfg["keywords"]`).
+    hour (measured 2026-11-03), and a run comes every fifteen minutes. A search per word cost a request per
+    word, 20 jobs each; the list costs the same however many words there are.
     """
     endpoint = cfg.get("endpoint", "https://himalayas.app/jobs/api")
     max_age = cfg.get("max_age_hours", 24)
-    keywords = cfg.get("keywords", [])
     out: list[JobLink] = []
     with make_shared_client() as client:
         for page in range(int(cfg.get("max_pages", 1))):
@@ -112,8 +88,6 @@ def gather_himalayas(cfg: dict[str, Any], logger) -> list[JobLink]:
                 if not is_within_hours(iso, max_age):
                     continue
                 text = _striptags(j.get("description")) or j.get("excerpt", "")
-                if keywords and not _keyword_hit(f"{j.get('title', '')} {text}".lower(), keywords):
-                    continue
                 url = j.get("applicationLink") or j.get("guid")
                 if not url:
                     continue
@@ -141,7 +115,6 @@ def gather_justjoinit(cfg: dict[str, Any], logger) -> list[JobLink]:
     already read."""
     endpoint = cfg.get("endpoint", "https://justjoin.it/api/candidate-api/offers")
     max_age = cfg.get("max_age_hours", 24)
-    keywords = cfg.get("keywords", [])
     per_page = int(cfg.get("per_page", 100))
     out: list[JobLink] = []
     data: list[dict] = []
@@ -160,9 +133,6 @@ def gather_justjoinit(cfg: dict[str, Any], logger) -> list[JobLink]:
         if not is_within_hours(posted, max_age):
             continue
         skills = " ".join(s.get("name", "") for s in (j.get("requiredSkills") or []) if isinstance(s, dict))
-        haystack = f"{j.get('title','')} {skills}"
-        if keywords and not _keyword_hit(haystack, keywords):
-            continue
         slug = j.get("slug")
         if not slug:
             continue
@@ -184,63 +154,53 @@ def gather_justjoinit(cfg: dict[str, Any], logger) -> list[JobLink]:
 # ── NoFluffJobs (POST search) ────────────────────────────────────────
 
 def gather_nofluffjobs(cfg: dict[str, Any], logger) -> list[JobLink]:
-    """No Fluff Jobs' whole list: 18,221 jobs over 131 pages, ~620 new a day spread across all of them,
-    in no date order (measured 2026-11-03). A run reads the first page, which says how many there are,
-    and the next slice of the rest (`_rotation`): at 33 pages a run, the whole list every hour, the same
-    however many words there are. The page number goes in the address; in the body it is ignored.
-
-    It was searched per word (`criteriaSearch.requirement`), the first ~246 matches each. Every list
-    entry names its required skills (`tiles`), so the words are matched on them here as the search
-    matched them: all 220 jobs a "python" search found name python in their entry. Kept: the jobs
-    somebody's words name. Config keys: `cities` (optional), `source_label` (default nofluffjobs).
+    """No Fluff Jobs' whole list, newest first by when each posting went up or was last renewed: 19,629
+    postings over 130 pages, and every one renewed in the last hour on the first four (measured
+    2026-11-04; the whole list read in 36 s). A run walks from the first page until a page has nothing
+    renewed inside the window, at most `max_pages`, and keeps every posting that went up inside it. The
+    page number goes in the address; in the body it is ignored. Config keys: `cities` (optional),
+    `source_label` (default nofluffjobs).
     """
     endpoint = cfg.get("endpoint", "https://nofluffjobs.com/api/search/posting")
     max_age = cfg.get("max_age_hours", 24)
-    keywords = cfg.get("keywords", [])
     cities = cfg.get("cities") or []
     label = cfg.get("source_label", "nofluffjobs")
     criteria: dict[str, Any] = {"city": [c.lower() for c in cities]} if cities else {}
-    out: list[JobLink] = []
-
-    def page_of(client, page: int) -> dict:
-        try:
-            return client.post(endpoint, params={"page": page, "salaryCurrency": cfg.get("currency", "PLN"),
-                                                 "salaryPeriod": "month", "region": "pl"},
-                               json={"criteriaSearch": criteria, "page": page}).json()
-        except Exception as exc:
-            logger.warning("%s page %d failed: %s", label, page, exc)
-            return {}
-
+    postings: list[dict] = []
     with make_shared_client(headers={**_JSON, "Content-Type": "application/json"}, follow_redirects=True) as client:
-        first = page_of(client, 1)
-        bodies = [first] + [page_of(client, 1 + page)
-                            for page in _rotation(int(first.get("totalPages") or 1), int(cfg.get("max_pages", 1)))]
+        for page in range(1, int(cfg.get("max_pages", 1)) + 1):
+            try:
+                batch = client.post(endpoint, params={"page": page, "salaryCurrency": cfg.get("currency", "PLN"),
+                                                      "salaryPeriod": "month", "region": "pl"},
+                                    json={"criteriaSearch": criteria, "page": page}).json().get("postings") or []
+            except Exception as exc:
+                logger.warning("%s page %d failed: %s", label, page, exc)
+                break
+            postings += batch
+            if not any(is_within_hours(epoch_to_iso(j.get("renewed") or j.get("posted")), max_age) for j in batch):
+                break
+    out: list[JobLink] = []
     seen: set[str] = set()
-    for body in bodies:
-        for j in body.get("postings") or []:
-            slug = j.get("url")
-            iso = epoch_to_iso(j.get("posted"))
-            if not slug or slug in seen or not is_within_hours(iso, max_age):
-                continue
-            title = j.get("title", "")
-            skills = [str(tile.get("value", "")) for tile in (j.get("tiles") or {}).get("values", [])
-                      if isinstance(tile, dict)]
-            if keywords and not _keyword_hit(" ".join([title, j.get("technology") or "", *skills]), keywords):
-                continue
-            seen.add(slug)
-            loc = j.get("location") or {}
-            places = loc.get("places", []) if isinstance(loc, dict) else []
-            city = places[0].get("city", "") if places and isinstance(places[0], dict) else ""
-            # e.g. ", Hungary" on the HU block, so the country filter can place the job.
-            if city and cfg.get("location_suffix"):
-                city += cfg["location_suffix"]
-            out.append(JobLink(
-                url=f"https://nofluffjobs.com/job/{slug}", title=title,
-                company=j.get("name", ""), location=city, source=label,
-                date_posted=iso, snippet=title,
-                # fullyRemote=false could be hybrid — unknown, not on-site.
-                is_remote=(True if j.get("fullyRemote") else None),
-            ))
+    for j in postings:
+        slug = j.get("url")
+        iso = epoch_to_iso(j.get("posted"))
+        if not slug or slug in seen or not is_within_hours(iso, max_age):
+            continue
+        seen.add(slug)
+        title = j.get("title", "")
+        loc = j.get("location") or {}
+        places = loc.get("places", []) if isinstance(loc, dict) else []
+        city = places[0].get("city", "") if places and isinstance(places[0], dict) else ""
+        # e.g. ", Hungary" on the HU block, so the country filter can place the job.
+        if city and cfg.get("location_suffix"):
+            city += cfg["location_suffix"]
+        out.append(JobLink(
+            url=f"https://nofluffjobs.com/job/{slug}", title=title,
+            company=j.get("name", ""), location=city, source=label,
+            date_posted=iso, snippet=title,
+            # fullyRemote=false could be hybrid — unknown, not on-site.
+            is_remote=(True if j.get("fullyRemote") else None),
+        ))
     return out
 
 
@@ -376,15 +336,21 @@ def gather_jobicy(cfg: dict[str, Any], logger) -> list[JobLink]:
 
 # ── The Muse ──────────────────────────────────────────────────────────
 
+# The last page The Muse answers: past it, "Value `page` is too high", whatever its `page_count` says
+# (measured 2026-11-04, with and without a location). A vendor fact, beside the vendor's adapter.
+MUSE_LAST_PAGE = 99
+
 def gather_themuse(cfg: dict[str, Any], logger) -> list[JobLink]:
     """The Muse public API (www.themuse.com/api/public/jobs) — free, no auth.
 
     Requests the 'Flexible / Remote' location in every category: about 38 new a day (measured
     2026-11-03). It asked for "Software Engineering" and "Data Science" only, so a nurse or an
-    accountant never had a Muse job. Its list is in no date order, 6,159 jobs over 308 pages with the
-    new ones anywhere among them, so a run reads its first page and the next slice of the rest
-    (`_rotation`, `max_pages` a run). url is refs.landing_page; is_remote is set only when a location
-    name actually reads Remote/Flexible (a Muse job can carry multiple locations). Every job is kept.
+    accountant never had a Muse job. Its list is in no date order, with the new ones anywhere among them,
+    and it answers no page past `MUSE_LAST_PAGE`, however many it says there are (6,174 jobs over 309
+    pages on 2026-11-04): a run reads its first page and the next `max_pages` of the rest it will serve
+    (`turn`), all 100 at the default, 400 requests an hour of the 500 it allows. url is
+    refs.landing_page; is_remote is set only when a location name actually reads Remote/Flexible (a Muse
+    job can carry multiple locations). Every job is kept.
     """
     endpoint = cfg.get("endpoint", "https://www.themuse.com/api/public/jobs")
     max_age = cfg.get("max_age_hours", 24)
@@ -406,8 +372,8 @@ def gather_themuse(cfg: dict[str, Any], logger) -> list[JobLink]:
 
     with make_shared_client() as client:
         first = page_of(client, 0)
-        bodies = [first] + [page_of(client, page)
-                            for page in _rotation(int(first.get("page_count") or 1), pages)]
+        served = min(int(first.get("page_count") or 1), MUSE_LAST_PAGE + 1)
+        bodies = [first] + [page_of(client, 1 + page) for page in turn(served - 1, pages - 1)]
         for body in bodies:
             for j in body.get("results") or []:
                 url = ((j.get("refs") or {}).get("landing_page") or "").strip()
@@ -441,18 +407,18 @@ def gather_findwork(cfg: dict[str, Any], logger) -> list[JobLink]:
         return []
     endpoint = cfg.get("endpoint", "https://findwork.dev/api/jobs/")
     max_age = cfg.get("max_age_hours", 24)
-    searches: list[str] = cfg.get("searches", ["python", "backend", "golang"])
     headers = {**_JSON, "Authorization": f"Token {token}"}
     out: list[JobLink] = []
     seen: set[str] = set()
+    # Its whole list, newest first, page by page until a page is older than the window, at most
+    # `max_pages`. It was asked for "python", "backend" and "golang" only. Unmeasured: no key here.
     with make_shared_client(headers=headers, follow_redirects=True) as client:
-        for term in searches:
-            params = {"search": term, "remote": "true", "sort_by": "date"}
+        for page in range(1, int(cfg.get("max_pages", 1)) + 1):
             try:
-                results = client.get(endpoint, params=params).json().get("results", [])
+                results = client.get(endpoint, params={"sort_by": "date", "page": page}).json().get("results", [])
             except Exception as exc:
-                logger.warning("findwork %r failed: %s", term, exc)
-                continue
+                logger.warning("findwork page %d failed: %s", page, exc)
+                break
             for j in results:
                 url = (j.get("url") or "").strip()
                 if not url or url in seen:
@@ -467,6 +433,8 @@ def gather_findwork(cfg: dict[str, Any], logger) -> list[JobLink]:
                     date_posted=iso, snippet=_striptags(j.get("text")),
                     is_remote=(True if j.get("remote") else None),
                 ))
+            if not results or not is_within_hours(results[-1].get("date_posted"), max_age):
+                break
     return out
 
 
@@ -489,9 +457,11 @@ def gather_adzuna(cfg: dict[str, Any], logger) -> list[JobLink]:
     """Adzuna aggregator API — broad EU coverage, native recency (max_days_old). Requires FREE
     credentials: set ADZUNA_APP_ID and ADZUNA_APP_KEY in .env. Disabled when either is absent.
 
-    One GET per (country, keyword) with where='remote'; the free tier allows ~250 calls/day, so
-    keep countries x keywords modest. is_remote is left None (Adzuna has no exact remote flag —
-    where='remote' only biases the query) so the workplace filter/scorer decides."""
+    One GET per country somebody picked, with no word: its newest `results_per_page` jobs. The free
+    tier allows ~250 calls a day against a run every fifteen minutes, so `max_queries` countries are
+    asked a run and the rest on the next (`turn`): a whole country is more than the tier can read, so
+    each is read at its newest. Unmeasured: no key here. is_remote is left None (Adzuna has no exact
+    remote flag) so the workplace filter decides."""
     app_id = os.environ.get("ADZUNA_APP_ID") or cfg.get("app_id") or ""
     app_key = os.environ.get("ADZUNA_APP_KEY") or cfg.get("app_key") or ""
     if not (app_id and app_key):
@@ -500,47 +470,24 @@ def gather_adzuna(cfg: dict[str, Any], logger) -> list[JobLink]:
     max_age = cfg.get("max_age_hours", 24)
     per_page = int(cfg.get("results_per_page", 50))
     countries: list[str] = [c for c in cfg.get("countries") or [] if c in ADZUNA_COUNTRIES]
-    keywords: list[str] = [t for t in cfg.get("keywords") or [] if t]
-    if not (countries and keywords):
-        # Never a hardcoded fallback. This adapter used to default to
-        # `["python developer", "backend engineer"]` in `gb`, `where="remote"` — so switching the
-        # credential on would have harvested remote Python jobs regardless of who the platform's
-        # users were, which is the bias the source was added to correct.
-        logger.warning("adzuna: no %s from the active configs — asking for nothing this cycle",
-                       "countries" if not countries else "keywords")
+    if not countries:
+        logger.warning("adzuna: nobody has picked a country Adzuna serves — asking for nothing this cycle")
         return []
-
-    # The free tier allows roughly 250 calls a day against a cycle that runs every fifteen minutes,
-    # so the whole (country x keyword) grid cannot be asked every time. A slice of it is, and the
-    # slice advances each cycle, so the grid is covered over the day rather than its first N cells
-    # being asked ninety-six times. Derived from the clock rather than stored: a cursor in the
-    # database would be one more thing to write, read and disagree about.
-    pairs = [(country, term) for country in countries for term in keywords]
-    budget = max(1, int(cfg.get("max_queries") or queries_per_cycle_default("adzuna")))
-    if len(pairs) > budget:
-        start = (int(time.time()) // 900) * budget % len(pairs)
-        pairs = [pairs[(start + step) % len(pairs)] for step in range(budget)]
-        logger.info("adzuna: %d of %d (country, keyword) pairs this cycle, rotating",
-                    len(pairs), len(countries) * len(keywords))
+    budget = int(cfg.get("max_queries") or queries_per_cycle_default("adzuna"))
+    asked = [countries[index] for index in turn(len(countries), budget)]
 
     max_days = max(1, round(max_age / 24))
     out: list[JobLink] = []
     seen: set[str] = set()
     with make_shared_client(headers=_JSON, follow_redirects=True) as client:
-        for country, term in pairs:
-            base = f"https://api.adzuna.com/v1/api/jobs/{country}/search/1"
+        for country in asked:
             params = {"app_id": app_id, "app_key": app_key, "results_per_page": per_page,
-                      # No `where`. It used to default to "remote", which is a search preference
-                      # this adapter has no business holding: the workplace filter and the user's
-                      # own config decide that later, and biasing the query here removed every
-                      # on-site role before anybody could choose to filter it.
-                      "what": term,
-                      "max_days_old": max_days, "sort_by": "date",
-                      "content-type": "application/json"}
+                      "max_days_old": max_days, "sort_by": "date", "content-type": "application/json"}
             try:
-                results = client.get(base, params=params).json().get("results", [])
+                results = client.get(f"https://api.adzuna.com/v1/api/jobs/{country}/search/1",
+                                     params=params).json().get("results", [])
             except Exception as exc:
-                logger.warning("adzuna %s/%r failed: %s", country, term, exc)
+                logger.warning("adzuna %s failed: %s", country, exc)
                 continue
             for j in results:
                 url = (j.get("redirect_url") or "").strip()
@@ -570,12 +517,11 @@ def gather_hn_hiring(cfg: dict[str, Any], logger) -> list[JobLink]:
     startup/company-direct roles that never hit the job boards. Each top-level comment is one
     posting; the HN convention is a first line like 'Company | Role | Location | REMOTE | stack'.
 
-    We keep only comments that mention remote AND a target keyword, and gate on the comment's
+    We keep only comments that mention remote, and gate on the comment's
     own created_at (a fresh comment = a fresh posting), so this behaves as a fresh-catcher on the
     same 24h window as everything else. url is the comment permalink (the apply detail is in the
     text — surfaced to the scorer/human)."""
     max_age = cfg.get("max_age_hours", 24)
-    keywords: list[str] = cfg.get("keywords", [])
     out: list[JobLink] = []
     with make_shared_client() as client:
         # 1. Find the latest "Who is hiring?" story (exclude "who wants to be hired").
@@ -607,8 +553,6 @@ def gather_hn_hiring(cfg: dict[str, Any], logger) -> list[JobLink]:
                 continue
             low = text.lower()
             if "remote" not in low:
-                continue
-            if keywords and not _keyword_hit(low, keywords):
                 continue
             # First segment before '|' or newline is usually the company; the next is the role.
             head = re.split(r"\||\n|–|—| - ", text, maxsplit=2)

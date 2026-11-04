@@ -62,12 +62,6 @@ LIMITS: tuple[Limit, ...] = (
           "so a posting pinned there has 200 or more. Unlimited shows every job whatever the "
           "count.",
           choices=(10, 25, 50, 100, 150, 200)),
-    # Not unlimited-able.
-    # The one answer to "how often is LinkedIn searched for this account", and its own floor: an
-    # account field and a scheduler constant used to say it too, and disagreed (240 against 15).
-    Limit("linkedin_interval_min", "Minutes between LinkedIn runs", 15, "minutes",
-          "How often this account's LinkedIn tier runs. Shorter means fresher and more bandwidth.",
-          allow_unlimited=False, choices=(15, 30, 60, 120), minimum=15),
     Limit("keywords", "Search terms", 25, "terms",
           "More terms means broader collection and more proxy spend.",
           choices=(10, 25, 50, 100)),

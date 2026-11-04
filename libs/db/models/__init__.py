@@ -6,7 +6,7 @@ from libs.db.models.ats import AtsEtag, AtsToken
 from libs.db.models.auth import MAIL_PURPOSES, TOKEN_PURPOSES, AuthToken, MailSend, UserSession
 from libs.db.models.built import BuiltDocument
 from libs.db.models.contact import ContactMessage
-from libs.db.models.corpus import WORKPLACES, CorpusJob, Word
+from libs.db.models.corpus import WORKPLACES, CorpusJob, SweptPlace, Word
 from libs.db.models.document import DOCUMENT_KINDS, UserDocument
 from libs.db.models.notification import PushSubscription, UserNotification
 from libs.db.models.operator import OperatorKeyword
@@ -35,7 +35,7 @@ from libs.db.models.user import (
 MODELS = (User, UserConfig, UserSecret, UserSession, AuthToken, MailSend, CorpusJob, QueueJob,
           UserJobState, SetupConversation, SetupMessage, UserNotification, PushSubscription,
           UserDocument, UserProfileFile, PlatformSetting, AiRequest, AtsToken, AtsEtag,
-          BuiltDocument, OperatorKeyword, LanePause, Lock, ContactMessage, Word)
+          BuiltDocument, OperatorKeyword, LanePause, Lock, ContactMessage, Word, SweptPlace)
 
 __all__ = [
     "CLAIM_TIMEOUT_MIN", "DEFAULT_TITLE", "DOCUMENT_KINDS", "JOB_STATES", "LANES", "MAIL_PURPOSES",
@@ -44,6 +44,6 @@ __all__ = [
     "AiRequest", "AtsEtag", "AtsToken", "AuthToken", "BuiltDocument", "ContactMessage", "CorpusJob",
     "LanePause", "Lock",
     "MailSend", "OperatorKeyword", "PlatformSetting", "PushSubscription", "QueueJob",
-    "SetupConversation", "SetupMessage", "User", "UserConfig", "UserDocument", "UserJobState",
+    "SetupConversation", "SetupMessage", "SweptPlace", "User", "UserConfig", "UserDocument", "UserJobState",
     "UserNotification", "UserProfileFile", "UserSecret", "UserSession", "Word",
 ]

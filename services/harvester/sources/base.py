@@ -1,12 +1,28 @@
 """The shape every source adapter yields."""
 from __future__ import annotations
 
+import math
+import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
 from libs.corpus.filters import parse_date
 from libs.corpus.workfilter import classify
+from libs.settings import PLATFORM_TICK_MIN
+
+
+def turn(count: int, per_run: int, *, now: float | None = None) -> range:
+    """Which of `count` things (pages of a list in no date order, company boards) this run reads, when a
+    run reads at most `per_run`: the next `per_run` of them, so each is read once every few runs. The run
+    is counted on the platform's own clock (`PLATFORM_TICK_MIN`), so nothing is stored and no second clock
+    is added; a run that did not happen leaves its share to the next round."""
+    per_run = max(1, per_run)
+    if count <= per_run:
+        return range(count)
+    run = int((now if now is not None else time.time()) // (PLATFORM_TICK_MIN * 60))
+    start = (run % math.ceil(count / per_run)) * per_run
+    return range(start, min(start + per_run, count))
 
 
 @dataclass

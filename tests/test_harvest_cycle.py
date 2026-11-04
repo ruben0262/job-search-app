@@ -1,6 +1,7 @@
 """One harvest cycle, end to end, with fake sources."""
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -354,7 +355,20 @@ def test_a_board_with_no_geography_is_asked_once_per_keyword():
 def test_a_job_a_board_returned_survives_every_enabled_source_s_own_filtering():
     """The hole the ATS incident went through, closed for every source at once."""
     from services.harvester.source_config import build_source_configs
-    from services.harvester.sources.ats import JobFilter
+    from services.harvester.sources.ats import gather_ats
+
+    class Boards:
+        def live_tokens(self, _ats):
+            return ["acme"]
+
+        def etags(self, _ats):
+            return {}
+
+        def names(self, _ats):
+            return {}
+
+        def record_poll(self, *_args, **_kwargs):
+            pass
 
     # A job the platform exists to catch and no keyword list would name.
     ordinary = JobLink(
@@ -374,30 +388,27 @@ def test_a_job_a_board_returned_survives_every_enabled_source_s_own_filtering():
                "breezy", "workday", "personio", "workable"}]
     assert routed, "the ATS family should be enabled; this test is empty without it"
 
-    rejected = [name for name in routed if not JobFilter(built[name]).ok(ordinary)]
+    rejected = [name for name in routed if not gather_ats(
+        built[name], logging.getLogger("test"), ats=name, repo=Boards(),
+        fetch_company=lambda _token, _etag: ([ordinary], None))]
     assert not rejected, (
         f"{rejected} would drop a real posting before it ever reached the corpus — the shape of "
         "the incident that zeroed eleven sources")
 
 
-def test_a_keyword_filtered_source_keeps_what_matches_and_judges_nothing_else():
-    """A source still filtering on keywords (Just Join IT, until the database has room) is given every
-    person's words, and nothing else to judge a posting on."""
-    from services.harvester.source_config import (
-        KEYWORD_FILTER_SOURCES,
-        build_source_configs,
-    )
+def test_no_board_is_handed_anybodys_words_to_keep_jobs_by_but_the_one_asked_for_them():
+    """Every board is read whole and the words matched on what is stored (owner, 2026-11-04). Hiring
+    Cafe can only be asked for words, so it is asked for them, and keeps all it is sent."""
+    from services.harvester.source_config import build_source_configs
 
     built = build_source_configs(
         {uuid.uuid4(): {"sections": [
             {"keywords": ["software engineer"], "locations": ["europe"]}]}},
-        env={})
+        env={"ADZUNA_APP_ID": "x", "FINDWORK_API_KEY": "x"})
 
-    for name in KEYWORD_FILTER_SOURCES & set(built):
-        cfg = built[name]
-        assert cfg["keywords"] == ["software engineer"], f"{name} was asked for nothing"
-        # The keyword is the only filter these carry.
-        assert "location_keywords" not in cfg, f"{name} would also judge a posting on its location"
+    handed = {name for name, cfg in built.items() if "keywords" in cfg or "location_keywords" in cfg}
+    assert handed == set(), f"{handed} would keep only the jobs somebody's words name"
+    assert [name for name, cfg in built.items() if "queries" in cfg] == ["hiringcafe"]
 
 
 def test_a_source_whose_window_an_operator_narrowed_actually_narrows():
@@ -434,14 +445,12 @@ def test_an_operators_window_reaches_a_source_under_every_key_it_reads():
 
 def test_the_union_is_asked_for_not_used_to_throw_away_what_a_board_sent():
     """Six hours of zero ingestion from eleven sources."""
-    from services.harvester.source_config import PREFILTER_SOURCES, build_source_configs
+    from services.harvester.source_config import build_source_configs
 
     built = build_source_configs(
         {uuid.uuid4(): {"sections": [{"keywords": ["golang"], "locations": ["europe"]}]}},
         env={})
 
-    assert not PREFILTER_SOURCES, (
-        "re-enabling one needs the before/after count of good matches lost that 6o.1 demands")
     for source in ("greenhouse", "ashby", "lever", "workday"):
         assert "keywords" not in built[source], f"{source} would drop rows on title alone"
         assert "location_keywords" not in built[source], f"{source} would drop rows on a slug"
@@ -649,17 +658,12 @@ def test_an_unset_ceiling_leaves_the_platform_default_alone():
 def test_a_removed_source_cannot_be_quietly_switched_back_on():
     """`DEFERRED_SOURCES` records what was removed and why."""
     from libs.settings import HARVEST_SOURCES, QUERY_TAKING_SOURCES
-    from services.harvester.source_config import (
-        DEFAULT_ENABLED,
-        DEFERRED_SOURCES,
-        KEYWORD_FILTER_SOURCES,
-    )
+    from services.harvester.source_config import DEFAULT_ENABLED, DEFERRED_SOURCES
 
     deferred = set(DEFERRED_SOURCES)
     assert deferred & set(DEFAULT_ENABLED) == set()
     assert deferred & set(HARVEST_SOURCES) == set(), "the admin panel would offer it a control"
     assert deferred & QUERY_TAKING_SOURCES == set()
-    assert deferred & KEYWORD_FILTER_SOURCES == set()
 
 
 # ── how deep a paginated source walks (ROADMAP 6ag) ───────────────────────────────────────────
@@ -742,6 +746,38 @@ def test_a_harvest_runs_without_an_embedder(ctx, monkeypatch):
     assert ran, "the cycle itself ran, not just the entry point"
 
 
+def test_linkedin_is_read_beside_the_boards_and_the_words_found_after_both(ctx, monkeypatch):
+    """LinkedIn goes out through the site proxy and the boards go direct: read one after the other, a
+    long LinkedIn pass pushed the boards and the words past the tick (`TimeoutStartSec`)."""
+    import threading
+
+    from services.harvester import __main__ as entry
+
+    monkeypatch.setattr(entry, "database", lambda: ctx)
+    monkeypatch.setattr(entry, "ensure_schema", lambda *a: None)
+    monkeypatch.setattr(entry, "_configure_logging", lambda verbose: None)
+    order: list[str] = []
+    linkedin_started, boards_done = threading.Event(), threading.Event()
+
+    def linkedin_pass():
+        linkedin_started.set()
+        boards_done.wait(5)
+        order.append("linkedin")
+
+    def boards(db, **kwargs):
+        assert linkedin_started.wait(5), "the boards waited for LinkedIn to finish"
+        order.append("boards")
+        boards_done.set()
+        return cycle.CycleReport(), []
+
+    monkeypatch.setattr(entry, "_run_linkedin_pass", linkedin_pass)
+    monkeypatch.setattr(entry, "run_cycle", boards)
+    monkeypatch.setattr(entry, "_find_words", lambda: order.append("words"))
+
+    assert entry.main([]) == 0
+    assert order == ["boards", "linkedin", "words"]
+
+
 def test_with_no_site_proxy_every_board_but_linkedin_is_harvested(ctx, monkeypatch):
     """The site proxy is what LinkedIn needs and nothing else does: unset, LinkedIn is skipped and no
     other board loses anything."""
@@ -768,5 +804,5 @@ def test_with_no_site_proxy_every_board_but_linkedin_is_harvested(ctx, monkeypat
     def no_request(*args, **kwargs):
         raise AssertionError("LinkedIn was fetched with no proxy to fetch it through")
 
-    passed = linkedin.run_for_due_users(s, gather=no_request)
-    assert (passed.considered, passed.links_found) == (0, 0)
+    passed = linkedin.run_pass(s, sweep=no_request)
+    assert (passed.swept_places, passed.swept) == (0, 0)

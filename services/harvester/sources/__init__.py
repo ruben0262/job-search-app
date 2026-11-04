@@ -10,10 +10,10 @@ from services.harvester.sources.base import JobLink
 
 
 class Tier(StrEnum):
-    """Who pays for a fetch, and therefore which loop may run it."""
+    """Who pays for a fetch, and therefore which loop may run it. LinkedIn is its own pass
+    (`services.harvester.linkedin`), not a source here."""
 
     SHARED = "shared"
-    PER_USER = "per_user"
 
 
 class Source(NamedTuple):
@@ -27,7 +27,6 @@ class Source(NamedTuple):
 REGISTRY: dict[str, Source] = {
     s.key: s for s in (
         # JobSpy.
-        Source("jobspy_linkedin", jobspy_source.gather_linkedin, Tier.PER_USER),
         Source("jobspy_indeed", jobspy_source.gather_indeed, Tier.SHARED),
         Source("jobspy_google", jobspy_source.gather_google, Tier.SHARED),
 
@@ -63,7 +62,6 @@ REGISTRY: dict[str, Source] = {
 }
 
 SHARED_SOURCES = tuple(s.key for s in REGISTRY.values() if s.tier is Tier.SHARED)
-PER_USER_SOURCES = tuple(s.key for s in REGISTRY.values() if s.tier is Tier.PER_USER)
 
 # Outer fan-out cap, carried over from the 2026-07-24 CHANGELOG fix.
 OUTER_CONCURRENCY = 8
@@ -76,7 +74,6 @@ def sources_for(tier: Tier) -> list[Source]:
 
 __all__ = [
     "OUTER_CONCURRENCY",
-    "PER_USER_SOURCES",
     "REGISTRY",
     "SHARED_SOURCES",
     "JobLink",

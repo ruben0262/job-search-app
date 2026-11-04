@@ -12,7 +12,6 @@ import pytest
 
 from services.harvester.sources import (
     OUTER_CONCURRENCY,
-    PER_USER_SOURCES,
     REGISTRY,
     SHARED_SOURCES,
     Source,
@@ -100,21 +99,13 @@ def test_the_check_above_would_actually_catch_one():
 
 # ── the registry ──────────────────────────────────────────────────────────────────────────────
 
-def test_linkedin_is_the_only_per_user_source():
-    """It is the only source that needs a residential proxy."""
-    assert PER_USER_SOURCES == ("jobspy_linkedin",)
-
-
-def test_the_shared_tier_contains_no_proxied_source():
-    """A proxied source mis-tagged shared would spend one user's metered bandwidth for everyone."""
-    assert "jobspy_linkedin" not in SHARED_SOURCES
-    assert set(SHARED_SOURCES) | set(PER_USER_SOURCES) == set(REGISTRY)
-
-
-def test_sources_for_cannot_hand_the_shared_loop_a_proxied_source():
+def test_linkedin_is_not_a_board_the_shared_loop_can_be_handed():
+    """LinkedIn is read by its own pass, through the site proxy (`services.harvester.linkedin`); a board
+    here goes out direct, so LinkedIn listed here would be read from the server's own address."""
+    assert set(SHARED_SOURCES) == set(REGISTRY)
+    assert not [key for key in REGISTRY if "linkedin" in key]
     shared = sources_for(Tier.SHARED)
     assert shared and all(s.tier is Tier.SHARED for s in shared)
-    assert all(s.key != "jobspy_linkedin" for s in shared)
 
 
 def test_only_the_ats_family_needs_the_token_and_etag_repository():
@@ -178,22 +169,6 @@ def test_every_adapter_module_imports(path):
     """A port that leaves a module unimportable is a source that silently never runs."""
     import importlib
     importlib.import_module(f"services.harvester.sources.{path.stem}")
-
-
-def test_linkedin_is_only_gathered_through_the_proxy_it_is_handed():
-    """The reference read `cfg["proxy"]`. The site's proxy is handed in by the pass, keyword-only and
-    required, so nothing reaches LinkedIn from the box's own address or from a config."""
-    import inspect
-
-    sig = inspect.signature(jobspy_source.gather_linkedin)
-    proxy = sig.parameters.get("proxy")
-    assert proxy is not None, "gather_linkedin must be handed the proxy"
-    assert proxy.kind is inspect.Parameter.KEYWORD_ONLY, \
-        "keyword-only, so it cannot be positionally confused with cfg"
-    assert proxy.default is inspect.Parameter.empty, "mandatory, so it cannot be omitted"
-
-    with pytest.raises(TypeError):
-        jobspy_source.gather_linkedin({}, logging.getLogger("test"))
 
 
 def test_the_shared_jobspy_sources_take_no_lease():
@@ -266,46 +241,6 @@ def test_workable_is_asked_two_boards_at_a_time():
     assert most[0] == 2
 
 
-def test_each_linkedin_search_request_leaves_on_a_new_connection_so_a_new_address():
-    """jobspy's search kept one connection for all of a query's pages: one proxy address, refused
-    first. Three requests are three connections now, and the scraper builds the session that does it."""
-    import socketserver
-    import threading
-
-    linkedin = pytest.importorskip("jobspy.linkedin")
-    from services.harvester.sources.jobspy_source import new_connection_each_request
-
-    connections: list[int] = []
-
-    class Proxy(socketserver.BaseRequestHandler):
-        def handle(self) -> None:
-            connections.append(1)
-            reader = self.request.makefile("rb")
-            while reader.readline():
-                while reader.readline() not in (b"\r\n", b""):
-                    pass
-                self.request.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
-
-    class Server(socketserver.ThreadingTCPServer):
-        # A connection held open (the old way) must fail the count, not hang the shutdown.
-        daemon_threads, block_on_close = True, False
-
-    new_connection_each_request()
-    assert "RequestsRotating" in linkedin.LinkedIn.scrape.__code__.co_names, "the scraper's own session"
-    with Server(("127.0.0.1", 0), Proxy) as server:
-        threading.Thread(target=server.serve_forever, daemon=True).start()
-        session = linkedin.RequestsRotating([f"http://127.0.0.1:{server.server_address[1]}"])
-        session.verify = True
-        try:
-            for _ in range(3):
-                assert session.get("http://www.linkedin.com/jobs-guest/x").text == "ok"
-        finally:
-            session.close()
-            server.shutdown()
-
-    assert len(connections) == 3
-
-
 def test_just_join_it_is_read_page_by_page_until_its_offers_are_older_than_the_window(monkeypatch):
     """Its old API answers 503 to everything since 2026-11-01; the site's own one lists newest first,
     a page at a time. A page that fails keeps what was read before it."""
@@ -332,7 +267,7 @@ def test_just_join_it_is_read_page_by_page_until_its_offers_are_older_than_the_w
 
     monkeypatch.setattr(http_apis, "make_shared_client",
                         lambda **_: httpx.Client(transport=httpx.MockTransport(api)))
-    cfg = {"max_pages": 5, "per_page": 2, "max_age_hours": 24, "keywords": ["python"]}
+    cfg = {"max_pages": 5, "per_page": 2, "max_age_hours": 24}
 
     links = http_apis.gather_justjoinit(cfg, logging.getLogger("test"))
 
@@ -471,7 +406,7 @@ def test_a_user_agent_is_written_in_one_place_and_profession_s_own_beside_it():
     assert written == {"libs/corpus/postings.py", "services/harvester/sources/http_apis.py"}
 
 
-# ── feeds keep every job; the words are matched here (2026-11-03) ─────────────────────────────
+# ── every board read whole; the words are matched here (2026-11-03, 2026-11-04) ────────────────
 
 def _feed_job(name: str, request) -> httpx.Response:
     """One "Registered Nurse" job, posted an hour ago, in the shape each feed answers with."""
@@ -573,9 +508,9 @@ def _himalayas(monkeypatch, *, old_from_page: int = 99,
 
 
 @pytest.mark.parametrize("words", [["nurse"], ["nurse", *[f"word{n}" for n in range(24)]]])
-def test_himalayas_is_read_as_its_newest_list_the_same_however_many_words(monkeypatch, words):
+def test_himalayas_is_read_as_its_newest_list_every_job_kept_however_many_words(monkeypatch, words):
     """A search per word cost a request per word, 20 jobs each; its list, newest first, costs the
-    pages the operator set, and keeps the jobs somebody's words name."""
+    pages the operator set, and every job on them is kept: the words are matched on what is stored."""
     from services.harvester.source_config import build_source_configs
     from services.harvester.sources import http_apis
 
@@ -585,8 +520,8 @@ def test_himalayas_is_read_as_its_newest_list_the_same_however_many_words(monkey
     links = http_apis.gather_himalayas(cfg, logging.getLogger("test"))
 
     assert len(requests) == 3
-    assert {link.title for link in links} == {"Registered Nurse"}
-    assert len(links) == 15, "five nurses a page, three pages"
+    assert len(links) == 60, "twenty a page, three pages, whoever has a word for them"
+    assert {"Welder", "Sales Manager"} <= {link.title for link in links}
 
 
 def test_himalayas_stops_at_the_first_page_older_than_the_window(monkeypatch):
@@ -594,77 +529,168 @@ def test_himalayas_stops_at_the_first_page_older_than_the_window(monkeypatch):
     from services.harvester.sources import http_apis
 
     requests = _himalayas(monkeypatch, old_from_page=1)
-    cfg = build_source_configs({uuid.uuid4(): {"sections": [{"keywords": ["welder"]}]}}, env={},
-                               pages={"himalayas": 5})["himalayas"]
+    cfg = build_source_configs({}, env={}, pages={"himalayas": 5})["himalayas"]
     links = http_apis.gather_himalayas(cfg, logging.getLogger("test"))
 
-    assert len(requests) == 2 and len(links) == 5
-
-
-def test_a_filtered_feed_keeps_a_job_only_for_a_whole_word_as_the_site_shows_it(monkeypatch):
-    """A part of a word kept 53 of Himalayas' newest 100 for five words: "rest" inside "interest", "api"
-    inside "rapid" (2026-11-03). Stored and never shown to anybody."""
-    from services.harvester.source_config import build_source_configs
-    from services.harvester.sources import http_apis
-
-    _himalayas(monkeypatch, titles=("Interest Rate Analyst", "REST API Developer", "Rapid Response Nurse",
-                                    "API Engineer"))
-    cfg = build_source_configs({uuid.uuid4(): {"sections": [{"keywords": ["rest", "api"]}]}}, env={},
-                               pages={"himalayas": 1})["himalayas"]
-    kept = {link.title for link in http_apis.gather_himalayas(cfg, logging.getLogger("test"))}
-
-    assert kept == {"REST API Developer", "API Engineer"}
+    assert len(requests) == 2 and len(links) == 20
 
 
 def test_a_list_in_no_date_order_is_read_whole_over_a_round_of_runs(monkeypatch):
-    """The Muse's 308 pages hold its ~38 new jobs a day anywhere among them. Each run reads its first page
-    and the next slice of the rest, counted on the platform's own clock: one round of runs reads them all."""
+    """The Muse holds its ~38 new jobs a day anywhere in its list. A run reads its first page and the next
+    slice of the rest, counted on the platform's own clock: one round of runs reads them all."""
     import math
 
     from libs.settings import PLATFORM_TICK_MIN
     from services.harvester.source_config import build_source_configs
-    from services.harvester.sources import http_apis
+    from services.harvester.sources import base
 
     cfg = build_source_configs({}, env={}, pages={"themuse": 26})["themuse"]
     requests: list = []
     gather = _feed(monkeypatch, "themuse", requests)
-    runs = math.ceil(307 / 25)
+    runs = math.ceil(99 / 25)
     for run in range(runs):
-        monkeypatch.setattr(http_apis.time, "time", lambda run=run: run * PLATFORM_TICK_MIN * 60.0)
+        monkeypatch.setattr(base.time, "time", lambda run=run: run * PLATFORM_TICK_MIN * 60.0)
         gather(cfg, logging.getLogger("test"))
 
     pages = [int(request.url.params["page"]) for request in requests]
-    assert len(pages) == runs * 26 - (runs * 25 - 307), "26 a run, the last slice shorter"
-    assert set(pages) == set(range(308)), f"{runs} runs read every page"
+    assert len(pages) == runs * 26 - (runs * 25 - 99), "26 a run, the last slice shorter"
+    assert set(pages) == set(range(100)), f"{runs} runs read every page it serves"
 
 
-@pytest.mark.parametrize("words", [["python"], ["python", *[f"word{n}" for n in range(24)]]])
-def test_no_fluff_jobs_is_read_as_its_list_and_matched_on_the_skills_each_job_requires(monkeypatch, words):
-    """A search per word matched a job's required skills, the first ~246 matches each. Every entry of
-    its list names them, so the list is read a slice a run and the words matched on them here."""
+def test_the_muse_is_never_asked_a_page_it_does_not_serve_and_reads_all_it_does_each_run(monkeypatch):
+    """It says 309 pages and answers "Value `page` is too high" past the 100th (2026-11-04): a slice of
+    the rest asked pages 104 to 207 and read nothing at all. 500 requests an hour without a key, by its
+    own header: all 100 pages a run, four runs an hour, stay inside it."""
+    from libs.settings import PLATFORM_TICK_MIN, Snapshot, pages_per_cycle
+    from services.harvester.source_config import build_source_configs
+
+    pages = pages_per_cycle(Snapshot(), "themuse")
+    requests: list = []
+    _feed(monkeypatch, "themuse", requests)(
+        build_source_configs({}, env={}, pages={"themuse": pages})["themuse"], logging.getLogger("t"))
+
+    assert sorted(int(request.url.params["page"]) for request in requests) == list(range(100))
+    assert pages * 60 // PLATFORM_TICK_MIN <= 500
+
+
+def _nofluffjobs(monkeypatch, renewed_hours: dict[int, float], *, posted_days_ago: float = 0) -> list:
+    """No Fluff Jobs' list, newest first by renewal: page N's postings renewed `renewed_hours[N]` ago.
+    A posting renewed but first put up long before is `posted_days_ago` older."""
     from datetime import UTC, datetime, timedelta
 
-    from services.harvester.source_config import build_source_configs
     from services.harvester.sources import http_apis
 
-    posted = int((datetime.now(UTC) - timedelta(hours=1)).timestamp() * 1000)
     requests: list = []
+
+    def at(hours: float) -> int:
+        return int((datetime.now(UTC) - timedelta(hours=hours)).timestamp() * 1000)
 
     def answer(request):
         requests.append(request)
-        page = request.url.params["page"]
-        return httpx.Response(200, json={"totalPages": 131, "postings": [
-            {"url": f"backend-{page}", "title": "Backend Developer", "name": "Acme", "posted": posted,
-             "technology": "Java", "tiles": {"values": [{"value": "Python", "type": "requirement"}]}},
-            {"url": f"frontend-{page}", "title": "Frontend Developer", "name": "Acme", "posted": posted,
-             "technology": "JavaScript", "tiles": {"values": [{"value": "React", "type": "requirement"}]}}]})
+        page = int(request.url.params["page"])
+        hours = renewed_hours.get(page, 500)
+        return httpx.Response(200, json={"totalPages": 130, "postings": [
+            {"url": f"job-{page}-{n}", "title": title, "name": "Acme", "renewed": at(hours),
+             "posted": at(hours + (posted_days_ago * 24 if page > 1 else 0)), "fullyRemote": True}
+            for n, title in enumerate(("Backend Developer", "Accountant", "Welder"))]})
 
     monkeypatch.setattr(http_apis, "make_shared_client", lambda **_: httpx.Client(
         transport=httpx.MockTransport(answer)))
-    cfg = build_source_configs({uuid.uuid4(): {"sections": [{"keywords": words}]}}, env={},
-                               pages={"nofluffjobs": 4})["nofluffjobs"]
+    return requests
+
+
+def test_no_fluff_jobs_is_read_newest_first_until_a_page_has_nothing_new(monkeypatch):
+    """Everything renewed in its last hour is on the first four of its 130 pages (measured 2026-11-04):
+    a run stops at the first page with nothing inside the window, and keeps every posting that went up
+    inside it, whoever has a word for it. A posting only renewed, first up a month ago, is not new."""
+    from services.harvester.source_config import build_source_configs
+    from services.harvester.sources import http_apis
+
+    requests = _nofluffjobs(monkeypatch, {1: 0.2, 2: 1.0, 3: 30}, posted_days_ago=30)
+    cfg = build_source_configs({uuid.uuid4(): {"sections": [{"keywords": ["python"]}]}}, env={},
+                               freshness={"nofluffjobs": 2}, pages={"nofluffjobs": 10})["nofluffjobs"]
     links = http_apis.gather_nofluffjobs(cfg, logging.getLogger("test"))
 
-    assert len(requests) == 4, "the pages set, however many words"
-    assert len({request.url.params["page"] for request in requests}) == 4, "the page is in the address"
-    assert {link.title for link in links} == {"Backend Developer"}, "Python is required, not in the title"
+    assert [int(request.url.params["page"]) for request in requests] == [1, 2, 3], "page 3 is all old"
+    assert {link.title for link in links} == {"Backend Developer", "Accountant", "Welder"}
+    assert {link.url for link in links} == {f"https://nofluffjobs.com/job/job-1-{n}" for n in range(3)}
+
+
+def test_no_fluff_jobs_walks_no_further_than_the_operator_set(monkeypatch):
+    from services.harvester.source_config import build_source_configs
+    from services.harvester.sources import http_apis
+
+    requests = _nofluffjobs(monkeypatch, dict.fromkeys(range(1, 131), 0.1))
+    cfg = build_source_configs({}, env={}, pages={"nofluffjobs": 4})["nofluffjobs"]
+    http_apis.gather_nofluffjobs(cfg, logging.getLogger("test"))
+
+    assert len(requests) == 4
+
+
+def _boards(count: int):
+    class Boards:
+        def live_tokens(self, _ats):
+            return [f"company{n:03d}" for n in range(count)]
+
+        def etags(self, _ats):
+            return {}
+
+        def names(self, _ats):
+            return {}
+
+        def record_poll(self, *_args, **_kwargs):
+            pass
+    return Boards()
+
+
+def test_every_company_board_is_polled_over_a_round_of_runs_not_only_the_first_few(monkeypatch):
+    """A run polls `max_companies` boards: it was always the first ones, and a board past them was never
+    polled. Now the next ones each run, on the platform's clock."""
+    import math
+
+    from libs.settings import PLATFORM_TICK_MIN
+    from services.harvester.sources import base
+    from services.harvester.sources.ats import gather_ats
+
+    polled: list[str] = []
+
+    def fetch(token, _etag):
+        polled.append(token)
+        return [], None
+
+    runs = math.ceil(25 / 10)
+    for run in range(runs):
+        monkeypatch.setattr(base.time, "time", lambda run=run: run * PLATFORM_TICK_MIN * 60.0)
+        gather_ats({"max_companies": 10}, logging.getLogger("test"), ats="greenhouse", repo=_boards(25),
+                   fetch_company=fetch)
+
+    assert len(polled) == 25 and set(polled) == {f"company{n:03d}" for n in range(25)}
+
+
+def test_adzuna_is_asked_each_countrys_newest_with_no_word_two_countries_a_run(monkeypatch):
+    """Its free tier allows ~250 calls a day: two a run, a country each, every country in turn."""
+    from libs.settings import PLATFORM_TICK_MIN
+    from services.harvester.source_config import build_source_configs
+    from services.harvester.sources import base, http_apis
+
+    monkeypatch.setenv("ADZUNA_APP_ID", "id")
+    monkeypatch.setenv("ADZUNA_APP_KEY", "key")
+    asked: list[httpx.URL] = []
+
+    def answer(request):
+        asked.append(request.url)
+        return httpx.Response(200, json={"results": []})
+
+    monkeypatch.setattr(http_apis, "make_shared_client", lambda **_: httpx.Client(
+        transport=httpx.MockTransport(answer)))
+    cfg = build_source_configs(
+        {uuid.uuid4(): {"sections": [{"keywords": ["nurse", "welder"],
+                                      "locations": ["germany", "france", "spain"]}]}},
+        env={"ADZUNA_APP_ID": "id"})["adzuna"]
+    for run in range(2):
+        monkeypatch.setattr(base.time, "time", lambda run=run: run * PLATFORM_TICK_MIN * 60.0)
+        http_apis.gather_adzuna(cfg, logging.getLogger("test"))
+
+    assert not [url for url in asked if "what" in url.params], "no word is asked"
+    assert sorted(url.path.split("/")[4] for url in asked) == ["de", "es", "fr"], "two, then the third"
+    assert {url.params["sort_by"] for url in asked} == {"date"}

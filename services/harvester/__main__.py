@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+from concurrent.futures import ThreadPoolExecutor
 
 from libs.corpus.terms import catch_up
 from libs.db import database, ensure_schema
@@ -20,7 +21,7 @@ from libs.settings import (
 )
 from libs.tenant.repository import TenantRepository
 from services.harvester.cycle import harvest_lock, run_cycle
-from services.harvester.linkedin import run_for_due_users as run_linkedin
+from services.harvester.linkedin import run_pass as run_linkedin
 from services.harvester.source_config import build_source_configs
 
 logger = logging.getLogger("harvester")
@@ -55,7 +56,7 @@ def main(argv: list[str] | None = None) -> int:
                         help="cap every source at this many queries for this run, ignoring the "
                              "operator's per-source limits")
     parser.add_argument("--linkedin", action="store_true",
-                        help="run the per-user LinkedIn pass for whoever is due, then stop")
+                        help="run the LinkedIn pass alone, then stop")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args(argv)
     _configure_logging(args.verbose)
@@ -64,14 +65,23 @@ def main(argv: list[str] | None = None) -> int:
     ensure_schema()
 
     if args.linkedin:
-        # Everyone due, their searches pooled, through the site proxy.
-        report = run_linkedin(database())
-        logger.info("linkedin: %d considered, %d searched for, %d distinct search(es), %d link(s), %d new, "
-                    "%d described", report.considered, report.ran, report.queries, report.links_found,
-                    report.new_jobs, report.described)
+        _run_linkedin_pass()
         _find_words()
         return 0
 
+    with ThreadPoolExecutor(max_workers=1) as beside:
+        # LinkedIn beside the boards, not after them: it goes out through the site proxy and they go direct,
+        # so neither waits on the other and each has the tick's whole budget. The words come after both.
+        if not args.dry_run:
+            beside.submit(_run_linkedin_pass)
+        code = _run_shared(args)
+    if not args.dry_run:
+        _find_words()
+    return code
+
+
+def _run_shared(args) -> int:
+    """The shared cycle: every board but LinkedIn."""
     kwargs = {}
     if args.dry_run:
         kwargs["run_source"] = lambda *a, **k: []
@@ -104,21 +114,16 @@ def main(argv: list[str] | None = None) -> int:
         report.new_jobs, len(report.source_failures))
     for key, error in report.source_failures.items():
         logger.warning("source %s failed: %s", key, error)
-
-    # The LinkedIn tier runs on the same tick, not its own timer, and then the words in what both stored.
-    if not args.dry_run:
-        _run_linkedin_pass()
-        _find_words()
     return 0
 
 
 def _run_linkedin_pass() -> None:
-    """The LinkedIn tier: everyone due, their searches pooled."""
+    """The LinkedIn pass: every country somebody picked, every job in it stored and described."""
     try:
         report = run_linkedin(database())
-        logger.info("linkedin: %d considered, %d searched for, %d distinct search(es), %d link(s), %d new, "
-                    "%d described", report.considered, report.ran, report.queries, report.links_found,
-                    report.new_jobs, report.described)
+        logger.info("linkedin: %d place(s), %d request(s), %d job(s) listed, %d new, %d described",
+                    report.swept_places, report.sweep_requests, report.swept, report.new_jobs,
+                    report.described)
     except Exception:
         logger.exception("the LinkedIn pass failed; the shared harvest was unaffected")
 
