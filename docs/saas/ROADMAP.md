@@ -3131,6 +3131,13 @@ numbers)**
     exits before the whole EU is anybody's search; a few countries need none. ~13 KB a description,
     ~1–2 GB a day for the EU and the UK.
 
+    **How many, by the chart** (exits counted 2026-11-04: exactly 4, in strict turn, 30 requests each of
+    120; a connection kept open stays on one). An exit reads ~40 pages a minute, ~440 in a pass, and a
+    new job costs ~1.2 pages: its text, and its share of the list pages. Kept at half use, for the
+    backlog after downtime and production's own traffic, **one exit per ~700 jobs in the busiest hour**
+    of "Jobs found by country". The EU and the UK at 11:00 were ~6,000 an hour: 8–9 exits. The UK alone
+    ~1,500: 2–3. Germany alone ~860: 1–2. The pacing in item 33 would stretch each a little further.
+
 **Putting it live, in order (owner, 2026-11-04)**
 
 27. **Now: deploy `main`** (the search minimums, the account page). Nothing waits on it.
