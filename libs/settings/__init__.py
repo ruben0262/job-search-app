@@ -155,6 +155,12 @@ DEFAULT_DATABASE_BUDGET_MB = 512
 # a killed cycle skips the stages after the one that overran, silently (`test_schedules.py`).
 HARVEST_CYCLE_BUDGET_SECONDS = 11 * 60
 
+# How long one harvest run may spend searching the stored postings for people's new words, after the boards
+# and LinkedIn: it stops there and goes on in the next run (`libs.corpus.terms`). Measured 2026-11-04 at
+# 1.5 million postings, the whole store searched for one common word took 612 s, past the unit's 14
+# minutes; the postings that can still be shown are about a quarter of it (`test_schedules.py`).
+TERMS_BUDGET_SECONDS = 90
+
 # The share of that budget above which a cycle is reported as close to its ceiling. Derived from the
 # budget rather than being a second time bound, so raising one raises both.
 #

@@ -26,15 +26,23 @@ class CorpusJob(Document):
                IndexModel("content_key", name="content_key"),
                IndexModel("application_canonical_url", name="application_canonical_url"),
                IndexModel([("source", 1), ("first_seen_at", 1)], name="source_first_seen"),
-               # The jobs page and the alerts: newest first, open postings only.
-               IndexModel([("first_seen_at", DESCENDING)], partialFilterExpression={"closed_at": None},
-                          name="open_newest"),
+               # The jobs page and the alerts: newest first, open postings only. With the id, the order the
+               # match sorts by, so it is read in order and stops: without it, the match for a word not yet
+               # searched for sorted 400,000 postings, 79 s at 1.5 million (2026-11-04).
+               IndexModel([("first_seen_at", DESCENDING), ("_id", DESCENDING)],
+                          partialFilterExpression={"closed_at": None}, name="open_newest_first"),
                IndexModel("describe_failures", partialFilterExpression={"describe_failures": {"$gt": 0}},
                           name="describe_failures"),
-               # A person's jobs: the postings that have one of their words (`libs.corpus.terms`).
-               IndexModel("terms", partialFilterExpression={"closed_at": None}, name="open_terms"),
-               # The postings whose words are still to be found, which matching reads the slow way.
-               IndexModel("terms_at", name="terms_at"))
+               # A person's jobs: the postings in their countries that have one of their words
+               # (`libs.corpus.terms`), newest first in the order the match sorts by, so it reads the
+               # newest and stops, rather than every posting with the word, in every country, and then
+               # sorts them (`libs.matching`, `filters._fresh_enough`).
+               IndexModel([("terms", 1), ("country", 1), ("first_seen_at", DESCENDING), ("_id", DESCENDING)],
+                          partialFilterExpression={"closed_at": None}, name="open_terms_newest"),
+               # The postings whose words are still to be found, which matching reads the slow way: newest
+               # first too, so the two halves of a match merge in order.
+               IndexModel([("terms_at", 1), ("first_seen_at", DESCENDING), ("_id", DESCENDING)],
+                          name="terms_at_newest"))
 
     id: int | None = None
     url: str
@@ -84,4 +92,8 @@ class Word(Document):
     BACKED_UP = False
 
     id: str  # the word, as words are compared (`libs.matching.norm`)
-    indexed_at: datetime = field(default_factory=now)
+    # When every posting that can still be shown had been searched for it; None while that search is under
+    # way, a stretch each harvest run (`libs.corpus.terms`), and until then it is matched the slow way.
+    indexed_at: datetime | None = field(default_factory=now)
+    # How far back, by when the postings were found, the search has reached: it goes on from here.
+    searched_to: datetime | None = None

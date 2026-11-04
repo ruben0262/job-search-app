@@ -117,6 +117,83 @@ def test_a_word_added_later_is_found_at_once_and_stored_in_postings_already_sear
 
 
 @needs_db
+def test_a_new_word_is_searched_for_a_stretch_at_a_time_and_its_jobs_found_meanwhile(account):
+    """At 1.5 million postings, searching all of them for "agile" took 612 s, past the harvest's 14 minutes,
+    so it would have started again every run and never finished (2026-11-04). It goes back a stretch at a
+    time, keeps where it got to, and its jobs are found the slow way until it is done."""
+    from datetime import timedelta
+
+    from libs.db import get, now
+    from libs.db.models import CorpusJob, Word
+
+    db, user, search = account
+    jobs = [_stored(db, "Developer") for _ in range(3)]
+    # Three of the stretches it searches in, each one hour inside them.
+    for hours, job in zip((1, 8, 14), jobs, strict=True):
+        db[CorpusJob.COLLECTION].update_one({"_id": job},
+                                            {"$set": {"first_seen_at": now() - timedelta(hours=hours)}})
+    catch_up(db)
+
+    search("python", "postgres")
+    first = catch_up(db, budget_seconds=0)
+    assert first.new_words == 1 and get(db, Word, "postgres").indexed_at is None, "one stretch, no more"
+    assert "postgres" in get(db, CorpusJob, jobs[0]).terms
+    assert "postgres" not in get(db, CorpusJob, jobs[1]).terms
+    assert set(_found(db, user)) == set(jobs), "its jobs are found meanwhile, the slow way"
+
+    runs = 1
+    while get(db, Word, "postgres").indexed_at is None and runs < 100:
+        catch_up(db, budget_seconds=0)
+        runs += 1
+    assert get(db, Word, "postgres").indexed_at is not None and runs > 2, "a stretch a run, and then done"
+    assert all("postgres" in get(db, CorpusJob, job).terms for job in jobs)
+    assert set(_found(db, user)) == set(jobs)
+
+
+@needs_db
+def test_adding_a_word_keeps_every_job_the_other_words_found_while_it_is_searched_for(account):
+    """Until a new word was searched for, every word was read the slow way, in the newest candidates only:
+    adding one cut a person's list from ~1,500 jobs to 458 for up to a run (2026-11-04)."""
+    from datetime import timedelta
+
+    from libs.db import now
+    from libs.db.models import CorpusJob
+    from libs.matching import matching_jobs
+
+    db, user, search = account
+    theirs = [_stored(db, "Developer") for _ in range(2)]
+    newer = [_stored(db, "Registered Nurse", "Ward rounds. " * 30) for _ in range(3)]
+    for hours, job in zip((5, 4, 3, 2, 1), [*theirs, *newer], strict=True):
+        db[CorpusJob.COLLECTION].update_one({"_id": job},
+                                            {"$set": {"first_seen_at": now() - timedelta(hours=hours)}})
+    catch_up(db)
+
+    search("python", "golang")
+
+    assert {match.job.id for match in matching_jobs(db, user, scan=3)} == set(theirs)
+
+
+@needs_db
+def test_a_new_word_is_not_searched_for_in_postings_too_old_to_be_shown(account):
+    """Nothing older than the widest window any board has is matched, so it is not searched either."""
+    from datetime import timedelta
+
+    from libs.db import get, now
+    from libs.db.models import CorpusJob
+
+    db, _, search = account
+    recent, old = _stored(db, "Developer"), _stored(db, "Developer")
+    db[CorpusJob.COLLECTION].update_one({"_id": old}, {"$set": {"first_seen_at": now() - timedelta(days=25)}})
+    catch_up(db)
+
+    search("python", "postgres")
+    catch_up(db)
+
+    assert "postgres" in get(db, CorpusJob, recent).terms
+    assert "postgres" not in get(db, CorpusJob, old).terms
+
+
+@needs_db
 def test_postings_stored_before_this_get_their_city_country_and_described_time_once(account):
     """Rows written before these fields existed are given them on the first pass."""
     from libs.db import get, insert, now

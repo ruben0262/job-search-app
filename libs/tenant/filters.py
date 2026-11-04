@@ -153,7 +153,21 @@ def _fresh_enough(filters: UserFilters, *, now: datetime | None = None) -> dict:
     date_only = {"$or": [{"$eq": [{"$ifNull": ["$posted_at", None]}, None]},
                          {"$eq": ["$posted_at", {"$dateTrunc": {"date": "$posted_at", "unit": "day"}}]}]}
     clock = {"$cond": [date_only, "$first_seen_at", "$posted_at"]}
-    return {"$expr": {"$gte": [clock, cutoff]}}
+    # The rule above is computed per posting, so no index can narrow by it. Said plainly as well, the
+    # bound it implies is what the words index reads by (`open_terms_newest`), newest first, and stops.
+    # Without it, at 1.5 million postings a match read every one with a person's words, up to 586,000,
+    # and took 199 s (2026-11-04).
+    since = candidate_since(filters.max_age_hours, filters.source_min_ages, now=reference)
+    return {"$and": [{"first_seen_at": {"$gte": since}}, {"$expr": {"$gte": [clock, cutoff]}}]}
+
+
+def candidate_since(max_age_hours: int, source_min_ages, *, now: datetime) -> datetime:
+    """The oldest a posting can have been found and still be anybody's candidate: the widest window any
+    source has (`_fresh_enough`), and a day to spare for a board whose clock runs ahead of ours. Nothing
+    older is matched, so nothing older is searched for a new word (`libs.corpus.terms`)."""
+    floors = dict(source_min_ages) or SOURCE_MIN_AGE_HOURS
+    widest = max([*floors.values(), DEFAULT_SOURCE_MIN_AGE_HOURS, max_age_hours])
+    return now - timedelta(hours=widest + 24)
 
 
 @dataclass(frozen=True)
@@ -212,9 +226,9 @@ def candidate_conditions(filters: UserFilters, *, now: datetime | None = None) -
         # Nothing to apply for.
         {"closed_at": None},
         _fresh_enough(filters, now=now),
-        # Their countries, or a posting that names no readable place.
-        {} if not filters.countries
-        else {"$or": [{"country": None}, {"country": {"$in": sorted(filters.countries)}}]},
+        # Their countries, or a posting that names no readable place (`None` is both a null and no field).
+        # Asked as one `$in`, which the words index reads country by country (`open_terms_newest`).
+        {} if not filters.countries else {"country": {"$in": [None, *sorted(filters.countries)]}},
         # A posting whose page refused to answer twice was abandoned, and its stored "description"
         # is its own title. Matching words against a sentence is worse than not matching.
         {"describe_failures": {"$lt": DESCRIBE_MAX_FAILURES}},

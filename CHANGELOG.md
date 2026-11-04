@@ -14,6 +14,52 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-04 (night) — Matching at full size: a month of jobs for the EU and the UK
+
+The owner: measure the Jobs page and a new word at the size the platform will hold, before deploying it.
+`scripts/scale_probe.py` builds it in a throwaway database (`scale_probe`, never Atlas): our 24,452
+real jobs copied to 1.5 million over 30 days, weighted by country as LinkedIn listed them, and 300
+people searching for 3–12 words each in one to three countries. Run on a MongoDB like server_db's VM:
+8.0.34, zstd, two CPU cores. 7.1 GB of data took 2.5 GB on disk and 0.45 GB of indexes.
+
+**What it found, and what changed:**
+
+| | Before | After |
+|---|---|---|
+| The busiest person's match | read 586,000 jobs, 199 s | read ~2,000–8,000, under 2 s |
+| Everybody's Jobs page (300 people) | minutes for many | median 433–455 ms, 90% under 1.1 s, slowest ~2 s (3.5 GB cache) |
+| A new word, searched for in the stored jobs | 612 s ("agile"), 210 s ("blockchain"), every run, never finishing inside the run's 14 minutes | 70–97 s, in one or two runs |
+| The page while a new word waits | 90 s, and ~1,500 jobs cut to 458 | 1.6–1.8 s, every job kept |
+| One run's 1,800 new jobs | stored 12 s, texts 45 s, words 13 s | (unchanged) |
+
+- **A match asks separate questions, not one with an "or"** (`libs.matching`): jobs whose words are
+  indexed, through the words index; jobs not indexed yet, by their text; and a word not searched for yet,
+  in the newest jobs' text, that word only. Asked as one, the database read every job with a person's
+  words and sorted them in memory.
+- **An age bound the index can use** (`filters.candidate_since`): no job found before the widest window
+  any board has, plus a day, is a candidate. The per-board rule stays as it was, after it.
+- **Indexes that keep the match's order** (`libs/db/models/corpus.py`): words, country, newest first
+  (`open_terms_newest`); not-yet-indexed, newest first (`terms_at_newest`); and newest first with the id
+  (`open_newest_first`), without which a word not yet searched for sorted 400,000 jobs (79 s). The
+  deploy's schema step builds them: 1.6 minutes at 1.5 million.
+- **A country is one `$in`**, which the words index reads country by country: a person in Czechia read
+  every job with their words in the EU before.
+- **A new word is searched for a stretch at a time** (`libs.corpus.terms`): only jobs that can still be
+  shown, newest first, 6 hours of them at a time, keeping where it got to (`vocabulary.searched_to`), at
+  least one stretch a run and at most `TERMS_BUDGET_SECONDS` (90). It joins the vocabulary at once, so new
+  jobs are indexed with it; it counts as indexed (`indexed_at`) once it has reached the oldest that can be
+  shown.
+
+**Not fixed, for the owner:** the Jobs page's own target is under 300 ms. At this size the median is
+~450 ms on two cores with a 3.5 GB cache (~550 ms with 1.5 GB). Every match reads whole jobs, ~4.7 KB
+each and mostly description, where it needs a few fields. Keeping the descriptions in a collection of
+their own would make what a match reads ~8× smaller: measured next, before anything is built (ROADMAP).
+
+Tests (each fails on the previous commit): a match never reads jobs older than the bound; a new word is
+searched for a stretch a run, its jobs found meanwhile, and done; it is not searched for in jobs too old
+to show; adding a word keeps every job the other words found; the word search stops in time for the run
+to end inside its unit.
+
 ## 2026-11-04 — An account's page says what they do with the site; "last online" is when they were
 
 The owner: per-account stats on the admin page, mainly to work out what to improve; last online as a

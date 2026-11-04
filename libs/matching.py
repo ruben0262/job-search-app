@@ -121,7 +121,7 @@ def matching_jobs(db: Database, user: User, *, since: datetime | None = None,
         where.append({"first_seen_at": {"$gt": since}})
     if described_since is not None:
         where.append({"described_at": {"$gte": described_since}})
-    indexed = sorted(db[Word.COLLECTION].distinct("_id", {"_id": {"$in": mine}}))
+    indexed = sorted(db[Word.COLLECTION].distinct("_id", {"_id": {"$in": mine}, "indexed_at": {"$ne": None}}))
     pending = [word for word in mine if word not in indexed]
     unsearched = {"$eq": [{"$ifNull": ["$terms_at", None]}, None]}
 
@@ -129,23 +129,28 @@ def matching_jobs(db: Database, user: User, *, since: datetime | None = None,
         return {"$cond": [unsearched, _hits(field, mine), _hits(field, pending)]}
 
     newest = [{"$sort": {"first_seen_at": -1, "_id": -1}}, {"$limit": scan}]
-    if pending:
-        # Searched for by the harvester's next pass, and read as before until then: the newest
-        # candidates, by regex.
-        stages = [{"$match": {"$and": where}}, *newest,
-                  {"$addFields": {"_in_title": hits("$title"), "_in_text": hits("$description")}},
-                  {"$match": {"$or": [{"terms": {"$in": indexed}}, {"_in_title.0": {"$exists": True}},
-                                      {"_in_text.0": {"$exists": True}}]}}]
-    else:
-        # Measured 2026-11-02, 5,000 postings of real text and ten words: 101–132 ms, against 439–482 ms
-        # reading the text with a regex, and the same 1,220 jobs with the same words both ways.
-        stages = [{"$match": {"$and": [*where, {"$or": [{"terms": {"$in": mine}},
-                                                        {"terms_at": None, **has_any(mine)}]}]}},
-                  *newest, {"$addFields": {"_in_title": hits("$title"), "_in_text": hits("$description")}}]
+    found = [{"$addFields": {"_in_title": hits("$title"), "_in_text": hits("$description")}}]
     # A minimum salary is read off the text, so it comes back for someone who set one.
     if not (text or (config or {}).get("min_salary")):
-        stages.append({"$unset": "description"})
-    rows = list(db[CorpusJob.COLLECTION].aggregate(stages))
+        found.append({"$unset": "description"})
+    # Separate questions, not one with an "or": the postings with a word already searched for, by the words
+    # index; those not searched yet, by their text. Asked as one, the database read every posting with a
+    # person's words and sorted them; asked apart, it reads the index newest first and stops at `scan`. At
+    # 1.5 million postings, the busiest person's match read 4,996 postings in 1.2 s against 160,000 in over
+    # two minutes (2026-11-04). At 5,000, the index read in 101–132 ms what a regex over the text read in
+    # 439–482 ms (2026-11-02).
+    searches = [[{"$match": {"$and": [*where, {"terms_at": None, **has_any(mine)}]}}, *newest, *found]]
+    if indexed:
+        searches.append([{"$match": {"$and": [*where, {"terms": {"$in": indexed}}]}}, *newest, *found])
+    if pending:
+        # A word not searched for yet (`libs.corpus.terms` does, within a run), read in the newest
+        # candidates' text meanwhile. Only that word: when every word was read this way, adding one cut a
+        # person's list from ~1,500 jobs to 458 until the run that searched for it (2026-11-04).
+        searches.append([{"$match": {"$and": where}}, *newest, *found, {"$match": {"$or": [
+            {"_in_title.0": {"$exists": True}}, {"_in_text.0": {"$exists": True}}]}}])
+    rows = sorted({row["_id"]: row for stages in searches
+                   for row in db[CorpusJob.COLLECTION].aggregate(stages)}.values(),
+                  key=lambda row: (row["first_seen_at"], row["_id"]), reverse=True)[:scan]
     if (since or described_since) and len(rows) == scan:
         # The caller's watermark will pass every older match this never reached.
         logger.warning("matching: %s has at least %d new matches; only the newest %d were read, so older "

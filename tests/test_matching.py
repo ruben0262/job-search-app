@@ -215,3 +215,55 @@ def test_a_country_shows_every_job_in_it_and_an_old_city_reads_as_its_country(ac
     assert shown("hungary") == {nowhere}
     # A posting that names only its town is still in its country, and kept from everybody else's.
     assert shown("poland") == {kielce, nowhere}
+
+
+@needs_db
+def test_a_match_reads_the_newest_postings_with_the_words_and_never_the_older_ones(account):
+    """What a match reads grows with the postings recent enough to show, not with all those stored.
+    Asked as one question with an "or", at 1.5 million postings the database read every posting with a
+    person's words, up to 586,000, and took over three minutes (2026-11-04)."""
+    import os
+
+    from pymongo import MongoClient, monitoring
+
+    from libs.db import now
+    from libs.db.models import CorpusJob
+    from libs.matching import matching_jobs
+
+    db, user = account
+    old, recent = now() - timedelta(days=20), now() - timedelta(hours=1)
+    db[CorpusJob.COLLECTION].insert_many([
+        {"_id": 900_000 + n, "url": f"https://example.com/old/{n}", "source": "test",
+         "title": "Backend Engineer", "description": "Build APIs", "first_seen_at": old,
+         "posted_at": old, "closed_at": None,
+         "describe_failures": 0, "terms": ["backend engineer"], "title_terms": ["backend engineer"],
+         "terms_at": old} for n in range(400)])
+    _jobs(db, *[("Backend Engineer", "Build APIs", True, 60) for _ in range(5)])
+    db.vocabulary.insert_one({"_id": "backend engineer", "indexed_at": recent})
+
+    asked: list[dict] = []
+
+    class Aggregates(monitoring.CommandListener):
+        def started(self, event):
+            if event.command_name == "aggregate":
+                asked.append(event.command)
+
+        def succeeded(self, event):
+            pass
+
+        def failed(self, event):
+            pass
+
+    watched = MongoClient(os.environ["MONGODB_URI"], uuidRepresentation="standard", tz_aware=True,
+                          event_listeners=[Aggregates()])[db.name]
+    try:
+        assert len(matching_jobs(watched, user)) == 5
+        read = 0
+        for command in asked:
+            plan = watched.command("explain", {"aggregate": command["aggregate"],
+                                               "pipeline": command["pipeline"], "cursor": {}},
+                                   verbosity="executionStats")
+            read += plan.get("stages", [plan])[0].get("$cursor", plan)["executionStats"]["totalDocsExamined"]
+    finally:
+        watched.client.close()
+    assert read <= 5, f"read {read} postings to show 5: the 400 older ones were read too"

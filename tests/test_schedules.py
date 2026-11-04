@@ -84,6 +84,15 @@ def test_the_linkedin_pass_fits_inside_the_harvest_tick_it_now_rides_on():
         f"{DESCRIBE_BUDGET_SECONDS}s, so the run would be killed part-way with no summary")
 
 
+def test_a_new_words_search_stops_in_time_for_the_run_to_end_inside_its_unit():
+    """The words are found after the harvest's passes; a new word's search through the stored postings took
+    612 s at 1.5 million (2026-11-04), so it stops at its own budget and goes on in the next run."""
+    from libs.settings import HARVEST_CYCLE_BUDGET_SECONDS, TERMS_BUDGET_SECONDS
+
+    timeout = seconds(directive(UNITS / "harvester.service", "TimeoutStartSec"))
+    assert timeout >= HARVEST_CYCLE_BUDGET_SECONDS + TERMS_BUDGET_SECONDS + 60, "a minute to spare"
+
+
 def test_only_the_timers_that_have_to_exist_do():
     """Every clock is a unit to install, a timeout to get wrong."""
     assert {timer.stem for timer in timers()} == {"harvester", "health", "backup"}
