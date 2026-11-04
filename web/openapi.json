@@ -776,6 +776,83 @@
         "title": "ContactRow",
         "type": "object"
       },
+      "CountryChart": {
+        "properties": {
+          "by": {
+            "enum": [
+              "hour",
+              "day"
+            ],
+            "title": "By",
+            "type": "string"
+          },
+          "countries": {
+            "items": {
+              "$ref": "#/components/schemas/CountrySeries"
+            },
+            "title": "Countries",
+            "type": "array"
+          },
+          "starts": {
+            "items": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "title": "Starts",
+            "type": "array"
+          },
+          "waiting": {
+            "title": "Waiting",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "by",
+          "starts",
+          "countries",
+          "waiting"
+        ],
+        "title": "CountryChart",
+        "type": "object"
+      },
+      "CountrySeries": {
+        "properties": {
+          "country": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country"
+          },
+          "counts": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Counts",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "country",
+          "name",
+          "total",
+          "counts"
+        ],
+        "title": "CountrySeries",
+        "type": "object"
+      },
       "CredentialBody": {
         "properties": {
           "allow_unvalidated": {
@@ -3774,6 +3851,50 @@
           }
         },
         "summary": "Corpus",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/countries": {
+      "get": {
+        "description": "New postings by the country each is in: by the hour over two days or less, by the day beyond.",
+        "operationId": "countries_admin_countries_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 2,
+              "title": "Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CountryChart"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Countries",
         "tags": [
           "admin"
         ]

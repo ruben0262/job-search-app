@@ -8,6 +8,7 @@ import os
 import re
 import uuid as _uuid
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import Response, StreamingResponse
@@ -15,11 +16,14 @@ from pydantic import BaseModel, Field
 from pymongo.database import Database
 
 from libs.contracts.config import WORKPLACE_NAMES, location_search_name, migrate_config
+from libs.corpus.geo import COUNTRY_LABELS
+from libs.corpus.repository import CorpusRepository
 from libs.db import delete_account, find, find_one, get, insert
 from libs.db.models import (
     AtsToken,
     BuiltDocument,
     CorpusJob,
+    CountryCount,
     OperatorKeyword,
     PushSubscription,
     QueueJob,
@@ -55,6 +59,7 @@ from libs.settings import (
     snapshot,
     source_min_ages,
 )
+from libs.settings import get as get_setting
 from libs.tenant import applications
 from libs.tenant.repository import TenantRepository
 from services.api.deps import current_user, get_db
@@ -346,6 +351,53 @@ def sources(db: Database = Depends(get_db), admin: User = Depends(require_admin)
             "companies_held": db[AtsToken.COLLECTION].count_documents({}),
         },
     }
+
+
+class CountrySeries(BaseModel):
+    # The ISO code, or None for postings whose country cannot be told ("Remote", "Worldwide").
+    country: str | None
+    name: str
+    total: int
+    # One per bucket of `CountryChart.starts`.
+    counts: list[int]
+
+
+class CountryChart(BaseModel):
+    by: Literal["hour", "day"]
+    # When each bucket starts.
+    starts: list[datetime]
+    # Most jobs first.
+    countries: list[CountrySeries]
+    # LinkedIn postings still waiting for their text and young enough to reach somebody: growing run after
+    # run, the pass cannot keep up, and the proxy needs more exits.
+    waiting: int
+
+
+@router.get("/countries", response_model=CountryChart)
+def countries(db: Database = Depends(get_db), admin: User = Depends(require_admin), *,
+              days: int = 2) -> dict:
+    """New postings by the country each is in: by the hour over two days or less, by the day beyond."""
+    days = max(1, min(days, 366))
+    by = "hour" if days <= 2 else "day"
+    step = timedelta(hours=1) if by == "hour" else timedelta(days=1)
+    latest = datetime.now(UTC).replace(minute=0, second=0, microsecond=0)
+    if by == "day":
+        latest = latest.replace(hour=0)
+    starts = [latest - step * n for n in range(days * 24 if by == "hour" else days)][::-1]
+    at = {start: index for index, start in enumerate(starts)}
+    found: dict[str | None, list[int]] = {}
+    for row in db[CountryCount.COLLECTION].find({"hour": {"$gte": starts[0]}}):
+        hour = row["hour"].replace(tzinfo=UTC)
+        bucket = at.get(hour if by == "hour" else hour.replace(hour=0))
+        if bucket is not None:
+            found.setdefault(row["country"], [0] * len(starts))[bucket] += row["jobs"]
+    series = sorted(({"country": code, "name": COUNTRY_LABELS.get(code, code) if code else "Not known",
+                      "total": sum(counts), "counts": counts} for code, counts in found.items()),
+                    key=lambda each: -each["total"])
+    waiting = CorpusRepository(db).count_awaiting_description(
+        linkedin=True, max_age_hours=int(get_setting(db, "job_max_age_hours")))
+    audit(logger, "admin.countries", user=admin.id, days=days)
+    return {"by": by, "starts": starts, "countries": series, "waiting": waiting}
 
 
 class LimitPatch(BaseModel):

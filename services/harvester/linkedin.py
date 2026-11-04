@@ -18,7 +18,7 @@ from time import monotonic
 import httpx
 from bs4 import BeautifulSoup
 
-from libs.corpus.geo import COUNTRIES
+from libs.corpus.geo import COUNTRIES, COUNTRY_LABELS
 from libs.corpus.postings import LI_BACKOFF, LI_RETRIES
 from libs.corpus.repository import CorpusRepository
 from libs.db import lease
@@ -89,11 +89,9 @@ def wanted_places(configs: dict) -> list[str]:
     """LinkedIn's name for every country somebody picked, each once; a region is read as its countries.
     LinkedIn lists no further than 1,000 jobs, and the EU lists ~660 in 15 minutes (2026-11-04), so the
     30 minutes a sweep reaches back would lose its oldest ~300 every run. Its biggest country lists ~110."""
-    named = {next(iter(place.countries)): place.label
-             for place in COUNTRIES.values() if len(place.countries) == 1}
     codes = {code for slug in union_locations(configs) if slug in COUNTRIES
              for code in COUNTRIES[slug].countries}
-    return sorted(named[code] for code in codes if code in named)
+    return sorted(COUNTRY_LABELS[code] for code in codes if code in COUNTRY_LABELS)
 
 
 def sweep_window(swept_at: datetime | None, *, now: datetime, most: int) -> int:

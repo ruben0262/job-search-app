@@ -86,6 +86,22 @@ class CorpusJob(Document):
 
 
 @dataclass(kw_only=True)
+class CountryCount(Document):
+    """How many new postings arrived in one hour in one country (`country`; None when it cannot be
+    told): the admin's chart of what is found where (`CorpusRepository.add`). Kept when the postings
+    themselves are archived, so the chart reaches back further than the corpus does."""
+
+    COLLECTION = "country_counts"
+    OWNER = None
+    INDEXES = (IndexModel("hour", name="hour"),)
+
+    id: str  # the hour and the country
+    hour: datetime
+    country: str | None = None
+    jobs: int = 0
+
+
+@dataclass(kw_only=True)
 class SweptPlace(Document):
     """When the LinkedIn pass last read a place's new jobs to the end (`services.harvester.linkedin`), so
     the next sweep of it reaches back to there."""

@@ -105,6 +105,27 @@ def test_a_pass_reads_only_the_jobs_it_moves(ctx, tmp_path):
     assert plan["executionStats"]["totalDocsExamined"] <= 4, "the three it moves, not the thirty it leaves"
 
 
+def test_the_archive_is_written_small_and_a_gzip_one_from_before_still_reads(ctx, tmp_path):
+    """Kept forever, and ~70,000 postings a day once every country is read: xz is a third smaller than
+    the gzip it replaces (measured 2026-11-04). Two passes in a day add to one file, read as one."""
+    import gzip
+    import json
+    import lzma
+
+    r, s = ctx
+    first = [_aged(r, s, days=45, description="Go, gRPC, Postgres, Kubernetes. " * 60) for _ in range(30)]
+    archive_expired(s, directory=tmp_path, limit=15)
+    result = archive_expired(s, directory=tmp_path, limit=15)
+
+    with lzma.open(result.path) as handle:
+        assert result.path.suffix == ".xz" and handle.read()
+    assert sorted(row["id"] for row in read_archive(result.path)) == sorted(first)
+    old = tmp_path / "corpus-2026-11-01.jsonl.gz"
+    with gzip.open(old, "wt", encoding="utf-8") as handle:
+        handle.write(json.dumps({"id": 1, "url": "https://example.com/1"}) + "\n")
+    assert read_archive(old) == [{"id": 1, "url": "https://example.com/1"}]
+
+
 def test_a_posting_past_the_window_leaves_the_corpus_whole(ctx, tmp_path):
     """The row is deleted, not hollowed out — and everything about it is in the file first."""
     r, s = ctx

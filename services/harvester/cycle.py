@@ -15,6 +15,7 @@ from pymongo.errors import PyMongoError
 from libs.corpus.archive import archive_expired
 from libs.corpus.ats import AtsRepository
 from libs.corpus.ats_urls import tokens_from_urls
+from libs.corpus.geo import allows, posting_country, wanted_countries
 from libs.corpus.repository import TYPED, CorpusRepository
 from libs.db import find, get, lease
 from libs.db.models import CorpusJob, User
@@ -36,7 +37,7 @@ from services.harvester.query_set import (
     original_terms,
     select_within_budget,
 )
-from services.harvester.source_config import QUERY_SHAPES, QUERY_TAKING_SOURCES
+from services.harvester.source_config import QUERY_SHAPES, QUERY_TAKING_SOURCES, union_locations
 from services.harvester.sources import OUTER_CONCURRENCY, JobLink, Source, Tier, sources_for
 
 logger = logging.getLogger(__name__)
@@ -51,6 +52,8 @@ class CycleReport:
     links_found: int = 0
     duplicates: dict[str, int] = field(default_factory=dict)
     new_jobs: int = 0
+    # Postings in a country nobody picked, not stored (owner, 2026-11-04).
+    elsewhere: int = 0
     # Rows whose thin snippet was replaced by the posting's own text.
     described: int = 0
     describe_outcomes: dict[str, int] = field(default_factory=dict)
@@ -159,7 +162,8 @@ def run_cycle(
 
         # 4-5. Dedup and upsert.
         with timed("ingest", report.timings):
-            report.new_jobs = _ingest(corpus, links, report)
+            report.new_jobs = _ingest(corpus, links, report,
+                                      wanted=wanted_countries(union_locations(configs)))
 
         # 5b. Fetch the postings' own text for rows that arrived with a thin snippet.
         if describe:
@@ -179,16 +183,16 @@ def run_cycle(
         _archive_expired(db, report)
 
     logger.info(
-        "harvest: %d queries (%d deferred), %d links, %d duplicates, %d new, %d described",
-        report.queries_planned, report.queries_deferred, report.links_found,
-        report.duplicates_total, report.new_jobs, report.described)
+        "harvest: %d queries (%d deferred), %d links, %d duplicates, %d in no country anybody picked, "
+        "%d new, %d described", report.queries_planned, report.queries_deferred, report.links_found,
+        report.duplicates_total, report.elsewhere, report.new_jobs, report.described)
     report_timings(report.timings, event="harvest.timing", log=logger,
                    links=report.links_found, new=report.new_jobs)
 
     _warn_if_near_budget(monotonic() - started, report)
     audit(logger, "harvest.cycle",
           queries=report.queries_planned, links=report.links_found,
-          new=report.new_jobs, described=report.described,
+          new=report.new_jobs, elsewhere=report.elsewhere, described=report.described,
           ats_tokens_found=report.ats_tokens_found, archived=report.archived,
           failed_sources=len(report.source_failures),
           empty_sources=sum(1 for n in report.links_by_source.values() if n == 0))
@@ -294,11 +298,17 @@ def _record_source(report: CycleReport, source: Source, found: list[JobLink],
                        source.key)
 
 
-def _ingest(corpus: CorpusRepository, links: Iterable[JobLink], report: CycleReport) -> int:
-    """Dedup each candidate against the corpus, then upsert the survivors."""
+def _ingest(corpus: CorpusRepository, links: Iterable[JobLink], report: CycleReport, *,
+            wanted: frozenset[str] | None = None) -> int:
+    """Dedup each candidate against the corpus, then upsert the survivors. A posting in a country nobody
+    picked (`wanted`, everybody's countries) is not stored: nobody's search would show it. One whose
+    country cannot be told, "Remote" for one, is kept, as the jobs page keeps it (`geo.allows`)."""
     new_jobs = 0
     for link in links:
         if not link.url:
+            continue
+        if not allows(posting_country(link.location, title=link.title), wanted):
+            report.elsewhere += 1
             continue
         duplicate = corpus.find_duplicate(
             link.url, link.title, link.company, link.location,

@@ -22,6 +22,7 @@ from __future__ import annotations
 import gzip
 import json
 import logging
+import lzma
 import os
 import uuid
 from dataclasses import dataclass
@@ -141,21 +142,29 @@ def forget_stale_state(db: Database, *, cutoff: datetime, kept: list[int] | None
     return db[UserJobState.COLLECTION].delete_many({"_id": {"$in": stale}, "$nor": [MARKED]}).deleted_count
 
 
+# How hard the archive is compressed. Measured 2026-11-04 on 1,000 LinkedIn postings (5.1 MB as JSON):
+# gzip at its best, 1.45 MB in 0.6 s; xz at 6, 0.95 MB in 5 s, once a tick; xz at its best, 0.94 MB in
+# 6 s. The archive is kept forever (owner), and is ~70,000 postings a day once every country is read.
+ARCHIVE_PRESET = 6
+
+
 def write_archive(rows: list, directory: Path | None = None) -> Path:
-    """Append rows to today's archive file, one JSON object per line, gzipped."""
+    """Append rows to today's archive file, one JSON object per line, xz-compressed."""
     target = Path(directory) if directory is not None else DEFAULT_ARCHIVE_DIR
     target.mkdir(parents=True, exist_ok=True)
-    path = target / f"corpus-{datetime.now(UTC):%Y-%m-%d}.jsonl.gz"
+    path = target / f"corpus-{datetime.now(UTC):%Y-%m-%d}.jsonl.xz"
 
-    # Append rather than replace: a second pass on the same day adds to the same file, and `at`
-    # against a gzip member boundary is valid — readers see one continuous stream.
-    with gzip.open(path, "at", encoding="utf-8") as handle:
+    # Append rather than replace: a second pass on the same day adds a stream to the same file, and
+    # readers see the streams as one.
+    with lzma.open(path, "at", encoding="utf-8", preset=ARCHIVE_PRESET) as handle:
         for row in rows:
             handle.write(json.dumps(dict(row), default=_plain, ensure_ascii=False) + "\n")
     return path
 
 
 def read_archive(path: Path) -> list[dict]:
-    """Read one archive file back. The proof that what was written can be recovered."""
-    with gzip.open(path, "rt", encoding="utf-8") as handle:
+    """Read one archive file back. The proof that what was written can be recovered. Files written
+    before 2026-11-04 are gzip (`.gz`)."""
+    opener = gzip.open if Path(path).suffix == ".gz" else lzma.open
+    with opener(path, "rt", encoding="utf-8") as handle:
         return [json.loads(line) for line in handle if line.strip()]

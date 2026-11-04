@@ -118,6 +118,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/countries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Countries
+         * @description New postings by the country each is in: by the hour over two days or less, by the day beyond.
+         */
+        get: operations["countries_admin_countries_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/health": {
         parameters: {
             query?: never;
@@ -1831,6 +1851,31 @@ export interface components {
             /** Subject */
             subject: string;
         };
+        /** CountryChart */
+        CountryChart: {
+            /**
+             * By
+             * @enum {string}
+             */
+            by: "hour" | "day";
+            /** Countries */
+            countries: components["schemas"]["CountrySeries"][];
+            /** Starts */
+            starts: string[];
+            /** Waiting */
+            waiting: number;
+        };
+        /** CountrySeries */
+        CountrySeries: {
+            /** Country */
+            country: string | null;
+            /** Counts */
+            counts: number[];
+            /** Name */
+            name: string;
+            /** Total */
+            total: number;
+        };
         /** CredentialBody */
         CredentialBody: {
             /**
@@ -2993,6 +3038,37 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    countries_admin_countries_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CountryChart"];
                 };
             };
             /** @description Validation Error */

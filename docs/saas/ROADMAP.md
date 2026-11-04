@@ -3131,6 +3131,40 @@ numbers)**
     exits before the whole EU is anybody's search; a few countries need none. ~13 KB a description,
     ~1–2 GB a day for the EU and the UK.
 
+**Putting it live, in order (owner, 2026-11-04)**
+
+27. **Now: deploy `main`** (the search minimums, the account page). Nothing waits on it.
+28. **The database: `~/projects/server_db`, built, not yet on the server.** You make the `db` VM, an R2
+    bucket and two healthchecks.io checks (its README, steps 1–5), then `bin/sdb add-app mahoraga` and
+    the copy from Atlas (its DESIGN, "Moving Mahoraga", ~10 minutes with the harvest paused). It brings
+    hourly off-site backups and a weekly restore drill. The one piece missing: the archive folder lives
+    on the app VM, not in the database, and has no off-site copy. Recommendation: a nightly restic of
+    `archive/` to the same bucket, built next. The archive is xz now, a third smaller than gzip.
+29. **Proxy exits, only as many as the countries people pick need** (item 26). Measure on the server
+    first: the admin's "Jobs found by country" and its count of LinkedIn jobs waiting for their text.
+30. **Merge `harvest-everything` and deploy.** The first pass reaches 4 hours back in each country,
+    ~8,000 jobs for the EU and the UK, and its describing catches up in an hour or two.
+31. **Watch the chart.** A waiting count that grows run after run is a pass that cannot keep up: more
+    exits, or fewer countries.
+
+**More from the same four exits** (to measure before building; the owner asked whether asynchronous
+work, or opening and closing sessions faster, would help):
+
+32. **Faster asking does not raise the limit.** Every LinkedIn request already opens a new connection,
+    which leaves from the proxy's next exit. The limit is LinkedIn's rate per exit, ~40 pages a minute
+    each, and a pass reaches it with four readers: the 11:06 pass had 492 tries refused. Asked faster,
+    pages are refused sooner. The boards take 152–169 s of an 11-minute budget, so nothing to gain there.
+33. **What could, each measured as pages read and tries refused per pass, before and after:**
+    - **Pace to the limit instead of past it.** A refused try costs a retry, a back-off and part of the
+      exit's allowance. One shared pace of ~150 a minute for all readers.
+    - **A shorter sweep overlap.** Re-reading the previous 15 minutes costs ~150 list pages a pass, ~10%
+      of the allowance. Measure how late LinkedIn lists a job, and overlap by that.
+    - **One harvester per proxy.** The dev loop on the laptop (`scripts/dev.sh`) shares the exits with
+      the server: `HARVEST_LINKEDIN_DISABLED=1` in `certificates/dev.env`.
+    - **Bigger list pages**, if LinkedIn's list answers more than ten jobs a page.
+
+    Expected together: 10–30% more pages read. More exits are what scale past that.
+
 ## Phase 9 — MongoDB instead of Postgres (added 2026-10-30)
 
 **Why.** The owner's decision: users, their logins and everything stored about them live in MongoDB

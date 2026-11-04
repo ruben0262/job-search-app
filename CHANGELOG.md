@@ -14,6 +14,34 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-04 (later) — Boards keep only jobs in a picked country; jobs found by country, charted; archives in xz
+
+The owner: only countries somebody picked are read and kept, LinkedIn and the other boards alike; a
+chart in Admin of the jobs found in each country through time; archives compressed to save space.
+
+- **A board keeps only the jobs in a country somebody picked** (`cycle._ingest`, with `geo.allows`, the
+  rule the jobs page applies). One whose country cannot be told, "Remote" or "Worldwide", is kept, as
+  the jobs page keeps it. LinkedIn already read only the picked countries. The cycle's line and audit
+  say how many were left out (`elsewhere`).
+- **Every new job is counted by its hour and its country** (`country_counts`, written by
+  `CorpusRepository.add`, the one place a job comes in). The counts are kept after the jobs are archived,
+  so the chart reaches back further than the corpus.
+- **Admin → Corpus: "Jobs found by country"** (`GET /admin/countries`). By the hour over 2 days, by
+  the day over 30 or 90. All countries together, then each country on one shared scale, the busiest
+  first and the rest folded. With it, the number of LinkedIn jobs still waiting for their text
+  (`count_awaiting_description`, the describer's own question): if it grows run after run, the pass
+  cannot keep up.
+- **The archive is xz, not gzip.** Measured on 1,000 LinkedIn jobs (5.1 MB as JSON): gzip 1.45 MB in
+  0.6 s, xz 0.95 MB in 5 s, once a tick. The archive is kept forever, at ~70,000 jobs a day once every
+  country is read: ~14 GB a year less. Files written before still read.
+- The ROADMAP has the order to put all of this live, and what more the same four proxy exits could
+  give (items 27–33).
+
+Tests (each fails on the previous commit): a board's job in a country nobody picked is not stored and
+a "Remote" one is; the jobs found in each country are charted by the hour and the day, and kept after
+the jobs are archived; the waiting count; the archive is xz and an old gzip one still reads; and in the
+browser, the chart's countries, its waiting count and its two ranges.
+
 ## 2026-11-04 — Every source read whole on every run; LinkedIn by country, every job described
 
 The owner: no word goes to a source and no title is filtered. Every source is read for everything new,

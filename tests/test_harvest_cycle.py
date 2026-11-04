@@ -55,6 +55,22 @@ def test_a_cycle_ingests_and_dedups(ctx):
     assert s[CorpusJob.COLLECTION].distinct("url") == sorted(link.url for link in found)
 
 
+def test_a_board_keeps_only_jobs_in_a_country_somebody_picked_and_any_it_cannot_place(ctx):
+    """Nobody's search shows a job in a country nobody picked, so it is not stored (owner, 2026-11-04).
+    One whose country cannot be told, "Remote", is kept, as the jobs page keeps it."""
+    s = ctx
+    _active_user(s)  # the United Kingdom
+    found = [JobLink(url=f"https://boards.greenhouse.io/acme/jobs/{n}", title="Nurse", company=f"Acme {n}",
+                     location=where, source="greenhouse")
+             for n, where in enumerate(["London", "Berlin, Germany", "Austin, TX", "Remote"])]
+
+    report, _ = run_cycle(s, source_configs=_sources(himalayas={}), run_source=lambda *a: list(found),
+                          describe=False)
+
+    assert sorted(s[CorpusJob.COLLECTION].distinct("location")) == ["London", "Remote"]
+    assert (report.new_jobs, report.elsewhere) == (2, 2)
+
+
 def test_the_same_job_twice_is_ingested_once(ctx):
     """Two sources listing one posting is the normal case, not the exception."""
     s = ctx

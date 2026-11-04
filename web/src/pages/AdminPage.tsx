@@ -976,6 +976,148 @@ function MessagesTab() {
 }
 
 /** The corpus tab as it opens: no search, the last 30 days, the first page. */
+type CountryChart = Schema<"CountryChart">;
+
+/** The ranges the country chart offers: by the hour over two days, by the day beyond. */
+const COUNTRY_RANGES = [[2, "2 days"], [30, "30 days"], [90, "90 days"]] as const;
+
+/** How many countries are listed before the rest are opened. */
+const COUNTRIES_SHOWN = 12;
+
+/** New jobs by the country each is in, through time (owner, 2026-11-04): where the jobs come from, and
+ * whether LinkedIn's describing keeps up with them. */
+function JobsByCountry() {
+  const [days, setDays] = useState<number>(2);
+  const path = `/admin/countries?days=${days}`;
+  const [chart, setChart] = useState<CountryChart | null>(() => peek<CountryChart>(path));
+  const [failed, setFailed] = useState(false);
+  const [all, setAll] = useState(false);
+
+  useEffect(() => {
+    setChart(peek<CountryChart>(path));
+    api.get<CountryChart>(path)
+      .then((body) => {
+        keep(path, body);
+        setChart(body);
+        setFailed(false);
+      })
+      .catch(() => setFailed(true));
+  }, [path]);
+
+  const total = chart?.starts.map((_, index) =>
+    chart.countries.reduce((sum, country) => sum + (country.counts[index] ?? 0), 0)) ?? [];
+  const shown = all ? chart?.countries ?? [] : (chart?.countries ?? []).slice(0, COUNTRIES_SHOWN);
+  const hidden = (chart?.countries.length ?? 0) - shown.length;
+  // One scale for every country, so a column twice as tall is twice as many jobs.
+  const busiest = Math.max(...(chart?.countries ?? []).flatMap((country) => country.counts), 1);
+
+  return (
+    <section style={{ marginBottom: "2.5rem" }}>
+      <h2 style={{ marginTop: 0 }}>Jobs found by country</h2>
+      <p className="hint">
+        New jobs as they are stored, by the country each is in. &ldquo;Not known&rdquo; is remote or
+        worldwide.
+      </p>
+      <div className="toggles" role="group" aria-label="How far back">
+        {COUNTRY_RANGES.map(([value, label]) => (
+          <button key={value} type="button" className="toggle" aria-pressed={days === value}
+                  onClick={() => setDays(value)}>
+            {label}
+          </button>
+        ))}
+      </div>
+      {failed ? <p className="error">Could not read the counts.</p> : null}
+      {chart ? (
+        <>
+          <p className="facts">
+            LinkedIn jobs waiting for their text: <strong>{chart.waiting.toLocaleString()}</strong>. If
+            this keeps growing, LinkedIn needs more proxy exits.
+          </p>
+          <div className="country-rows">
+            <strong>All countries</strong>
+            <strong className="num">{total.reduce((sum, value) => sum + value, 0).toLocaleString()}</strong>
+            <Columns values={total} starts={chart.starts} by={chart.by} label="All countries" height={120}
+                     peak={Math.max(...total, 1)} />
+            {shown.map((country) => (
+              <Fragment key={country.country ?? "none"}>
+                <span>{country.name}</span>
+                <span className="num">{country.total.toLocaleString()}</span>
+                <Columns values={country.counts} starts={chart.starts} by={chart.by} label={country.name}
+                         height={28} peak={busiest} />
+              </Fragment>
+            ))}
+          </div>
+          {hidden > 0 || all ? (
+            <button type="button" className="linklike more" onClick={() => setAll(!all)}>
+              {all ? "Show fewer countries" : `Show ${hidden} more countries`}
+            </button>
+          ) : null}
+        </>
+      ) : failed ? null : <p className="muted">Reading the counts…</p>}
+    </section>
+  );
+}
+
+/** One series as columns, one per hour or day, each with its count on hover, against `peak`; the tallest
+ * labelled, and the first and last bucket named when there is room. */
+function Columns({ values, starts, by, label, height, peak }: {
+  values: number[];
+  starts: string[];
+  by: CountryChart["by"];
+  label: string;
+  height: number;
+  peak: number;
+}) {
+  const width = 720;
+  const labelled = height >= 60;
+  const padTop = labelled ? 14 : 2;
+  const padBottom = labelled ? 18 : 0;
+  const plot = height - padTop - padBottom;
+  const gap = 2;
+  const slot = width / Math.max(values.length, 1);
+  const barWidth = Math.max(Math.min(slot - gap, 24), 1);
+  const tallest = values.indexOf(Math.max(...values));
+  const when = (at: string) => (by === "hour" ? hourLabel(at)
+    : new Date(at).toLocaleDateString([], { day: "numeric", month: "short" }));
+  return (
+    <svg className="spark" viewBox={`0 0 ${width} ${height}`} role="img"
+         aria-label={`${label}: new jobs by ${by}`}>
+      <line x1="0" y1={padTop + plot} x2={width} y2={padTop + plot} stroke="var(--faint)" strokeWidth="1" />
+      {values.map((value, index) => {
+        const barHeight = (value / peak) * plot;
+        const x = index * slot + (slot - barWidth) / 2;
+        return (
+          <g key={starts[index]}>
+            {/* The hover target is the whole slot, not only the column, so a short day can be read. */}
+            <rect x={index * slot} y={padTop} width={slot} height={plot} fill="transparent">
+              <title>{when(starts[index] ?? "")} · {value.toLocaleString()} jobs</title>
+            </rect>
+            {value > 0 ? (
+              <path d={bar(x, padTop + plot - barHeight, barWidth, barHeight, Math.min(4, barWidth / 2))}
+                    fill="var(--dim)" pointerEvents="none" />
+            ) : null}
+          </g>
+        );
+      })}
+      {labelled && values[tallest] ? (
+        <text x={Math.min(Math.max(tallest * slot + slot / 2, 16), width - 16)}
+              y={padTop + plot - (values[tallest]! / peak) * plot - 4}
+              className="spark-peak" textAnchor="middle">
+          {values[tallest]!.toLocaleString()}
+        </text>
+      ) : null}
+      {labelled && starts.length > 1 ? (
+        <>
+          <text x="0" y={height - 4} className="spark-label">{when(starts[0]!)}</text>
+          <text x={width} y={height - 4} className="spark-label" textAnchor="end">
+            {when(starts[starts.length - 1]!)}
+          </text>
+        </>
+      ) : null}
+    </svg>
+  );
+}
+
 export const CORPUS_FIRST = `/admin/corpus?${new URLSearchParams({ q: "", source: "", days: "30", offset: "0" })}`;
 
 function CorpusTab() {
@@ -1032,7 +1174,9 @@ function CorpusTab() {
 
   return (
     <>
-      <h2 style={{ marginTop: 0 }}>Corpus</h2>
+      <JobsByCountry />
+
+      <h2>Corpus</h2>
       <p className="hint">
         Every posting the platform has collected, shared by all accounts. A new user can only train
         on what is already in here for their field, which is why seeding it ahead of them matters.

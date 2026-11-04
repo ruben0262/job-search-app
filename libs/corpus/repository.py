@@ -13,7 +13,7 @@ from libs.corpus import langfilter, workfilter
 from libs.corpus.geo import posting_country, read_city
 from libs.corpus.keys import canonical_url, content_key
 from libs.db import insert, now
-from libs.db.models import CorpusJob
+from libs.db.models import CorpusJob, CountryCount
 
 # Below this, stored text is a teaser rather than a description and the job is re-fetched from its own page.
 MIN_DESCRIPTION = 200
@@ -64,6 +64,17 @@ def awaiting_description_conditions(min_chars: int = MIN_DESCRIPTION,
         conditions.append({"$or": [{"posted_at": {"$gte": cutoff}},
                                    {"posted_at": None, "first_seen_at": {"$gte": cutoff}}]})
     return conditions
+
+
+def _awaiting(linkedin: bool | None, min_chars: int, max_age_hours: int | None) -> dict:
+    """`awaiting_description`'s question, which its count asks too: LinkedIn's postings, the others',
+    or both."""
+    where = awaiting_description_conditions(min_chars, max_age_hours)
+    if linkedin is True:
+        where.append({"url": {"$regex": "/jobs/view/"}})
+    elif linkedin is False:
+        where.append({"url": {"$not": {"$regex": "/jobs/view/"}}})
+    return {"$and": where}
 
 
 @dataclass(frozen=True)
@@ -169,9 +180,15 @@ class CorpusRepository:
             discovered_via=discovered_via,
         )
         try:
-            return insert(self._db, job).id
+            job_id = insert(self._db, job).id
         except DuplicateKeyError:
             return None
+        # One more in its hour and country, for the admin's chart.
+        hour = job.first_seen_at.replace(minute=0, second=0, microsecond=0)
+        self._db[CountryCount.COLLECTION].update_one(
+            {"_id": f"{hour:%Y-%m-%dT%H}|{job.country or ''}"},
+            {"$inc": {"jobs": 1}, "$setOnInsert": {"hour": hour, "country": job.country}}, upsert=True)
+        return job_id
 
     def add_typed(self, *, url: str, title: str, company: str, location: str, description: str) -> int:
         """A job a person wrote in, kept for them alone: their own mark on it (`added_at`) is the only way
@@ -229,12 +246,13 @@ class CorpusRepository:
                              max_age_hours: int | None = None) -> list[CorpusJob]:
         """Jobs whose stored text is too thin to match words against, newest first. A `limit` of 0
         is every one of them."""
-        where = awaiting_description_conditions(min_chars, max_age_hours)
-        if linkedin is True:
-            where.append({"url": {"$regex": "/jobs/view/"}})
-        elif linkedin is False:
-            where.append({"url": {"$not": {"$regex": "/jobs/view/"}}})
-        return self._jobs({"$and": where}, limit)
+        return self._jobs(_awaiting(linkedin, min_chars, max_age_hours), limit)
+
+    def count_awaiting_description(self, *, linkedin: bool | None = None,
+                                   max_age_hours: int | None = None) -> int:
+        """How many `awaiting_description` would return with no limit: a backlog that grows run after run
+        is a pass that cannot keep up."""
+        return self._corpus.count_documents(_awaiting(linkedin, MIN_DESCRIPTION, max_age_hours))
 
     def _jobs(self, where: dict, limit: int) -> list[CorpusJob]:
         return [CorpusJob.from_doc(row) for row in

@@ -278,6 +278,39 @@ def _one_word_short(page) -> None:
     expect(page.get_by_text("To go on: add 1 more green word.")).to_be_visible()
 
 
+def test_the_admin_charts_the_jobs_found_in_each_country(site, capsys):
+    """Where the jobs come from, by the hour and by the day, and how many LinkedIn jobs still wait for
+    their text (owner, 2026-11-04)."""
+    from libs.corpus.repository import CorpusRepository
+    from libs.db import database
+
+    base, email, _ = site
+    corpus = CorpusRepository(database())
+    for n, where in enumerate(["Berlin, Germany"] * 5 + ["Paris, France"] * 2 + ["Remote"]):
+        corpus.add(url=f"https://www.linkedin.com/jobs/view/{900 + n}", source="linkedin", title="Nurse",
+                   location=where)
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = browser.new_context(viewport={"width": 1280, "height": 900}).new_page()
+        _sign_up(page, base, email, capsys)
+        _onboard(page)
+        database().users.update_one({"email": email}, {"$set": {"is_admin": True}})
+        page.reload()
+        page.locator("nav .places a", has_text="Admin").click()
+        page.get_by_role("button", name="Corpus").click()
+
+        expect(page.get_by_role("heading", name="Jobs found by country")).to_be_visible()
+        rows = page.locator(".country-rows > span:not(.num)")
+        expect(rows).to_have_text(["Germany", "France", "Not known"])
+        expect(page.get_by_text("LinkedIn jobs waiting for their text: 8.")).to_be_visible()
+        expect(page.get_by_role("img", name="All countries: new jobs by hour")).to_be_visible()
+        page.get_by_role("button", name="30 days").click()
+        expect(page.get_by_role("img", name="All countries: new jobs by day")).to_be_visible()
+        page.locator("h2", has_text="Jobs found by country").locator("..").screenshot(
+            path=os.environ.get("E2E_SHOT", "/dev/null") if os.environ.get("E2E_SHOT") else None)
+        browser.close()
+
+
 def test_a_job_found_somewhere_else_is_brought_in_by_its_link(site, capsys):
     """Add a job, on a phone: a link to a job already here shows it ready for a CV, though it has none
     of their words, and it stays listed there; a link into this server's own network is refused in

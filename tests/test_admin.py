@@ -623,3 +623,45 @@ def test_the_live_pipeline_is_not_public(api):
 
     # Authorisation is decided before the first frame.
     assert http.get("/admin/pipeline/stream").status_code == 404
+
+
+# ── what is found where (owner, 2026-11-04) ───────────────────────────────────────────────────
+
+def test_the_jobs_found_in_each_country_are_charted_by_the_hour_and_by_the_day(api):
+    """Counted as each posting is stored, by its hour and its country, and kept when the postings are
+    archived: the chart reaches back further than the corpus does. A posting seen again is not new."""
+    from libs.corpus.repository import CorpusRepository
+    from libs.db.models import CorpusJob
+
+    http, db, operator, _, sign_in = api
+    sign_in(http, operator)
+    corpus = CorpusRepository(db)
+    for n, where in enumerate(["Berlin, Germany", "Munich, Germany", "Paris, France", "Remote"]):
+        corpus.add(url=f"https://example.com/{n}", source="linkedin", title="Nurse", location=where)
+    corpus.add(url="https://example.com/0", source="linkedin", title="Nurse", location="Berlin, Germany")
+    db[CorpusJob.COLLECTION].delete_many({})  # archived: the count stays
+
+    hourly = http.get("/admin/countries", params={"days": 2}).json()
+    daily = http.get("/admin/countries", params={"days": 30}).json()
+
+    assert (hourly["by"], len(hourly["starts"]), daily["by"], len(daily["starts"])) == ("hour", 48, "day", 30)
+    assert [(each["name"], each["total"]) for each in hourly["countries"]] == [
+        ("Germany", 2), ("France", 1), ("Not known", 1)]
+    assert hourly["countries"][0]["counts"][-1] == 2, "in the hour it came in"
+    assert daily["countries"][0]["counts"] == [0] * 29 + [2]
+
+
+def test_the_chart_says_how_many_linkedin_jobs_still_wait_for_their_text(api):
+    """A number that grows run after run is a pass that cannot keep up: the proxy needs more exits."""
+    from libs.corpus.repository import CorpusRepository
+
+    http, db, operator, _, sign_in = api
+    sign_in(http, operator)
+    corpus = CorpusRepository(db)
+    for n in range(3):
+        corpus.add(url=f"https://www.linkedin.com/jobs/view/{n}", source="linkedin", title="Nurse",
+                   location="Berlin, Germany")
+    corpus.set_description(corpus.add(url="https://www.linkedin.com/jobs/view/9", source="linkedin",
+                                      title="Nurse", location="Berlin, Germany"), "Ward nursing. " * 40)
+
+    assert http.get("/admin/countries").json()["waiting"] == 3

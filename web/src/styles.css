@@ -2226,6 +2226,19 @@ button.making::after {
   overflow-wrap: anywhere;
 }
 
+/* Jobs by country: the name, its count, and its own columns, one country a row. */
+.country-rows {
+  display: grid;
+  grid-template-columns: minmax(6rem, 10rem) 4.5rem minmax(0, 1fr);
+  gap: 0.35rem 1rem;
+  align-items: center;
+  margin-top: 1.25rem;
+}
+.country-rows .spark {
+  margin-top: 0;
+  max-width: none;
+}
+
 /* The per-source table in Settings: name, freshness, query ceiling, and what that source is
    currently asking for. Four columns rather than two, because a ceiling means nothing until you can
    see the demand beside it. */
