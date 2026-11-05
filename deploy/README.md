@@ -32,6 +32,7 @@ or restarted while the rest keep running. The database is MongoDB Atlas, outside
 | `oauthbroker` | `full` | Claude sign-in sessions; exactly one replica |
 | `cloudflared` | `full` | the only way in; no inbound port is open |
 | `harvester` | `tools` | one harvest, every 15 minutes from `harvester.timer` |
+| `describer` | `full` | LinkedIn's job texts, read all the time, through the site proxy |
 | `seed-ats` | `tools` | the company boards from `scripts/ats_companies.txt`, run by `deploy.sh` when the list changes |
 
 What each needs, measured, and the VM they need together: [`SERVER.md`](SERVER.md#what-it-needs).

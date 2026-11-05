@@ -55,6 +55,26 @@ services:
     mem_limit: 1g
     cpus: 2
 
+  # LinkedIn's job texts, read all the time (`services/harvester/describer.py`), in the harvester's image:
+  # the 15-minute harvest lists the jobs, this reads each one's text from then on, through the same proxy.
+  # A loop that waits on the network: a page at once per proxy address, one core is plenty.
+  describer:
+    build:
+      context: ..
+      dockerfile: deploy/docker/Dockerfile.harvester
+    entrypoint: ["python", "-m", "services.harvester.describer"]
+    profiles: ["full"]
+    restart: always
+    environment:
+      MONGODB_URI: ${MONGODB_URI:?set it in certificates/server.env — see deploy/server.env.example}
+      MONGODB_DB: ${MONGODB_DB:-mahoraga}
+      HARVEST_PROXY: ${HARVEST_PROXY:-}
+      LOG_DIR: /var/log/jobsearch
+    volumes:
+      - ../logs:/var/log/jobsearch
+    mem_limit: 512m
+    cpus: 1
+
   # The company boards the ATS sources poll: each company in deploy/scripts/ats_companies.txt looked for
   # on every ATS, and the boards that list jobs stored in `ats_tokens`. A one-shot behind `tools`, like
   # the harvester: `deploy.sh` runs it in the background when a deploy changes the list, and

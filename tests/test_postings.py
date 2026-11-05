@@ -410,6 +410,45 @@ def test_the_metadata_refresh_reports_a_refusing_proxy_the_same_way():
     assert stats == {"li_proxy_error": 1}
 
 
+class OneAddressRefusing(FakeClient):
+    """A rotating proxy with one address that answers 503 to every connection: every `every`th try."""
+
+    def __init__(self, every: int, *responses: FakeResponse):
+        super().__init__(*responses)
+        self.every, self.tries = every, 0
+
+    def get(self, url: str, **kwargs: object) -> FakeResponse:
+        self.tries += 1
+        if self.tries % self.every == 1 or self.every == 1:
+            raise httpx.ProxyError("503 Service Unavailable")
+        return super().get(url, **kwargs)
+
+
+def test_one_proxy_address_refusing_is_tried_again_from_the_next():
+    """Two of the proxy's six addresses answered 503 to every connection, and the first refusal stopped
+    every LinkedIn text for the run: about four a run were read, 13,800 waited (2026-11-05). A refusal at
+    one address says nothing about the next, which the next try leaves from."""
+    stats: dict[str, int] = {}
+    page = FakeResponse(f'<div class="show-more-less-html__markup">{"Build the payments API. " * 20}</div>')
+
+    posting = postings.fetch_job("https://www.linkedin.com/jobs/view/1", client=OneAddressRefusing(3, page),
+                                 stats=stats)
+    meta = postings.fetch_meta("https://www.linkedin.com/jobs/view/1",
+                               client=OneAddressRefusing(3, FakeResponse(GUEST_FRAGMENT)), stats={})
+
+    assert "payments API" in posting.description and stats == {"li_proxy_error": 1, "li_ok": 1}
+    assert meta["applicants"] == 200
+
+
+def test_a_proxy_refusing_every_try_is_the_proxy_itself():
+    """Not this address but all of them: the proxy is down, and no other job will fare better."""
+    stats: dict[str, int] = {}
+    with pytest.raises(postings.ProxyUnusable):
+        postings.fetch_job("https://www.linkedin.com/jobs/view/1", client=OneAddressRefusing(1),
+                           stats=stats)
+    assert stats == {"li_proxy_error": postings.LI_RETRIES}
+
+
 def test_an_ordinary_transport_failure_is_still_retried():
     """The distinction has to be narrow: a dropped connection is exactly what the retries exist for."""
     class Flaky:

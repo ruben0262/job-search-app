@@ -14,6 +14,44 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-05 — LinkedIn's job texts read all the time, and a refused proxy connection asked again
+
+The owner: the jobs waiting for their text reached 13,797; fetch them all the time, not only inside the
+15-minute run, and use the threads the server has.
+
+**What the log showed (the server's `logs/harvester.log`, 18:56–20:28).** Each run read **two to four
+texts**, then `describe: stopping, the proxy refused: 503 Service Unavailable`. 36 requests through the
+site proxy to an address echo, one after another: it rotates over six addresses, and **the 4th and 5th
+answered 503 to all twelve of theirs**. The other four worked. Two faults in our handling turned one
+dead address into almost nothing read:
+
+- **A text fetch took any proxy refusal for the proxy being unusable** (`postings.ProxyUnusable`) and
+  stopped every text for the run. A 407 is the proxy refusing us at every address (its password, its
+  traffic), and still stops at once. Anything else is the one address that connection left from: the
+  next try leaves from another. Every try refused is the proxy itself (`postings._proxy_refused`).
+- **A list page the proxy could not open was taken as an empty page.** After a full page it looked like
+  the end, so the country "ended on empty pages" and was read again from hours back next run (twelve of
+  29 at 19:13). On a country's first page it was worse: the country ended with no jobs and counted as
+  read. The page is now asked again, and the run's line says how many connections were refused.
+
+**LinkedIn's texts are read by a service of their own, all the time** (`services/harvester/describer.py`,
+the `describer` container, always on). The 15-minute run only lists now; before, it read texts in what was
+left of its 11 minutes, after the lists. The describer reads the newest waiting jobs, 120 a round, as many
+at once as the proxy has addresses (`proxy_exits`). Between rounds it looks again for newer jobs and waits
+while a run is listing (the `linkedin` lease), so the two never spend LinkedIn's allowance at once. After
+a round that read nothing it rests 30 seconds, and it logs one line every 15 minutes: read, tried,
+refusals, and how many still wait.
+
+**Not measured on the server yet.** With four working addresses at ~40 pages a minute each, ~160 texts a
+minute is the ceiling, ~9,600 an hour; on six, ~14,000. The busiest hour measured for the EU and the UK
+listed ~6,000 new jobs (2026-11-04).
+
+Tests (each fails on the previous commit): one address refusing every connection stops neither the
+lists (0 of 25 jobs stored before) nor the texts (1 of 25 read before), and is counted in the line; every
+try refused is the proxy itself; the run reads no text, and the describer reads every stored job's; it
+waits while a run lists, goes straight on while there is text, rests when there is none, and a round
+that fails is said and the next one runs.
+
 ## 2026-11-05 — LinkedIn reads a page from each proxy address at once; jobs by country, as lines in time
 
 The owner, the evening after deploying: LinkedIn's jobs waiting for their text grew run after run (8,425,

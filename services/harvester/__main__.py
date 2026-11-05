@@ -118,12 +118,12 @@ def _run_shared(args) -> int:
 
 
 def _run_linkedin_pass() -> None:
-    """The LinkedIn pass: every country somebody picked, every job in it stored and described."""
+    """The LinkedIn pass: every country somebody picked, every job in it stored. Their texts are read by
+    `services.harvester.describer`, all the time."""
     try:
         report = run_linkedin(database())
-        logger.info("linkedin: %d place(s), %d request(s), %d job(s) listed, %d new, %d described",
-                    report.swept_places, report.sweep_requests, report.swept, report.new_jobs,
-                    report.described)
+        logger.info("linkedin: %d place(s), %d request(s), %d job(s) listed, %d new",
+                    report.swept_places, report.sweep_requests, report.swept, report.new_jobs)
     except Exception:
         logger.exception("the LinkedIn pass failed; the shared harvest was unaffected")
 

@@ -33,7 +33,7 @@ Each part is its own container, so one can be rebuilt or restarted while the oth
 | Folder | Container | What it does |
 |---|---|---|
 | [`services/api/`](services/api/) and [`web/`](web/) | `api` | the site and its API, on one origin |
-| [`services/harvester/`](services/harvester/) | `harvester`, `seed-ats` | finds postings every 15 minutes; finds the company boards to poll |
+| [`services/harvester/`](services/harvester/) | `harvester`, `describer`, `seed-ats` | finds postings every 15 minutes; reads LinkedIn's job texts all the time; finds the company boards to poll |
 | [`services/docgen/`](services/docgen/) | `docgen` | makes CVs and cover letters; the only one with Chrome |
 | [`services/notifier/`](services/notifier/) | `notifier` | Telegram, browser and email alerts |
 | [`services/oauthbroker/`](services/oauthbroker/) | `oauthbroker` | Claude sign-in sessions |

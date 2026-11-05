@@ -73,6 +73,11 @@ def lease(db: Database, name: str, seconds: float) -> Iterator[bool]:
             db.locks.update_one({"_id": name, "holder": holder}, {"$set": {"until": now()}})
 
 
+def held(db: Database, name: str) -> bool:
+    """Whether a live holder has the named lease (`lease`), without taking it."""
+    return db.locks.count_documents({"_id": name, "until": {"$gt": now()}}, limit=1) > 0
+
+
 @dataclass(kw_only=True)
 class Document:
     """A collection's shape. Subclasses are dataclasses whose `id` field, if any, is stored as `_id`."""

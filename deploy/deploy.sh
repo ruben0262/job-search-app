@@ -29,7 +29,7 @@ COMPOSE="deploy/compose.sh"
 # so it was left out of this list — and every full deploy then rebuilt eight services and silently
 # left the one that does the collecting on old code. It ran for hours without `fetched_at` after the
 # column shipped, reporting healthy cycles the whole time.
-ALL_SERVICES="api oauthbroker notifier docgen harvester seed-ats"
+ALL_SERVICES="api oauthbroker notifier docgen harvester describer seed-ats"
 
 # The one-shots. They exit when their work is done, so "is it running" and `exec` are the wrong
 # questions — verification runs a fresh container instead.

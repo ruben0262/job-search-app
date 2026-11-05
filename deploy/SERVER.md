@@ -18,9 +18,10 @@ not a reservation; what each one actually uses was measured on 2026-11-03 where 
 | `oauthbroker` (Claude sign-in) | always | 512 MB | | 1 |
 | `cloudflared` (the tunnel) | always | 256 MB | | |
 | `harvester` | every 15 minutes, for up to 14 | 1 GB | | 2 |
+| `describer` (LinkedIn's job texts) | always | 512 MB | | 1 |
 | `seed-ats` | when the company list changes | 512 MB | | 1 |
 
-The always-on ceilings add up to 3.8 GB, 4.8 GB while a harvest runs. Building the images takes about
+The always-on ceilings add up to 4.3 GB, 5.3 GB while a harvest runs. Building the images takes about
 another 1.5 GB for a few minutes (the site's `npm` build, Chrome's packages).
 
 **The VM: 4 vCPU, 8 GB RAM, 4 GB swap, 64 GB disk.** That leaves room for a build during a harvest
@@ -205,7 +206,7 @@ sudo deploy/install-units.sh     # the harvest, health and backup timers
   is `logs/seed_ats.log`).
 
 ```bash
-deploy/compose.sh ps                                     # api, docgen, notifier, oauthbroker, cloudflared: running
+deploy/compose.sh ps                                     # api, docgen, notifier, oauthbroker, describer, cloudflared: running
 curl -s https://mahoraga-new.rubenlekli.com/health       # {"status":"ok"}
 systemctl list-timers harvester.timer health.timer backup.timer
 ```

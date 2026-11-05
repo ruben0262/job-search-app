@@ -20,6 +20,16 @@ logger = logging.getLogger(__name__)
 class ProxyUnusable(RuntimeError):
     """The proxy itself refused, so no retry and no other job will fare any better."""
 
+
+def _proxy_refused(exc: Exception, refused: int) -> None:
+    """A connection the site proxy would not open, the `refused`th try in a row for this page. A 407 is the
+    proxy refusing us at every address alike, its password or its traffic: no try will fare better.
+    Anything else is the one address this connection left from (2026-11-05: two of six answered 503 to
+    every connection while four worked, and stopping at the first stopped every text for the run), and
+    the next try leaves from another. Every try refused is the proxy itself."""
+    if str(exc).startswith("407") or refused >= LI_RETRIES:
+        raise ProxyUnusable(str(exc)) from exc
+
 try:
     from bs4 import BeautifulSoup
 except ImportError:  # pragma: no cover - only the harvester image installs it
@@ -595,12 +605,15 @@ def _fetch_linkedin(job_id: str, *, client: httpx.Client, snippet: str, title: s
                     out: Posting, tally) -> Posting:
     """The guest endpoint, retried — each try on a new connection, so from the site proxy's next
     address (`services.harvester.fetch._mounts`)."""
+    refused = 0
     for _ in range(LI_RETRIES):
         try:
             response = client.get(_guest_url(job_id))
         except httpx.ProxyError as exc:
             tally("li_proxy_error")
-            raise ProxyUnusable(str(exc)) from exc
+            refused += 1
+            _proxy_refused(exc, refused)
+            continue
         except Exception:
             tally("li_error")
             time.sleep(LI_BACKOFF)
@@ -654,12 +667,15 @@ def fetch_meta(url: str, *, client: httpx.Client, stats: dict | None = None) -> 
         tally("non_li")
         return out
 
+    refused = 0
     for _ in range(LI_RETRIES):
         try:
             response = client.get(_guest_url(job_id))
         except httpx.ProxyError as exc:
             tally("li_proxy_error")
-            raise ProxyUnusable(str(exc)) from exc
+            refused += 1
+            _proxy_refused(exc, refused)
+            continue
         except Exception:
             tally("li_error")
             time.sleep(LI_BACKOFF)

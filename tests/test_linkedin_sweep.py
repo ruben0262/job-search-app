@@ -1,6 +1,6 @@
 """The LinkedIn pass: every country somebody picked, read whole with no search word, ten jobs a page;
-every job stored, whoever has a word for it, and described in the same pass. Words are matched on the
-stored jobs, never asked of LinkedIn (owner, 2026-11-04)."""
+every job stored, whoever has a word for it. Words are matched on the stored jobs, never asked of LinkedIn
+(owner, 2026-11-04). And the describer, which reads every stored job's text all the time (2026-11-05)."""
 from __future__ import annotations
 
 import logging
@@ -8,11 +8,12 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
+import httpx
 import pytest
 
 from libs.db import insert, lease
 from libs.db.models import CorpusJob, SweptPlace, User, UserConfig
-from services.harvester import linkedin
+from services.harvester import describer, linkedin
 
 NOW = datetime(2026, 7, 31, 12, 0, tzinfo=UTC)
 
@@ -42,11 +43,15 @@ def _card(job_id: int, title: str) -> str:
 
 
 class LinkedIn:
-    """LinkedIn's guest list for each place, ten jobs a page, each job's own page, and every request."""
+    """LinkedIn's guest list for each place, ten jobs a page, each job's own page, and every request. With
+    `refuse_every`, the proxy in front of it cannot open every so many connections: one of its addresses
+    answering 503 to every one, as two of six did on 2026-11-05."""
 
-    def __init__(self, listed: dict[str, list[str]], *, refuse_once: set[int] = frozenset()):
+    def __init__(self, listed: dict[str, list[str]], *, refuse_once: set[int] = frozenset(),
+                 refuse_every: int = 0):
         self.listed = listed
         self.refuse_once = set(refuse_once)
+        self.refuse_every, self.connections = refuse_every, 0
         self.asked: list[dict] = []
         self.opened: list[str] = []
         self.megabytes_downloaded = 0.0
@@ -61,6 +66,11 @@ class LinkedIn:
         return False
 
     def get(self, url, params=None, **_kwargs):
+        self.connections += 1
+        # The first, and every `refuse_every`th after it: a list's first page refused ended the country with
+        # no jobs, read to its end as far as anybody could tell.
+        if self.refuse_every and self.connections % self.refuse_every == 1:
+            raise httpx.ProxyError("503 Service Unavailable")
         if url != linkedin.SWEEP_URL:
             self.opened.append(url)
             return SimpleNamespace(status_code=200, url=url, text='<div class="show-more-less-html__markup">'
@@ -85,12 +95,20 @@ def site(monkeypatch):
     def install(listed, **kwargs) -> LinkedIn:
         fake = LinkedIn(listed, **kwargs)
         monkeypatch.setattr(linkedin, "make_site_client", fake)
+        monkeypatch.setattr(describer, "make_site_client", fake)
         return fake
     return install
 
 
 def _pass(db, now=NOW):
     return linkedin.run_pass(db, now=now)
+
+
+def _described(db, rounds=1) -> list[float]:
+    """The describer's rounds, and the rests it took between them."""
+    rests: list[float] = []
+    describer.run(db, rounds=rounds, sleep=rests.append)
+    return rests
 
 
 GERMANY = ["Python Developer", "Nurse", "Senior Python Developer (m/w/d)", "Accountant"] * 6 + ["Welder"]
@@ -111,14 +129,32 @@ def test_every_job_a_country_lists_is_stored_whoever_has_a_word_for_it(db, site)
     assert {asked["keywords"] for asked in linkedin_site.asked} == {""}, "no word is asked of LinkedIn"
 
 
-def test_every_job_stored_is_described_in_the_same_pass(db, site):
-    """A job's text is what its words are found in: a nurse job asking for Python is a Python job."""
+def test_every_job_stored_is_described_by_the_describer_without_waiting_for_the_next_run(db, site):
+    """A job's text is what its words are found in: a nurse job asking for Python is a Python job. The run
+    only lists; the describer reads every text as soon as it can."""
     linkedin_site = site({"Germany": GERMANY})
     _user(db, _config("python", "golang", "sql"))
 
-    report = _pass(db)
+    _pass(db)
+    assert linkedin_site.opened == [], "the run lists, and reads no job's text"
+    _described(db)
 
-    assert report.described == 25 and len(linkedin_site.opened) == 25
+    assert len(linkedin_site.opened) == 25
+    assert db[CorpusJob.COLLECTION].count_documents({"description": {"$regex": "in Python"}}) == 25
+
+
+def test_one_proxy_address_refusing_every_connection_stops_neither_the_lists_nor_the_texts(db, site):
+    """Two of the proxy's six addresses answered 503 to every connection (2026-11-05). Taken as the end
+    of a list, twelve countries were read again from hours back every run; taken as the proxy being
+    unusable, it stopped every text for the run after about four. Each is asked again, from another."""
+    site({"Germany": GERMANY}, refuse_every=3)
+    _user(db, _config("python", "golang", "sql"))
+
+    report = _pass(db)
+    _described(db)
+
+    assert report.new_jobs == 25
+    assert db[SweptPlace.COLLECTION].count_documents({"_id": "Germany"}) == 1, "read to its end"
     assert db[CorpusJob.COLLECTION].count_documents({"description": {"$regex": "in Python"}}) == 25
 
 
@@ -153,12 +189,14 @@ def test_linkedin_is_read_a_page_at_once_from_each_of_the_proxys_addresses(db, s
     site({})  # the proxy's address, set
     fake = AtOnce({"Germany": GERMANY})
     monkeypatch.setattr(linkedin, "make_site_client", fake)
+    monkeypatch.setattr(describer, "make_site_client", fake)
     _user(db, _config("python", "golang", "sql"))
     put(db, "proxy_exits", addresses)
 
-    report = _pass(db)
+    _pass(db)
+    _described(db)
 
-    assert report.described == 25, "the premise: enough jobs to read more pages at once than that"
+    assert len(fake.opened) == 25, "the premise: enough jobs to read more pages at once than that"
     assert fake.most == addresses
 
 
@@ -264,6 +302,7 @@ def test_a_country_listing_more_than_linkedin_shows_says_so(db, site, caplog, mo
 
 def test_a_sweep_that_fails_is_reported_and_what_earlier_passes_stored_is_still_described(db, site,
                                                                                         monkeypatch):
+    """The describer does not depend on the run: what is stored waits, and is read."""
     from libs.corpus.repository import CorpusRepository
     from services.harvester.sources.base import JobLink
 
@@ -277,9 +316,10 @@ def test_a_sweep_that_fails_is_reported_and_what_earlier_passes_stored_is_still_
 
     monkeypatch.setattr(linkedin, "sweep_places", broken)
     report = _pass(db)
+    _described(db)
 
     assert "sweep" in report.failures
-    assert report.described == 1 and [url.rsplit("/", 1)[1] for url in linkedin_site.opened] == ["42"]
+    assert [url.rsplit("/", 1)[1] for url in linkedin_site.opened] == ["42"]
 
 
 def test_two_passes_never_read_linkedin_at_once(db, site):
@@ -316,6 +356,79 @@ def test_the_tier_can_be_switched_off_for_everybody(db, site, monkeypatch):
     _pass(db)
 
     assert linkedin_site.asked == []
+
+
+# ── the describer, all the time (2026-11-05) ──────────────────────────────────────────────────
+
+def test_a_sweep_running_goes_first(db, site):
+    """The two never spend LinkedIn's allowance at once: while the run lists, the describer waits."""
+    linkedin_site = site({"Germany": GERMANY})
+    _user(db, _config("python", "golang", "sql"))
+    _pass(db)
+
+    with lease(db, "linkedin", 60):
+        rests = _described(db)
+    assert (linkedin_site.opened, rests) == ([], [describer.REST_SECONDS])
+
+    _described(db)
+    assert len(linkedin_site.opened) == 25
+
+
+def test_the_describer_goes_straight_on_while_there_is_text_to_read_and_rests_when_there_is_none(db, site,
+                                                                                                monkeypatch):
+    linkedin_site = site({"Germany": GERMANY})
+    _user(db, _config("python", "golang", "sql"))
+    _pass(db)
+    monkeypatch.setattr(describer, "ROUND", 10)
+
+    rests = _described(db, rounds=4)
+
+    assert len(linkedin_site.opened) == 25
+    assert rests == [describer.REST_SECONDS], "three rounds read 10, 10 and 5; the fourth found nothing"
+
+
+def test_a_round_that_fails_is_said_and_the_describer_goes_on(db, site, monkeypatch, caplog):
+    site({"Germany": GERMANY})
+    _user(db, _config("python", "golang", "sql"))
+
+    def broken(*_args, **_kwargs):
+        raise RuntimeError("the database went away")
+
+    monkeypatch.setattr(describer, "describe_pending", broken)
+    with caplog.at_level(logging.ERROR):
+        rests = _described(db, rounds=2)
+
+    assert rests == [describer.REST_SECONDS] * 2
+    assert caplog.text.count("describer: a round failed") == 2
+
+
+def test_the_describer_says_what_it_read_once_a_tick_not_once_a_round(db, site, monkeypatch, caplog):
+    site({"Germany": GERMANY}, refuse_every=3)
+    _user(db, _config("python", "golang", "sql"))
+    _pass(db)
+    monkeypatch.setattr(describer, "PLATFORM_TICK_MIN", 0)
+
+    with caplog.at_level(logging.INFO, logger=describer.logger.name):
+        _described(db)
+
+    lines = [record.getMessage() for record in caplog.records if record.name == describer.logger.name]
+    assert len(lines) == 1
+    assert lines[0].startswith("describer: 25 text(s) read of 25 tried in 1 round(s), 0 waiting")
+    assert "'li_proxy_error'" in lines[0], "the refusals are counted, not hidden"
+
+
+def test_without_the_proxy_or_with_linkedin_off_the_describer_reads_nothing(db, site, monkeypatch):
+    linkedin_site = site({"Germany": GERMANY})
+    _user(db, _config("python", "golang", "sql"))
+    _pass(db)
+
+    monkeypatch.setenv("HARVEST_LINKEDIN_DISABLED", "1")
+    _described(db)
+    monkeypatch.delenv("HARVEST_LINKEDIN_DISABLED")
+    monkeypatch.delenv("HARVEST_PROXY")
+    _described(db)
+
+    assert linkedin_site.opened == []
 
 
 def test_a_stored_account_with_its_retired_linkedin_schedule_still_loads_and_the_prune_removes_it(db):

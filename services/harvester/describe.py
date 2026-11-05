@@ -46,7 +46,7 @@ def describe_pending(corpus: CorpusRepository, client, *, linkedin: bool | None 
                      limit: int | None = SHARED_LIMIT,
                      budget_seconds: float | None = None,
                      max_age_hours: int | None = None,
-                     workers: int = 1) -> DescribeReport:
+                     workers: int = 1, quiet: bool = False) -> DescribeReport:
     """Fetch and store descriptions for corpus rows that are still thin, `workers` pages at a time.
 
     `limit` of `None` is every row waiting; `budget_seconds` is then what bounds the pass.
@@ -55,6 +55,8 @@ def describe_pending(corpus: CorpusRepository, client, *, linkedin: bool | None 
 
     Pages are fetched in parallel and written one at a time, here: the fetch is the slow part (a
     second or more each through the site proxy, measured 2026-11-02), and the writes stay in order.
+    `quiet` leaves the summary to the caller, which runs this every half minute (`describer`); what went
+    wrong is said all the same.
     """
     report = DescribeReport()
     jobs = corpus.awaiting_description(limit=limit or 0, linkedin=linkedin,
@@ -104,9 +106,11 @@ def describe_pending(corpus: CorpusRepository, client, *, linkedin: bool | None 
     if skipped and busy.is_set():
         logger.warning("describe: stopping at %d of %d, every try refused for %d page(s) in a row — "
                        "the rest are first in line next run", report.attempted, len(jobs), in_a_row[0])
-    elif skipped and not report.proxy_error:
+    elif skipped and not report.proxy_error and not quiet:
         logger.info("describe: stopping at %d of %d, the pass is out of time — the rest are "
                     "first in line next run", report.attempted, len(jobs))
+    if quiet:
+        return report
     logger.info("describe: %d attempted, %d described, %d still thin, %d throttled — %s",
                 report.attempted, report.described, report.still_thin, report.throttled,
                 report.outcomes)
