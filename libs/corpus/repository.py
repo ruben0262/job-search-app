@@ -15,6 +15,7 @@ from libs.corpus.geo import posting_country, read_city
 from libs.corpus.keys import canonical_url, content_key
 from libs.db import insert, now
 from libs.db.models import CorpusJob, CountryCount
+from libs.settings import PLATFORM_TICK_MIN
 
 # Below this, stored text is a teaser rather than a description and the job is re-fetched from its own page.
 MIN_DESCRIPTION = 200
@@ -184,11 +185,13 @@ class CorpusRepository:
             job_id = insert(self._db, job).id
         except DuplicateKeyError:
             return None
-        # One more in its hour and country, for the admin's chart.
-        hour = job.first_seen_at.replace(minute=0, second=0, microsecond=0)
+        # One more in its run and country, for the admin's chart (`libs.ops.countries`): jobs arrive a run
+        # at a time, every `PLATFORM_TICK_MIN`. Per hour before 2026-11-05, under ids without the minutes.
+        found = job.first_seen_at.replace(second=0, microsecond=0)
+        run = found.replace(minute=found.minute - found.minute % PLATFORM_TICK_MIN)
         self._db[CountryCount.COLLECTION].update_one(
-            {"_id": f"{hour:%Y-%m-%dT%H}|{job.country or ''}"},
-            {"$inc": {"jobs": 1}, "$setOnInsert": {"hour": hour, "country": job.country}}, upsert=True)
+            {"_id": f"{run:%Y-%m-%dT%H:%M}|{job.country or ''}"},
+            {"$inc": {"jobs": 1}, "$setOnInsert": {"hour": run, "country": job.country}}, upsert=True)
         return job_id
 
     def add_typed(self, *, url: str, title: str, company: str, location: str, description: str) -> int:

@@ -17,14 +17,12 @@ from pymongo.database import Database
 
 from libs.contracts.config import WORKPLACE_NAMES, location_search_name, migrate_config
 from libs.corpus.freshness import platform_windows
-from libs.corpus.geo import COUNTRY_LABELS
 from libs.corpus.repository import CorpusRepository
 from libs.db import delete_account, find, find_one, get, insert
 from libs.db.models import (
     AtsToken,
     BuiltDocument,
     CorpusJob,
-    CountryCount,
     OperatorKeyword,
     PushSubscription,
     QueueJob,
@@ -39,6 +37,7 @@ from libs.limits import all_for, describe, set_limit
 from libs.matching import green_words, their_jobs
 from libs.obs import audit
 from libs.ops import evaluate, platform_health, render
+from libs.ops.countries import RANGES_HOURS, by_country
 from libs.ops.latency import (
     latency_report,
     pipeline_latency,
@@ -364,49 +363,27 @@ class CountrySeries(BaseModel):
 
 
 class CountryChart(BaseModel):
-    by: Literal["hour", "day"]
-    # When each bucket starts: the range asked for, from the first hour anything was counted if later.
+    # Per run (`minutes`, `bucket_minutes` long) up to half a day, per hour to two weeks, per day beyond.
+    by: Literal["minutes", "hour", "day"]
+    bucket_minutes: int
+    # When each bucket starts: the range asked for, from the first count if that is later.
     starts: list[datetime]
-    # The first hour anything was counted; `None` before anything has been.
+    # When the first count began; `None` before anything has been counted.
     since: datetime | None
     # Most jobs first.
     countries: list[CountrySeries]
-    # LinkedIn postings still waiting for their text and young enough to reach somebody: growing run after
-    # run, the pass cannot keep up, and the proxy needs more exits.
+    # LinkedIn jobs still waiting for their text and young enough to reach somebody (the describer's queue).
     waiting: int
 
 
 @router.get("/countries", response_model=CountryChart)
 def countries(db: Database = Depends(get_db), admin: User = Depends(require_admin), *,
-              days: int = 2) -> dict:
-    """New postings by the country each is in: by the hour over a week or less, by the day beyond. The
-    buckets start no earlier than the first hour anything was counted: before it, a zero is not a count."""
-    days = max(1, min(days, 366))
-    by = "hour" if days <= 7 else "day"
-    step = timedelta(hours=1) if by == "hour" else timedelta(days=1)
-    latest = datetime.now(UTC).replace(minute=0, second=0, microsecond=0)
-    if by == "day":
-        latest = latest.replace(hour=0)
-    starts = [latest - step * n for n in range(days * 24 if by == "hour" else days)][::-1]
-    first = db[CountryCount.COLLECTION].find_one({}, {"hour": 1}, sort=[("hour", 1)])
-    since = first["hour"].replace(tzinfo=UTC) if first else None
-    if since is not None:
-        floor = since if by == "hour" else since.replace(hour=0)
-        starts = [start for start in starts if start >= floor] or starts[-1:]
-    at = {start: index for index, start in enumerate(starts)}
-    found: dict[str | None, list[int]] = {}
-    for row in db[CountryCount.COLLECTION].find({"hour": {"$gte": starts[0]}}):
-        hour = row["hour"].replace(tzinfo=UTC)
-        bucket = at.get(hour if by == "hour" else hour.replace(hour=0))
-        if bucket is not None:
-            found.setdefault(row["country"], [0] * len(starts))[bucket] += row["jobs"]
-    series = sorted(({"country": code, "name": COUNTRY_LABELS.get(code, code) if code else "Not known",
-                      "total": sum(counts), "counts": counts} for code, counts in found.items()),
-                    key=lambda each: -each["total"])
-    waiting = CorpusRepository(db).count_awaiting_description(
-        linkedin=True, windows=platform_windows(db))
-    audit(logger, "admin.countries", user=admin.id, days=days)
-    return {"by": by, "starts": starts, "since": since, "countries": series, "waiting": waiting}
+              hours: int = 24) -> dict:
+    """New jobs by the country each is in, over the last `hours` (`libs.ops.countries`)."""
+    hours = max(1, min(hours, max(RANGES_HOURS)))
+    audit(logger, "admin.countries", user=admin.id, hours=hours)
+    waiting = CorpusRepository(db).count_awaiting_description(linkedin=True, windows=platform_windows(db))
+    return {**by_country(db, hours=hours), "waiting": waiting}
 
 
 class LimitPatch(BaseModel):

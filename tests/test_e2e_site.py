@@ -299,22 +299,26 @@ def test_the_admin_charts_the_jobs_found_in_each_country(site, capsys):
 
         expect(page.get_by_role("heading", name="Jobs found by country")).to_be_visible()
         expect(page.get_by_text("LinkedIn jobs waiting for their text: 8.")).to_be_visible()
-        expect(page.get_by_role("img", name="All countries: new jobs by hour")).to_be_visible()
-        expect(page.get_by_role("img", name="Each country: new jobs by hour")).to_be_visible()
-        expect(page.locator(".country-table tbody label")).to_have_text([*busiest, "Not known"])
-        legend = page.get_by_role("list", name="Countries drawn").get_by_role("listitem")
-        expect(legend).to_have_text(busiest[:5])
+        expect(page.get_by_role("img", name="Jobs found: new jobs per hour")).to_be_visible()
+        rows = page.locator(".country-table tbody label")
+        expect(rows).to_have_text(["All countries", *busiest, "Not known"])
+        legend = page.get_by_role("list", name="Lines drawn").get_by_role("listitem")
+        expect(legend).to_have_text(["All countries", *busiest[:5]])
 
         france = page.locator(".country-table label", has_text="France").locator(".line-key")
         hue = france.evaluate("key => getComputedStyle(key).backgroundColor")
         page.get_by_role("checkbox", name="Germany").uncheck()
-        expect(legend).to_have_text([name for name in busiest[:5] if name != "Germany"])
+        expect(legend).to_have_text(["All countries", *[name for name in busiest[:5] if name != "Germany"]])
         assert france.evaluate("key => getComputedStyle(key).backgroundColor") == hue, "France kept its hue"
         page.get_by_role("checkbox", name="Italy").check()
         expect(legend).to_contain_text(["Italy"])
+        # All countries together is a line like the others: off, and on again.
+        page.get_by_role("checkbox", name="All countries").uncheck()
+        expect(legend.first).not_to_have_text("All countries")
+        page.get_by_role("checkbox", name="All countries").check()
 
         # Read without a pointer: the arrow keys walk the hours, every series' number at each.
-        page.get_by_label("All countries, new jobs by hour: arrow keys read each hour").focus()
+        page.get_by_label("Jobs found, new jobs per hour: arrow keys read each in turn").focus()
         tip = page.locator(".trend-tip")
         expect(tip).to_contain_text("so far")
         expect(tip).to_contain_text("8All countries")
@@ -328,7 +332,10 @@ def test_the_admin_charts_the_jobs_found_in_each_country(site, capsys):
         page.locator("h2", has_text="Jobs found by country").locator("..").screenshot(
             path=os.environ.get("E2E_SHOT", "/dev/null") if os.environ.get("E2E_SHOT") else None)
         page.get_by_role("button", name="30 days").click()
-        expect(page.get_by_role("img", name="All countries: new jobs by day")).to_be_visible()
+        expect(page.get_by_role("img", name="Jobs found: new jobs per day")).to_be_visible()
+        # The shortest ranges a run at a time: the last hour, four runs.
+        page.get_by_role("button", name="1 hour", exact=True).click()
+        expect(page.get_by_role("img", name="Jobs found: new jobs per 15 minutes")).to_be_visible()
         browser.close()
 
 

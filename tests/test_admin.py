@@ -628,10 +628,10 @@ def test_the_live_pipeline_is_not_public(api):
 
 # ── what is found where (owner, 2026-11-04) ───────────────────────────────────────────────────
 
-def test_the_jobs_found_in_each_country_are_charted_by_the_hour_and_by_the_day(api):
-    """Counted as each posting is stored, by its hour and its country, and kept when the postings are
-    archived: the chart reaches back further than the corpus does. A posting seen again is not new. By the
-    hour up to a week, by the day beyond, and from the first hour anything was counted: a zero before it
+def test_the_jobs_found_in_each_country_are_charted_per_run_per_hour_and_per_day(api):
+    """Counted as each posting is stored, by its run and its country, and kept when the postings are
+    archived: the chart reaches back further than the corpus does. A posting seen again is not new. Per run
+    up to half a day, per hour to two weeks, per day beyond, and from the first count: a zero before it
     would be a count nobody took."""
     from libs.corpus.repository import CorpusRepository
     from libs.db.models import CorpusJob, CountryCount
@@ -644,20 +644,61 @@ def test_the_jobs_found_in_each_country_are_charted_by_the_hour_and_by_the_day(a
     corpus.add(url="https://example.com/0", source="linkedin", title="Nurse", location="Berlin, Germany")
     db[CorpusJob.COLLECTION].delete_many({})  # archived: the count stays
     hour = datetime.now(UTC).replace(minute=0, second=0, microsecond=0)
-    began = hour - timedelta(hours=30)
-    insert(db, CountryCount(id="began", hour=began, country="DE", jobs=5))
+    began = hour - timedelta(hours=30)  # counted per hour then, under an id without minutes
+    insert(db, CountryCount(id=f"{began:%Y-%m-%dT%H}|DE", hour=began, country="DE", jobs=5))
 
-    hourly, weekly, daily = (http.get("/admin/countries", params={"days": days}).json()
-                             for days in (2, 7, 30))
+    charts = {hours: http.get("/admin/countries", params={"hours": hours}).json()
+              for hours in (2, 24, 168, 720)}
 
-    assert (hourly["by"], weekly["by"], daily["by"]) == ("hour", "hour", "day")
-    assert len(hourly["starts"]) == len(weekly["starts"]) == 31, "from the first hour counted"
-    assert len(daily["starts"]) == (hour.date() - began.date()).days + 1
-    assert [(each["name"], each["total"]) for each in hourly["countries"]] == [
-        ("Germany", 7), ("France", 1), ("Not known", 1)]
-    germany = hourly["countries"][0]["counts"]
-    assert (germany[0], germany[-1], sum(germany)) == (5, 2, 7), "in the hour each came in"
-    assert daily["countries"][0]["counts"][-1] == (7 if began.date() == hour.date() else 2)
+    assert {hours: (chart["by"], chart["bucket_minutes"]) for hours, chart in charts.items()} == {
+        2: ("minutes", 15), 24: ("hour", 60), 168: ("hour", 60), 720: ("day", 1440)}
+    assert len(charts[2]["starts"]) == 8 and len(charts[24]["starts"]) == 24
+    assert len(charts[168]["starts"]) == 31, "from the first count, not a week of zeros"
+    assert len(charts[720]["starts"]) == (hour.date() - began.date()).days + 1
+    for hours in (2, 24):
+        assert [(each["name"], each["total"]) for each in charts[hours]["countries"]] == [
+            ("Germany", 2), ("France", 1), ("Not known", 1)]
+    germany = charts[168]["countries"][0]
+    assert (germany["name"], germany["counts"][0], germany["total"]) == ("Germany", 5, 7)
+    assert charts[720]["countries"][0]["total"] == 7
+
+
+def test_a_job_is_counted_in_the_run_it_was_found_in(db):
+    """Jobs arrive a run at a time, so the chart's finest count is a run's."""
+    from libs.corpus.repository import CorpusRepository
+    from libs.db.models import CorpusJob, CountryCount
+    from libs.ops.countries import floor
+    from libs.settings import PLATFORM_TICK_MIN
+
+    corpus = CorpusRepository(db)
+    job_id = corpus.add(url="https://example.com/1", source="linkedin", title="Nurse",
+                        location="Berlin, Germany")
+    found = db[CorpusJob.COLLECTION].find_one({"_id": job_id})["first_seen_at"].replace(tzinfo=UTC)
+
+    (row,) = db[CountryCount.COLLECTION].find({})
+    assert (row["country"], row["jobs"]) == ("DE", 1)
+    run = row["hour"].replace(tzinfo=UTC)
+    assert run == floor(found, PLATFORM_TICK_MIN)
+    assert run.minute % PLATFORM_TICK_MIN == 0 and run <= found < run + timedelta(minutes=PLATFORM_TICK_MIN)
+
+
+def test_each_range_adds_the_runs_up_into_its_own_buckets(db):
+    """The same counts, per run over an hour, per hour over a day, per day over a month."""
+    from libs.db.models import CountryCount
+    from libs.ops.countries import by_country
+
+    now = datetime(2026, 11, 5, 13, 7, tzinfo=UTC)
+    for at, jobs in ((datetime(2026, 11, 4, 9, 30, tzinfo=UTC), 4),
+                     (datetime(2026, 11, 5, 12, 45, tzinfo=UTC), 2),
+                     (datetime(2026, 11, 5, 13, 0, tzinfo=UTC), 3)):
+        insert(db, CountryCount(id=f"{at:%Y-%m-%dT%H:%M}|DE", hour=at, country="DE", jobs=jobs))
+
+    hour, day, month = (by_country(db, hours=hours, now=now) for hours in (1, 24, 720))
+
+    assert [start.strftime("%H:%M") for start in hour["starts"]] == ["12:15", "12:30", "12:45", "13:00"]
+    assert hour["countries"][0]["counts"] == [0, 0, 2, 3]
+    assert day["countries"][0]["counts"][-2:] == [2, 3] and day["countries"][0]["total"] == 5
+    assert month["countries"][0]["counts"] == [4, 5], "from the first count's day, a sum a day"
 
 
 def test_the_chart_says_how_many_linkedin_jobs_still_wait_for_their_text(api):

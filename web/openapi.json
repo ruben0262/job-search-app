@@ -778,8 +778,13 @@
       },
       "CountryChart": {
         "properties": {
+          "bucket_minutes": {
+            "title": "Bucket Minutes",
+            "type": "integer"
+          },
           "by": {
             "enum": [
+              "minutes",
               "hour",
               "day"
             ],
@@ -820,6 +825,7 @@
         },
         "required": [
           "by",
+          "bucket_minutes",
           "starts",
           "since",
           "countries",
@@ -3871,16 +3877,16 @@
     },
     "/admin/countries": {
       "get": {
-        "description": "New postings by the country each is in: by the hour over a week or less, by the day beyond. The\nbuckets start no earlier than the first hour anything was counted: before it, a zero is not a count.",
+        "description": "New jobs by the country each is in, over the last `hours` (`libs.ops.countries`).",
         "operationId": "countries_admin_countries_get",
         "parameters": [
           {
             "in": "query",
-            "name": "days",
+            "name": "hours",
             "required": false,
             "schema": {
-              "default": 2,
-              "title": "Days",
+              "default": 24,
+              "title": "Hours",
               "type": "integer"
             }
           }
@@ -4240,6 +4246,52 @@
           }
         },
         "summary": "Pipeline Shape",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/pipeline/sources": {
+      "get": {
+        "description": "Each source's last `hours`: found, with text, waiting for text, newest. Not in the live frame: it\nreads the day's jobs, and once a minute is enough to see a board go quiet.",
+        "operationId": "pipeline_sources_admin_pipeline_sources_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "hours",
+            "required": false,
+            "schema": {
+              "default": 24,
+              "title": "Hours",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Pipeline Sources Admin Pipeline Sources Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Pipeline Sources",
         "tags": [
           "admin"
         ]

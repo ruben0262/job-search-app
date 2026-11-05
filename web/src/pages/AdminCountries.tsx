@@ -1,9 +1,10 @@
 /**
- * Admin → Corpus: new jobs through time, all countries and each one (owner, 2026-11-04 and 2026-11-05).
+ * Admin → Corpus: new jobs through time, all countries together and each one (owner, 2026-11-04 and -05).
  *
- * Two line charts on one time axis: the total, and the countries ticked in the table under them, one hue
- * each (styles.css, `--series-*`). A country keeps its hue while it is drawn, whatever else is added or
- * taken away. The table and the numbers under the charts say everything the lines do, without a pointer.
+ * One line chart: every country together, and the countries ticked in the table under it, a hue each
+ * (styles.css, `--series-*`); any of them, the total too, ticked off. A country keeps its hue while it is
+ * drawn, whatever else is added or taken away. The table and the numbers under the chart say everything
+ * the lines do, without a pointer.
  */
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 
@@ -13,11 +14,13 @@ import { keep, peek } from "../kept";
 type CountryChart = Schema<"CountryChart">;
 type Country = CountryChart["countries"][number];
 type By = CountryChart["by"];
-type Series = { key: string; name: string; color: string; values: number[] };
+type Series = { key: string; name: string; color: string; values: number[]; area?: boolean };
 type Hover = { at: number; chart: string } | null;
 
-/** The ranges offered: by the hour up to a week, by the day beyond (`/admin/countries`). */
-const RANGES = [[2, "2 days"], [7, "7 days"], [30, "30 days"], [90, "90 days"]] as const;
+/** The ranges offered, in hours (`libs.ops.countries.RANGES_HOURS`): per run to half a day, per hour to two
+ * weeks, per day beyond. */
+const RANGES = [[1, "1 hour"], [2, "2 hours"], [4, "4 hours"], [8, "8 hours"], [12, "12 hours"],
+                [24, "1 day"], [48, "2 days"], [168, "7 days"], [336, "14 days"], [720, "30 days"]] as const;
 /** Countries drawn at once, one hue each in a fixed order: more than six hues cannot be told apart. */
 const SLOTS = 6;
 /** Countries drawn when the page opens: the busiest. */
@@ -28,13 +31,15 @@ const ROWS_SHOWN = 12;
 const keyOf = (country: Country) => country.country ?? "none";
 
 export function JobsByCountry() {
-  const [days, setDays] = useState<number>(2);
-  const path = `/admin/countries?days=${days}`;
+  const [hours, setHours] = useState<number>(24);
+  const path = `/admin/countries?hours=${hours}`;
   const [chart, setChart] = useState<CountryChart | null>(() => peek<CountryChart>(path));
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
   // Each country drawn, and its hue: kept while it is drawn, so no line changes colour under the reader.
   const [slots, setSlots] = useState<Record<string, number> | null>(null);
+  // Every country together, as its own line.
+  const [together, setTogether] = useState(true);
   const [hover, setHover] = useState<Hover>(null);
   const [all, setAll] = useState(false);
 
@@ -80,28 +85,34 @@ export function JobsByCountry() {
   const countries = chart?.countries ?? [];
   const starts = chart?.starts ?? [];
   const by: By = chart?.by ?? "hour";
+  const step = chart?.bucket_minutes ?? 60;
+  const unit = unitName(by, step);
   const total = starts.map((_, index) => countries.reduce((sum, each) => sum + (each.counts[index] ?? 0), 0));
   const sum = total.reduce((a, b) => a + b, 0);
   const drawn: Series[] = countries
     .filter((each) => keyOf(each) in picked)
     .sort((a, b) => picked[keyOf(a)]! - picked[keyOf(b)]!)
     .map((each) => ({ key: keyOf(each), name: each.name, color: hue(picked[keyOf(each)]!), values: each.counts }));
+  const lines: Series[] = [
+    ...(together ? [{ key: "all", name: "All countries", color: "var(--ink)", values: total, area: true }] : []),
+    ...drawn,
+  ];
   const busiest = total.indexOf(Math.max(...total));
   const full = Object.keys(picked).length >= SLOTS;
   const rows = all ? countries : countries.slice(0, ROWS_SHOWN);
-  const trimmed = chart?.since && starts.length < (by === "hour" ? days * 24 : days);
+  const trimmed = chart?.since && starts.length < Math.floor((hours * 60) / step);
 
   return (
     <section style={{ marginBottom: "2.5rem" }}>
       <h2 style={{ marginTop: 0 }}>Jobs found by country</h2>
       <p className="hint">
         New jobs as they are stored, by the country each is in. &ldquo;Not known&rdquo; is remote or
-        worldwide.
+        worldwide. Tick or untick any line in the table, all countries together included.
       </p>
       <div className="toggles" role="group" aria-label="How far back">
         {RANGES.map(([value, label]) => (
-          <button key={value} type="button" className="toggle" aria-pressed={days === value}
-                  onClick={() => setDays(value)}>
+          <button key={value} type="button" className="toggle" aria-pressed={hours === value}
+                  onClick={() => setHours(value)}>
             {label}
           </button>
         ))}
@@ -115,7 +126,7 @@ export function JobsByCountry() {
             each day means LinkedIn is read too slowly for the countries picked.
           </p>
           {trimmed ? (
-            <p className="facts">Counting began {when(chart.since!, "hour")}: nothing before it was counted.</p>
+            <p className="facts">Counting began {when(chart.since!, "minutes")}: nothing before it was counted.</p>
           ) : null}
           {countries.length === 0 ? (
             <p className="muted">Nothing counted in this time yet.</p>
@@ -125,39 +136,43 @@ export function JobsByCountry() {
                 <span className="label">All countries</span>
                 <strong>{sum.toLocaleString()}</strong>
                 <span className="muted small">
-                  busiest {by}: {total[busiest]!.toLocaleString()}, {when(starts[busiest]!, by)}
+                  busiest {unit}: {total[busiest]!.toLocaleString()}, {when(starts[busiest]!, by)}
                 </span>
               </div>
-              <LineChart id="total" label="All countries" area height={150} by={by} starts={starts}
-                         series={[{ key: "all", name: "All countries", color: "var(--ink)", values: total }]}
-                         hover={hover} onHover={setHover} />
-
-              <div className="trend-head">
-                <span className="label">By country</span>
-                <span className="muted small">Tick a country below to draw it, up to {SLOTS}.</span>
-              </div>
-              {drawn.length ? (
+              {lines.length ? (
                 <>
-                  <ul className="trend-legend" aria-label="Countries drawn">
-                    {drawn.map((each) => (
+                  <ul className="trend-legend" aria-label="Lines drawn">
+                    {lines.map((each) => (
                       <li key={each.key}><i className="line-key" style={{ background: each.color }} />{each.name}</li>
                     ))}
                   </ul>
-                  <LineChart id="countries" label="Each country" endLabels height={260} by={by} starts={starts}
-                             series={drawn} hover={hover} onHover={setHover} />
+                  <LineChart id="countries" label="Jobs found" endLabels height={300} by={by} step={step}
+                             starts={starts} series={lines} hover={hover} onHover={setHover} />
                 </>
-              ) : <p className="muted small">No country is drawn.</p>}
+              ) : <p className="muted small">No line is ticked.</p>}
 
               <table className="country-table">
                 <thead>
                   <tr>
                     <th scope="col">Country</th>
                     <th scope="col" className="num">Jobs</th>
-                    <th scope="col" className="num busiest">Busiest {by}</th>
+                    <th scope="col" className="num busiest">Busiest {unit}</th>
                     <th scope="col" className="num">Share</th>
                   </tr>
                 </thead>
                 <tbody>
+                  <tr>
+                    <td>
+                      <label className="pick">
+                        <input type="checkbox" checked={together} onChange={() => setTogether(!together)} />
+                        <i className="line-key" style={{ background: together ? "var(--ink)" : "transparent" }} />
+                        All countries
+                      </label>
+                    </td>
+                    <td className="num">{sum.toLocaleString()}</td>
+                    <td className="num busiest">{Math.max(0, ...total).toLocaleString()}</td>
+                    <td className="num">{sum ? "100%" : "—"}</td>
+                  </tr>
                   {rows.map((each) => {
                     const slot = picked[keyOf(each)];
                     return (
@@ -185,12 +200,12 @@ export function JobsByCountry() {
               ) : null}
 
               <details className="trend-numbers">
-                <summary>The numbers, {by === "hour" ? "hour by hour" : "day by day"}</summary>
+                <summary>The numbers, {unit} by {unit}</summary>
                 <div className="table-scroll">
                   <table>
                     <thead>
                       <tr>
-                        <th scope="col">{by === "hour" ? "Hour" : "Day"}</th>
+                        <th scope="col">{unit.charAt(0).toUpperCase() + unit.slice(1)}</th>
                         <th scope="col" className="num">All</th>
                         {drawn.map((each) => <th key={each.key} scope="col" className="num">{each.name}</th>)}
                       </tr>
@@ -219,14 +234,14 @@ export function JobsByCountry() {
 
 /** One or more series against time, one axis, with a crosshair and every series' value under the pointer
  * or the arrow keys. `hover` is shared, so both charts mark the same hour. */
-function LineChart({ id, label, series, starts, by, height, area = false, endLabels = false, hover, onHover }: {
+function LineChart({ id, label, series, starts, by, step, height, endLabels = false, hover, onHover }: {
   id: string;
   label: string;
   series: Series[];
   starts: string[];
   by: By;
+  step: number;
   height: number;
-  area?: boolean;
   endLabels?: boolean;
   hover: Hover;
   onHover: (hover: Hover) => void;
@@ -280,15 +295,17 @@ function LineChart({ id, label, series, starts, by, height, area = false, endLab
       }
     }
   }
-  const peak = area && series[0] ? series[0].values.indexOf(Math.max(...series[0].values)) : -1;
+  // The busiest bucket of the line with a wash under it (all countries together), named.
+  const washed = series.find((each) => each.area);
+  const peak = washed ? washed.values.indexOf(Math.max(...washed.values)) : -1;
   const clamp = (value: number) => Math.min(Math.max(value, left + 20), left + plotWidth - 20);
 
   return (
     <div ref={box} className="trend-chart" tabIndex={0}
-         aria-label={`${label}, new jobs by ${by}: arrow keys read each ${by}`}
+         aria-label={`${label}, new jobs per ${unitName(by, step)}: arrow keys read each in turn`}
          onPointerMove={(event) => point(event.clientX)} onPointerLeave={() => onHover(null)}
          onFocus={() => onHover({ at: at ?? n - 1, chart: id })} onBlur={() => onHover(null)} onKeyDown={keys}>
-      <svg width={width} height={height} role="img" aria-label={`${label}: new jobs by ${by}`}>
+      <svg width={width} height={height} role="img" aria-label={`${label}: new jobs per ${unitName(by, step)}`}>
         {ticks.map((tick) => (
           <g key={tick}>
             <line x1={left} x2={left + plotWidth} y1={y(tick)} y2={y(tick)}
@@ -298,14 +315,14 @@ function LineChart({ id, label, series, starts, by, height, area = false, endLab
             </text>
           </g>
         ))}
-        {xTicks(starts, by, plotWidth).map((index) => (
+        {xTicks(starts, by, step, plotWidth).map((index) => (
           <text key={index} x={clamp(x(index))} y={height - 6} textAnchor="middle" className="trend-axis">
             {tickLabel(starts[index]!, by)}
           </text>
         ))}
         {series.map((each) => (
           <g key={each.key}>
-            {area && n > 2 ? (
+            {each.area && n > 2 ? (
               <path d={`${line(each.values, last + 1)} L${x(last)},${y(0)} L${x(0)},${y(0)} Z`}
                     fill={each.color} opacity={0.1} />
             ) : null}
@@ -322,9 +339,9 @@ function LineChart({ id, label, series, starts, by, height, area = false, endLab
         {named.map((each) => (
           <text key={each.key} x={x(n - 1) + 10} y={each.y + 4} className="trend-name">{each.name}</text>
         ))}
-        {peak >= 0 && series[0]!.values[peak] ? (
-          <text x={clamp(x(peak))} y={y(series[0]!.values[peak]!) - 8} textAnchor="middle" className="trend-peak">
-            {series[0]!.values[peak]!.toLocaleString()}
+        {washed && peak >= 0 && washed.values[peak] ? (
+          <text x={clamp(x(peak))} y={y(washed.values[peak]!) - 8} textAnchor="middle" className="trend-peak">
+            {washed.values[peak]!.toLocaleString()}
           </text>
         ) : null}
         {at !== null ? (
@@ -367,12 +384,14 @@ function yTicks(peak: number): number[] {
   return Array.from({ length: Math.ceil(peak / step) + 1 }, (_, index) => index * step);
 }
 
-/** Which buckets get a label along the bottom: round hours, or midnights, or every few days, as many as fit. */
-function xTicks(starts: string[], by: By, plotWidth: number): number[] {
+/** Which buckets get a label along the bottom: round times, or midnights, or every few days, as many as
+ * fit. */
+function xTicks(starts: string[], by: By, step: number, plotWidth: number): number[] {
   const room = Math.max(2, Math.floor(plotWidth / 84));
-  if (by === "hour") {
-    for (const step of [1, 2, 3, 6, 12, 24]) {
-      const fit = starts.flatMap((at, index) => (new Date(at).getHours() % step === 0 ? [index] : []));
+  if (by !== "day") {
+    const minute = (at: string) => new Date(at).getHours() * 60 + new Date(at).getMinutes();
+    for (const every of [15, 30, 60, 120, 180, 360, 720, 1440].filter((each) => each >= step)) {
+      const fit = starts.flatMap((at, index) => (minute(at) % every === 0 ? [index] : []));
       if (fit.length <= room) return fit;
     }
     const midnights = starts.flatMap((at, index) => (new Date(at).getHours() === 0 ? [index] : []));
@@ -384,8 +403,15 @@ function xTicks(starts: string[], by: By, plotWidth: number): number[] {
 
 function tickLabel(at: string, by: By): string {
   const date = new Date(at);
-  if (by === "day" || date.getHours() === 0) return date.toLocaleDateString([], { day: "numeric", month: "short" });
+  if (by === "day" || (date.getHours() === 0 && date.getMinutes() === 0)) {
+    return date.toLocaleDateString([], { day: "numeric", month: "short" });
+  }
   return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+/** What one bucket is called: "15 minutes", "hour" or "day". */
+function unitName(by: By, step: number): string {
+  return by === "minutes" ? `${step} minutes` : by;
 }
 
 /** An hour or a day, in full: "Thu 5 Nov, 20:00" or "Thu 5 Nov". */

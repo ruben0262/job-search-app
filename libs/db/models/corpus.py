@@ -90,9 +90,10 @@ class CorpusJob(Document):
 
 @dataclass(kw_only=True)
 class CountryCount(Document):
-    """How many new postings arrived in one hour in one country (`country`; None when it cannot be
-    told): the admin's chart of what is found where (`CorpusRepository.add`). Kept when the postings
-    themselves are archived, so the chart reaches back further than the corpus does."""
+    """How many new postings arrived in one run (`PLATFORM_TICK_MIN`; an hour before 2026-11-05) in one
+    country (`country`; None when it cannot be told): the admin's chart of what is found where
+    (`CorpusRepository.add`, `libs.ops.countries`). Kept when the postings themselves are archived, so the
+    chart reaches back further than the corpus does. `hour` is when the run's count began."""
 
     COLLECTION = "country_counts"
     OWNER = None

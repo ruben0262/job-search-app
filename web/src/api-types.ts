@@ -127,8 +127,7 @@ export interface paths {
         };
         /**
          * Countries
-         * @description New postings by the country each is in: by the hour over a week or less, by the day beyond. The
-         *     buckets start no earlier than the first hour anything was counted: before it, a zero is not a count.
+         * @description New jobs by the country each is in, over the last `hours` (`libs.ops.countries`).
          */
         get: operations["countries_admin_countries_get"];
         put?: never;
@@ -295,6 +294,27 @@ export interface paths {
          * @description Where the jobs are right now, stage by stage.
          */
         get: operations["pipeline_shape_admin_pipeline_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/pipeline/sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Pipeline Sources
+         * @description Each source's last `hours`: found, with text, waiting for text, newest. Not in the live frame: it
+         *     reads the day's jobs, and once a minute is enough to see a board go quiet.
+         */
+        get: operations["pipeline_sources_admin_pipeline_sources_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1854,11 +1874,13 @@ export interface components {
         };
         /** CountryChart */
         CountryChart: {
+            /** Bucket Minutes */
+            bucket_minutes: number;
             /**
              * By
              * @enum {string}
              */
-            by: "hour" | "day";
+            by: "minutes" | "hour" | "day";
             /** Countries */
             countries: components["schemas"]["CountrySeries"][];
             /** Since */
@@ -3057,7 +3079,7 @@ export interface operations {
     countries_admin_countries_get: {
         parameters: {
             query?: {
-                days?: number;
+                hours?: number;
             };
             header?: never;
             path?: never;
@@ -3308,6 +3330,39 @@ export interface operations {
         };
     };
     pipeline_shape_admin_pipeline_get: {
+        parameters: {
+            query?: {
+                hours?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pipeline_sources_admin_pipeline_sources_get: {
         parameters: {
             query?: {
                 hours?: number;
