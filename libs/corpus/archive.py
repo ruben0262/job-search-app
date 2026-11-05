@@ -44,8 +44,9 @@ DEFAULT_ARCHIVE_DIR = Path(os.environ.get("ARCHIVE_DIR") or "archive")
 # How many rows one pass moves. The pass runs on the harvest tick, so this is a ceiling on the work
 # added to a cycle that already has an 11-minute budget, not a limit on how much can ever be
 # archived — the next tick continues where this one stopped. Measured 2026-11-05 at 400,000 postings:
-# 5,000 a pass took 8.3 s, 480,000 a day at a pass a tick; the EU's and the UK's ~70,000 a day leave
-# within hours of their day, and a keep shortened from 30 days to 15 is caught up in about 10 hours.
+# 5,000 a pass took 8.3 s written with gzip and 35.6 s with xz (`ARCHIVE_PRESET`), 480,000 a day at a
+# pass a tick; the EU's and the UK's ~70,000 a day leave within hours of their day (~500 a tick, ~4 s),
+# and a keep shortened from 30 days to 15 is caught up in about 10 hours.
 ARCHIVE_BATCH = 5000
 
 @dataclass(frozen=True)
