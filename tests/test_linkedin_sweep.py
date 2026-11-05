@@ -122,6 +122,46 @@ def test_every_job_stored_is_described_in_the_same_pass(db, site):
     assert db[CorpusJob.COLLECTION].count_documents({"description": {"$regex": "in Python"}}) == 25
 
 
+@pytest.mark.parametrize("addresses", [2, 5])
+def test_linkedin_is_read_a_page_at_once_from_each_of_the_proxys_addresses(db, site, monkeypatch, addresses):
+    """The proxy sends each new connection from its next address, and LinkedIn's limit is a rate per
+    address, so a pass reads as many pages at once as the proxy has addresses (Admin → Settings). It read
+    four whatever the proxy had, and the proxy went from four to six on 2026-11-05."""
+    import threading
+    import time
+
+    from libs.settings import put
+
+    class AtOnce(LinkedIn):
+        """LinkedIn, counting the most pages it was asked for at the same time."""
+
+        def __init__(self, listed):
+            super().__init__(listed)
+            self.lock, self.now, self.most = threading.Lock(), 0, 0
+
+        def get(self, url, params=None, **kwargs):
+            with self.lock:
+                self.now += 1
+                self.most = max(self.most, self.now)
+            time.sleep(0.02)
+            try:
+                return super().get(url, params, **kwargs)
+            finally:
+                with self.lock:
+                    self.now -= 1
+
+    site({})  # the proxy's address, set
+    fake = AtOnce({"Germany": GERMANY})
+    monkeypatch.setattr(linkedin, "make_site_client", fake)
+    _user(db, _config("python", "golang", "sql"))
+    put(db, "proxy_exits", addresses)
+
+    report = _pass(db)
+
+    assert report.described == 25, "the premise: enough jobs to read more pages at once than that"
+    assert fake.most == addresses
+
+
 def test_a_pass_costs_the_same_however_many_people_and_words_there_are(db, site):
     few = site({"Germany": GERMANY})
     _user(db, _config("python developer", "golang", "sql"))

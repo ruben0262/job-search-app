@@ -364,8 +364,10 @@ class CountrySeries(BaseModel):
 
 class CountryChart(BaseModel):
     by: Literal["hour", "day"]
-    # When each bucket starts.
+    # When each bucket starts: the range asked for, from the first hour anything was counted if later.
     starts: list[datetime]
+    # The first hour anything was counted; `None` before anything has been.
+    since: datetime | None
     # Most jobs first.
     countries: list[CountrySeries]
     # LinkedIn postings still waiting for their text and young enough to reach somebody: growing run after
@@ -376,14 +378,20 @@ class CountryChart(BaseModel):
 @router.get("/countries", response_model=CountryChart)
 def countries(db: Database = Depends(get_db), admin: User = Depends(require_admin), *,
               days: int = 2) -> dict:
-    """New postings by the country each is in: by the hour over two days or less, by the day beyond."""
+    """New postings by the country each is in: by the hour over a week or less, by the day beyond. The
+    buckets start no earlier than the first hour anything was counted: before it, a zero is not a count."""
     days = max(1, min(days, 366))
-    by = "hour" if days <= 2 else "day"
+    by = "hour" if days <= 7 else "day"
     step = timedelta(hours=1) if by == "hour" else timedelta(days=1)
     latest = datetime.now(UTC).replace(minute=0, second=0, microsecond=0)
     if by == "day":
         latest = latest.replace(hour=0)
     starts = [latest - step * n for n in range(days * 24 if by == "hour" else days)][::-1]
+    first = db[CountryCount.COLLECTION].find_one({}, {"hour": 1}, sort=[("hour", 1)])
+    since = first["hour"].replace(tzinfo=UTC) if first else None
+    if since is not None:
+        floor = since if by == "hour" else since.replace(hour=0)
+        starts = [start for start in starts if start >= floor] or starts[-1:]
     at = {start: index for index, start in enumerate(starts)}
     found: dict[str | None, list[int]] = {}
     for row in db[CountryCount.COLLECTION].find({"hour": {"$gte": starts[0]}}):
@@ -397,7 +405,7 @@ def countries(db: Database = Depends(get_db), admin: User = Depends(require_admi
     waiting = CorpusRepository(db).count_awaiting_description(
         linkedin=True, max_age_hours=int(get_setting(db, "job_max_age_hours")))
     audit(logger, "admin.countries", user=admin.id, days=days)
-    return {"by": by, "starts": starts, "countries": series, "waiting": waiting}
+    return {"by": by, "starts": starts, "since": since, "countries": series, "waiting": waiting}
 
 
 class LimitPatch(BaseModel):

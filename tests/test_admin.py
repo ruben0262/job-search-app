@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import uuid
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -629,9 +630,11 @@ def test_the_live_pipeline_is_not_public(api):
 
 def test_the_jobs_found_in_each_country_are_charted_by_the_hour_and_by_the_day(api):
     """Counted as each posting is stored, by its hour and its country, and kept when the postings are
-    archived: the chart reaches back further than the corpus does. A posting seen again is not new."""
+    archived: the chart reaches back further than the corpus does. A posting seen again is not new. By the
+    hour up to a week, by the day beyond, and from the first hour anything was counted: a zero before it
+    would be a count nobody took."""
     from libs.corpus.repository import CorpusRepository
-    from libs.db.models import CorpusJob
+    from libs.db.models import CorpusJob, CountryCount
 
     http, db, operator, _, sign_in = api
     sign_in(http, operator)
@@ -640,15 +643,21 @@ def test_the_jobs_found_in_each_country_are_charted_by_the_hour_and_by_the_day(a
         corpus.add(url=f"https://example.com/{n}", source="linkedin", title="Nurse", location=where)
     corpus.add(url="https://example.com/0", source="linkedin", title="Nurse", location="Berlin, Germany")
     db[CorpusJob.COLLECTION].delete_many({})  # archived: the count stays
+    hour = datetime.now(UTC).replace(minute=0, second=0, microsecond=0)
+    began = hour - timedelta(hours=30)
+    insert(db, CountryCount(id="began", hour=began, country="DE", jobs=5))
 
-    hourly = http.get("/admin/countries", params={"days": 2}).json()
-    daily = http.get("/admin/countries", params={"days": 30}).json()
+    hourly, weekly, daily = (http.get("/admin/countries", params={"days": days}).json()
+                             for days in (2, 7, 30))
 
-    assert (hourly["by"], len(hourly["starts"]), daily["by"], len(daily["starts"])) == ("hour", 48, "day", 30)
+    assert (hourly["by"], weekly["by"], daily["by"]) == ("hour", "hour", "day")
+    assert len(hourly["starts"]) == len(weekly["starts"]) == 31, "from the first hour counted"
+    assert len(daily["starts"]) == (hour.date() - began.date()).days + 1
     assert [(each["name"], each["total"]) for each in hourly["countries"]] == [
-        ("Germany", 2), ("France", 1), ("Not known", 1)]
-    assert hourly["countries"][0]["counts"][-1] == 2, "in the hour it came in"
-    assert daily["countries"][0]["counts"] == [0] * 29 + [2]
+        ("Germany", 7), ("France", 1), ("Not known", 1)]
+    germany = hourly["countries"][0]["counts"]
+    assert (germany[0], germany[-1], sum(germany)) == (5, 2, 7), "in the hour each came in"
+    assert daily["countries"][0]["counts"][-1] == (7 if began.date() == hour.date() else 2)
 
 
 def test_the_chart_says_how_many_linkedin_jobs_still_wait_for_their_text(api):

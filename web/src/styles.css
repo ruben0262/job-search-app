@@ -2226,17 +2226,148 @@ button.making::after {
   overflow-wrap: anywhere;
 }
 
-/* Jobs by country: the name, its count, and its own columns, one country a row. */
-.country-rows {
-  display: grid;
-  grid-template-columns: minmax(6rem, 10rem) 4.5rem minmax(0, 1fr);
-  gap: 0.35rem 1rem;
-  align-items: center;
-  margin-top: 1.25rem;
+/* Jobs by country, through time (`AdminCountries.tsx`): a hue a country, in this order, kept while it is
+   drawn. The reference data-viz palette, checked 2026-11-05 against this site's two backgrounds (#060606,
+   #f7f7f5): every neighbouring pair apart, for colour-blind readers too. In light, four are under 3:1
+   against the page, so each line also carries its name, and the table its numbers. */
+:root {
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
+  --series-6: #008300;
 }
-.country-rows .spark {
-  margin-top: 0;
-  max-width: none;
+[data-theme="light"] {
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
+  --series-6: #008300;
+}
+.trend {
+  transition: opacity var(--fade) var(--ease);
+}
+/* A new range on its way: the old one stays, dimmed, rather than the page jumping. */
+.trend.busy {
+  opacity: 0.5;
+}
+.trend-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.75rem;
+  margin: 1.75rem 0 0.25rem;
+}
+.trend-chart {
+  position: relative;
+  outline: none;
+}
+.trend-chart:focus-visible {
+  box-shadow: 0 0 0 1px var(--faint);
+  border-radius: var(--radius);
+}
+.trend-chart svg {
+  display: block;
+  overflow: visible;
+  touch-action: pan-y;
+}
+.trend-axis {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  fill: var(--dim);
+}
+.trend-name {
+  font-size: 11px;
+  fill: var(--muted);
+}
+.trend-peak {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  fill: var(--muted);
+}
+.trend-tip {
+  position: absolute;
+  top: 0.25rem;
+  z-index: 2;
+  min-width: 9rem;
+  padding: 0.5rem 0.7rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--faint);
+  border-radius: var(--radius);
+  font-size: 0.8125rem;
+  pointer-events: none;
+}
+.trend-tip .when {
+  color: var(--muted);
+  font-size: 0.75rem;
+  margin-bottom: 0.3rem;
+}
+.trend-tip .row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.trend-tip strong {
+  min-width: 3rem;
+  font-variant-numeric: tabular-nums;
+}
+.trend-tip .name {
+  color: var(--muted);
+}
+/* A series' key: a short stroke of its colour, as its line is drawn. */
+.line-key {
+  display: inline-block;
+  flex: none;
+  width: 14px;
+  height: 2px;
+  border-radius: 1px;
+}
+.trend-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 1.1rem;
+  margin: 0.25rem 0 0.5rem;
+  padding: 0;
+  list-style: none;
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+.trend-legend li,
+.country-table .pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.country-table {
+  max-width: 44rem;
+  margin-top: 1.5rem;
+}
+.country-table th.num,
+.country-table td.num {
+  text-align: right;
+}
+/* On a phone the busiest hour gives way: it is in the numbers under the table. */
+@media (max-width: 40rem) {
+  .country-table .busiest {
+    display: none;
+  }
+}
+.country-table .pick {
+  cursor: pointer;
+}
+.trend-numbers {
+  margin-top: 1rem;
+}
+.trend-numbers summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+.trend-numbers .table-scroll {
+  max-height: 24rem;
+  overflow: auto;
 }
 
 /* The per-source table in Settings: name, freshness, query ceiling, and what that source is

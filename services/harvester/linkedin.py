@@ -27,7 +27,7 @@ from libs.obs import audit
 from libs.proxy import ENV as PROXY_ENV
 from libs.proxy import site_proxy
 from libs.secrets import redacting
-from libs.settings import HARVEST_CYCLE_BUDGET_SECONDS, PLATFORM_TICK_MIN, freshness_hours
+from libs.settings import HARVEST_CYCLE_BUDGET_SECONDS, PLATFORM_TICK_MIN, freshness_hours, proxy_exits
 from libs.settings import get as settings_get
 from libs.tenant.repository import TenantRepository
 from services.harvester.describe import describe_pending
@@ -49,13 +49,6 @@ SWEEP_PAGE, SWEEP_DEPTH = 10, 1000
 # hour stopped at 20 of ~300 jobs that way (2026-11-03). After a full page, an empty one is asked again,
 # each time from another of the proxy's addresses, before it counts as the end.
 EMPTY_RETRIES = 3
-
-# LinkedIn pages fetched at once, sweeping (a country each) or describing. Measured through the site
-# proxy, 2026-11-02: one at a time took 1.1–1.4 s a page, four took 0.24–0.47 s and read all 50 asked,
-# eight took 0.17–0.63 s and gave up on 3 of 24 in one run. Its limit is a rate, not a count at once:
-# ~150 pages a minute answered whole, 240 asked got ~180 through, 360 almost none (2026-11-04). One country
-# after another, 28 countries' sweep took 3.4 of a pass's 11 minutes (2026-11-04).
-READERS = 4
 
 
 @dataclass
@@ -105,10 +98,10 @@ def sweep_window(swept_at: datetime | None, *, now: datetime, most: int) -> int:
     return int(min(most * 3600, since + PLATFORM_TICK_MIN * 60))
 
 
-def sweep_places(places: dict[str, int], *, proxy: str) -> list[Sweep]:
-    """Every job each place listed in its window (seconds), newest first, with no search word: `READERS`
+def sweep_places(places: dict[str, int], *, proxy: str, readers: int) -> list[Sweep]:
+    """Every job each place listed in its window (seconds), newest first, with no search word: `readers`
     places at once, each read a page after the other."""
-    with redacting(proxy), make_site_client(proxy) as client, ThreadPoolExecutor(READERS) as pool:
+    with redacting(proxy), make_site_client(proxy) as client, ThreadPoolExecutor(readers) as pool:
         return list(pool.map(lambda place: _sweep(client, place, places[place]), places))
 
 
@@ -191,15 +184,18 @@ def run_pass(db, *, now: datetime | None = None, sweep=None) -> LinkedInReport:
         deadline = monotonic() + PASS_BUDGET_SECONDS
         now = now or datetime.now(UTC)
         corpus = CorpusRepository(db)
-        _swept(db, corpus, report, now=now, proxy=proxy, sweep=sweep or sweep_places)
-        _describe(db, corpus, proxy, report, seconds=deadline - monotonic())
+        # A page at once from each of the proxy's addresses (`libs.settings.DEFAULT_PROXY_EXITS`).
+        readers = proxy_exits(db)
+        _swept(db, corpus, report, now=now, proxy=proxy, readers=readers, sweep=sweep or sweep_places)
+        _describe(db, corpus, proxy, report, readers=readers, seconds=deadline - monotonic())
 
     audit(logger, "linkedin.pass", places=report.swept_places, requests=report.sweep_requests,
           swept=report.swept, new=report.new_jobs, described=report.described, failures=len(report.failures))
     return report
 
 
-def _swept(db, corpus: CorpusRepository, report: LinkedInReport, *, now: datetime, proxy: str, sweep) -> None:
+def _swept(db, corpus: CorpusRepository, report: LinkedInReport, *, now: datetime, proxy: str, readers: int,
+           sweep) -> None:
     """Every place's new jobs, each stored once, and when each place was read whole."""
     places = wanted_places(TenantRepository(db).active_configs())
     if not places:
@@ -209,7 +205,7 @@ def _swept(db, corpus: CorpusRepository, report: LinkedInReport, *, now: datetim
     last = {row["_id"]: row["swept_at"] for row in db[SweptPlace.COLLECTION].find({"_id": {"$in": places}})}
     try:
         sweeps = sweep({place: sweep_window(last.get(place), now=now, most=most) for place in places},
-                       proxy=proxy)
+                       proxy=proxy, readers=readers)
     except Exception as exc:                                        # noqa: BLE001
         # The sweep failing is not the describing failing: what earlier passes stored still waits.
         report.failures["sweep"] = f"{type(exc).__name__}: {exc}"
@@ -234,7 +230,8 @@ def _swept(db, corpus: CorpusRepository, report: LinkedInReport, *, now: datetim
                        "window went unread", truncated)
 
 
-def _describe(db, corpus: CorpusRepository, proxy: str, report: LinkedInReport, *, seconds: float) -> None:
+def _describe(db, corpus: CorpusRepository, proxy: str, report: LinkedInReport, *, readers: int,
+              seconds: float) -> None:
     """Every LinkedIn posting still without its text, newest first, until the pass's time is spent.
 
     LinkedIn's list carries no text, so each posting is opened to read it. Only a posting still young
@@ -244,7 +241,7 @@ def _describe(db, corpus: CorpusRepository, proxy: str, report: LinkedInReport, 
         described = describe_pending(corpus, client, linkedin=True, limit=None,
                                      budget_seconds=max(seconds, 0),
                                      max_age_hours=int(settings_get(db, "job_max_age_hours")),
-                                     workers=READERS)
+                                     workers=readers)
     report.described = described.described
     if described.proxy_error:
         logger.error("linkedin: describing stopped, the site proxy failed: %s", described.proxy_error[:200])

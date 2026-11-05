@@ -127,7 +127,8 @@ export interface paths {
         };
         /**
          * Countries
-         * @description New postings by the country each is in: by the hour over two days or less, by the day beyond.
+         * @description New postings by the country each is in: by the hour over a week or less, by the day beyond. The
+         *     buckets start no earlier than the first hour anything was counted: before it, a zero is not a count.
          */
         get: operations["countries_admin_countries_get"];
         put?: never;
@@ -1860,6 +1861,8 @@ export interface components {
             by: "hour" | "day";
             /** Countries */
             countries: components["schemas"]["CountrySeries"][];
+            /** Since */
+            since: string | null;
             /** Starts */
             starts: string[];
             /** Waiting */

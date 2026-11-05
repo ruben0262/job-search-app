@@ -16,7 +16,7 @@ import socket
 import threading
 import time
 import uuid
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from urllib.parse import urlparse
 
 import pytest
@@ -279,16 +279,14 @@ def _one_word_short(page) -> None:
 
 
 def test_the_admin_charts_the_jobs_found_in_each_country(site, capsys):
-    """Where the jobs come from, by the hour and by the day, and how many LinkedIn jobs still wait for
-    their text (owner, 2026-11-04)."""
-    from libs.corpus.repository import CorpusRepository
+    """Where the jobs come from through time, all countries and each, and how many LinkedIn jobs still
+    wait for their text (owner, 2026-11-04). Lines on a time axis, a hue a country: the busiest five
+    drawn, any other ticked in, and a country keeps its hue when another is taken away (2026-11-05)."""
     from libs.db import database
 
     base, email, _ = site
-    corpus = CorpusRepository(database())
-    for n, where in enumerate(["Berlin, Germany"] * 5 + ["Paris, France"] * 2 + ["Remote"]):
-        corpus.add(url=f"https://www.linkedin.com/jobs/view/{900 + n}", source="linkedin", title="Nurse",
-                   location=where)
+    busiest, an_hour_ago = _counted_by_country(database())
+
     with sync_api.sync_playwright() as playwright:
         browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
         page = browser.new_context(viewport={"width": 1280, "height": 900}).new_page()
@@ -300,15 +298,65 @@ def test_the_admin_charts_the_jobs_found_in_each_country(site, capsys):
         page.get_by_role("button", name="Corpus").click()
 
         expect(page.get_by_role("heading", name="Jobs found by country")).to_be_visible()
-        rows = page.locator(".country-rows > span:not(.num)")
-        expect(rows).to_have_text(["Germany", "France", "Not known"])
         expect(page.get_by_text("LinkedIn jobs waiting for their text: 8.")).to_be_visible()
         expect(page.get_by_role("img", name="All countries: new jobs by hour")).to_be_visible()
-        page.get_by_role("button", name="30 days").click()
-        expect(page.get_by_role("img", name="All countries: new jobs by day")).to_be_visible()
+        expect(page.get_by_role("img", name="Each country: new jobs by hour")).to_be_visible()
+        expect(page.locator(".country-table tbody label")).to_have_text([*busiest, "Not known"])
+        legend = page.get_by_role("list", name="Countries drawn").get_by_role("listitem")
+        expect(legend).to_have_text(busiest[:5])
+
+        france = page.locator(".country-table label", has_text="France").locator(".line-key")
+        hue = france.evaluate("key => getComputedStyle(key).backgroundColor")
+        page.get_by_role("checkbox", name="Germany").uncheck()
+        expect(legend).to_have_text([name for name in busiest[:5] if name != "Germany"])
+        assert france.evaluate("key => getComputedStyle(key).backgroundColor") == hue, "France kept its hue"
+        page.get_by_role("checkbox", name="Italy").check()
+        expect(legend).to_contain_text(["Italy"])
+
+        # Read without a pointer: the arrow keys walk the hours, every series' number at each.
+        page.get_by_label("All countries, new jobs by hour: arrow keys read each hour").focus()
+        tip = page.locator(".trend-tip")
+        expect(tip).to_contain_text("so far")
+        expect(tip).to_contain_text("8All countries")
+        page.keyboard.press("ArrowLeft")
+        expect(tip).to_contain_text(f"{an_hour_ago:,}All countries")
+
+        page.set_viewport_size({"width": 390, "height": 900})
+        expect(page.locator(".country-table")).to_be_visible()
+        assert page.evaluate("document.documentElement.scrollWidth") <= 390, "a phone scrolls sideways"
+        page.set_viewport_size({"width": 1280, "height": 900})
         page.locator("h2", has_text="Jobs found by country").locator("..").screenshot(
             path=os.environ.get("E2E_SHOT", "/dev/null") if os.environ.get("E2E_SHOT") else None)
+        page.get_by_role("button", name="30 days").click()
+        expect(page.get_by_role("img", name="All countries: new jobs by day")).to_be_visible()
         browser.close()
+
+
+def _counted_by_country(db) -> tuple[list[str], int]:
+    """Eight LinkedIn jobs stored this hour, five in Germany, two in France, one remote; and the thirty
+    hours before it counted, each country with its own rhythm. The countries busiest first, and every
+    country's count an hour ago."""
+    from libs.corpus.repository import CorpusRepository
+    from libs.db.models import CountryCount
+
+    corpus = CorpusRepository(db)
+    for n, where in enumerate(["Berlin, Germany"] * 5 + ["Paris, France"] * 2 + ["Remote"]):
+        corpus.add(url=f"https://www.linkedin.com/jobs/view/{900 + n}", source="linkedin", title="Nurse",
+                   location=where)
+    rhythm = {"GB": (60, 11, 50), "DE": (50, 7, 40), "FR": (30, 5, 25), "NL": (20, 3, 15), "ES": (10, 2, 9),
+              "IT": (8, 1, 5), "PL": (5, 1, 4)}
+    hour = datetime.now(UTC).replace(minute=0, second=0, microsecond=0)
+    db[CountryCount.COLLECTION].insert_many([
+        {"_id": f"seeded {back} {code}", "hour": hour - timedelta(hours=back), "country": code,
+         "jobs": low + (back * step) % spread}
+        for back in range(1, 31) for code, (low, step, spread) in rhythm.items()])
+    totals = {code: sum(low + (back * step) % spread for back in range(1, 31))
+              for code, (low, step, spread) in rhythm.items()}
+    totals["DE"], totals["FR"] = totals["DE"] + 5, totals["FR"] + 2
+    names = {"GB": "United Kingdom", "DE": "Germany", "FR": "France", "NL": "Netherlands", "ES": "Spain",
+             "IT": "Italy", "PL": "Poland"}
+    return ([names[code] for code in sorted(totals, key=lambda code: -totals[code])],
+            sum(low + step % spread for low, step, spread in rhythm.values()))
 
 
 def test_a_job_found_somewhere_else_is_brought_in_by_its_link(site, capsys):

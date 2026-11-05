@@ -793,6 +793,18 @@
             "title": "Countries",
             "type": "array"
           },
+          "since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Since"
+          },
           "starts": {
             "items": {
               "format": "date-time",
@@ -809,6 +821,7 @@
         "required": [
           "by",
           "starts",
+          "since",
           "countries",
           "waiting"
         ],
@@ -3858,7 +3871,7 @@
     },
     "/admin/countries": {
       "get": {
-        "description": "New postings by the country each is in: by the hour over two days or less, by the day beyond.",
+        "description": "New postings by the country each is in: by the hour over a week or less, by the day beyond. The\nbuckets start no earlier than the first hour anything was counted: before it, a zero is not a count.",
         "operationId": "countries_admin_countries_get",
         "parameters": [
           {

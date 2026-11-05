@@ -14,6 +14,48 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-05 — LinkedIn reads a page from each proxy address at once; jobs by country, as lines in time
+
+The owner, the evening after deploying: LinkedIn's jobs waiting for their text grew run after run (8,425,
+then 10,973 two minutes later); and the chart of jobs by country "looks terrible", where it should be a
+time series, a colour a country, over a chosen time.
+
+**The waiting count.** A pass sweeps every picked country first and stores what it lists, which is the
+jump, then reads job texts, newest first, for the rest of its 11 minutes. It read four pages at once
+(`READERS = 4`), set when the proxy had four addresses. Each new connection leaves from the proxy's next
+address and LinkedIn's limit is a rate per address (~40 pages a minute), so on six addresses four
+readers leave a third of what the proxy allows unused.
+
+- **`proxy_exits`, a platform setting (Admin → Settings → Proxy addresses, 6 by default):** how many
+  addresses the proxy sends from, and how many LinkedIn pages a pass reads at once, sweeping and reading
+  texts alike. The constant is gone.
+- **Not measured on the server yet.** Expected: up to half as many pages again per pass, if four readers
+  were what held it back; nothing, if LinkedIn's refusals were. The harvester log says which, before and
+  after: `linkedin: swept … in N request(s)`, `describe: … attempted, … described, … throttled`, and
+  `describe: stopping at …, every try refused`.
+- Jobs older than `job_max_age_hours` (24) are not read and leave the count. A backlog left at the day's
+  end never shrinks back: those jobs stay without their text, and are matched on their title alone.
+- "Descriptions fetched per cycle" said it decides how fast every backlog clears. It is the other
+  boards' only; its hint says so now.
+
+**The chart** (`web/src/pages/AdminCountries.tsx`, replacing the rows of columns in `AdminPage.tsx`):
+
+- Two line charts on one time axis: every country together, then the countries ticked in the table under
+  it, a colour each (the busiest five at first, six at most). A country keeps its colour while it is
+  drawn, whatever is ticked or unticked beside it. The colours are the data-viz reference palette, checked
+  against this site's two backgrounds; in light mode four are under 3:1, so lines carry their names and
+  the numbers are in a table.
+- 2, 7, 30 or 90 days: by the hour up to a week (it was two days), by the day beyond. It starts at the
+  first hour anything was counted, not with zeros before it (`CountryChart.since`).
+- The hour still being counted ends each line as a faint open dot, so its drop does not read as one.
+- A crosshair and every drawn series' number under the pointer, or the arrow keys; the table gives each
+  country's jobs, busiest hour and share, and "The numbers" every hour's.
+
+Tests (each fails on the previous commit): a pass reads as many LinkedIn pages at once as the setting
+says, 2 or 5; the chart is hourly to a week and starts at the first count; in a browser, the busiest five
+are drawn, a country keeps its colour when another is unticked, the keys read each hour's numbers, and a
+phone's width needs no sideways scroll.
+
 ## 2026-11-05 — The admin page and the health alerts work on server_db
 
 The owner, after deploying: Admin read "Could not read the platform state", every time.

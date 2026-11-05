@@ -104,8 +104,18 @@ DEFAULT_ATS_COMPANIES_PER_CYCLE = 400
 ATS_DISCOVERY_LOOKBACK_HOURS = 48
 ATS_DISCOVERY_MAX_ROWS = 20_000
 
-# How many postings the shared cycle will fetch descriptions for in one pass.
+# How many postings the shared cycle will fetch descriptions for in one pass: the boards', not LinkedIn's,
+# whose text is fetched for the rest of its pass, `proxy_exits` pages at a time.
 DEFAULT_DESCRIBE_PER_CYCLE = 200
+
+# How many addresses the site proxy (`HARVEST_PROXY`) sends from, each new connection from the next in
+# turn. LinkedIn is read that many pages at once (`services.harvester.linkedin`): its limit is a rate per
+# address, ~40 pages a minute (2026-11-04: 240 asked a minute of four addresses got ~180 through, 360
+# almost none), and four readers on four addresses reached it. Measured through the proxy, 2026-11-02: one
+# reader took 1.1–1.4 s a page, four 0.24–0.47 s, eight on four addresses gave up on 3 of 24. The owner
+# went to six addresses on 2026-11-05, and the count stayed four in code, reading at most two thirds of
+# what six allow.
+DEFAULT_PROXY_EXITS = 6
 
 # How deep a paginated source reads in one cycle, per source.
 DEFAULT_SOURCE_PAGES_PER_CYCLE: dict[str, int] = {
@@ -289,6 +299,7 @@ DEFAULTS: dict[str, object] = {
     "source_pages_per_cycle": DEFAULT_SOURCE_PAGES_PER_CYCLE,
     "ats_companies_per_cycle": DEFAULT_ATS_COMPANIES_PER_CYCLE,
     "describe_per_cycle": DEFAULT_DESCRIBE_PER_CYCLE,
+    "proxy_exits": DEFAULT_PROXY_EXITS,
     "document_models": DEFAULT_DOCUMENT_MODELS,
     "document_keep_hours": DEFAULT_DOCUMENT_KEEP_HOURS,
     "support_chat_enabled": DEFAULT_SUPPORT_CHAT_ENABLED,
@@ -383,6 +394,11 @@ def ats_companies_per_cycle(db: Database | Snapshot) -> int:
 def describe_per_cycle(db: Database) -> int:
     """How many postings the shared cycle fetches descriptions for in one pass."""
     return int(get(db, "describe_per_cycle") or DEFAULT_DESCRIBE_PER_CYCLE)
+
+
+def proxy_exits(db: Database) -> int:
+    """How many addresses the site proxy sends from: how many LinkedIn pages are read at once."""
+    return max(1, int(get(db, "proxy_exits")))
 
 
 def document_model(db: Database, provider: str) -> str:
