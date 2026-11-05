@@ -3107,7 +3107,8 @@ numbers)**
 21. **Done 2026-11-04: LinkedIn is read country by country, every job stored and described.** No word is
     asked of LinkedIn and no title is filtered: every country an active person picked is swept each run,
     and every job's text is read in the same pass. Words are matched on the stored jobs, title and text.
-22. **The database must have room before this is deployed** (branch `harvest-everything`). Every board's
+22. **Done 2026-11-05: Mahoraga runs on server_db** (`~/projects/server_db`, the `db` LXC), so the
+    branch can be deployed once server_db's step 13 (speed at full size, on the server) passes. Every board's
     whole window is kept now. LinkedIn alone, for the EU and the UK, listed 750–1,500 jobs per 15 minutes
     (09:50 and 11:00, 2026-11-04): 40,000–70,000 a day at ~5 KB each, 0.2–0.4 GB a day. Atlas's 512 MB
     fills in a day or two, and a full Atlas refuses every write, logins included. Recommendation: move to
@@ -3123,7 +3124,9 @@ numbers)**
 25. **Adzuna's free tier cannot read a country whole.** About 250 calls a day: two countries a run, the
     newest 50 jobs each. Unmeasured, with no key here. Recommendation: keep it as a sample, or pay for
     a tier that reads a country's day.
-26. **Four proxy exits carry the whole EU and the UK at peak, with nothing to spare.** Measured
+26. **Six proxy exits since 2026-11-05** (the owner: no more to be had), ~240 pages a minute: the whole EU
+    and the UK at their busiest hour (~6,000 jobs) use about 70% of them. What follows was measured on four.
+    **Four proxy exits carry the whole EU and the UK at peak, with nothing to spare.** Measured
     2026-11-04: ~150 LinkedIn pages a minute answered whole, 240 asked got ~180 through, 360 almost none,
     recovered a minute after. At 11:00 the EU and the UK listed ~1,500 jobs per 15 minutes; a pass read
     501 list pages and described 1,427 of 1,801 new jobs in its 11 minutes. A backlog drains only off
