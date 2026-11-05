@@ -50,7 +50,6 @@ class PlatformHealth:
     database_bytes: int
     # What it must stay under: the operator's setting, the tier's size.
     database_budget_bytes: int
-    connections: int
     users: list[UserHealth] = field(default_factory=list)
 
     def as_dict(self) -> dict:
@@ -112,7 +111,6 @@ def platform_health(db: Database, *, include_users: bool = True) -> PlatformHeal
         archive_overdue=overdue(db),
         database_bytes=int(size.get("dataSize", 0) + size.get("indexSize", 0)),
         database_budget_bytes=database_budget_bytes(db),
-        connections=int(db.command("serverStatus")["connections"]["current"]),
         users=user_health(db) if include_users else [],
     )
 

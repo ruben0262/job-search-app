@@ -14,6 +14,24 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-05 — The admin page and the health alerts work on server_db
+
+The owner, after deploying: Admin read "Could not read the platform state", every time.
+
+**Why.** The health read (`libs.ops.health.platform_health`) asked MongoDB for `serverStatus`, for one
+number: connections open to the whole server. That command reads the server, not a database, and
+server_db's app logins are `readWrite` and `dbAdmin` on their own database only (its `bin/sdb add-app`,
+by design). MongoDB refused it, and the read failed as a whole. Atlas allowed it, and so does the
+laptop's mongod, which has no logins, so neither the tests nor the laptop could see it.
+
+**The same read feeds the health timer** (`deploy/scripts/check_health.py`), so no alert email could be
+sent from the move to server_db until this deploy.
+
+- **The number is gone.** Nothing used it but one line of the health timer's log, and the admin page
+  never showed it. The server's own connections are server_db's business (`bin/sdb status`, Uptime Kuma).
+- **A test asks MongoDB what the two roles allow** (`rolesInfo`), and fails if the admin's health read
+  sends any command outside them. It fails on the previous commit: `['serverStatus']`.
+
 ## 2026-11-05 — Full size, measured on the server; `harvest-everything` merged
 
 The owner ran server_db's step 13 (`~/projects/server_db/ROADMAP.md`) on the real servers: the probe in

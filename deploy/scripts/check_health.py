@@ -73,7 +73,7 @@ def main(argv: list[str] | None = None) -> int:
         summary = ("TIMERS NOT ENABLED: " + ", ".join(absent)
                    + "\n  Fix with: sudo deploy/install-units.sh\n\n" + summary)
     print(f"{state.corpus_rows:,} corpus rows, {state.users_active} active users, "
-          f"{state.database_bytes / 1024**2:.0f} MB, {state.connections} connections")
+          f"{state.database_bytes / 1024**2:.0f} MB")
     for lane in state.lanes:
         print(f"  {lane.lane:8} ready={lane.ready:<5} claimed={lane.claimed:<4} "
               f"dead={lane.dead:<4} oldest={lane.oldest_ready_min or 0:.0f}m")

@@ -29,7 +29,6 @@ type Health = {
   corpus_rows: number;
   database_bytes: number;
   database_budget_bytes: number;
-  connections: number;
   alerts: Alert[];
   latency: {
     window_hours: number;

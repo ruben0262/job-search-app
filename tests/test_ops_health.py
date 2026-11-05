@@ -27,7 +27,7 @@ def user(**kwargs) -> UserHealth:
 def health(**kwargs) -> PlatformHealth:
     base = {"checked_at": datetime.now(UTC).isoformat(), "lanes": [lane()], "users_total": 1,
             "users_active": 1, "corpus_rows": 1000, "archive_overdue": 0, "database_bytes": ROOMY,
-            "database_budget_bytes": DATABASE_BUDGET_BYTES, "connections": 5, "users": []}
+            "database_budget_bytes": DATABASE_BUDGET_BYTES, "users": []}
     return PlatformHealth(**{**base, **kwargs})
 
 
@@ -184,13 +184,57 @@ def test_health_reads_a_live_database_without_scanning_it(db):
     assert lanes["notify"].ready == 1 and lanes["notify"].oldest_ready_min >= 59
     assert (state.users_total, state.users_active, state.corpus_rows) == (1, 1, 1)
     assert state.database_bytes > 0
-    assert state.connections > 0
     assert any(row.email == account.email for row in state.users)
     assert {"dead_letter:docgen", "stalled:notify"} <= keys(evaluate(state))
 
 
 
 # ── what the health check costs as the platform grows (ROADMAP 6be) ───────────────────────────
+
+def test_the_health_check_asks_only_what_an_apps_own_login_may(db):
+    """server_db gives each app `readWrite` and `dbAdmin` on its own database and nothing more
+    (`~/projects/server_db/bin/sdb add-app`), and refuses a command needing more, failing the whole read.
+    `serverStatus` did that on the day Mahoraga moved there (2026-11-05): the admin page read "Could not
+    read the platform state" and the health timer sent no alert. Atlas allowed it, and so does a mongod
+    without logins, which is what the tests run on: so MongoDB is asked what the two roles grant, and
+    every command the admin's health read sends must be one of those."""
+    import os
+
+    from pymongo import MongoClient, monitoring
+
+    from libs.ops.health import platform_health
+    from libs.ops.latency import pipeline_latency
+
+    granted = {action for role in ("readWrite", "dbAdmin")
+               for privilege in db.command("rolesInfo", {"role": role, "db": db.name},
+                                           showPrivileges=True)["roles"][0]["privileges"]
+               for action in privilege["actions"]}
+
+    class Sent(monitoring.CommandListener):
+        def __init__(self):
+            self.names = []
+
+        def started(self, event):
+            self.names.append(event.command_name)
+
+        def succeeded(self, event):
+            pass
+
+        def failed(self, event):
+            pass
+
+    sent = Sent()
+    with MongoClient(os.environ["MONGODB_URI"], uuidRepresentation="standard", tz_aware=True,
+                     event_listeners=[sent]) as client:
+        platform_health(client[db.name])
+        pipeline_latency(client[db.name])
+    # Reading a collection is the action `find`, whichever command does it; a cursor's next page and
+    # the end of the client's sessions need none. The rest are named for their action.
+    reads = {"aggregate": "find", "count": "find", "distinct": "find"}
+    actions = {reads.get(name, name) for name in sent.names} - {"getMore", "endSessions"}
+    assert "find" in actions, "the premise: the listener sees the health read's commands"
+    assert actions <= granted, f"it needs more than its own database: {sorted(actions - granted)}"
+
 
 def test_the_health_check_does_not_ask_the_platform_a_question_per_account(db):
     """**A relationship, not a stopwatch.** The count of queries must not scale with accounts.
