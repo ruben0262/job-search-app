@@ -3143,17 +3143,13 @@ numbers)**
 
 **Putting it live, in order (owner, 2026-11-04)**
 
-27. **Now: deploy `main`** (the search minimums, the account page). Nothing waits on it.
-28. **The database: `~/projects/server_db`, built, not yet on the server.** You make the `db` VM, an R2
-    bucket and two healthchecks.io checks (its README, steps 1–5), then `bin/sdb add-app mahoraga` and
-    the copy from Atlas (its DESIGN, "Moving Mahoraga", ~10 minutes with the harvest paused). It brings
-    hourly off-site backups and a weekly restore drill. The one piece missing: the archive folder lives
-    on the app VM, not in the database, and has no off-site copy. Recommendation: a nightly restic of
-    `archive/` to the same bucket, built next. The archive is xz now, a third smaller than gzip.
-29. **Proxy exits, only as many as the countries people pick need** (item 26). Measure on the server
-    first: the admin's "Jobs found by country" and its count of LinkedIn jobs waiting for their text.
-30. **Merge `harvest-everything` and deploy.** The first pass reaches 4 hours back in each country,
-    ~8,000 jobs for the EU and the UK, and its describing catches up in an hour or two.
+27. **`main`: the search minimums and the account page** go live with item 30's deploy, if not before.
+28. **Done 2026-11-05: Mahoraga runs on server_db** (the `db` LXC), and its backups and the archive
+    folder's are running (owner; `~/projects/server_db/ROADMAP.md`, Phase 2).
+29. **Done 2026-11-05: six exits**, the most there will be (item 26). Whether they keep up is item 31.
+30. **Merged 2026-11-05, after server_db's step 13 measured full size on the server** (CHANGELOG,
+    "Full size, measured on the server"). **Next: deploy.** The first pass reaches 4 hours back in each
+    country, ~8,000 jobs for the EU and the UK, and its describing catches up in an hour or two.
 31. **Watch the chart.** A waiting count that grows run after run is a pass that cannot keep up: more
     exits, or fewer countries.
 
@@ -3177,8 +3173,10 @@ work, or opening and closing sessions faster, would help):
 
 **At full size (measured 2026-11-04 on 1.5 million jobs; CHANGELOG, "Matching at full size")**
 
-34. **The Jobs page is ~450 ms at a month of the EU and the UK, against its 300 ms target.** A match reads
-    whole jobs, ~4.7 KB each and mostly description, where it needs the title, company, place and words.
+34. **The Jobs page is ~450 ms at a month of the EU and the UK, against its 300 ms target** (on the
+    server, 2026-11-05: 461 ms, 539 ms the first look; a person's page while their new word waits,
+    2.8–3.5 s). A match reads whole jobs, ~4.7 KB each and mostly description, where it needs the
+    title, company, place and words.
     Proposed: the descriptions in a collection of their own, read only for the page's 20 jobs, a job
     being opened, a CV, and the words search. What a match reads would be ~8× smaller. To measure first
     with `scripts/scale_probe.py` before building: it touches every reader of a description.

@@ -14,6 +14,41 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-05 — Full size, measured on the server; `harvest-everything` merged
+
+The owner ran server_db's step 13 (`~/projects/server_db/ROADMAP.md`) on the real servers: the probe in
+the harvester's image on the apps' LXC, the throwaway database on the `db` LXC (two cores, MongoDB
+8.0.34, zstd). The same 1.5 million jobs over 30 days and 300 people as the laptop's measurement
+(2026-11-04, night), copied from the newest 25,000 of Mahoraga's own jobs.
+
+| | Laptop, 3.5 GB cache | Server | Step 13's line |
+|---|---|---|---|
+| Jobs page, median: first look / again | ~450 ms | 539 / 461 ms | 0.5 s |
+| 90% of people under | ~1.1 s | 1.37 / 1.18 s | |
+| The slowest person | ~2 s | 2.30 / 1.71 s | 2 s |
+| A new word, searched for in every job that can be shown | 70–97 s | 90 s ("agile", 37,745 jobs), 58 s ("blockchain", 1,226) | 5 minutes |
+| A person's page while their new word waits | 1.6–1.8 s | 2.8–3.5 s | |
+| A run's 1,800 new jobs: stored, texts, words | 12 s, 45 s, 13 s | 3.6 s, 16.6 s, 2.3 s | stored in 30 s |
+| Data, on disk (zstd), indexes | 7.1, 2.5, 0.45 GB | 6.73, 2.47, 0.73 GB | |
+
+- **A second look is inside both lines; the first look is over both**, by 39 ms at the median and 0.3 s
+  for the slowest person. The build writes 30 days in random order, so the 8 days a match reads were
+  spread through the whole collection and partly on disk. In use, those 8 days are what the harvester
+  wrote last. The first look is also what a page costs after anything pushes the jobs out of the cache
+  (a restart, a backup reading every job). Taken as a pass, and recorded as over: the 15-day keep holds
+  half of what was measured.
+- **Writing is 3–6× faster than on the laptop.** A run's new jobs cost seconds.
+- **"agile" ran to the 90 s budget** (`TERMS_BUDGET_SECONDS`), so its oldest jobs may wait for the next
+  run, as on the laptop. "blockchain" finished in one.
+- **Slower here: the page while a new word waits**, 2.8–3.5 s against 1.6–1.8 s. That search reads the
+  newest jobs' text on the database's two cores, until the word has been searched for (one or two
+  harvest runs). It is not one of step 13's lines, but it is over the site's "a click answers within a
+  second". ROADMAP item 34, which makes what a match reads smaller, is where it goes.
+
+So `harvest-everything` is merged into `main` (fast-forward, 15c910a…6c69c0f). Nothing in it changes
+how a match reads (`libs/matching.py`, `libs/tenant/filters.py` and `libs/corpus/terms.py` are as
+measured).
+
 ## 2026-11-04 (later) — Boards keep only jobs in a picked country; jobs found by country, charted; archives in xz
 
 The owner: only countries somebody picked are read and kept, LinkedIn and the other boards alike; a
