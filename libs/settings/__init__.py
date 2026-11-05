@@ -131,12 +131,13 @@ DEFAULT_SOURCE_PAGES_PER_CYCLE: dict[str, int] = {
 }
 
 # How long a posting stays in the corpus before it is archived to a file and deleted
-# (`libs.corpus.archive`). Thirty days, set by the owner 2026-08-11; a setting since 2026-10-30,
-# because on Atlas the corpus is what decides whether the database fits its tier.
+# (`libs.corpus.archive`). Fifteen days, set by the owner 2026-11-05 (thirty since 2026-08-11): no job
+# older than eight days is anybody's match any more (`filters.candidate_since`), so the rest is the
+# disk, the indexes and the backups. A setting since 2026-10-30, in Admin → Settings.
 #
 # One definition, because the number this replaced had two: `CORPUS_HOT_DAYS = 90` in the corpus
 # repository against the 30 the owner had stated twice, and the code wins that argument silently.
-DEFAULT_CORPUS_RETENTION_DAYS = 30
+DEFAULT_CORPUS_RETENTION_DAYS = 15
 
 # Where the Help page's contact form is emailed, with the person's own address to reply to. The
 # FlowSolutions inbox the owner's marketplace app already sends its support mail to.

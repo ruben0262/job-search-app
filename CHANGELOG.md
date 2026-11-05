@@ -14,6 +14,40 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-05 — Jobs are kept for 15 days, and moved to the archive fast enough to keep up
+
+The owner: retire every job older than 15 days (21 at most) to the compressed archive, daily, reliably;
+keep each person's applied jobs on their Applied page; fewer jobs to search through.
+
+**What the measurement said first.** No job older than eight days is anybody's match since 2026-11-04
+(`filters.candidate_since`), so a match never reads the older ones, and the keep does not change search
+speed. It changes the disk (2.5 GB for a month of the EU and the UK, half for 15 days), the indexes and
+the backups. What did need fixing was the move itself, measured at 400,000 jobs over 30 days with
+15 days kept:
+
+| | Before | After |
+|---|---|---|
+| Finding the jobs to move | read all 397,000 and sorted them, 2 s, every run | read 5,139 for 5,000, 39 ms |
+| Jobs moved a run | 1,000 (3.4 s) | 5,000 (8.3 s) |
+| Most a day, a run every 15 minutes | 96,000 | 480,000 |
+| A keep shortened from 30 days to 15 | ~197,000 due: about two days to clear | about 10 hours |
+
+- **Kept for 15 days by default** (`DEFAULT_CORPUS_RETENTION_DAYS`), set in Admin → Settings, which now
+  offers 7, 10, 15, 21, 30, 60 and 90 days, and keeps showing a value chosen before.
+- **The oldest first, by an index** (`first_seen`), **5,000 a run** (`ARCHIVE_BATCH`). Written to the
+  archive file first and deleted only once it is written, as before.
+- **A job somebody applied to, or wrote a cover letter for, stays whole** for their Applied page, as
+  before: the job's text is there for an interview weeks later. It never comes back into anybody's jobs
+  list, which reads only the last eight days.
+- **An alert when it falls behind** (`archive_overdue`, Admin → Health and the health timer): jobs a
+  day past their keep and still in the database. A working pass leaves none; counting them took 0.8 s
+  with 166,000 of them.
+- Admin → Settings' note said a job somebody hid stays; it has aged out with the rest since 2026-11-02.
+
+Tests (each fails on the previous commit): by default a job leaves after 15 days and one somebody applied
+to stays; a pass reads only the jobs it moves; the keep is the setting, 21 keeping a 16-day-old job;
+jobs left a day past their keep warn, and an applied-to one does not count.
+
 ## 2026-11-04 (night) — Matching at full size: a month of jobs for the EU and the UK
 
 The owner: measure the Jobs page and a new word at the size the platform will hold, before deploying it.

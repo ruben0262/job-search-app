@@ -54,6 +54,57 @@ def _state(s, user, job_id) -> UserJobState | None:
 
 # ── what leaves ───────────────────────────────────────────────────────────────────────────────
 
+def test_by_default_a_job_leaves_after_fifteen_days_and_one_somebody_applied_to_stays(ctx, tmp_path):
+    """No job older than eight days is anybody's match, so the rest only fills the disk (owner,
+    2026-11-05). A job somebody applied to stays, whole, for their Applied page: interviews go on after."""
+    r, s = ctx
+    fresh, due, applied = _aged(r, s, days=14), _aged(r, s, days=16), _aged(r, s, days=40)
+    record_state(s, _user(s).id, applied, applied_at=now())
+
+    archive_expired(s, directory=tmp_path)
+
+    assert get(s, CorpusJob, fresh) is not None and get(s, CorpusJob, due) is None
+    assert get(s, CorpusJob, applied) is not None
+
+
+def test_a_pass_reads_only_the_jobs_it_moves(ctx, tmp_path):
+    """It read every job and sorted them to find the oldest: 397,000 to move 1,000, 2 s a run at 400,000
+    (2026-11-05)."""
+    import os
+
+    from pymongo import MongoClient, monitoring
+
+    r, s = ctx
+    for days in (40, 39, 38):
+        _aged(r, s, days=days)
+    for _ in range(30):
+        _aged(r, s, days=1)
+    finds: list[dict] = []
+
+    class Finds(monitoring.CommandListener):
+        def started(self, event):
+            if event.command_name == "find" and event.command.get("find") == CorpusJob.COLLECTION:
+                finds.append(event.command)
+
+        def succeeded(self, event):
+            pass
+
+        def failed(self, event):
+            pass
+
+    watched = MongoClient(os.environ["MONGODB_URI"], uuidRepresentation="standard", tz_aware=True,
+                          event_listeners=[Finds()])[s.name]
+    try:
+        assert archive_expired(watched, retention_days=15, directory=tmp_path).jobs == 3
+        command = finds[0]
+        plan = watched.command("explain", {"find": command["find"], "filter": command["filter"],
+                                           "sort": command.get("sort"), "limit": command.get("limit")},
+                               verbosity="executionStats")
+    finally:
+        watched.client.close()
+    assert plan["executionStats"]["totalDocsExamined"] <= 4, "the three it moves, not the thirty it leaves"
+
+
 def test_a_posting_past_the_window_leaves_the_corpus_whole(ctx, tmp_path):
     """The row is deleted, not hollowed out — and everything about it is in the file first."""
     r, s = ctx
@@ -340,19 +391,18 @@ def test_the_oldest_postings_leave_first(ctx, tmp_path):
     assert get(s, CorpusJob, oldest) is None
 
 
-def test_the_retention_window_is_thirty_days_unless_the_operator_says_otherwise(ctx, tmp_path):
-    """Set by the owner 2026-08-11. It had two values before: 90 in code against the stated 30. A
-    setting since 2026-10-30, and the pass reads it rather than a copy of it."""
+def test_the_keep_is_the_operators_setting_and_the_pass_reads_it(ctx, tmp_path):
+    """Fifteen days unless Admin → Settings says otherwise (owner, 2026-11-05; thirty before). It had two
+    values once: 90 in code against the stated 30. The pass reads the setting, never a copy of it."""
     from libs import settings
-    from libs.settings import DEFAULTS
 
-    assert DEFAULTS["corpus_retention_days"] == 30
     r, s = ctx
-    twelve_days_old = _aged(r, s, days=12)
-    assert archive_expired(s, directory=tmp_path).jobs == 0, "inside thirty days"
-    settings.put(s, "corpus_retention_days", 10)
+    sixteen_days_old = _aged(r, s, days=16)
+    settings.put(s, "corpus_retention_days", 21)
+    assert archive_expired(s, directory=tmp_path).jobs == 0, "inside twenty-one days"
+    settings.put(s, "corpus_retention_days", 15)
     assert archive_expired(s, directory=tmp_path).jobs == 1
-    assert get(s, CorpusJob, twelve_days_old) is None
+    assert get(s, CorpusJob, sixteen_days_old) is None
     assert not hasattr(__import__("libs.corpus.repository", fromlist=["x"]), "CORPUS_HOT_DAYS"), (
         "the 90-day constant is back, and it is the one the code would enforce")
 

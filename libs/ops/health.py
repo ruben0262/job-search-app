@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 
 from pymongo.database import Database
 
+from libs.corpus.archive import overdue
 from libs.db.models import CorpusJob, QueueJob, User
 from libs.db.models.queue import LANES
 from libs.settings import database_budget_bytes
@@ -43,6 +44,8 @@ class PlatformHealth:
     users_total: int
     users_active: int
     corpus_rows: int
+    # Postings a day past their keep and still here: the archive pass is behind or failing.
+    archive_overdue: int
     # Data and indexes, which is what Atlas's free-tier ceiling counts (ROADMAP Phase 9).
     database_bytes: int
     # What it must stay under: the operator's setting, the tier's size.
@@ -106,6 +109,7 @@ def platform_health(db: Database, *, include_users: bool = True) -> PlatformHeal
         users_total=db[User.COLLECTION].count_documents({}),
         users_active=db[User.COLLECTION].count_documents({"active": True}),
         corpus_rows=db[CorpusJob.COLLECTION].estimated_document_count(),
+        archive_overdue=overdue(db),
         database_bytes=int(size.get("dataSize", 0) + size.get("indexSize", 0)),
         database_budget_bytes=database_budget_bytes(db),
         connections=int(db.command("serverStatus")["connections"]["current"]),

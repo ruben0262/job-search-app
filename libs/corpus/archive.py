@@ -42,8 +42,10 @@ DEFAULT_ARCHIVE_DIR = Path(os.environ.get("ARCHIVE_DIR") or "archive")
 
 # How many rows one pass moves. The pass runs on the harvest tick, so this is a ceiling on the work
 # added to a cycle that already has an 11-minute budget, not a limit on how much can ever be
-# archived — the next tick continues where this one stopped.
-ARCHIVE_BATCH = 1000
+# archived — the next tick continues where this one stopped. Measured 2026-11-05 at 400,000 postings:
+# 5,000 a pass took 8.3 s, 480,000 a day at a pass a tick; the EU's and the UK's ~70,000 a day leave
+# within hours of their day, and a keep shortened from 30 days to 15 is caught up in about 10 hours.
+ARCHIVE_BATCH = 5000
 
 @dataclass(frozen=True)
 class ArchiveResult:
@@ -87,8 +89,7 @@ def archive_expired(db: Database, *, retention_days: int | None = None,
         retention_days = corpus_retention_days(db)
     cutoff = now() - timedelta(days=retention_days)
     kept = db[UserJobState.COLLECTION].distinct("job_id", ACTED_ON)
-    rows = list(db[CorpusJob.COLLECTION].find({"first_seen_at": {"$lt": cutoff}, "_id": {"$nin": kept}},
-                                              sort=[("first_seen_at", 1)], limit=limit))
+    rows = list(db[CorpusJob.COLLECTION].find(_due(cutoff, kept), sort=[("first_seen_at", 1)], limit=limit))
     ids = [row["_id"] for row in rows]
 
     path: Path | None = None
@@ -106,6 +107,20 @@ def archive_expired(db: Database, *, retention_days: int | None = None,
                     len(ids), states, retention_days,
                     f", archived to {path.name}" if path else "")
     return ArchiveResult(len(ids), states, path)
+
+
+def _due(cutoff: datetime, kept: list[int]) -> dict:
+    """The postings the pass moves: found before `cutoff`, and nobody applied to them or wrote them a
+    cover letter."""
+    return {"first_seen_at": {"$lt": cutoff}, "_id": {"$nin": kept}}
+
+
+def overdue(db: Database) -> int:
+    """Postings still here a day after the pass should have moved them: it is behind, or failing. A
+    pass a tick moves up to `ARCHIVE_BATCH`, so a working one leaves none this old."""
+    cutoff = now() - timedelta(days=corpus_retention_days(db) + 1)
+    return db[CorpusJob.COLLECTION].count_documents(
+        _due(cutoff, db[UserJobState.COLLECTION].distinct("job_id", ACTED_ON)))
 
 
 def forget_stale_state(db: Database, *, cutoff: datetime, kept: list[int] | None = None,

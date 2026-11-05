@@ -62,6 +62,13 @@ def _capacity_alerts(health: PlatformHealth) -> list[Alert]:
             "At the ceiling Atlas refuses every write, sign-ups included. Check the archive pass ran "
             "(`archive:` in the harvester log); if it did, keep jobs for fewer days in the admin "
             "panel, or move the cluster to a bigger tier and raise the budget there."))
+    if health.archive_overdue:
+        alerts.append(Alert(
+            "warn", "archive_overdue",
+            f"{health.archive_overdue} job(s) are a day past their keep and still in the database",
+            "The archive pass is behind or failing: `archive:` in the harvester log says which. A "
+            "failure there names the archive folder (full disk, permissions); nothing is deleted "
+            "until its file is written."))
     return alerts
 
 

@@ -26,7 +26,7 @@ def user(**kwargs) -> UserHealth:
 
 def health(**kwargs) -> PlatformHealth:
     base = {"checked_at": datetime.now(UTC).isoformat(), "lanes": [lane()], "users_total": 1,
-            "users_active": 1, "corpus_rows": 1000, "database_bytes": ROOMY,
+            "users_active": 1, "corpus_rows": 1000, "archive_overdue": 0, "database_bytes": ROOMY,
             "database_budget_bytes": DATABASE_BUDGET_BYTES, "connections": 5, "users": []}
     return PlatformHealth(**{**base, **kwargs})
 
@@ -108,6 +108,29 @@ def test_the_database_alert_comes_before_the_ceiling_not_at_it():
 
 
 # ── per-user conditions ───────────────────────────────────────────────────────────────────────
+
+def test_jobs_left_a_day_past_their_keep_warn_that_the_archive_pass_is_behind(db):
+    """The archive pass moves jobs out every run; a job still here a day after its keep means it is
+    behind or failing, which nothing else would say until the disk fills. A job somebody applied to
+    stays on purpose and does not count."""
+    from libs.db.models import CorpusJob, UserJobState
+    from libs.ops import platform_health
+
+    def job(days: float) -> int:
+        moment = datetime.now(UTC) - timedelta(days=days)
+        return insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test", title="Nurse",
+                                    first_seen_at=moment)).id
+
+    job(3)
+    job(15.5)
+    applied = job(40)
+    insert(db, UserJobState(user_id=uuid.uuid4(), job_id=applied, applied_at=datetime.now(UTC)))
+    assert "archive_overdue" not in keys(evaluate(platform_health(db))), "inside its keep, or a day's grace"
+
+    job(17)
+    state = platform_health(db)
+    assert state.archive_overdue == 1 and "archive_overdue" in keys(evaluate(state))
+
 
 def test_a_broken_bot_warns_and_names_the_user():
     """An operator cannot act on "somebody's Telegram broke"."""

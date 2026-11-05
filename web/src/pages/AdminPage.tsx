@@ -674,9 +674,10 @@ export function AdminPage() {
 
           <p className="label" style={{ marginTop: "1.5rem" }}>Jobs kept for</p>
           <span className="hint">
-            How long a job stays before it is moved to the archive file. Jobs somebody applied to
-            or hid stay regardless. Jobs are what fill the database, so this is the control when it
-            nears its size.
+            How long a job stays before it is moved to the archive file, compressed. Nobody&apos;s jobs
+            list shows a job older than eight days, so this decides the database&apos;s size, not what
+            people see. A job somebody applied to, or wrote a cover letter for, stays in their Applied
+            list whatever this says.
           </span>
           <select
             value={settings.corpus_retention_days}
@@ -686,9 +687,12 @@ export function AdminPage() {
               void savePlatform.run("corpus_retention_days", Number(event.target.value))}
             style={{ maxWidth: "10rem", marginTop: "0.5rem" }}
           >
-            {[7, 10, 14, 30, 60, 90].map((n) => (
-              <option key={n} value={n}>{n} days</option>
-            ))}
+            {/* Whatever is set is offered, so a value chosen before these options still shows. */}
+            {[...new Set([7, 10, 15, 21, 30, 60, 90, settings.corpus_retention_days])]
+              .sort((a, b) => a - b)
+              .map((n) => (
+                <option key={n} value={n}>{n} days</option>
+              ))}
           </select>
 
           <p className="label" style={{ marginTop: "1.5rem" }}>Database size</p>
