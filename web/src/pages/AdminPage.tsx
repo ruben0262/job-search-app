@@ -119,8 +119,16 @@ type PipelineStage = {
   // `null`, not 0, where the stage has no queue at all.
   waiting: number | null;
   oldest_min: number | null;
+  /** Left the step's queue too old for anybody's Jobs page in the window, never taken. */
+  missed: number | null;
+  slow_after_min: number | null;
+  too_long_after_min: number | null;
+  note: string | null;
   verdict: "ok" | "warn" | "down";
 };
+
+/** One source's last day: found, with text, still waiting for text, and its newest. */
+type SourceFound = { source: string; found: number; with_text: number; waiting: number; newest: string | null };
 
 type PipelineLane = {
   lane: string;
@@ -151,8 +159,6 @@ type PipelineReport = {
   lanes: PipelineLane[];
   lane_accounts: LaneAccount[];
   at: string;
-  amber_after_min: number;
-  red_after_min: number;
 };
 
 type Settings = {
@@ -1238,6 +1244,18 @@ function PipelineTab() {
   const [connected, setConnected] = useState(false);
   // The previous frame, so a count that moved can say so.
   const previous = useRef<Record<string, number | null>>({});
+  // Not in the live frame: it reads the day's jobs, and a board going quiet shows inside a minute.
+  const [sources, setSources] = useState<SourceFound[] | null>(null);
+
+  useEffect(() => {
+    const read = () =>
+      api.get<{ sources: SourceFound[] }>("/admin/pipeline/sources")
+        .then((body) => setSources(body.sources))
+        .catch(() => undefined);
+    void read();
+    const every = window.setInterval(read, 60_000);
+    return () => window.clearInterval(every);
+  }, []);
 
   useEffect(() => {
     const source = new EventSource("/admin/pipeline/stream");
@@ -1275,12 +1293,11 @@ function PipelineTab() {
               title={connected ? "live" : "reconnecting"} />
       </h2>
       <p className="hint" style={{ maxWidth: "62ch" }}>
-        One row per stage, in the order a posting moves through them, updating every second.{" "}
-        <strong>Waiting</strong> is how many are sitting in that stage now; <strong>entered</strong>{" "}
-        is how many arrived in the last {report.window_hours} hours. A stage turns amber after{" "}
-        {report.amber_after_min} minutes of the oldest row waiting and red after{" "}
-        {report.red_after_min} — the tick that should have cleared it runs every{" "}
-        {report.amber_after_min / 2} minutes.
+        One row per step, in the order a job goes through them, updating every second.{" "}
+        <strong>Waiting</strong> is how many sit at that step now; the next number is how many went
+        through it in the last {report.window_hours} hours. A step turns amber, then red, when the job
+        waiting longest has waited past its limits, the same ones the Latency tab judges by. A job too old
+        for anybody&apos;s Jobs page waits nowhere: it leaves the queue, and is counted as too old.
       </p>
 
       <div className="pipeline">
@@ -1294,6 +1311,19 @@ function PipelineTab() {
               <div className="pipeline-head">
                 <strong>{stage.label}</strong>
                 <span className="small muted">{stage.what}</span>
+                {stage.slow_after_min !== null ? (
+                  <span className="small muted">
+                    Fine under {minutes(stage.slow_after_min)}, slow to {minutes(stage.too_long_after_min)},
+                    too long past it.
+                  </span>
+                ) : null}
+                {stage.missed ? (
+                  <span className="small behind">
+                    {stage.missed.toLocaleString()} too old before their text was read, in{" "}
+                    {report.window_hours}h: dropped, not waiting.
+                  </span>
+                ) : null}
+                {stage.note ? <span className="small muted">{stage.note}</span> : null}
               </div>
               <div className="pipeline-bar-wrap">
                 {/* Width is relative to the busiest stage. */}
@@ -1320,6 +1350,36 @@ function PipelineTab() {
           );
         })}
       </div>
+
+      <h3 style={{ marginTop: "1.6rem" }}>Where they come from, last 24 hours</h3>
+      {sources === null ? (
+        <p className="muted">Counting…</p>
+      ) : (
+        <div className="table-scroll">
+          <table className="source-found">
+            <thead>
+              <tr>
+                <th scope="col">Source</th>
+                <th scope="col" className="num">Found</th>
+                <th scope="col" className="num">With text</th>
+                <th scope="col" className="num">Waiting for text</th>
+                <th scope="col">Newest</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sources.map((row) => (
+                <tr key={row.source}>
+                  <td><strong>{row.source}</strong></td>
+                  <td className="num">{row.found ? row.found.toLocaleString() : <span className="behind">nothing</span>}</td>
+                  <td className="num">{row.found ? `${row.with_text.toLocaleString()} (${Math.round((100 * row.with_text) / row.found)}%)` : "—"}</td>
+                  <td className="num">{row.waiting ? row.waiting.toLocaleString() : "—"}</td>
+                  <td>{row.newest ? `${minutes((Date.now() - new Date(row.newest).getTime()) / 60_000)} ago` : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* The stages say where postings are; this says whether anything is turning the handle. */}
       <h3 style={{ marginTop: "1.6rem" }}>The queue, right now</h3>
@@ -1424,9 +1484,9 @@ function LatencyTab() {
     <>
       <h2 style={{ marginTop: 0 }}>Where the time goes</h2>
       <p className="hint">
-        A posting arrives as a link and leaves as a card in Telegram. Every row below is one
-        boundary in between — somewhere work is picked up, done, and handed on. Open a row for what
-        that zone is waiting on.
+        A job arrives as a line in a list and leaves as an alert. Every row below is one step in
+        between, the same steps as the Pipeline tab, judged on the slowest tenth (p90) against the limits
+        beside it. Open a row for what that step is waiting on.
       </p>
 
       <div className="row" style={{ margin: "1rem 0", alignItems: "center" }}>
@@ -1460,6 +1520,7 @@ function LatencyTab() {
                 {/* A stage with a healthy p90 and a forty-minute tail has something worth looking at. */}
                 <th className="num">Worst</th>
                 <th className="num">Volume</th>
+                <th>Fine · slow · too long</th>
                 <th>Verdict</th>
               </tr>
             </thead>
@@ -1485,13 +1546,18 @@ function LatencyTab() {
                       <td className="num">{minutes(stage.p99)}</td>
                       <td className="num">{minutes(stage.worst)}</td>
                       <td className="num">{stage.samples.toLocaleString()}</td>
+                      <td className="small muted">
+                        {stage.amber_after_min === null
+                          ? "not judged"
+                          : `under ${minutes(stage.amber_after_min)} · to ${minutes(stage.red_after_min)} · past it`}
+                      </td>
                       <td>
                         <span className={`verdict ${stage.verdict}`}>{verdictWord(stage)}</span>
                       </td>
                     </tr>
                     {isOpen ? (
                       <tr className="drill">
-                        <td colSpan={8}>
+                        <td colSpan={9}>
                           <StageDrill stage={stage} detail={details[stage.key]} />
                         </td>
                       </tr>

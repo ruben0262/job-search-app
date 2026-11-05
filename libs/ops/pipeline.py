@@ -1,4 +1,12 @@
-"""Where the jobs are right now — the shape of the pipeline rather than its speed."""
+"""Where the jobs are right now, step by step, in the order a job moves through them (2026-11-05):
+
+    found and stored (each run) → text read (the describer, all the time) → words found (each run's end)
+    → shown on Jobs pages, decided when read (`libs.matching`) → sent as an alert (the notifier)
+
+Each step's numbers come from the same questions the code that does the step asks (`steps`), and a job
+too old for anybody's Jobs page is in no queue (`freshness.showable`). How long each step should take is
+`steps.THRESHOLDS`, the same limits the Latency tab judges by.
+"""
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
@@ -6,38 +14,42 @@ from datetime import UTC, datetime, timedelta
 
 from pymongo.database import Database
 
-from libs.corpus.freshness import platform_windows
+from libs.corpus.freshness import platform_windows, showable
 from libs.corpus.repository import awaiting_description_conditions
-from libs.db.models import CorpusJob, QueueJob, User, UserJobState
-from libs.settings import PLATFORM_TICK_MIN
-
-# How long a row may sit at a stage before the colour changes, as multiples of its tick.
-AMBER_TICKS = 2
-RED_TICKS = 8
+from libs.db.models import CorpusJob, PushSubscription, QueueJob, User, UserJobState
+from libs.ops.steps import THRESHOLDS, text_queue, waiting
+from libs.settings import HARVEST_SOURCES
 
 
 @dataclass(frozen=True)
 class Stage:
-    """One stage of the pipeline, as it stands right now."""
+    """One step, as it stands right now."""
 
     key: str
     label: str
     what: str
-    # How many rows entered this stage in the window.
+    # How many jobs went through this step in the window.
     entered: int | None
-    # How many are sitting in it, waiting for the next step to take them.
+    # How many are sitting at it, waiting for the step to take them; `None` where nothing waits.
     waiting: int | None
     # How long the oldest of those has waited, in minutes.
     oldest_min: float | None
+    # Waited too long: left the step's queue too old for anybody's Jobs page, in the window, never taken.
+    missed: int | None = None
+    # The step's limits (`steps.THRESHOLDS`): slow after, too long after, in minutes.
+    slow_after_min: int | None = None
+    too_long_after_min: int | None = None
+    # One sentence the numbers need beside them.
+    note: str | None = None
 
     @property
     def verdict(self) -> str:
-        """green, amber or red."""
-        if not self.waiting or self.oldest_min is None:
+        """`ok`, `warn` or `down`, by how long the oldest waiting job has waited."""
+        if not self.waiting or self.oldest_min is None or self.slow_after_min is None:
             return "ok"
-        if self.oldest_min > RED_TICKS * PLATFORM_TICK_MIN:
+        if self.oldest_min > self.too_long_after_min:
             return "down"
-        if self.oldest_min > AMBER_TICKS * PLATFORM_TICK_MIN:
+        if self.oldest_min > self.slow_after_min:
             return "warn"
         return "ok"
 
@@ -45,52 +57,78 @@ class Stage:
         return {**asdict(self), "verdict": self.verdict}
 
 
-def _age_minutes(db: Database, field: str, conditions: list[dict]) -> float | None:
-    """How long ago the oldest matching posting arrived, in minutes. `None` when there are none."""
-    oldest = db[CorpusJob.COLLECTION].find_one({"$and": conditions}, {field: 1}, sort=[(field, 1)])
-    if oldest is None:
-        return None
-    return round((datetime.now(UTC) - oldest[field]).total_seconds() / 60, 1)
+def _count(db: Database, conditions: list[dict] | dict) -> int:
+    where = {"$and": conditions} if isinstance(conditions, list) else conditions
+    return db[CorpusJob.COLLECTION].count_documents(where)
 
 
-def _entered(db: Database, field: str, since) -> int:
-    return db[CorpusJob.COLLECTION].count_documents({field: {"$gte": since}})
+def _limits(key: str) -> dict:
+    slow, too_long = THRESHOLDS[key]
+    return {"slow_after_min": slow, "too_long_after_min": too_long}
 
 
 def pipeline(db: Database, *, hours: int = 24) -> dict:
-    """Every stage, with what is in it."""
-    since = datetime.now(UTC) - timedelta(hours=hours)
-
-    # The describer's own question: a row it will never fetch is not waiting.
-    describe_conditions = awaiting_description_conditions(platform_windows(db))
+    """Every step, with what is in it."""
+    now = datetime.now(UTC)
+    since = now - timedelta(hours=hours)
+    windows = platform_windows(db)
+    text, words = waiting(db, "found_to_described", windows), waiting(db, "described_to_indexed", windows)
+    # Without text, and between showable then and not now: aged out of the describer's queue untaken.
+    missed = [*awaiting_description_conditions(), showable(windows, now=since),
+              {"$nor": [showable(windows, now=now)]}]
+    instant = len(set(db[User.COLLECTION].distinct("_id", {"telegram_status": "connected"}))
+                  | set(db[PushSubscription.COLLECTION].distinct("user_id")))
 
     stages = [
-        # One row, because it is one statement.
-        Stage("gather", "Gathered & stored",
-              "A source answered with a link, and it survived dedup against four keys. One "
-              "statement, so nothing is ever queued between the two.",
-              entered=_entered(db, "first_seen_at", since),
-              waiting=None, oldest_min=None),
-        Stage("describe", "Described", "The posting's own text, fetched where the listing gave a "
-                                       "teaser.",
-              entered=_entered(db, "description_fetched_at", since),
-              waiting=db[CorpusJob.COLLECTION].count_documents({"$and": describe_conditions}),
-              oldest_min=_age_minutes(db, "first_seen_at", describe_conditions)),
-        # No queue of its own to show: what is matched is decided when it is read (`libs.matching`),
-        # so the step after a described posting is a message, not a stage a row can wait in.
-        Stage("deliver", "Delivered", "Sent to the people whose words it matches, up to each "
-                                      "account's daily cap.",
+        Stage("gather", "Found and stored",
+              "A board or LinkedIn listed it, and it was stored unless already here (four checks). Each "
+              "run, every 15 minutes.",
+              entered=_count(db, {"first_seen_at": {"$gte": since}}), waiting=None, oldest_min=None),
+        Stage("describe", "Text read",
+              "The job's own text, read from its page: by the describer for LinkedIn, all the time, and by "
+              "each run for the other boards. Newest first; a job too old for anybody's Jobs page leaves "
+              "the queue and is never read.",
+              entered=_count(db, {"description_fetched_at": {"$gte": since}}),
+              **text, missed=_count(db, missed), **_limits("found_to_described")),
+        Stage("words", "Words found",
+              "Every green word anybody has, searched for in the job's title and text, at the end of each "
+              "run. Until then a job is matched more slowly, and found all the same.",
+              entered=_count(db, {"terms_at": {"$gte": since}}),
+              **words, **_limits("described_to_indexed")),
+        # Shown on Jobs pages is decided when a page is read (`libs.matching`), so it is no queue a job
+        # can wait in; the step after it is an alert.
+        Stage("deliver", "Alert sent",
+              "Sent to the people whose words it has, by Telegram or in their browser, up to each "
+              "account's daily cap. The daily email is not counted here.",
               entered=db[UserJobState.COLLECTION].count_documents({"notified_at": {"$gte": since}}),
-              waiting=None, oldest_min=None),
+              waiting=None, oldest_min=None,
+              note=f"{instant} account(s) with Telegram or browser alerts on."),
     ]
     return {"window_hours": hours, "stages": [stage.as_dict() for stage in stages],
             "lanes": lanes(db, since),
             # The same lanes, split by account: "docgen 2 dead" is only actionable once you know
             # whose two, and which error.
             "lane_accounts": lane_accounts(db, since),
-            "at": datetime.now(UTC).isoformat(),
-            "amber_after_min": AMBER_TICKS * PLATFORM_TICK_MIN,
-            "red_after_min": RED_TICKS * PLATFORM_TICK_MIN}
+            "at": now.isoformat()}
+
+
+def sources(db: Database, *, hours: int = 24) -> list[dict]:
+    """Each source's last `hours`: jobs found, how many of them have their text, how many wait for it,
+    and when its newest was found. Every source the harvester reads is listed, a silent one as a zero:
+    a board that stops answering raises nothing, and this is where it shows."""
+    since = datetime.now(UTC) - timedelta(hours=hours)
+    found = {row["_id"]: row for row in db[CorpusJob.COLLECTION].aggregate([
+        {"$match": {"first_seen_at": {"$gte": since}}},
+        {"$group": {"_id": "$source", "found": {"$sum": 1}, "newest": {"$max": "$first_seen_at"},
+                    "with_text": {"$sum": {"$cond": [{"$ifNull": ["$described_at", False]}, 1, 0]}}}}])}
+    waiting = {row["_id"]: row["n"] for row in db[CorpusJob.COLLECTION].aggregate([
+        {"$match": {"$and": text_queue(platform_windows(db))}},
+        {"$group": {"_id": "$source", "n": {"$sum": 1}}}])}
+    names = sorted(set(HARVEST_SOURCES) | set(found) | set(waiting), key=lambda name: (
+        -(found.get(name) or {}).get("found", 0), name or ""))
+    return [{"source": name or "unknown", "found": (found.get(name) or {}).get("found", 0),
+             "with_text": (found.get(name) or {}).get("with_text", 0), "waiting": waiting.get(name, 0),
+             "newest": (found.get(name) or {}).get("newest")} for name in names]
 
 
 def _tally(since: datetime) -> dict:

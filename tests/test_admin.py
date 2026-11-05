@@ -613,7 +613,7 @@ def test_the_live_pipeline_pushes_a_usable_frame(api):
     assert frame.startswith("data: ")
     assert frame.endswith("\n\n"), "an unterminated event sits in the browser's buffer forever"
     payload = json.loads(frame[len("data: "):])
-    assert [stage["key"] for stage in payload["stages"]] == ["gather", "describe", "deliver"]
+    assert [stage["key"] for stage in payload["stages"]] == ["gather", "describe", "words", "deliver"]
     assert "lanes" in payload
 
 

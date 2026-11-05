@@ -7,8 +7,8 @@ from datetime import UTC, datetime, timedelta
 from pymongo.database import Database
 
 from libs.corpus.freshness import platform_windows
-from libs.corpus.repository import awaiting_description_conditions
 from libs.db.models import CorpusJob, QueueJob, UserJobState
+from libs.ops.steps import QUEUES, THRESHOLDS, waiting
 
 # How far back to measure.
 WINDOW_HOURS = 24
@@ -16,29 +16,23 @@ WINDOW_HOURS = 24
 # Below this many samples a percentile is arithmetic rather than evidence.
 MIN_SAMPLES = 20
 
-# Set from measured behaviour, not guessed: (amber, red) on the p90, in minutes.
-THRESHOLDS: dict[str, tuple[int, int]] = {
-    "found_to_delivered": (60, 120),
-    "found_to_described": (30, 60),
-    # Ours, and tight on purpose.
-    "fetched_to_stored": (1, 5),
-}
-
-# Why each threshold is where it is, in the words the expanded row shows.
+# Why each limit (`steps.THRESHOLDS`) is where it is, in the words the expanded row shows.
 THRESHOLD_REASONING: dict[str, str] = {
-    "posted_to_fetched": "Not judged. The board's own publishing lag plus our tick, and sources "
-                         "round what they report — so this measures their precision as much as "
-                         "anything we control.",
-    "fetched_to_stored": "Four dedup queries and an insert, against a gather stage that takes about "
-                         "twenty seconds for a whole cycle. Seconds is normal; a minute means a "
-                         "source is hanging or the ingest is contended, and both are worth a look "
-                         "today.",
-    "found_to_described": "The harvest runs every 15 minutes and the describe pass drains behind "
-                          "it, so one missed cycle is normal and two is a backlog worth seeing.",
-    "found_to_delivered": "What the user experiences, and the only one of these worth waking up for. "
-                          "Delivery is a 15-minute cadence and sending is paced, so a job found just "
-                          "after a send waits most of a cycle by design. Two hours means something "
-                          "is not draining.",
+    "posted_to_fetched": "Not judged. The board's own publishing lag plus our 15-minute run, and boards "
+                         "round what they report (LinkedIn gives a date, no time), so this measures their "
+                         "precision as much as anything we control.",
+    "fetched_to_stored": "Inside the run that listed it: LinkedIn's list is read country by country, then "
+                         "every job is checked and stored. Minutes is normal; past a run's 15, the run is "
+                         "hanging or the database is slow.",
+    "found_to_described": "The describer reads LinkedIn's texts all the time, newest first, and each run "
+                          "reads the other boards'. Inside one run's 15 minutes when nothing is behind; an "
+                          "hour means it cannot keep up: proxy addresses refusing, or too few of them.",
+    "described_to_indexed": "The words step runs at the end of each run, so a text read just after one "
+                            "waits for the next: up to about half an hour. An hour means runs are failing "
+                            "or the step runs out of time.",
+    "found_to_delivered": "What the person waits for an alert, and the only one of these worth waking up "
+                          "for: text, words, then the notifier's next send. Three runs is normal; six "
+                          "means something is not draining.",
 }
 
 
@@ -65,8 +59,8 @@ class Stage:
 STAGES: tuple[Stage, ...] = (
     Stage(
         key="posted_to_fetched",
-        label="Posted → fetched",
-        zone="the board, plus our 15-minute tick",
+        label="Posted → listed",
+        zone="the board, plus our 15-minute run",
         what="The site published the posting and our next harvest went looking. Almost none of this "
              "is ours: it is how long the board took to list the job, plus up to one cycle waiting "
              "for the next tick.",
@@ -78,27 +72,34 @@ STAGES: tuple[Stage, ...] = (
     ),
     Stage(
         key="fetched_to_stored",
-        label="Fetched → stored",
-        zone="batch wait, then dedup and insert",
-        what="From the moment a source handed us this link to the moment it was stored. **Most of "
-             "this is waiting for the rest of the batch, not work on this posting.** A cycle gathers "
-             "every query concurrently and ingests only when all of them have returned, so a link "
-             "parsed in the first second of a 31-second gather waits the whole 31 seconds.",
+        label="Listed → stored",
+        zone="the run: the whole list, then dedup and store",
+        what="From the moment a board or LinkedIn's list handed us this job to the moment it was stored. "
+             "**Most of this is waiting for the rest of the list, not work on this job**: every country's "
+             "list is read, then every job is checked and stored.",
         scope="corpus", start="fetched_at", end="first_seen_at",
     ),
     Stage(
         key="found_to_described",
-        label="Found → described",
-        zone="describe pass",
-        what="The link became text. Until a posting has a description its words cannot be matched, "
-             "so it reaches nobody.",
+        label="Stored → text read",
+        zone="the describer (LinkedIn), each run (the other boards)",
+        what="The job's own text, read from its page. Until then only its title can be matched.",
         scope="corpus", start="first_seen_at", end="description_fetched_at",
     ),
     Stage(
+        key="described_to_indexed",
+        label="Text read → words found",
+        zone="the words step, at the end of each run",
+        what="Every green word anybody has, searched for in the new text. Until then the job is matched "
+             "the slower way, and found all the same.",
+        scope="corpus", start="description_fetched_at", end="terms_at",
+    ),
+    Stage(
         key="found_to_delivered",
-        label="Found → delivered",
-        zone="the whole pipeline",
-        what="What the person actually waited, from the link arriving to the alert sending.",
+        label="Found → alert sent",
+        zone="the whole way, to Telegram or a browser",
+        what="What the person waited, from the job being stored to its alert being sent. The daily email "
+             "is not counted.",
         scope="user", start="first_seen_at", end="notified_at", lane="notify",
     ),
 )
@@ -252,16 +253,10 @@ def _breakdown(spans: dict[str, list[tuple[datetime, float]]]) -> list[dict]:
 
 
 def _backlog(db: Database, stage: Stage) -> dict | None:
-    """How much is sitting at the describe pass's door, and how long the oldest has waited: the describer's
-    own question (`awaiting_description_conditions`). Its own here counted every row ever stored without
-    text, too old to be read or not, so it grew for ever beside the pipeline's count (2026-11-05)."""
-    if stage.key != "found_to_described":
-        return None
-    where = {"$and": awaiting_description_conditions(platform_windows(db))}
-    oldest = db[CorpusJob.COLLECTION].find_one(where, {"first_seen_at": 1}, sort=[("first_seen_at", 1)])
-    return {"waiting": db[CorpusJob.COLLECTION].count_documents(where),
-            "oldest_min": round((datetime.now(UTC) - oldest["first_seen_at"]).total_seconds() / 60, 1)
-            if oldest else None}
+    """How much is waiting at the step, and how long the oldest has waited, by the step's own question
+    (`steps.waiting`, which the Pipeline tab reads too). Its own here counted every job ever stored without
+    text, too old to be read or not, so it grew for ever beside the Pipeline tab's count (2026-11-05)."""
+    return waiting(db, stage.key, platform_windows(db)) if stage.key in QUEUES else None
 
 
 def stage_detail(db: Database, key: str, *, hours: int = WINDOW_HOURS) -> dict:

@@ -8,7 +8,12 @@ from libs.db import insert
 
 
 def _job(db, **kwargs):
+    from libs.corpus.repository import MIN_DESCRIPTION
     from libs.db.models import CorpusJob
+
+    # Whole text has `described_at`, as `set_description` gives it the moment the text arrives.
+    if len(kwargs.get("description") or "") >= MIN_DESCRIPTION:
+        kwargs.setdefault("described_at", kwargs.get("description_fetched_at") or datetime.now(UTC))
 
     # `source` is overridable: the per-source freshness floors are keyed on it, so a test about
     # retention has to be able to say which board a posting came from.
@@ -26,18 +31,22 @@ def test_every_stage_of_the_pipeline_is_present(db):
     from libs.ops.pipeline import pipeline
 
     keys = [s["key"] for s in pipeline(db)["stages"]]
-    # No separate "store", and no "embed" or "score": nothing embeds or scores (ROADMAP Phase 8).
-    assert keys == ["gather", "describe", "deliver"]
+    # No separate "store", and no "embed" or "score": nothing embeds or scores (ROADMAP Phase 8). Words
+    # since 2026-11-05: the describer reads texts between runs, and their words wait for the next.
+    assert keys == ["gather", "describe", "words", "deliver"]
     for entry in pipeline(db)["stages"]:
         assert entry["label"] and entry["what"], "every stage says what it is, on the page itself"
 
 
-def test_a_described_posting_is_waiting_for_nothing(db):
+def test_a_described_posting_waits_only_for_its_words_and_then_for_nothing(db):
     """It is matched when it is read. A vector nothing computes is not a backlog to show anybody."""
     from libs.ops.pipeline import pipeline
 
-    _job(db, description="We build things. " * 40, description_fetched_at=datetime.now(UTC))
+    job = _job(db, description="We build things. " * 40, description_fetched_at=datetime.now(UTC))
+    waits = {entry["key"]: entry["waiting"] for entry in pipeline(db)["stages"] if entry["waiting"]}
+    assert waits == {"words": 1}
 
+    db.corpus.update_one({"_id": job.id}, {"$set": {"terms_at": datetime.now(UTC)}})
     assert all(not entry["waiting"] for entry in pipeline(db)["stages"])
 
 
@@ -111,13 +120,92 @@ def test_an_empty_stage_is_green_and_says_nothing_about_age(db):
 
 
 def test_the_thresholds_come_from_the_tick_that_clears_them(db):
-    """Derived, not chosen — the harvest interval is what is supposed to drain these stages."""
+    """Derived, not chosen — the run every 15 minutes is what drains these steps, and Latency judges each
+    by the same limits (`steps.THRESHOLDS`)."""
     from libs.ops.pipeline import pipeline
     from libs.settings import PLATFORM_TICK_MIN
 
-    report = pipeline(db)
-    assert report["amber_after_min"] == 2 * PLATFORM_TICK_MIN
-    assert report["red_after_min"] == 8 * PLATFORM_TICK_MIN
+    limits = {row["key"]: (row["slow_after_min"], row["too_long_after_min"])
+              for row in pipeline(db)["stages"]}
+    assert limits["describe"] == (PLATFORM_TICK_MIN, 4 * PLATFORM_TICK_MIN)
+    assert limits["words"] == (2 * PLATFORM_TICK_MIN, 4 * PLATFORM_TICK_MIN)
+    assert limits["gather"] == limits["deliver"] == (None, None), "no queue, so nothing to wait too long in"
+
+
+def test_a_step_turns_slow_then_too_long_by_its_oldest_waiting_job(db):
+    from libs.ops.pipeline import pipeline
+    from libs.settings import PLATFORM_TICK_MIN
+
+    job = _job(db, first_seen_at=datetime.now(UTC) - timedelta(minutes=PLATFORM_TICK_MIN - 2))
+    assert stage(pipeline(db), "describe")["verdict"] == "ok"
+    for minutes, verdict in ((PLATFORM_TICK_MIN + 2, "warn"), (4 * PLATFORM_TICK_MIN + 2, "down")):
+        db.corpus.update_one({"_id": job.id}, {"$set": {
+            "first_seen_at": datetime.now(UTC) - timedelta(minutes=minutes)}})
+        assert stage(pipeline(db), "describe")["verdict"] == verdict
+
+
+def test_each_step_counts_exactly_what_went_through_it_in_the_window(db):
+    from libs.ops.pipeline import pipeline
+
+    moment = datetime.now(UTC)
+    for hours_ago in (1, 2, 23):
+        _job(db, first_seen_at=moment - timedelta(hours=hours_ago))
+    _job(db, first_seen_at=moment - timedelta(hours=30))  # before the window
+    _job(db, first_seen_at=moment - timedelta(hours=3), description="We build things. " * 40,
+         description_fetched_at=moment - timedelta(hours=2), terms_at=moment - timedelta(hours=1))
+    _job(db, first_seen_at=moment - timedelta(hours=40), description="We build things. " * 40,
+         description_fetched_at=moment - timedelta(hours=30), terms_at=moment - timedelta(hours=29))
+
+    entered = {row["key"]: row["entered"] for row in pipeline(db, hours=24)["stages"]}
+
+    assert entered == {"gather": 4, "describe": 1, "words": 1, "deliver": 0}
+
+
+def test_a_job_too_old_to_be_shown_leaves_the_text_queue_and_is_counted_once_as_missed(db):
+    """The owner: a job past the window is dropped from describing, not left to pile up (2026-11-05). The
+    page says how many were dropped untaken in the window, so a describer falling behind is seen."""
+    from libs.ops.pipeline import pipeline
+
+    moment = datetime.now(UTC)
+    for hours_ago in (1, 25, 50):  # waiting; aged out today; aged out the day before
+        _job(db, source="linkedin", first_seen_at=moment - timedelta(hours=hours_ago))
+    _job(db, source="linkedin", first_seen_at=moment - timedelta(hours=25), description="We build. " * 40)
+
+    describe = stage(pipeline(db, hours=24), "describe")
+
+    assert (describe["waiting"], describe["missed"]) == (1, 1)
+
+
+def test_the_wait_for_words_begins_when_the_text_came_not_when_the_job_was_found(db):
+    from libs.ops.pipeline import pipeline
+
+    moment = datetime.now(UTC)
+    _job(db, first_seen_at=moment - timedelta(hours=3), description="We build things. " * 40,
+         description_fetched_at=moment - timedelta(minutes=10))
+
+    assert 9.5 <= stage(pipeline(db), "words")["oldest_min"] <= 11
+
+
+def test_every_source_is_listed_with_what_it_found_and_a_silent_one_as_zero(db):
+    """A board that stops answering raises nothing: this is where it shows."""
+    from libs.ops.pipeline import sources
+    from libs.settings import HARVEST_SOURCES
+
+    moment = datetime.now(UTC)
+    _job(db, source="himalayas", first_seen_at=moment - timedelta(hours=1), description="We build. " * 40)
+    _job(db, source="himalayas", first_seen_at=moment - timedelta(hours=2))
+    _job(db, source="linkedin", first_seen_at=moment - timedelta(hours=1))
+    _job(db, source="linkedin", first_seen_at=moment - timedelta(hours=30))  # before the window
+
+    rows = {row["source"]: row for row in sources(db, hours=24)}
+
+    assert set(HARVEST_SOURCES) <= set(rows)
+    assert {key: rows["himalayas"][key] for key in ("found", "with_text", "waiting")} == {
+        "found": 2, "with_text": 1, "waiting": 1}
+    assert {key: rows["linkedin"][key] for key in ("found", "with_text", "waiting")} == {
+        "found": 1, "with_text": 0, "waiting": 1}
+    assert rows["jobicy"]["found"] == 0 and rows["jobicy"]["newest"] is None
+    assert [row["source"] for row in sources(db, hours=24)][:2] == ["himalayas", "linkedin"], "busiest first"
 
 
 # ── the three ways the first version lied ───────────────────────────────────────────────────────

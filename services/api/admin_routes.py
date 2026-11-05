@@ -45,6 +45,7 @@ from libs.ops.latency import (
     stage_detail,
 )
 from libs.ops.pipeline import pipeline
+from libs.ops.pipeline import sources as found_by_source
 from libs.settings import (
     DEFAULT_SOURCE_MIN_AGE_HOURS,
     DEFAULTS,
@@ -562,6 +563,16 @@ def pipeline_shape(db: Database = Depends(get_db), admin: User = Depends(require
                    hours: int = 24) -> dict:
     """Where the jobs are right now, stage by stage."""
     return pipeline(db, hours=max(1, min(hours, 168)))
+
+
+@router.get("/pipeline/sources")
+def pipeline_sources(db: Database = Depends(get_db), admin: User = Depends(require_admin), *,
+                     hours: int = 24) -> dict:
+    """Each source's last `hours`: found, with text, waiting for text, newest. Not in the live frame: it
+    reads the day's jobs, and once a minute is enough to see a board go quiet."""
+    window = max(1, min(hours, 168))
+    audit(logger, "admin.pipeline_sources", user=admin.id, hours=window)
+    return {"window_hours": window, "sources": found_by_source(db, hours=window)}
 
 
 # How often the live view recomputes.

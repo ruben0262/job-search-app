@@ -40,8 +40,7 @@ TYPED = "typed"
 DESCRIBE_MAX_FAILURES = 2
 
 
-def awaiting_description_conditions(windows: PlatformWindows | None = None, *,
-                                    min_chars: int = MIN_DESCRIPTION) -> list[dict]:
+def awaiting_description_conditions(windows: PlatformWindows | None = None) -> list[dict]:
     """Rows the describer will actually fetch text for, and so what every count of them counts.
 
     A closed posting is not worth a fetch: on the proxied tier that fetch is the user's own
@@ -53,20 +52,25 @@ def awaiting_description_conditions(windows: PlatformWindows | None = None, *,
     already past the age cutoff**. A rule of its own here disagreed with the page's: it read LinkedIn's
     date-only time as midnight, so a job listed at 23:50 left the queue ten minutes later (2026-11-05).
 
+    Without its whole text is without `described_at`, which `set_description` sets the moment a job has
+    `MIN_DESCRIPTION` characters of it, and nothing clears. The same jobs as measuring every text's
+    length (2,482 of 24,452, none apart, 2026-11-05), read from an index (`text_queue`) rather than from
+    every description: 30 ms against 160, and the admin's live view asks every second.
+
     `windows` is passed in rather than read here, because it is the operator's setting and this module
     is not where platform policy lives. `None` is every age.
     """
     conditions = [{"closed_at": None}, {"describe_failures": {"$lt": DESCRIBE_MAX_FAILURES}},
-                  {"$expr": {"$lt": [{"$strLenCP": {"$ifNull": ["$description", ""]}}, min_chars]}}]
+                  {"described_at": None}]
     if windows is not None:
         conditions.append(showable(windows))
     return conditions
 
 
-def _awaiting(linkedin: bool | None, min_chars: int, windows: PlatformWindows | None) -> dict:
+def _awaiting(linkedin: bool | None, windows: PlatformWindows | None) -> dict:
     """`awaiting_description`'s question, which its count asks too: LinkedIn's postings, the others',
     or both."""
-    where = awaiting_description_conditions(windows, min_chars=min_chars)
+    where = awaiting_description_conditions(windows)
     if linkedin is True:
         where.append({"url": {"$regex": "/jobs/view/"}})
     elif linkedin is False:
@@ -239,17 +243,16 @@ class CorpusRepository:
     # for 25 hours reading as a stuck pipeline, and nothing was stuck.
 
     def awaiting_description(self, *, limit: int = 200, linkedin: bool | None = None,
-                             min_chars: int = MIN_DESCRIPTION,
                              windows: PlatformWindows | None = None) -> list[CorpusJob]:
         """Jobs whose stored text is too thin to match words against, newest first. A `limit` of 0
         is every one of them."""
-        return self._jobs(_awaiting(linkedin, min_chars, windows), limit)
+        return self._jobs(_awaiting(linkedin, windows), limit)
 
     def count_awaiting_description(self, *, linkedin: bool | None = None,
                                    windows: PlatformWindows | None = None) -> int:
         """How many `awaiting_description` would return with no limit: a backlog that grows run after run
         is a pass that cannot keep up."""
-        return self._corpus.count_documents(_awaiting(linkedin, MIN_DESCRIPTION, windows))
+        return self._corpus.count_documents(_awaiting(linkedin, windows))
 
     def _jobs(self, where: dict, limit: int) -> list[CorpusJob]:
         return [CorpusJob.from_doc(row) for row in

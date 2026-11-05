@@ -29,6 +29,9 @@ class CorpusJob(Document):
                # The oldest first, for the archive pass (`libs.corpus.archive`): without it, finding 1,000
                # postings to move read all 397,000 and sorted them, 2 s a run at 400,000 (2026-11-05).
                IndexModel([("first_seen_at", 1)], name="first_seen"),
+               # The jobs still without their text, newest first: the describer's queue and every count of
+               # it (`repository.awaiting_description_conditions`), the admin's live view once a second.
+               IndexModel([("described_at", 1), ("first_seen_at", DESCENDING)], name="text_queue"),
                # The jobs page and the alerts: newest first, open postings only. With the id, the order the
                # match sorts by, so it is read in order and stops: without it, the match for a word not yet
                # searched for sorted 400,000 postings, 79 s at 1.5 million (2026-11-04).
