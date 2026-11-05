@@ -5,7 +5,8 @@ from dataclasses import dataclass
 
 from libs.ops.health import PlatformHealth
 
-# The share of the database budget (`database_budget_mb`, a platform setting) that pages.
+# How full the database's disk may get before it pages: before server_db's own alert at 85%, so the
+# platform's operator hears first, and while there is still room to archive or grow the disk.
 DATABASE_ALERT_FRACTION = 0.80
 
 
@@ -53,15 +54,16 @@ def _queue_alerts(health: PlatformHealth) -> list[Alert]:
 
 def _capacity_alerts(health: PlatformHealth) -> list[Alert]:
     alerts = []
-    used = health.database_bytes / health.database_budget_bytes
+    used = health.disk_used_bytes / health.disk_total_bytes if health.disk_total_bytes else 0
     if used > DATABASE_ALERT_FRACTION:
         alerts.append(Alert(
             "page", "database_size",
-            f"MongoDB holds {health.database_bytes / 1024**2:.0f} MB, {used:.0%} of its "
-            f"{health.database_budget_bytes // 1024**2} MB budget",
-            "At the ceiling Atlas refuses every write, sign-ups included. Check the archive pass ran "
-            "(`archive:` in the harvester log); if it did, keep jobs for fewer days in the admin "
-            "panel, or move the cluster to a bigger tier and raise the budget there."))
+            f"The database's disk is {used:.0%} full: {health.disk_used_bytes / 1e9:.0f} of "
+            f"{health.disk_total_bytes / 1e9:.0f} GB, {health.database_bytes / 1e9:.1f} GB of it this "
+            f"platform's",
+            "A full disk refuses every write, sign-ups included, for every app on server_db. Check the "
+            "archive pass ran (`archive:` in the harvester log); if it did, keep jobs for fewer days "
+            "(Admin → Settings), or give server_db's data disk more room."))
     if health.archive_overdue:
         alerts.append(Alert(
             "warn", "archive_overdue",

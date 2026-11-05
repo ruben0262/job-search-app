@@ -29,7 +29,8 @@ type Health = {
   users_active: number;
   corpus_rows: number;
   database_bytes: number;
-  database_budget_bytes: number;
+  disk_used_bytes: number;
+  disk_total_bytes: number;
   alerts: Alert[];
   latency: {
     window_hours: number;
@@ -172,7 +173,6 @@ type Settings = {
   /** The help chat: 0 off, 1 on. */
   support_chat_enabled: number;
   corpus_retention_days: number;
-  database_budget_mb: number;
   /** Where the Help page's contact form is emailed. */
   support_email: string;
   /** The hour of each person's own day their daily email of new jobs goes out. */
@@ -469,9 +469,10 @@ export function AdminPage() {
       <dl className="stats">
         <Stat value={health.corpus_rows.toLocaleString()} label="corpus rows" />
         <Stat value={`${health.users_active}/${health.users_total}`} label="active users" />
+        <Stat value={gigabytes(health.database_bytes)} label="database" />
         <Stat
-          value={`${Math.round(health.database_bytes / 1024 ** 2)} of ${Math.round(health.database_budget_bytes / 1024 ** 2)} MB`}
-          label="database"
+          value={`${gigabytes(health.disk_used_bytes)} of ${gigabytes(health.disk_total_bytes)}`}
+          label={`disk used, ${Math.round((100 * health.disk_used_bytes) / Math.max(health.disk_total_bytes, 1))}%`}
         />
       </dl>
 
@@ -716,24 +717,6 @@ export function AdminPage() {
               .map((n) => (
                 <option key={n} value={n}>{n} days</option>
               ))}
-          </select>
-
-          <p className="label" style={{ marginTop: "1.5rem" }}>Database size</p>
-          <span className="hint">
-            The size of the MongoDB Atlas tier. An alert goes out at 80% of it, before Atlas stops
-            accepting writes. Change it when the tier changes.
-          </span>
-          <select
-            value={settings.database_budget_mb}
-            disabled={savePlatform.busy}
-            aria-label="Database size"
-            onChange={(event) =>
-              void savePlatform.run("database_budget_mb", Number(event.target.value))}
-            style={{ maxWidth: "10rem", marginTop: "0.5rem" }}
-          >
-            {[512, 2048, 5120, 10240].map((n) => (
-              <option key={n} value={n}>{n < 1024 ? `${n} MB` : `${n / 1024} GB`}</option>
-            ))}
           </select>
 
           <p className="label" style={{ marginTop: "1.5rem" }}>Built documents kept for</p>
@@ -1742,6 +1725,12 @@ function seconds(value: number | null | undefined): string {
   if (value < 1) return "<1s";
   if (value < 90) return `${Math.round(value)}s`;
   return minutes(value / 60);
+}
+
+/** Bytes as gigabytes, to one decimal below ten. */
+function gigabytes(bytes: number): string {
+  const value = bytes / 1e9;
+  return `${value < 10 ? value.toFixed(1) : Math.round(value).toLocaleString()} GB`;
 }
 
 function hourLabel(at: string): string {

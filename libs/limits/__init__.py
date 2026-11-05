@@ -52,7 +52,7 @@ LIMITS: tuple[Limit, ...] = (
           "seconds is 15 a minute.", allow_unlimited=False,
           choices=(3, 4, 5, 8, 12, 20)),
     # About a hundred documents: an instant CV is 25–70 KB (measured 2026-11-01). Every account's
-    # counts against the database tier (`database_budget_mb`), which is why it is not larger.
+    # takes room on the database's disk (Admin → Health), which is why it is not larger.
     Limit("document_storage_mb", "Saved CVs and cover letters", 5, "MB",
           "How much of the CVs and cover letters this account makes are kept for it to download again. "
           "When it is full, new ones are not kept until some are deleted.",

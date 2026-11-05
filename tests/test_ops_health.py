@@ -8,10 +8,10 @@ from libs.db import insert
 from libs.ops.alerts import DATABASE_ALERT_FRACTION, Alert, evaluate, render
 from libs.ops.health import LaneHealth, PlatformHealth, UserHealth
 
-# Atlas's free tier; comfortably inside it, and past the point it pages at.
-DATABASE_BUDGET_BYTES = 512 * 1024**2
-ROOMY = DATABASE_BUDGET_BYTES // 4
-NEARLY_FULL = int(DATABASE_BUDGET_BYTES * (DATABASE_ALERT_FRACTION + 0.05))
+# server_db's data disk, 98 GB as it reports itself; comfortably inside it, and past the point it pages at.
+DISK = 98 * 10**9
+ROOMY = DISK // 4
+NEARLY_FULL = int(DISK * (DATABASE_ALERT_FRACTION + 0.05))
 
 
 def lane(name="notify", *, ready=0, claimed=0, dead=0, oldest=None, expected=5) -> LaneHealth:
@@ -26,8 +26,8 @@ def user(**kwargs) -> UserHealth:
 
 def health(**kwargs) -> PlatformHealth:
     base = {"checked_at": datetime.now(UTC).isoformat(), "lanes": [lane()], "users_total": 1,
-            "users_active": 1, "corpus_rows": 1000, "archive_overdue": 0, "database_bytes": ROOMY,
-            "database_budget_bytes": DATABASE_BUDGET_BYTES, "users": []}
+            "users_active": 1, "corpus_rows": 1000, "archive_overdue": 0, "database_bytes": 2 * 10**9,
+            "disk_used_bytes": ROOMY, "disk_total_bytes": DISK, "users": []}
     return PlatformHealth(**{**base, **kwargs})
 
 
@@ -80,31 +80,38 @@ def test_every_lane_has_an_expected_wait_of_its_own():
 
 # ── capacity ──────────────────────────────────────────────────────────────────────────────────
 
-def test_a_nearly_full_database_pages():
-    """Everything is in one database by design, so this is the whole platform rather than a component.
-    At the free tier's ceiling Atlas refuses every write, sign-ups included."""
-    alerts = evaluate(health(database_bytes=NEARLY_FULL))
+def test_a_nearly_full_disk_pages_and_says_how_full():
+    """Everything is in one database by design, and on server_db its disk is every app's: full, it refuses
+    every write, sign-ups included."""
+    alerts = evaluate(health(disk_used_bytes=NEARLY_FULL))
     assert keys(alerts) == {"database_size"}
     assert alerts[0].pages
-    assert "512 MB" in alerts[0].text
+    assert "85% full: 83 of 98 GB, 2.0 GB of it this platform's" in alerts[0].text
 
 
-def test_the_budget_the_alert_measures_against_is_the_operators_setting(db):
-    """A bigger tier is a panel change: the same size that pages on the free tier is quiet on 2 GB."""
-    from libs import settings
+def test_the_alert_comes_before_the_disk_is_full_not_at_it():
+    """A page at 100% is a page after the outage. Below the threshold is quiet."""
+    just_under = int(DISK * DATABASE_ALERT_FRACTION) - 1
+    assert evaluate(health(disk_used_bytes=just_under)) == []
+    assert DATABASE_ALERT_FRACTION < 1
+
+
+def test_the_disk_is_the_one_the_database_is_on_as_it_says_itself(db):
+    """No setting to keep in step with the disk (Atlas's 512 MB was one, and outlived Atlas): MongoDB says
+    how big its disk is and how full, and what this database takes on it."""
+    from libs.corpus.repository import CorpusRepository
     from libs.ops.health import platform_health
 
-    assert platform_health(db).database_budget_bytes == DATABASE_BUDGET_BYTES, "the free tier by default"
-    settings.put(db, "database_budget_mb", 2048)
-    assert platform_health(db).database_budget_bytes == 2048 * 1024**2
-    assert evaluate(health(database_bytes=NEARLY_FULL, database_budget_bytes=2048 * 1024**2)) == []
+    empty = platform_health(db)
+    corpus = CorpusRepository(db)
+    corpus.set_description(corpus.add(url="https://example.com/1", source="test", title="Nurse"),
+                           "A ward job. " * 2000)
+    state = platform_health(db)
+    reported = db.command("dbStats")
 
-
-def test_the_database_alert_comes_before_the_ceiling_not_at_it():
-    """A page at 100% is a page after the outage. Below the threshold is quiet."""
-    just_under = int(DATABASE_BUDGET_BYTES * DATABASE_ALERT_FRACTION) - 1
-    assert evaluate(health(database_bytes=just_under)) == []
-    assert DATABASE_ALERT_FRACTION < 1
+    assert 0 < state.database_bytes <= state.disk_used_bytes <= state.disk_total_bytes
+    assert state.disk_total_bytes == reported["fsTotalSize"]
+    assert state.database_bytes >= empty.database_bytes
 
 
 # ── per-user conditions ───────────────────────────────────────────────────────────────────────
@@ -150,7 +157,7 @@ def test_every_alert_says_what_to_do():
     """"Look into it" is not an action. Each alert names the likely cause."""
     alerts = evaluate(health(lanes=[lane("notify", dead=1, ready=1, oldest=60)],
                              users=[user(telegram_status="broken")],
-                             database_bytes=NEARLY_FULL))
+                             disk_used_bytes=NEARLY_FULL))
     assert len(alerts) == 4
     assert all(len(alert.action) > 20 for alert in alerts)
 

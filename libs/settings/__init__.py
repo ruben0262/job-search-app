@@ -155,9 +155,6 @@ DEFAULT_SUPPORT_EMAIL = "hello@flow-solutions.xyz"
 # notifier's next sweep after it.
 DEFAULT_EMAIL_DIGEST_HOUR = 8
 
-# The database's size ceiling, in MB of data and indexes: Atlas's free tier stops accepting writes at
-# 512 (ROADMAP Phase 9). The health alert pages at 80% of it, so it changes when the tier does.
-DEFAULT_DATABASE_BUDGET_MB = 512
 
 # How long one harvest cycle may spend before it must stop and let the next tick have the box.
 # Below `harvester.service`'s TimeoutStartSec, which is what kills a cycle that ignores this — and
@@ -304,7 +301,6 @@ DEFAULTS: dict[str, object] = {
     "document_keep_hours": DEFAULT_DOCUMENT_KEEP_HOURS,
     "support_chat_enabled": DEFAULT_SUPPORT_CHAT_ENABLED,
     "corpus_retention_days": DEFAULT_CORPUS_RETENTION_DAYS,
-    "database_budget_mb": DEFAULT_DATABASE_BUDGET_MB,
     "support_email": DEFAULT_SUPPORT_EMAIL,
     "email_digest_hour": DEFAULT_EMAIL_DIGEST_HOUR,
 }
@@ -415,11 +411,6 @@ def document_keep_hours(db: Database) -> int:
 def corpus_retention_days(db: Database) -> int:
     """How many days a posting stays in the corpus before it is archived."""
     return int(get(db, "corpus_retention_days"))
-
-
-def database_budget_bytes(db: Database) -> int:
-    """The size the database must stay under, data and indexes."""
-    return int(get(db, "database_budget_mb")) * 1024**2
 
 
 def freshness_hours(db: Database | Snapshot, source: str) -> int:
