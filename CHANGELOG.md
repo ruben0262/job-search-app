@@ -14,6 +14,65 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-05 (night) — The admin's numbers, made true to how the platform now works
+
+The owner: make the admin's numbers right, and tested for accuracy; drop jobs too old to have their text
+read rather than leave them waiting anywhere; measure the database against its 98 GB disk, not 512 MB;
+make sure every source is read, stored, given its text and shown; one country chart, every line tickable,
+an hour to a month; Latency to follow the pipeline, with limits for each step.
+
+**One rule for what can still be shown** (`libs/corpus/freshness.py`, `showable`). The Jobs page judged a
+date-only posting time (LinkedIn's list gives a date) by when the job was found; the text queue read it as
+midnight. So every LinkedIn job still without its text left the queue at midnight UTC, one listed at 23:50
+included, while the page went on showing it without text. The page, the text queue (and so the describer
+and every count of it), the boards' own text fetching (which had no age limit at all), the words search
+and the admin all use the one rule now. Latency's backlog had a rule of its own, every job ever stored
+without text, so it grew for ever beside Pipeline's count; it reads the describer's queue now.
+
+**The text queue from an index.** Without its whole text is without `described_at`, which
+`set_description` sets the moment a job has 200 characters of it. On every one of the laptop's 24,452
+jobs, the same 2,482 as measuring every description's length, read from `text_queue` instead: Pipeline's
+live frame, once a second, 500 ms → 64 ms.
+
+**The database against its disk** (Admin → Health). MongoDB reports the disk it is on (`dbStats`
+`fsUsedSize`, `fsTotalSize`), so the 98 GB is read, not set: the setting `database_budget_mb` (Atlas's 512
+MB) is gone. The alert pages past 80% of the disk, before server_db's own at 85%.
+
+**Pipeline and Latency, the same steps** (`libs/ops/steps.py`): found and stored → text read → words found
+(new: texts come between runs now, and their words at the next run's end) → alert sent. One table of
+limits, from the 15-minute run: fine under / slow to / too long past —
+
+| Step | Fine under | Too long past |
+|---|---|---|
+| Listed → stored | 5 min | 15 min |
+| Stored → text read | 15 min | 60 min |
+| Text read → words found | 30 min | 60 min |
+| Found → alert sent | 45 min | 90 min |
+
+Pipeline colours a step by the job waiting longest, Latency by the slowest tenth; what waits is one
+function both read. New: how many jobs aged out without their text in the day (dropped, not waiting); how
+many accounts have Telegram or browser alerts on, beside "alerts sent"; and each source's day — found, with
+text, waiting for text, newest — every source listed, a silent one as "nothing".
+
+**The country chart**: one chart, "All countries" a line like any country's, each ticked on or off in the
+table; 1, 2, 4, 8, 12 hours, 1, 2, 7, 14, 30 days. Counted per run (15 minutes) from now, as jobs arrive;
+the hourly counts before stay valid.
+
+**Every source, checked** (`deploy/scripts/check_sources.py`, one real cycle on the laptop, direct, at
+22:47): ashby, greenhouse, himalayas, jobicy, justjoinit, lever, personio, profession, recruitee,
+smartrecruiters, themuse and workingnomads listed and stored jobs; most of the rest of what they listed is
+in no country anybody picked, not kept by design. No Fluff Jobs listed none in its 2-hour window, and 39
+in 6 hours, 475 in 48: the board was quiet, not broken. breezy, workable and workday had no board due or
+changed in that run. Hiring Cafe answers 403, as known. The check now says how many listed jobs were in no
+picked country, and its `--linkedin` option, broken by the pass's new readers, works again.
+
+Tests, each against behaviour with known inputs: the four places agree on a LinkedIn job dated yesterday
+and found two hours ago (kept) and found 25 hours ago (dropped); each step counts exactly what went through
+it; a job aged out without text counted once; a step turns slow, then too long, by its oldest job; the wait
+for words begins when the text came; both tabs read the same backlogs; every source listed, a silent one as
+zero; the words step timed from text to words; the disk alert and its numbers; each chart range's buckets;
+a job counted in its run; runs added into hours and days at a fixed moment.
+
 ## 2026-11-05 — LinkedIn's job texts read all the time, and a refused proxy connection asked again
 
 The owner: the jobs waiting for their text reached 13,797; fetch them all the time, not only inside the

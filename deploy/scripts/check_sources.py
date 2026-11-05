@@ -18,14 +18,16 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from libs.corpus.geo import allows, posting_country, wanted_countries
 from libs.corpus.repository import CorpusRepository
 from libs.db import database, ensure_schema
 from libs.obs import configure
 from libs.secrets import install
+from libs.tenant.repository import TenantRepository
 from services.harvester import linkedin
 from services.harvester.__main__ import source_configs_for
 from services.harvester.cycle import _run_source, run_cycle
-from services.harvester.source_config import ATS_SOURCES
+from services.harvester.source_config import ATS_SOURCES, union_locations
 
 
 def _age(links) -> str:
@@ -46,6 +48,11 @@ def _age(links) -> str:
 def _stored(corpus: CorpusRepository, links) -> int:
     return sum(1 for link in links if link.url and corpus.find_duplicate(
         link.url, link.title, link.company, link.location, application_url=link.application_url))
+
+
+def _elsewhere(links, wanted) -> int:
+    """Listed in no country anybody picked: not kept, by design (`cycle._ingest`)."""
+    return sum(1 for link in links if not allows(posting_country(link.location, title=link.title), wanted))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -78,24 +85,28 @@ def main(argv: list[str] | None = None) -> int:
     if args.linkedin:
         found: list = []
 
-        def sweep(places, *, proxy):
-            sweeps = linkedin.sweep_places(places, proxy=proxy)
+        def sweep(places, *, proxy, readers):
+            sweeps = linkedin.sweep_places(places, proxy=proxy, readers=readers)
             found.extend(job for each in sweeps for job in each.jobs)
             return sweeps
 
         linkedin.run_pass(db, sweep=sweep)
         listed["linkedin"] = found
 
+    wanted = wanted_countries(union_locations(TenantRepository(db).active_configs()))
     print(f"\n{'board':16s} {'listed':>7s} {'newest':>8s} {'in corpus':>10s}  note")
     for key in sorted(set(configs) | set(listed) | set(failed)):
         links = listed.get(key, [])
         stored = _stored(corpus, links)
+        elsewhere = _elsewhere(links, wanted)
         # A company board answers "not modified" when nothing on it changed since the last poll, so
         # nothing listed there is normal; the harvest log says how many were unchanged.
         empty = ("no board changed since the last poll, or none answered (see the log)" if key in ATS_SOURCES
                  else "listed nothing new")
-        note = failed.get(key) or (empty if not links else
-                                   "" if stored == len(links) else f"{len(links) - stored} not stored")
+        missing = len(links) - stored - elsewhere
+        note = failed.get(key) or (empty if not links else "; ".join(part for part in (
+            f"{elsewhere} in no picked country, not kept" if elsewhere else "",
+            f"{missing} not stored" if missing > 0 else "") if part))
         print(f"{key:16s} {len(links):7d} {_age(links):>8s} {stored:5d}/{len(links):<4d}  {note}")
     print(f"\ncycle: {report.queries_planned} queries, {report.links_found} links, {report.new_jobs} new, "
           f"{report.duplicates_total} already known")
