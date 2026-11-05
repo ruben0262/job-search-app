@@ -34,6 +34,8 @@ from services.harvester.cycle import CycleReport, _ingest
 from services.harvester.sources.base import JobLink
 
 PROBE = "scale_probe"
+# How many real jobs are copied to make the rest: 24,452 on 2026-11-04's measurement.
+SOURCE_JOBS = 25_000
 # What people search for: job titles and skills across trades, so the words index is as busy as a real one.
 WORDS = """python java javascript typescript react angular node golang rust php ruby kotlin swift sql
 postgresql mysql mongodb oracle excel tableau sap salesforce aws azure gcp docker kubernetes terraform
@@ -92,7 +94,9 @@ def build(jobs: int) -> None:
         _people(db, rng)
     source = MongoClient(os.environ.get("SOURCE_URI", "mongodb://127.0.0.1:27017"), tz_aware=True)[
         os.environ.get("SOURCE_DB", "jobsearch_dev")]
-    rows = list(source.corpus.find({}))
+    # The newest SOURCE_JOBS of them, copied over and over: enough real variety, and inside the harvester
+    # container's 1 GB, which a whole corpus held in memory at once is not.
+    rows = list(source.corpus.find({}, sort=[("first_seen_at", -1)], limit=SOURCE_JOBS))
     started = time.monotonic()
     for row in rows:
         row.update(terms_of(row.get("title"), row.get("description"), VOCABULARY))
