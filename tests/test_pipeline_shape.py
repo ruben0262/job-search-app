@@ -89,13 +89,14 @@ def test_a_posting_too_old_to_deliver_is_not_reported_as_waiting(db):
     fifteen minutes, 156 of them already past the delivery window, the oldest first seen 167 hours
     earlier — the same ids, on a user's own metered proxy, for a week.
     """
+    from libs.corpus.freshness import platform_windows
     from libs.corpus.repository import CorpusRepository
     from libs.ops.pipeline import pipeline
 
     stale = _job(db, description=None, first_seen_at=datetime.now(UTC) - timedelta(days=3))
 
     assert stage(pipeline(db), "describe")["waiting"] == 0
-    assert not [row for row in CorpusRepository(db).awaiting_description(max_age_hours=24)
+    assert not [row for row in CorpusRepository(db).awaiting_description(windows=platform_windows(db))
                 if row.id == stale.id], "and the describer agrees"
 
 

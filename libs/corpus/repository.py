@@ -3,13 +3,14 @@ from __future__ import annotations
 
 import secrets
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from pymongo import ReturnDocument
 from pymongo.database import Database
 from pymongo.errors import DuplicateKeyError
 
 from libs.corpus import langfilter, workfilter
+from libs.corpus.freshness import PlatformWindows, showable
 from libs.corpus.geo import posting_country, read_city
 from libs.corpus.keys import canonical_url, content_key
 from libs.db import insert, now
@@ -39,37 +40,33 @@ TYPED = "typed"
 DESCRIBE_MAX_FAILURES = 2
 
 
-def awaiting_description_conditions(min_chars: int = MIN_DESCRIPTION,
-                                    max_age_hours: int | None = None) -> list[dict]:
-    """Rows the describer will actually fetch text for.
+def awaiting_description_conditions(windows: PlatformWindows | None = None, *,
+                                    min_chars: int = MIN_DESCRIPTION) -> list[dict]:
+    """Rows the describer will actually fetch text for, and so what every count of them counts.
 
     A closed posting is not worth a fetch: on the proxied tier that fetch is the user's own
     metered bandwidth, and nothing downstream will ever read the text.
 
-    Neither is a posting already too old to be delivered. The pre-score filter refuses anything
-    past `job_max_age_hours`, so fetching its description spends a user's proxy on a row no account
-    can ever be shown. Measured 2026-08-08: the describer was retrying **212** thin LinkedIn rows
-    every pass, **156 of them already past the age cutoff**, the oldest first seen 167 hours
-    earlier. Same LinkedIn ids, every fifteen minutes, for a week.
+    Neither is a posting nobody can be shown any more: past `windows`, judged by the Jobs page's own
+    rule (`freshness.showable`), it leaves the queue and every count of it, and is never asked for.
+    Measured 2026-08-08: the describer was retrying **212** thin LinkedIn rows every pass, **156 of them
+    already past the age cutoff**. A rule of its own here disagreed with the page's: it read LinkedIn's
+    date-only time as midnight, so a job listed at 23:50 left the queue ten minutes later (2026-11-05).
 
-    `max_age_hours` is passed in rather than read here, because it is the operator's setting and
-    this module is not where platform policy lives.
+    `windows` is passed in rather than read here, because it is the operator's setting and this module
+    is not where platform policy lives. `None` is every age.
     """
     conditions = [{"closed_at": None}, {"describe_failures": {"$lt": DESCRIBE_MAX_FAILURES}},
                   {"$expr": {"$lt": [{"$strLenCP": {"$ifNull": ["$description", ""]}}, min_chars]}}]
-    if max_age_hours:
-        cutoff = now() - timedelta(hours=int(max_age_hours))
-        # Dated rows against their posted time, undated ones against when we found them — the same
-        # rule `UserFilters.fresh_since` applies, so the two cannot disagree about what is stale.
-        conditions.append({"$or": [{"posted_at": {"$gte": cutoff}},
-                                   {"posted_at": None, "first_seen_at": {"$gte": cutoff}}]})
+    if windows is not None:
+        conditions.append(showable(windows))
     return conditions
 
 
-def _awaiting(linkedin: bool | None, min_chars: int, max_age_hours: int | None) -> dict:
+def _awaiting(linkedin: bool | None, min_chars: int, windows: PlatformWindows | None) -> dict:
     """`awaiting_description`'s question, which its count asks too: LinkedIn's postings, the others',
     or both."""
-    where = awaiting_description_conditions(min_chars, max_age_hours)
+    where = awaiting_description_conditions(windows, min_chars=min_chars)
     if linkedin is True:
         where.append({"url": {"$regex": "/jobs/view/"}})
     elif linkedin is False:
@@ -243,16 +240,16 @@ class CorpusRepository:
 
     def awaiting_description(self, *, limit: int = 200, linkedin: bool | None = None,
                              min_chars: int = MIN_DESCRIPTION,
-                             max_age_hours: int | None = None) -> list[CorpusJob]:
+                             windows: PlatformWindows | None = None) -> list[CorpusJob]:
         """Jobs whose stored text is too thin to match words against, newest first. A `limit` of 0
         is every one of them."""
-        return self._jobs(_awaiting(linkedin, min_chars, max_age_hours), limit)
+        return self._jobs(_awaiting(linkedin, min_chars, windows), limit)
 
     def count_awaiting_description(self, *, linkedin: bool | None = None,
-                                   max_age_hours: int | None = None) -> int:
+                                   windows: PlatformWindows | None = None) -> int:
         """How many `awaiting_description` would return with no limit: a backlog that grows run after run
         is a pass that cannot keep up."""
-        return self._corpus.count_documents(_awaiting(linkedin, MIN_DESCRIPTION, max_age_hours))
+        return self._corpus.count_documents(_awaiting(linkedin, MIN_DESCRIPTION, windows))
 
     def _jobs(self, where: dict, limit: int) -> list[CorpusJob]:
         return [CorpusJob.from_doc(row) for row in

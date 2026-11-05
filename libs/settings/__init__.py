@@ -140,7 +140,7 @@ DEFAULT_SOURCE_PAGES_PER_CYCLE: dict[str, int] = {
 
 # How long a posting stays in the corpus before it is archived to a file and deleted
 # (`libs.corpus.archive`). Fifteen days, set by the owner 2026-11-05 (thirty since 2026-08-11): no job
-# older than eight days is anybody's match any more (`filters.candidate_since`), so the rest is the
+# older than eight days is anybody's match any more (`freshness.candidate_since`), so the rest is the
 # disk, the indexes and the backups. A setting since 2026-10-30, in Admin → Settings.
 #
 # One definition, because the number this replaced had two: `CORPUS_HOT_DAYS = 90` in the corpus

@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from time import monotonic
 
+from libs.corpus.freshness import PlatformWindows
 from libs.corpus.postings import Posting, ProxyUnusable, fetch_job
 from libs.corpus.repository import DESCRIBE_MAX_FAILURES, CorpusRepository
 from libs.db.models import CorpusJob
@@ -45,13 +46,13 @@ class DescribeReport:
 def describe_pending(corpus: CorpusRepository, client, *, linkedin: bool | None = None,
                      limit: int | None = SHARED_LIMIT,
                      budget_seconds: float | None = None,
-                     max_age_hours: int | None = None,
+                     windows: PlatformWindows | None = None,
                      workers: int = 1, quiet: bool = False) -> DescribeReport:
     """Fetch and store descriptions for corpus rows that are still thin, `workers` pages at a time.
 
     `limit` of `None` is every row waiting; `budget_seconds` is then what bounds the pass.
-    `max_age_hours` is the operator's delivery window. A posting past it cannot reach anybody, so
-    fetching its text is bandwidth spent on a row the pre-score filter has already refused.
+    `windows` is the operator's delivery window (`freshness.platform_windows`). A posting past it cannot
+    reach anybody, so fetching its text is bandwidth spent on a row no Jobs page will show.
 
     Pages are fetched in parallel and written one at a time, here: the fetch is the slow part (a
     second or more each through the site proxy, measured 2026-11-02), and the writes stay in order.
@@ -60,7 +61,7 @@ def describe_pending(corpus: CorpusRepository, client, *, linkedin: bool | None 
     """
     report = DescribeReport()
     jobs = corpus.awaiting_description(limit=limit or 0, linkedin=linkedin,
-                                       max_age_hours=max_age_hours)
+                                       windows=windows)
     deadline = None if budget_seconds is None else monotonic() + budget_seconds
     refused = threading.Event()
     # As many pages in a row as there are readers, each refused on every try and every address: LinkedIn

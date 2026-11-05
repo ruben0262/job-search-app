@@ -6,10 +6,10 @@ from datetime import UTC, datetime, timedelta
 
 from pymongo.database import Database
 
+from libs.corpus.freshness import platform_windows
 from libs.corpus.repository import awaiting_description_conditions
 from libs.db.models import CorpusJob, QueueJob, User, UserJobState
 from libs.settings import PLATFORM_TICK_MIN
-from libs.settings import get as settings_get
 
 # How long a row may sit at a stage before the colour changes, as multiples of its tick.
 AMBER_TICKS = 2
@@ -61,11 +61,8 @@ def pipeline(db: Database, *, hours: int = 24) -> dict:
     """Every stage, with what is in it."""
     since = datetime.now(UTC) - timedelta(hours=hours)
 
-    # Not trimmed.
-    # The describer skips rows past the delivery window, so the page must too — counting them
-    # would rebuild exactly the phantom backlog the closed-row fix removed, one setting later.
-    describe_conditions = awaiting_description_conditions(
-        max_age_hours=int(settings_get(db, "job_max_age_hours")))
+    # The describer's own question: a row it will never fetch is not waiting.
+    describe_conditions = awaiting_description_conditions(platform_windows(db))
 
     stages = [
         # One row, because it is one statement.

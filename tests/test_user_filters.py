@@ -103,13 +103,6 @@ def test_the_filter_never_invents_a_window_of_its_own():
         UserFilters.from_config(config())
 
 
-def test_fresh_since_is_the_window_behind_now():
-    filters = UserFilters(max_age_hours=24)
-    now = datetime(2026, 8, 6, 12, 0, tzinfo=UTC)
-
-    assert filters.fresh_since(now=now) == now - timedelta(hours=24)
-
-
 def test_a_v1_config_is_migrated_before_it_is_read():
     """A v1 config keeps these at the top level."""
     filters = built({"keywords": ["engineer"], "exclude_keywords": ["senior"]}, max_age_hours=72)
@@ -146,7 +139,6 @@ def test_a_closed_posting_is_never_a_candidate(db):
     broke twice in one day for two correct changes. The behaviour each condition exists to produce
     is asserted directly instead, here and in the tests around it.
     """
-    from datetime import UTC, datetime
 
     open_row = _row(db)
     closed = _row(db, closed_at=datetime.now(UTC))
@@ -191,7 +183,6 @@ def _survivors(db, filters):
 
 def test_a_posting_older_than_the_account_asked_for_never_reaches_the_model(db):
     """The harvester fetches at the widest window any account asked for."""
-    from datetime import UTC, datetime, timedelta
 
     now = datetime.now(UTC)
     fresh = _row(db, posted_at=now - timedelta(hours=2))
@@ -204,7 +195,6 @@ def test_a_posting_older_than_the_account_asked_for_never_reaches_the_model(db):
 
 def test_an_undated_posting_is_aged_from_when_we_found_it(db):
     """Most sources report no posted time."""
-    from datetime import UTC, datetime, timedelta
 
     now = datetime.now(UTC)
     recent = _row(db, posted_at=None)
@@ -268,7 +258,6 @@ def test_a_slow_source_is_not_silenced_by_a_tight_global_window(db):
     seventeen sources returned nothing at all. `arbeitnow` held 2,691 open jobs and none inside 72
     hours — harvested every cycle and discarded in full.
     """
-    from datetime import UTC, datetime, timedelta
 
     now = datetime.now(UTC)
     slow = _row(db, source="arbeitnow", posted_at=now - timedelta(hours=100))
@@ -282,7 +271,6 @@ def test_a_slow_source_is_not_silenced_by_a_tight_global_window(db):
 
 def test_the_operator_can_widen_a_window_but_not_narrow_it_past_the_floor(db):
     """The global setting applies on top of each source's floor, never underneath it."""
-    from datetime import UTC, datetime, timedelta
 
     now = datetime.now(UTC)
     recent_linkedin = _row(db, source="linkedin", posted_at=now - timedelta(hours=100))
@@ -300,7 +288,6 @@ def test_a_date_only_posting_is_judged_on_when_we_found_it(db):
     fifteen minutes and polls every ATS token each cycle, so when we first saw a row is the better
     statement about its age.
     """
-    from datetime import UTC, datetime, timedelta
 
     now = datetime.now(UTC)
     midnight_today = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -322,7 +309,6 @@ def test_a_date_only_posting_is_judged_on_when_we_found_it(db):
 
 def test_a_real_timestamp_is_still_judged_on_the_posting_time(db):
     """The date-only rule must not become a way for genuinely old jobs to slip through."""
-    from datetime import UTC, datetime, timedelta
 
     now = datetime.now(UTC)
     old = _row(db, source="linkedin", posted_at=now - timedelta(hours=30),
@@ -341,7 +327,6 @@ def test_the_delivery_floor_is_the_operator_s_to_change(db):
     operator could widen a source's harvest window, watch rows arrive, and never learn that a floor
     they could not see was discarding them. Both are now set in the same place.
     """
-    from datetime import UTC, datetime, timedelta
 
     from libs import settings
     from libs.db import insert

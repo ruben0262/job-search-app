@@ -27,6 +27,7 @@ from time import monotonic
 from pymongo import UpdateOne
 from pymongo.database import Database
 
+from libs.corpus.freshness import candidate_since, platform_windows
 from libs.corpus.geo import posting_country, read_city
 from libs.corpus.repository import MIN_DESCRIPTION
 from libs.db import now
@@ -34,7 +35,6 @@ from libs.db.models import CorpusJob, UserConfig, Word
 from libs.matching import green_words, has_any, norm
 from libs.obs import audit
 from libs.settings import TERMS_BUDGET_SECONDS
-from libs.tenant.filters import candidate_since, platform_windows
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +107,7 @@ def catch_up(db: Database, *, budget_seconds: float = TERMS_BUDGET_SECONDS) -> C
 
 def _backfill(db: Database, word: str, *, since, upto, deadline: float) -> int:
     """One word, in the postings already indexed without it, newest first, a stretch of `STRETCH` at a
-    time, back to `since`: older ones are never shown (`filters.candidate_since`). At least one stretch a
+    time, back to `since`: older ones are never shown (`freshness.candidate_since`). At least one stretch a
     run, however little time is left, so a word is never starved. Where it got to is kept on the word, so
     a run out of time goes on from there next run; at `since` it is indexed, and matching reads it from
     the index. The database picks out the postings with the word, so only those cross the network."""

@@ -21,6 +21,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from time import monotonic
 
+from libs.corpus.freshness import platform_windows
 from libs.corpus.repository import CorpusRepository
 from libs.db import database, held
 from libs.obs import configure
@@ -28,7 +29,6 @@ from libs.proxy import ENV as PROXY_ENV
 from libs.proxy import site_proxy
 from libs.secrets import install, redacting
 from libs.settings import PLATFORM_TICK_MIN, proxy_exits
-from libs.settings import get as settings_get
 from services.harvester.describe import DescribeReport, describe_pending
 from services.harvester.fetch import make_site_client
 from services.harvester.governor import linkedin_enabled
@@ -67,8 +67,7 @@ def run_round(db) -> DescribeReport | None:
         return None
     with redacting(proxy), make_site_client(proxy) as client:
         report = describe_pending(CorpusRepository(db), client, linkedin=True, limit=ROUND,
-                                  max_age_hours=int(settings_get(db, "job_max_age_hours")),
-                                  workers=proxy_exits(db), quiet=True)
+                                  windows=platform_windows(db), workers=proxy_exits(db), quiet=True)
     if report.proxy_error:
         logger.error("describer: the site proxy refused every try, so the round stopped: %s",
                      report.proxy_error[:200])
@@ -96,8 +95,7 @@ def run(db, *, rounds: int | None = None, sleep=time.sleep) -> None:
 
 def _say(db, tally: Tally) -> None:
     """The line a tick: what was read, why the rest was not, and how many still wait."""
-    waiting = CorpusRepository(db).count_awaiting_description(
-        linkedin=True, max_age_hours=int(settings_get(db, "job_max_age_hours")))
+    waiting = CorpusRepository(db).count_awaiting_description(linkedin=True, windows=platform_windows(db))
     logger.info("describer: %d text(s) read of %d tried in %d round(s), %d waiting — %s", tally.described,
                 tally.attempted, tally.rounds, waiting, dict(tally.outcomes))
 

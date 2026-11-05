@@ -3,15 +3,15 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import datetime
 
 from libs.contracts.config import migrate_config
 from libs.corpus import langfilter, workfilter
+from libs.corpus.freshness import PlatformWindows, platform_windows, showable
 from libs.corpus.geo import wanted_countries
 from libs.corpus.repository import DESCRIBE_MAX_FAILURES, TYPED
 from libs.db.models.corpus import WORKPLACES
 from libs.limits import limit_default
-from libs.settings import DEFAULT_SOURCE_MIN_AGE_HOURS, SOURCE_MIN_AGE_HOURS
 
 # The catalogue's ceiling, for a caller with no user to resolve against — a test, or a direct construction.
 CATALOGUE_APPLICANT_CAP = limit_default("applicant_cap")
@@ -86,10 +86,6 @@ class UserFilters:
             source_min_ages=source_min_ages,
         )
 
-    def fresh_since(self, *, now: datetime | None = None) -> datetime:
-        """The oldest a posting may be and still be worth scoring for this account."""
-        return (now or datetime.now(UTC)) - timedelta(hours=self.max_age_hours)
-
     def excluded(self, title: str | None, company: str | None) -> str | None:
         """The term that rules this posting out, or `None`."""
         if self._matcher is None:
@@ -125,76 +121,6 @@ class UserFilters:
         return None
 
 
-def _fresh_enough(filters: UserFilters, *, now: datetime | None = None) -> dict:
-    """Whether a posting is recent enough for this account, judged per source.
-
-    **One global window does not mean "fresher jobs", it means "LinkedIn only".** Measured against
-    the live corpus on 2026-08-09 with the operator's window at six hours, fifteen of seventeen
-    sources returned nothing — a board that publishes a few times a day has nothing posted in the
-    last six hours, so the window was switching sources off rather than raising the bar. Each
-    source is therefore given at least the window it can actually serve (`min_age_hours`), and the
-    operator's setting applies on top of that rather than underneath it.
-
-    The second half is about which clock to read. Most sources report a real posting time and are
-    judged on it. A few report a date only — every `posted_at` at midnight — so by mid-morning
-    their whole catalogue looks half a day old however fresh it is. Those are judged on
-    `first_seen_at` instead, which is trustworthy here because the harvest runs every fifteen
-    minutes and every ATS token is polled every cycle: when we first saw a posting is a better
-    statement about its age than a date stamped to midnight.
-    """
-    reference = now or datetime.now(UTC)
-    floors = dict(filters.source_min_ages) or SOURCE_MIN_AGE_HOURS
-    cutoff = {"$switch": {
-        "branches": [{"case": {"$eq": ["$source", source]},
-                      "then": reference - timedelta(hours=max(hours, filters.max_age_hours))}
-                     for source, hours in sorted(floors.items())],
-        "default": reference - timedelta(hours=max(DEFAULT_SOURCE_MIN_AGE_HOURS, filters.max_age_hours))}}
-    # A midnight timestamp is a date, not a time: judge those, and postings with none, on when we found them.
-    date_only = {"$or": [{"$eq": [{"$ifNull": ["$posted_at", None]}, None]},
-                         {"$eq": ["$posted_at", {"$dateTrunc": {"date": "$posted_at", "unit": "day"}}]}]}
-    clock = {"$cond": [date_only, "$first_seen_at", "$posted_at"]}
-    # The rule above is computed per posting, so no index can narrow by it. Said plainly as well, the
-    # bound it implies is what the words index reads by (`open_terms_newest`), newest first, and stops.
-    # Without it, at 1.5 million postings a match read every one with a person's words, up to 586,000,
-    # and took 199 s (2026-11-04).
-    since = candidate_since(filters.max_age_hours, filters.source_min_ages, now=reference)
-    return {"$and": [{"first_seen_at": {"$gte": since}}, {"$expr": {"$gte": [clock, cutoff]}}]}
-
-
-def candidate_since(max_age_hours: int, source_min_ages, *, now: datetime) -> datetime:
-    """The oldest a posting can have been found and still be anybody's candidate: the widest window any
-    source has (`_fresh_enough`), and a day to spare for a board whose clock runs ahead of ours. Nothing
-    older is matched, so nothing older is searched for a new word (`libs.corpus.terms`)."""
-    floors = dict(source_min_ages) or SOURCE_MIN_AGE_HOURS
-    widest = max([*floors.values(), DEFAULT_SOURCE_MIN_AGE_HOURS, max_age_hours])
-    return now - timedelta(hours=widest + 24)
-
-
-@dataclass(frozen=True)
-class PlatformWindows:
-    """The two operator settings every account's filters are built from.
-
-    Identical for every account by definition — they are platform settings — and `filters_for` read
-    both from the database **once per account**. In a loop over every account that is 2N queries
-    returning the same two answers. Measured at fifty accounts: 351 queries for one health check.
-
-    Read once with `platform_windows` and passed down. Not a cache: nothing is stored and nothing
-    expires, so there is no second copy to go stale (CLAUDE.md §1).
-    """
-
-    max_age_hours: int
-    source_min_ages: tuple[tuple[str, int], ...]
-
-
-def platform_windows(session) -> PlatformWindows:
-    """Read the platform-wide filter settings once, for a caller about to loop over accounts."""
-    from libs import settings  # noqa: PLC0415 - avoids a cycle at import time
-
-    return PlatformWindows(
-        max_age_hours=int(settings.get(session, "job_max_age_hours")),
-        source_min_ages=tuple(sorted(settings.source_min_ages(session).items())))
-
-
 def filters_for(session, user, *, windows: PlatformWindows | None = None) -> UserFilters:
     """This account's pre-score conditions, with the operator's numbers already resolved.
 
@@ -225,7 +151,7 @@ def candidate_conditions(filters: UserFilters, *, now: datetime | None = None) -
     return [
         # Nothing to apply for.
         {"closed_at": None},
-        _fresh_enough(filters, now=now),
+        showable(PlatformWindows(filters.max_age_hours, filters.source_min_ages), now=now),
         # Their countries, or a posting that names no readable place (`None` is both a null and no field).
         # Asked as one `$in`, which the words index reads country by country (`open_terms_newest`).
         {} if not filters.countries else {"country": {"$in": [None, *sorted(filters.countries)]}},

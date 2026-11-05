@@ -6,6 +6,8 @@ from datetime import UTC, datetime, timedelta
 
 from pymongo.database import Database
 
+from libs.corpus.freshness import platform_windows
+from libs.corpus.repository import awaiting_description_conditions
 from libs.db.models import CorpusJob, QueueJob, UserJobState
 
 # How far back to measure.
@@ -250,10 +252,12 @@ def _breakdown(spans: dict[str, list[tuple[datetime, float]]]) -> list[dict]:
 
 
 def _backlog(db: Database, stage: Stage) -> dict | None:
-    """How much is sitting at the describe pass's door, and how long the oldest has waited."""
+    """How much is sitting at the describe pass's door, and how long the oldest has waited: the describer's
+    own question (`awaiting_description_conditions`). Its own here counted every row ever stored without
+    text, too old to be read or not, so it grew for ever beside the pipeline's count (2026-11-05)."""
     if stage.key != "found_to_described":
         return None
-    where = {"description_fetched_at": None, "closed_at": None}
+    where = {"$and": awaiting_description_conditions(platform_windows(db))}
     oldest = db[CorpusJob.COLLECTION].find_one(where, {"first_seen_at": 1}, sort=[("first_seen_at", 1)])
     return {"waiting": db[CorpusJob.COLLECTION].count_documents(where),
             "oldest_min": round((datetime.now(UTC) - oldest["first_seen_at"]).total_seconds() / 60, 1)

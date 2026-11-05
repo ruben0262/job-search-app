@@ -15,6 +15,7 @@ from pymongo.errors import PyMongoError
 from libs.corpus.archive import archive_expired
 from libs.corpus.ats import AtsRepository
 from libs.corpus.ats_urls import tokens_from_urls
+from libs.corpus.freshness import platform_windows
 from libs.corpus.geo import allows, posting_country, wanted_countries
 from libs.corpus.repository import TYPED, CorpusRepository
 from libs.db import find, get, lease
@@ -165,11 +166,11 @@ def run_cycle(
             report.new_jobs = _ingest(corpus, links, report,
                                       wanted=wanted_countries(union_locations(configs)))
 
-        # 5b. Fetch the postings' own text for rows that arrived with a thin snippet.
+        # 5b. Fetch the postings' own text for rows that arrived with a thin snippet, and can still be shown.
         if describe:
             with timed("describe", report.timings), make_shared_client() as client:
-                described = describe_pending(corpus, client, linkedin=False,
-                                             limit=describe_limit)
+                described = describe_pending(corpus, client, linkedin=False, limit=describe_limit,
+                                             windows=platform_windows(db))
             report.described = described.described
             report.describe_outcomes = described.outcomes
 

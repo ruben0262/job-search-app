@@ -169,7 +169,6 @@ def test_the_age_window_is_enforced_in_sql_before_anything_is_scored():
     """The harvester fetches at the widest window any account asked for."""
     tight = filters(max_age_hours=6)
     assert tight.max_age_hours == 6
-    assert tight.fresh_since(now=NOW) == NOW - timedelta(hours=6)
     # And that it is not silently one of the checks that moved into `unwanted`.
     assert drops(Item(posted_at=NOW - timedelta(hours=300)), tight) is None
 

@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from pymongo.database import Database
 
 from libs.contracts.config import WORKPLACE_NAMES, location_search_name, migrate_config
+from libs.corpus.freshness import platform_windows
 from libs.corpus.geo import COUNTRY_LABELS
 from libs.corpus.repository import CorpusRepository
 from libs.db import delete_account, find, find_one, get, insert
@@ -59,7 +60,6 @@ from libs.settings import (
     snapshot,
     source_min_ages,
 )
-from libs.settings import get as get_setting
 from libs.tenant import applications
 from libs.tenant.repository import TenantRepository
 from services.api.deps import current_user, get_db
@@ -403,7 +403,7 @@ def countries(db: Database = Depends(get_db), admin: User = Depends(require_admi
                       "total": sum(counts), "counts": counts} for code, counts in found.items()),
                     key=lambda each: -each["total"])
     waiting = CorpusRepository(db).count_awaiting_description(
-        linkedin=True, max_age_hours=int(get_setting(db, "job_max_age_hours")))
+        linkedin=True, windows=platform_windows(db))
     audit(logger, "admin.countries", user=admin.id, days=days)
     return {"by": by, "starts": starts, "since": since, "countries": series, "waiting": waiting}
 
