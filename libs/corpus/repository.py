@@ -13,8 +13,9 @@ from libs.corpus import langfilter, workfilter
 from libs.corpus.freshness import DATE_ONLY, PlatformWindows, showable
 from libs.corpus.geo import posting_country, read_city
 from libs.corpus.keys import canonical_url, content_key
+from libs.corpus.words import terms_of
 from libs.db import insert, now
-from libs.db.models import CorpusJob, CountryCount
+from libs.db.models import CorpusJob, CountryCount, Word
 from libs.settings import PLATFORM_TICK_MIN
 
 # Below this, stored text is a teaser rather than a description and the job is re-fetched from its own page.
@@ -211,7 +212,8 @@ class CorpusRepository:
         return job_id
 
     def set_description(self, job_id: int, description: str) -> bool:
-        """Attach fetched description text, up to `MAX_DESCRIPTION` of it."""
+        """Attach fetched description text, up to `MAX_DESCRIPTION` of it, and which of everyone's words the
+        job has (`libs.corpus.terms`), in the same write: a job's words are found the moment its text is."""
         description = description[:MAX_DESCRIPTION]
         row = self._corpus.find_one({"_id": job_id}, {"description": 1, "title": 1, "location": 1,
                                                       "is_remote": 1, "workplace": 1, "described_at": 1})
@@ -221,12 +223,11 @@ class CorpusRepository:
             self._corpus.update_one({"_id": job_id}, {"$set": {"description_fetched_at": now()}})
             return False
 
+        vocabulary = self._vocabulary()
         changes = {"description": description, "description_fetched_at": now(),
                    # Read once here rather than per reader per pass: the language is a fact about the posting.
                    "language": langfilter.detect_language(description),
-                   # New text, so its words are found again (`libs.corpus.terms.catch_up`); until
-                   # then matching reads it the slow way, and finds them all the same.
-                   "terms_at": None}
+                   **terms_of(row["title"], description, vocabulary), "terms_at": now()}
         if len(description) >= MIN_DESCRIPTION and not row.get("described_at"):
             # A whole job from now: alerts wait for this, not for the posting to be found.
             changes["described_at"] = now()
@@ -235,7 +236,17 @@ class CorpusRepository:
             changes["workplace"] = workfilter.classify(
                 row["title"], row["location"] or "", description, row["is_remote"])
         self._corpus.update_one({"_id": job_id}, {"$set": changes})
+        # A word that joined the vocabulary while this was written: `terms.catch_up` looks for a new word only
+        # in postings that already have their words, and this one may not have had them yet when it looked.
+        if late := sorted(set(self._vocabulary()) - set(vocabulary)):
+            found = terms_of(row["title"], description, late)
+            self._corpus.update_one({"_id": job_id}, {"$addToSet": {
+                "terms": {"$each": found["terms"]}, "title_terms": {"$each": found["title_terms"]}}})
         return True
+
+    def _vocabulary(self) -> list[str]:
+        """Every green word anybody has, as `libs.corpus.terms.catch_up` keeps them."""
+        return self._db[Word.COLLECTION].distinct("_id")
 
     # ── what each stage is still waiting for ──────────────────────────────────────────────────
     #

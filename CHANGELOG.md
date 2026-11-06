@@ -14,6 +14,38 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-06 — A job's words found as its text is stored; the Pipeline's descriptions folded
+
+The owner: "Words found" sits at hundreds waiting; make it faster, with an index or a new structure if that
+is what it takes. And fold the Pipeline's descriptions: too long.
+
+**Words were found by a step at the end of each 15-minute run** (`terms.catch_up` → `_index`), so a text
+the 24/7 describer read just after one waited for the next: 689 waiting on the server, the oldest 12
+minutes. Meanwhile the Jobs page read every such job with a regex. On the laptop the same list took 84 ms
+with every job's words found, 112 ms with the newest 700 read jobs not yet indexed, and 171 ms with 2,000.
+
+- **Found in the write that stores the text** (`CorpusRepository.set_description`, `terms_of` over the
+  vocabulary). A job's words are found the moment its text is read, so the Jobs page reads the index, not
+  a regex. Storing a text took 9.4 ms against 7.9 (median of 300, a 200-word vocabulary, 6,000-character
+  texts), against the hundreds of milliseconds it takes to fetch the page.
+- A word that joins the vocabulary while a text is being written is looked for again straight after, as
+  `catch_up` looks for a new word only in postings that already have their words, and this one may not have
+  had them yet when it looked.
+- `catch_up` keeps the vocabulary and looks for each new word in the postings already stored, as before.
+  `_index` is removed: it found words for postings with none, title-only ones included, which are never
+  shown. Its fill-in of city, country and text-read time was for jobs stored before those fields existed,
+  and every job since has them when it is stored. Its test goes with it.
+- `words_in`, `terms_of` and `norm` move to `libs/corpus/words.py`, which needs nothing, so the match, the
+  words index and the repository can all import it.
+- **"Words found" is no longer a step**: the Pipeline and Latency show found → text read and words found
+  → alert sent. `steps.words_queue`, its `QUEUES` entry and the `described_to_indexed` limits and stage go.
+- The Pipeline's explanation folds under "How to read this", and each step's description under its name;
+  the limits, the too-old count and the numbers stay in view.
+
+Tests: a job's words are found the moment its text is stored (the previous code left `terms` empty and
+`terms_at` unset); a word joining while a text is stored is still found in it (fails with the second look
+removed); a posting whose text is read waits at no step (the previous code had it waiting for its words).
+
 ## 2026-11-06 — LinkedIn's list asked fresh every run, and a check of what it shows against what is stored
 
 The owner: how do we know every LinkedIn job in the picked countries, in the window, is fetched, with no

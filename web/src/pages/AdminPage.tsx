@@ -1292,13 +1292,17 @@ function PipelineTab() {
         <span className={`pulse ${connected ? "on" : "off"}`}
               title={connected ? "live" : "reconnecting"} />
       </h2>
-      <p className="hint" style={{ maxWidth: "62ch" }}>
-        One row per step, in the order a job goes through them, updating every second.{" "}
-        <strong>Waiting</strong> is how many sit at that step now; the next number is how many went
-        through it in the last {report.window_hours} hours. A step turns amber, then red, when the job
-        waiting longest has waited past its limits, the same ones the Latency tab judges by. A job too old
-        for anybody&apos;s Jobs page waits nowhere: it leaves the queue, and is counted as too old.
-      </p>
+      {/* Folded: read once, then in the way (owner, 2026-11-06). */}
+      <details className="fold-plain">
+        <summary>How to read this</summary>
+        <p className="hint" style={{ maxWidth: "62ch" }}>
+          One row per step, in the order a job goes through them, updating every second.{" "}
+          <strong>Waiting</strong> is how many sit at that step now; the next number is how many went
+          through it in the last {report.window_hours} hours. A step turns amber, then red, when the job
+          waiting longest has waited past its limits, the same ones the Latency tab judges by. A job too
+          old for anybody&apos;s Jobs page waits nowhere: it leaves the queue, and is counted as too old.
+        </p>
+      </details>
 
       <div className="pipeline">
         {report.stages.map((stage) => {
@@ -1309,8 +1313,10 @@ function PipelineTab() {
           return (
             <div key={stage.key} className={`pipeline-row ${stage.verdict}`}>
               <div className="pipeline-head">
-                <strong>{stage.label}</strong>
-                <span className="small muted">{stage.what}</span>
+                <details className="fold-plain">
+                  <summary><strong>{stage.label}</strong></summary>
+                  <span className="small muted">{stage.what}</span>
+                </details>
                 {stage.slow_after_min !== null ? (
                   <span className="small muted">
                     Fine under {minutes(stage.slow_after_min)}, slow to {minutes(stage.too_long_after_min)},

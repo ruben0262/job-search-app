@@ -1,15 +1,16 @@
 """Which of everyone's green words each posting has, kept on the posting, so finding a person's jobs is
 an index lookup rather than a regex over every description they could see (owner, 2026-11-02).
 
-One writer, `catch_up`, which the harvester runs after each pass:
-
 - `vocabulary` holds every green word anybody has; `indexed_at` says the postings that can still be
   shown have all been searched for it.
 - A posting's `terms` are the vocabulary's words it has, anywhere; `title_terms` the ones in its title;
-  `terms_at` when they were found. A new posting has no `terms_at`, and new text clears it
-  (`CorpusRepository.set_description`). A posting without `terms_at` has every word looked for.
-- A word an account has and the vocabulary does not joins it at once, and is looked for in the postings
-  already indexed, newest first, a stretch each run until it reaches the oldest that can be shown.
+  `terms_at` when they were found: in the same write that stores its text
+  (`CorpusRepository.set_description`), so a job's words are found the moment its text is read. Found at
+  the end of each run before 2026-11-06, a text read just after one waited up to 15 minutes, 689 of them
+  at once, and the Jobs page read every one with a regex meanwhile: 171 ms with 2,000 waiting, 84 with none.
+- `catch_up`, which the harvester runs after each pass, keeps the vocabulary: a word an account has and
+  the vocabulary does not joins it, and is looked for in the postings already indexed, newest first, a
+  stretch each run until it reaches the oldest that can be shown.
 
 Nothing waits on it to be found: `libs.matching` reads a posting without `terms_at`, and a word not yet
 indexed, the way it always did, with a regex over the text.
@@ -17,22 +18,18 @@ indexed, the way it always did, with a regex over the text.
 from __future__ import annotations
 
 import logging
-import re
-from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import timedelta
-from functools import cache
 from time import monotonic
 
 from pymongo import UpdateOne
 from pymongo.database import Database
 
 from libs.corpus.freshness import candidate_since, platform_windows
-from libs.corpus.geo import posting_country, read_city
-from libs.corpus.repository import MIN_DESCRIPTION
+from libs.corpus.words import terms_of
 from libs.db import now
 from libs.db.models import CorpusJob, UserConfig, Word
-from libs.matching import green_words, has_any, norm
+from libs.matching import green_words, has_any
 from libs.obs import audit
 from libs.settings import TERMS_BUDGET_SECONDS
 
@@ -53,32 +50,11 @@ class CatchUp:
     new_words: int = 0
     # Postings that already had their terms and turned out to have a word being searched for.
     backfilled: int = 0
-    # Postings whose words were found for the first time, or again after new text.
-    indexed: int = 0
-
-
-@cache
-def _bounded(word: str) -> re.Pattern:
-    return re.compile(rf"(?<!\w){re.escape(word)}(?!\w)")
-
-
-def found(text: str | None, words: Iterable[str]) -> set[str]:
-    """The words a text has, as `libs.matching.pattern` finds them: whole words, any case, a space and
-    a hyphen alike. Each word is looked for on its own, so "engineer" is found inside "backend
-    engineer" too, which one regex of every word would have passed over."""
-    hay = norm(text or "")
-    return {word for word in words if word in hay and _bounded(word).search(hay)}
-
-
-def terms_of(title: str | None, description: str | None, words: Iterable[str]) -> dict[str, list[str]]:
-    words = list(words)
-    in_title = found(title, words)
-    return {"terms": sorted(in_title | found(description, words)), "title_terms": sorted(in_title)}
 
 
 def catch_up(db: Database, *, budget_seconds: float = TERMS_BUDGET_SECONDS) -> CatchUp:
-    """Look for every word in the new postings, and for each account's new words in the postings that
-    can still be shown, a stretch at a time, for at most `budget_seconds`."""
+    """Each account's new words into the vocabulary, and looked for in the postings that can still be
+    shown, a stretch at a time, for at most `budget_seconds`."""
     report = CatchUp()
     started, deadline = now(), monotonic() + budget_seconds
     vocabulary = {row["_id"]: row for row in db[Word.COLLECTION].find({})}
@@ -90,18 +66,16 @@ def catch_up(db: Database, *, budget_seconds: float = TERMS_BUDGET_SECONDS) -> C
             "indexed_at": None, "searched_to": None}}, upsert=True) for word in new], ordered=False)
         vocabulary.update({word: {"indexed_at": None, "searched_to": None} for word in new})
     report.new_words = len(new)
-    report.indexed = _index(db, sorted(vocabulary), at=started)
     windows = platform_windows(db)
     since = candidate_since(windows.max_age_hours, windows.source_min_ages, now=started)
     for word, row in sorted(vocabulary.items()):
         if row.get("indexed_at") is None:
             report.backfilled += _backfill(db, word, since=since, upto=row.get("searched_to"),
                                            deadline=deadline)
-    if report.new_words or report.indexed or report.backfilled:
-        logger.info("terms: %d new word(s); %d posting(s) indexed; %d found to have a word being searched "
-                    "for", report.new_words, report.indexed, report.backfilled)
-    audit(logger, "terms.catch_up", new_words=report.new_words, backfilled=report.backfilled,
-          indexed=report.indexed)
+    if report.new_words or report.backfilled:
+        logger.info("terms: %d new word(s); %d posting(s) found to have a word being searched for",
+                    report.new_words, report.backfilled)
+    audit(logger, "terms.catch_up", new_words=report.new_words, backfilled=report.backfilled)
     return report
 
 
@@ -133,31 +107,3 @@ def _backfill(db: Database, word: str, *, since, upto, deadline: float) -> int:
             return found_in
     db[Word.COLLECTION].update_one({"_id": word}, {"$set": {"indexed_at": now()}})
     return found_in
-
-
-def _index(db: Database, words: list[str], *, at) -> int:
-    """Every word, in each posting that has no terms yet. Written only if its text is still the text
-    read, so a description stored meanwhile is indexed next time rather than marked done."""
-    corpus = db[CorpusJob.COLLECTION]
-    writes, count = [], 0
-    for row in corpus.find({"terms_at": None}, {"title": 1, "description": 1, "description_fetched_at": 1,
-                                                "location": 1, "city": 1, "country": 1, "described_at": 1,
-                                                "first_seen_at": 1}):
-        values = {**terms_of(row.get("title"), row.get("description"), words), "terms_at": at}
-        # Postings stored before a city and a described time were kept: given theirs once, here.
-        if "city" not in row:
-            values["city"] = read_city(row.get("location"))
-        # And a country, for those stored before a city anywhere in the world could give one.
-        if row.get("country") is None:
-            values["country"] = posting_country(row.get("location"), title=row.get("title"))
-        fetched = row.get("description_fetched_at")
-        if "described_at" not in row:
-            whole = len(row.get("description") or "") >= MIN_DESCRIPTION
-            values["described_at"] = (fetched or row["first_seen_at"]) if whole else None
-        writes.append(UpdateOne({"_id": row["_id"], "description_fetched_at": fetched}, {"$set": values}))
-        if len(writes) == BATCH:
-            count += corpus.bulk_write(writes, ordered=False).modified_count
-            writes = []
-    if writes:
-        count += corpus.bulk_write(writes, ordered=False).modified_count
-    return count

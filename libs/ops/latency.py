@@ -27,11 +27,8 @@ THRESHOLD_REASONING: dict[str, str] = {
     "found_to_described": "The describer reads LinkedIn's texts all the time, newest first, and each run "
                           "reads the other boards'. Inside one run's 15 minutes when nothing is behind; an "
                           "hour means it cannot keep up: proxy addresses refusing, or too few of them.",
-    "described_to_indexed": "The words step runs at the end of each run, so a text read just after one "
-                            "waits for the next: up to about half an hour. An hour means runs are failing "
-                            "or the step runs out of time.",
     "found_to_delivered": "What the person waits for an alert, and the only one of these worth waking up "
-                          "for: text, words, then the notifier's next send. Three runs is normal; six "
+                          "for: its text and words, then the notifier's next send. Three runs is normal; six "
                           "means something is not draining.",
 }
 
@@ -83,16 +80,9 @@ STAGES: tuple[Stage, ...] = (
         key="found_to_described",
         label="Stored → text read",
         zone="the describer (LinkedIn), each run (the other boards)",
-        what="The job's own text, read from its page. Until then only its title can be matched.",
+        what="The job's own text, read from its page, and everybody's words found in it in the same write. "
+             "Until then the job reaches nobody.",
         scope="corpus", start="first_seen_at", end="description_fetched_at",
-    ),
-    Stage(
-        key="described_to_indexed",
-        label="Text read → words found",
-        zone="the words step, at the end of each run",
-        what="Every green word anybody has, searched for in the new text. Until then the job is matched "
-             "the slower way, and found all the same.",
-        scope="corpus", start="description_fetched_at", end="terms_at",
     ),
     Stage(
         key="found_to_delivered",

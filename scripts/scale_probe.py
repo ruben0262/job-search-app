@@ -26,7 +26,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 os.environ["MONGODB_DB"] = "scale_probe"
 
 from libs.corpus.repository import CorpusRepository
-from libs.corpus.terms import catch_up, terms_of
+from libs.corpus.terms import catch_up
+from libs.corpus.words import terms_of
 from libs.db import ensure_schema, now
 from libs.db.models import User, Word
 from libs.matching import their_jobs
@@ -170,10 +171,9 @@ def measure() -> None:
            for row in db.corpus.find({"url": {"$in": [link.url for link in links]}}, {"url": 1})}
     for link, row in zip(links, rows, strict=True):
         corpus.set_description(ids[link.url], row.get("description") or "")
-    texts, started = time.monotonic() - started, time.monotonic()
-    report = catch_up(db)
-    print(f"one run's {new:,} new jobs: stored in {stored:.1f} s, their text saved in {texts:.1f} s, "
-          f"their words found in {time.monotonic() - started:.1f} s ({report.indexed:,})", flush=True)
+    texts = time.monotonic() - started
+    print(f"one run's {new:,} new jobs: stored in {stored:.1f} s, their text saved and its words found in "
+          f"{texts:.1f} s", flush=True)
 
 
 def main() -> None:

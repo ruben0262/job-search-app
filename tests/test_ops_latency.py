@@ -80,7 +80,6 @@ def test_every_zone_the_posting_crosses_is_a_row_and_they_are_in_order():
         "posted_to_fetched",
         "fetched_to_stored",
         "found_to_described",
-        "described_to_indexed",
         "found_to_delivered",
     ]
     # Each row hands its end timestamp to the next row's start, or there is a gap between them.
@@ -274,26 +273,8 @@ def test_a_backfill_never_reports_itself_as_pipeline_latency(db):
     assert rows["found_to_delivered"]["samples"] == 0
 
 
-def test_the_words_step_is_timed_from_the_text_to_the_words_and_judged_by_its_own_limits(db):
-    """New with the describer (2026-11-05): a text read is matched quickly only once its words are found,
-    at the end of a run. Timed from the text, not from when the job was found."""
-    from libs.ops.latency import MIN_SAMPLES, stage_breakdown
-    from libs.ops.steps import THRESHOLDS
-
-    slow, too_long = THRESHOLDS["described_to_indexed"]
-    for n in range(MIN_SAMPLES):
-        # Found two hours ago, its text read after an hour, its words found 5–24 minutes after that.
-        _posting(db, minutes_ago=120, described_after=60, indexed_after=5 + n)
-
-    words = {row["key"]: row for row in stage_breakdown(db, hours=24)}["described_to_indexed"]
-
-    assert (words["samples"], words["p50"], words["worst"]) == (MIN_SAMPLES, 14.5, 24.0)
-    assert words["p90"] < slow and words["verdict"] == "ok"
-    assert (words["amber_after_min"], words["red_after_min"]) == (slow, too_long)
-
-
 def test_both_admin_views_read_the_same_backlogs(db):
-    """Pipeline's waiting and Latency's backlog are one function's answer, for both steps with a queue."""
+    """Pipeline's waiting and Latency's backlog are one function's answer, for the step with a queue."""
     from libs.ops.latency import stage_detail
     from libs.ops.pipeline import pipeline
 
@@ -302,7 +283,7 @@ def test_both_admin_views_read_the_same_backlogs(db):
     _posting(db, minutes_ago=70, described_after=10, indexed_after=5)  # nothing
 
     shown = {row["key"]: row for row in pipeline(db)["stages"]}
-    for step, key, waits in (("describe", "found_to_described", 1), ("words", "described_to_indexed", 2)):
+    for step, key, waits in (("describe", "found_to_described", 1),):
         backlog = stage_detail(db, key)["backlog"]
         assert backlog["waiting"] == shown[step]["waiting"] == waits
         assert backlog["oldest_min"] == pytest.approx(shown[step]["oldest_min"], abs=0.2)

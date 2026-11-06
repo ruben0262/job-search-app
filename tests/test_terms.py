@@ -7,7 +7,8 @@ import uuid
 
 import pytest
 
-from libs.corpus.terms import catch_up, found
+from libs.corpus.terms import catch_up
+from libs.corpus.words import words_in as found
 from tests.conftest import needs_db
 
 TEXT = "We build payment systems in Python and Postgres, on call one week in six. " * 4
@@ -60,7 +61,7 @@ def test_the_same_jobs_with_the_same_words_before_and_after_the_words_are_stored
 
     report = catch_up(db)
 
-    assert report.new_words == 2 and report.indexed == 3
+    assert (report.new_words, report.backfilled) == (2, 2)
     assert _found(db, user) == before == {titled: (("backend engineer",), ("backend engineer",)),
                                           in_text: (("python",), ())}
 
@@ -79,8 +80,10 @@ def test_a_searched_posting_is_matched_on_its_stored_words_not_read_again(accoun
 
 
 @needs_db
-def test_new_text_is_read_at_once_and_searched_on_the_next_pass(account):
-    """A posting described after the pass is not missed in between: it is read the slow way."""
+def test_a_job_s_words_are_found_the_moment_its_text_is_stored(account):
+    """In the same write (owner, 2026-11-06). Found at the end of each run before, a text read just after
+    one waited up to 15 minutes, and the Jobs page read every such job with a regex: 171 ms with 2,000
+    waiting against 84 with none, measured on the laptop."""
     from libs.corpus.repository import CorpusRepository
     from libs.db import get
     from libs.db.models import CorpusJob
@@ -91,11 +94,35 @@ def test_new_text_is_read_at_once_and_searched_on_the_next_pass(account):
     assert _found(db, user) == {}
 
     CorpusRepository(db).set_description(job, TEXT)
-    assert get(db, CorpusJob, job).terms_at is None, "new text, searched again"
+
+    stored = get(db, CorpusJob, job)
+    assert (stored.terms, stored.terms_at is not None) == (["python"], True)
     assert _found(db, user) == {job: (("python",), ())}
+
+
+@needs_db
+def test_a_word_that_joins_while_a_text_is_stored_is_found_in_it(account, monkeypatch):
+    """`catch_up` looks for a new word only in postings that already have their words, so a posting whose
+    text was being stored as the word joined would be passed over by both, and never matched for it."""
+    from libs.corpus.repository import CorpusRepository
+    from libs.db import get
+    from libs.db.models import CorpusJob, Word
+
+    db, _, _ = account
     catch_up(db)
-    assert get(db, CorpusJob, job).terms == ["python"]
-    assert _found(db, user) == {job: (("python",), ())}
+    job = _stored(db, "Developer", text=None)
+    read = CorpusRepository._vocabulary
+
+    def joined_meanwhile(self):
+        words = read(self)
+        db[Word.COLLECTION].update_one({"_id": "postgres"}, {"$setOnInsert": {
+            "indexed_at": None, "searched_to": None}}, upsert=True)
+        return words
+
+    monkeypatch.setattr(CorpusRepository, "_vocabulary", joined_meanwhile)
+    CorpusRepository(db).set_description(job, TEXT)
+
+    assert set(get(db, CorpusJob, job).terms) == {"postgres", "python"}
 
 
 @needs_db
@@ -111,7 +138,7 @@ def test_a_word_added_later_is_found_at_once_and_stored_in_postings_already_sear
     assert _found(db, user) == {job: (("postgres", "python"), ())}, "before the harvester searched for it"
     report = catch_up(db)
 
-    assert (report.new_words, report.backfilled, report.indexed) == (1, 1, 0), "no posting read again whole"
+    assert (report.new_words, report.backfilled) == (1, 1)
     assert set(get(db, CorpusJob, job).terms) == {"postgres", "python"}
     assert _found(db, user) == {job: (("postgres", "python"), ())}
 
@@ -191,27 +218,3 @@ def test_a_new_word_is_not_searched_for_in_postings_too_old_to_be_shown(account)
 
     assert "postgres" in get(db, CorpusJob, recent).terms
     assert "postgres" not in get(db, CorpusJob, old).terms
-
-
-@needs_db
-def test_postings_stored_before_this_get_their_city_country_and_described_time_once(account):
-    """Rows written before these fields existed are given them on the first pass."""
-    from libs.db import get, insert, now
-    from libs.db.models import CorpusJob
-
-    db, _user, _ = account
-    old = insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test", title="Developer",
-                               location="Warszawa, Poland", description=TEXT, description_fetched_at=now()))
-    thin = insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test", title="Developer",
-                                location="Remote", description="Short."))
-    town = insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test", title="Developer",
-                                location="Kielce", description=TEXT))
-    fields = {"city": "", "described_at": "", "terms": "", "terms_at": ""}
-    db[CorpusJob.COLLECTION].update_many({"_id": {"$in": [old.id, thin.id, town.id]}}, {"$unset": fields})
-
-    catch_up(db)
-
-    assert (get(db, CorpusJob, old.id).city, get(db, CorpusJob, thin.id).city) == ("warsaw", None)
-    assert get(db, CorpusJob, town.id).country == "PL", "read again, now a town anywhere names a country"
-    assert get(db, CorpusJob, old.id).described_at is not None
-    assert get(db, CorpusJob, thin.id).described_at is None, "a teaser is not a whole job"

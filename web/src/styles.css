@@ -2424,6 +2424,12 @@ button.making::after {
   min-width: 0;
 }
 
+/* A step's name opens what it does: the numbers and its limits stay in view. */
+.pipeline-head > .fold-plain > summary {
+  min-height: 2rem;
+  color: var(--ink);
+}
+
 .pipeline-bar-wrap {
   height: 0.5rem;
   background: var(--bg);

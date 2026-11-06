@@ -31,22 +31,25 @@ def test_every_stage_of_the_pipeline_is_present(db):
     from libs.ops.pipeline import pipeline
 
     keys = [s["key"] for s in pipeline(db)["stages"]]
-    # No separate "store", and no "embed" or "score": nothing embeds or scores (ROADMAP Phase 8). Words
-    # since 2026-11-05: the describer reads texts between runs, and their words wait for the next.
-    assert keys == ["gather", "describe", "words", "deliver"]
+    # No separate "store", and no "embed" or "score": nothing embeds or scores (ROADMAP Phase 8). No "words"
+    # since 2026-11-06: a job's words are found in the write that stores its text.
+    assert keys == ["gather", "describe", "deliver"]
     for entry in pipeline(db)["stages"]:
         assert entry["label"] and entry["what"], "every stage says what it is, on the page itself"
 
 
-def test_a_described_posting_waits_only_for_its_words_and_then_for_nothing(db):
-    """It is matched when it is read. A vector nothing computes is not a backlog to show anybody."""
+def test_a_posting_whose_text_is_read_waits_for_nothing_more(db):
+    """Its words are found in the same write as its text (owner, 2026-11-06). Found at the end of each run
+    before, 689 read jobs waited for them at once, up to 15 minutes each."""
+    from libs.corpus.repository import CorpusRepository
     from libs.ops.pipeline import pipeline
 
-    job = _job(db, description="We build things. " * 40, description_fetched_at=datetime.now(UTC))
-    waits = {entry["key"]: entry["waiting"] for entry in pipeline(db)["stages"] if entry["waiting"]}
-    assert waits == {"words": 1}
+    corpus = CorpusRepository(db)
+    job_id = corpus.add(url=f"https://example.com/{uuid.uuid4()}", source="test", title="Backend Engineer")
+    assert {entry["key"]: entry["waiting"] for entry in pipeline(db)["stages"] if entry["waiting"]} == {
+        "describe": 1}
 
-    db.corpus.update_one({"_id": job.id}, {"$set": {"terms_at": datetime.now(UTC)}})
+    corpus.set_description(job_id, "We build things. " * 40)
     assert all(not entry["waiting"] for entry in pipeline(db)["stages"])
 
 
@@ -128,7 +131,6 @@ def test_the_thresholds_come_from_the_tick_that_clears_them(db):
     limits = {row["key"]: (row["slow_after_min"], row["too_long_after_min"])
               for row in pipeline(db)["stages"]}
     assert limits["describe"] == (PLATFORM_TICK_MIN, 4 * PLATFORM_TICK_MIN)
-    assert limits["words"] == (2 * PLATFORM_TICK_MIN, 4 * PLATFORM_TICK_MIN)
     assert limits["gather"] == limits["deliver"] == (None, None), "no queue, so nothing to wait too long in"
 
 
@@ -158,7 +160,7 @@ def test_each_step_counts_exactly_what_went_through_it_in_the_window(db):
 
     entered = {row["key"]: row["entered"] for row in pipeline(db, hours=24)["stages"]}
 
-    assert entered == {"gather": 4, "describe": 1, "words": 1, "deliver": 0}
+    assert entered == {"gather": 4, "describe": 1, "deliver": 0}
 
 
 def test_a_job_too_old_to_be_shown_leaves_the_text_queue_and_is_counted_once_as_missed(db):
@@ -174,16 +176,6 @@ def test_a_job_too_old_to_be_shown_leaves_the_text_queue_and_is_counted_once_as_
     describe = stage(pipeline(db, hours=24), "describe")
 
     assert (describe["waiting"], describe["missed"]) == (1, 1)
-
-
-def test_the_wait_for_words_begins_when_the_text_came_not_when_the_job_was_found(db):
-    from libs.ops.pipeline import pipeline
-
-    moment = datetime.now(UTC)
-    _job(db, first_seen_at=moment - timedelta(hours=3), description="We build things. " * 40,
-         description_fetched_at=moment - timedelta(minutes=10))
-
-    assert 9.5 <= stage(pipeline(db), "words")["oldest_min"] <= 11
 
 
 def test_every_source_is_listed_with_what_it_found_and_a_silent_one_as_zero(db):

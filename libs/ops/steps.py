@@ -1,7 +1,7 @@
 """The steps a job takes, as both admin views judge them: how long each should take, and what waits at the
-two that have a queue. One table, so Pipeline's colour for a step and Latency's cannot disagree.
+one that has a queue. One table, so Pipeline's colour for a step and Latency's cannot disagree.
 
-    found and stored (each run) → text read (the describer, all the time) → words found (each run's end)
+    found and stored (each run) → text read and its words found, in one write (the describer, all the time)
     → shown on Jobs pages (decided when read) → sent as an alert (the notifier)
 """
 from __future__ import annotations
@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 
 from pymongo.database import Database
 
-from libs.corpus.freshness import PlatformWindows, showable
+from libs.corpus.freshness import PlatformWindows
 from libs.corpus.repository import awaiting_description_conditions
 from libs.db.models import CorpusJob
 from libs.settings import PLATFORM_TICK_MIN
@@ -22,9 +22,7 @@ THRESHOLDS: dict[str, tuple[int, int]] = {
     "fetched_to_stored": (5, PLATFORM_TICK_MIN),
     # The describer reads all the time, newest first: inside a tick unless it is behind.
     "found_to_described": (PLATFORM_TICK_MIN, 4 * PLATFORM_TICK_MIN),
-    # The words step ends each run, so a text read just after one waits for the next run's end.
-    "described_to_indexed": (2 * PLATFORM_TICK_MIN, 4 * PLATFORM_TICK_MIN),
-    # Text, then words, then the notifier's next send.
+    # Text and its words, then the notifier's next send.
     "found_to_delivered": (3 * PLATFORM_TICK_MIN, 6 * PLATFORM_TICK_MIN),
 }
 
@@ -34,17 +32,9 @@ def text_queue(windows: PlatformWindows) -> list[dict]:
     return awaiting_description_conditions(windows)
 
 
-def words_queue(windows: PlatformWindows) -> list[dict]:
-    """Open jobs still able to reach somebody whose words have not been searched for since their text came:
-    the words step (`libs.corpus.terms.catch_up`) takes every job with none, these and older ones too."""
-    return [{"terms_at": None}, {"closed_at": None}, showable(windows)]
-
-
-# The steps with a queue: what waits at each, and when a job's wait there began.
-QUEUES = {
-    "found_to_described": (text_queue, "$first_seen_at"),
-    "described_to_indexed": (words_queue, {"$ifNull": ["$description_fetched_at", "$first_seen_at"]}),
-}
+# The steps with a queue: what waits at each, and when a job's wait there began. One since 2026-11-06,
+# when a job's words came to be found in the write that stores its text (`set_description`).
+QUEUES = {"found_to_described": (text_queue, "$first_seen_at")}
 
 
 def waiting(db: Database, key: str, windows: PlatformWindows) -> dict:

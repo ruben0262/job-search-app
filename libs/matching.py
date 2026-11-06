@@ -15,6 +15,7 @@ from pymongo.database import Database
 
 from libs.contracts.config import migrate_config
 from libs.corpus import salary
+from libs.corpus.words import norm
 from libs.db.models import CorpusJob, User, UserJobState, Word
 from libs.tenant.filters import candidate_conditions, filters_for
 from libs.tenant.repository import TenantRepository
@@ -43,11 +44,6 @@ class Match:
         """The more of their words a job has, the better it probably is; a title that names one
         breaks a tie (owner, 2026-11-02). Nothing is weighted or learned."""
         return len(self.words), len(self.in_title)
-
-
-def norm(text: str) -> str:
-    """A word as green and red words are compared: lower case, spaces and hyphens alike."""
-    return re.sub(r"[\s-]+", " ", text.strip().lower())
 
 
 def green_words(config: dict | None) -> list[str]:

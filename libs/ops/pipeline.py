@@ -1,6 +1,6 @@
 """Where the jobs are right now, step by step, in the order a job moves through them (2026-11-05):
 
-    found and stored (each run) → text read (the describer, all the time) → words found (each run's end)
+    found and stored (each run) → text read and its words found, in one write (the describer, all the time)
     → shown on Jobs pages, decided when read (`libs.matching`) → sent as an alert (the notifier)
 
 Each step's numbers come from the same questions the code that does the step asks (`steps`), and a job
@@ -72,7 +72,7 @@ def pipeline(db: Database, *, hours: int = 24) -> dict:
     now = datetime.now(UTC)
     since = now - timedelta(hours=hours)
     windows = platform_windows(db)
-    text, words = waiting(db, "found_to_described", windows), waiting(db, "described_to_indexed", windows)
+    text = waiting(db, "found_to_described", windows)
     # Without text, and between showable then and not now: aged out of the describer's queue untaken.
     missed = [*awaiting_description_conditions(), showable(windows, now=since),
               {"$nor": [showable(windows, now=now)]}]
@@ -86,15 +86,11 @@ def pipeline(db: Database, *, hours: int = 24) -> dict:
               entered=_count(db, {"first_seen_at": {"$gte": since}}), waiting=None, oldest_min=None),
         Stage("describe", "Text read",
               "The job's own text, read from its page: by the describer for LinkedIn, all the time, and by "
-              "each run for the other boards. Newest first; a job too old for anybody's Jobs page leaves "
-              "the queue and is never read. A job is on Jobs pages only from here.",
+              "each run for the other boards, and everybody's words found in it in the same write. Newest "
+              "first; a job too old for anybody's Jobs page leaves the queue and is never read. A job is on "
+              "Jobs pages only from here.",
               entered=_count(db, {"description_fetched_at": {"$gte": since}}),
               **text, missed=_count(db, missed), **_limits("found_to_described")),
-        Stage("words", "Words found",
-              "Every green word anybody has, searched for in the job's title and text, at the end of each "
-              "run. Until then a job is matched more slowly, and found all the same.",
-              entered=_count(db, {"terms_at": {"$gte": since}}),
-              **words, **_limits("described_to_indexed")),
         # Shown on Jobs pages is decided when a page is read (`libs.matching`), so it is no queue a job
         # can wait in; the step after it is an alert.
         Stage("deliver", "Alert sent",

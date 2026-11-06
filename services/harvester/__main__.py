@@ -129,9 +129,10 @@ def _run_linkedin_pass() -> None:
 
 
 def _find_words() -> None:
-    """Which of everyone's words the postings have (`libs.corpus.terms`), under the harvest's lock so one
-    pass at a time writes them. A failure costs speed, not jobs: matching reads what is not found yet
-    with a regex."""
+    """Each account's new words into the vocabulary, and looked for in the postings already stored
+    (`libs.corpus.terms`), under the harvest's lock so one pass at a time writes them. A new posting's words
+    are found as its text is stored. A failure costs speed, not jobs: matching reads a word not looked for
+    yet with a regex."""
     try:
         db = database()
         with harvest_lock(db) as acquired:
