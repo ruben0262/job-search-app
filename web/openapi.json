@@ -1216,6 +1216,14 @@
             "title": "Jobs",
             "type": "array"
           },
+          "shelf_hours": {
+            "title": "Shelf Hours",
+            "type": "integer"
+          },
+          "shelf_longest_hours": {
+            "title": "Shelf Longest Hours",
+            "type": "integer"
+          },
           "sources": {
             "items": {
               "$ref": "#/components/schemas/FeedSource"
@@ -1242,7 +1250,9 @@
           "words",
           "countries",
           "cities",
-          "as_of"
+          "as_of",
+          "shelf_hours",
+          "shelf_longest_hours"
         ],
         "title": "Feed",
         "type": "object"

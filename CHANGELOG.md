@@ -14,6 +14,35 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-06 — The Jobs page says how long a job stays; company boards found from apply links
+
+The owner: show the job shelf life on the Jobs page, following Admin's setting; look into Hiring Cafe and
+remove it if nothing can be read; the proxy's two dead exits are fixed; the prompt files stay.
+
+**How long a job stays, on the Jobs page.** Under the count: "From the last 24 hours · slower boards: the
+last 7 days". Both numbers come from the rule that decides what is shown (`freshness.shelf_life`, over
+`showable`'s per-source floors and Admin's job shelf life), so changing the setting changes the line and
+the list together. Tested by what the page shows: a LinkedIn job 23 hours old is there and one 25 hours
+old is not, a Workday job 160 hours old is there and one 170 hours old is not, and with the setting at 48
+hours the LinkedIn job 47 hours old is there too.
+
+**Company boards from apply links too** (`cycle._discover_ats_tokens`). Discovery read each posting's own
+link only. A board's posting often sends applicants to another company's board, and that link was never
+read: on the laptop's corpus the apply links named 29 boards not polled (7 Workday, 6 Recruitee, 4 Lever,
+4 Ashby, 3 Workable, 3 SmartRecruiters, 1 Greenhouse, 1 Personio), a tenth more than the 291 polled. And
+the row cap (20,000 of the last 48 hours, in no set order) filled with LinkedIn postings, ~40,000 a day,
+whose own link is LinkedIn's and whose guest page gives no apply link (1 of 18,965 had one). A LinkedIn
+posting is now read only when it has one. The tests that stored a LinkedIn posting under a board's own
+link describe one LinkedIn never sends, and use an apply link now.
+
+**Hiring Cafe, looked into.** Every page but `robots.txt` answers a Cloudflare challenge, the sitemaps its
+`robots.txt` names for crawlers included. `robots.txt` disallows `/*?searchState=*` and `/*?page=*`, the
+URLs the adapter read. No API, partner programme or feed exists that a search found, only scrapers of its
+internal endpoints. Not removed yet: the query machinery goes with it, and that includes Admin's "Search
+terms" section (ROADMAP Phase 8 item 23), which waits on the owner.
+
+**Working Nomads:** 33 jobs, the newest 1.1 days old, 2 in the week. Kept; checked again on 2026-11-09.
+
 ## 2026-11-06 — A job's words found as its text is stored; the Pipeline's descriptions folded
 
 The owner: "Words found" sits at hundreds waiting; make it faster, with an index or a new structure if that

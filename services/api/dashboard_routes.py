@@ -13,6 +13,7 @@ from pymongo.database import Database
 
 from libs import limits
 from libs.corpus import salary
+from libs.corpus.freshness import platform_windows, shelf_life
 from libs.corpus.geo import CITIES, COUNTRY_LABELS
 from libs.corpus.postings import paragraphs
 from libs.db import get, now
@@ -144,6 +145,10 @@ class Feed(BaseModel):
     cities: list[FeedPlace]
     # When this list was read: jobs found after it are the new ones (`found_after`).
     as_of: datetime
+    # How long a job stays on the page, in hours: the job shelf life set in Admin, and the longest a board
+    # that posts less often keeps its jobs there (`freshness.shelf_life`). Said on the page.
+    shelf_hours: int
+    shelf_longest_hours: int
 
 
 def _is_admin(user: User) -> bool:
@@ -261,6 +266,7 @@ def feed(*, db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curren
     words = Counter(each for match in visible for each in match.words)
     countries = Counter(match.job.country for match in visible if match.job.country)
     cities = Counter(match.job.city for match in visible if match.job.city)
+    shortest, longest = shelf_life(platform_windows(db))
     return Feed(total=len(matches),
                 jobs=[feed_row(match, texts.get(match.job.id), documents.get(match.job.id, []))
                       for match in page],
@@ -270,7 +276,7 @@ def feed(*, db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curren
                            for code, count in countries.most_common()],
                 cities=[FeedPlace(value=slug, label=CITIES[slug].label if slug in CITIES else slug,
                                   jobs=count) for slug, count in cities.most_common()],
-                as_of=as_of)
+                as_of=as_of, shelf_hours=shortest, shelf_longest_hours=longest)
 
 
 def _when(match: Match) -> datetime:

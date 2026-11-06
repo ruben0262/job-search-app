@@ -362,12 +362,20 @@ def _discover_ats_tokens(db, ats: AtsRepository) -> int:
 
     It runs over recent rows rather than the whole corpus because it is idempotent and the corpus
     only grows: a token found last week is already enrolled, and `add_tokens` ignores duplicates.
+
+    Both of a posting's links, its own and where it is applied to (2026-11-06): a board's posting often
+    sends its applicants to another company's board, and that link was never read. On the laptop's corpus
+    the apply links named 29 boards not polled, a tenth more than the 291 that were. A LinkedIn posting
+    is read only with an apply link: its own is LinkedIn's, and its guest page gives none (1 of 18,965
+    had one). The ~40,000 a day it lists otherwise filled the row cap before any board's posting was read.
     """
     since = datetime.now(UTC) - timedelta(hours=ATS_DISCOVERY_LOOKBACK_HOURS)
-    urls = [row["url"] for row in db[CorpusJob.COLLECTION].find(
+    urls = [link for row in db[CorpusJob.COLLECTION].find(
         # A job somebody wrote in names whatever address they typed: not a board to enrol for everyone.
-        {"first_seen_at": {"$gte": since}, "url": {"$ne": None}, "source": {"$ne": TYPED}}, {"url": 1},
-        limit=ATS_DISCOVERY_MAX_ROWS)]
+        {"first_seen_at": {"$gte": since}, "source": {"$ne": TYPED},
+         "$or": [{"source": {"$ne": "linkedin"}}, {"application_url": {"$ne": None}}]},
+        {"url": 1, "application_url": 1}, limit=ATS_DISCOVERY_MAX_ROWS)
+        for link in (row.get("url"), row.get("application_url")) if link]
 
     pairs = tokens_from_urls(urls)
     if not pairs:

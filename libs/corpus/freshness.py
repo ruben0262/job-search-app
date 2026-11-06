@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from libs import settings
-from libs.settings import DEFAULT_SOURCE_MIN_AGE_HOURS, SOURCE_MIN_AGE_HOURS
+from libs.settings import DEFAULT_SOURCE_MIN_AGE_HOURS, HARVEST_SOURCES, SOURCE_MIN_AGE_HOURS
 
 # A posting time at midnight is a date, not a time, and so is none at all: a board that gives only a day.
 DATE_ONLY = {"$or": [{"$eq": [{"$ifNull": ["$posted_at", None]}, None]},
@@ -71,6 +71,16 @@ def showable(windows: PlatformWindows, *, now: datetime | None = None) -> dict:
     # and took 199 s (2026-11-04).
     since = candidate_since(windows.max_age_hours, windows.source_min_ages, now=reference)
     return {"$and": [{"first_seen_at": {"$gte": since}}, {"$expr": {"$gte": [clock, cutoff]}}]}
+
+
+def shelf_life(windows: PlatformWindows) -> tuple[int, int]:
+    """How long a job stays on Jobs pages, in hours, by `showable`'s rule: the shortest, the operator's job
+    shelf life (Admin → Settings), and the longest, a board that posts less often. What the Jobs page says,
+    so changing the setting changes what it says (owner, 2026-11-06)."""
+    floors = dict(windows.source_min_ages) or SOURCE_MIN_AGE_HOURS
+    hours = [max(floors.get(source, DEFAULT_SOURCE_MIN_AGE_HOURS), windows.max_age_hours)
+             for source in HARVEST_SOURCES]
+    return min(hours), max(hours)
 
 
 def candidate_since(max_age_hours: int, source_min_ages, *, now: datetime) -> datetime:

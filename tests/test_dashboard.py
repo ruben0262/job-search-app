@@ -338,6 +338,29 @@ def test_a_job_whose_text_was_read_after_a_list_was_read_is_counted_as_new(api):
     assert found_after not in _ids(http.get("/feed").json())
 
 
+def test_the_page_says_how_long_a_job_stays_and_shows_exactly_that(api):
+    """A job leaving the list is no surprise when the page says how long jobs stay (owner, 2026-11-06). The
+    numbers are Admin's job shelf life and the longest a slower board keeps its jobs, and the jobs shown
+    are the ones they describe: LinkedIn's for the shelf life, Workday's for a week."""
+    from libs import settings
+
+    http, db, _, _ = api
+    found = {(source, hours): insert(db, CorpusJob(
+        url=f"https://example.com/{uuid.uuid4()}", source=source, title="Backend Engineer", description="x",
+        first_seen_at=now() - timedelta(hours=hours), described_at=now() - timedelta(hours=hours))).id
+        for source, hours in (("linkedin", 23), ("linkedin", 25), ("workday", 160), ("workday", 170),
+                              ("linkedin", 47))}
+
+    def shown() -> tuple[tuple[int, int], set]:
+        body = http.get("/feed").json()
+        return (body["shelf_hours"], body["shelf_longest_hours"]), {
+            key for key, job_id in found.items() if job_id in _ids(body)}
+
+    assert shown() == ((24, 168), {("linkedin", 23), ("workday", 160)})
+    settings.put(db, "job_max_age_hours", 48)
+    assert shown() == ((48, 168), {("linkedin", 23), ("linkedin", 25), ("linkedin", 47), ("workday", 160)})
+
+
 def test_one_country_or_one_city_and_each_offered_with_its_count(api):
     http, db, _, jobs = api
     db[CorpusJob.COLLECTION].update_one({"_id": jobs[0].id}, {"$set": {"country": "DE", "city": "berlin"}})

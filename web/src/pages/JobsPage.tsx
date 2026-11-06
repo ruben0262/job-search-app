@@ -40,6 +40,9 @@ const BOARDS: Record<string, string> = {
 };
 const board = (name: string) => BOARDS[name] ?? name.charAt(0).toUpperCase() + name.slice(1);
 
+/** A time a job stays listed, as people say it: "24 hours", "3 days". */
+const span = (hours: number) => (hours < 48 || hours % 24 ? `${hours} hours` : `${hours / 24} days`);
+
 /** The orders the list comes in: its words, when the board says it was posted, when it arrived here. */
 const ORDERS = [["best", "Most of your words first"], ["newest", "Newest posted first"],
                 ["arrived", "Just arrived first"]] as const;
@@ -237,6 +240,14 @@ export function JobsPage({ dashboard, focus, onChanged }: {
           ? "Finding your jobs…"
           : `${total} ${total === 1 ? "job matches" : "jobs match"} your ${filtered ? "search" : "words"}`}
       </h1>
+      {/* How long a job stays here, as Admin sets it: a job leaving is then no surprise (owner, 2026-11-06). */}
+      {feed ? (
+        <p className="small muted">
+          From the last {span(feed.shelf_hours)}
+          {feed.shelf_longest_hours > feed.shelf_hours
+            ? ` · slower boards: the last ${span(feed.shelf_longest_hours)}` : ""}
+        </p>
+      ) : null}
       {dashboard.applied ? (
         <p className="small muted">
           You have applied to {dashboard.applied} {dashboard.applied === 1 ? "job" : "jobs"}.{" "}

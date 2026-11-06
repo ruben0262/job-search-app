@@ -2036,6 +2036,10 @@ export interface components {
             countries: components["schemas"]["FeedPlace"][];
             /** Jobs */
             jobs: components["schemas"]["FeedJob"][];
+            /** Shelf Hours */
+            shelf_hours: number;
+            /** Shelf Longest Hours */
+            shelf_longest_hours: number;
             /** Sources */
             sources: components["schemas"]["FeedSource"][];
             /** Total */

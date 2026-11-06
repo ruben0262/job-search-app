@@ -3072,12 +3072,21 @@ suggestions on the jobs page. `CHANGELOG.md` has the numbers.
     once a pass, however many people share it.
 14. **Working Nomads gives nothing.** Its feed's newest job was 4 days old on 2026-11-02, 4.7 days on
     2026-11-03 (35 jobs), and 5.3 days that evening. Recommendation: move it to `DEFERRED_SOURCES` if it is still stale on 2026-11-09.
+    *2026-11-06:* 33 jobs, the newest 1.1 days old, 2 in the week. Owner: defer it if it gives no jobs later;
+    checked again on 2026-11-09.
 15. **Hiring Cafe answers 403** (a bot wall). Getting past it by imitating a browser is circumventing the
     site's refusal, and was not attempted. Recommendation: ask hiring.cafe for API access, or leave it off;
     the company boards it pointed at are polled directly.
     *2026-11-03:* the scraper the owner linked (`umur957/hiring-cafe-job-scraper`) is the same thing. It
     sends headers forged to look like Chrome to the site's internal `/api/search-jobs`. It is not an API
     the site offers, so nothing changes here.
+    *2026-11-06, looked into again (owner):* every page but `robots.txt` answers a Cloudflare challenge
+    (`cf-mitigated: challenge`), the sitemaps `robots.txt` names for crawlers included, so a plain client
+    reads nothing. `robots.txt` disallows `/*?searchState=*` and `/*?page=*`, the very URLs the adapter asked
+    for. No API, partner programme or feed was found, only third-party scrapers of its internal endpoints.
+    Its jobs are companies' own boards (46 ATSs, by one scraper's listing), which is what the company-board
+    sources read directly; discovering boards from apply links as well (2026-11-06) widens that list.
+    Owner: remove it, since nothing was found. Removing it removes item 23's query machinery with it.
 16. **Outcomes need people to say them.** Admin › Outcomes is empty until applications are marked.
     Recommendation: none yet; once there are a few hundred, read interview rate by CV kind and by the ATS
     verdict before changing the CV prompts.
@@ -3099,7 +3108,7 @@ suggestions on the jobs page. `CHANGELOG.md` has the numbers.
     `libs/prompts` names `label_template.md` in `LABEL_TEMPLATE`, which nothing reads. Moving them to
     `retired/` is a prompt change (CLAUDE.md §3a), so they stay until you say. Recommendation: retire
     `label.md`, `score.md` and `label_template.md`, which are the model's. Keep the other three if
-    interview prep, outreach or a CV pack are coming back.
+    interview prep, outreach or a CV pack are coming back. *Owner, 2026-11-06: they stay for now.*
 
 **Reading every source whole, words matched here (owner, 2026-11-03 and 2026-11-04; CHANGELOG has the
 numbers)**
@@ -3117,6 +3126,11 @@ numbers)**
     words and answers 403 (item 15); Jooble is off. The query set, per-board ceilings and carry-over in
     the shared cycle serve nothing that works. Recommendation: move Hiring Cafe to `DEFERRED_SOURCES`
     and delete the query machinery with it.
+    *2026-11-06:* the owner agreed to remove Hiring Cafe (item 15). What goes with it, 18 files: the query
+    set and its budgets and carry-over, Jooble's and JobSpy's adapters (search-shaped, off, and barred by
+    the 2026-11-04 rule that no word goes to a source), and Admin's "Search terms" (operator terms that only
+    feed the query set). Adzuna keeps its own "two countries a run". Waiting on the owner's yes for the Admin
+    section.
 24. **The Muse serves 2,000 of its 6,174 remote jobs.** It answers no page past the 100th, whatever it
     says it has. All 100 are read every run. Reaching the rest would mean splitting its list by category,
     one more request per category. It lists ~38 new jobs a day, mostly in the US. Recommendation: leave
@@ -3124,7 +3138,9 @@ numbers)**
 25. **Adzuna's free tier cannot read a country whole.** About 250 calls a day: two countries a run, the
     newest 50 jobs each. Unmeasured, with no key here. Recommendation: keep it as a sample, or pay for
     a tier that reads a country's day.
-26. **Six proxy exits since 2026-11-05** (the owner: no more to be had), ~240 pages a minute: the whole EU
+26. *2026-11-06:* two of the six answered 503 to every connection on 2026-11-05 (Admin → Settings → Proxy
+    addresses was set to the four that worked); the owner fixed them on 2026-11-06, so it is six again.
+    **Six proxy exits since 2026-11-05** (the owner: no more to be had), ~240 pages a minute: the whole EU
     and the UK at their busiest hour (~6,000 jobs) use about 70% of them. What follows was measured on four.
     **Four proxy exits carry the whole EU and the UK at peak, with nothing to spare.** Measured
     2026-11-04: ~150 LinkedIn pages a minute answered whole, 240 asked got ~180 through, 360 almost none,
@@ -3147,7 +3163,7 @@ numbers)**
 28. **Done 2026-11-05: Mahoraga runs on server_db** (the `db` LXC), and its backups and the archive
     folder's are running (owner; `~/projects/server_db/ROADMAP.md`, Phase 2).
 29. **Done 2026-11-05: six exits**, the most there will be (item 26). Whether they keep up is item 31.
-30. **Merged 2026-11-05, after server_db's step 13 measured full size on the server** (CHANGELOG,
+30. **Deployed 2026-11-05.** **Merged 2026-11-05, after server_db's step 13 measured full size on the server** (CHANGELOG,
     "Full size, measured on the server"). **Next: deploy.** The first pass reaches 4 hours back in each
     country, ~8,000 jobs for the EU and the UK, and its describing catches up in an hour or two.
 31. **Watch the chart.** A waiting count that grows run after run is a pass that cannot keep up: more
@@ -3180,9 +3196,31 @@ work, or opening and closing sessions faster, would help):
     Proposed: the descriptions in a collection of their own, read only for the page's 20 jobs, a job
     being opened, a CV, and the words search. What a match reads would be ~8× smaller. To measure first
     with `scripts/scale_probe.py` before building: it touches every reader of a description.
+    *2026-11-06:* a job's words are now found as its text is stored, so the page no longer reads the jobs
+    read since the last run with a regex (84 ms with none waiting against 171 with 2,000, on the laptop).
+    The baseline above is unchanged.
 35. **server_db's VM: 8 GB of memory, 3.5 GB of it MongoDB's cache.** The jobs a match reads, the last 8
     days, are ~1.9 GB: in a 1.5 GB cache they are read from disk every time (median ~550 ms against
     ~450). `~/projects/server_db/DESIGN.md`, "Speed".
+
+**Done 2026-11-06** (CHANGELOG has the numbers)
+
+36. **A job is shown once its text is read**, and "new" counts from then (owner).
+37. **LinkedIn's posting time from the list card**, the earliest of LinkedIn's readings kept. LinkedIn gives no
+    exact time anywhere.
+38. **LinkedIn answered a recently asked list from a saved copy**, and runs 15 minutes apart all asked ~r1800.
+    Every window is now one not asked lately. Asked fresh, a country's one list held 54 of 55 jobs its
+    cities' lists showed. `deploy/scripts/check_linkedin_coverage.py` measures it against what is stored:
+    the owner runs it on the server before and after deploying.
+39. **A job's words are found as its text is stored**; "Words found" is no longer a step.
+40. **The Jobs page says how long a job stays**, from Admin's job shelf life.
+41. **Company boards are discovered from apply links too**, and LinkedIn's linkless postings no longer fill
+    the discovery's row cap: 29 boards on the laptop's corpus, a tenth more than were polled.
+
+**Open, from 2026-11-06**
+
+42. **Shorter sweep overlap** (item 33). Asked fresh, LinkedIn's list held a job within ~1–8 minutes of its
+    posting; each sweep re-reads 15 minutes. Measure before shortening: it is proxy capacity for texts.
 
 ## Phase 9 — MongoDB instead of Postgres (added 2026-10-30)
 

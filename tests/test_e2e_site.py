@@ -97,6 +97,8 @@ def test_a_new_person_goes_from_sign_up_to_a_downloaded_cv(site, capsys, tmp_pat
 
         # Their jobs: the two that match, each saying why, and not the one that does not.
         expect(page.get_by_role("heading", name="2 jobs match your words")).to_be_visible()
+        # And how long a job stays, as Admin sets it.
+        expect(page.get_by_text("From the last 24 hours · slower boards: the last 7 days")).to_be_visible()
         cards = page.locator("article.job-card")
         expect(cards).to_have_count(2)
         for title in TITLES[:2]:
