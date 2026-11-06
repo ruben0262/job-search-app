@@ -13,7 +13,6 @@ from libs.contracts.config import (
     Currency,
     Language,
     Location,
-    Platform,
     SearchSection,
     Seniority,
     UserConfigSchema,
@@ -23,7 +22,7 @@ from libs.contracts.config import (
 )
 
 # Which overrides belong to a search section and which to the account.
-SECTION_FIELDS = {"platform", "keywords", "exclude_keywords", "locations", "workplaces",
+SECTION_FIELDS = {"keywords", "exclude_keywords", "locations", "workplaces",
                   "posted_within_hours"}
 
 
@@ -57,7 +56,6 @@ def test_three_words_a_country_and_a_language_are_enough():
     """The least a search takes (owner, 2026-11-04); the way of working starts switched on."""
     section = _valid().sections[0]
     assert section.keywords == WORDS
-    assert section.platform == Platform.ALL, "one section, targeting everything, is the default"
     assert section.workplaces == [Workplace.REMOTE, Workplace.HYBRID], "as the question it replaced"
     assert section.posted_within_hours == 24, "24h steady state; cold start widens it once"
 
@@ -105,21 +103,32 @@ def test_too_many_keywords_is_rejected_not_truncated():
     assert "keywords" in str(exc.value)
 
 
-def test_the_cap_spans_sections_rather_than_applying_to_each():
-    """Per-section caps would let five sections buy five times the fan-out budget - silently."""
+def test_the_cap_counts_every_word_however_many_sections_a_page_sent():
+    """Several sections are read as one search, so the cap is on all their words together."""
     half = MAX_KEYWORDS_PER_USER // 2 + 1
-    with pytest.raises(ValidationError, match="exceeds the limit"):
+    with pytest.raises(ValidationError, match="keywords"):
         UserConfigSchema(languages=["en"], sections=[
             {"platform": "all", "keywords": [f"a{i}" for i in range(half)], "locations": ["germany"]},
             {"platform": "linkedin", "keywords": [f"b{i}" for i in range(half)], "locations": ["germany"]}])
 
 
-def test_one_platform_cannot_have_two_sections():
-    """The fold would merge them, so the user would see terms they believed they had kept separate."""
-    with pytest.raises(ValidationError, match="at most one section"):
-        UserConfigSchema(languages=["en"], sections=[
-            {"platform": "linkedin", "keywords": WORDS, "locations": ["germany"]},
-            {"platform": "linkedin", "keywords": ["rust"], "locations": ["germany"]}])
+def test_a_search_stored_in_several_sections_reads_as_the_one_my_search_shows():
+    """A search could once be split by board, a section each. Matching read every section as one search
+    while My search showed the first alone, and nothing read a section's board once no board was asked for
+    a word (2026-11-06). Read as that one search: every word, red word and country once, every way of
+    working any section switched on (none switched on was every one), and the widest window."""
+    stored = {"languages": ["en"], "sections": [
+        {"platform": "all", "keywords": ["golang", "sql"], "locations": ["germany"], "workplaces": ["remote"],
+         "posted_within_hours": 24},
+        {"platform": "linkedin", "keywords": ["Golang", "rust"], "exclude_keywords": ["senior"],
+         "locations": ["france"], "workplaces": [], "posted_within_hours": 72}]}
+
+    assert migrate_config(stored)["sections"] == [
+        {"keywords": ["golang", "sql", "rust"], "exclude_keywords": ["senior"],
+         "locations": ["germany", "france"], "workplaces": ["remote", "hybrid", "onsite"],
+         "posted_within_hours": 72}]
+    saved = UserConfigSchema.model_validate(stored)
+    assert [section.keywords for section in saved.sections] == [["golang", "sql", "rust"]], "and saved so"
 
 
 @pytest.mark.parametrize("bad", ["a", " x ", "z" * 41])
@@ -245,7 +254,7 @@ def test_a_v1_config_still_folds_exactly_as_it_did():
           "remote_policy": "remote_only", "posted_within_hours": 48}
 
     migrated = migrate_config(v1)
-    assert migrated["sections"][0]["platform"] == Platform.ALL
+    assert "platform" not in migrated["sections"][0]
     assert UserConfigSchema.model_validate(migrated).sections[0].posted_within_hours == 48
     assert migrated["sections"][0]["keywords"] == WORDS
 

@@ -229,7 +229,7 @@ def _event(name: str, **data) -> str:
 
 def _add(db: Database, user_id: _uuid.UUID, args: dict) -> str:
     stored = TenantRepository(db).get_config(user_id)
-    config = migrate_config(stored) if stored else {"sections": [{"platform": "all", "keywords": []}]}
+    config = migrate_config(stored) if stored else {"sections": [{"keywords": []}]}
     if args["kind"] == "red" and not green_words(config):
         raise HTTPException(status.HTTP_409_CONFLICT,
                             detail="pick a word for the jobs you want first — a red word only hides "

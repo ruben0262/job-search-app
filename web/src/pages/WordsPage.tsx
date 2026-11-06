@@ -104,7 +104,7 @@ export function WordsForm({ withIdentity = false, askBeforeLeaving: guarded = fa
     onEdited?.();
   };
   const patch = (changes: Partial<Section>) =>
-    edit({ ...config, sections: [{ ...section, ...changes }, ...config.sections.slice(1)] });
+    edit({ ...config, sections: [{ ...section, ...changes }] });
   const toggle = <T,>(list: T[], value: T) =>
     list.includes(value) ? list.filter((each) => each !== value) : [...list, value];
   const places = section.locations ?? [];

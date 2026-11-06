@@ -456,11 +456,38 @@ def test_an_unset_ceiling_leaves_the_platform_default_alone():
 def test_a_removed_source_cannot_be_quietly_switched_back_on():
     """`DEFERRED_SOURCES` records what was removed and why."""
     from libs.settings import HARVEST_SOURCES
-    from services.harvester.source_config import DEFAULT_ENABLED, DEFERRED_SOURCES
+    from services.harvester.source_config import DEFERRED_SOURCES, build_source_configs
 
     deferred = set(DEFERRED_SOURCES)
-    assert deferred & set(DEFAULT_ENABLED) == set()
+    assert deferred & set(build_source_configs({}, env={})) == set()
     assert deferred & set(HARVEST_SOURCES) == set(), "the admin panel would offer it a control"
+
+
+def test_the_boards_a_run_reads_are_the_boards_admin_lists():
+    """One list (`HARVEST_SOURCES`), which Admin's per-source controls read: the run reads every board on it
+    but LinkedIn, a pass of its own. A second, hand-kept list in the harvester agreed with it only by care
+    until 2026-11-06, and a board on one list and not the other got controls that changed nothing."""
+    from libs.settings import HARVEST_SOURCES
+    from services.harvester.source_config import build_source_configs
+
+    built = build_source_configs({}, env={"ADZUNA_APP_ID": "x", "FINDWORK_API_KEY": "x"})
+
+    assert list(built) == [name for name in HARVEST_SOURCES if name != "linkedin"]
+
+
+def test_a_board_taken_off_the_list_stops_even_holding_its_key(monkeypatch):
+    """Taken off the one list, a board is not read: a board needing a key was read whenever its key was
+    set, which kept Jooble running after its block until the key map was edited too (2026-08)."""
+    from libs import settings
+    from services.harvester.source_config import build_source_configs
+
+    listed = tuple(name for name in settings.HARVEST_SOURCES if name not in ("himalayas", "adzuna"))
+    monkeypatch.setattr(settings, "HARVEST_SOURCES", listed)
+
+    built = build_source_configs({}, env={"ADZUNA_APP_ID": "x", "FINDWORK_API_KEY": "x"})
+
+    assert {"himalayas", "adzuna"} & set(built) == set()
+    assert "findwork" in built, "and the rest are read as before"
 
 
 # ── how deep a paginated source walks (ROADMAP 6ag) ───────────────────────────────────────────

@@ -5,21 +5,9 @@ import os
 from collections.abc import Mapping
 from uuid import UUID
 
+from libs import settings
 from libs.contracts.config import migrate_config
-
-# Sources needing no API key and no credential. Each is read whole, every job in its window kept, and
-# people's words are matched on the stored jobs (owner, 2026-11-04).
-DEFAULT_ENABLED = (
-    # Remote-work aggregators.
-    "himalayas", "workingnomads", "jobicy",
-    # ATS boards: employers posting directly. Gated on `ats_tokens` having rows.
-    "greenhouse", "ashby", "lever", "smartrecruiters",
-    "recruitee", "breezy", "workday", "personio", "workable",
-    # Aggregators.
-    "themuse",
-    # European boards, which is where this platform's users actually are.
-    "nofluffjobs", "profession", "justjoinit",
-)
+from services.harvester.sources import REGISTRY
 
 # Removed 2026-08-04, with the measurement that removed them.
 DEFERRED_SOURCES = ("arbeitnow", "remotive", "remoteok", "dreamjobs",
@@ -32,11 +20,9 @@ RESULT_KEYS: dict[str, str] = {
     "jobicy": "count",
 }
 
-# The ATS family polls company boards rather than issuing queries, so its ceiling is a company count.
-ATS_SOURCES: frozenset[str] = frozenset({
-    "greenhouse", "ashby", "lever", "smartrecruiters", "recruitee",
-    "breezy", "workday", "personio", "workable",
-})
+# The company boards (ATS), whose ceiling is a count of boards: the sources that read our list of them, by the
+# registry's own mark rather than a list beside it.
+ATS_SOURCES: frozenset[str] = frozenset(name for name, source in REGISTRY.items() if source.needs_ats_repo)
 
 
 # How far back to ask a source, when no user has asked for a window and the operator has set none.
@@ -95,7 +81,6 @@ def union_locations(configs: Mapping[UUID, Mapping]) -> list[str]:
 def build_source_configs(
     configs: Mapping[UUID, Mapping],
     *,
-    enabled: tuple[str, ...] | None = None,
     env: Mapping[str, str] | None = None,
     freshness: Mapping[str, int] | None = None,
     pages: Mapping[str, int] | None = None,
@@ -107,11 +92,12 @@ def build_source_configs(
     env = env if env is not None else os.environ
     locations = union_locations(configs)
 
-    active = list(enabled if enabled is not None else DEFAULT_ENABLED)
-    for source, key in KEY_GATED.items():
-        # Enabled only with a credential: a source that 401s every cycle drowns real failures.
-        if env.get(key):
-            active.append(source)
+    # Every board in `HARVEST_SOURCES`, the one list, which Admin's per-source controls read too, with an
+    # adapter here: LinkedIn is a pass of its own. A board needing a key only with it: one that 401s every
+    # cycle drowns real failures. Here as a second, hand-kept list until 2026-11-06, which only care kept
+    # agreeing, and the key alone switched a board on even once that list had dropped it (Jooble, 2026-08).
+    active = [name for name in settings.HARVEST_SOURCES
+              if name in REGISTRY and (name not in KEY_GATED or env.get(KEY_GATED[name]))]
 
     # The widest window any active user asked for.
     windows = []

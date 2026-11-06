@@ -2352,12 +2352,6 @@ export interface components {
             /** New Password */
             new_password: string;
         };
-        /**
-         * Platform
-         * @description Which sources a search section targets.
-         * @enum {string}
-         */
-        Platform: "all" | "linkedin" | "indeed" | "google";
         /** ProfileLink */
         ProfileLink: {
             platform?: components["schemas"]["LinkPlatform"] | null;
@@ -2515,7 +2509,7 @@ export interface components {
         };
         /**
          * SearchSection
-         * @description One search, targeted at one platform or at all of them.
+         * @description A person's search: the words, places and ways of working My search shows.
          */
         SearchSection: {
             /** Exclude Keywords */
@@ -2524,8 +2518,6 @@ export interface components {
             keywords: string[];
             /** Locations */
             locations?: components["schemas"]["Location"][];
-            /** @default all */
-            platform: components["schemas"]["Platform"];
             /**
              * Posted Within Hours
              * @default 24

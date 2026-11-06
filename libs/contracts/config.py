@@ -9,28 +9,20 @@ from pydantic_core import PydanticCustomError
 from libs.corpus.geo import CITY_COUNTRY, COUNTRIES
 from libs.db.models.corpus import WORKPLACES
 
-# Current shape version, stored on `user_config.schema_version`.
-CONFIG_SCHEMA_VERSION = 2
+# Current shape version, stored on `user_config.schema_version`. 3 (2026-11-06): one section, with no board
+# of its own (`migrate_config`).
+CONFIG_SCHEMA_VERSION = 3
 
 # The per-user search-term cap (`TENANT_SAFETY.md` §3, `HARVESTER_PLAN.md` §3).
 MAX_KEYWORDS_PER_USER = 25
 
-# Queries are keywords x locations x sources, so the keyword cap applies before the cross product.
+# Countries one search may pick.
 MAX_LOCATIONS_PER_USER = 12
 
 # The least a search may have (owner, 2026-11-04): three green words, and at least one country, one way
 # of working and one language. Jobs are fetched country by country and the words matched here, so a
 # search with no country has no jobs coming in; three words are what make a list worth reading.
 MIN_GREEN_WORDS = 3
-
-
-class Platform(StrEnum):
-    """Which sources a search section targets."""
-
-    ALL = "all"
-    LINKEDIN = "linkedin"
-    INDEED = "indeed"
-    GOOGLE = "google"
 
 
 # The ways of working a person can switch on: remote, hybrid, on site. More than one is either of them.
@@ -125,11 +117,10 @@ def _deduplicate(values: list) -> list:
 
 
 class SearchSection(BaseModel):
-    """One search, targeted at one platform or at all of them."""
+    """A person's search: the words, places and ways of working My search shows."""
 
     model_config = ConfigDict(extra="forbid", use_enum_values=True)
 
-    platform: Platform = Platform.ALL
     keywords: list[str] = Field(min_length=1, max_length=MAX_KEYWORDS_PER_USER)
     # As many red words as green: the form offers 25 of each, and the 11th used to be refused.
     exclude_keywords: list[str] = Field(default_factory=list, max_length=MAX_KEYWORDS_PER_USER)
@@ -182,7 +173,8 @@ class UserConfigSchema(BaseModel):
 
     model_config = ConfigDict(extra="forbid", use_enum_values=True)
 
-    sections: list[SearchSection] = Field(min_length=1, max_length=5)
+    # One, in a list as every stored config keeps it (`migrate_config`).
+    sections: list[SearchSection] = Field(min_length=1, max_length=1)
 
     # Person-level, not search-level: a candidate is not more senior on one job board than another.
     seniority: list[Seniority] = Field(default_factory=list)
@@ -196,21 +188,11 @@ class UserConfigSchema(BaseModel):
     def _clean_enums(cls, values: list) -> list:
         return _deduplicate(values)
 
-    @field_validator("sections")
+    @model_validator(mode="before")
     @classmethod
-    def _cap_total_keywords(cls, sections: list[SearchSection]) -> list[SearchSection]:
-        """The cap spans every section, not each one."""
-        total = sum(len(section.keywords) for section in sections)
-        if total > MAX_KEYWORDS_PER_USER:
-            raise ValueError(
-                f"{total} keywords across {len(sections)} sections exceeds the limit of "
-                f"{MAX_KEYWORDS_PER_USER}")
-
-        platforms = [section.platform for section in sections]
-        if len(set(platforms)) != len(platforms):
-            # Two sections for one platform is a mistake, and the fold would silently merge them.
-            raise ValueError("each platform may appear in at most one section")
-        return sections
+    def _current_shape(cls, values):
+        # A page loaded before a change still sends the shape it read: saved as it is read.
+        return migrate_config(values) if isinstance(values, dict) else values
 
     @model_validator(mode="after")
     def _enough_to_search(self) -> UserConfigSchema:
@@ -236,14 +218,37 @@ def migrate_config(raw: dict) -> dict:
     # Deleted 2026-10-28: nothing read it — the daily cap is `libs.limits`' `notifications_per_day`.
     raw = {key: value for key, value in raw.items() if key != "max_notifications_per_day"}
     if "sections" in raw:
-        return {**raw, "sections": [_migrate_section(s) for s in raw.get("sections") or []]}
+        return {**raw, "sections": _one_section([_migrate_section(s) for s in raw.get("sections") or []])}
 
     section_fields = ("keywords", "exclude_keywords", "locations", "remote_policy", "workplaces",
                       "posted_within_hours")
     section = {key: raw[key] for key in section_fields if key in raw}
-    section["platform"] = Platform.ALL.value
     rest = {key: value for key, value in raw.items() if key not in section_fields}
     return {"sections": [_migrate_section(section)], **rest}
+
+
+def _one_section(sections: list[dict]) -> list[dict]:
+    """Every stored section as the one My search shows (2026-11-06). A search could once be split by board,
+    a section each. Nothing read a section's board after no board was asked for a word, and matching read
+    every section's words, red words, countries and ways of working as one search, while My search showed
+    and edited the first section only. Merged, they find the same jobs, and all that finds them is shown."""
+    if len(sections) < 2:
+        return sections
+    merged: dict = {}
+    for field in ("keywords", "exclude_keywords", "locations"):
+        # Each once, the first spelling kept, in the order the sections had them.
+        kept: dict[str, object] = {}
+        for section in sections:
+            for value in section.get(field) or []:
+                kept.setdefault(str(value).lower(), value)
+        merged[field] = list(kept.values())
+    # A section with none switched on admitted every way of working (`filters._workplaces`).
+    ways = {way for section in sections for way in section.get("workplaces") or WORKPLACES}
+    merged["workplaces"] = [way for way in WORKPLACES if way in ways]
+    windows = [section["posted_within_hours"] for section in sections if section.get("posted_within_hours")]
+    if windows:
+        merged["posted_within_hours"] = max(windows)
+    return [merged]
 
 
 # What a retired location slug means in the vocabulary that replaced it.
@@ -270,7 +275,8 @@ def _migrate_section(section: dict) -> dict:
     if not section:
         return section
     switched = _POLICY_WORKPLACES.get(section.get("remote_policy")) or _POLICY_WORKPLACES["remote_or_hybrid"]
-    current = {key: value for key, value in section.items() if key != "remote_policy"}
+    # Which board a section was for: none since 2026-11-06 (`_one_section`).
+    current = {key: value for key, value in section.items() if key not in ("remote_policy", "platform")}
     current.setdefault("workplaces", list(switched))
     return current
 

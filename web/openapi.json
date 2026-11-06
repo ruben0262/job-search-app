@@ -2321,17 +2321,6 @@
         "title": "PasswordChange",
         "type": "object"
       },
-      "Platform": {
-        "description": "Which sources a search section targets.",
-        "enum": [
-          "all",
-          "linkedin",
-          "indeed",
-          "google"
-        ],
-        "title": "Platform",
-        "type": "string"
-      },
       "ProfileLink": {
         "additionalProperties": false,
         "properties": {
@@ -2749,7 +2738,7 @@
       },
       "SearchSection": {
         "additionalProperties": false,
-        "description": "One search, targeted at one platform or at all of them.",
+        "description": "A person's search: the words, places and ways of working My search shows.",
         "properties": {
           "exclude_keywords": {
             "items": {
@@ -2775,10 +2764,6 @@
             "maxItems": 12,
             "title": "Locations",
             "type": "array"
-          },
-          "platform": {
-            "$ref": "#/components/schemas/Platform",
-            "default": "all"
           },
           "posted_within_hours": {
             "default": 24,
@@ -3389,7 +3374,7 @@
             "items": {
               "$ref": "#/components/schemas/SearchSection"
             },
-            "maxItems": 5,
+            "maxItems": 1,
             "minItems": 1,
             "title": "Sections",
             "type": "array"

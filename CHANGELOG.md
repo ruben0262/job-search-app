@@ -14,6 +14,52 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-06 — One list of sources; a search is one section, with no board of its own
+
+The owner: fix the two things found after Hiring Cafe's removal, checking first that they are what they
+looked like.
+
+**The sources were listed twice.**
+- `source_config.DEFAULT_ENABLED` was `HARVEST_SOURCES` less the two boards that need a key and LinkedIn
+  (its own pass), in the same order: checked, the same boards. Admin's per-source controls read
+  `HARVEST_SOURCES`, and the run read the other list, so the two agreed only by care.
+- A board needing a key was read whenever its key was set, whether or not `HARVEST_SOURCES` still named
+  it: how Jooble kept running after its block, until the key map was edited too.
+- `ATS_SOURCES` was a third hand-kept list, of the company boards the registry already marks
+  (`needs_ats_repo`): checked, the same nine.
+
+Now the run reads `libs.settings.HARVEST_SOURCES` itself (`build_source_configs`): every board on it
+with an adapter, the keyed ones only with their key. `ATS_SOURCES` comes from the registry. The unused
+`enabled` parameter goes. The same boards are read in the same order. Tests: the boards a run reads are
+the boards Admin lists; a board taken off the list stops even holding its key. The second test fails on
+the previous code, which still read Himalayas and Adzuna.
+
+**A section's board did nothing.** Checked before removing:
+- `platform` (all, LinkedIn, Indeed, Google) was read by the schema's one-section-per-board rule, and by
+  nothing else since the query set went (entry below).
+- Matching, red words, countries, ways of working, suggestions and the help chat all read every section
+  as one search.
+- My search has no control for a board. It showed and saved the first section only, so the words, red
+  words and countries of any other section found jobs without being shown or editable. The test below
+  shows it: a LinkedIn-only section's "rust" matched a Greenhouse job in Paris.
+
+Done:
+- `platform` and the `Platform` enum are removed.
+- `migrate_config` merges stored sections into the one My search shows (`_one_section`): every word, red
+  word and country once, every way of working any section switched on (none switched on meant every
+  one, as `filters._workplaces` read it), and the widest window. That is what matching already read, so
+  nobody's jobs change; what finds them is now on the page.
+- The schema keeps one section and runs `migrate_config` on what a page sends, so a tab loaded before
+  this still saves.
+- `CONFIG_SCHEMA_VERSION` is 3.
+
+The laptop's one account had one section, set to "all". The server's accounts are not readable from
+here; any with two sections are read as one from this deploy, and stored so when next saved.
+
+Tests: several sections read and save as one; through My search's own routes, a section the page never
+showed is on it, and saving what it shows finds the same jobs. Both fail on the previous code. The
+keyword cap still counts every word, however many sections a page sent.
+
 ## 2026-11-06 — Hiring Cafe removed, and with it every way of sending a word to a board
 
 The owner, after Hiring Cafe was found unreadable (entry below): "scrap it and remove it all".

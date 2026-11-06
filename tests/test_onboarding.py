@@ -6,6 +6,7 @@ import json
 import os
 import pathlib
 import uuid
+from datetime import UTC, datetime
 
 import pytest
 
@@ -335,6 +336,38 @@ def test_the_identity_and_config_routes_return_the_users_own_data(api):
 
     config = http.get("/onboarding/review").json()
     assert config["config"]["sections"][0]["keywords"] == CONFIG["sections"][0]["keywords"]
+
+
+def test_words_in_a_section_my_search_never_showed_are_on_the_page_and_find_the_same_jobs(api):
+    """A search stored in two sections, a LinkedIn-only one among them, from before (2026-11-06): its words
+    found jobs, and My search showed and saved only the first section. Now the page shows them all, and
+    saving what it shows finds the same jobs."""
+    from libs.db import insert
+    from libs.db.models import CorpusJob
+    from libs.matching import matching_jobs
+    from libs.tenant.repository import TenantRepository
+
+    http, db, user = api
+    TenantRepository(db).save_config(user.id, {"languages": ["en"], "sections": [
+        {"platform": "all", "keywords": ["golang", "postgres", "kafka"], "locations": ["germany"]},
+        {"platform": "linkedin", "keywords": ["rust"], "exclude_keywords": ["senior"],
+         "locations": ["france"]}]}, schema_version=2)
+    for title, place in (("Rust Engineer", "Paris, France"), ("Golang Developer", "Berlin, Germany"),
+                         ("Senior Golang Developer", "Berlin, Germany"), ("Rust Engineer", "Madrid, Spain")):
+        insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="greenhouse", title=title,
+                             location=place, country={"France": "FR", "Germany": "DE", "Spain": "ES"}[
+                                 place.split(", ")[1]], description="We build things. " * 20,
+                             described_at=datetime.now(UTC)))
+    before = sorted(match.job.title for match in matching_jobs(db, user))
+
+    page = http.get("/onboarding/review").json()["config"]
+    assert [section["keywords"] for section in page["sections"]] == [["golang", "postgres", "kafka", "rust"]]
+    assert page["sections"][0]["exclude_keywords"] == ["senior"]
+    assert page["sections"][0]["locations"] == ["germany", "france"]
+    assert http.put("/onboarding/config", json=page).status_code == 200
+
+    assert before == ["Golang Developer", "Rust Engineer"]
+    assert sorted(match.job.title for match in matching_jobs(db, user)) == before
 
 
 @needs_db
