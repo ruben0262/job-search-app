@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Alerts } from "../alerts";
 import { api, type Schema } from "../api";
 import { ThemeToggle } from "../theme";
+import { Brand } from "../wheel";
 import { Error, useAction } from "../ui";
 import { AboutYou, Files, useDocuments } from "./DocumentsPage";
 import { WordsForm } from "./WordsPage";
@@ -38,10 +39,11 @@ export function Onboarding({ state, onChanged }: {
     <>
       <div className="backdrop" aria-hidden="true" />
       <main className="wizard">
-        <ThemeToggle floating />
-        <nav style={{ border: "none", marginBottom: 0 }}>
-          <span className="brand">Mahoraga</span>
-        </nav>
+        {/* The name, not a link: nothing is open to them until this is done. */}
+        <header className="shell-top">
+          <Brand />
+          <ThemeToggle />
+        </header>
 
         <div className="step page-in" key={current}>
           {/* Said on every screen: this is setting up their profile, and their jobs come after it. */}

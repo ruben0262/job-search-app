@@ -15,18 +15,23 @@ npm run build    # tsc --noEmit, then vite build
 | File | What it owns |
 |---|---|
 | `src/api.ts` | every request, the single-flight refresh, and `Schema<"Name">` for the generated types |
-| `src/App.tsx` | routing, the five places (a tab bar on a phone), and where a signed-in user belongs |
+| `src/App.tsx` | routing, the top bar, and where a signed-in user belongs |
+| `src/places.tsx` | the five places and the picture each is on a phone's tab bar |
+| `src/landing/` | the landing page, and the job card that works on it (`Demo.tsx`) |
+| `src/wheel.tsx` | the wheel, drawn once: the landing's halo, the sign-in art, the brand's mark |
 | `src/pages/Onboarding.tsx` | the three screens: your CV, what we found, done |
 | `src/pages/{Jobs,Words,Documents,Settings}Page.tsx` | the places after signup; Help is the support chat's |
 | `src/documents.ts` | a CV or cover letter for a job: start it, show it being made, hand over the PDF |
-| `src/alerts.tsx`, `src/push.ts` | Telegram and this browser's notifications, one tap each |
+| `src/alerts.tsx`, `src/push.ts` | Telegram through the person's own bot, and this browser's notifications |
 | `src/ui.tsx` | the pieces every page needs: word chips, the upload button, errors |
 
 ## Look
 
-**Black, white, grey.** Two colours exist in the whole palette — a red for errors and a green for a
-score — and both mean exactly one thing, which is why they read instantly. Everything structural is
-a step on one grey ramp. Banners are told apart by a left rule and their words rather than by a
+**Graphite, white and one purple** (owner, 2026-11-06: concept C of three, in a flat "galaxy" purple).
+The purple is `--accent` in `styles.css`, said once; small purple text on graphite takes a lighter shade
+of it (`--accent-text`) to stay readable. Green and red keep the one meaning each — a word that finds
+jobs or hides them, and red an error — which is why they read instantly. Everything structural is a
+step on one ramp of the ink colour. Banners are told apart by a left rule and their words rather than by a
 fill, because three coloured blocks on one page is a traffic light nobody reads.
 
 **No containers on the two pages that ask something of you.** The onboarding wizard and the
@@ -36,23 +41,24 @@ weight until 2026-07-28, which made "process your documents" look exactly like t
 settings; the panels remain where a page genuinely holds several unrelated things (the feed, the
 privacy disclosure, the settings forms).
 
-**Dark by default, light by choice** (changed 2026-07-30). The landing page at
-mahoraga.rubenlekli.com is dark-only, and the app opening in white read as a different product — so
-the app carries the landing's exact tokens (`#060606`, hairline borders, mono uppercase kickers,
-pill buttons, the faint dot-grid backdrop) and dark is the default regardless of the system
-preference. The toggle offers light, an equivalent inverse, and the choice sticks.
+**Dark by default, light by choice** (changed 2026-07-30). The landing page and the app are one design
+(`landing.css` reads `styles.css`'s tokens), and dark is the default regardless of the system
+preference. The toggle offers light, an equivalent inverse, grows it from the button as a circle, and
+the choice sticks.
 
 **The attribute is set before first paint** by a snippet in `index.html`, not by a React effect. An
 effect runs after the first frame, so a dark-mode viewer would see one white flash on every load.
 
-Transitions are 0.25 s, one duration for everything — different speeds on one page read as
-jitter — plus a single fade-up when a route changes, and `prefers-reduced-motion` turns all of it
-off entirely.
+Colour changes take 0.25 s, one duration, because different speeds on one page read as jitter; movement
+eases out fast and settles (`--out`), or springs a little past (`--spring`). A route rises in once.
+`prefers-reduced-motion` turns all of it off. Frost (`backdrop-filter`) only on what floats over the page
+— the bars, a dialog — never on each of 25 job cards, which is what makes a phone stutter.
 
 **No component library and no router.** This is a wizard plus four screens: `react-router` would be
 more configuration than routing, and a component library would be a build-time dependency and a lot
-of generated markup for markup that is already written. Two runtime dependencies, `react` and
-`react-dom`, and a ~74 kB gzipped bundle.
+of generated markup for markup that is already written. Four runtime dependencies: `react`, `react-dom`,
+and the two typefaces (Sora for titles, Inter for text), served with the site so no page asks a font
+host. 108 kB of gzipped script and 15 kB of style (2026-11-06).
 
 **A hash router, not history.** Cloudflare Pages then serves `index.html` for every URL with no
 rewrite rule for anybody to forget.

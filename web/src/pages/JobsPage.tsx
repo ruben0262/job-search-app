@@ -57,7 +57,7 @@ export const FEED = "/feed?offset=0";
 /** Jobs has two tabs: the jobs that match your words, and one brought in by its link. */
 export function JobsTabs({ on }: { on: "list" | "add" }) {
   return (
-    <nav className="tabs" aria-label="Jobs">
+    <nav className="tabs split" aria-label="Jobs">
       <a className={on === "list" ? "tab on" : "tab"} href="#/" aria-current={on === "list" ? "page" : undefined}>
         Your jobs
       </a>

@@ -4,16 +4,17 @@ import { useState } from "react";
 import { api } from "../api";
 import { Error, Field, useAction } from "../ui";
 import { ThemeToggle } from "../theme";
+import { Brand, Wheel } from "../wheel";
 
 export function SignIn({
   onSignedIn,
-  initialMode = "in",
+  mode,
 }: {
   /** Resolves once the dashboard has been read, which is what makes the route safe to change. */
   onSignedIn: () => void | Promise<void>;
-  initialMode?: "in" | "up";
+  /** From the address (`#/signin`, `#/signup`), and from nothing else. */
+  mode: "in" | "up";
 }) {
-  const [mode, setMode] = useState<"in" | "up">(initialMode);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [sent, setSent] = useState(false);
@@ -93,7 +94,6 @@ export function SignIn({
         {mode === "in" ? "New here? " : "Already have an account? "}
         <a
           href={mode === "in" ? "#/signup" : "#/signin"}
-          onClick={() => setMode(mode === "in" ? "up" : "in")}
         >
           {mode === "in" ? "Create an account" : "Sign in instead"}
         </a>
@@ -145,7 +145,8 @@ export function ResendLink({ email }: { email: string }) {
   );
 }
 
-/** The frame both auth states share: backdrop, wordmark, kicker, title, and a way back. */
+/** The frame every signed-out page shares (sign in, sign up, the emailed links): the wordmark home, the
+ * wheel lying in its halo of light, and one question under it. */
 export function AuthShell({
   kicker,
   title,
@@ -158,14 +159,15 @@ export function AuthShell({
   return (
     <>
       <div className="backdrop" aria-hidden="true" />
-      <main className="wizard page-in">
-        <ThemeToggle floating />
-        <nav style={{ border: "none", marginBottom: "0" }}>
-          <a className="brand" href="#/">
-            Mahoraga
-          </a>
-        </nav>
-        <div className="step" style={{ paddingTop: "8vh" }}>
+      <main className="auth page-in">
+        <header className="shell-top">
+          <Brand href="#/" />
+          <ThemeToggle />
+        </header>
+        <div className="auth-body">
+          <div className="auth-art" aria-hidden="true">
+            <Wheel />
+          </div>
           <p className="kicker">{kicker}</p>
           <h1>{title}</h1>
           {children}

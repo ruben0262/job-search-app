@@ -522,3 +522,36 @@ def test_only_a_real_job_and_the_two_marks_are_accepted(api):
     http, _db, _user, jobs = api
     assert http.put("/jobs/999999999/applied").status_code == 404
     assert http.put(f"/jobs/{jobs[0].id}/sent").status_code == 422
+
+
+# ── the landing page ──────────────────────────────────────────────────────────────────────────
+
+def test_the_landing_pages_numbers_are_counted_and_answer_anybody(db, monkeypatch):
+    """What the landing page says the platform reads: the one source list, and the company boards still
+    answering. Typed into the page, they said 25 sources and ~940 boards long after either was true."""
+    os.environ.setdefault("ACCESS_TOKEN_SECRET", "test-" + "x" * 40)
+    monkeypatch.setenv("DISABLE_RATE_LIMIT", "1")
+    from fastapi.testclient import TestClient
+
+    from libs.db.models import AtsToken, CountryCount
+    from libs.ops.countries import floor
+    from libs.settings import HARVEST_SOURCES, PLATFORM_TICK_MIN
+    from services.api.app import app
+
+    for token in ("acme", "northwind"):
+        insert(db, AtsToken(ats="greenhouse", token=token))
+    insert(db, AtsToken(ats="lever", token="gone", dead_at=now()))
+    # Two runs apart, in two countries: one run found 5, the latest found 3.
+    run = floor(now(), PLATFORM_TICK_MIN)
+    for at, country, jobs in ((run - timedelta(minutes=2 * PLATFORM_TICK_MIN), "DE", 5), (run, "FR", 3)):
+        insert(db, CountryCount(id=f"{at:%Y-%m-%dT%H:%M}|{country}", hour=at, country=country, jobs=jobs))
+
+    # No cookie: nobody who reads the landing page is signed in.
+    with TestClient(app, base_url="https://testserver") as http:
+        answer = http.get("/stats")
+    assert answer.status_code == 200
+    body = answer.json()
+    assert {key: body[key] for key in ("sources", "company_boards", "every_minutes")} == {
+        "sources": len(HARVEST_SOURCES), "company_boards": 2, "every_minutes": PLATFORM_TICK_MIN}
+    # A run a bar, from the first counted: the 5, a run with nothing, the 3.
+    assert body["found"][0] == 5 and sum(body["found"]) == 8, body["found"]

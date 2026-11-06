@@ -14,6 +14,79 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-06 — The site in one design: graphite, white and one purple
+
+The owner chose concept C of three static mock-ups (not committed), in one flat "galaxy" purple
+instead of its indigo. The bottom menus on a phone were to be pictures that match their pages, not
+words. The app keeps its buttons, words and layout. The landing page, sign in, sign up and the
+emailed-link pages are new.
+
+**The design.** `styles.css` keeps its rules and layout; its tokens and components change.
+- Three colours: graphite `#0f1013`, white `#f5f6f8` and purple `#8b3dff` (white on it is 5:1). Small
+  purple text on graphite takes a lighter shade of the same purple (`--accent-text`, 7.5:1). Green and
+  red keep their one meaning each: words that find jobs or hide them, and red for errors.
+- Sora for titles and Inter for text, served with the site (`@fontsource-variable/*`): no page asks a
+  font host.
+- The theme button grows the new theme out of itself as a circle (View Transitions). It switches at
+  once where the browser cannot, or where the person asked for less motion.
+- Job cards are solid, not frosted: a blur under each of 25 cards makes a phone stutter. Only what
+  floats over the page is frosted: the bars, dialogs and the toast.
+- On a phone the tab bar floats and shows pictures only. Each place keeps its name for a screen reader.
+  - Settings had a sun-like icon (the theme button's sun), and My search had a price tag. They are now
+    a gear and a magnifier.
+  - The places and their pictures are one list (`places.tsx`), which the landing page's phone draws too.
+  - On a phone the Jobs filters are one row that swipes, so the first job is above the fold. The Jobs
+    tabs are one switch.
+
+**The landing page** is rebuilt on CSS transitions and one scroll handler. framer-motion goes from the
+dependencies: the old landing was its only user. The old landing's components (the wheel nav, the
+background wheel, its sections, `Reveal`, its icons) are deleted. Its words were out of date:
+- **The numbers were typed into the page.** It said "25 job sources" and "~940 company boards". The code
+  reads 19 sources (`HARVEST_SOURCES`, LinkedIn included), and the live boards are a count in the
+  database. Both now come from a public `GET /stats`, with `PLATFORM_TICK_MIN` and the jobs found per
+  run in the last six hours. That last count is `libs.ops.countries.by_country`, the admin chart's own:
+  the concept's chart of found jobs was made up. Without an answer the page shows no number rather than
+  an old one.
+- **Telegram**: "Connect Telegram in one tap" now reads "your own bot, in three steps" (decided
+  2026-11-01).
+- **Order**: "Newest first" now reads "the most of your words first", the default order.
+- **Ranking**: "A word in the title counts more" now reads "the more of your green words, the higher"
+  (2026-11-02).
+- **When a job is matched**: as soon as its text is read (2026-11-06).
+- **The alert example** is laid out as `services/notifier/card.py` sends one ("Matches: …").
+
+**Fixed on the way:**
+- **The phone tab bar was drawn in the wrong place.** The top bar's frost (`backdrop-filter`) made the
+  bar the box that fixed things inside it are placed against. So the phone's tab bar, which lives inside
+  the top bar, was drawn at the top bar's foot. The frost is now on a layer of its own.
+- **Sign in and sign up could show the wrong title.** `#/signin` and `#/signup` are one component.
+  Going from one to the other by the address, Back included, kept the first page's title. The component
+  is now keyed by the address.
+- **Small link-buttons sat on a line of their own.** "Read it all" took the small button's padding,
+  which indented it.
+
+Tests:
+- `/stats` answers a signed-out visitor with the counted numbers. It fails on the previous code with a
+  404.
+- The landing page shows the server's count of sources.
+- Sign in and sign up follow the address.
+- A phone's tab bar is pictures only, each named and each opening its page (e2e).
+
+Gates, all local:
+- `lint-imports`: 2 contracts kept.
+- `ruff check`: clean.
+- The schema pruned onto an empty local database.
+- The contract was regenerated, and regenerating again changed nothing.
+- `npm run build`: 108 kB of gzipped script and 15 kB of style.
+- `pytest`: 1,319 passed and 3 skipped (Postgres copy, the reference instance, an empty parameter set).
+  The browser tests ran.
+
+Left as they are, for the owner (CLAUDE.md §5):
+- `/stats` counts the source list, so Adzuna and Findwork are counted even where their key is missing.
+- `index.html`'s description still says "every 15 minutes". Search engines read it and cannot read
+  `/stats`.
+- `favicon.svg` holds the purple's hex. A file outside the page cannot read `--accent`.
+
 ## 2026-11-06 — One list of sources; a search is one section, with no board of its own
 
 The owner: fix the two things found after Hiring Cafe's removal, checking first that they are what they

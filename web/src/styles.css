@@ -1,52 +1,79 @@
 /**
- * The landing page's design system (`mahoraga-jobs-web/src/index.css`), carried into the app.
+ * One design for the landing page, the signed-out pages and the app (owner, 2026-11-06: "C, in purple").
  *
- * **Dark is the brand default** — `#060606`, hairline borders, mono uppercase kickers, pill
- * buttons — and light is its exact inverse for anyone who asks. Two colours carry meaning in the
- * whole palette: a red for errors and a green for a score. Everything structural is a step on one
- * ramp of the ink colour at falling opacity, which is what keeps both themes one set of rules.
+ * **Three colours**: graphite, white, and one purple, flat. Dark is the default and light its inverse
+ * for anyone who asks. Green and red keep the one meaning each they always had: a word that finds
+ * jobs and one that hides them, and red an error too. Everything structural is a step on one ramp of
+ * the ink colour at falling opacity, which is what keeps both themes one set of rules.
  */
 
 :root {
-  --bg: #060606;
-  --bg-raised: #0d0d0d;
-  --ink: #f4f4f2;
-  --muted: rgba(244, 244, 242, 0.58);
-  --dim: rgba(244, 244, 242, 0.32);
-  --faint: rgba(244, 244, 242, 0.14);
-  --hairline: rgba(244, 244, 242, 0.09);
-  --accent: #f4f4f2;
-  --accent-ink: #060606;
-  /* The only two colours in the palette. Both mean exactly one thing. */
+  --bg: #0f1013;
+  --bg-rgb: 15, 16, 19;
+  --bg-raised: #17181d;
+  --ink: #f5f6f8;
+  --ink-rgb: 245, 246, 248;
+  --muted: rgba(245, 246, 248, 0.66);
+  --dim: rgba(245, 246, 248, 0.45);
+  --faint: rgba(245, 246, 248, 0.14);
+  --hairline: rgba(245, 246, 248, 0.08);
+  /* The purple. White on it is 5:1 in both themes. */
+  --accent: #8b3dff;
+  --accent-rgb: 139, 61, 255;
+  --accent-ink: #ffffff;
+  /* The same purple as small text on graphite, light enough to read (7.5:1). */
+  --accent-text: #ba8cff;
+  /* Frosted panels: what floats over the page (the bars, a dialog), not every card on it. */
+  --glass: rgba(23, 24, 29, 0.72);
+  --glass-line: rgba(255, 255, 255, 0.1);
   --danger: #ef9a95;
   --score: #6fd39f;
-  --dot: rgba(244, 244, 242, 0.05);
+  --dot: rgba(245, 246, 248, 0.05);
 
-  --font-body:
-    "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --font-body: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Sora Variable", var(--font-body);
   --font-mono:
     "Cascadia Code", "SF Mono", Consolas, "Liberation Mono", monospace;
 
-  --radius: 10px;
-  --radius-lg: 16px;
-  /* One duration for everything that moves. Different speeds on one page read as jitter. */
+  --radius: 14px;
+  --radius-lg: 22px;
+  /* One duration for colour. Movement eases out fast and settles, or springs a little past. */
   --fade: 0.25s;
   --ease: ease;
+  --out: cubic-bezier(0.16, 1, 0.3, 1);
+  --spring: cubic-bezier(0.34, 1.45, 0.55, 1);
+  color-scheme: dark;
 }
 
 [data-theme="light"] {
-  --bg: #f7f7f5;
+  --bg: #f5f6f8;
+  --bg-rgb: 245, 246, 248;
   --bg-raised: #ffffff;
-  --ink: #111110;
-  --muted: rgba(17, 17, 16, 0.62);
-  --dim: rgba(17, 17, 16, 0.4);
-  --faint: rgba(17, 17, 16, 0.16);
-  --hairline: rgba(17, 17, 16, 0.1);
-  --accent: #111110;
-  --accent-ink: #f7f7f5;
+  --ink: #0f1013;
+  --ink-rgb: 15, 16, 19;
+  --muted: rgba(15, 16, 19, 0.66);
+  --dim: rgba(15, 16, 19, 0.46);
+  --faint: rgba(15, 16, 19, 0.15);
+  --hairline: rgba(15, 16, 19, 0.09);
+  --accent-text: #7b2ff7;
+  --glass: rgba(255, 255, 255, 0.78);
+  --glass-line: rgba(15, 16, 19, 0.09);
   --danger: #b3261e;
   --score: #1f6f4a;
-  --dot: rgba(17, 17, 16, 0.05);
+  --dot: rgba(15, 16, 19, 0.05);
+  color-scheme: light;
+}
+
+/* The theme button's circle (`theme.tsx`): the new page is cut in as it grows, not faded. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
 }
 
 * {
@@ -95,23 +122,32 @@ body {
 }
 
 ::selection {
-  background: var(--ink);
-  color: var(--bg);
+  background: var(--accent);
+  color: var(--accent-ink);
 }
 
-/* The landing page's faint dot grid, so the space behind the content never reads as pure void. */
+/* The room every page stands in: a fine grid fading out below, and the purple's light from above, so
+   the space behind the content never reads as pure void. Fixed, so it stays put while the page moves. */
 .backdrop {
   position: fixed;
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  background-image: radial-gradient(var(--dot) 1px, transparent 1.4px);
-  background-size: 36px 36px;
-  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.9), rgba(0, 0, 0, 0.35));
+  background:
+    radial-gradient(60% 42% at 50% -6%, rgba(var(--accent-rgb), var(--glow, 0.2)), transparent 72%),
+    linear-gradient(var(--dot) 1px, transparent 1px) 0 0 / 56px 56px,
+    linear-gradient(90deg, var(--dot) 1px, transparent 1px) 0 0 / 56px 56px;
+  -webkit-mask-image: linear-gradient(to bottom, #000 25%, transparent 80%);
+  mask-image: linear-gradient(to bottom, #000 25%, transparent 80%);
+}
+
+[data-theme="light"] .backdrop {
+  --glow: 0.12;
 }
 
 .app,
 .wizard,
+.auth,
 .centered {
   position: relative;
   z-index: 1;
@@ -121,6 +157,11 @@ body {
   /* A grid or flex child defaults to `min-width: auto` — its content width — so one wide table
      stretched the whole column past the viewport instead of scrolling within itself. */
   min-width: 0;
+}
+
+/* The bar sits at the very top and is the page's first spacing. */
+.app {
+  padding-top: 0;
 }
 
 /* Anything that can be wider than its column scrolls itself rather than the page. */
@@ -134,21 +175,25 @@ body {
   max-width: 44rem;
 }
 
+.auth {
+  max-width: 30rem;
+}
+
 .centered {
   padding-top: 22vh;
   text-align: center;
   color: var(--muted);
 }
 
-/* Route content fades up once — the landing page's reveal, at page scale. */
+/* Route content rises in once, the way the landing page's sections do. */
 .page-in {
-  animation: page-in 0.4s var(--ease) both;
+  animation: page-in 0.6s var(--out) both;
 }
 
 @keyframes page-in {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(12px);
   }
   to {
     opacity: 1;
@@ -156,75 +201,134 @@ body {
   }
 }
 
-/* ── top bar ─────────────────────────────────────────────────────────────────────────────── */
+/* ── top bars ────────────────────────────────────────────────────────────────────────────── */
 
-nav {
-  display: flex;
-  align-items: center;
-  gap: 1.6rem;
-  border-bottom: 1px solid var(--hairline);
-  margin-bottom: 2.5rem;
-}
-
-/* **Sticky only inside the signed-in shell.** The rule was on every `nav`, and the auth pages have
-   one too — so sign-in, signup, verify and forgot-password each got an opaque bar pinned at
-   `z-index: 20`, which is the dark box in the corner of an otherwise empty screen.
-   Opaque where it does apply: the dot-grid backdrop is fixed, so a translucent bar shows the page
-   sliding underneath it, legible for a moment and then not. */
-/* The top bar alone (`> nav`): a tab row inside a page is a `nav` too, and took this, so the Jobs
-   tabs sat over the notifications panel (2026-11-03). */
+/* **The signed-in shell's bar alone** (`> nav`): a tab row inside a page is a `nav` too, and took the
+   bar's rules, so the Jobs tabs sat over the notifications panel (2026-11-03). Sticky, across the whole
+   window, and frosted rather than clear: a page sliding under a clear bar is legible for a moment and
+   then not. Its contents line up with the page's column. */
 .app > nav {
   position: sticky;
   top: 0;
   z-index: 20;
-  background: var(--bg);
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  margin: 0 calc(50% - 50vw) 2.25rem;
+  padding: 0.7rem calc(50vw - 50%);
+  border-bottom: 1px solid var(--hairline);
 }
 
-/* The wordmark, exactly as the landing sets it: uppercase, spaced, heavy. */
+/* The frost on a layer of its own. On the bar itself, a backdrop filter makes the bar the box that
+   everything fixed inside it is placed against, and the phone's tab bar, which lives in it, sat at the
+   bar's foot over the page's top instead of at the foot of the screen. */
+.app > nav::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: rgba(var(--bg-rgb), 0.82);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  backdrop-filter: blur(18px) saturate(160%);
+}
+
+/* The signed-out pages' and onboarding's: the name, and the theme at the other end. */
+.shell-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 3.5rem;
+}
+
+/* The wordmark: the wheel at the size of a letter, in the purple, and the name. */
 .brand {
-  font-weight: 750;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  font-size: 0.9rem;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.6rem;
   color: var(--ink);
+  font: 600 1.1rem/1 var(--font-display);
+  letter-spacing: -0.02em;
   text-decoration: none;
-  margin-right: 0.6rem;
-  padding: 0.9rem 0;
 }
 
-nav a:not(.brand) {
-  color: var(--dim);
-  text-decoration: none;
-  padding: 0.95rem 0;
-  border-bottom: 1px solid transparent;
-  margin-bottom: -1px;
-  font-family: var(--font-mono);
-  font-size: 0.74rem;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
+.brand .mark {
+  width: 1.6rem;
+  height: 1.6rem;
+  color: var(--accent);
+  transition: transform 0.9s var(--out);
 }
 
-nav a:not(.brand):hover {
+.brand:hover .mark {
+  transform: rotate(45deg);
+}
+
+/* The places: a pill each, the one you are on lit in the purple. Words on a laptop, and the pictures
+   beside them once there is room for both. */
+.places {
+  display: flex;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.places a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.85rem;
+  border-radius: 999px;
   color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 500;
+  white-space: nowrap;
+  text-decoration: none;
+  transition: color var(--fade) var(--ease), background-color var(--fade) var(--ease);
 }
 
-nav a.on {
+.places a:hover {
   color: var(--ink);
-  border-bottom-color: var(--ink);
+  background: rgba(var(--ink-rgb), 0.06);
 }
 
-/* Pushed to the end of the bar rather than given a corner of its own: it is a control, not a
-   feature, and should be findable without competing with the navigation. */
+.places a.on {
+  color: var(--ink);
+  background: rgba(var(--accent-rgb), 0.16);
+  box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb), 0.45);
+}
+
+.places svg {
+  display: none;
+  width: 1.15rem;
+  height: 1.15rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.places a.on svg {
+  color: var(--accent-text);
+}
+
+@media (min-width: 1100px) {
+  .places svg {
+    display: block;
+  }
+}
+
 /* A circle on every page: square sides, and nothing (a flex row, the button defaults) allowed to
-   stretch one of them. It was a tall pill on the sign-in and onboarding pages. */
+   stretch one of them. It was a tall pill on the sign-in and onboarding pages. It turns a little as
+   the pointer reaches it, and the new theme grows out of it (`theme.tsx`). */
 .theme-toggle {
   margin-left: auto;
-  background: none;
-  border: 1px solid var(--faint);
+  background: rgba(var(--ink-rgb), 0.04);
+  border: 1px solid var(--glass-line);
   color: var(--muted);
   border-radius: 50%;
-  width: 2.25rem;
-  height: 2.25rem;
+  width: 2.5rem;
+  height: 2.5rem;
   min-width: 0;
   min-height: 0;
   aspect-ratio: 1;
@@ -233,39 +337,40 @@ nav a.on {
   padding: 0;
   display: grid;
   place-items: center;
+  box-shadow: none;
   cursor: pointer;
   line-height: 1;
+  transition: transform 0.6s var(--spring), color var(--fade) var(--ease), border-color var(--fade) var(--ease);
 }
 
-.theme-toggle:hover {
+.theme-toggle:hover:not([disabled]) {
   color: var(--ink);
-  border-color: var(--dim);
-  opacity: 1;
-}
-
-/* On pages with no navigation, so the control exists everywhere rather than only once signed in. */
-.theme-toggle.floating {
-  position: fixed;
-  top: 1rem;
-  right: 1rem;
-  background: var(--bg-raised);
-  /* Above the landing page's wheel and backdrop as well as the app's pages. */
-  z-index: 50;
+  border-color: rgba(var(--accent-rgb), 0.6);
+  transform: scale(1.08) rotate(20deg);
+  box-shadow: none;
 }
 
 /* ── type ────────────────────────────────────────────────────────────────────────────────── */
 
+/* Titles in Sora, set tight; everything else in Inter. Both are served with the site (`main.tsx`). */
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+}
+
 h1 {
-  font-size: 1.6rem;
-  font-weight: 650;
-  letter-spacing: -0.02em;
-  margin: 0 0 0.35rem;
+  font-size: 1.85rem;
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.035em;
+  margin: 0 0 0.45rem;
 }
 
 h2 {
-  font-size: 1rem;
-  font-weight: 650;
-  letter-spacing: -0.01em;
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
   margin: 0 0 0.85rem;
 }
 
@@ -273,8 +378,15 @@ p {
   margin: 0 0 0.85rem;
 }
 
+/* A link reads as one: the ink, underlined in the purple. */
 a {
   color: var(--ink);
+  text-decoration-color: rgba(var(--accent-rgb), 0.7);
+  text-underline-offset: 3px;
+}
+
+a:hover {
+  text-decoration-color: var(--accent);
 }
 
 .muted {
@@ -285,32 +397,45 @@ a {
   font-size: 0.875rem;
 }
 
-/* The landing's section label: mono, spaced, uppercase, with a leading rule. */
+/* What a page is, above its title: small, in the purple, after a point of its light. */
 .kicker {
   display: flex;
   align-items: center;
-  gap: 0.9rem;
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  letter-spacing: 0.32em;
-  text-transform: uppercase;
-  color: var(--dim);
-  margin: 0 0 1.1rem;
+  gap: 0.55rem;
+  margin: 0 0 0.65rem;
+  color: var(--accent-text);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
 }
 
 .kicker::before {
   content: "";
-  width: 2.4rem;
-  height: 1px;
-  background: var(--faint);
+  flex: none;
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.2), 0 0 10px rgba(var(--accent-rgb), 0.9);
 }
 
 /* ── surfaces ────────────────────────────────────────────────────────────────────────────── */
+
+/* In light, a card is lifted off the page by a soft shadow; in dark, a shadow would not show, and the
+   step up in surface does the same. */
+:root {
+  --lift: none;
+}
+
+[data-theme="light"] {
+  --lift: 0 1px 2px rgba(15, 16, 19, 0.04), 0 10px 28px -18px rgba(15, 16, 19, 0.22);
+}
 
 .card {
   background: var(--bg-raised);
   border: 1px solid var(--hairline);
   border-radius: var(--radius-lg);
+  box-shadow: var(--lift);
   padding: 1.5rem;
   margin-bottom: 1.25rem;
 }
@@ -328,7 +453,7 @@ a {
   display: block;
   font-weight: 600;
   font-size: 0.9375rem;
-  margin-bottom: 0.2rem;
+  margin-bottom: 0.3rem;
 }
 
 .hint {
@@ -342,7 +467,7 @@ input,
 select,
 textarea {
   width: 100%;
-  padding: 0.55rem 0.8rem;
+  padding: 0.65rem 0.95rem;
   border: 1px solid var(--faint);
   border-radius: var(--radius);
   background: var(--bg-raised);
@@ -378,11 +503,13 @@ textarea::placeholder {
   color: var(--dim);
 }
 
+/* Focused: the purple's edge, and a ring of its light. */
 input:focus,
 select:focus,
 textarea:focus {
   outline: none;
-  border-color: var(--ink);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px rgba(var(--accent-rgb), 0.2);
 }
 
 textarea {
@@ -391,8 +518,9 @@ textarea {
   line-height: 1.55;
 }
 
-/* The landing's pill buttons: solid inverts on hover, ghost sharpens its border. `.button` is a link
-   that looks like one: a download or a job page is an address, not an action. */
+/* The purple for the one thing to do, a quiet outline for the rest. It glows when the pointer is on it
+   and gives a little when pressed. `.button` is a link that looks like one: a download or a job page is
+   an address, not an action. */
 button,
 .button {
   display: inline-flex;
@@ -401,23 +529,32 @@ button,
   gap: 0.6rem;
   font: inherit;
   font-size: 0.9375rem;
-  font-weight: 550;
-  padding: 0.6rem 1.4rem;
+  font-weight: 600;
+  line-height: 1.25;
+  padding: 0.65rem 1.3rem;
   border: 1px solid var(--accent);
-  border-radius: 999px;
+  border-radius: var(--radius);
   background: var(--accent);
   color: var(--accent-ink);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 8px 20px -10px rgba(var(--accent-rgb), 0.9);
   cursor: pointer;
   transition:
-    background var(--fade) var(--ease),
+    background-color var(--fade) var(--ease),
     color var(--fade) var(--ease),
     border-color var(--fade) var(--ease),
-    transform var(--fade) var(--ease);
+    box-shadow 0.3s var(--ease),
+    transform 0.35s var(--spring);
 }
 
 button:hover:not([disabled]),
 .button:hover {
-  transform: translateY(-2px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 0 0 4px rgba(var(--accent-rgb), 0.22),
+    0 12px 26px -10px rgba(var(--accent-rgb), 1);
+}
+
+button:active:not([disabled]),
+.button:active {
+  transform: scale(0.96);
 }
 
 .button {
@@ -426,14 +563,14 @@ button:hover:not([disabled]),
 
 button.secondary,
 .button.secondary {
-  background: transparent;
+  background: rgba(var(--ink-rgb), 0.03);
   color: var(--ink);
   border-color: var(--faint);
 }
 
 button.secondary:hover:not([disabled]),
 .button.secondary:hover {
-  border-color: var(--ink);
+  border-color: rgba(var(--accent-rgb), 0.6);
 }
 
 button.danger {
@@ -442,9 +579,19 @@ button.danger {
   color: var(--danger);
 }
 
+/* What is not the purple's own does not glow: a quiet button, a link that is a button, a word, a ×.
+   **A new kind of plain button goes on this list**, or it borrows the purple's light at rest. */
+:is(.secondary, .danger, .danger-btn, .linklike, .title, .back, .chip, .tab, .toggle, .dismiss, .close, .add,
+    .bell, .bell-act, .bell-x, .bell-item, .alert-dismiss, .theme-toggle, .icon-btn, .word, .word button),
+:is(.secondary, .danger, .danger-btn, .linklike, .title, .back, .chip, .tab, .toggle, .dismiss, .close, .add,
+    .bell, .bell-act, .bell-x, .bell-item, .alert-dismiss, .theme-toggle, .icon-btn, .word, .word button):hover:not([disabled]) {
+  box-shadow: none;
+}
+
 button[disabled] {
   opacity: 0.45;
   cursor: not-allowed;
+  box-shadow: none;
 }
 
 .row {
@@ -477,11 +624,12 @@ button[disabled] {
   align-items: center;
   gap: 0.5rem 0.9rem;
   margin-bottom: 1rem;
-  padding: 0.75rem 1rem;
+  padding: 0.85rem 1.1rem;
   border-radius: var(--radius);
   border: 1px solid var(--hairline);
   border-left-width: 3px;
   background: var(--bg-raised);
+  box-shadow: var(--lift);
   font-size: 0.9375rem;
 }
 
@@ -514,7 +662,7 @@ button[disabled] {
 }
 
 .banner.warning {
-  border-left-color: var(--ink);
+  border-left-color: var(--accent);
 }
 
 .banner.info {
@@ -536,9 +684,7 @@ button[disabled] {
 }
 
 .step h1 {
-  font-size: 1.9rem;
-  font-weight: 650;
-  letter-spacing: -0.02em;
+  font-size: 2.1rem;
   margin: 0 0 1.75rem;
 }
 
@@ -546,6 +692,112 @@ button[disabled] {
 .step .lede {
   color: var(--muted);
   margin: -1.25rem 0 1.75rem;
+}
+
+/* ── signed out: sign in, sign up, the emailed links (`AuthShell`) ──────────────────────────── */
+
+.auth-body {
+  padding-top: 1vh;
+}
+
+.auth h1 {
+  font-size: 2.1rem;
+  margin-bottom: 1.5rem;
+}
+
+/* The wheel lying flat in a ring of the purple's light, turning: the landing page's halo, small. */
+.auth-art {
+  position: relative;
+  height: 9rem;
+  margin: 0.25rem 0 1.5rem;
+  perspective: 600px;
+  pointer-events: none;
+}
+
+.auth-art .wheel,
+.auth-art::after {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 14.5rem;
+  height: 14.5rem;
+  margin: -7.25rem 0 0 -7.25rem;
+  transform: rotateX(64deg);
+}
+
+.auth-art .wheel {
+  animation: lie-and-turn 40s linear infinite;
+}
+
+.auth-art::after {
+  content: "";
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  box-shadow: 0 0 18px rgba(var(--accent-rgb), 0.9), inset 0 0 18px rgba(var(--accent-rgb), 0.6);
+}
+
+@keyframes lie-and-turn {
+  to {
+    transform: rotateX(64deg) rotate(1turn);
+  }
+}
+
+/* The one thing to do, the width of the column. */
+.auth form button[type="submit"] {
+  width: 100%;
+  min-height: 3.1rem;
+  font-size: 1rem;
+}
+
+/* ── the wheel (`wheel.tsx`), wherever it is drawn ───────────────────────────────────────────── */
+
+.wheel .w-outer,
+.wheel .w-rim {
+  stroke: rgba(var(--ink-rgb), 0.3);
+}
+
+.wheel .w-inner,
+.wheel .w-hub-in {
+  stroke: rgba(var(--ink-rgb), 0.12);
+}
+
+.wheel .w-tick {
+  stroke: rgba(var(--ink-rgb), 0.22);
+}
+
+.wheel .w-tick.major {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.wheel .w-spoke line {
+  stroke: rgba(var(--ink-rgb), 0.22);
+  stroke-width: 1.5;
+}
+
+.wheel .w-diamond {
+  stroke: rgba(var(--accent-rgb), 0.9);
+  fill: rgba(var(--accent-rgb), 0.25);
+}
+
+.wheel .w-hub {
+  stroke: rgba(var(--accent-rgb), 0.9);
+  stroke-width: 2;
+  fill: rgba(var(--bg-rgb), 0.6);
+}
+
+.wheel .w-core {
+  fill: var(--accent);
+}
+
+.wheel .w-spoke.lit line {
+  stroke: var(--accent);
+  stroke-width: 4;
+  filter: drop-shadow(0 0 6px rgba(var(--accent-rgb), 0.9));
+}
+
+.wheel .w-spoke.lit .w-diamond {
+  fill: var(--accent);
 }
 
 .icon-btn {
@@ -581,8 +833,7 @@ button[disabled] {
 
 .icon-btn:hover:not([disabled]) {
   color: var(--ink);
-  border-color: var(--ink);
-  transform: none;
+  border-color: var(--accent);
 }
 
 /* ── the jobs table ──────────────────────────────────────────────────────────────────────── */
@@ -606,32 +857,29 @@ button[disabled] {
   width: auto;
 }
 
-/* A quiet on/off filter — mono like every other label of its kind. */
+/* A quiet on/off filter; on, it takes the purple's edge and a wash of it. */
 .chip {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
-  padding: 0.4rem 0.9rem;
+  padding: 0.45rem 0.95rem;
   border: 1px solid var(--faint);
-  border-radius: 999px;
-  background: transparent;
+  border-radius: 12px;
+  background: rgba(var(--ink-rgb), 0.03);
   color: var(--muted);
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  font-size: 0.84rem;
+  font-weight: 500;
   cursor: pointer;
 }
 
 .chip:hover {
-  border-color: var(--dim);
+  border-color: rgba(var(--accent-rgb), 0.5);
   color: var(--ink);
-  transform: none;
 }
 
 .chip.on {
-  background: var(--accent);
-  color: var(--accent-ink);
+  background: rgba(var(--accent-rgb), 0.18);
+  color: var(--ink);
   border-color: var(--accent);
 }
 
@@ -650,11 +898,10 @@ th {
 }
 
 th {
-  font-family: var(--font-mono);
-  font-size: 0.7rem;
-  letter-spacing: 0.18em;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--dim);
   white-space: nowrap;
   user-select: none;
@@ -693,9 +940,10 @@ td.num {
 }
 
 .stat dt {
+  font-family: var(--font-display);
   font-size: 1.75rem;
-  font-weight: 650;
-  letter-spacing: -0.02em;
+  font-weight: 600;
+  letter-spacing: -0.04em;
   /* Tabular figures so three numbers of different widths still line up under each other. */
   font-variant-numeric: tabular-nums;
 }
@@ -703,10 +951,7 @@ td.num {
 .stat dd {
   margin: 0.15rem 0 0;
   color: var(--dim);
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
+  font-size: 0.8125rem;
   line-height: 1.5;
 }
 
@@ -795,7 +1040,7 @@ td.num {
 .pick input {
   width: auto;
   margin: 0;
-  accent-color: var(--ink);
+  accent-color: var(--accent);
   flex-shrink: 0;
 }
 
@@ -829,14 +1074,15 @@ td.num {
   align-items: center;
 }
 
+/* Circles, as the theme button is: the same size, the same glass. */
 .bell {
   position: relative;
-  background: none;
-  border: 1px solid var(--faint);
+  background: rgba(var(--ink-rgb), 0.04);
+  border: 1px solid var(--glass-line);
   color: var(--muted);
   border-radius: 999px;
-  width: 2.25rem;
-  height: 2.25rem;
+  width: 2.5rem;
+  height: 2.5rem;
   padding: 0;
   display: grid;
   place-items: center;
@@ -845,8 +1091,7 @@ td.num {
 
 .bell:hover:not([disabled]) {
   color: var(--ink);
-  border-color: var(--dim);
-  transform: none;
+  border-color: rgba(var(--accent-rgb), 0.6);
 }
 
 .bell-dot {
@@ -868,10 +1113,10 @@ td.num {
   max-height: 26rem;
   overflow-y: auto;
   background: var(--bg-raised);
-  border: 1px solid var(--faint);
+  border: 1px solid var(--glass-line);
   border-radius: var(--radius-lg);
   z-index: 60;
-  box-shadow: 0 18px 50px rgb(0 0 0 / 45%);
+  box-shadow: 0 30px 60px -24px rgb(0 0 0 / 60%);
 }
 
 .bell-head {
@@ -983,7 +1228,7 @@ td.num {
 }
 
 .bell-row.unread.warning {
-  border-left-color: var(--ink);
+  border-left-color: var(--accent);
 }
 
 .bell-row.unread.info {
@@ -1012,10 +1257,7 @@ td.num {
 .bell-when {
   display: block;
   margin-top: 0.3rem;
-  font-family: var(--font-mono);
-  font-size: 0.66rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  font-size: 0.75rem;
   color: var(--dim);
 }
 
@@ -1033,7 +1275,8 @@ td.num {
 /* ── the five places: jobs, words, documents, settings, help ─────────────────────────────────
  *
  * Built for a phone first and a person who does not read instructions: every control a thumb can
- * hit (44px, Apple's and Google's floor), one main button a page, and words over icons.
+ * hit (44px, Apple's and Google's floor), one main button a page, and words over icons — but for the
+ * phone's tab bar, which is pictures alone (owner, 2026-11-06), each named for a screen reader.
  */
 
 /* Taps, not clicks. Admin is a laptop tool and keeps its dense controls. */
@@ -1042,9 +1285,14 @@ td.num {
   min-height: 2.75rem;
 }
 
-button.small,
+/* Not a link that is a button: its padding put "Read it all" on a line of its own, indented. */
+button.small:not(.linklike),
 .button.small {
   padding: 0.4rem 1rem;
+}
+
+button.small,
+.button.small {
   font-size: 0.875rem;
 }
 
@@ -1067,15 +1315,6 @@ button.main {
   margin: 0 0 1.5rem;
 }
 
-.places {
-  display: flex;
-  gap: 1.6rem;
-}
-
-.places svg {
-  display: none;
-}
-
 /* A job, as a card: what, where, how fresh, why it is here, and what to do with it. */
 .jobs {
   display: grid;
@@ -1083,19 +1322,23 @@ button.main {
   margin-top: 1rem;
 }
 
+/* Solid, not frosted: a blur under each of twenty-five cards is what makes a phone stutter on scroll. */
 .job-card {
   background: var(--bg-raised);
   border: 1px solid var(--hairline);
   border-radius: var(--radius-lg);
-  padding: 1.1rem 1.25rem;
+  box-shadow: var(--lift);
+  padding: 1.15rem 1.25rem;
   overflow-wrap: anywhere;
+  transition: border-color 0.3s var(--ease), box-shadow 0.4s var(--ease);
 }
 
 .job-card h3 {
-  margin: 0 0 0.25rem;
-  font-size: 1.05rem;
-  font-weight: 650;
-  line-height: 1.35;
+  margin: 0 0 0.3rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.025em;
 }
 
 /* The title opens the whole job, as a tap anywhere else on the card does. */
@@ -1104,7 +1347,8 @@ button.main {
 }
 
 .job-card:not(.gone):hover {
-  border-color: var(--faint);
+  border-color: rgba(var(--accent-rgb), 0.45);
+  box-shadow: var(--lift), 0 20px 40px -26px rgba(var(--accent-rgb), 0.55);
 }
 
 .job-card h3 .title {
@@ -1120,6 +1364,7 @@ button.main {
 
 .job-card h3 .title:hover {
   text-decoration: underline;
+  text-decoration-color: var(--accent);
   text-underline-offset: 3px;
   transform: none;
 }
@@ -1154,11 +1399,12 @@ button.main {
 .job-meta .country {
   display: inline-block;
   margin-right: 0.5rem;
-  padding: 0 0.5rem;
-  border: 1px solid var(--faint);
-  border-radius: 999px;
+  padding: 0.05rem 0.55rem;
+  border-radius: 8px;
+  background: rgba(var(--ink-rgb), 0.07);
   color: var(--ink);
   font-size: 0.8rem;
+  font-weight: 500;
   line-height: 1.5;
 }
 
@@ -1194,7 +1440,7 @@ button.main {
   max-width: 22rem;
 }
 
-/* Being made: the words say what, the bar says it has not stopped. */
+/* Being made: the words say what, a light passing over the button says it has not stopped. */
 button.making {
   position: relative;
   overflow: hidden;
@@ -1208,17 +1454,14 @@ button.making[disabled] {
 button.making::after {
   content: "";
   position: absolute;
-  left: 0;
-  bottom: 0;
-  width: 40%;
-  height: 3px;
-  background: var(--score);
-  animation: making 1.2s ease-in-out infinite;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, 0.45), transparent 70%);
+  animation: making 1.1s ease-in-out infinite;
 }
 
 @keyframes making {
   from { transform: translateX(-100%); }
-  to { transform: translateX(250%); }
+  to { transform: translateX(100%); }
 }
 
 .more {
@@ -1232,7 +1475,7 @@ button.making::after {
   gap: 0.25rem;
   padding: 0.25rem 0.8rem;
   border: 1px solid var(--faint);
-  border-radius: 999px;
+  border-radius: 10px;
   background: var(--bg-raised);
   color: var(--ink);
   font-size: 0.875rem;
@@ -1252,6 +1495,7 @@ button.making::after {
 
 .why .word {
   padding: 0.1rem 0.6rem;
+  border-radius: 8px;
   font-size: 0.8rem;
 }
 
@@ -1361,7 +1605,7 @@ button.making::after {
 }
 .setup-steps li.done { border-top-color: var(--score); }
 .setup-steps li.now {
-  border-top-color: var(--ink);
+  border-top-color: var(--accent);
   color: var(--ink);
   font-weight: 600;
 }
@@ -1383,11 +1627,12 @@ button.making::after {
 
 .drop:hover,
 .drop.over {
-  border-color: var(--ink);
+  border-color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.06);
 }
 
 .drop:focus-within {
-  outline: 2px solid var(--ink);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
@@ -1405,10 +1650,11 @@ button.making::after {
   align-items: center;
   min-height: 2.75rem;
   padding: 0.6rem 1.6rem;
-  border-radius: 999px;
+  border-radius: var(--radius);
   background: var(--accent);
   color: var(--accent-ink);
   font-weight: 600;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 8px 20px -10px rgba(var(--accent-rgb), 0.9);
 }
 
 .drop-hint {
@@ -1506,16 +1752,20 @@ button.making::after {
   z-index: 40;
   left: 50%;
   bottom: 1.5rem;
-  transform: translateX(-50%);
+  /* `translate`, not `transform`: the rise it arrives with is a transform of its own. */
+  translate: -50% 0;
   width: max-content;
   max-width: calc(100vw - 2rem);
   margin: 0;
-  padding: 0.75rem 1.1rem;
-  border: 1px solid var(--faint);
+  padding: 0.8rem 1.15rem;
+  border: 1px solid var(--glass-line);
   border-radius: var(--radius);
-  background: var(--bg-raised);
-  box-shadow: 0 12px 40px rgb(0 0 0 / 40%);
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  backdrop-filter: blur(20px) saturate(160%);
+  box-shadow: 0 30px 60px -30px rgb(0 0 0 / 60%);
   font-size: 0.9375rem;
+  animation: page-in 0.5s var(--spring) both;
 }
 
 /* Telegram, this browser, the pause: one row each, saying where it stands. */
@@ -1600,22 +1850,26 @@ button.making::after {
 @media (max-width: 720px) {
   .app,
   .wizard,
+  .auth,
   .centered {
     padding: 1rem 1rem 4rem;
   }
 
   /* Clear of the tab bar, whatever the phone puts under it. */
   .app {
-    padding-bottom: calc(6rem + env(safe-area-inset-bottom));
+    padding-top: 0;
+    padding-bottom: calc(6.5rem + env(safe-area-inset-bottom));
   }
 
-  nav {
-    gap: 1rem;
+  .app > nav {
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+    padding-block: 0.6rem;
   }
 
   /* The places become a tab bar along the bottom: where every phone app keeps them, in reach of the
-     thumb, with a picture and a word each. As many columns as there are places; an admin's extra one
-     scrolls sideways on the narrowest phones rather than squeezing every word. */
+     thumb. **Pictures alone** (owner, 2026-11-06), each still named for a screen reader, the one you
+     are on lit in the purple; frosted, and clear of the edges, as the landing page's dock is. */
   /* Admin is a laptop tool; on a phone its tab would push Settings off the bar. */
   .places a[href="#/admin"] {
     display: none;
@@ -1624,36 +1878,49 @@ button.making::after {
   .places {
     position: fixed;
     z-index: 30;
-    left: 0;
-    right: 0;
-    bottom: 0;
+    left: 0.75rem;
+    right: 0.75rem;
+    bottom: calc(0.75rem + env(safe-area-inset-bottom));
     display: grid;
     grid-auto-flow: column;
-    grid-auto-columns: minmax(3.4rem, 1fr);
-    overflow-x: auto;
-    scrollbar-width: none;
-    gap: 0;
-    padding-bottom: env(safe-area-inset-bottom);
-    border-top: 1px solid var(--hairline);
-    background: var(--bg);
+    grid-auto-columns: 1fr;
+    gap: 0.25rem;
+    padding: 0.35rem;
+    border: 1px solid var(--glass-line);
+    border-radius: 22px;
+    background: var(--glass);
+    -webkit-backdrop-filter: blur(18px) saturate(160%);
+    backdrop-filter: blur(18px) saturate(160%);
+    box-shadow: 0 16px 30px -16px rgb(0 0 0 / 60%);
   }
 
-  nav .places a {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
+  .places a {
+    position: relative;
     justify-content: center;
-    gap: 0.2rem;
-    min-height: 3.5rem;
-    margin: 0;
-    padding: 0.45rem 0.15rem;
-    border-bottom: none;
-    font-family: var(--font-body);
-    font-size: 0.64rem;
-    letter-spacing: 0;
-    text-transform: none;
-    text-align: center;
-    line-height: 1.2;
+    min-height: 3rem;
+    padding: 0;
+    border-radius: 16px;
+    color: var(--dim);
+  }
+
+  .places a.on {
+    color: var(--ink);
+  }
+
+  /* Read out, not shown. */
+  .place-name {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .places svg {
+    display: block;
+    width: 24px;
+    height: 24px;
   }
 
   /* Two short names a row, not seventeen rows of one. */
@@ -1661,21 +1928,10 @@ button.making::after {
     grid-template-columns: 1fr 1fr;
   }
 
-  .places svg {
-    display: block;
-    width: 22px;
-    height: 22px;
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 1.7;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-  }
-
   /* Across the screen under the bar: hung from the bell, it ran off the left edge. */
   .bell-panel {
     position: fixed;
-    top: 4.75rem;
+    top: 4.5rem;
     left: 1rem;
     right: 1rem;
     width: auto;
@@ -1688,7 +1944,7 @@ button.making::after {
   }
 
   .toast {
-    bottom: calc(5rem + env(safe-area-inset-bottom));
+    bottom: calc(5.75rem + env(safe-area-inset-bottom));
   }
 }
 
@@ -1741,16 +1997,19 @@ button.making::after {
   background: none;
   border: none;
   padding: 0;
-  color: var(--ink);
+  color: var(--accent-text);
   font: inherit;
+  font-weight: 500;
   text-align: left;
   text-decoration: underline;
+  text-decoration-color: rgba(var(--accent-rgb), 0.5);
   text-underline-offset: 3px;
   cursor: pointer;
 }
 
 .linklike:hover:not([disabled]) {
-  color: var(--score);
+  color: var(--ink);
+  text-decoration-color: var(--accent);
   transform: none;
 }
 
@@ -1908,18 +2167,35 @@ button.making::after {
   cursor: not-allowed;
 }
 
-/* A question that needs an answer first (`Prompt`): the browser's dialog, above everything. */
+/* A question that needs an answer first (`Prompt`): the browser's dialog, above everything, springing
+   in over a page gone soft behind it. */
 .prompt {
   width: min(30rem, calc(100% - 2rem));
   padding: 0;
-  border: 1px solid var(--faint);
-  border-radius: var(--radius-lg);
+  border: 1px solid var(--glass-line);
+  border-radius: 26px;
   background: var(--bg-raised);
   color: var(--ink);
+  box-shadow: 0 40px 80px -30px rgb(0 0 0 / 70%);
 }
 
-.prompt::backdrop {
-  background: rgba(0, 0, 0, 0.6);
+.prompt[open],
+.sheet[open] {
+  animation: pop 0.5s var(--spring);
+}
+
+@keyframes pop {
+  from {
+    opacity: 0;
+    scale: 0.92;
+  }
+}
+
+.prompt::backdrop,
+.sheet::backdrop {
+  background: rgba(var(--bg-rgb), 0.55);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
 }
 
 .prompt-body {
@@ -1932,49 +2208,62 @@ button.making::after {
 
 /* ── admin tabs ──────────────────────────────────────────────────────────────────────────────── */
 
-/* Same grammar as the top navigation: mono, spaced, uppercase, with the active one carrying the
-   ink and a rule under it. A second visual language for a second row of links would read as a
-   different product. */
+/* A row of tabs inside a page (Jobs, Admin): one control, the open tab filled in the purple, the way the
+   top bar lights the place you are on. */
 .tabs {
   display: flex;
   flex-wrap: wrap;
-  gap: 1.4rem;
+  gap: 0.25rem;
   align-items: center;
-  border-bottom: 1px solid var(--hairline);
-  margin: 1.75rem 0 2rem;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0.25rem 0 1.75rem;
+  padding: 0.25rem;
+  border: 1px solid var(--glass-line);
+  border-radius: 16px;
+  background: rgba(var(--ink-rgb), 0.03);
   /* Not sticky, unlike the top bar: this one scrolls with the content it labels. */
   position: static;
-  background: none;
 }
 
 .tab {
   display: inline-flex;
+  justify-content: center;
   text-decoration: none;
   align-items: center;
   gap: 0.5rem;
   background: none;
   border: none;
-  border-bottom: 1px solid transparent;
-  border-radius: 0;
-  margin-bottom: -1px;
-  padding: 0.7rem 0;
-  color: var(--dim);
-  font-family: var(--font-mono);
-  font-size: 0.74rem;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
+  border-radius: 12px;
+  padding: 0.55rem 1.1rem;
+  color: var(--muted);
+  font-size: 0.875rem;
+  font-weight: 500;
   cursor: pointer;
 }
 
 .tab:hover:not([disabled]) {
-  color: var(--muted);
-  background: none;
+  color: var(--ink);
+  background: rgba(var(--ink-rgb), 0.05);
   transform: none;
 }
 
-.tab.on {
-  color: var(--ink);
-  border-bottom-color: var(--ink);
+.tab.on,
+.tab.on:hover:not([disabled]) {
+  background: var(--accent);
+  color: var(--accent-ink);
+  box-shadow: 0 6px 16px -8px rgba(var(--accent-rgb), 1);
+}
+
+/* Two tabs on a phone share its width, as two halves of one switch. */
+@media (max-width: 720px) {
+  .tabs.split {
+    width: 100%;
+  }
+
+  .tabs.split .tab {
+    flex: 1;
+  }
 }
 
 /* How many things need a person, on the tab that holds them, so the count is visible from any
@@ -2538,18 +2827,17 @@ button.making::after {
    itself (`role="switch"` in the markup), so it stays a real form control: a label still toggles it,
    the keyboard still reaches it, and a new one anywhere gets the same look with no extra code. */
 
+/* On is the purple, in both themes. */
 :root {
-  --track-off: #232322;
-  --track-on: var(--ink);
-  --knob-off: #d8d8d5;
-  --knob-on: #0b0b0b;
+  --track-off: #2a2b31;
+  --track-on: var(--accent);
+  --knob-off: #d8d9de;
+  --knob-on: #ffffff;
 }
 
 [data-theme="light"] {
-  --track-off: #dcdcd8;
-  --track-on: var(--ink);
+  --track-off: #dcdde2;
   --knob-off: #ffffff;
-  --knob-on: #ffffff;
 }
 
 input[type="checkbox"] {
@@ -2784,7 +3072,7 @@ input[type="checkbox"]:disabled {
 
 .made-badge.cv { color: var(--made-cv); }
 .made-badge.cover { color: var(--made-cover); }
-.made-badge.new { color: var(--ink); }
+.made-badge.new { color: var(--accent-text); }
 
 .storage {
   display: grid;
@@ -2803,7 +3091,7 @@ input[type="checkbox"]:disabled {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: var(--ink);
+  background: var(--accent);
   transition: width 0.4s cubic-bezier(0.22, 0.8, 0.24, 1);
 }
 
@@ -2853,9 +3141,26 @@ input[type="checkbox"]:disabled {
   border-radius: 999px;
 }
 
+/* On a phone, one row that swipes rather than four that push the first job off the screen; its far
+   end fades, so the row says there is more. Padded at the end, so the last one can be swiped clear of
+   the fade. */
 @media (max-width: 720px) {
-  .filters select {
-    flex: 1 1 45%;
+  .filters {
+    flex-wrap: nowrap;
+    margin-inline: -1rem;
+    padding: 0 3rem 0.25rem 1rem;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(90deg, #000 85%, transparent);
+    mask-image: linear-gradient(90deg, #000 85%, transparent);
+  }
+
+  .filters::-webkit-scrollbar {
+    display: none;
+  }
+
+  .filters > * {
+    flex: none;
   }
 }
 
@@ -2895,9 +3200,9 @@ input[type="checkbox"]:disabled {
 }
 
 .telegram-steps li.done .step-number {
-  background: var(--ink);
-  border-color: var(--ink);
-  color: var(--bg);
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
 }
 
 .telegram-steps .row {
@@ -2939,15 +3244,12 @@ input[type="checkbox"]:disabled {
   max-height: calc(100dvh - 2rem);
   overflow: auto;
   padding: 0;
-  border: 1px solid var(--faint);
-  border-radius: var(--radius-lg);
+  border: 1px solid var(--glass-line);
+  border-radius: 26px;
   background: var(--bg-raised);
   color: var(--ink);
+  box-shadow: 0 40px 80px -30px rgb(0 0 0 / 70%);
   cursor: auto;
-}
-
-.sheet::backdrop {
-  background: rgba(0, 0, 0, 0.6);
 }
 
 .sheet-body {
@@ -3019,8 +3321,9 @@ input[type="checkbox"]:disabled {
   z-index: 30;
   width: fit-content;
   margin: 0 auto;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
-  animation: page-in 0.2s var(--ease) both;
+  border-radius: 999px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 12px 30px -10px rgba(var(--accent-rgb), 0.9);
+  animation: page-in 0.5s var(--spring) both;
 }
 
 .words-filter .count {
@@ -3046,7 +3349,7 @@ button.toggle {
 /* Not a pressed one: its ink is the page's background colour, and the hover's ink made its label vanish. */
 button.toggle:hover:not([disabled]):not([aria-pressed="true"]) {
   color: var(--ink);
-  border-color: var(--ink);
+  border-color: var(--accent);
   transform: none;
 }
 

@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { api, type Schema } from "../api";
 import { ThemeToggle } from "../theme";
 import { Card, Error, useAction } from "../ui";
+import { Brand } from "../wheel";
 
 export function PrivacyPage() {
   const [disclosure, setDisclosure] = useState<Schema<"Disclosure"> | null>(null);
@@ -30,12 +31,10 @@ export function PrivacyPage() {
     <>
       <div className="backdrop" aria-hidden="true" />
       <main className="wizard page-in">
-        <ThemeToggle floating />
-        <nav style={{ border: "none", marginBottom: 0 }}>
-          <a className="brand" href="#/">
-            Mahoraga
-          </a>
-        </nav>
+        <header className="shell-top">
+          <Brand href="#/" />
+          <ThemeToggle />
+        </header>
         <p className="kicker" style={{ marginTop: "2.5rem" }}>
           Privacy · version {disclosure.version}
         </p>

@@ -185,6 +185,40 @@ def test_the_theme_button_is_a_circle_on_every_page_and_switches_the_theme(site,
         browser.close()
 
 
+def test_the_landing_page_counts_from_the_server_and_a_phone_shows_the_places_as_pictures(site, capsys):
+    """The landing page's numbers are the server's (`/stats`): typed into it, they said 25 sources long
+    after that was true. Sign in and sign up follow the address, going back included. And on a phone
+    the tab bar is pictures alone (owner, 2026-11-06), each still named and each opening its page."""
+    from libs.settings import HARVEST_SOURCES
+
+    base, email, _ = site
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = browser.new_context(viewport={"width": 390, "height": 844}).new_page()
+        page.goto(f"{base}/#/")
+        sources = page.locator(".reach div", has_text="Job sources").locator("dt")
+        expect(sources).to_have_text(str(len(HARVEST_SOURCES)))
+
+        page.goto(f"{base}/#/signin")
+        expect(page.get_by_role("heading", name="Sign in")).to_be_visible()
+        page.goto(f"{base}/#/signup")
+        expect(page.get_by_role("heading", name="Create your account")).to_be_visible()
+        page.go_back()
+        expect(page.get_by_role("heading", name="Sign in")).to_be_visible()
+
+        _sign_up(page, base, email, capsys)
+        _onboard(page)
+        places = page.locator("nav .places a")
+        expect(places).to_have_count(5)
+        for place in places.all():
+            expect(place.locator("svg")).to_be_visible()
+            assert place.locator(".place-name").bounding_box()["width"] <= 1, "a word on the phone's tab bar"
+        page.get_by_role("link", name="My search").click()
+        expect(page.get_by_role("heading", name="What we look for")).to_be_visible()
+        expect(page.get_by_role("link", name="My search")).to_have_attribute("aria-current", "page")
+        browser.close()
+
+
 def test_step_two_says_what_it_found_with_its_words_ready_and_a_plain_way_to_add_more(site, capsys):
     """The review screen: said to be setting up their profile, three titled parts, two of their own
     words already filtering, a "+ Add" that always answers, places as buttons, ways of working as

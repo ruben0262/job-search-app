@@ -17,7 +17,7 @@ from libs.corpus.freshness import platform_windows, shelf_life
 from libs.corpus.geo import CITIES, COUNTRY_LABELS
 from libs.corpus.postings import paragraphs
 from libs.db import get, now
-from libs.db.models import BuiltDocument, CorpusJob, User, UserJobState
+from libs.db.models import AtsToken, BuiltDocument, CorpusJob, User, UserJobState
 from libs.db.models.tenant import record_state
 from libs.documents.saved import for_jobs
 from libs.llm import PLATFORM, ai_requests_today, resolve
@@ -25,7 +25,9 @@ from libs.matching import Match, marks, norm, their_jobs
 from libs.notify import reachable
 from libs.obs import audit
 from libs.onboarding import onboarding_state
+from libs.ops.countries import by_country
 from libs.profiles.repository import ProfileFiles
+from libs.settings import HARVEST_SOURCES, PLATFORM_TICK_MIN
 from libs.tenant import applications
 from services.api.admin_routes import admin_emails
 from services.api.deps import current_user, get_db
@@ -178,6 +180,29 @@ def dashboard(db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curr
     _, applied = marks(db, user_id)
     return ReadyDashboard(stage="ready", is_admin=_is_admin(user), applied=len(applied),
                           banners=_banners(db, user), ai=_ai(db, user))
+
+
+class Reach(BaseModel):
+    """How much the platform reads, counted from what it reads. The landing page typed its own numbers
+    and still said 25 sources and ~940 company boards after both had changed (2026-11-06)."""
+    # The one source list (`HARVEST_SOURCES`), LinkedIn included; two of them run only with their key.
+    sources: int
+    # Company boards still answering: a dead one is kept so it is not found again, and not counted.
+    company_boards: int
+    every_minutes: int
+    # New jobs in each run of the last six hours, oldest first: the landing page's chart, counted as the
+    # admin's is (`libs.ops.countries`), so it draws what was found rather than a made-up shape.
+    found: list[int]
+
+
+@router.get("/stats", response_model=Reach)
+def stats(db: Database = Depends(get_db)) -> Reach:
+    """Public: the landing page asks before anybody has an account."""
+    chart = by_country(db, hours=6)
+    return Reach(sources=len(HARVEST_SOURCES), every_minutes=PLATFORM_TICK_MIN,
+                 company_boards=db[AtsToken.COLLECTION].count_documents({"dead_at": None}),
+                 found=[sum(country["counts"][run] for country in chart["countries"])
+                        for run in range(len(chart["starts"]))])
 
 
 def _ai(db: Database, user: User) -> AiWriting:

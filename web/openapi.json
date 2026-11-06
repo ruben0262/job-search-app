@@ -2446,6 +2446,38 @@
         "title": "Question",
         "type": "object"
       },
+      "Reach": {
+        "description": "How much the platform reads, counted from what it reads. The landing page typed its own numbers\nand still said 25 sources and ~940 company boards after both had changed (2026-11-06).",
+        "properties": {
+          "company_boards": {
+            "title": "Company Boards",
+            "type": "integer"
+          },
+          "every_minutes": {
+            "title": "Every Minutes",
+            "type": "integer"
+          },
+          "found": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Found",
+            "type": "array"
+          },
+          "sources": {
+            "title": "Sources",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "sources",
+          "company_boards",
+          "every_minutes",
+          "found"
+        ],
+        "title": "Reach",
+        "type": "object"
+      },
       "ReadyDashboard": {
         "description": "What every signed-in page needs before it draws. No count of matches: the jobs page is the\nfront page and counts its own list, and asking here as well was a second full match run on every\nload \u2014 /dashboard went from 150 ms to 13 ms (median, 2,000 rows) without it.",
         "properties": {
@@ -6762,6 +6794,28 @@
         "summary": "Delete One",
         "tags": [
           "documents"
+        ]
+      }
+    },
+    "/stats": {
+      "get": {
+        "description": "Public: the landing page asks before anybody has an account.",
+        "operationId": "stats_stats_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Reach"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Stats",
+        "tags": [
+          "dashboard"
         ]
       }
     },

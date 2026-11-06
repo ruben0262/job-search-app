@@ -1381,6 +1381,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stats
+         * @description Public: the landing page asks before anybody has an account.
+         */
+        get: operations["stats_stats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/suggestions": {
         parameters: {
             query?: never;
@@ -2393,6 +2413,21 @@ export interface components {
         Question: {
             /** Text */
             text: string;
+        };
+        /**
+         * Reach
+         * @description How much the platform reads, counted from what it reads. The landing page typed its own numbers
+         *     and still said 25 sources and ~940 company boards after both had changed (2026-11-06).
+         */
+        Reach: {
+            /** Company Boards */
+            company_boards: number;
+            /** Every Minutes */
+            every_minutes: number;
+            /** Found */
+            found: number[];
+            /** Sources */
+            sources: number;
         };
         /**
          * ReadyDashboard
@@ -5096,6 +5131,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stats_stats_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Reach"];
                 };
             };
         };

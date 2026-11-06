@@ -1,5 +1,5 @@
 /** Routing, and the one decision the whole app hangs off: where a signed-in user belongs. */
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ApiError, api, type Dashboard } from "./api";
 import { HelpButton } from "./help";
@@ -21,7 +21,9 @@ import { SignIn } from "./pages/SignIn";
 import { Verify } from "./pages/Verify";
 import { REVIEW, WordsPage } from "./pages/WordsPage";
 import { NotificationBell } from "./notifications";
+import { PLACES } from "./places";
 import { ThemeToggle } from "./theme";
+import { Brand } from "./wheel";
 
 function useHash(): string {
   const [hash, setHash] = useState(() => window.location.hash.slice(1) || "/");
@@ -45,17 +47,6 @@ function useHash(): string {
 
 type Session =
   | { state: "loading" } | { state: "down"; why: string } | { state: "out" } | { state: "in"; dashboard: Dashboard };
-
-/** The places, in tab-bar order, Settings last. `#/feed` is Jobs too: every alert links there. Admin is
- * only listed for an admin; the API refuses `/admin/*` to anybody else on its own. */
-const PLACES: [string, string, ReactNode][] = [
-  ["jobs", "Jobs", <path key="i" d="M4 8h16v11H4zM9 8V5h6v3" />],
-  ["applied", "Applied", <path key="i" d="M5 12.5l4.5 4.5L19 7.5" />],
-  ["words", "My search", <path key="i" d="M4 12l8-8h7v7l-8 8zM15.5 8.5h.01" />],
-  ["documents", "My documents", <path key="i" d="M6 3h8l4 4v14H6zM14 3v4h4M9 13h6M9 17h6" />],
-  ["admin", "Admin", <path key="i" d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6z" />],
-  ["settings", "Settings", <path key="i" d="M12 9a3 3 0 100 6 3 3 0 000-6zM4 12h2m12 0h2M12 4v2m0 12v2M6.3 6.3l1.4 1.4m8.6 8.6l1.4 1.4m0-11.4l-1.4 1.4m-8.6 8.6l-1.4 1.4" />],
-];
 
 export function App() {
   const hash = useHash();
@@ -126,9 +117,12 @@ export function App() {
   }
 
   if (session.state === "out") {
-    // The landing page is the ported `mahoraga-jobs-web` (decision reversed 2026-07-30: one deployment.
+    // The landing page, for anybody signed out; sign in and sign up behind its buttons.
     if (hash.startsWith("/signin") || hash.startsWith("/signup")) {
-      return <SignIn onSignedIn={reload} initialMode={hash.startsWith("/signup") ? "up" : "in"} />;
+      // Keyed by the address, so the address alone says which: going back from one to the other kept the
+      // first one's title on the second one's page.
+      const mode = hash.startsWith("/signup") ? "up" : "in";
+      return <SignIn key={mode} onSignedIn={reload} mode={mode} />;
     }
     return <Landing />;
   }
@@ -149,16 +143,15 @@ export function App() {
       <div className="backdrop" aria-hidden="true" />
       <div className="app">
         <nav>
-          <a className="brand" href="#/">
-            Mahoraga
-          </a>
-          {/* A row of links up top on a laptop; a tab bar along the bottom on a phone. */}
+          <Brand href="#/" />
+          {/* A row of links up top on a laptop; a tab bar along the bottom on a phone, its names read out
+              rather than shown. */}
           <div className="places">
             {PLACES.filter(([key]) => key !== "admin" || dashboard.is_admin).map(([key, label, icon]) => (
               <a key={key} href={key === "jobs" ? "#/" : `#/${key}`} className={section === key ? "on" : ""}
                  aria-current={section === key ? "page" : undefined}>
                 <svg viewBox="0 0 24 24" aria-hidden="true">{icon}</svg>
-                {label}
+                <span className="place-name">{label}</span>
               </a>
             ))}
           </div>

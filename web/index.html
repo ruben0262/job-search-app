@@ -10,12 +10,14 @@
     <title>Mahoraga</title>
     <!-- What lets an iPhone add the site to its home screen, which Web Push there requires. -->
     <link rel="manifest" href="/manifest.webmanifest" />
+    <!-- The wheel, in the purple (`src/wheel.tsx` draws the same mark). -->
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <script>
       // Before first paint, deliberately. A React effect runs after the first frame, so a
       // dark-mode viewer would see one white flash on every single load.
       (function () {
         try {
-          // Dark is the brand default (the landing page is dark-only); light is a choice.
+          // Dark is the default; light is a choice, kept under the same key `theme.tsx` writes.
           var choice = localStorage.getItem("theme");
           if (choice !== "light" && choice !== "dark") choice = "dark";
           document.documentElement.setAttribute("data-theme", choice);

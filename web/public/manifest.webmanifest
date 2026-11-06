@@ -3,6 +3,6 @@
   "short_name": "Mahoraga",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#060606",
-  "theme_color": "#060606"
+  "background_color": "#0f1013",
+  "theme_color": "#0f1013"
 }
