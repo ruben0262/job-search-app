@@ -2035,6 +2035,8 @@ export interface components {
         };
         /** FeedJob */
         FeedJob: {
+            /** Apply On */
+            apply_on: string;
             /** Company */
             company: string | null;
             /** Country */
@@ -2093,6 +2095,8 @@ export interface components {
         FeedSource: {
             /** Jobs */
             jobs: number;
+            /** Label */
+            label: string;
             /** Name */
             name: string;
         };
@@ -2594,7 +2598,7 @@ export interface components {
         };
         /**
          * Step
-         * @description One thing that happened after "I applied", in the person's own words.
+         * @description One thing that happened after "Mark as applied", in the person's own words.
          */
         Step: {
             /**

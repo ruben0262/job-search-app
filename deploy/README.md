@@ -136,8 +136,8 @@ hostname back. Anything written to Atlas meanwhile stays there.
 here. In Settings they follow three steps: make a bot with **@BotFather**, paste its token (checked
 with Telegram's `getMe`), and press **Start** in it. The site finds their chat from that Start
 (`getUpdates`), sends a welcome, and from then on the notifier sends through their bot with the token
-decrypted under `SECRETS_KEK`. Jobs arrive as cards with two plain links, **Open job** and **Make my
-CV**, so nothing in the chat needs a webhook.
+decrypted under `SECRETS_KEK`. Jobs arrive as cards with two plain links, **Apply on LinkedIn** (or
+whichever board posted it) and **Make my CV**, so nothing in the chat needs a webhook.
 
 **Browser notifications** need nothing beyond the `VAPID_*` keys in `server.env`. Generate that pair
 once: a new one strands every browser that subscribed with the old.

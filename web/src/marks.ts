@@ -1,4 +1,4 @@
-/** "Skip" and "I applied", kept in this browser until the server has them: a lost connection, a
+/** "Skip" and "Mark as applied", kept in this browser until the server has them: a lost connection, a
  * refresh or a phone switched off loses neither, and a job marked is never shown again. */
 import { ApiError, api } from "./api";
 

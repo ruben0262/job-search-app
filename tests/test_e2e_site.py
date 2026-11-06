@@ -188,7 +188,8 @@ def test_the_theme_button_is_a_circle_on_every_page_and_switches_the_theme(site,
 def test_the_landing_page_counts_from_the_server_and_a_phone_shows_the_places_as_pictures(site, capsys):
     """The landing page's numbers are the server's (`/stats`): typed into it, they said 25 sources long
     after that was true. Sign in and sign up follow the address, going back included. And on a phone
-    the tab bar is pictures alone (owner, 2026-11-06), each still named and each opening its page."""
+    the tab bar is pictures alone (owner, 2026-11-06), each still named and each opening its page. Its
+    card says where people apply: on the job's own site, never here (owner, 2026-11-06)."""
     from libs.settings import HARVEST_SOURCES
 
     base, email, _ = site
@@ -198,6 +199,9 @@ def test_the_landing_page_counts_from_the_server_and_a_phone_shows_the_places_as
         page.goto(f"{base}/#/")
         sources = page.locator(".reach div", has_text="Job sources").locator("dt")
         expect(sources).to_have_text(str(len(HARVEST_SOURCES)))
+        demo = page.locator(".demo-card")
+        demo.get_by_role("button", name="Apply on LinkedIn").click()
+        expect(demo).to_contain_text("opens it on LinkedIn, and you apply there")
 
         page.goto(f"{base}/#/signin")
         expect(page.get_by_role("heading", name="Sign in")).to_be_visible()
@@ -625,7 +629,7 @@ def test_the_tabs_in_order_and_what_each_one_is_for(site, capsys):
 
         card = page.locator("article.job-card").filter(
             has=page.get_by_role("button", name=TITLES[0], exact=True))
-        card.get_by_role("button", name="I applied").click()
+        card.get_by_role("button", name="Mark as applied").click()
         expect(page.get_by_text(f"Applied: {TITLES[0]}")).to_be_visible()
         tabs.filter(has_text="Applied").click()
         expect(page.get_by_role("heading", name="You applied to 1 job")).to_be_visible()
@@ -708,7 +712,7 @@ def test_a_made_cv_is_still_there_after_a_refresh_in_applied_and_in_my_documents
         expect(card().get_by_text("CV made")).to_be_visible()
         expect(card().get_by_role("button", name="Make my cover letter")).to_be_visible()
 
-        card().get_by_role("button", name="I applied").click()
+        card().get_by_role("button", name="Mark as applied").click()
         expect(page.get_by_text(f"Applied: {TITLES[0]}")).to_be_visible()
         page.goto(f"{base}/#/applied")
         expect(page.get_by_role("link", name="Download your CV")).to_be_visible()
@@ -858,7 +862,7 @@ def test_my_search_asks_before_leaving_unsaved_and_applied_opens_the_whole_job(s
 
         card = page.locator("article.job-card").filter(
             has=page.get_by_role("button", name=TITLES[0], exact=True))
-        card.get_by_role("button", name="I applied").click()
+        card.get_by_role("button", name="Mark as applied").click()
         expect(page.get_by_text(f"Applied: {TITLES[0]}")).to_be_visible()
         tabs.filter(has_text="Applied").click()
         page.get_by_role("button", name=TITLES[0], exact=True).click()
@@ -1106,13 +1110,17 @@ def _onboard(page) -> None:
 
 
 def _marks(page) -> None:
-    """"I applied" takes the job away with an Undo, and is counted; "Skip" asks first. A job applied
-    to stays away after a refresh; one taken back, or not skipped after all, stays."""
+    """Nobody applies here: a job opens on the site it was posted on, in a tab of its own (owner,
+    2026-11-06). "Mark as applied" takes the job away with an Undo, and is counted; "Skip" asks first. A
+    job applied to stays away after a refresh; one taken back, or not skipped after all, stays."""
     def card(title):
         return page.locator("article.job-card").filter(has=page.get_by_role("button", name=title, exact=True))
 
-    card(TITLES[0]).get_by_role("button", name="I applied").click()
-    expect(page.get_by_text(f"Applied: {TITLES[0]}")).to_be_visible()
+    apply = card(TITLES[0]).get_by_role("link", name="Apply on Test")
+    expect(apply).to_have_attribute("href", re.compile(r"^https://jobs\.example\.com/"))
+    expect(apply).to_have_attribute("target", "_blank")
+    card(TITLES[0]).get_by_role("button", name="Mark as applied").click()
+    expect(page.get_by_text(f"Moved to Applied: {TITLES[0]}")).to_be_visible()
     expect(page.get_by_text("You have applied to 1 job.")).to_be_visible()
     expect(page.get_by_role("heading", name="1 job matches your words")).to_be_visible()
     card(TITLES[1]).get_by_role("button", name="Skip").click()
@@ -1120,7 +1128,7 @@ def _marks(page) -> None:
     expect(asked).to_contain_text(f"{TITLES[1]} leaves your list")
     asked.get_by_role("button", name="Keep it").click()
     expect(asked).to_have_count(0)
-    card(TITLES[1]).get_by_role("button", name="I applied").click()
+    card(TITLES[1]).get_by_role("button", name="Mark as applied").click()
     page.locator("article.gone", has_text=f"Applied: {TITLES[1]}").get_by_role("button", name="Undo").click()
     expect(card(TITLES[1])).to_be_visible()
 

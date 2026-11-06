@@ -10,6 +10,7 @@ import { JobView } from "../jobview";
 import { keep, peek } from "../kept";
 import { type Mark, mark as record, send, unsent } from "../marks";
 import { POLL_MS } from "../notifications";
+import { PLACES } from "../places";
 import { ago, useNow } from "../time";
 import { Banner, Error, Prompt, useAction } from "../ui";
 
@@ -32,13 +33,13 @@ const UNDO_MS = 6000;
 const POSTED: [string, number | null][] = [["Any time", null], ["Last 24 hours", 24], ["Last 3 days", 72],
                                            ["Last week", 168]];
 
-/** A board's name as people write it; anything not listed is its own name, capitalised. */
-const BOARDS: Record<string, string> = {
-  linkedin: "LinkedIn", justjoinit: "Just Join IT", nofluffjobs: "No Fluff Jobs",
-  workingnomads: "Working Nomads", themuse: "The Muse", smartrecruiters: "SmartRecruiters",
-  link: "Added by link",
+/** The pictures on a job's own buttons, in each button's colour: out to the site it was posted on, the tick
+ * that is Applied's picture, and an eye shut on a job not shown again. The landing page's card has them too. */
+export const PICTURES = {
+  apply: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13.5 4.5h6v6M19.5 4.5l-8 8M18 13.5v5a1.5 1.5 0 01-1.5 1.5h-11A1.5 1.5 0 014 18.5v-11A1.5 1.5 0 015.5 6h5" /></svg>,
+  applied: <svg viewBox="0 0 24 24" aria-hidden="true">{PLACES.find(([key]) => key === "applied")?.[2]}</svg>,
+  skip: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12zM14.5 12a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0zM4 4l16 16" /></svg>,
 };
-const board = (name: string) => BOARDS[name] ?? name.charAt(0).toUpperCase() + name.slice(1);
 
 /** A time a job stays listed, as people say it: "24 hours", "3 days". */
 const span = (hours: number) => (hours < 48 || hours % 24 ? `${hours} hours` : `${hours / 24} days`);
@@ -72,7 +73,7 @@ export function JobsPage({ dashboard, focus, onChanged }: {
   dashboard: Ready;
   /** The job an alert's link names, if they arrived from one. */
   focus: number | null;
-  /** "I applied" changed the count the dashboard keeps. */
+  /** "Mark as applied" changed the count the dashboard keeps. */
   onChanged: () => void;
 }) {
   const [query, setQuery] = useState("");
@@ -94,7 +95,7 @@ export function JobsPage({ dashboard, focus, onChanged }: {
   const [feed, setFeed] = useState<Feed | null>(cached);
   const [failed, setFailed] = useState(false);
   // Skipped or applied here, by what: still counted in `feed.total`, so the heading subtracts them.
-  // A skip, asked about first, is gone at once; "I applied" keeps an Undo for a moment.
+  // A skip, asked about first, is gone at once; "Mark as applied" keeps an Undo for a moment.
   const [marked, setMarked] = useState<Map<number, Mark>>(new Map());
   const [gone, setGone] = useState<Set<number>>(new Set());
   // How many jobs reached the list since it was read and how long the list is now, and when the one
@@ -274,7 +275,7 @@ export function JobsPage({ dashboard, focus, onChanged }: {
         <select aria-label="Job board" value={source} onChange={(event) => setSource(event.target.value)}>
           <option value="">All boards</option>
           {boards.map((each) => (
-            <option key={each.name} value={each.name}>{board(each.name)} ({each.jobs})</option>
+            <option key={each.name} value={each.name}>{each.label} ({each.jobs})</option>
           ))}
         </select>
         {countries.length > 1 || country ? (
@@ -428,7 +429,7 @@ export function JobCard({ job, ai, focus, done, fresh, onMark }: {
   if (done) {
     return (
       <article className="job-card gone">
-        <span className="muted small">Applied: {job.title}</span>
+        <span className="muted small">Moved to Applied: {job.title}</span>
         <button type="button" className="linklike" onClick={() => onMark(job, done, false)}>Undo</button>
       </article>
     );
@@ -441,14 +442,19 @@ export function JobCard({ job, ai, focus, done, fresh, onMark }: {
       <MakeDocument doc={cover} kind="cover" ai={ai} existing={existing.cover} />
     </div>
   );
+  // Nobody applies here: the job opens where it was posted, and they apply there, then say so here
+  // (owner, 2026-11-06). In that order, and Skip, the way out, apart from both.
   const marks = (
-    <div className="job-actions">
+    <div className="job-actions marks">
       <a className="button secondary small" href={job.url} target="_blank" rel="noreferrer">
-        {job.source === "link" || job.source === "typed" ? "Open the job" : `Open on ${board(job.source)}`}
+        Apply on {job.apply_on}
+        {PICTURES.apply}
       </a>
-      <button type="button" className="secondary small" onClick={() => setSkipping(true)}>Skip</button>
       <button type="button" className="secondary small" onClick={() => onMark(job, "applied", true)}>
-        I applied
+        {PICTURES.applied}Mark as applied
+      </button>
+      <button type="button" className="secondary small skip" onClick={() => setSkipping(true)}>
+        {PICTURES.skip}Skip
       </button>
     </div>
   );

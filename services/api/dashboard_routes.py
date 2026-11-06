@@ -13,6 +13,7 @@ from pymongo.database import Database
 
 from libs import limits
 from libs.corpus import salary
+from libs.corpus.boards import apply_on, board_name
 from libs.corpus.freshness import platform_windows, shelf_life
 from libs.corpus.geo import CITIES, COUNTRY_LABELS
 from libs.corpus.postings import paragraphs
@@ -74,7 +75,7 @@ class ReadyDashboard(BaseModel):
     load — /dashboard went from 150 ms to 13 ms (median, 2,000 rows) without it."""
     stage: Literal["ready"]
     is_admin: bool
-    # How many jobs they said they applied to — moved only by "I applied".
+    # How many jobs they said they applied to — moved only by "Mark as applied".
     applied: int
     banners: list[DashboardBanner]
     ai: AiWriting
@@ -98,6 +99,8 @@ class FeedJob(BaseModel):
     is_remote: bool | None
     url: str
     source: str
+    # What its button says after "Apply on": the board's name, or "the job's site" for one somebody added.
+    apply_on: str
     # The green words that matched, anywhere in the job: why it is on the page.
     words: list[str]
     posted_at: datetime | None
@@ -117,6 +120,8 @@ class FeedJob(BaseModel):
 
 class FeedSource(BaseModel):
     name: str
+    # The board's name as people write it: "LinkedIn", "No Fluff Jobs".
+    label: str
     # How many of their jobs came from it, before any filter.
     jobs: int
 
@@ -305,7 +310,8 @@ def feed(*, db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curren
     return Feed(total=len(matches), arrived=arrived,
                 jobs=[feed_row(match, texts.get(match.job.id), documents.get(match.job.id, []))
                       for match in page],
-                sources=[FeedSource(name=name, jobs=count) for name, count in boards.most_common()],
+                sources=[FeedSource(name=name, label=board_name(name), jobs=count)
+                         for name, count in boards.most_common()],
                 words=[FeedWord(name=name, jobs=count) for name, count in words.most_common()],
                 countries=[FeedPlace(value=code, label=COUNTRY_LABELS.get(code, code), jobs=count)
                            for code, count in countries.most_common()],
@@ -324,7 +330,7 @@ def feed_row(match: Match, text: str | None, documents: list[dict]) -> FeedJob:
     job = match.job
     return FeedJob(id=job.id, title=job.title, company=job.company, location=job.location,
                    country=job.country, is_remote=job.is_remote, url=job.url, source=job.source,
-                   words=list(match.words), posted_at=job.posted_at,
+                   apply_on=apply_on(job.source), words=list(match.words), posted_at=job.posted_at,
                    first_seen_at=job.first_seen_at, described_at=job.described_at,
                    salary=salary.extract(text), **_summary(text),
                    documents=[job_document(row) for row in documents])
@@ -355,7 +361,7 @@ def job_description(job_id: int, db: Database = Depends(get_db),
 
 
 class Step(BaseModel):
-    """One thing that happened after "I applied", in the person's own words."""
+    """One thing that happened after "Mark as applied", in the person's own words."""
     stage: Literal["interview", "offer", "hired", "rejected"]
     at: datetime
 
@@ -422,7 +428,7 @@ class JobMarks(BaseModel):
     hidden: bool
 
 
-# "I applied" and "Skip" — the only two things a person records about a job, and nothing else does:
+# "Mark as applied" and "Skip" — the only two things a person records about a job, and nothing else does:
 # making a document is not applying. Either takes the job off their jobs page for good. Skip is
 # `hidden` here, as it was called before the page renamed it.
 _MARKS = {"applied": "applied_at", "hidden": "dismissed_at"}

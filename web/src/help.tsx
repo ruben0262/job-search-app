@@ -15,13 +15,17 @@ const ANSWERS: [string, string][] = [
   ["How do I make a CV or a cover letter?",
    "Tap “Make my CV” or “Make my cover letter” under any job. It is made from the CV in My documents " +
    "in a few seconds, and downloads as a PDF."],
+  // Nobody applies through the site (owner, 2026-11-06): it says so where people look first.
+  ["Can I apply to jobs here?",
+   "No, you apply on the job's own site, and we make that quick. Make your CV here, then tap “Apply on …” " +
+   "under the job: it opens on the site it was posted on, and you apply there. Then tap “Mark as applied”."],
   ["How do I get new jobs on my phone?",
    "In Settings, turn on notifications in this browser, or connect Telegram. Both are optional, and " +
    "your Jobs page fills up either way."],
   ["How do I stop seeing a job?",
    "Tap “Skip”, then “Skip it”. It leaves your Jobs page and does not come back, even after a refresh."],
   ["Where are the jobs I applied to?",
-   "Tap “I applied” on a job. It leaves your Jobs page and is kept in Applied, even after it stops " +
+   "Tap “Mark as applied” on a job. It leaves your Jobs page and is kept in Applied, even after it stops " +
    "matching your search."],
   ["I forgot my password.",
    "Sign out, then tap “Forgot your password?” on the sign-in page. We email you a link to set a new one."],

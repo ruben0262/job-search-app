@@ -215,6 +215,7 @@ def test_a_new_job_is_read_kept_for_everyone_and_shown_to_whoever_has_its_words(
     assert answer["outcome"] == "added"
     job = CorpusJob.from_doc(db[CorpusJob.COLLECTION].find_one({"_id": answer["job"]["id"]}))
     assert (job.source, job.company, job.discovered_via) == ("link", "Globex", "link")
+    assert answer["job"]["apply_on"] == "the job's site", "its board is wherever its link goes"
     assert job.described_at is not None, "a whole job: alerts and CVs read it"
     assert _added(http) == [job.id]
 
@@ -275,7 +276,9 @@ def test_a_job_written_in_is_theirs_alone_and_stands_in_for_no_real_posting(api)
     url = "https://careers.initech.com/backend-engineer"
     typed = {"url": url, "title": "Backend Engineer", "company": "Initech", "location": "Berlin",
              "description": TEXT}
-    mine = http.post("/jobs/link/save", json=typed).json()["job"]["id"]
+    saved = http.post("/jobs/link/save", json=typed).json()["job"]
+    assert saved["apply_on"] == "the job's site"
+    mine = saved["id"]
 
     other = insert(db, User(email=f"{uuid.uuid4()}@example.com", password_hash="x", status="active",
                             active=True, onboarding_completed_at=now()))

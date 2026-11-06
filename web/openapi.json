@@ -1278,6 +1278,10 @@
       },
       "FeedJob": {
         "properties": {
+          "apply_on": {
+            "title": "Apply On",
+            "type": "string"
+          },
           "company": {
             "anyOf": [
               {
@@ -1423,6 +1427,7 @@
           "is_remote",
           "url",
           "source",
+          "apply_on",
           "words",
           "posted_at",
           "first_seen_at",
@@ -1497,6 +1502,10 @@
             "title": "Jobs",
             "type": "integer"
           },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -1504,6 +1513,7 @@
         },
         "required": [
           "name",
+          "label",
           "jobs"
         ],
         "title": "FeedSource",
@@ -2901,7 +2911,7 @@
         "type": "object"
       },
       "Step": {
-        "description": "One thing that happened after \"I applied\", in the person's own words.",
+        "description": "One thing that happened after \"Mark as applied\", in the person's own words.",
         "properties": {
           "at": {
             "format": "date-time",

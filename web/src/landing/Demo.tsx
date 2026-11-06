@@ -1,8 +1,10 @@
-/** The Jobs page's card, working, on a made-up job: it writes a CV or a cover letter in front of you, asks
- * before a Skip, and offers an Undo after "I applied". The app's own classes, so it looks as the real one
- * does. Fictional, as every example on the landing page is: never real pipeline output. */
-import { useEffect, useState } from "react";
+/** The Jobs page's card, working, on a made-up job: it writes a CV or a cover letter in front of you, says
+ * where you would apply, asks before a Skip, and offers an Undo after "Mark as applied". The app's own
+ * classes and pictures, so it looks as the real one does. Fictional, as every example on the landing page
+ * is: never real pipeline output. */
+import { useEffect, useRef, useState } from "react";
 
+import { PICTURES } from "../pages/JobsPage";
 import { Prompt } from "../ui";
 
 type Kind = "cv" | "cover";
@@ -43,6 +45,12 @@ export function Demo() {
   const [written, setWritten] = useState(0);
   const [mark, setMark] = useState<"applied" | "skipped" | null>(null);
   const [asking, setAsking] = useState(false);
+  const [told, setTold] = useState(false);
+  // Said at the card's foot, which the phone may have scrolled out of sight: brought into it.
+  const note = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (told) note.current?.scrollIntoView({ block: "nearest", behavior: still() ? "auto" : "smooth" });
+  }, [told]);
 
   // A few letters a frame, the way a document streams while it is made.
   useEffect(() => {
@@ -73,7 +81,7 @@ export function Demo() {
   if (mark) {
     return (
       <article className="job-card gone">
-        <span className="muted small">{mark === "applied" ? "Applied" : "Skipped"}: {TITLE}</span>
+        <span className="muted small">{mark === "applied" ? "Moved to Applied" : "Skipped"}: {TITLE}</span>
         <button type="button" className="linklike" onClick={() => setMark(null)}>
           {mark === "applied" ? "Undo" : "Show it again"}
         </button>
@@ -125,10 +133,23 @@ export function Demo() {
         {slot("cover")}
       </div>
       {shown ? <Paper lines={LINES[shown]} written={written} /> : null}
-      <div className="job-actions">
-        <button type="button" className="secondary small" onClick={() => setAsking(true)}>Skip</button>
-        <button type="button" className="secondary small" onClick={() => setMark("applied")}>I applied</button>
+      <div className="job-actions marks">
+        {/* A made-up job has nowhere to open, so it says where a real one does. */}
+        <button type="button" className="secondary small" onClick={() => setTold(true)}>
+          Apply on LinkedIn{PICTURES.apply}
+        </button>
+        <button type="button" className="secondary small" onClick={() => setMark("applied")}>
+          {PICTURES.applied}Mark as applied
+        </button>
+        <button type="button" className="secondary small skip" onClick={() => setAsking(true)}>
+          {PICTURES.skip}Skip
+        </button>
       </div>
+      {told ? (
+        <p ref={note} className="small muted">
+          On a real job, this opens it on LinkedIn, and you apply there with the CV you made here.
+        </p>
+      ) : null}
       {asking ? (
         <Prompt title="Skip this job?" onClose={() => setAsking(false)}>
           <p className="small muted"><strong>{TITLE}</strong> leaves your list and is not shown to you again.</p>

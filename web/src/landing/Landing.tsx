@@ -225,8 +225,8 @@ export function Landing() {
             </p>
             <p className="hero-sub" data-reveal style={after(0.6)}>
               Choose the words you want and the words you don't. It reads job boards, company career pages and
-              LinkedIn {often}, shows every match with the reason it matched, and makes your CV and cover letter
-              for any job in one tap.
+              LinkedIn {often}, and makes your CV and cover letter in one tap. You apply on the job's own site,
+              in minutes, not hours.
             </p>
             <div className="hero-ctas" data-reveal style={after(0.7)}>
               <a className="btn btn-primary" href="#/signup">Create account <Arrow /></a>
@@ -247,7 +247,7 @@ export function Landing() {
         <section id="what" className="section">
           <div className="head center" data-reveal>
             <p className="pill"><i />01 · What it is</p>
-            <h2>Your job search, <span className="glow">on autopilot.</span></h2>
+            <h2>You apply. <span className="glow">It does the rest.</span></h2>
           </div>
           <div className="bento">
             <article className="tile" data-reveal data-spot>
@@ -321,7 +321,8 @@ export function Landing() {
             <h2>Every match says <span className="glow">why it is there.</span></h2>
             <p className="lp-lede">
               Your Jobs page lists every match, the jobs with the most of your words first, and says which words
-              found each one. One tap makes the CV or the cover letter; another marks the job as applied.
+              found each one. One tap makes the CV or the cover letter. You apply on the job's own site, then
+              mark it as applied.
             </p>
           </div>
           <div className="live-grid">
@@ -334,8 +335,8 @@ export function Landing() {
               <div className="alert-card" role="img" aria-label="A new job, as an alert on a phone">
                 <div className="alert-app"><i><Telegram /></i>Jordan's job bot<span>now</span></div>
                 <div className="alert-title">Python Engineer, Data Platform</div>
-                <div className="alert-meta">Northwind · linkedin · 2h<br />📍 London · 🏠 Hybrid<br />Matches: python, data platform</div>
-                <div className="alert-buttons"><span>Open job</span><span>Make my CV</span></div>
+                <div className="alert-meta">Northwind · LinkedIn · 2h<br />📍 London · 🏠 Hybrid<br />Matches: python, data platform</div>
+                <div className="alert-buttons"><span>Apply on LinkedIn</span><span>Make my CV</span></div>
               </div>
               <p className="try">Try it: press Make my CV on the card</p>
             </div>
@@ -381,9 +382,9 @@ export function Landing() {
             <a className="btn btn-primary btn-lg" href="#/signup">Create your account <Arrow /></a>
           </div>
           <p className="honest" data-reveal>
-            Honest by design: there is no hidden score. Every job is shown because of words you chose, and every
-            line of your CV comes from what you wrote. Alerts come by Telegram, by your browser's notifications, or
-            in one email each morning.
+            Honest by design: there is no hidden score, and it never applies for you. Every job is shown because
+            of words you chose, and every line of your CV comes from what you wrote. Alerts come by Telegram, by
+            your browser's notifications, or in one email each morning.
           </p>
         </section>
       </main>

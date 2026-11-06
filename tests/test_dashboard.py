@@ -254,14 +254,16 @@ def test_posted_lately_keeps_only_jobs_from_the_last_hours_asked(api):
 
 def test_one_board_at_a_time_and_every_board_is_offered_with_its_count(api):
     http, db, _, _jobs = api
-    other = insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="greenhouse",
+    other = insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="smartrecruiters",
                                  described_at=now(), title="Backend Engineer", description="x"))
 
-    body = http.get("/feed?source=greenhouse").json()
+    body = http.get("/feed?source=smartrecruiters").json()
 
     assert _ids(body) == [other.id]
-    assert {each["name"]: each["jobs"] for each in body["sources"]} == {"test": 2, "greenhouse": 1}, (
-        "every board, counted before the filter, so another can be picked")
+    assert {each["name"]: (each["label"], each["jobs"]) for each in body["sources"]} == {
+        "test": ("Test", 2), "smartrecruiters": ("SmartRecruiters", 1)}, (
+        "every board by the name people write, counted before the filter, so another can be picked")
+    assert body["jobs"][0]["apply_on"] == "SmartRecruiters", "what its button says: where to apply"
 
 
 def test_no_document_yet_leaves_out_the_ones_with_a_cv_made(api):

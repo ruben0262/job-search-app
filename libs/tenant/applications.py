@@ -1,4 +1,4 @@
-"""What happened after "I applied", in the person's own words (owner, 2026-11-03), and what those words
+"""What happened after "Mark as applied", in the person's own words (owner, 2026-11-03), and what those words
 add up to across everyone: the platform's one measure of whether its CVs, cover letters, searches and
 ATS check get people interviews and jobs.
 

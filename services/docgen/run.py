@@ -105,7 +105,7 @@ def run_ai(db, user_id: _uuid.UUID, job_id: int, *, client, model: str, kind: st
 
 def _done(db, user: User, job: CorpusJob, *, kind: str, mode: str, document: bytes,
           report: pdf.PdfReport, calls: int) -> Built:
-    """Say the build happened, once. It is not an application: "I applied" on the jobs page is."""
+    """Say the build happened, once. It is not an application: "Mark as applied" on the jobs page is."""
     if not report.ats_ok:
         # A warning rather than a refusal: the layout is single-column and known good.
         logger.warning("docgen: ATS check flagged %s for user %s: %s",

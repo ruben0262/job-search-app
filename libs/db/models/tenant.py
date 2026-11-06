@@ -28,7 +28,7 @@ class UserJobState(Document):
     # for them there, whether or not it has their words.
     added_at: datetime | None = None
     created_at: datetime = field(default_factory=now)
-    # What happened after "I applied", in the person's own words, each `{"stage": ..., "at": ...}`
+    # What happened after "Mark as applied", in the person's own words, each `{"stage": ..., "at": ...}`
     # (`libs.tenant.applications`). The last is where the application stands.
     progress: list[dict] = field(default_factory=list)
 

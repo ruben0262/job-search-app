@@ -133,6 +133,23 @@ def test_unlimited_still_fits_inside_one_claim():
     assert fetched > SEND_BUDGET_SECONDS / DEFAULT_SEND_GAP_SECONDS
 
 
+def test_the_card_says_which_board_to_apply_on_by_its_name():
+    """Nobody applies through this site (owner, 2026-11-06), so the alert's first button says where they
+    do, and a job somebody added by its link goes wherever its link goes."""
+    from libs.db.models import CorpusJob
+    from services.notifier.card import keyboard, render
+
+    job = CorpusJob(id=1, url="https://www.linkedin.com/jobs/view/1", source="linkedin", title="Engineer",
+                    company="Acme")
+    [[apply, cv]] = keyboard(job)["inline_keyboard"]
+    assert (apply["text"], apply["url"]) == ("Apply on LinkedIn", job.url)
+    assert cv["text"] == "Make my CV"
+    assert "Acme · LinkedIn" in render(job, ("engineer",)), "the board as people write it, not its key"
+
+    added = CorpusJob(id=2, url="https://careers.example.com/42", source="link", title="Engineer")
+    assert keyboard(added)["inline_keyboard"][0][0]["text"] == "Apply on the job's site"
+
+
 def test_the_card_says_what_linkedin_said_about_applicants():
     """The number alone says the opposite of the page."""
     from services.notifier.card import applicant_label

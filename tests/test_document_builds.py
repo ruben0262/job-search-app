@@ -160,7 +160,7 @@ def test_an_instant_cv_is_asked_for_built_and_downloaded(api):
 
 
 def test_making_a_document_is_not_applying(api):
-    """Instant documents are free previews; only "I applied" on the jobs page records an application."""
+    """Instant documents are free previews; only "Mark as applied" on the jobs page records an application."""
     from libs.db import find_one
     from libs.db.models import UserJobState
 

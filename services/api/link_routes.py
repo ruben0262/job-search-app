@@ -25,7 +25,7 @@ from pydantic import BaseModel, Field
 from pymongo.database import Database
 
 from libs.corpus.postings import PAGE_HEADERS, job_link, linkedin_id, read_link
-from libs.corpus.repository import MAX_DESCRIPTION, MIN_DESCRIPTION, TYPED, CorpusRepository
+from libs.corpus.repository import LINK, MAX_DESCRIPTION, MIN_DESCRIPTION, TYPED, CorpusRepository
 from libs.db import now
 from libs.db.models import CorpusJob, UserJobState
 from libs.db.models.tenant import record_state
@@ -210,7 +210,7 @@ def _keep(corpus: CorpusRepository, job: Draft, found: dict[str, Any]) -> int:
     """A job read whole from its page, into the shared corpus as the harvest keeps one: matched, alerted
     and archived like any other. A LinkedIn job is LinkedIn's; anything else is a link's."""
     workplace = found.get("workplace")
-    job_id = corpus.add(url=job.url, source="linkedin" if linkedin_id(job.url) else "link",
+    job_id = corpus.add(url=job.url, source="linkedin" if linkedin_id(job.url) else LINK,
                         title=job.title, company=job.company, location=job.location,
                         is_remote=True if workplace == "remote" else None, posted_at=found.get("posted_at"),
                         workplace=workplace, fetched_at=now(), discovered_via="link")

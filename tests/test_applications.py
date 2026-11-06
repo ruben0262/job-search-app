@@ -1,4 +1,4 @@
-"""What happened after "I applied", in the person's own words, and what it adds up to (owner,
+"""What happened after "Mark as applied", in the person's own words, and what it adds up to (owner,
 2026-11-03): an interview, an offer, the job, or not this time, each a step that can be taken back."""
 from __future__ import annotations
 

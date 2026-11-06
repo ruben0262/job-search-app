@@ -1296,9 +1296,10 @@ td.num {
  * phone's tab bar, which is pictures alone (owner, 2026-11-06), each named for a screen reader.
  */
 
-/* Taps, not clicks. Admin is a laptop tool and keeps its dense controls. */
-.app main:not(.admin) :is(button, .button):not(.theme-toggle),
-.wizard :is(button, .button):not(.theme-toggle) {
+/* Taps, not clicks. Admin is a laptop tool and keeps its dense controls. A link inside a sentence is a
+   word of it: a thumb's height there pushed its line away from the one above ("Read it all"). */
+.app main:not(.admin) :is(button, .button):not(.theme-toggle, p .linklike),
+.wizard :is(button, .button):not(.theme-toggle, p .linklike) {
   min-height: 2.75rem;
 }
 
@@ -1311,12 +1312,6 @@ button.small:not(.linklike),
 button.small,
 .button.small {
   font-size: 0.875rem;
-}
-
-/* On: "I applied" once it is true. */
-button.secondary.on {
-  border-color: var(--score);
-  color: var(--score);
 }
 
 /* The one thing to do on a page. */
@@ -1400,6 +1395,11 @@ button.main {
   padding: 0.5rem 1.25rem;
 }
 
+/* "Undo" whole, however long the title beside it: squeezed by one, it broke as "Und / o". */
+.job-card.gone button {
+  flex: none;
+}
+
 .job-meta {
   margin: 0 0 0.15rem;
   color: var(--muted);
@@ -1455,6 +1455,28 @@ button.main {
   margin: 0;
   font-size: 0.85rem;
   max-width: 22rem;
+}
+
+/* Where a job goes next: applied on the site it was posted on, marked here, or skipped. Each has a
+   picture, seen before its words are read, and Skip, the way out, stands apart at the far end. Not greyed:
+   grey read as a button that cannot be pressed. */
+.marks :is(button, .button) {
+  gap: 0.45rem;
+}
+
+.marks svg {
+  flex: none;
+  width: 1.05rem;
+  height: 1.05rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.marks .skip {
+  margin-left: auto;
 }
 
 /* Being made: the words say what, a light passing over the button says it has not stopped. */

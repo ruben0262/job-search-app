@@ -29,6 +29,9 @@ MAX_DESCRIPTION = 12_000
 # The source of a job somebody wrote in themselves (Add a job): theirs alone, never anybody else's match
 # (owner, 2026-11-03). Read by `libs.tenant.filters.candidate_conditions`, which every match asks.
 TYPED = "typed"
+# The source of a job kept from a pasted link that is not LinkedIn's: shared, matched and alerted like any
+# other, and applied to wherever its link goes (`libs.corpus.boards`).
+LINK = "link"
 
 # Consecutive failed reads before a posting is abandoned: never described, embedded or scored.
 #

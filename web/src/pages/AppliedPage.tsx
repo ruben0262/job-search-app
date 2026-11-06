@@ -68,8 +68,8 @@ export function AppliedPage() {
       {failed ? <p className="error">Your applications did not load. Refresh the page to try again.</p> : null}
       {jobs?.length === 0 ? (
         <p className="muted">
-          Nothing here yet. When you apply to a job, tap “I applied” on it in <a href="#/">Jobs</a>, and
-          it is kept here.
+          Nothing here yet. When you have applied to a job, tap “Mark as applied” on it in{" "}
+          <a href="#/">Jobs</a>, and it is kept here.
         </p>
       ) : null}
       <div className="jobs">

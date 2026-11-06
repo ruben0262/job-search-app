@@ -479,7 +479,7 @@ def test_an_instant_cv_is_their_own_lines_and_spends_no_model_call(monkeypatch, 
     assert "Built the billing service in Python and Postgres" in fake_chrome["html"]
     assert result.pdf.startswith(b"%PDF") and result.filename == "Alice_Example_CV.pdf"
     assert result.calls == 0
-    # A free preview, not an application: only "I applied" on the jobs page records one.
+    # A free preview, not an application: only "Mark as applied" on the jobs page records one.
     assert state.applied_at is None
 
 

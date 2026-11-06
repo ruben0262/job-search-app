@@ -119,7 +119,7 @@ def test_a_new_match_reaches_telegram_and_every_browser_once(db):
     # Plain links, so a tap opens something rather than waiting on a webhook.
     page = site_url(f"/#/feed?job={match.id}")
     assert [(b["text"], b["url"]) for b in keyboard["inline_keyboard"][0]] == [
-        ("Open job", match.url), ("Make my CV", page)]
+        ("Apply on Test", match.url), ("Make my CV", page)]
     assert [payload["url"] for _, payload in outbox.browsers] == [page, page]
     assert _notified(db, user) == {match.id}
     assert run(db, user, Outbox()) == 0, "sent once, and never again"

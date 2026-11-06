@@ -5,6 +5,7 @@ import html
 
 from libs.contracts.config import WORKPLACE_NAMES
 from libs.corpus import salary as salarylib
+from libs.corpus.boards import apply_on, board_name
 from libs.corpus.filters import age_label
 from libs.corpus.workfilter import classify
 from libs.db.models import CorpusJob
@@ -66,16 +67,17 @@ def render(job: CorpusJob, words: tuple[str, ...]) -> str:
     place = f"{place}\n" if place else ""
 
     return (f"<b>{esc((job.title or '')[:120])}</b>{easy}{repost}\n"
-            f"{esc((job.company or '')[:60])} · {esc(job.source or '')}{applicants}{age}\n"
+            f"{esc((job.company or '')[:60])} · {esc(board_name(job.source or ''))}{applicants}{age}\n"
             f"{place}{salary_line(job)}\n"
             f"Matches: {esc(', '.join(words))}")
 
 
 def keyboard(job: CorpusJob) -> dict:
-    """Two links and no callbacks: the posting itself, and the job on our site to make a CV for it."""
+    """Two links and no callbacks: the posting, where they apply, and the job on our site to make a CV for
+    it. Nobody applies through this site (owner, 2026-11-06), so the first says where they do."""
     buttons = [{"text": "Make my CV", "url": job_page(job)}]
     if job.url:
-        buttons.insert(0, {"text": "Open job", "url": job.url})
+        buttons.insert(0, {"text": f"Apply on {apply_on(job.source or '')}", "url": job.url})
     return {"inline_keyboard": [buttons]}
 
 

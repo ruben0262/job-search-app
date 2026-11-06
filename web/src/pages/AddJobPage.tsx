@@ -20,7 +20,7 @@ type Draft = Schema<"Draft">;
 
 export function AddJobPage({ dashboard, onChanged }: {
   dashboard: Ready;
-  /** "I applied" changed the count the dashboard keeps. */
+  /** "Mark as applied" changed the count the dashboard keeps. */
   onChanged: () => void;
 }) {
   const [link, setLink] = useState("");

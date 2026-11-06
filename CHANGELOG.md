@@ -14,6 +14,99 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-06 — Nobody applies here, and the site and its alerts say so: "Apply on …", "Mark as applied", Skip apart
+
+The owner asked for the site to make one thing plain: nobody applies to a job on it or through it. It
+helps with applying and saves a lot of time. "Open on …" was to say "Apply on …", "I applied" was to
+become "Mark as applied", and Skip and "I applied" were to be clearer, moved or given pictures.
+
+**A job's card.**
+- **The buttons, in the order they are used:**
+  1. "Apply on Greenhouse": the board's name, or "the job's site" for a job added by its link.
+  2. "Mark as applied".
+  3. Skip, at the far end.
+
+  It was "Open on …", Skip, "I applied". Skip sat between the two steps of applying, and all three looked
+  alike.
+- **Each has a picture:**
+  - "Apply on" ends with an arrow out of a box: the job opens on another site, in a tab of its own.
+  - "Mark as applied" starts with Applied's tick from the tab bar, the place the job goes.
+  - Skip starts with an eye shut: the job is not shown again. It keeps the others' outline and colour,
+    because greyed out it read as a button that could not be pressed.
+- **After "Mark as applied"** the card says "Moved to Applied: <title>", with Undo, so it says where
+  the job went.
+- **"Undo" stays whole.** Beside a long title it was squeezed until it broke as "Und / o".
+- **"Read it all"** sits in its line of the summary. Every button has a thumb's height (44 px), and that
+  included the link-style buttons inside a sentence, which pushed their line away from the one above.
+  The same rule had held "Withdraw" in Settings and "Use another bot" in the alerts.
+
+**The words.**
+- **The landing page.**
+  - **Hero:** "You apply on the job's own site, in minutes, not hours." It replaces "shows every match
+    with the reason it matched", which the sections below say. The hero keeps the same number of lines
+    as before. The buttons are where they were at all eight sizes measured, from 320×640 to 1440×900.
+  - **Section 01:** the heading was "Your job search, on autopilot.", the phrase auto-apply tools use.
+    It is now "You apply. It does the rest."
+  - **Section 03:** you apply on the job's own site, then mark it as applied.
+  - **"Honest by design":** it never applies for you.
+- **The landing's card** has the same three buttons. Its job is made up, so "Apply on LinkedIn" says
+  where a real job opens and who applies. It scrolls that line into view above the phone's tab bar: the
+  bar's height (96 px) is now one value, `--tabs`, used for both the room kept free and where the scroll
+  stops.
+- **Help** answers "Can I apply to jobs here?". The other answers and the empty Applied page say "Mark as
+  applied".
+- **Comments and docstrings** that named the button now name the new one. `Step`'s docstring is part of
+  the API contract, so `openapi.json` and `api-types.ts` change by that one line.
+
+**Removed:** the style `button.secondary.on` ("I applied" once it was true). No button sets the class
+`on` beside `secondary`; a search of `web/src` found none.
+
+**Telegram** (owner: "open job should be changed on telegram").
+- **The alert's first button** says "Apply on LinkedIn", the board's name, where it said "Open job". A job
+  somebody added by its link says "Apply on the job's site": such a job is shared and alerted like any
+  other.
+- **The line above the buttons** names the board the same way, "Northwind · LinkedIn", not by its key,
+  "linkedin".
+- **The landing's picture of an alert** matches. At 320 px its "Apply on LinkedIn" broke in two, so the
+  two halves stay equal, as Telegram draws them, but never narrower than their words.
+
+**One list of board names.** The names were the Jobs page's own (`BOARDS` in `JobsPage.tsx`), and the
+Telegram card needed them too.
+- They are now `libs/corpus/boards.py`: `board_name` ("No Fluff Jobs") and `apply_on` ("LinkedIn", or "the
+  job's site").
+- The feed sends each board's `label` and each job's `apply_on`.
+- The site's copy is deleted, with its rule for jobs people added.
+- `link`, the source the add-a-job route writes and `apply_on` reads, is one constant (`repository.LINK`),
+  beside `TYPED`.
+
+**Not changed** (owner: leave the help chat for now): `libs/prompts/support.md`, the help chat's prompt,
+still says "I applied". CLAUDE.md §3a: a prompt changes only on the owner's word. No page on the site
+calls the chat, so nobody sees it today.
+
+Tests: on the Jobs page, "Apply on Test" links to the job's own address and opens in a new tab, and "Mark
+as applied" says "Moved to Applied". On the landing page, the card's "Apply on LinkedIn" says the job
+opens on LinkedIn and you apply there. Run against the previous commit, both fail: neither the link nor
+the button exists there.
+
+The Telegram card says "Apply on LinkedIn" and names LinkedIn, and a job added by link says "Apply on the
+job's site". The feed sends the names: for a board with a name of its own ("SmartRecruiters"), for a job
+added by link, and for a job written in. Run against the previous commit, all five of those tests fail:
+the card says "Open job" there, and the feed has neither field.
+
+The sweep of every page at every size (28 sizes) found nothing. A sweep that never signs in also finds
+nothing, so its sign-in was checked first: it reaches the Jobs page, with the new row on all five cards.
+
+Gates, all local:
+- `lint-imports`: 2 contracts kept.
+- `ruff check`: clean.
+- The schema pruned onto an empty local database.
+- The contract changed by the one docstring line and the two new fields, `FeedSource.label` and
+  `FeedJob.apply_on`. It is regenerated and current.
+- `npm run build`: 109.4 kB of gzipped script and 15.6 kB of style. That is 0.24 kB and 0.07 kB more than
+  the previous commit, measured on a build of it.
+- `pytest`: 1,327 passed and 3 skipped (the Postgres copy, the reference instance, an empty parameter
+  set). The browser tests ran.
+
 ## 2026-11-06 — The new-jobs count says what left too; company boards found by name; a bigger corpus chart
 
 Three things the owner asked for on the same day.
