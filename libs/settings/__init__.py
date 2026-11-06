@@ -32,8 +32,6 @@ DEFAULT_SOURCE_FRESHNESS_HOURS: dict[str, int] = {
     # Newest first by when a posting went up or was renewed: everything renewed in the last hour is on its
     # first four pages, and a run walks until a page has nothing inside the window (measured 2026-11-04).
     "nofluffjobs": 2,
-    # Search-shaped boards, relevance-sorted rather than date-sorted.
-    "hiringcafe": 48,
     "profession": 24,
     # Company boards, reached when our token list gets there.
     "greenhouse": 72, "ashby": 72, "lever": 72, "smartrecruiters": 72,
@@ -50,47 +48,30 @@ HARVEST_SOURCES: tuple[str, ...] = (
     # ATS boards, polled directly per company.
     "greenhouse", "ashby", "lever", "smartrecruiters", "recruitee",
     "breezy", "workday", "personio", "workable",
-    # Aggregators and VC portfolio boards.
-    "hiringcafe", "themuse",
+    # Aggregators.
+    "themuse",
     # European boards.
     "nofluffjobs", "profession", "justjoinit",
     # Key-gated, enabled only with a credential.
-    #
-    # `jooble` is deliberately absent. The platform holds a valid key and the international host
-    # answers 200 from a laptop, but every request from the VPS comes back as an HTML 403 block
-    # page — the country editions (`hu.`, `uk.`) refuse from anywhere. It is an IP block, not a
-    # credential or a host problem, and a source that fails every cycle drowns the failures that
-    # matter (CLAUDE.md §8). The adapter and the key stay; only the enrolment goes, so restoring
-    # it is one line if the block lifts or the harvest moves.
     "findwork", "adzuna",
     # The per-user tier, on the user's own proxy.
     "linkedin",
 )
 
-# The sources that take a keyword query, as opposed to serving a feed.
-QUERY_TAKING_SOURCES: frozenset[str] = frozenset(
-    {"hiringcafe", "jooble"})
-
-# How many queries a source may be asked in one 15-minute cycle, before the operator says otherwise.
+# How many calls a source may make in one 15-minute cycle, for the one source that is metered by the call.
+# No source is asked for a word (owner, 2026-11-04), and the two that could only be asked for one, Hiring
+# Cafe and Jooble, were removed on 2026-11-06 with the query set that asked them.
 DEFAULT_SOURCE_QUERIES_PER_CYCLE: dict[str, int] = {
-    # Search-shaped boards on a shared client.
-    "hiringcafe": 100,
-    "jooble": 50,
-    # Metered by the vendor, not by politeness: the free tier is roughly 250 calls a day and the
-    # cycle runs ninety-six times, so two is what stays inside it: two countries a run, each at its
-    # newest. Everything else in this map is a rate-limit guess; this one is an allowance.
+    # The free tier is roughly 250 calls a day and the cycle runs ninety-six times, so two is what stays
+    # inside it: two countries a run, each at its newest.
     "adzuna": 2,
 }
-
-# A source nobody has tuned.
-DEFAULT_QUERIES_PER_CYCLE = 40
 
 
 # How many results one query may bring back, per source.
 DEFAULT_SOURCE_RESULTS_PER_QUERY: dict[str, int] = {
     "justjoinit": 100,
     "jobicy": 50,
-    "hiringcafe": 40,
 }
 
 # How many company boards the ATS family polls in one cycle.
@@ -119,8 +100,6 @@ DEFAULT_PROXY_EXITS = 6
 
 # How deep a paginated source reads in one cycle, per source.
 DEFAULT_SOURCE_PAGES_PER_CYCLE: dict[str, int] = {
-    # Relevance-sorted, so the top pages carry the matches and depth has falling returns.
-    "hiringcafe": 3,
     # Newest-first at 20 a page, and the walk stops once a page is older than the freshness window.
     "workday": 5,
     # Newest-first at 100 a page, about ten offers an hour, and the walk stops the same way.
@@ -198,8 +177,7 @@ DEFAULT_JOB_MAX_AGE_HOURS = 24
 # stating because it is the opposite of the intuition**: a smaller number here is *stricter* and
 # yields fewer jobs, not fresher ones. There is nothing to gain by lowering one below what its
 # source can serve, and `hiringcafe` is what that costs — it sat at 12 hours, where the corpus
-# holds one open posting, while at 168 it holds 526. It is also the richest non-software source
-# on the platform, so the tightest window was on the board that mattered most.
+# holds one open posting, while at 168 it holds 526 (it was removed on 2026-11-06, unreadable).
 #
 # A floor below the harvest window (`source_freshness_hours`) discards rows the cycle just paid to
 # fetch, so the two are set together in the admin panel.
@@ -226,7 +204,6 @@ SOURCE_MIN_AGE_HOURS: dict[str, int] = {
     "recruitee": 72,        # 10 at 6h, 16 at 72h
     "personio": 72,
     # Weekly batches and slow boards. A tighter window here is not stricter, it is off.
-    "hiringcafe": 168,      # **1 at 12h and 526 at 168h.** It was set to 12.
     "workday": 168,         # 6 at 24h, 133 at 168h
     "breezy": 168,          # 4 at 6h, 21 at 168h
     "jobicy": 168,          # 3 at 12h, 13 at 168h
@@ -346,24 +323,12 @@ def put(db: Database, key: str, value: object, *, by: str | None = None) -> None
 
 
 
-def queries_per_cycle_default(source: str) -> int:
-    """The catalogue ceiling for a caller with no database — an adapter reading its own fallback.
-
-    Split out so `services.harvester.sources` can share this map instead of restating a number
-    beside it. A constant on each side plus a test asserting they are equal passes while both are
-    wrong; one definition cannot disagree with itself (CLAUDE.md §5).
-    """
-    return DEFAULT_SOURCE_QUERIES_PER_CYCLE.get(source, DEFAULT_QUERIES_PER_CYCLE)
-
-
-def queries_per_cycle(db: Database | Snapshot, source: str) -> int:
-    """How many queries this source may be asked this cycle."""
+def queries_per_cycle(db: Database | Snapshot, source: str) -> int | None:
+    """How many calls this source may make this cycle, or `None` for a source not metered by the call."""
     per_source = get(db, "source_queries_per_cycle") or {}
-    if source in per_source:
+    if source in per_source and source in DEFAULT_SOURCE_QUERIES_PER_CYCLE:
         return int(per_source[source])
-    if source in DEFAULT_SOURCE_QUERIES_PER_CYCLE:
-        return DEFAULT_SOURCE_QUERIES_PER_CYCLE[source]
-    return DEFAULT_QUERIES_PER_CYCLE
+    return DEFAULT_SOURCE_QUERIES_PER_CYCLE.get(source)
 
 
 def pages_per_cycle(db: Database | Snapshot, source: str) -> int | None:

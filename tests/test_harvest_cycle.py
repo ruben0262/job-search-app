@@ -47,8 +47,8 @@ def test_a_cycle_ingests_and_dedups(ctx):
     _active_user(s)
     found = [_link(), _link()]
 
-    report, _ = run_cycle(s, source_configs=_sources(himalayas={}),
-                          run_source=lambda source, cfg, repo: list(found))
+    report = run_cycle(s, source_configs=_sources(himalayas={}),
+                       run_source=lambda source, cfg, repo: list(found))
 
     assert report.links_found == 2
     assert report.new_jobs == 2
@@ -64,7 +64,7 @@ def test_a_board_keeps_only_jobs_in_a_country_somebody_picked_and_any_it_cannot_
                      location=where, source="greenhouse")
              for n, where in enumerate(["London", "Berlin, Germany", "Austin, TX", "Remote"])]
 
-    report, _ = run_cycle(s, source_configs=_sources(himalayas={}), run_source=lambda *a: list(found),
+    report = run_cycle(s, source_configs=_sources(himalayas={}), run_source=lambda *a: list(found),
                           describe=False)
 
     assert sorted(s[CorpusJob.COLLECTION].distinct("location")) == ["London", "Remote"]
@@ -77,8 +77,8 @@ def test_the_same_job_twice_is_ingested_once(ctx):
     _active_user(s)
     link = _link()
 
-    first, _ = run_cycle(s, source_configs=_sources(himalayas={}), run_source=lambda *a: [link])
-    second, _ = run_cycle(s, source_configs=_sources(himalayas={}), run_source=lambda *a: [link])
+    first = run_cycle(s, source_configs=_sources(himalayas={}), run_source=lambda *a: [link])
+    second = run_cycle(s, source_configs=_sources(himalayas={}), run_source=lambda *a: [link])
 
     assert first.new_jobs == 1
     assert second.new_jobs == 0
@@ -97,93 +97,25 @@ def test_a_snippet_saves_the_description_fetch(ctx):
     assert job["description"] == "A real description. " * 30, "the snippet is stored as the text"
 
 
-# ── the budget ────────────────────────────────────────────────────────────────────────────────
-
-def test_the_fan_out_budget_is_respected(ctx):
-    """Unbounded, 50 users × 5 terms × 3 sources is 750 queries a cycle — a ban and a bill."""
-    s = ctx
-    for i in range(10):
-        _active_user(s, keywords=[f"u{i}term{j}" for j in range(5)])
-
-    # A source config, because the query set is built for the sources that are enabled.
-    report, deferred = run_cycle(s, source_configs=_sources(hiringcafe={}, jooble={}),
-                                 limits={"hiringcafe": 7, "jooble": 7},
-                                 run_source=lambda *a: [])
-    # Per source, so two sources at seven each is fourteen -- not seven shared between them.
-    assert report.queries_planned == 14
-    assert report.queries_deferred > 0
-    assert len(deferred) == report.queries_deferred
-
-
-def test_deferred_queries_are_returned_for_the_next_cycle(ctx):
-    """Advice for next time, not persisted state."""
-    s = ctx
-    for i in range(4):
-        _active_user(s, keywords=[f"u{i}a", f"u{i}b"])
-
-    asked = _sources(hiringcafe={}, jooble={})
-    caps = {"hiringcafe": 3, "jooble": 3}
-    _, deferred = run_cycle(s, source_configs=asked, limits=caps, run_source=lambda *a: [])
-    assert deferred
-
-    report2, _ = run_cycle(s, source_configs=asked, limits=caps,
-                           carried_over=deferred, run_source=lambda *a: [])
-    assert report2.queries_planned == 6
-
-
-def test_one_sources_ceiling_does_not_starve_another(ctx):
-    """The defect the global budget had, stated as behaviour."""
-    s = ctx
-    for i in range(20):
-        _active_user(s, keywords=[f"u{i}term{j}" for j in range(3)])
-
-    report, _ = run_cycle(s, source_configs=_sources(hiringcafe={}, jooble={}),
-                          limits={"hiringcafe": 2, "jooble": 5},
-                          run_source=lambda *a: [])
-
-    # Each source gets exactly its own ceiling, whatever the other one's demand is.
-    assert report.queries_planned == 7
-
-
-def test_a_source_the_operator_has_not_tuned_still_gets_a_ceiling(ctx):
-    """Unbounded is not an option — 50 users × 5 terms is a ban and a cycle that takes an hour."""
-    from services.harvester.query_set import DEFAULT_QUERIES_PER_CYCLE
-
-    s = ctx
-    for i in range(30):
-        _active_user(s, keywords=[f"u{i}term{j}" for j in range(3)])
-
-    report, _ = run_cycle(s, source_configs=_sources(hiringcafe={}), limits={},
-                          run_source=lambda *a: [])
-    assert report.queries_planned == DEFAULT_QUERIES_PER_CYCLE
-    assert report.queries_deferred > 0
-
-
 # ── who is in the fold ────────────────────────────────────────────────────────────────────────
 
-def test_a_switched_off_user_costs_nothing(ctx):
-    """An account an operator has stopped must stop consuming harvest budget."""
+def test_only_active_accounts_countries_keep_jobs(ctx):
+    """An account an operator has stopped, or a signup not yet verified, widens nothing: a job in only their
+    country is not stored (TENANT_SAFETY §5: a signup flood must cost nothing)."""
     s = ctx
-    _active_user(s, keywords=["activeterm"])
-    _active_user(s, keywords=["stoppedterm"], status="suspended", active=False)
-    asked: list[str] = []
+    _active_user(s)  # the United Kingdom
+    for status in ("suspended", "pending_verification"):
+        stopped = _active_user(s, status=status, active=False)
+        TenantRepository(s).save_config(stopped.id, {"keywords": ["x"], "locations": ["germany"]})
+    found = [JobLink(url=f"https://boards.greenhouse.io/acme/jobs/{n}", title="Nurse", company=f"Acme {n}",
+                     location=where, source="greenhouse")
+             for n, where in enumerate(["London", "Berlin, Germany"])]
 
-    def board(source, cfg, repo):
-        asked.append(str(cfg.get("queries")))
-        return []
+    report = run_cycle(s, source_configs=_sources(himalayas={}), run_source=lambda *a: list(found),
+                       describe=False)
 
-    report, _ = run_cycle(s, source_configs=_sources(hiringcafe={}), run_source=board)
-    assert report.queries_planned == 1
-    assert "activeterm" in asked[0] and "stoppedterm" not in asked[0]
-
-
-def test_an_unverified_signup_consumes_no_harvest_budget(ctx):
-    """TENANT_SAFETY §5: a signup flood must cost nothing."""
-    s = ctx
-    _active_user(s, status="pending_verification", active=False)
-
-    report, _ = run_cycle(s, source_configs=_sources(hiringcafe={}), run_source=lambda *a: [])
-    assert report.queries_planned == 0
+    assert s[CorpusJob.COLLECTION].distinct("location") == ["London"]
+    assert report.elsewhere == 1
 
 
 # ── failure containment ───────────────────────────────────────────────────────────────────────
@@ -199,8 +131,8 @@ def test_one_dead_source_cannot_sink_the_cycle(ctx):
             raise RuntimeError("upstream changed its JSON again")
         return [good]
 
-    report, _ = run_cycle(s, source_configs=_sources(himalayas={}, nofluffjobs={}),
-                          run_source=flaky)
+    report = run_cycle(s, source_configs=_sources(himalayas={}, nofluffjobs={}),
+                       run_source=flaky)
 
     assert "himalayas" in report.source_failures
     assert report.new_jobs == 1, "the healthy source still delivered"
@@ -258,10 +190,10 @@ def test_two_cycles_cannot_run_at_once(ctx):
 
     with harvest_lock(s) as held:
         assert held, "the fixture failed to take the lease"
-        report, _ = run_cycle(s, source_configs={}, run_source=lambda *a: [])
+        report = run_cycle(s, source_configs={}, run_source=lambda *a: [])
 
     assert report.skipped_locked is True
-    assert report.queries_planned == 0
+    assert report.links_found == 0
 
 
 def test_the_lock_is_released_after_a_cycle(ctx):
@@ -301,71 +233,25 @@ def test_a_cycle_that_died_holding_the_lock_does_not_stop_the_next_one(ctx):
     s.locks.update_one({"_id": "harvest"}, {"$set": {"until": now() - timedelta(seconds=1),
                                                     "holder": "a cycle that was killed"}})
 
-    report, _ = run_cycle(s, source_configs={}, run_source=lambda *a: [])
+    report = run_cycle(s, source_configs={}, run_source=lambda *a: [])
 
     assert report.skipped_locked is False
 
 
 # ── de-personalised source config ─────────────────────────────────────────────────────────────
 
-def test_source_filters_come_from_the_union_of_users_not_one_person(ctx):
-    """The de-personalisation."""
-    from services.harvester.source_config import build_source_configs, union_keywords
-
-    s = ctx
-    _active_user(s, keywords=["golang"])
-    _active_user(s, keywords=["rust", "Golang"])
-
-    configs = TenantRepository(s).active_configs()
-    assert union_keywords(configs) == ["golang", "rust"], "deduplicated, lowercased, sorted"
-
-    # Asserted on the queries, not on `keywords`.
-    built = build_source_configs(configs, env={})
-    assert built["hiringcafe"]["queries"] == [{"search_term": "golang"}, {"search_term": "rust"}]
-
-
 def test_the_filter_reads_the_sections_a_real_config_actually_stores():
     """Every test here wrote a flat config and every real one stores sections."""
-    from services.harvester.source_config import union_keywords, union_locations
+    from services.harvester.source_config import union_locations
 
     sectioned = {
         uuid.uuid4(): {"sections": [{"keywords": ["Rust", "golang"],
                                      "locations": ["Budapest"], "platform": "all"}]},
     }
-    assert union_keywords(sectioned) == ["golang", "rust"]
     assert union_locations(sectioned) == ["hungary"], "a city stored before is read as its country"
 
-    both = {uuid.uuid4(): {"keywords": ["flat"], "sections": [{"keywords": ["nested"]}]}}
-    assert union_keywords(both) == ["flat", "nested"], "neither shape may shadow the other"
-
-
-def test_each_board_is_asked_in_the_shape_it_reads():
-    """A query in the wrong shape is silent: the board answers its unfiltered feed and reports success."""
-    from services.harvester.source_config import build_source_configs
-
-    built = build_source_configs(
-        {uuid.uuid4(): {"sections": [{"keywords": ["golang"]}]}}, env={})
-
-    assert built["hiringcafe"]["queries"] == [{"search_term": "golang"}]
-
-
-def test_a_board_with_no_geography_is_asked_once_per_keyword():
-    """This is the redundancy, stated exactly."""
-    from services.harvester.query_set import build_query_set
-
-    config = {uuid.uuid4(): {"sections": [
-        {"keywords": ["golang"], "platform": "all",
-         "locations": ["europe", "united_kingdom", "budapest"]}]}}
-
-    # `nofluffjobs` has no location parameter at all; `hiringcafe` has a real one.
-    keys = build_query_set(config, sources=("nofluffjobs", "hiringcafe"),
-                           locating_sources=("hiringcafe",))
-    per_source: dict[str, int] = {}
-    for key in keys:
-        per_source[key.source] = per_source.get(key.source, 0) + 1
-
-    assert per_source["nofluffjobs"] == 1, "one keyword, one query, however many places were asked for"
-    assert per_source["hiringcafe"] == 3, "a source that can filter by place still gets all three"
+    both = {uuid.uuid4(): {"locations": ["germany"], "sections": [{"locations": ["france"]}]}}
+    assert union_locations(both) == ["france", "germany"], "neither shape may shadow the other"
 
 
 def test_a_job_a_board_returned_survives_every_enabled_source_s_own_filtering():
@@ -412,9 +298,9 @@ def test_a_job_a_board_returned_survives_every_enabled_source_s_own_filtering():
         "the incident that zeroed eleven sources")
 
 
-def test_no_board_is_handed_anybodys_words_to_keep_jobs_by_but_the_one_asked_for_them():
-    """Every board is read whole and the words matched on what is stored (owner, 2026-11-04). Hiring
-    Cafe can only be asked for words, so it is asked for them, and keeps all it is sent."""
+def test_no_board_is_handed_anybodys_words_to_ask_for_or_to_keep_jobs_by():
+    """Every board is read whole and the words matched on what is stored (owner, 2026-11-04). Hiring Cafe
+    could only be asked for words, and was removed with the query set on 2026-11-06."""
     from services.harvester.source_config import build_source_configs
 
     built = build_source_configs(
@@ -424,7 +310,7 @@ def test_no_board_is_handed_anybodys_words_to_keep_jobs_by_but_the_one_asked_for
 
     handed = {name for name, cfg in built.items() if "keywords" in cfg or "location_keywords" in cfg}
     assert handed == set(), f"{handed} would keep only the jobs somebody's words name"
-    assert [name for name, cfg in built.items() if "queries" in cfg] == ["hiringcafe"]
+    assert [name for name, cfg in built.items() if "queries" in cfg] == [], "nobody's words are asked for"
 
 
 def test_a_source_whose_window_an_operator_narrowed_actually_narrows():
@@ -445,18 +331,11 @@ def test_an_operators_window_reaches_a_source_under_every_key_it_reads():
     """Setting the window in three places was not enough, because a fourth exists."""
     from services.harvester.source_config import build_source_configs
 
-    built = build_source_configs({}, env={}, freshness={"hiringcafe": 48, "greenhouse": 3})
+    built = build_source_configs({}, env={}, freshness={"himalayas": 48, "greenhouse": 3})
 
-    assert built["hiringcafe"]["max_age_hours"] == 48
-    assert built["hiringcafe"]["posted_within_days"] == 2, "48 hours is 2 days, rounded up"
-    assert built["greenhouse"]["posted_within_hours"] == 3
-
-    # Rounded up: a board that thinks in calendar days cannot honour "36 hours".
-    day_and_a_half = build_source_configs({}, env={}, freshness={"hiringcafe": 36})
-    assert day_and_a_half["hiringcafe"]["posted_within_days"] == 2
-    # And never zero, which would be "nothing qualifies".
-    assert build_source_configs(
-        {}, env={}, freshness={"hiringcafe": 1})["hiringcafe"]["posted_within_days"] == 1
+    assert built["himalayas"]["max_age_hours"] == 48
+    # `ats.JobFilter` reads `posted_within_hours` first, and the platform default sat there.
+    assert (built["greenhouse"]["max_age_hours"], built["greenhouse"]["posted_within_hours"]) == (3, 3)
 
 
 def test_the_union_is_asked_for_not_used_to_throw_away_what_a_board_sent():
@@ -470,59 +349,6 @@ def test_the_union_is_asked_for_not_used_to_throw_away_what_a_board_sent():
     for source in ("greenhouse", "ashby", "lever", "workday"):
         assert "keywords" not in built[source], f"{source} would drop rows on title alone"
         assert "location_keywords" not in built[source], f"{source} would drop rows on a slug"
-    # And the half that is worth having is still there.
-    assert built["hiringcafe"]["queries"] == [{"search_term": "golang"}]
-
-
-def test_a_board_is_asked_for_the_phrase_the_user_wrote():
-    """The fold key is not a search term, and sending it cost real quality on the first live cycle."""
-    from services.harvester.query_set import normalise_keyword, original_terms
-
-    configs = {uuid.uuid4(): {"sections": [
-        {"keywords": ["stress engineer", "szoftverfejlesztő", "C++ developer"]}]}}
-    terms = original_terms(configs)
-
-    assert terms[normalise_keyword("stress engineer")] == "stress engineer"
-    assert terms[normalise_keyword("szoftverfejlesztő")] == "szoftverfejlesztő"
-    assert terms[normalise_keyword("C++ developer")] == "C++ developer"
-    # The key itself still folds, or the whole point of the fold is lost.
-    assert normalise_keyword("stress engineer") == normalise_keyword("Engineer, Stress")
-
-
-def test_one_folded_key_emits_the_same_term_however_users_phrased_it():
-    """Several users writing one search differently must not make the emitted term depend on which of."""
-    from services.harvester.query_set import normalise_keyword, original_terms
-
-    key = normalise_keyword("python developer")
-    a = {uuid.uuid4(): {"sections": [{"keywords": ["python developer"]}]},
-         uuid.uuid4(): {"sections": [{"keywords": ["Developer Python"]}]}}
-    b = {uuid.uuid4(): {"sections": [{"keywords": ["Developer Python"]}]},
-         uuid.uuid4(): {"sections": [{"keywords": ["python developer"]}]}}
-
-    assert original_terms(a)[key] == original_terms(b)[key]
-
-
-def test_no_locating_sources_is_not_the_same_as_not_saying():
-    """An empty iterable means "nothing locates"; `None` means "everything does"."""
-    from services.harvester.query_set import build_query_set
-
-    config = {uuid.uuid4(): {"sections": [
-        {"keywords": ["golang"], "platform": "all", "locations": ["london", "berlin"]}]}}
-
-    assert len(build_query_set(config, sources=("linkedin",))) == 2
-    assert len(build_query_set(config, sources=("linkedin",), locating_sources=())) == 1
-
-
-def test_a_switched_off_users_keywords_leave_the_filter(ctx):
-    """Their terms should stop widening the harvest the moment they stop costing anything."""
-    from services.harvester.source_config import build_source_configs
-
-    s = ctx
-    _active_user(s, keywords=["stillhere"])
-    _active_user(s, keywords=["goneaway"], status="suspended", active=False)
-
-    built = build_source_configs(TenantRepository(s).active_configs(), env={})
-    assert built["hiringcafe"]["queries"] == [{"search_term": "stillhere"}]
 
 
 def test_with_no_users_at_all_sources_stay_enabled_and_unfiltered():
@@ -541,47 +367,6 @@ def test_key_gated_sources_stay_off_without_their_credential():
     assert "adzuna" not in build_source_configs({}, env={})
     assert "adzuna" in build_source_configs(
         {}, env={"ADZUNA_APP_ID": "x", "ADZUNA_APP_KEY": "y"})
-
-
-def test_a_source_blocked_at_the_network_stays_off_even_holding_its_key():
-    """Holding a valid credential is not the same as being able to reach the board.
-
-    Jooble answers every request from the VPS with an HTML 403 block page — probed 2026-08-10 with
-    a working key, on the international host and both country editions. `KEY_GATED` is what
-    actually enables a source, appending to the active list whenever the credential is present and
-    regardless of `HARVEST_SOURCES`, so dropping it from that tuple alone left it running and
-    failing every cycle.
-    """
-    from services.harvester.source_config import build_source_configs
-
-    assert "jooble" not in build_source_configs({}, env={"JOOBLE_API_KEY": "x"})
-
-
-def test_query_taking_sources_always_get_a_query():
-    """Found on the first real cycle against live sources."""
-    from services.harvester.source_config import QUERY_TAKING_SOURCES, build_source_configs
-
-    built = build_source_configs({}, env={})
-    for key in QUERY_TAKING_SOURCES & built.keys():
-        assert built[key].get("queries"), f"{key} would make no request at all"
-
-
-def test_with_no_users_the_query_is_a_broad_feed_read():
-    """Not a placeholder: an empty search fetches the board's unfiltered recent feed."""
-    from services.harvester.source_config import build_source_configs
-
-    assert build_source_configs({}, env={})["hiringcafe"]["queries"] == [{"search_term": ""}]
-
-
-def test_users_keywords_become_the_queries(ctx):
-    from services.harvester.source_config import build_source_configs
-
-    s = ctx
-    _active_user(s, keywords=["golang"])
-    _active_user(s, keywords=["rust"])
-
-    built = build_source_configs(TenantRepository(s).active_configs(), env={})
-    assert built["hiringcafe"]["queries"] == [{"search_term": "golang"}, {"search_term": "rust"}]
 
 
 def test_the_recency_window_is_the_widest_any_user_asked_for(ctx):
@@ -607,7 +392,7 @@ def test_the_recency_window_is_the_widest_any_user_asked_for(ctx):
 
 # ── the age window actually reaching the sources ──────────────────────────────────────────────
 
-def test_the_jobspy_tier_is_given_the_age_window_under_the_key_it_reads():
+def test_every_board_is_given_the_age_window_the_accounts_asked_for():
     """The bug that put month-old, already-closed postings into live feeds."""
     from services.harvester.source_config import build_source_configs
 
@@ -616,10 +401,8 @@ def test_the_jobspy_tier_is_given_the_age_window_under_the_key_it_reads():
 
     assert configs, "no sources enabled — the assertion below would pass vacuously"
     for source, cfg in configs.items():
-        assert cfg.get("hours_old") == cfg.get("max_age_hours"), (
-            f"{source} would filter on one key and scrape on the other")
         # The number the user asked for, not merely a number.
-        assert cfg["hours_old"] == 4, f"{source} ignored the window the user asked for"
+        assert cfg["max_age_hours"] == 4, f"{source} ignored the window the user asked for"
 
 
 def test_the_window_is_the_widest_any_active_account_asked_for():
@@ -630,8 +413,7 @@ def test_the_window_is_the_widest_any_active_account_asked_for():
         "tight": {"sections": [{"keywords": ["python"], "posted_within_hours": 2}]},
         "wide": {"sections": [{"keywords": ["python"], "posted_within_hours": 72}]}})
 
-    assert all(cfg["hours_old"] == 72 for cfg in configs.values())
-    assert all(cfg["hours_old"] != 2 for cfg in configs.values()), "the tighter ask won"
+    assert all(cfg["max_age_hours"] == 72 for cfg in configs.values()), "the tighter ask won"
 
 
 def test_an_account_may_ask_for_a_window_as_tight_as_the_reference_watcher():
@@ -648,11 +430,11 @@ def test_the_operators_result_and_company_ceilings_reach_the_adapters():
 
     built = build_source_configs(
         {}, env={},
-        results={"jobicy": 25, "hiringcafe": 25},
+        results={"jobicy": 25, "justjoinit": 40},
         ats_companies=750)
 
     assert built["jobicy"]["count"] == 25
-    assert built["hiringcafe"]["results_wanted"] == 25
+    assert built["justjoinit"]["per_page"] == 40
     # One company ceiling across the whole ATS family, since they share a mechanism.
     for name in ("greenhouse", "ashby", "workday"):
         assert built[name]["max_companies"] == 750
@@ -668,18 +450,17 @@ def test_an_unset_ceiling_leaves_the_platform_default_alone():
 
     built = build_source_configs({}, env={})
     assert built["greenhouse"]["max_companies"] == PLATFORM_DEFAULTS["greenhouse"]["max_companies"]
-    assert "results_wanted" not in built["hiringcafe"], "no result key until somebody sets one"
+    assert "per_page" not in built["justjoinit"], "no result key until somebody sets one"
 
 
 def test_a_removed_source_cannot_be_quietly_switched_back_on():
     """`DEFERRED_SOURCES` records what was removed and why."""
-    from libs.settings import HARVEST_SOURCES, QUERY_TAKING_SOURCES
+    from libs.settings import HARVEST_SOURCES
     from services.harvester.source_config import DEFAULT_ENABLED, DEFERRED_SOURCES
 
     deferred = set(DEFERRED_SOURCES)
     assert deferred & set(DEFAULT_ENABLED) == set()
     assert deferred & set(HARVEST_SOURCES) == set(), "the admin panel would offer it a control"
-    assert deferred & QUERY_TAKING_SOURCES == set()
 
 
 # ── how deep a paginated source walks (ROADMAP 6ag) ───────────────────────────────────────────
@@ -689,9 +470,9 @@ def test_the_operators_page_depth_reaches_the_two_sources_that_paginate():
     """Both were constants inside their adapters and neither appeared anywhere an operator looks."""
     from services.harvester.source_config import build_source_configs
 
-    built = build_source_configs({}, env={}, pages={"hiringcafe": 8, "workday": 2})
+    built = build_source_configs({}, env={}, pages={"himalayas": 8, "workday": 2})
 
-    assert built["hiringcafe"]["max_pages"] == 8
+    assert built["himalayas"]["max_pages"] == 8
     assert built["workday"]["max_pages"] == 2
 
 
@@ -699,7 +480,7 @@ def test_a_source_with_no_page_setting_keeps_its_own_default():
     """An operator who has tuned one source must not silently reset every other one."""
     from services.harvester.source_config import build_source_configs
 
-    built = build_source_configs({}, env={}, pages={"hiringcafe": 8})
+    built = build_source_configs({}, env={}, pages={"himalayas": 8})
 
     assert "max_pages" not in built.get("workday", {})
 
@@ -756,7 +537,7 @@ def test_a_harvest_runs_without_an_embedder(ctx, monkeypatch):
     monkeypatch.setattr(entry, "_run_linkedin_pass", lambda: None)
     ran = []
     monkeypatch.setattr(entry, "run_cycle", lambda db, **kwargs: (
-        ran.append(kwargs) or (cycle.CycleReport(), [])))
+        ran.append(kwargs) or cycle.CycleReport()))
 
     assert entry.main([]) == 0
     assert ran, "the cycle itself ran, not just the entry point"
@@ -784,7 +565,7 @@ def test_linkedin_is_read_beside_the_boards_and_the_words_found_after_both(ctx, 
         assert linkedin_started.wait(5), "the boards waited for LinkedIn to finish"
         order.append("boards")
         boards_done.set()
-        return cycle.CycleReport(), []
+        return cycle.CycleReport()
 
     monkeypatch.setattr(entry, "_run_linkedin_pass", linkedin_pass)
     monkeypatch.setattr(entry, "run_cycle", boards)
@@ -804,17 +585,16 @@ def test_with_no_site_proxy_every_board_but_linkedin_is_harvested(ctx, monkeypat
     s = ctx
     _active_user(s, keywords=["welder"])
     shared = {source.key for source in sources_for(Tier.SHARED)}
-    asked: dict[str, str] = {}
+    asked: set[str] = set()
 
     def board(source, cfg, repo):
-        asked[source.key] = str(cfg.get("queries", ""))
+        asked.add(source.key)
         return [_link(title="Welder")] if source.key == "himalayas" else []
 
-    report, _ = run_cycle(s, source_configs=_sources(**{key: {} for key in shared}),
-                          run_source=board, describe=False)
+    report = run_cycle(s, source_configs=_sources(**{key: {} for key in shared}),
+                       run_source=board, describe=False)
 
-    assert set(asked) == shared, "every shared board was asked"
-    assert all("welder" in asked[key] for key in ("hiringcafe", "jooble"))
+    assert asked == shared, "every shared board was asked"
     assert report.new_jobs == 1
 
     def no_request(*args, **kwargs):

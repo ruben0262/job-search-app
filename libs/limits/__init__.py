@@ -63,7 +63,8 @@ LIMITS: tuple[Limit, ...] = (
           "count.",
           choices=(10, 25, 50, 100, 150, 200)),
     Limit("keywords", "Search terms", 25, "terms",
-          "More terms means broader collection and more proxy spend.",
+          "How many green words this account may have. No board is asked for them: they are matched on the "
+          "jobs already collected, so more words cost nothing to collect.",
           choices=(10, 25, 50, 100)),
     Limit("documents", "Uploaded documents", 25, "files",
           "The CVs and cover letters they upload, which their suggestions and documents are read from.",

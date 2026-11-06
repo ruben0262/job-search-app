@@ -1,8 +1,8 @@
 # services/harvester runtime dependencies.
 #
-# Per-service, per CODE_STRUCTURE.md §5: this is the only image that will carry jobspy, just as
-# docgen is the only one carrying Chrome. Keeping them separate is what lets api and notifier stay
-# small and fast to rebuild, which matters because they are what gets restarted most.
+# Per-service, per CODE_STRUCTURE.md §5: docgen is the only image carrying Chrome. Keeping them separate
+# is what lets api and notifier stay small and fast to rebuild, which matters because they are what gets
+# restarted most.
 
 httpx>=0.28
 # Several adapters parse RSS/XML from third-party job boards. Stdlib ElementTree is documented as
@@ -10,12 +10,6 @@ httpx>=0.28
 defusedxml>=0.7            # the fetch layer; per-host transport mounts are load-bearing for D3
 pymongo>=4.19,<5
 pydantic>=2.10         # libs/contracts config schema
-
-# The JobSpy tier — LinkedIn, Indeed, Google Jobs. Listed as "added with the source adapters in
-# step 4c, not before" and then not added, which is why those three sources could not run at all:
-# the adapters were ported, the config existed, and the import would have failed on first call.
-# Same pin as the reference.
-python-jobspy>=1.1.80
 
 # The description pass (`libs/corpus/postings.py`). It degrades to a regex tag-strip without this,
 # which is not good enough to ship: the JSON-LD path is what gets the clean JD instead of the page's

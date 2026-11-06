@@ -313,7 +313,8 @@ def test_the_source_list_shows_each_setting_as_it_is_set_from_one_read_of_them(a
     http, db, operator, _ordinary, sign_in = api
     sign_in(http, operator)
     settings.put(db, "source_freshness_hours", {"himalayas": 7})
-    settings.put(db, "source_queries_per_cycle", {"hiringcafe": 3})
+    # Adzuna's calls a run, and a value left stored for a source removed since (2026-11-06).
+    settings.put(db, "source_queries_per_cycle", {"adzuna": 3, "hiringcafe": 3})
     settings.put(db, "source_min_age_hours", {"jobicy": 11})
     settings.put(db, "ats_companies_per_cycle", 123)
 
@@ -342,7 +343,10 @@ def test_the_source_list_shows_each_setting_as_it_is_set_from_one_read_of_them(a
     assert asked > 0, "the counter saw nothing: it is not measuring the route"
 
     rows = {row["name"]: row for row in body["sources"]}
-    assert (rows["himalayas"]["hours"], rows["hiringcafe"]["queries_per_cycle"]) == (7, 3)
+    assert (rows["himalayas"]["hours"], rows["adzuna"]["queries_per_cycle"]) == (7, 3)
+    assert "hiringcafe" not in rows
+    assert {name for name, row in rows.items() if row["queries_per_cycle"] is not None} == {"adzuna"}, (
+        "only the source metered by the call has calls to set: no board is asked for a word")
     assert rows["jobicy"]["min_age_hours"] == 11 and body["ats"]["companies_per_cycle"] == 123
     for name, row in rows.items():
         assert row["hours"] == settings.freshness_hours(db, name)
@@ -466,47 +470,6 @@ def test_the_corpus_browser_reports_what_is_actually_in_there(api):
     searched = http.get("/admin/corpus?q=mechanical").json()
     assert searched["total"] == 3
     assert all("Mechanical" in job["title"] for job in searched["jobs"])
-
-
-def test_operator_keywords_are_added_listed_and_removed(api):
-    """Seeding the corpus ahead of the users who will need it."""
-    http, _db, operator, _ordinary, sign_in = api
-    sign_in(http, operator)
-
-    created = http.post("/admin/keywords",
-                        json={"keyword": "  Stress   Engineer ", "location": "united_kingdom",
-                              "note": "seeding mech eng"})
-    assert created.status_code == 201
-    assert created.json()["keyword"] == "stress engineer", "whitespace and case are normalised"
-
-    # Adding it again is somebody unsure whether it took, not a request for two query stems.
-    again = http.post("/admin/keywords",
-                      json={"keyword": "stress engineer", "location": "united_kingdom"})
-    assert again.json()["created"] is False
-
-    listed = http.get("/admin/keywords").json()
-    assert any(row["keyword"] == "stress engineer" for row in listed["operator"])
-
-    removed = http.delete(f"/admin/keywords/{created.json()['id']}")
-    assert removed.status_code == 200
-    assert not http.get("/admin/keywords").json()["operator"]
-
-
-def test_a_users_own_search_terms_are_shown_but_never_deletable(api):
-    """Their feed is built from these."""
-    from libs.db.models import UserConfig
-
-    http, db, operator, ordinary, sign_in = api
-    sign_in(http, operator)
-    insert(db, UserConfig(user_id=ordinary.id,
-                          config={"sections": [{"keywords": ["quantum welder"],
-                                                "locations": ["europe"], "platform": "all"}]}))
-
-    listed = http.get("/admin/keywords").json()
-    theirs = [row for row in listed["users"] if row["keyword"] == "quantum welder"]
-    assert theirs, "an operator should be able to see what a user searches for"
-    assert theirs[0]["deletable"] is False
-    assert ordinary.email in theirs[0]["accounts"]
 
 
 # ── discarding dead letters (ROADMAP 6af) ─────────────────────────────────────────────────────

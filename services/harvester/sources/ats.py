@@ -26,11 +26,6 @@ _TIMEOUT = 15
 LEVER_TIMEOUT = 60
 # The three JSON files and their lock are gone.
 
-# hiring.cafe source strings -> our ATS name (greenhouse shows as 'grnhse', lever splits eu/us).
-_HARVEST_MAP = {"grnhse": "greenhouse", "greenhouse": "greenhouse", "ashby": "ashby",
-                "lever": "lever", "eu_lever": "lever", "smartrecruiters": "smartrecruiters",
-                "recruitee": "recruitee", "breezy": "breezy"}
-
 # One pooled client shared by every board poll.
 _CLIENT: httpx.Client | None = None
 _CLIENT_LOCK = threading.Lock()
@@ -51,21 +46,6 @@ def _http() -> httpx.Client:
 # Lowercasing and dedup moved into AtsRepository.add_tokens: normalising at the storage boundary.
 def load_harvested(repo: AtsRepository, ats: str) -> list[str]:
     return repo.live_tokens(ats)
-
-
-def _add_tokens(repo: AtsRepository, pairs: list[tuple[str, str]]) -> int:
-    return repo.add_tokens(pairs) if pairs else 0
-
-
-def harvest_from_hits(repo: AtsRepository, hits: list[dict[str, Any]]) -> int:
-    """Record ATS board tokens seen in hiring.cafe hits (source + board_token). # newly added."""
-    pairs = []
-    for h in hits:
-        ats = _HARVEST_MAP.get((h.get("source") or "").lower())
-        bt = (h.get("board_token") or "").strip()
-        if ats and bt:
-            pairs.append((ats, bt))
-    return _add_tokens(repo, pairs)
 
 
 # ── ETag cache (conditional polling) ──────────────────────────────────────

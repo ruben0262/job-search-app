@@ -1806,10 +1806,10 @@ button.making::after {
    leaving the markup as rows. */
 .sources {
   display: grid;
-  /* Fixed widths on the five control columns, so a row's contents cannot move its neighbours'
-     columns. Wide enough for the longest option in each: `168h`, `168h`, `200`, `100`, and a
-     count. The second `5rem` is `keep`, added beside `fresh` because the two are one decision. */
-  grid-template-columns: minmax(7rem, 1fr) 5rem 5rem 4.5rem 4.5rem 4.5rem 4rem;
+  /* Fixed widths on the control columns, so a row's contents cannot move its neighbours' columns. Wide
+     enough for the longest option in each: `168h`, `168h`, `12`, `100`, `10`. The second `5rem` is
+     `keep`, added beside `fresh` because the two are one decision. */
+  grid-template-columns: minmax(7rem, 1fr) 5rem 5rem 4.5rem 4.5rem 4.5rem;
   align-items: center;
   column-gap: 0.75rem;
   margin-top: 0.75rem;
@@ -2055,16 +2055,6 @@ button.making::after {
 
 /* A ticked option should look ticked from across the room, not only by its label shade. */
 .pick:has(input:checked) { font-weight: 500; }
-
-/* Search terms, two columns. The three-column source grid put twenty-odd short strings on screen
-   with no order anybody could follow — it read as a wall rather than a list, and a term you were
-   looking for was as hard to find as one you were not. */
-.term-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(20rem, 100%), 1fr));
-  gap: 0 1.5rem;
-  max-width: 44rem;
-}
 
 /* A stage's verdict. Colour plus a word, never colour alone: a red pill nobody can read is a red
    pill somebody guesses at, and 8% of men cannot reliably tell it from the green one. */

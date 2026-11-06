@@ -9,9 +9,6 @@ logger = logging.getLogger(__name__)
 # Below this, detection is guesswork. A three-word title is not evidence of anything.
 MIN_CHARS = 40
 
-# Sources exempt from the filter entirely.
-EXEMPT_SOURCES = frozenset({"hiringcafe"})
-
 @cache
 def _warn_library_missing() -> None:
     """Said once per process, not once per posting.
@@ -57,11 +54,8 @@ def detect_language(text: str) -> str | None:
         return None
 
 
-def is_allowed(language: str | None, allowed: set[str] | None, *,
-               source: str | None = None) -> bool:
+def is_allowed(language: str | None, allowed: set[str] | None) -> bool:
     """True to keep the job. `language` is the stored code, read once at describe time."""
-    if source and source in EXEMPT_SOURCES:
-        return True
     if not allowed:
         return True
     # Unknown keeps: a wrong language hides a job somebody wanted, an unknown one costs nothing.

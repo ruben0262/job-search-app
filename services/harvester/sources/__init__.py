@@ -5,7 +5,7 @@ from collections.abc import Callable
 from enum import StrEnum
 from typing import Any, NamedTuple
 
-from services.harvester.sources import ats, hiringcafe, http_apis, jobspy_source
+from services.harvester.sources import ats, http_apis
 from services.harvester.sources.base import JobLink
 
 
@@ -26,12 +26,6 @@ class Source(NamedTuple):
 # Ordered as in the reference, so a diff against it stays readable.
 REGISTRY: dict[str, Source] = {
     s.key: s for s in (
-        # JobSpy.
-        Source("jobspy_indeed", jobspy_source.gather_indeed, Tier.SHARED),
-        Source("jobspy_google", jobspy_source.gather_google, Tier.SHARED),
-
-        Source("hiringcafe", hiringcafe.gather_hiringcafe, Tier.SHARED),
-
         # Direct company ATS boards: unproxied, and the only family reading harvested tokens and ETags.
         Source("greenhouse", ats.gather_greenhouse, Tier.SHARED, needs_ats_repo=True),
         Source("ashby", ats.gather_ashby, Tier.SHARED, needs_ats_repo=True),
@@ -43,13 +37,10 @@ REGISTRY: dict[str, Source] = {
         Source("personio", ats.gather_personio, Tier.SHARED, needs_ats_repo=True),
         Source("workable", ats.gather_workable, Tier.SHARED, needs_ats_repo=True),
 
-        # VC portfolio boards.
-
         # Board APIs — feed-shaped, so they need no query set at all (HARVESTER_PLAN.md §1).
         Source("nofluffjobs", http_apis.gather_nofluffjobs, Tier.SHARED),
         Source("nofluffjobs_hu", http_apis.gather_nofluffjobs, Tier.SHARED),
         Source("profession", http_apis.gather_profession, Tier.SHARED),
-        Source("jooble", http_apis.gather_jooble, Tier.SHARED),
         Source("justjoinit", http_apis.gather_justjoinit, Tier.SHARED),
         Source("himalayas", http_apis.gather_himalayas, Tier.SHARED),
         Source("workingnomads", http_apis.gather_workingnomads, Tier.SHARED),

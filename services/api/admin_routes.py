@@ -12,27 +12,24 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import Response, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from pymongo.database import Database
 
 from libs.contracts.config import WORKPLACE_NAMES, location_search_name, migrate_config
 from libs.corpus.freshness import platform_windows
 from libs.corpus.repository import CorpusRepository
-from libs.db import delete_account, find, find_one, get, insert
+from libs.db import delete_account, find, get
 from libs.db.models import (
     AtsToken,
     BuiltDocument,
     CorpusJob,
-    OperatorKeyword,
     PushSubscription,
     QueueJob,
     User,
-    UserConfig,
     UserDocument,
     UserJobState,
 )
 from libs.documents.read import LANGUAGE_NAMES
-from libs.harvest import distinct_keywords
 from libs.limits import all_for, describe, set_limit
 from libs.matching import green_words, their_jobs
 from libs.obs import audit
@@ -49,7 +46,6 @@ from libs.settings import (
     DEFAULT_SOURCE_MIN_AGE_HOURS,
     DEFAULTS,
     HARVEST_SOURCES,
-    QUERY_TAKING_SOURCES,
     all_settings,
     ats_companies_per_cycle,
     freshness_hours,
@@ -321,11 +317,8 @@ def delete_user(user_id: _uuid.UUID, body: DeleteConfirmation, db: Database = De
 
 @router.get("/sources")
 def sources(db: Database = Depends(get_db), admin: User = Depends(require_admin)) -> dict:
-    """Every source the harvester collects from, with the freshness window each one is using."""
-    # One number per query-taking source: a source is asked once per distinct keyword. LinkedIn is
-    # asked for none since 2026-11-04: it is read country by country.
-    wanted = len(distinct_keywords(TenantRepository(db).active_configs()))
-    asked = QUERY_TAKING_SOURCES
+    """Every source the harvester collects from, with the freshness window each one is using. No source is
+    asked for a word (owner, 2026-11-04): each is read whole for its window."""
     # Every setting below, from one read of them (`settings.snapshot`).
     stored = snapshot(db)
     floors = source_min_ages(stored)
@@ -338,12 +331,12 @@ def sources(db: Database = Depends(get_db), admin: User = Depends(require_admin)
                      # source's harvest window did nothing an operator could see if the floor
                      # below was discarding the result.
                      "min_age_hours": floors.get(name, DEFAULT_SOURCE_MIN_AGE_HOURS),
+                     # Calls a run, for the one source metered by the call (Adzuna); `None` elsewhere.
                      "queries_per_cycle": queries_per_cycle(stored, name),
                      # `None` where the source has no result cap to set at all.
                      "results_per_query": results_per_query(stored, name),
                      # `None` for a source that fetches one response rather than walking pages.
-                     "pages_per_cycle": pages_per_cycle(stored, name),
-                     "wanted": wanted if name in asked else 0}
+                     "pages_per_cycle": pages_per_cycle(stored, name)}
                     for name in HARVEST_SOURCES],
         # The ATS ceiling, with the number it is a ceiling on.
         "ats": {
@@ -456,69 +449,6 @@ def corpus(db: Database = Depends(get_db), admin: User = Depends(require_admin),
             for row in rows],
     }
 
-
-class KeywordBody(BaseModel):
-    keyword: str = Field(min_length=2, max_length=100)
-    # Absent means every location the platform already searches.
-    location: str | None = Field(default=None, max_length=64)
-    note: str | None = Field(default=None, max_length=200)
-
-
-@router.get("/keywords")
-def keywords(db: Database = Depends(get_db), admin: User = Depends(require_admin)) -> dict:
-    """Every term the harvest currently searches, and who it belongs to."""
-    injected = find(db, OperatorKeyword, {}, sort=[("keyword", 1)])
-
-    owned: dict[str, set[str]] = {}
-    rows = [(row["user_id"], row["config"])
-            for row in db[UserConfig.COLLECTION].find({}, {"user_id": 1, "config": 1})]
-    emails = {row["_id"]: row["email"] for row in db[User.COLLECTION].find({}, {"email": 1})}
-    for user_id, config in rows:
-        for section in (config or {}).get("sections") or []:
-            for term in section.get("keywords") or []:
-                owned.setdefault(str(term).strip().lower(), set()).add(
-                    emails.get(user_id, "unknown"))
-
-    return {
-        "operator": [
-            {"id": row.id, "keyword": row.keyword, "location": row.location, "note": row.note,
-             "created_by": row.created_by,
-             "created_at": row.created_at.isoformat() if row.created_at else None}
-            for row in injected],
-        # Read-only in the payload too, so a client cannot offer a delete the server would refuse.
-        "users": [{"keyword": term, "accounts": sorted(who), "deletable": False}
-                  for term, who in sorted(owned.items())],
-    }
-
-
-@router.post("/keywords", status_code=status.HTTP_201_CREATED)
-def add_keyword(body: KeywordBody, db: Database = Depends(get_db),
-                admin: User = Depends(require_admin)) -> dict:
-    """Inject a term into the harvest, to fill the corpus ahead of the users who will need it."""
-    term = " ".join(body.keyword.split()).lower()
-    place = (body.location or "").strip() or None
-    existing = find_one(db, OperatorKeyword, {"keyword": term, "location": place})
-    if existing is not None:
-        # Idempotent: adding the same term twice is a person being unsure, not a request for two.
-        return {"id": existing.id, "keyword": existing.keyword, "location": existing.location,
-                "created": False}
-
-    row = insert(db, OperatorKeyword(keyword=term, location=place, note=(body.note or "").strip() or None,
-                                     created_by=admin.email))
-    audit(logger, "admin.keyword_added", user=admin.id, keyword=term, location=place)
-    return {"id": row.id, "keyword": row.keyword, "location": row.location, "created": True}
-
-
-@router.delete("/keywords/{keyword_id}")
-def remove_keyword(keyword_id: int, db: Database = Depends(get_db),
-                   admin: User = Depends(require_admin)) -> dict:
-    """Remove an injected term."""
-    row = get(db, OperatorKeyword, keyword_id)
-    if row is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="no such keyword")
-    db[OperatorKeyword.COLLECTION].delete_one({"_id": keyword_id})
-    audit(logger, "admin.keyword_removed", user=admin.id, keyword=row.keyword)
-    return {"status": "removed", "keyword": row.keyword}
 
 @router.delete("/queue/dead")
 def discard_dead_letters(db: Database = Depends(get_db), admin: User = Depends(require_admin), *,

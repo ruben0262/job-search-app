@@ -47,7 +47,7 @@ import httpx
 
 from libs.corpus.filters import epoch_to_iso, is_within_hours
 from libs.corpus.postings import strip_html
-from libs.settings import queries_per_cycle_default
+from libs.settings import DEFAULT_SOURCE_QUERIES_PER_CYCLE
 from services.harvester.fetch import make_shared_client
 from services.harvester.sources.base import JobLink, turn
 
@@ -473,7 +473,7 @@ def gather_adzuna(cfg: dict[str, Any], logger) -> list[JobLink]:
     if not countries:
         logger.warning("adzuna: nobody has picked a country Adzuna serves — asking for nothing this cycle")
         return []
-    budget = int(cfg.get("max_queries") or queries_per_cycle_default("adzuna"))
+    budget = int(cfg.get("max_queries") or DEFAULT_SOURCE_QUERIES_PER_CYCLE["adzuna"])
     asked = [countries[index] for index in turn(len(countries), budget)]
 
     max_days = max(1, round(max_age / 24))
@@ -652,70 +652,4 @@ def gather_profession(cfg: dict[str, Any], logger) -> list[JobLink]:
             # Explicit remote word only; absence is unknown, and unknown is kept.
             is_remote=(True if ("remote" in low or "távmunka" in low) else None),
         ))
-    return out
-
-
-
-# ── Jooble (aggregator, international edition) ────────────────────────
-
-def gather_jooble(cfg: dict[str, Any], logger) -> list[JobLink]:
-    """Jooble partner API — free key required (jooble.org/api/about -> JOOBLE_API_KEY in .env).
-    Adapter is a no-op (returns []) while the key is absent, like findwork/adzuna.
-
-    Live-probed 2026-08-10 with the platform's key. Built from the published
-    partner-API contract — POST https://<host>/api/<key> with {"keywords", "location", "page"}
-    returning {"totalCount", "jobs": [{title, location, snippet, salary, source, type, link,
-    company, updated, id}]}. Field handling is defensive; on the FIRST run with a real key,
-    eyeball 3-5 results per checklist §6 before trusting counts. `updated` is the freshest
-    date the API offers (updated != posted — reposts may look fresh; the applicant-glut and
-    dedup layers still apply). `salary` is a free-text string; it is prepended to the snippet
-    so lib/salary.extract() picks it up on the feed card. Jooble links are redirect pages
-    (not company ATS), so the surface-time apply-URL resolution handles cross-source dedup —
-    do NOT add 'jooble' to watcher._DIRECT_SOURCES."""
-    key = os.environ.get("JOOBLE_API_KEY", "").strip()
-    if not key:
-        return []
-    # `jooble.org`, not a country edition. Probed 2026-08-10 with the platform's key:
-    # `hu.jooble.org` and `uk.jooble.org` both answer HTTP 403 with an HTML block page, while the
-    # international host answers 200 and serves every country. A per-country host was a guess at
-    # better local coverage that in fact returned nothing at all.
-    host = cfg.get("host", "jooble.org")
-    max_age = cfg.get("max_age_hours", 24)
-    suffix = cfg.get("location_suffix", "")
-    out: list[JobLink] = []
-    seen: set[str] = set()
-    with make_shared_client(headers={**_JSON, "Content-Type": "application/json"}, follow_redirects=True) as client:
-        for q in cfg.get("queries", []):
-            body = {"keywords": q.get("keywords", ""), "location": q.get("location", ""), "page": "1"}
-            try:
-                jobs = client.post(f"https://{host}/api/{key}", json=body).json().get("jobs", [])
-            except Exception as exc:
-                logger.warning("jooble query %s failed: %s", q, exc)
-                continue
-            for j in jobs:
-                url = (j.get("link") or "").strip()
-                if not url or url in seen:
-                    continue
-                if not is_within_hours(j.get("updated"), max_age):
-                    continue
-                seen.add(url)
-                title = (j.get("title") or "").strip()
-                loc = (j.get("location") or "").strip()
-                low = f"{title} {loc} {j.get('type') or ''}".lower()
-                if suffix and loc and suffix.strip(", ").lower() not in loc.lower():
-                    loc += suffix
-                # Salary string (when Jooble carries one) rides in front of the snippet so the
-                # downstream salary extraction sees it even before the full JD is fetched.
-                sal = (j.get("salary") or "").strip()
-                snippet = _striptags(j.get("snippet")) or title
-                if sal:
-                    snippet = f"Salary: {sal}. {snippet}"
-                out.append(JobLink(
-                    url=url, title=title, company=(j.get("company") or "").strip(),
-                    location=loc or (suffix.strip(", ") if suffix else ""),
-                    source="jooble", date_posted=j.get("updated"), snippet=snippet,
-                    # Tri-state: explicit remote words only; anything else is unknown.
-                    is_remote=(True if ("remote" in low or "távmunka" in low or "home office" in low)
-                               else None),
-                ))
     return out

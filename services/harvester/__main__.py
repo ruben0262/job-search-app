@@ -42,19 +42,13 @@ def source_configs_for(db) -> dict[str, dict]:
                  if results_per_query(db, name)},
         pages={name: pages_per_cycle(db, name) for name in HARVEST_SOURCES
                if pages_per_cycle(db, name)},
-        # Sources that iterate their own demand rather than a planned query set read their ceiling
-        # from the config; `select_within_budget` never sees them.
-        queries={name: queries_per_cycle(db, name) for name in HARVEST_SOURCES},
+        # Adzuna's calls a run, the one source metered by the call.
+        queries={name: calls for name in HARVEST_SOURCES if (calls := queries_per_cycle(db, name))},
         ats_companies=ats_companies_per_cycle(db))
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run one shared harvest cycle.")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="build and budget the query set, then stop before fetching anything")
-    parser.add_argument("--max-queries", type=int, default=None,
-                        help="cap every source at this many queries for this run, ignoring the "
-                             "operator's per-source limits")
     parser.add_argument("--linkedin", action="store_true",
                         help="run the LinkedIn pass alone, then stop")
     parser.add_argument("-v", "--verbose", action="store_true")
@@ -72,32 +66,19 @@ def main(argv: list[str] | None = None) -> int:
     with ThreadPoolExecutor(max_workers=1) as beside:
         # LinkedIn beside the boards, not after them: it goes out through the site proxy and they go direct,
         # so neither waits on the other and each has the tick's whole budget. The words come after both.
-        if not args.dry_run:
-            beside.submit(_run_linkedin_pass)
-        code = _run_shared(args)
-    if not args.dry_run:
-        _find_words()
+        beside.submit(_run_linkedin_pass)
+        code = _run_shared()
+    _find_words()
     return code
 
 
-def _run_shared(args) -> int:
+def _run_shared() -> int:
     """The shared cycle: every board but LinkedIn."""
-    kwargs = {}
-    if args.dry_run:
-        kwargs["run_source"] = lambda *a, **k: []
-
     try:
         db = database()
         source_configs = source_configs_for(db)
-        # The operator's per-source query ceilings, read where the db is.
-        limits = (dict.fromkeys(HARVEST_SOURCES, args.max_queries)
-                  if args.max_queries is not None
-                  else {name: queries_per_cycle(db, name) for name in HARVEST_SOURCES})
-        kwargs["limits"] = limits
-        kwargs["describe_limit"] = describe_per_cycle(db)
         logger.info("harvest: %d sources enabled", len(source_configs))
-
-        report, deferred = run_cycle(db, source_configs=source_configs, **kwargs)
+        report = run_cycle(db, source_configs=source_configs, describe_limit=describe_per_cycle(db))
     except Exception:
         logger.exception("harvest cycle failed")
         return 1
@@ -107,11 +88,8 @@ def _run_shared(args) -> int:
         logger.info("skipped — another cycle holds the lock")
         return 0
 
-    logger.info(
-        "cycle complete: %d queries planned, %d deferred, %d links, %d duplicates, %d new, "
-        "%d source failures",
-        report.queries_planned, len(deferred), report.links_found, report.duplicates_total,
-        report.new_jobs, len(report.source_failures))
+    logger.info("cycle complete: %d links, %d duplicates, %d new, %d source failures",
+                report.links_found, report.duplicates_total, report.new_jobs, len(report.source_failures))
     for key, error in report.source_failures.items():
         logger.warning("source %s failed: %s", key, error)
     return 0

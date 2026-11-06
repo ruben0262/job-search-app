@@ -34,7 +34,7 @@ const POSTED: [string, number | null][] = [["Any time", null], ["Last 24 hours",
 
 /** A board's name as people write it; anything not listed is its own name, capitalised. */
 const BOARDS: Record<string, string> = {
-  linkedin: "LinkedIn", hiringcafe: "Hiring Cafe", justjoinit: "Just Join IT", nofluffjobs: "No Fluff Jobs",
+  linkedin: "LinkedIn", justjoinit: "Just Join IT", nofluffjobs: "No Fluff Jobs",
   workingnomads: "Working Nomads", themuse: "The Muse", smartrecruiters: "SmartRecruiters",
   link: "Added by link",
 };

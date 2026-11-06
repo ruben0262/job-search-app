@@ -173,7 +173,6 @@ instance (four Dockerfiles). Keep it:
 
 - `docgen` is the only image with Chrome.
 - `trainer`/`scorer` are the only images with scikit-learn and numpy.
-- `harvester` is the only image with jobspy.
 - `api` and `notifier` stay small and fast to rebuild — which matters, because they are what you
   restart most.
 

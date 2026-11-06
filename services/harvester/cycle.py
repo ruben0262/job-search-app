@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-import uuid as _uuid
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -18,8 +17,8 @@ from libs.corpus.ats_urls import tokens_from_urls
 from libs.corpus.freshness import platform_windows
 from libs.corpus.geo import allows, posting_country, wanted_countries
 from libs.corpus.repository import TYPED, CorpusRepository
-from libs.db import find, get, lease
-from libs.db.models import CorpusJob, User
+from libs.db import lease
+from libs.db.models import CorpusJob
 from libs.obs import Timings, audit, report_timings, timed
 from libs.settings import (
     ATS_DISCOVERY_LOOKBACK_HOURS,
@@ -31,14 +30,7 @@ from libs.tenant.repository import TenantRepository
 from services.harvester.describe import SHARED_LIMIT as DESCRIBE_PER_CYCLE_DEFAULT
 from services.harvester.describe import describe_pending
 from services.harvester.fetch import make_shared_client
-from services.harvester.query_set import (
-    PlannedQuery,
-    QueryKey,
-    build_query_set,
-    original_terms,
-    select_within_budget,
-)
-from services.harvester.source_config import QUERY_SHAPES, QUERY_TAKING_SOURCES, union_locations
+from services.harvester.source_config import union_locations
 from services.harvester.sources import OUTER_CONCURRENCY, JobLink, Source, Tier, sources_for
 
 logger = logging.getLogger(__name__)
@@ -48,8 +40,6 @@ logger = logging.getLogger(__name__)
 class CycleReport:
     """What one cycle did. Returned rather than only logged, so a caller can assert on it."""
 
-    queries_planned: int = 0
-    queries_deferred: int = 0
     links_found: int = 0
     duplicates: dict[str, int] = field(default_factory=dict)
     new_jobs: int = 0
@@ -87,39 +77,17 @@ def _run_source(source: Source, cfg: dict, repo: AtsRepository) -> list[JobLink]
 
 
 
-# The pseudo-account operator keywords are folded in under.
-OPERATOR_DEMAND_ID = _uuid.UUID("00000000-0000-0000-0000-0000000000ff")
-
-
-def _operator_demand(db) -> dict:
-    """Operator keywords, shaped like a user config so the fold needs no special case."""
-    from libs.db.models import OperatorKeyword  # noqa: PLC0415 - avoids a cycle at import time
-
-    rows = find(db, OperatorKeyword, {})
-    if not rows:
-        return {}
-
-    by_place: dict[str, list[str]] = {}
-    for row in rows:
-        by_place.setdefault(row.location or "", []).append(row.keyword)
-
-    sections = [{"keywords": sorted(set(terms)),
-                 "locations": [place] if place else [],
-                 "platform": "all"}
-                for place, terms in sorted(by_place.items())]
-    return {OPERATOR_DEMAND_ID: {"sections": sections}}
-
 def run_cycle(
     db: Database,
     *,
     source_configs: dict[str, dict] | None = None,
-    carried_over: Iterable[QueryKey] = (),
-    limits: dict[str, int] | None = None,
     describe_limit: int = DESCRIBE_PER_CYCLE_DEFAULT,
     run_source: Callable[[Source, dict, AtsRepository], list[JobLink]] = _run_source,
     describe: bool = True,
-) -> tuple[CycleReport, list[QueryKey]]:
-    """Run one shared harvest cycle. Nothing is embedded or scored: matching happens when it is read."""
+) -> CycleReport:
+    """Run one shared harvest cycle: every enabled board read whole for its window, what is new stored, the
+    thin texts read, company boards learned, old jobs archived. No board is asked for a word (owner,
+    2026-11-04): people's words are matched on the stored jobs when they are read."""
     started = monotonic()
     report = CycleReport()
     corpus = CorpusRepository(db)
@@ -131,34 +99,17 @@ def run_cycle(
         if not acquired:
             logger.warning("harvest: another cycle holds the lock, skipping this tick")
             report.skipped_locked = True
-            return report, list(carried_over)
+            return report
 
-        # 1-2. Every active account's config, which is what the query set is folded from.
+        # 1. Every active account's config: which countries are kept.
         configs = tenant.active_configs()
-
-        # Operator-injected demand, folded in as one more participant.
-        configs = {**configs, **_operator_demand(db)}
-        # The sources that are actually enabled and actually read a query set.
-        askable = tuple(sorted(QUERY_TAKING_SOURCES & set(source_configs)))
-        # No location axis at all, decided 2026-08-04.
-        query_set = build_query_set(configs, sources=askable,
-                                    locating_sources=(), remote_aware_sources=(),
-                                    budgets=_keyword_budgets(db, configs))
-        planned, deferred = select_within_budget(
-            query_set, limits=limits, carried_over=carried_over)
-        report.queries_planned = len(planned)
-        report.queries_deferred = len(deferred)
         if not configs:
-            # A cycle with no active accounts finishes instantly and reads like a healthy quiet run.
-            logger.warning("harvest: no active accounts — this cycle will fetch nothing")
-        elif not planned:
-            logger.warning("harvest: %d account(s) but no queries planned — check their configs",
-                           len(configs))
+            # A cycle with no active accounts keeps nothing, and reads like a healthy quiet run.
+            logger.warning("harvest: no active accounts — this cycle keeps nothing")
 
-        # 3. Fetch the shared tier. The per-user LinkedIn loop runs on its own interval.
+        # 2. Read every enabled board. LinkedIn is a pass of its own beside this one.
         with timed("gather", report.timings):
-            links = _gather(source_configs, planned, ats, run_source, report,
-                            terms=original_terms(configs))
+            links = _gather(source_configs, ats, run_source, report)
         report.links_found = len(links)
 
         # 4-5. Dedup and upsert.
@@ -184,20 +135,18 @@ def run_cycle(
         _archive_expired(db, report)
 
     logger.info(
-        "harvest: %d queries (%d deferred), %d links, %d duplicates, %d in no country anybody picked, "
-        "%d new, %d described", report.queries_planned, report.queries_deferred, report.links_found,
-        report.duplicates_total, report.elsewhere, report.new_jobs, report.described)
+        "harvest: %d links, %d duplicates, %d in no country anybody picked, %d new, %d described",
+        report.links_found, report.duplicates_total, report.elsewhere, report.new_jobs, report.described)
     report_timings(report.timings, event="harvest.timing", log=logger,
                    links=report.links_found, new=report.new_jobs)
 
     _warn_if_near_budget(monotonic() - started, report)
-    audit(logger, "harvest.cycle",
-          queries=report.queries_planned, links=report.links_found,
+    audit(logger, "harvest.cycle", links=report.links_found,
           new=report.new_jobs, elsewhere=report.elsewhere, described=report.described,
           ats_tokens_found=report.ats_tokens_found, archived=report.archived,
           failed_sources=len(report.source_failures),
           empty_sources=sum(1 for n in report.links_by_source.values() if n == 0))
-    return report, [q.key for q in deferred]
+    return report
 
 
 def _archive_expired(db: Database, report: CycleReport) -> None:
@@ -235,14 +184,9 @@ def _warn_if_near_budget(elapsed: float, report: CycleReport) -> None:
         slowest[0] if slowest else "none", (slowest[1] / 60_000) if slowest else 0.0)
 
 
-def _gather(source_configs: dict[str, dict], planned: list[PlannedQuery], ats: AtsRepository,
-            run_source: Callable[..., list[JobLink]], report: CycleReport,
-            *, terms: dict[str, str] | None = None) -> list[JobLink]:
+def _gather(source_configs: dict[str, dict], ats: AtsRepository,
+            run_source: Callable[..., list[JobLink]], report: CycleReport) -> list[JobLink]:
     """Run every enabled shared source concurrently."""
-    queries_by_source: dict[str, list[PlannedQuery]] = {}
-    for query in planned:
-        queries_by_source.setdefault(query.key.source, []).append(query)
-
     shared = [s for s in sources_for(Tier.SHARED) if source_configs.get(s.key, {}).get("enabled")]
     links: list[JobLink] = []
     if not shared:
@@ -250,18 +194,7 @@ def _gather(source_configs: dict[str, dict], planned: list[PlannedQuery], ats: A
         logger.warning("harvest: no shared sources are enabled — nothing will be fetched")
 
     def _config_for(source: Source) -> dict:
-        cfg = dict(source_configs.get(source.key, {}))
-        queries = queries_by_source.get(source.key)
-        if queries:
-            # Rendered in the shape this adapter reads.
-            shape = QUERY_SHAPES[source.key]
-            cfg["queries"] = [
-                # The phrase the user wrote, not the fold key.
-                shape.render(term=(terms or {}).get(q.key.keyword_norm, q.key.keyword_norm),
-                             location=q.key.location_norm, is_remote=q.key.is_remote)
-                for q in queries]
-            cfg["hours_old"] = max(q.key.max_age_hours for q in queries)
-        return cfg
+        return dict(source_configs.get(source.key, {}))
 
     db_bound = [s for s in shared if s.needs_ats_repo]
     network_only = [s for s in shared if not s.needs_ats_repo]
@@ -295,8 +228,7 @@ def _record_source(report: CycleReport, source: Source, found: list[JobLink],
     links.extend(found)
     report.links_by_source[source.key] = len(found)
     if not found:
-        logger.warning("source %s returned nothing — check it was actually asked for something",
-                       source.key)
+        logger.warning("source %s returned nothing: down, or nothing in its window", source.key)
 
 
 def _ingest(corpus: CorpusRepository, links: Iterable[JobLink], report: CycleReport, *,
@@ -331,18 +263,6 @@ def _ingest(corpus: CorpusRepository, links: Iterable[JobLink], report: CycleRep
         if link.application_url:
             corpus.set_application_url(job_id, link.application_url)
     return new_jobs
-
-
-def _keyword_budgets(db, configs) -> dict:
-    """Each account's own `keywords` ceiling, so the panel's value is the one that harvests."""
-    from libs import limits  # noqa: PLC0415 - one caller, kept local
-
-    out = {}
-    for user_id in configs:
-        user = get(db, User, user_id)
-        # Operator-injected demand has no user row and keeps the catalogue default.
-        out[user_id] = limits.resolve(user, "keywords") if user is not None else None
-    return out
 
 
 def _discover_ats_tokens(db, ats: AtsRepository) -> int:

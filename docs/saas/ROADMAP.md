@@ -3087,6 +3087,7 @@ suggestions on the jobs page. `CHANGELOG.md` has the numbers.
     Its jobs are companies' own boards (46 ATSs, by one scraper's listing), which is what the company-board
     sources read directly; discovering boards from apply links as well (2026-11-06) widens that list.
     Owner: remove it, since nothing was found. Removing it removes item 23's query machinery with it.
+    **Done 2026-11-06** (owner: "scrap it and remove it all"), with item 23.
 16. **Outcomes need people to say them.** Admin › Outcomes is empty until applications are marked.
     Recommendation: none yet; once there are a few hundred, read interview rate by CV kind and by the ATS
     verdict before changing the CV prompts.
@@ -3129,8 +3130,8 @@ numbers)**
     *2026-11-06:* the owner agreed to remove Hiring Cafe (item 15). What goes with it, 18 files: the query
     set and its budgets and carry-over, Jooble's and JobSpy's adapters (search-shaped, off, and barred by
     the 2026-11-04 rule that no word goes to a source), and Admin's "Search terms" (operator terms that only
-    feed the query set). Adzuna keeps its own "two countries a run". Waiting on the owner's yes for the Admin
-    section.
+    feed the query set). Adzuna keeps its own "two countries a run". **Done 2026-11-06**, Admin's section
+    included (CHANGELOG).
 24. **The Muse serves 2,000 of its 6,174 remote jobs.** It answers no page past the 100th, whatever it
     says it has. All 100 are read every run. Reaching the rest would mean splitting its list by category,
     one more request per category. It lists ~38 new jobs a day, mostly in the US. Recommendation: leave

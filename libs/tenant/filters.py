@@ -114,8 +114,7 @@ class UserFilters:
             return "workplace"
 
         # The stored code, detected once at describe time rather than per reader per pass.
-        if not langfilter.is_allowed(row.get("language"), set(self.languages),
-                                     source=row.get("source")):
+        if not langfilter.is_allowed(row.get("language"), set(self.languages)):
             return "language"
 
         return None

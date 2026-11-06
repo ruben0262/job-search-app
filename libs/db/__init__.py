@@ -135,6 +135,11 @@ def find[D: Document](db: Database, model: type[D], where: dict, **options: Any)
     return [model.from_doc(doc) for doc in db[model.COLLECTION].find(where, **options)]
 
 
+# Collections no code reads any more, dropped by the deploy's prune. The operator's search terms fed the
+# query set, removed with Hiring Cafe and Jooble on 2026-11-06 (owner: "remove it all").
+RETIRED_COLLECTIONS = ("operator_keywords",)
+
+
 def ensure_schema(db: Database | None = None, *, prune: bool = False) -> None:
     """Make every collection's rules and indexes what `libs.db.models` declares. Safe to repeat: it runs
     at every service start.
@@ -170,6 +175,10 @@ def ensure_schema(db: Database | None = None, *, prune: bool = False) -> None:
                                              {"$unset": dict.fromkeys(model.RETIRED, "")}).modified_count
             if removed:
                 logger.info("schema: removed %s from %d %s", model.RETIRED, removed, model.COLLECTION)
+    for name in RETIRED_COLLECTIONS if prune else ():
+        if name in existing:
+            db.drop_collection(name)
+            logger.info("schema: dropped the %s collection, which nothing reads any more", name)
 
 
 def _create(db: Database, name: str, rules: dict) -> None:

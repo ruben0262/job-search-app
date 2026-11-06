@@ -75,14 +75,14 @@ def test_a_rotated_source_is_asked_for_a_window_its_sweep_can_cover():
     """
     from libs.settings import (
         DEFAULT_SOURCE_FRESHNESS_HOURS,
+        DEFAULT_SOURCE_QUERIES_PER_CYCLE,
         PLATFORM_TICK_MIN,
-        queries_per_cycle_default,
     )
     from services.harvester.sources.http_apis import ADZUNA_COUNTRIES
 
     # Every country Adzuna serves, the most anybody's countries can ask of it.
     pairs = len(ADZUNA_COUNTRIES)
-    per_cycle = queries_per_cycle_default("adzuna")
+    per_cycle = DEFAULT_SOURCE_QUERIES_PER_CYCLE["adzuna"]
     cycles_per_sweep = -(-pairs // per_cycle)
     sweep_hours = cycles_per_sweep * PLATFORM_TICK_MIN / 60
 
@@ -122,9 +122,9 @@ def test_the_delivery_window_does_not_discard_what_the_harvest_just_paid_for():
 
 def test_the_call_budget_has_one_definition():
     """A ceiling the panel shows and an adapter reads must be the same number, not two equal ones."""
-    from libs.settings import queries_per_cycle_default
+    from libs.settings import DEFAULT_SOURCE_QUERIES_PER_CYCLE
     from services.harvester.sources import http_apis
 
     assert not hasattr(http_apis, "DEFAULT_ADZUNA_QUERIES"), (
         "the adapter restated the ceiling; a second copy drifts silently")
-    assert queries_per_cycle_default("adzuna") == 2
+    assert DEFAULT_SOURCE_QUERIES_PER_CYCLE["adzuna"] == 2

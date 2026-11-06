@@ -14,6 +14,47 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-06 — Hiring Cafe removed, and with it every way of sending a word to a board
+
+The owner, after Hiring Cafe was found unreadable (entry below): "scrap it and remove it all".
+
+Since 2026-11-04 no board is asked for a word: each is read whole and people's words are matched on the
+stored jobs. Hiring Cafe could be asked for nothing else and answered a Cloudflare challenge to every
+request; Jooble was the only other board that took a word, off since its block of 2026-08-10 and barred by
+the same rule; JobSpy's Indeed and Google were registered and never enabled. The machinery that asked them
+served nothing that worked:
+
+- **Removed**:
+  - the Hiring Cafe, Jooble and JobSpy adapters, and the `python-jobspy` dependency;
+  - the query set and its budgets, carry-over and fold (`services/harvester/query_set.py`,
+    `QUERY_TAKING_SOURCES`, `QUERY_SHAPES`, `union_keywords`, `libs.harvest`);
+  - the harvester's `--dry-run` and `--max-queries`, which planned and capped queries;
+  - `deploy/scripts/show_query_set.py`;
+  - Hiring Cafe's `harvest_from_hits` and the language filter's exemption for it;
+  - `hours_old`, which only JobSpy read;
+  - `JOOBLE_API_KEY`.
+- **Admin's "Search terms" section is gone**: the operator's own terms (`OperatorKeyword`, the
+  `/admin/keywords` routes) only fed the query set, and "What users are searching for" listed what that
+  query set spent its budget on. Each person's words are still on their account page. The deploy's prune
+  drops the `operator_keywords` collection (`RETIRED_COLLECTIONS`), and the account copier no longer
+  copies it.
+- **Admin → Settings → Per source**: "wanted" goes, and "queries" becomes **calls**. It is now set only
+  for the one source metered by the call, Adzuna (2 a run, its free tier's countries). Every other row
+  shows "—". Before, Adzuna's row showed a greyed "1" while its adapter made 2 calls: the panel and the
+  code disagreed. `queries_per_cycle` is `None` for every other source, and a value left stored for a
+  removed source is ignored.
+- `run_cycle` returns its report alone. With no query set there is nothing deferred to carry over.
+
+The "Search terms" limit stays: it caps how many green words an account may have, now described as such.
+
+Tests: the query-set tests go with what they tested. The two that asked who is folded into the harvest
+become one test of what still depends on it: a stopped account's or an unverified signup's country keeps
+no job. Also tested:
+- no board is handed a word, to ask for or to keep jobs by;
+- the Sources list sets calls for Adzuna alone and ignores a stored value for a removed source (it
+  showed 40 for every source before);
+- the deploy's prune drops the retired collection and nothing else.
+
 ## 2026-11-06 — The Jobs page says how long a job stays; company boards found from apply links
 
 The owner: show the job shelf life on the Jobs page, following Admin's setting; look into Hiring Cafe and

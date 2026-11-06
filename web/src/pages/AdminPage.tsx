@@ -191,13 +191,12 @@ type Source = {
   /** How long a posting from this source stays deliverable once stored — the floor the global
    *  window cannot push below. The other half of `hours`, and until 2026-08-09 it had no control. */
   min_age_hours: number;
-  queries_per_cycle: number;
+  /** Calls a run, for the one source metered by the call (Adzuna); `null` for every other. */
+  queries_per_cycle: number | null;
   /** `null` where the source has no result cap to set — it serves a feed or counts pages. */
   results_per_query: number | null;
   /** `null` where the source fetches one response rather than walking pages. */
   pages_per_cycle: number | null;
-  /** How many distinct queries this source currently has. 0 means it takes none. */
-  wanted: number;
 };
 
 /** The ATS ceiling and the number it is a ceiling on. */
@@ -242,11 +241,6 @@ type CorpusPage = {
   jobs: CorpusJob[];
 };
 
-type Keywords = {
-  operator: { id: number; keyword: string; location: string | null; note: string | null }[];
-  users: { keyword: string; accounts: string[]; deletable: boolean }[];
-};
-
 function BinIcon() {
   return (
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -275,7 +269,7 @@ function lastActive(iso: string | null): string {
 
 /** What Admin reads on arrival, as `kept.ts` keeps it, and read ahead for an admin once signed in. */
 export const ADMIN_READS = ["/admin/health", "/admin/users", "/admin/settings", "/admin/sources",
-                            "/admin/outcomes", "/admin/contact", "/admin/keywords"];
+                            "/admin/outcomes", "/admin/contact"];
 
 export function AdminPage() {
   // Each part draws from what was read last time at once, and each as soon as its own read is back:
@@ -552,10 +546,9 @@ export function AdminPage() {
             that publishes a few times a day has nothing posted in the last six.{" "}
             <strong>Freshness</strong> is how recent a posting must be to qualify. LinkedIn lists
             within minutes; a company board is reached whenever our token list gets there, so the
-            same window would keep 2% of it. <strong>Queries</strong> is how many times a cycle that
-            source may be asked — per source, because rate limits are, and one shared number made
-            unrelated boards queue behind each other. <strong>Wanted</strong> is how many it
-            currently has: equal or under the ceiling means it is fully served each cycle.
+            same window would keep 2% of it. No source is asked for a word: each is read whole.{" "}
+            <strong>Calls</strong> is for Adzuna alone, metered by the call: how many countries a run
+            reads, each at its newest.
           </span>
           <Error>{saveFreshness.error ?? saveMinAge.error ?? saveQueries.error}</Error>
           <div className="sources">
@@ -563,10 +556,9 @@ export function AdminPage() {
               <span className="source-name">source</span>
               <span>fresh</span>
               <span>keep</span>
-              <span>queries</span>
+              <span>calls</span>
               <span>results</span>
               <span>pages</span>
-              <span className="num">wanted</span>
             </div>
             {(sources ?? []).map((source) => (
               <div key={source.name} className="source-row">
@@ -593,41 +585,23 @@ export function AdminPage() {
                     <option key={hours} value={hours}>{hours}h</option>
                   ))}
                 </select>
-                {/* Only the sources that take a query get a ceiling. */}
-                {source.wanted > 0 ? (
-                  <>
-                    <select
-                      value={source.queries_per_cycle}
-                      disabled={saveQueries.busy}
-                      aria-label={`${source.name} queries per cycle`}
-                      onChange={(event) =>
-                        void saveQueries.run(source.name, Number(event.target.value))}
-                    >
-                      {[5, 10, 20, 40, 60, 100, 200].map((n) => (
-                        <option key={n} value={n}>{n}</option>
-                      ))}
-                    </select>
-                    <Results source={source} save={saveResults} />
-                    <Pages source={source} save={savePages} />
-                    {/* Amber when the ceiling is below demand. */}
-                    <span className={source.wanted > source.queries_per_cycle
-                      ? "num behind" : "num muted"}>
-                      {source.wanted}
-                    </span>
-                  </>
+                {/* Only a source metered by the call has a number of calls to set. */}
+                {source.queries_per_cycle === null ? (
+                  <span className="muted">—</span>
                 ) : (
-                  <>
-                    {/* A feed source issues exactly one request a cycle. */}
-                    <select value={1} disabled aria-label={`${source.name} queries per cycle`}
-                            title="This board serves a feed and takes no search term, so it is
-                                   fetched once a cycle.">
-                      <option value={1}>1</option>
-                    </select>
-                    <Results source={source} save={saveResults} />
-                    <Pages source={source} save={savePages} />
-                    <span className="num muted">—</span>
-                  </>
+                  <select
+                    value={source.queries_per_cycle}
+                    disabled={saveQueries.busy}
+                    aria-label={`${source.name} calls a run`}
+                    onChange={(event) => void saveQueries.run(source.name, Number(event.target.value))}
+                  >
+                    {[1, 2, 3, 4, 6, 8, 12].map((n) => (
+                      <option key={n} value={n}>{n}</option>
+                    ))}
+                  </select>
                 )}
+                <Results source={source} save={saveResults} />
+                <Pages source={source} save={savePages} />
               </div>
             ))}
           </div>
@@ -993,15 +967,9 @@ export const CORPUS_FIRST = `/admin/corpus?${new URLSearchParams({ q: "", source
 function CorpusTab() {
   // The unsearched first page, and the terms, drawn from last time at once (`kept.ts`).
   const [page, setPage] = useState<CorpusPage | null>(() => peek<CorpusPage>(CORPUS_FIRST));
-  const [keywords, setKeywords] = useState<Keywords | null>(() => peek<Keywords>("/admin/keywords"));
   const [q, setQ] = useState("");
   const [source, setSource] = useState("");
-  const [term, setTerm] = useState("");
   const [failed, setFailed] = useState<string | null>(null);
-  // Searching the term lists is a different thing from searching the corpus.
-  const [termQuery, setTermQuery] = useState("");
-  const [operatorPage, setOperatorPage] = useState(0);
-  const [userPage, setUserPage] = useState(0);
 
   const load = async (offset = 0) => {
     const query = new URLSearchParams({ q, source, days: "30", offset: String(offset) });
@@ -1010,37 +978,10 @@ function CorpusTab() {
     if (path === CORPUS_FIRST) keep(path, body);
     setPage(body);
   };
-  const loadKeywords = async () => {
-    const body = await api.get<Keywords>("/admin/keywords");
-    keep("/admin/keywords", body);
-    setKeywords(body);
-  };
-
   useEffect(() => {
     void load().catch(() => setFailed("Could not read the corpus."));
-    void loadKeywords().catch(() => undefined);
     // Deliberately once: searching is an explicit action.
   }, []);
-
-  const addTerm = useAction(async () => {
-    await api.post("/admin/keywords", { keyword: term });
-    setTerm("");
-    await loadKeywords();
-  });
-
-  const dropTerm = useAction(async (id: number) => {
-    await api.del(`/admin/keywords/${id}`);
-    await loadKeywords();
-  });
-
-  // Filtered and paged in the browser.
-  const needle = termQuery.trim().toLowerCase();
-  const operatorTerms = (keywords?.operator ?? []).filter(
-    (row) => !needle || row.keyword.includes(needle));
-  const userTerms = (keywords?.users ?? []).filter((row) => !needle || row.keyword.includes(needle));
-  const operatorShown = operatorTerms.slice(operatorPage * TERMS_PER_PAGE,
-                                            (operatorPage + 1) * TERMS_PER_PAGE);
-  const userShown = userTerms.slice(userPage * TERMS_PER_PAGE, (userPage + 1) * TERMS_PER_PAGE);
 
   return (
     <>
@@ -1048,8 +989,7 @@ function CorpusTab() {
 
       <h2>Corpus</h2>
       <p className="hint">
-        Every posting the platform has collected, shared by all accounts. A new user can only train
-        on what is already in here for their field, which is why seeding it ahead of them matters.
+        Every posting the platform has collected, shared by all accounts.
       </p>
 
       <form
@@ -1141,96 +1081,6 @@ function CorpusTab() {
         </>
       ) : null}
 
-      <h2 style={{ marginTop: "2.5rem" }}>Search terms</h2>
-      <p className="hint">
-        What the harvest looks for. Add terms to fill the corpus for fields nobody has signed up for
-        yet, so the first person who does has something to train on.
-      </p>
-
-      <input
-        type="search"
-        value={termQuery}
-        placeholder="Filter terms — check before adding a duplicate"
-        onChange={(event) => {
-          setTermQuery(event.target.value);
-          setOperatorPage(0);
-          setUserPage(0);
-        }}
-        style={{ maxWidth: "22rem", marginBottom: "0.8rem" }}
-      />
-
-      <form
-        className="row"
-        style={{ margin: "0.8rem 0" }}
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (term.trim()) void addTerm.run();
-        }}
-      >
-        <input
-          value={term}
-          placeholder="e.g. stress engineer"
-          onChange={(event) => setTerm(event.target.value)}
-          style={{ maxWidth: "18rem" }}
-        />
-        <button type="submit" className="secondary" disabled={addTerm.busy || !term.trim()}>
-          {addTerm.busy ? "Adding…" : "Add term"}
-        </button>
-      </form>
-      <Error>{addTerm.error ?? dropTerm.error}</Error>
-
-      <div className="term-grid">
-        {operatorShown.map((row) => (
-          <div key={row.id} className="source-row">
-            <span className="source-name">
-              {row.keyword}
-              {row.location ? <span className="small muted"> · {row.location}</span> : null}
-            </span>
-            <button
-              type="button"
-              className="icon-btn"
-              title="Remove this term"
-              aria-label={`Remove ${row.keyword}`}
-              disabled={dropTerm.busy}
-              onClick={() => void dropTerm.run(row.id)}
-            >
-              <BinIcon />
-            </button>
-          </div>
-        ))}
-      </div>
-      {keywords && !operatorTerms.length ? (
-        <p className="facts">
-          {needle
-            ? "No added term matches that."
-            : "No terms added yet. The harvest is searching for whatever users ask for."}
-        </p>
-      ) : null}
-      <Pager
-        page={operatorPage}
-        total={operatorTerms.length}
-        onPage={setOperatorPage}
-      />
-
-      {/* Shown, never removable. */}
-      <h2 style={{ marginTop: "2rem" }}>What users are searching for</h2>
-      <p className="hint">
-        Theirs, not yours. Listed so you can see what the harvest is spending its budget on.
-      </p>
-      <div className="term-grid">
-        {userShown.map((row) => (
-          <div key={row.keyword} className="source-row" title={row.accounts.join(", ")}>
-            <span className="source-name">{row.keyword}</span>
-            <span className="small muted">{row.accounts.length}</span>
-          </div>
-        ))}
-      </div>
-      {keywords && !userTerms.length ? (
-        <p className="facts">
-          {needle ? "No user term matches that." : "Nobody is searching for anything yet."}
-        </p>
-      ) : null}
-      <Pager page={userPage} total={userTerms.length} onPage={setUserPage} />
     </>
   );
 }
@@ -1862,36 +1712,3 @@ function Pages({ source, save }: {
   );
 }
 
-/** How many terms a page shows. */
-const TERMS_PER_PAGE = 20;
-
-/** Previous/next for a list held in the browser. */
-function Pager({
-  page,
-  total,
-  onPage,
-}: {
-  page: number;
-  total: number;
-  onPage: (page: number) => void;
-}) {
-  const pages = Math.ceil(total / TERMS_PER_PAGE);
-  if (pages <= 1) return null;
-  return (
-    <div className="row" style={{ marginTop: "0.6rem", alignItems: "center" }}>
-      <button className="secondary" disabled={page === 0} onClick={() => onPage(page - 1)}>
-        Previous
-      </button>
-      <span className="small muted">
-        {page + 1} of {pages} · {total.toLocaleString()} terms
-      </span>
-      <button
-        className="secondary"
-        disabled={page + 1 >= pages}
-        onClick={() => onPage(page + 1)}
-      >
-        Next
-      </button>
-    </div>
-  );
-}

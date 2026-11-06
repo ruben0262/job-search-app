@@ -92,7 +92,7 @@ Do **not** build billing, payment, or upgrade flows yet — just the seam they w
 
 | Quota | `free` limit | Enforced at |
 |---|---|---|
-| Search terms | 5 | Config save + harvest query-set build |
+| Search terms | 5 | Config save (no board is asked for them since 2026-11-04; the query set went 2026-11-06) |
 | Notifications/day | 100 | `notify` worker, before send |
 | CV/cover builds/day | 10 | `docgen` enqueue |
 | Labels/day | 500 | `label` enqueue |

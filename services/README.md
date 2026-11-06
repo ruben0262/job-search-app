@@ -44,9 +44,8 @@ Three things, all non-negotiable:
 
 ## Per-service dependencies stay per-service
 
-Each service owns its `requirements.txt` and Dockerfile. `docgen` is the only image with Chrome and
-`harvester` the only one with jobspy. `api` and `notifier` stay small, which matters, because they are
-what gets restarted most.
+Each service owns its `requirements.txt` and Dockerfile. `docgen` is the only image with Chrome. `api` and
+`notifier` stay small, which matters, because they are what gets restarted most.
 
 ## Compose profiles
 

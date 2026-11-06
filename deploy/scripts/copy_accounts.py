@@ -28,7 +28,6 @@ from libs.db import database, ensure_schema
 from libs.db.models import (
     SECRET_KINDS,
     LanePause,
-    OperatorKeyword,
     PlatformSetting,
     PushSubscription,
     SetupConversation,
@@ -71,7 +70,7 @@ TABLES: list[tuple[type, str]] = [
     (SetupMessage, """SELECT id, user_id, conversation_id, role, content, status, error, agent, tool_calls,
                              created_at FROM setup_messages WHERE agent = 'support'"""),
     (PlatformSetting, "SELECT key AS id, value, updated_at, updated_by FROM platform_settings"),
-    (OperatorKeyword, "SELECT id, keyword, location, note, created_at, created_by FROM operator_keywords"),
+    # Not the operator's search terms: nothing reads them since the query set went (2026-11-06).
     (AtsToken, "SELECT ats, token, first_seen_at, dead_at FROM ats_tokens"),
 ]
 
@@ -125,7 +124,7 @@ def copy(source, db, *, write: bool) -> dict[str, int]:
             if write and pauses:
                 db[LanePause.COLLECTION].insert_many(pauses)
     if write:
-        for model in (UserDocument, UserNotification, SetupMessage, OperatorKeyword):
+        for model in (UserDocument, UserNotification, SetupMessage):
             highest = db[model.COLLECTION].find_one({}, {"_id": 1}, sort=[("_id", -1)])
             if highest is not None:
                 db.counters.update_one({"_id": model.COLLECTION}, {"$max": {"value": highest["_id"]}},

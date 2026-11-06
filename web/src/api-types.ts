@@ -158,50 +158,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/admin/keywords": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Keywords
-         * @description Every term the harvest currently searches, and who it belongs to.
-         */
-        get: operations["keywords_admin_keywords_get"];
-        put?: never;
-        /**
-         * Add Keyword
-         * @description Inject a term into the harvest, to fill the corpus ahead of the users who will need it.
-         */
-        post: operations["add_keyword_admin_keywords_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/admin/keywords/{keyword_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /**
-         * Remove Keyword
-         * @description Remove an injected term.
-         */
-        delete: operations["remove_keyword_admin_keywords__keyword_id__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/admin/latency": {
         parameters: {
             query?: never;
@@ -412,7 +368,8 @@ export interface paths {
         };
         /**
          * Sources
-         * @description Every source the harvester collects from, with the freshness window each one is using.
+         * @description Every source the harvester collects from, with the freshness window each one is using. No source is
+         *     asked for a word (owner, 2026-11-04): each is read whole for its window.
          */
         get: operations["sources_admin_sources_get"];
         put?: never;
@@ -2228,15 +2185,6 @@ export interface components {
             /** Job Id */
             job_id: number;
         };
-        /** KeywordBody */
-        KeywordBody: {
-            /** Keyword */
-            keyword: string;
-            /** Location */
-            location?: string | null;
-            /** Note */
-            note?: string | null;
-        };
         /**
          * Language
          * @description ISO 639-1 codes the platform offers. Also a controlled list, for the same reason.
@@ -3132,96 +3080,6 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
-                };
-            };
-        };
-    };
-    keywords_admin_keywords_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-        };
-    };
-    add_keyword_admin_keywords_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["KeywordBody"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    remove_keyword_admin_keywords__keyword_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                keyword_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

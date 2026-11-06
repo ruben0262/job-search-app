@@ -87,6 +87,23 @@ def test_an_index_nobody_declares_is_left_by_a_service_and_dropped_by_the_deploy
 
 
 @needs_db
+def test_a_collection_nothing_reads_any_more_is_left_by_a_service_and_dropped_by_the_deploy(db):
+    """The operator's search terms fed a query set that was removed on 2026-11-06. A service starting leaves
+    them, as it leaves an index; the deploy's prune drops them, and nothing else."""
+    from libs.db import ensure_schema
+
+    db["operator_keywords"].insert_one({"_id": 3, "keyword": "nurse"})
+    db["kept_by_someone_else"].insert_one({"_id": 1})
+
+    ensure_schema(db)
+    assert "operator_keywords" in db.list_collection_names()
+
+    ensure_schema(db, prune=True)
+    assert {"operator_keywords", "kept_by_someone_else"} & set(db.list_collection_names()) == {
+        "kept_by_someone_else"}
+
+
+@needs_db
 def test_services_starting_together_on_an_empty_database_all_come_up(db):
     from libs.db import ensure_schema
     from libs.db.models import MODELS

@@ -21,7 +21,6 @@ from libs.contracts.config import (
     complete_search,
     migrate_config,
 )
-from services.harvester.query_set import HARVEST_MAX_QUERIES_PER_USER, build_query_set
 
 # Which overrides belong to a search section and which to the account.
 SECTION_FIELDS = {"platform", "keywords", "exclude_keywords", "locations", "workplaces",
@@ -229,52 +228,9 @@ def test_duplicate_enum_selections_collapse():
 
 # ── the contract the frontend is generated from ───────────────────────────────────────────────
 
-def test_the_keyword_cap_is_the_one_the_harvester_enforces():
-    """Two numbers, one question: how many search terms one account may have.
-
-    This used to read an exported JSON Schema and also loop over every field asserting it appeared in
-    that schema's `properties` — which pydantic guarantees, so those loops could not fail. The cap
-    equality is the part that can, and it is read straight off the field now: the export existed to
-    generate a form that is in fact hand-written TSX, and it is gone (2026-08-11).
-    """
-    assert _keyword_cap() == HARVEST_MAX_QUERIES_PER_USER, (
-        "the config accepts a different number of keywords than the harvester will run")
-
-
 def test_the_schema_version_is_recorded_so_old_rows_stay_readable():
     """`user_config.schema_version` is what lets a shape change be migrated rather than guessed."""
     assert isinstance(CONFIG_SCHEMA_VERSION, int) and CONFIG_SCHEMA_VERSION >= 1
-
-
-# ── the seam: a validated config must actually drive the harvester ────────────────────────────
-
-def test_a_validated_config_produces_the_expected_query_set():
-    """Neither test above would notice if the schema and the harvester stopped agreeing."""
-    import uuid
-
-    user = uuid.uuid4()
-    config = UserConfigSchema(languages=["en"], sections=[{
-        "keywords": ["Python Developer", "golang", "sql"],
-        "locations": ["united_kingdom", "germany"],
-        "remote_policy": "remote_only",
-        "posted_within_hours": 24}])
-
-    query_set = build_query_set({user: config.model_dump()}, ["linkedin"])
-
-    assert len(query_set) == 6, "3 keywords x 2 locations x 1 source"
-    assert all(key.is_remote for key in query_set), "remote_only must reach the source"
-    assert {k.location_norm for k in query_set} == {"united_kingdom", "germany"}
-    assert all(users == frozenset({user}) for users in query_set.values())
-
-
-def test_the_per_user_cap_is_one_definition_not_two():
-    """This rule was briefly written twice — a literal in the schema and a constant in the harvester."""
-    assert HARVEST_MAX_QUERIES_PER_USER is MAX_KEYWORDS_PER_USER
-    assert _keyword_cap() == MAX_KEYWORDS_PER_USER
-
-    with pytest.raises(ValidationError):
-        UserConfigSchema(sections=[
-            {"keywords": [f"term{i}" for i in range(MAX_KEYWORDS_PER_USER + 1)]}])
 
 
 def test_currency_is_offered_as_a_picklist():
@@ -283,39 +239,15 @@ def test_currency_is_offered_as_a_picklist():
 
 # ── sections, and reading a config written before they existed ────────────────────────────────
 
-def test_a_platform_section_only_reaches_that_platform():
-    """The whole point of sections: terms a user wants on LinkedIn and nowhere else."""
-    import uuid
-
-    user = uuid.uuid4()
-    config = UserConfigSchema(languages=["en"], sections=[
-        {"platform": "all", "keywords": ["golang", "sql", "go"], "locations": ["germany"]},
-        {"platform": "linkedin", "keywords": ["rust"], "locations": ["germany"]}])
-
-    query_set = build_query_set({user: config.model_dump()}, ["indeed", "google", "linkedin"])
-    by_term = {}
-    for key in query_set:
-        by_term.setdefault(key.keyword_norm, set()).add(key.source)
-
-    assert by_term["golang"] == {"indeed", "google", "linkedin"}
-    assert by_term["rust"] == {"linkedin"}
-
-
 def test_a_v1_config_still_folds_exactly_as_it_did():
     """Stored rows are read through `migrate_config` rather than rewritten by a deploy."""
-    import uuid
-
-    user = uuid.uuid4()
     v1 = {"keywords": WORDS, "locations": ["london"], "languages": ["en"],
           "remote_policy": "remote_only", "posted_within_hours": 48}
 
     migrated = migrate_config(v1)
     assert migrated["sections"][0]["platform"] == Platform.ALL
     assert UserConfigSchema.model_validate(migrated).sections[0].posted_within_hours == 48
-
-    query_set = build_query_set({user: v1}, ["indeed", "google"])
-    assert len(query_set) == 6, "three keywords, one location, two sources - unchanged from v1"
-    assert all(key.is_remote for key in query_set)
+    assert migrated["sections"][0]["keywords"] == WORDS
 
 
 def test_migrating_a_config_twice_changes_nothing():

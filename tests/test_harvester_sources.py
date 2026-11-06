@@ -16,7 +16,6 @@ from services.harvester.sources import (
     SHARED_SOURCES,
     Source,
     Tier,
-    jobspy_source,
     sources_for,
 )
 from services.harvester.sources.base import JobLink
@@ -169,14 +168,6 @@ def test_every_adapter_module_imports(path):
     """A port that leaves a module unimportable is a source that silently never runs."""
     import importlib
     importlib.import_module(f"services.harvester.sources.{path.stem}")
-
-
-def test_the_shared_jobspy_sources_take_no_lease():
-    """Indeed and Google need no proxy. Accepting one would let them spend a user's bandwidth."""
-    import inspect
-
-    for adapter in (jobspy_source.gather_indeed, jobspy_source.gather_google):
-        assert "lease" not in inspect.signature(adapter).parameters, adapter.__name__
 
 
 # ── company boards that are slow, or that refuse a burst (2026-11-02) ─────────────────────────

@@ -139,7 +139,7 @@ _CH_HINTS = ("switzerland", "zurich", "zürich", "geneva", "basel", "schweiz")
 _GLOBAL_HINTS = ("worldwide", "anywhere", "global", "united states", "usa", "americas")
 
 # HU-only boards — anything they carry is a Hungarian job regardless of location string.
-HU_SOURCES = {"profession", "dreamjobs", "nofluffjobs_hu", "jooble"}
+HU_SOURCES = {"profession", "dreamjobs", "nofluffjobs_hu"}
 
 # Mirrors cv_builder._QUANT_RE (kept local: this module must stay import-light for the watcher).
 _QUANT_RE = re.compile(

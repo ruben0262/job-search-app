@@ -1809,45 +1809,6 @@
         "title": "JobMarks",
         "type": "object"
       },
-      "KeywordBody": {
-        "properties": {
-          "keyword": {
-            "maxLength": 100,
-            "minLength": 2,
-            "title": "Keyword",
-            "type": "string"
-          },
-          "location": {
-            "anyOf": [
-              {
-                "maxLength": 64,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Location"
-          },
-          "note": {
-            "anyOf": [
-              {
-                "maxLength": 200,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Note"
-          }
-        },
-        "required": [
-          "keyword"
-        ],
-        "title": "KeywordBody",
-        "type": "object"
-      },
       "Language": {
         "description": "ISO 639-1 codes the platform offers. Also a controlled list, for the same reason.",
         "enum": [
@@ -3966,117 +3927,6 @@
         ]
       }
     },
-    "/admin/keywords": {
-      "get": {
-        "description": "Every term the harvest currently searches, and who it belongs to.",
-        "operationId": "keywords_admin_keywords_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Keywords Admin Keywords Get",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Keywords",
-        "tags": [
-          "admin"
-        ]
-      },
-      "post": {
-        "description": "Inject a term into the harvest, to fill the corpus ahead of the users who will need it.",
-        "operationId": "add_keyword_admin_keywords_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/KeywordBody"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Add Keyword Admin Keywords Post",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Add Keyword",
-        "tags": [
-          "admin"
-        ]
-      }
-    },
-    "/admin/keywords/{keyword_id}": {
-      "delete": {
-        "description": "Remove an injected term.",
-        "operationId": "remove_keyword_admin_keywords__keyword_id__delete",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "keyword_id",
-            "required": true,
-            "schema": {
-              "title": "Keyword Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Remove Keyword Admin Keywords  Keyword Id  Delete",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Remove Keyword",
-        "tags": [
-          "admin"
-        ]
-      }
-    },
     "/admin/latency": {
       "get": {
         "description": "The drill-down: the spans, then where the time actually went, then when.",
@@ -4495,7 +4345,7 @@
     },
     "/admin/sources": {
       "get": {
-        "description": "Every source the harvester collects from, with the freshness window each one is using.",
+        "description": "Every source the harvester collects from, with the freshness window each one is using. No source is\nasked for a word (owner, 2026-11-04): each is read whole for its window.",
         "operationId": "sources_admin_sources_get",
         "responses": {
           "200": {

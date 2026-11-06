@@ -153,7 +153,7 @@ The shared cycle is a **one-shot command**, not a daemon with a sleep, driven by
 
 ```bash
 deploy/compose.sh run --rm --no-deps harvester   # one cycle, as the timer runs it
-python -m services.harvester --dry-run           # plan the queries, fetch nothing
+python deploy/scripts/check_sources.py            # one real cycle, then what each board listed and stored
 ```
 
 Exit codes are the interface:
@@ -189,6 +189,5 @@ searches are pooled by query (2026-11-03). What a person chooses is how often th
   starting together cannot race into an outage (`CODE_STRUCTURE.md` §5).
 - **Compose profiles**: the services that stay up are `full`; the one-shots are `tools`, so a bare
   `up` never starts a harvest that would then sit there.
-- **Per-service dependencies stay per-service.** `docgen` is the only image with Chrome, and
-  `harvester` the only one with jobspy. `api` and `notifier` stay small, because they are what gets
-  restarted most.
+- **Per-service dependencies stay per-service.** `docgen` is the only image with Chrome. `api` and
+  `notifier` stay small, because they are what gets restarted most.

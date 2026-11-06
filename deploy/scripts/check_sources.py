@@ -79,7 +79,7 @@ def main(argv: list[str] | None = None) -> int:
         return found
 
     configs = source_configs_for(db)
-    report, _ = run_cycle(db, source_configs=configs, run_source=recording)
+    report = run_cycle(db, source_configs=configs, run_source=recording)
     failed.update({key: str(error)[:120] for key, error in report.source_failures.items()})
 
     if args.linkedin:
@@ -108,7 +108,7 @@ def main(argv: list[str] | None = None) -> int:
             f"{elsewhere} in no picked country, not kept" if elsewhere else "",
             f"{missing} not stored" if missing > 0 else "") if part))
         print(f"{key:16s} {len(links):7d} {_age(links):>8s} {stored:5d}/{len(links):<4d}  {note}")
-    print(f"\ncycle: {report.queries_planned} queries, {report.links_found} links, {report.new_jobs} new, "
+    print(f"\ncycle: {report.links_found} links, {report.new_jobs} new, "
           f"{report.duplicates_total} already known")
     return 0
 
