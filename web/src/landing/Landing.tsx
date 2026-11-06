@@ -55,7 +55,7 @@ export function Landing() {
     api.get<Reach>("/stats").then(setReach).catch(() => undefined);
   }, []);
 
-  // In on arrival, then as each part is reached; the pointer leans the halo and lights what it is over.
+  // In on arrival, then each part as it is reached.
   useEffect(() => {
     const page = root.current!;
     const frame = requestAnimationFrame(() => requestAnimationFrame(() => page.classList.add("lp-in")));
@@ -65,66 +65,123 @@ export function Landing() {
       seen.unobserve(entry.target);
     }), { rootMargin: "0px 0px -8% 0px" });
     page.querySelectorAll("[data-reveal]").forEach((el) => seen.observe(el));
-    const lean = (event: PointerEvent) => {
-      const target = event.target as HTMLElement;
-      page.style.setProperty("--turn", `${(event.clientX / innerWidth - 0.5) * 16}deg`);
-      const lit = target.closest<HTMLElement>("[data-spot]");
-      if (lit) {
-        const box = lit.getBoundingClientRect();
-        lit.style.setProperty("--mx", `${event.clientX - box.left}px`);
-        lit.style.setProperty("--my", `${event.clientY - box.top}px`);
-      }
-    };
-    if (pointer() && !still()) addEventListener("pointermove", lean);
     return () => {
       cancelAnimationFrame(frame);
       seen.disconnect();
-      removeEventListener("pointermove", lean);
     };
   }, []);
 
-  // Scrolling: the bar frosts, the halo rises to face you, the dock follows the section you are in, and
-  // a step's card shrinks into the shade as the next one covers it, as a stack of paper does.
+  // What moves with the scroll and the pointer: the bar frosts, the halo rises to face you and leans to
+  // the pointer, the dock follows the section you are in, and a step's card shrinks into the shade as the
+  // next one covers it. Written straight onto the few elements that move, never as a variable on the page:
+  // one there restyled every element under it on every frame (54 ms a frame on a laptop, 2026-11-06).
   useEffect(() => {
     const page = root.current!;
-    const cards = [...page.querySelectorAll<HTMLElement>(".stack-card")];
+    const halo = page.querySelector<HTMLElement>(".halo-tilt")!;
+    const stack = page.querySelector<HTMLElement>(".stack")!;
+    const cards = [...stack.querySelectorAll<HTMLElement>(".stack-card")];
+    const shades = cards.map((card) => card.querySelector<HTMLElement>(".stack-shade")!);
+    const motion = !still();
+    // Where the CSS sticks each card, read once a size rather than every frame. None on a short screen,
+    // where a card would be taller than the screen and the CSS lets them scroll instead.
+    let stuck: number[] = [];
+    const measure = () => {
+      const sticky = getComputedStyle(cards[0]!).position === "sticky";
+      stuck = sticky ? cards.map((card) => parseFloat(getComputedStyle(card).top)) : [];
+      if (!sticky) cards.forEach((card, i) => {
+        card.style.transform = "";
+        shades[i]!.style.opacity = "";
+      });
+    };
+
+    // The halo glides to where the scroll and the pointer put it: a wheel moves the page a hundred pixels
+    // at a time, and the halo eases the distance rather than jumping it, at the same pace at any refresh rate.
+    const goal = { tilt: 70, grow: 1, turn: 0 };
+    const now = { ...goal };
+    const near = { tilt: 0.01, grow: 0.0001, turn: 0.01 };
+    let gliding = 0;
+    let last = 0;
+    const glide = (time: number) => {
+      const k = 1 - 0.86 ** Math.min(4, (time - last) / 16.7);
+      last = time;
+      let settled = true;
+      for (const key of ["tilt", "grow", "turn"] as const) {
+        const gap = goal[key] - now[key];
+        now[key] = Math.abs(gap) < near[key] ? goal[key] : now[key] + gap * k;
+        settled &&= now[key] === goal[key];
+      }
+      halo.style.transform = `rotateX(${now.tilt}deg) rotateY(${now.turn}deg) scale(${now.grow})`;
+      gliding = settled ? 0 : requestAnimationFrame(glide);
+    };
+    const aim = () => {
+      if (gliding) return;
+      last = performance.now();
+      gliding = requestAnimationFrame(glide);
+    };
+
+    let at = -1;
     let queued = false;
     const draw = () => {
       queued = false;
       const y = scrollY;
       page.classList.toggle("scrolled", y > 8);
       page.classList.toggle("past-hero", y > innerHeight * 0.5);
-      if (!still()) {
+      if (motion) {
         const k = clamp(y / (innerHeight * 0.9));
         const eased = k * k * (3 - 2 * k);
-        page.style.setProperty("--tilt", `${70 - 58 * eased}deg`);
-        page.style.setProperty("--grow", String(1 + 0.18 * eased));
-        // How far each later card has slid over this one, against where the CSS sticks it.
-        cards.forEach((card, i) => {
-          const covered = cards.slice(i + 1).reduce((sum, next) => sum + clamp(
-            1 - (next.getBoundingClientRect().top - parseFloat(getComputedStyle(next).top)) / (card.offsetHeight || 1)), 0);
-          card.style.transform = `scale(${1 - covered * 0.045})`;
-          card.style.setProperty("--shade", String(Math.min(0.55, covered * 0.25)));
-        });
+        goal.tilt = 70 - 58 * eased;
+        goal.grow = 1 + 0.18 * eased;
+        aim();
+        const box = stack.getBoundingClientRect();
+        if (stuck.length && box.bottom > 0 && box.top < innerHeight) {
+          const tops = cards.map((card) => card.getBoundingClientRect().top);
+          cards.forEach((card, i) => {
+            // How far each later card has slid over this one.
+            let covered = 0;
+            for (let j = i + 1; j < cards.length; j++) {
+              covered += clamp(1 - (tops[j]! - stuck[j]!) / (card.offsetHeight || 1));
+            }
+            card.style.transform = covered ? `scale(${1 - covered * 0.045})` : "";
+            shades[i]!.style.opacity = covered ? String(Math.min(0.55, covered * 0.25)) : "";
+          });
+        }
       }
-      let now = 0;
+      let here = 0;
       SECTIONS.forEach(([id], i) => {
         const el = document.getElementById(id);
-        if (el && el.getBoundingClientRect().top <= innerHeight * 0.4) now = i;
+        if (el && el.getBoundingClientRect().top <= innerHeight * 0.4) here = i;
       });
-      setAt(now);
+      if (here !== at) setAt((at = here));
     };
     const queue = () => {
       if (queued) return;
       queued = true;
       requestAnimationFrame(draw);
     };
+    const resize = () => {
+      measure();
+      queue();
+    };
+    // The pointer leans the halo, and lights the edge of the tile it is over.
+    const lean = (event: PointerEvent) => {
+      goal.turn = (event.clientX / innerWidth - 0.5) * 16;
+      aim();
+      const lit = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-spot]") : null;
+      if (!lit) return;
+      const box = lit.getBoundingClientRect();
+      lit.style.setProperty("--mx", `${event.clientX - box.left}px`);
+      lit.style.setProperty("--my", `${event.clientY - box.top}px`);
+    };
+    measure();
     addEventListener("scroll", queue, { passive: true });
-    addEventListener("resize", queue);
+    addEventListener("resize", resize);
+    if (motion && pointer()) addEventListener("pointermove", lean);
     queue();
     return () => {
       removeEventListener("scroll", queue);
-      removeEventListener("resize", queue);
+      removeEventListener("resize", resize);
+      removeEventListener("pointermove", lean);
+      cancelAnimationFrame(gliding);
     };
   }, []);
 
@@ -243,6 +300,7 @@ export function Landing() {
           <div className="stack">
             {steps(often).map(([name, text], i) => (
               <article key={name} className="stack-card" style={{ "--i": i } as CSSProperties}>
+                <div className="stack-shade" aria-hidden="true" />
                 <div>
                   <span className="stack-num">0{i + 1} / 06</span>
                   <h3>{name}</h3>
@@ -353,7 +411,7 @@ function Dock({ at, jump }: { at: number; jump: (id: string) => (event: MouseEve
     const place = () => {
       const link = dock.current?.querySelectorAll("a")[at];
       if (!link || !pill.current) return;
-      pill.current.style.left = `${link.offsetLeft}px`;
+      pill.current.style.translate = `${link.offsetLeft}px 0`;
       pill.current.style.width = `${link.offsetWidth}px`;
     };
     place();
@@ -414,7 +472,7 @@ function Found({ runs, minutes }: { runs: number[]; minutes: number }) {
       <div className="bars" role="img"
            aria-label={`New jobs found in each ${minutes}-minute run of the last six hours: ${total.toLocaleString("en")} in all`}>
         {runs.map((run, i) => (
-          <i key={i} style={{ "--h": `${Math.max(4, (run / most) * 100)}%`, "--i": i } as CSSProperties} />
+          <i key={i} style={{ "--h": Math.max(0.04, run / most), "--i": i } as CSSProperties} />
         ))}
       </div>
       <figcaption>

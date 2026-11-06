@@ -219,6 +219,63 @@ def test_the_landing_page_counts_from_the_server_and_a_phone_shows_the_places_as
         browser.close()
 
 
+# What a screen of the site gets wrong at one size: anything past the screen's edge that nothing clips or
+# scrolls, and anything in a top bar sitting on something else there. The phone's tab bar is fixed to the
+# foot of the screen, a layer of its own, and is left out of the second.
+FAULTS = r"""() => {
+  const named = (el) => `${el.tagName.toLowerCase()} "${(el.textContent || "").trim().slice(0, 30)}"`;
+  const clipped = (el) => {
+    for (let up = el.parentElement; up && up !== document.body; up = up.parentElement) {
+      if (/(hidden|clip|auto|scroll)/.test(getComputedStyle(up).overflowX)) return true;
+    }
+    return false;
+  };
+  const off = [...document.querySelectorAll("body *")]
+    .filter((el) => !el.closest("svg, [aria-hidden=true]") && el.getClientRects().length)
+    .filter((el) => {
+      const box = el.getBoundingClientRect();
+      return (box.right > innerWidth + 1 || box.left < -1) && !clipped(el);
+    })
+    .map(named);
+  const fixed = (el) => getComputedStyle(el.closest(".places") ?? el).position === "fixed";
+  const inBar = [...document.querySelectorAll(".app > nav :is(a, button), .lp-top :is(a, button)")]
+    .filter((el) => el.getClientRects().length && !fixed(el));
+  const across = (p, q) => Math.min(p.right, q.right) - Math.max(p.left, q.left);
+  const down = (p, q) => Math.min(p.bottom, q.bottom) - Math.max(p.top, q.top);
+  const over = [];
+  inBar.forEach((a, i) => inBar.slice(i + 1).forEach((b) => {
+    if (a.contains(b) || b.contains(a)) return;
+    const p = a.getBoundingClientRect(), q = b.getBoundingClientRect();
+    if (across(p, q) > 1 && down(p, q) > 1) over.push(`${named(a)} over ${named(b)}`);
+  }));
+  return {off, over};
+}"""
+
+
+def test_nothing_runs_off_the_screen_or_over_something_else_at_any_size(site, capsys):
+    """A phone, a tablet and a laptop: on the landing page and the Jobs page, nothing past the screen's
+    edge, and nothing in the top bar on top of anything else in it. A tablet held upright had the laptop's
+    bar of words, which ran under its own buttons at 768px and 820px (2026-11-06)."""
+    base, email, _ = site
+    sizes = (320, 390, 768, 820, 1024, 1440)
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = browser.new_context(viewport={"width": 1280, "height": 900}).new_page()
+        page.goto(f"{base}/#/")
+        expect(page.get_by_text("The job search that runs itself.")).to_be_visible()
+        for width in sizes:
+            page.set_viewport_size({"width": width, "height": 900})
+            assert page.evaluate(FAULTS) == {"off": [], "over": []}, f"landing at {width}px"
+
+        _sign_up(page, base, email, capsys)
+        _onboard(page)
+        expect(page.get_by_role("heading", name="2 jobs match your words")).to_be_visible()
+        for width in sizes:
+            page.set_viewport_size({"width": width, "height": 900})
+            assert page.evaluate(FAULTS) == {"off": [], "over": []}, f"jobs at {width}px"
+        browser.close()
+
+
 def test_step_two_says_what_it_found_with_its_words_ready_and_a_plain_way_to_add_more(site, capsys):
     """The review screen: said to be setting up their profile, three titled parts, two of their own
     words already filtering, a "+ Add" that always answers, places as buttons, ways of working as

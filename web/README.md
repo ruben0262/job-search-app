@@ -16,7 +16,7 @@ npm run build    # tsc --noEmit, then vite build
 |---|---|
 | `src/api.ts` | every request, the single-flight refresh, and `Schema<"Name">` for the generated types |
 | `src/App.tsx` | routing, the top bar, and where a signed-in user belongs |
-| `src/places.tsx` | the five places and the picture each is on a phone's tab bar |
+| `src/places.tsx` | the five places and the picture each is on the tab bar of a phone or tablet |
 | `src/landing/` | the landing page, and the job card that works on it (`Demo.tsx`) |
 | `src/wheel.tsx` | the wheel, drawn once: the landing's halo, the sign-in art, the brand's mark |
 | `src/pages/Onboarding.tsx` | the three screens: your CV, what we found, done |
@@ -51,8 +51,17 @@ effect runs after the first frame, so a dark-mode viewer would see one white fla
 
 Colour changes take 0.25 s, one duration, because different speeds on one page read as jitter; movement
 eases out fast and settles (`--out`), or springs a little past (`--spring`). A route rises in once.
-`prefers-reduced-motion` turns all of it off. Frost (`backdrop-filter`) only on what floats over the page
-— the bars, a dialog — never on each of 25 job cards, which is what makes a phone stutter.
+`prefers-reduced-motion` turns all of it off. Frost (`backdrop-filter`) only on what is fixed over the page
+— the bars, a dialog — never on what scrolls: a blur behind a moving element is drawn again every frame.
+**Scroll and pointer effects write to the element that moves, never a CSS variable on a page-wide element:**
+one on the landing's root restyled every element under it on every frame (96% of a laptop's frames late,
+2026-11-06). Animate `transform` and `opacity`; a `backdrop-filter` on an element also makes it the box its
+fixed children are placed against, which once moved the phone's tab bar.
+
+**Sizes.** A phone and a tablet held upright (to 900px) get the tab bar at the foot, pictures only; a
+laptop gets the words up top. The landing's hero follows the screen's height as well as its width, so a
+phone on its side shows the title and a 720px-tall laptop the buttons. Checked at 23 widths from 320 to
+2560px and five short screens (`tests/test_e2e_site.py` keeps the edge and the bars honest).
 
 **No component library and no router.** This is a wizard plus four screens: `react-router` would be
 more configuration than routing, and a component library would be a build-time dependency and a lot

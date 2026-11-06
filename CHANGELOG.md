@@ -14,6 +14,74 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-06 — Smoother motion; every page checked at every size, and a tablet's bar fixed
+
+The owner asked for much smoother animations, transitions and motion, and for breakpoints where nothing
+on the site is too big, too small, squeezed or out of place.
+
+**Motion, measured first.** The landing page was scrolled top to bottom by script, 14px a frame, with
+the CPU slowed 4× (a mid-range phone), three runs each:
+
+| | Before | After |
+|---|---|---|
+| Phone: frames over 34 ms | 7.8–8.4% | 0% |
+| Phone: slowest 5% of frames | 50 ms | 16.8 ms |
+| Phone: style recalculation | 4.9 s | 1.9 s |
+| Laptop: frames over 34 ms | 96–99% | 0.8–1.2% |
+| Laptop: typical frame | 50–67 ms | 16.7 ms |
+| Laptop: style recalculation | 28 s | 1.25 s |
+
+- **The cause.** Every scroll frame and every pointer move wrote a CSS variable (`--tilt`, `--grow`,
+  `--turn`) on the landing's root element. That restyled every element under it, every wheel's SVG
+  included: about 54 ms a frame on the laptop.
+- **The halo.** Its transform is now written on the halo itself. It eases toward where the scroll and the
+  pointer put it, at the same pace at any refresh rate, so a mouse wheel's jump becomes a glide.
+- **The step cards.** The shade is an element of its own; where each card sticks is read once per size,
+  not every frame.
+- **Transforms only.** The dock's pill slides by transform, and the chart's bars grow by transform.
+- **Reveals** fade and rise without the blur, which was drawn again on every frame; the hero's few words
+  keep theirs.
+- **Frost** (`backdrop-filter`) stays only on what is fixed: the bar and the dock. The bar's frost fades
+  in.
+- **The dock** tells React only when the section changes.
+- **The app:** a softer spring for what is pressed (`--spring`) and a glide for what slides (`--glide`).
+  Dialogs ease in over a backdrop that fades. Tabs, focus rings and switches transition rather than snap.
+- **No entrance animation on the app's pages:** each draws whole the moment it opens (owner,
+  2026-11-03).
+
+**Sizes, checked by script and then by eye.**
+- **What was checked.** Every page, at 23 widths from 320 to 2560px and on five short screens (844×390,
+  932×430, 667×375, 1280×720 and 1024×600):
+  - pages: the landing, sign in and sign up, reset and privacy, Jobs, Add a job, Applied, My search,
+    My documents, Settings, Admin (from 1024px) and onboarding;
+  - faults: anything past the screen's edge, text spilling out of its box, two things on top of each
+    other, and type under 12px.
+  The pages were then looked at side by side.
+- **A tablet's bar.** A tablet held upright (721–900px) had the laptop's bar of words, which ran under its
+  own help and bell buttons: by 117px at 768px and 65px at 820px. The tab bar now serves it, centred and
+  never wider than a phone's. From 901 to 1099px the bar's spacing tightens so six tabs fit.
+- **The hero** was sized by width alone. A phone on its side showed the halo but not the title, and a
+  720px-tall laptop had the buttons below the fold. The halo, the title, the tagline and the headings now
+  follow the height too. The buttons are above the fold at 1024×760, 1280×720, 1366×768 and up.
+- **The step cards** stack only where a card fits the screen; under 620px tall they are a list.
+- **The four "what it is" tiles** sit two to a row on a tablet.
+- **The sign-in wheel** stays inside a 320px screen, and gives way on a phone on its side.
+- **Headings** balance their lines, and paragraphs avoid a last word alone.
+- **Admin's table headings** are 12px.
+- **The end state:** no finding at any size.
+
+Tests: on a phone, a tablet and a laptop (320–1440px), the landing page and the Jobs page put nothing past
+the screen's edge and nothing in the top bar over anything else. Run against the previous commit, the test
+fails at 768px: Settings over the help button.
+
+Gates, all local:
+- `lint-imports`: 2 contracts kept.
+- `ruff check`: clean.
+- The schema pruned onto an empty local database.
+- The contract is unchanged.
+- `npm run build`: 109 kB of gzipped script and 15 kB of style.
+- `pytest`: 1,320 passed and 3 skipped. The browser tests ran.
+
 ## 2026-11-06 — The site in one design: graphite, white and one purple
 
 The owner chose concept C of three static mock-ups (not committed), in one flat "galaxy" purple

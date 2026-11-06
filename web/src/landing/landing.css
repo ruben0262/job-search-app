@@ -39,6 +39,15 @@
   margin: 0;
 }
 
+/* Headings in lines of even length, and no paragraph ending on a word of its own. */
+.landing :is(h1, h2, h3, .hero-tag, .cta p) {
+  text-wrap: balance;
+}
+
+.landing p {
+  text-wrap: pretty;
+}
+
 .landing code {
   padding: 0.12em 0.45em;
   border-radius: 6px;
@@ -59,7 +68,8 @@
   height: calc(68px + env(safe-area-inset-top));
   padding: env(safe-area-inset-top) var(--pad) 0;
   border-bottom: 1px solid transparent;
-  transition: background-color 0.4s, border-color 0.4s;
+  transition: background-color 0.5s var(--out), border-color 0.5s var(--out), backdrop-filter 0.5s var(--out),
+    -webkit-backdrop-filter 0.5s var(--out);
 }
 
 .landing.scrolled .lp-top {
@@ -118,7 +128,9 @@
   -webkit-backdrop-filter: blur(18px) saturate(160%);
   backdrop-filter: blur(18px) saturate(160%);
   box-shadow: 0 20px 40px -20px rgba(0, 0, 0, 0.6);
-  transition: translate 0.6s var(--out), opacity 0.4s;
+  transition: translate 0.7s var(--glide), opacity 0.5s var(--out);
+  /* What happens inside the dock stays there: its pill's width never lays out the page. */
+  contain: layout paint;
 }
 
 .landing:not(.past-hero) .dock {
@@ -163,11 +175,12 @@
   position: absolute;
   z-index: 0;
   top: 5px;
+  left: 0;
   height: 44px;
   border-radius: 999px;
   background: var(--accent);
   box-shadow: 0 6px 20px -6px rgba(var(--accent-rgb), 0.9);
-  transition: left 0.55s var(--spring), width 0.55s var(--spring);
+  transition: translate 0.6s var(--glide), width 0.6s var(--glide);
 }
 
 @media (min-width: 1024px) {
@@ -268,8 +281,6 @@
   border-color: var(--glass-line);
   background: var(--tile);
   color: var(--ink);
-  -webkit-backdrop-filter: blur(10px);
-  backdrop-filter: blur(10px);
 }
 
 .landing .btn-glass:hover {
@@ -297,8 +308,6 @@
   border: 1px solid var(--glass-line);
   border-radius: 999px;
   background: var(--tile);
-  -webkit-backdrop-filter: blur(10px);
-  backdrop-filter: blur(10px);
   color: var(--muted);
   font-size: 13px;
   font-weight: 500;
@@ -320,7 +329,7 @@
 .landing h2 {
   max-width: 18ch;
   margin-bottom: 18px;
-  font: 600 clamp(2rem, 8vw, 3.6rem)/1.04 var(--font-display);
+  font: 600 clamp(2rem, min(8vw, 11svh), 3.6rem)/1.04 var(--font-display);
   letter-spacing: -0.04em;
 }
 
@@ -353,10 +362,10 @@
 .landing .word-in {
   display: inline-block;
   opacity: 0;
-  filter: blur(12px);
-  translate: 0 0.35em;
-  transition: opacity 0.9s var(--out), filter 0.9s var(--out), translate 1s var(--out);
-  transition-delay: calc(var(--base, 0s) + var(--i) * 55ms);
+  filter: blur(10px);
+  translate: 0 0.3em;
+  transition: opacity 1s var(--out), filter 1s var(--out), translate 1.1s var(--out);
+  transition-delay: calc(var(--base, 0s) + var(--i) * 60ms);
 }
 
 .landing.lp-in .word-in {
@@ -365,17 +374,17 @@
   translate: none;
 }
 
+/* A fade and a rise, both drawn by the compositor. The blur reveals had was drawn again on every frame
+   for every tile; the hero's few words keep theirs. */
 .landing [data-reveal] {
   opacity: 0;
-  filter: blur(8px);
-  translate: 0 24px;
-  transition: opacity 0.9s var(--out), filter 0.9s var(--out), translate 1s var(--out);
+  translate: 0 28px;
+  transition: opacity 1s var(--out), translate 1.1s var(--out);
   transition-delay: var(--d, 0s);
 }
 
 .landing [data-reveal].in {
   opacity: 1;
-  filter: none;
   translate: none;
 }
 
@@ -393,21 +402,22 @@
 }
 
 .landing .halo {
-  --s: min(96vw, 700px);
+  --s: min(96vw, 700px, 70svh);
   position: relative;
   width: var(--s);
   aspect-ratio: 1;
-  margin: calc(var(--s) * -0.34) 0 calc(var(--s) * -0.2);
+  margin: calc(var(--s) * -0.34) 0 calc(var(--s) * -0.28);
   perspective: 1000px;
   pointer-events: none;
 }
 
-/* `--tilt` and `--grow` follow the scroll, `--turn` the pointer (`Landing.tsx`). */
+/* Lying flat until `Landing.tsx` raises it with the scroll and leans it to the pointer, writing the
+   transform here and nowhere else. */
 .landing .halo-tilt {
   position: absolute;
   inset: 0;
   transform-style: preserve-3d;
-  transform: rotateX(var(--tilt, 70deg)) rotateY(var(--turn, 0deg)) scale(var(--grow, 1));
+  transform: rotateX(70deg);
   will-change: transform;
 }
 
@@ -455,13 +465,13 @@
 
 .landing .hero-title {
   margin: 0;
-  font: 600 clamp(3.6rem, 17vw, 8.5rem)/0.92 var(--font-display);
+  font: 600 clamp(3.2rem, min(17vw, 15svh), 8.5rem)/0.92 var(--font-display);
   letter-spacing: -0.06em;
 }
 
 .landing .hero-tag {
   margin-top: 12px;
-  font: 500 clamp(1.4rem, 5.6vw, 2.2rem)/1.15 var(--font-display);
+  font: 500 clamp(1.25rem, min(5.6vw, 5.2svh), 2.2rem)/1.15 var(--font-display);
   letter-spacing: -0.035em;
 }
 
@@ -475,8 +485,14 @@
 
 .landing .hero-sub {
   max-width: 44ch;
-  margin-top: 20px;
+  margin-top: clamp(14px, 2.4svh, 20px);
   color: var(--muted);
+}
+
+@media (min-width: 768px) {
+  .landing .hero-sub {
+    max-width: 52ch;
+  }
 }
 
 .landing .hero-ctas {
@@ -485,7 +501,7 @@
   justify-content: center;
   gap: 10px;
   width: 100%;
-  margin-top: 28px;
+  margin-top: clamp(20px, 3.4svh, 28px);
 }
 
 @media (max-width: 519px) {
@@ -510,8 +526,6 @@
   border: 1px solid var(--glass-line);
   border-radius: 18px;
   background: var(--tile);
-  -webkit-backdrop-filter: blur(12px);
-  backdrop-filter: blur(12px);
 }
 
 .landing .reach dt {
@@ -530,7 +544,6 @@
   from {
     opacity: 0;
     translate: 0 24px;
-    filter: blur(8px);
   }
 }
 
@@ -539,8 +552,10 @@
     grid-template-columns: repeat(4, 1fr);
   }
 
+  /* Less above the halo on a short screen, down to the bar's own height: a laptop 720px tall keeps the
+     buttons above the fold, and so does a phone on its side. */
   .landing .hero {
-    padding-top: 96px;
+    padding-top: clamp(72px, 11svh, 96px);
   }
 }
 
@@ -569,9 +584,20 @@
   gap: 12px;
 }
 
-@media (min-width: 900px) {
+@media (min-width: 640px) {
   .landing .bento {
-    grid-template-columns: repeat(6, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .landing .bento .tile:nth-child(1),
+  .landing .bento .tile:nth-child(4) {
+    grid-column: span 2;
+  }
+}
+
+@media (min-width: 1024px) {
+  .landing .bento {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
   }
 
   .landing .bento .tile:nth-child(1) {
@@ -595,8 +621,6 @@
   border: 1px solid var(--glass-line);
   border-radius: 26px;
   background: var(--tile);
-  -webkit-backdrop-filter: blur(14px);
-  backdrop-filter: blur(14px);
 }
 
 .landing .tile::before {
@@ -667,17 +691,20 @@
   height: 110px;
 }
 
+/* Grown by transform from their foot, in turn: no layout on any frame of it. */
 .landing .bars i {
   flex: 1;
   min-width: 3px;
-  height: 0;
+  height: 100%;
   border-radius: 4px 4px 2px 2px;
   background: rgba(var(--accent-rgb), 0.5);
-  transition: height 0.9s var(--out) calc(var(--i) * 25ms);
+  transform: scaleY(0);
+  transform-origin: 50% 100%;
+  transition: transform 1.1s var(--out) calc(var(--i) * 28ms);
 }
 
 .landing .in .bars i {
-  height: var(--h);
+  transform: scaleY(var(--h));
 }
 
 .landing .bars i:last-child {
@@ -868,13 +895,15 @@
   box-shadow: 0 -12px 40px -24px rgba(15, 16, 19, 0.3);
 }
 
-.landing .stack-card::after {
-  content: "";
+/* The shade a card goes into as the next covers it: an element of its own, so dimming it touches one
+   element and not the card (`Landing.tsx`). */
+.landing .stack-shade {
   position: absolute;
   inset: 0;
+  z-index: 1;
   border-radius: inherit;
   background: rgb(var(--bg-rgb));
-  opacity: var(--shade, 0);
+  opacity: 0;
   pointer-events: none;
 }
 
@@ -914,6 +943,13 @@
 .landing .stack-card p {
   color: var(--muted);
   font-size: 16.5px;
+}
+
+@media (max-height: 620px) {
+  .landing .stack-card {
+    position: relative;
+    top: auto;
+  }
 }
 
 @media (min-width: 900px) {
@@ -1066,9 +1102,7 @@
   padding: 5px;
   border: 1px solid var(--glass-line);
   border-radius: 22px;
-  background: var(--glass);
-  -webkit-backdrop-filter: blur(16px);
-  backdrop-filter: blur(16px);
+  background: rgba(var(--bg-rgb), 0.94);
   box-shadow: 0 16px 30px -16px rgba(0, 0, 0, 0.6);
 }
 
@@ -1210,9 +1244,7 @@
   padding: 14px 16px;
   border: 1px solid var(--glass-line);
   border-radius: 22px;
-  background: var(--glass);
-  -webkit-backdrop-filter: blur(20px) saturate(160%);
-  backdrop-filter: blur(20px) saturate(160%);
+  background: var(--bg-raised);
   box-shadow: 0 30px 60px -30px rgba(0, 0, 0, 0.6);
   opacity: 0;
   translate: 0 -30px;
