@@ -38,3 +38,17 @@ class AtsEtag(Document):
     token: str
     etag: str
     updated_at: datetime = field(default_factory=now)
+
+
+@dataclass(kw_only=True)
+class CompanyLookup(Document):
+    """A company named by a posting, already looked for on every company board (ATS) read by name
+    (`services.harvester.cycle._boards_by_name`): asked once, whether a board was found or not."""
+
+    COLLECTION = "company_lookups"
+    OWNER = None
+    # Asked again if lost: the names of two days of postings, a few requests each.
+    BACKED_UP = False
+
+    # The name as `cycle._company` keys it: case and spacing aside.
+    id: str

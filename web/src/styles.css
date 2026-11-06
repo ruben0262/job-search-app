@@ -8,6 +8,8 @@
  */
 
 :root {
+  /* The selects' arrow, and the dropdowns drawn as one (`.lines-pick`): a mid grey that reads on both themes. */
+  --arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8' fill='none' stroke='%238a8a87' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 1.5l5 5 5-5'/%3E%3C/svg%3E");
   --bg: #0f1013;
   --bg-rgb: 15, 16, 19;
   --bg-raised: #17181d;
@@ -487,7 +489,7 @@ select {
   appearance: none;
   -webkit-appearance: none;
   padding-right: 2.6rem;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8' fill='none' stroke='%238a8a87' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 1.5l5 5 5-5'/%3E%3C/svg%3E");
+  background-image: var(--arrow);
   background-repeat: no-repeat;
   background-position: right 1rem center;
   background-size: 0.7rem auto;
@@ -2663,7 +2665,6 @@ button.making::after {
 }
 .country-table {
   max-width: 44rem;
-  margin-top: 1.5rem;
 }
 .country-table th.num,
 .country-table td.num {
@@ -2689,6 +2690,58 @@ button.making::after {
 .trend-numbers .table-scroll {
   max-height: 24rem;
   overflow: auto;
+}
+
+/* Admin → Corpus: how far back, what one point is, the scale and the countries, in one row. */
+.chart-controls {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem 1.25rem;
+  margin: 1rem 0 0.25rem;
+}
+.chart-controls .control {
+  display: grid;
+  gap: 0.35rem;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+.chart-controls select {
+  width: auto;
+}
+.chart-controls button.toggle {
+  padding: 0.65rem 1rem;
+}
+/* The countries, folded under a button drawn as the selects beside it, first in the row, and opened over the
+   chart rather than pushing it down the page. */
+.lines-pick > summary {
+  list-style: none;
+  padding: 0.65rem 2.6rem 0.65rem 0.95rem;
+  border: 1px solid var(--faint);
+  border-radius: var(--radius);
+  background: var(--bg-raised) no-repeat right 1rem center / 0.7rem auto;
+  background-image: var(--arrow);
+  color: var(--ink);
+  font-size: 1rem;
+  cursor: pointer;
+}
+.lines-pick > summary::-webkit-details-marker {
+  display: none;
+}
+.lines-panel {
+  position: absolute;
+  z-index: 5;
+  left: 0;
+  top: calc(100% + 0.4rem);
+  width: min(40rem, 100%);
+  max-height: min(28rem, 60vh);
+  overflow: auto;
+  padding: 0.25rem 0.75rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--faint);
+  border-radius: var(--radius);
+  box-shadow: 0 18px 40px -18px rgba(0, 0, 0, 0.55);
 }
 
 /* The per-source table in Settings: name, freshness, query ceiling, and what that source is
@@ -3362,6 +3415,8 @@ input[type="checkbox"]:disabled {
   right: 0;
   z-index: 30;
   width: fit-content;
+  /* "100 new jobs · 85 older ones gone · Show them" wraps inside a phone's gutter, not past it. */
+  max-width: calc(100% - 2rem);
   margin: 0 auto;
   border-radius: 999px;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 12px 30px -10px rgba(var(--accent-rgb), 0.9);

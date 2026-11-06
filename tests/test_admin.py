@@ -665,6 +665,39 @@ def test_each_range_adds_the_runs_up_into_its_own_buckets(db):
     assert month["countries"][0]["counts"] == [4, 5], "from the first count's day, a sum a day"
 
 
+def test_what_the_chart_shows_and_what_one_point_stands_for_are_picked_apart(api):
+    """Everything counted, from the first count on; and a point a run, an hour or a day over any range, as
+    long as its points fit across the chart (owner, 2026-11-06)."""
+    from libs.db.models import CountryCount
+    from libs.ops.countries import by_country
+
+    http, db, operator, _, sign_in = api
+    sign_in(http, operator)
+    now = datetime(2026, 11, 5, 13, 7, tzinfo=UTC)
+    for at, jobs in ((datetime(2026, 10, 20, 9, 30, tzinfo=UTC), 4),
+                     (datetime(2026, 11, 5, 12, 45, tzinfo=UTC), 2),
+                     (datetime(2026, 11, 5, 13, 0, tzinfo=UTC), 3)):
+        insert(db, CountryCount(id=f"{at:%Y-%m-%dT%H:%M}|DE", hour=at, country="DE", jobs=jobs))
+
+    everything = by_country(db, hours=None, now=now)
+    assert (everything["by"], everything["steps"]) == ("day", [60, 1440]), "a run a point: 1,552 of them"
+    assert everything["starts"][0] == datetime(2026, 10, 20, tzinfo=UTC) and len(everything["starts"]) == 17
+    hourly = by_country(db, hours=None, minutes=60, now=now)
+    assert (len(hourly["starts"]), hourly["countries"][0]["total"]) == (389, 9), "16 days and 4 hours, all 9"
+
+    a_day_by_run = by_country(db, hours=24, minutes=15, now=now)
+    assert (a_day_by_run["by"], len(a_day_by_run["starts"])) == ("minutes", 96)
+    assert a_day_by_run["countries"][0]["counts"][-2:] == [2, 3]
+    a_week_by_day = by_country(db, hours=168, minutes=1440, now=now)
+    assert (a_week_by_day["by"], a_week_by_day["countries"][0]["counts"]) == ("day", [0] * 6 + [5])
+    a_month_by_run = by_country(db, hours=720, minutes=15, now=now)
+    assert (a_month_by_run["by"], a_month_by_run["steps"]) == ("day", [60, 1440]), "not offered: 2,880 points"
+
+    asked = http.get("/admin/countries", params={"minutes": 1440}).json()
+    assert (asked["by"], asked["starts"][0][:10], asked["countries"][0]["total"]) == ("day", "2026-10-20", 9)
+    assert http.get("/admin/countries", params={"hours": 24, "minutes": 15}).json()["by"] == "minutes"
+
+
 def test_the_chart_says_how_many_linkedin_jobs_still_wait_for_their_text(api):
     """A number that grows run after run is a pass that cannot keep up: the proxy needs more exits."""
     from libs.corpus.repository import CorpusRepository

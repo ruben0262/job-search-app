@@ -97,9 +97,9 @@ export function JobsPage({ dashboard, focus, onChanged }: {
   // A skip, asked about first, is gone at once; "I applied" keeps an Undo for a moment.
   const [marked, setMarked] = useState<Map<number, Mark>>(new Map());
   const [gone, setGone] = useState<Set<number>>(new Set());
-  // How many jobs were found since this list was read, and when the one before it was read: what
-  // the "new jobs" button says, and which cards it marks new.
-  const [fresh, setFresh] = useState(0);
+  // How many jobs reached the list since it was read and how long the list is now, and when the one
+  // before it was read: what the "new jobs" button says, and which cards it marks new.
+  const [news, setNews] = useState({ arrived: 0, total: 0 });
   const [seenUntil, setSeenUntil] = useState<string | null>(null);
   const shown = (id: number) => !gone.has(id);
   const filtered = query.trim() !== "" || remote || since !== null || source !== "" || country !== ""
@@ -147,7 +147,7 @@ export function JobsPage({ dashboard, focus, onChanged }: {
       setFeed(body);
       setMarked(new Map());
       setGone(unsent());
-      setFresh(0);
+      setNews({ arrived: 0, total: 0 });
       setFailed(false);
     }).catch(() => setFailed(true)));
   }, [read, filtered, order]);
@@ -163,7 +163,9 @@ export function JobsPage({ dashboard, focus, onChanged }: {
   useEffect(() => {
     if (!asOf) return;
     const look = () => {
-      if (document.visibilityState === "visible") read(0, asOf).then((body) => setFresh(body.total)).catch(() => undefined);
+      if (document.visibilityState === "visible") {
+        read(0, asOf).then((body) => setNews({ arrived: body.arrived ?? 0, total: body.total })).catch(() => undefined);
+      }
     };
     const timer = window.setInterval(look, POLL_MS);
     document.addEventListener("visibilitychange", look);
@@ -209,6 +211,10 @@ export function JobsPage({ dashboard, focus, onChanged }: {
   };
 
   const total = feed ? feed.total - marked.size : 0;
+  // The new ones, and the older ones that left meanwhile, past their shelf life: the list a refresh brings
+  // is this one, plus the first, less the second.
+  const fresh = news.arrived;
+  const left = Math.max(0, total + fresh - news.total);
   // The AI versions only when a build would be allowed: someone can pay, and there is a profile.
   const ai = dashboard.ai.payer !== null && dashboard.ai.profile;
   const card = (job: Job, isFocus = false) => (
@@ -230,7 +236,8 @@ export function JobsPage({ dashboard, focus, onChanged }: {
 
       {fresh > 0 ? (
         <button type="button" className="fresh-jobs" onClick={showNew}>
-          {fresh} new {fresh === 1 ? "job" : "jobs"} · Show {fresh === 1 ? "it" : "them"}
+          {fresh} new {fresh === 1 ? "job" : "jobs"}
+          {left ? ` · ${left} older ${left === 1 ? "one" : "ones"} gone` : ""} · Show {fresh === 1 ? "it" : "them"}
         </button>
       ) : null}
 

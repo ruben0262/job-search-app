@@ -14,6 +14,53 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-06 — The new-jobs count says what left too; company boards found by name; a bigger corpus chart
+
+Three things the owner asked for on the same day.
+
+**"100 new jobs", and the list only 15 longer after a refresh.** The count was already this person's
+own: their words, their filters, read only. Replayed on the laptop's corpus, it counted exactly the jobs a
+refresh added, 68 of 68, and none of them repeated a role already listed. The gap was the other end: in
+the same 8 hours, 24 older jobs passed their shelf life. On a list over 2,000 matches, the newest-2,000
+window pushes old jobs out the same way.
+- `GET /feed?found_after=` no longer narrows the list. It counts the jobs on the whole list that arrived
+  after it (`arrived`), with `total` beside it. The button says both: "100 new jobs · 85 older ones gone ·
+  Show them".
+- **Cost:** each poll reads the whole list, as a page load does. On the laptop that is 78 ms, against
+  3 ms for the new jobs alone, once a minute while the Jobs page is open and visible.
+
+**Company boards from the names postings carry.** The ATS tier polls `ats_tokens`. Links had added one
+board in three days on the laptop: a board's own postings link to that board, and LinkedIn gives no link
+to apply. Meanwhile about 5,000 new companies a day arrived, nearly all on LinkedIn.
+- **Measured:** of 150 of those companies, looked for by name on seven ATS, 16 had a board. Together they
+  listed 1,515 jobs, 131 of them in the harvest's three-day window. There were 290 boards in all.
+- **Each run now looks companies up** (`cycle._boards_by_name`), newest first, last in the run. It stops
+  at its own budget (`BOARD_LOOKUP_BUDGET_SECONDS`, 60 s) or the cycle's, whichever comes first.
+- **A name is not a company.** A board is kept only when it lists a job one of that company's postings
+  here is (`content_key`). That dropped a land-use firm found for "Unique" and a pharmacy for "ABF". Of 17
+  boards found by name alone it kept 11, holding 126 of the 131 recent jobs.
+- **Asked once.** A company is asked once whether a board is found or not (`company_lookups`), and a board
+  refusing the name (a 4xx other than 429) counts as an answer. Too many requests, or no answer, means it
+  is asked again next run.
+- **Not Workable,** which refused for hours after a burst (2026-11-02).
+- **Eight companies at once, each trying its ATS in turn.** Seven ATS at sixteen at once each made 88 of
+  280 requests fail to connect, and took 101 s on a 60 s budget. The deadline is checked before every
+  request, so a run goes past it by one request, not by a company's fourteen.
+- **On the laptop:** three 60-second runs looked up 136 companies and added 8 boards, at about 40–60
+  companies a run.
+- The seed script (`deploy/scripts/seed_ats.py`) now takes its fetchers and spellings from
+  `sources.ats` (`FETCHERS`, `spellings`), so a name is tried the same way in both.
+
+**Admin → Corpus chart.**
+- **Taller,** growing with its width: 300 px on a phone, about 460 on a laptop.
+- **"Show" and "One point is" are picked apart.** "Show" gains "All time", from the first count.
+  "One point is" offers 15 minutes, 1 hour or 1 day: whichever draw the range in at most 1,000 points
+  (`libs.ops.countries.steps`), so the server says which, and a month by the run is not offered.
+- **A log scale** beside the even one: 0, 1, 10, 100, 1K, so a country of tens moves as visibly as one of
+  thousands.
+- **The countries fold** under one button, first in the row, and open over the chart rather than pushing
+  it down. A tap anywhere else or Escape shuts them.
+
 ## 2026-11-06 — Smoother motion; every page checked at every size, and a tablet's bar fixed
 
 The owner asked for much smoother animations, transitions and motion, and for breakpoints where nothing

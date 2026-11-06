@@ -322,20 +322,47 @@ def test_a_job_whose_text_was_read_after_a_list_was_read_is_counted_as_new(api):
     corpus = CorpusRepository(db)
     found_before = corpus.add(url=f"https://example.com/{uuid.uuid4()}", source="linkedin",
                               title="Backend Engineer")
-    as_of = http.get("/feed").json()["as_of"]
-    assert http.get("/feed", params={"found_after": as_of}).json()["total"] == 0
+    first = http.get("/feed").json()
+    assert first["arrived"] is None, "not asked"
+    as_of = first["as_of"]
+    assert http.get("/feed", params={"found_after": as_of}).json()["arrived"] == 0
 
     found_after = corpus.add(url=f"https://example.com/{uuid.uuid4()}", source="linkedin",
                              title="Senior Backend Engineer")
-    assert http.get("/feed", params={"found_after": as_of}).json()["total"] == 0, "found, not read yet"
+    assert http.get("/feed", params={"found_after": as_of}).json()["arrived"] == 0, "found, not read yet"
 
     corpus.set_description(found_before, "We build backend systems in Go. " * 10)
     nurse = corpus.add(url=f"https://example.com/{uuid.uuid4()}", source="linkedin", title="Registered Nurse")
     corpus.set_description(nurse, "A ward in Berlin. " * 20)
 
-    new = http.get("/feed", params={"found_after": as_of})
-    assert _ids(new.json()) == [found_before], "read after the list was, and theirs; the nurse is not"
-    assert found_after not in _ids(http.get("/feed").json())
+    new = http.get("/feed", params={"found_after": as_of}).json()
+    assert new["arrived"] == 1, "read after the list was, and theirs; the nurse is not"
+    assert found_before in _ids(new) and found_after not in _ids(new)
+
+
+def test_the_new_jobs_count_is_what_a_refresh_adds_less_the_jobs_that_left_meanwhile(api):
+    """"100 new jobs", and a refresh made the list 15 longer (owner, 2026-11-06): the others had passed
+    their shelf life meanwhile. Every job counted new is theirs and on the list a refresh brings, and the
+    list's own length beside it says how many left."""
+    from libs.corpus.repository import CorpusRepository
+
+    http, db, _, jobs = api
+    corpus = CorpusRepository(db)
+    first = http.get("/feed").json()
+    assert first["total"] == 2
+    for title in ("Golang Developer", "Postgres Administrator", "Registered Nurse"):
+        corpus.set_description(corpus.add(url=f"https://example.com/{uuid.uuid4()}", source="linkedin",
+                                          title=title), "We build backend systems in Go. " * 10)
+    # Past the shelf life since the list was read.
+    db[CorpusJob.COLLECTION].update_one({"_id": jobs[0].id},
+                                        {"$set": {"first_seen_at": now() - timedelta(days=30)}})
+
+    poll = http.get("/feed", params={"found_after": first["as_of"], "limit": 1}).json()
+    after = http.get("/feed").json()
+
+    assert poll["arrived"] == 2, "theirs alone: the nurse has none of their words"
+    assert poll["total"] == after["total"] == first["total"] + 2 - 1, "what a refresh shows, the one gone"
+    assert jobs[0].id not in _ids(after)
 
 
 def test_the_page_says_how_long_a_job_stays_and_shows_exactly_that(api):

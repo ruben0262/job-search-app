@@ -818,6 +818,13 @@
             "title": "Starts",
             "type": "array"
           },
+          "steps": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Steps",
+            "type": "array"
+          },
           "waiting": {
             "title": "Waiting",
             "type": "integer"
@@ -826,6 +833,7 @@
         "required": [
           "by",
           "bucket_minutes",
+          "steps",
           "starts",
           "since",
           "countries",
@@ -1190,6 +1198,17 @@
       },
       "Feed": {
         "properties": {
+          "arrived": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Arrived"
+          },
           "as_of": {
             "format": "date-time",
             "title": "As Of",
@@ -3878,7 +3897,7 @@
     },
     "/admin/countries": {
       "get": {
-        "description": "New jobs by the country each is in, over the last `hours` (`libs.ops.countries`).",
+        "description": "New jobs by the country each is in, over the last `hours` or everything counted, a point `minutes`\nlong where that is offered (`libs.ops.countries`).",
         "operationId": "countries_admin_countries_get",
         "parameters": [
           {
@@ -3886,9 +3905,31 @@
             "name": "hours",
             "required": false,
             "schema": {
-              "default": 24,
-              "title": "Hours",
-              "type": "integer"
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Hours"
+            }
+          },
+          {
+            "in": "query",
+            "name": "minutes",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Minutes"
             }
           }
         ],
@@ -5583,7 +5624,7 @@
     },
     "/feed": {
       "get": {
-        "description": "This person's matches, a page at a time: the most of their words first, the newest posted\nfirst, or the ones that arrived here last first:\nsearched, remote only, posted lately, from one board, in one country or one city, with a document\nmade or not, having every word picked, or at least so many of their words \u2014 or one job, the one\nan alert's link names, which is either still in their list or not. `found_after` keeps only the\njobs that reached the list since it was read, which is how the page learns how many new ones there\nare without reloading. A job reaches it when its text is read, not when it is found: a LinkedIn job\nfound before the list was read and read after it is new to them.\n\nA job they skipped or applied to is gone from it for good: Applied lists the second.",
+        "description": "This person's matches, a page at a time: the most of their words first, the newest posted\nfirst, or the ones that arrived here last first:\nsearched, remote only, posted lately, from one board, in one country or one city, with a document\nmade or not, having every word picked, or at least so many of their words \u2014 or one job, the one\nan alert's link names, which is either still in their list or not. `found_after` counts the jobs\nthat reached the list since it was read (`arrived`), which is how the page learns how many new ones\nthere are without reloading. A job reaches it when its text is read, not when it is found: a LinkedIn\njob found before the list was read and read after it is new to them.\n\nCounted on the whole list, not instead of it: the jobs that left meanwhile, past their shelf life,\nare the difference between the two lengths. Asked for the new ones alone, the page said \"100 new\njobs\" and a refresh made the list 15 longer (owner, 2026-11-06).\n\nA job they skipped or applied to is gone from it for good: Applied lists the second.",
         "operationId": "feed_feed_get",
         "parameters": [
           {

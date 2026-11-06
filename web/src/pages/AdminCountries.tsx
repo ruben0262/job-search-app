@@ -1,10 +1,12 @@
 /**
- * Admin → Corpus: new jobs through time, all countries together and each one (owner, 2026-11-04 and -05).
+ * Admin → Corpus: new jobs through time, all countries together and each one (owner, 2026-11-04, -05, -06).
  *
- * One line chart: every country together, and the countries ticked in the table under it, a hue each
+ * One line chart: every country together, and the countries ticked under "Countries", a hue each
  * (styles.css, `--series-*`); any of them, the total too, ticked off. A country keeps its hue while it is
- * drawn, whatever else is added or taken away. The table and the numbers under the chart say everything
- * the lines do, without a pointer.
+ * drawn, whatever else is added or taken away. How far back it shows and what one point stands for are
+ * picked apart, and its scale is even or a log one, which shows a small country's changes beside a big
+ * one's. The countries' table and the numbers under the chart say everything the lines do, without a
+ * pointer.
  */
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 
@@ -17,22 +19,26 @@ type By = CountryChart["by"];
 type Series = { key: string; name: string; color: string; values: number[]; area?: boolean };
 type Hover = { at: number; chart: string } | null;
 
-/** The ranges offered, in hours (`libs.ops.countries.RANGES_HOURS`): per run to half a day, per hour to two
- * weeks, per day beyond. */
+/** The ranges offered, in hours (`libs.ops.countries.RANGES_HOURS`), and everything counted. */
 const RANGES = [[1, "1 hour"], [2, "2 hours"], [4, "4 hours"], [8, "8 hours"], [12, "12 hours"],
-                [24, "1 day"], [48, "2 days"], [168, "7 days"], [336, "14 days"], [720, "30 days"]] as const;
+                [24, "1 day"], [48, "2 days"], [168, "7 days"], [336, "14 days"], [720, "30 days"],
+                [null, "All time"]] as const;
 /** Countries drawn at once, one hue each in a fixed order: more than six hues cannot be told apart. */
 const SLOTS = 6;
 /** Countries drawn when the page opens: the busiest. */
 const FIRST_DRAWN = 5;
-/** Rows of the table before the rest are opened. */
-const ROWS_SHOWN = 12;
 
 const keyOf = (country: Country) => country.country ?? "none";
 
 export function JobsByCountry() {
-  const [hours, setHours] = useState<number>(24);
-  const path = `/admin/countries?hours=${hours}`;
+  const [hours, setHours] = useState<number | null>(24);
+  // What one point stands for, once picked: the range's own until then, and over a range too long for it.
+  const [minutes, setMinutes] = useState<number | null>(null);
+  const [log, setLog] = useState(false);
+  const query = new URLSearchParams();
+  if (hours !== null) query.set("hours", `${hours}`);
+  if (minutes !== null) query.set("minutes", `${minutes}`);
+  const path = `/admin/countries?${query}`;
   const [chart, setChart] = useState<CountryChart | null>(() => peek<CountryChart>(path));
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -41,7 +47,15 @@ export function JobsByCountry() {
   // Every country together, as its own line.
   const [together, setTogether] = useState(true);
   const [hover, setHover] = useState<Hover>(null);
-  const [all, setAll] = useState(false);
+  // The countries, folded: open over the chart, shut by a tap anywhere else or Escape.
+  const pick = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    const shut = (event: PointerEvent) => {
+      if (pick.current?.open && !pick.current.contains(event.target as Node)) pick.current.open = false;
+    };
+    document.addEventListener("pointerdown", shut);
+    return () => document.removeEventListener("pointerdown", shut);
+  }, []);
 
   useEffect(() => {
     let live = true;
@@ -99,23 +113,91 @@ export function JobsByCountry() {
   ];
   const busiest = total.indexOf(Math.max(...total));
   const full = Object.keys(picked).length >= SLOTS;
-  const rows = all ? countries : countries.slice(0, ROWS_SHOWN);
-  const trimmed = chart?.since && starts.length < Math.floor((hours * 60) / step);
+  const trimmed = chart?.since && hours !== null && starts.length < Math.floor((hours * 60) / step);
 
   return (
     <section style={{ marginBottom: "2.5rem" }}>
       <h2 style={{ marginTop: 0 }}>Jobs found by country</h2>
       <p className="hint">
         New jobs as they are stored, by the country each is in. &ldquo;Not known&rdquo; is remote or
-        worldwide. Tick or untick any line in the table, all countries together included.
+        worldwide. Pick the lines drawn under Countries, all countries together included.
       </p>
-      <div className="toggles" role="group" aria-label="How far back">
-        {RANGES.map(([value, label]) => (
-          <button key={value} type="button" className="toggle" aria-pressed={hours === value}
-                  onClick={() => setHours(value)}>
-            {label}
-          </button>
-        ))}
+      <div className="chart-controls">
+        {countries.length ? (
+          <details className="lines-pick control" ref={pick}
+                   onKeyDown={(event) => {
+                     if (event.key === "Escape" && pick.current?.open) {
+                       pick.current.open = false;
+                       pick.current.querySelector("summary")?.focus();
+                     }
+                   }}>
+            <summary>Countries · {lines.length} drawn</summary>
+            <div className="lines-panel">
+              <table className="country-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Country</th>
+                    <th scope="col" className="num">Jobs</th>
+                    <th scope="col" className="num busiest">Busiest {unit}</th>
+                    <th scope="col" className="num">Share</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>
+                      <label className="pick">
+                        <input type="checkbox" checked={together} onChange={() => setTogether(!together)} />
+                        <i className="line-key" style={{ background: together ? "var(--ink)" : "transparent" }} />
+                        All countries
+                      </label>
+                    </td>
+                    <td className="num">{sum.toLocaleString()}</td>
+                    <td className="num busiest">{Math.max(0, ...total).toLocaleString()}</td>
+                    <td className="num">{sum ? "100%" : "—"}</td>
+                  </tr>
+                  {countries.map((each) => {
+                    const slot = picked[keyOf(each)];
+                    return (
+                      <tr key={keyOf(each)}>
+                        <td>
+                          <label className="pick">
+                            <input type="checkbox" checked={slot !== undefined}
+                                   disabled={slot === undefined && full} onChange={() => toggle(keyOf(each))} />
+                            <i className="line-key" style={{ background: slot === undefined ? "transparent" : hue(slot) }} />
+                            {each.name}
+                          </label>
+                        </td>
+                        <td className="num">{each.total.toLocaleString()}</td>
+                        <td className="num busiest">{Math.max(...each.counts).toLocaleString()}</td>
+                        <td className="num">{sum ? `${Math.round((each.total / sum) * 100)}%` : "—"}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </details>
+        ) : null}
+        <div className="control">
+          <label htmlFor="chart-range">Show</label>
+          <select id="chart-range" value={hours ?? ""}
+                  onChange={(event) => setHours(event.target.value ? Number(event.target.value) : null)}>
+            {RANGES.map(([value, label]) => <option key={label} value={value ?? ""}>{label}</option>)}
+          </select>
+        </div>
+        <div className="control">
+          <label htmlFor="chart-step">One point is</label>
+          <select id="chart-step" value={step} onChange={(event) => setMinutes(Number(event.target.value))}>
+            {(chart?.steps ?? [step]).map((each) => <option key={each} value={each}>{pointName(each)}</option>)}
+          </select>
+        </div>
+        <div className="control">
+          Scale
+          <div className="toggles" role="group" aria-label="Scale">
+            <button type="button" className="toggle" aria-pressed={!log} onClick={() => setLog(false)}>Even</button>
+            <button type="button" className="toggle" aria-pressed={log} onClick={() => setLog(true)}>Log</button>
+          </div>
+        </div>
       </div>
       {failed ? <p className="error">Could not read the counts.</p> : null}
       {chart ? (
@@ -146,58 +228,10 @@ export function JobsByCountry() {
                       <li key={each.key}><i className="line-key" style={{ background: each.color }} />{each.name}</li>
                     ))}
                   </ul>
-                  <LineChart id="countries" label="Jobs found" endLabels height={300} by={by} step={step}
+                  <LineChart id="countries" label="Jobs found" endLabels log={log} by={by} step={step}
                              starts={starts} series={lines} hover={hover} onHover={setHover} />
                 </>
               ) : <p className="muted small">No line is ticked.</p>}
-
-              <table className="country-table">
-                <thead>
-                  <tr>
-                    <th scope="col">Country</th>
-                    <th scope="col" className="num">Jobs</th>
-                    <th scope="col" className="num busiest">Busiest {unit}</th>
-                    <th scope="col" className="num">Share</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td>
-                      <label className="pick">
-                        <input type="checkbox" checked={together} onChange={() => setTogether(!together)} />
-                        <i className="line-key" style={{ background: together ? "var(--ink)" : "transparent" }} />
-                        All countries
-                      </label>
-                    </td>
-                    <td className="num">{sum.toLocaleString()}</td>
-                    <td className="num busiest">{Math.max(0, ...total).toLocaleString()}</td>
-                    <td className="num">{sum ? "100%" : "—"}</td>
-                  </tr>
-                  {rows.map((each) => {
-                    const slot = picked[keyOf(each)];
-                    return (
-                      <tr key={keyOf(each)}>
-                        <td>
-                          <label className="pick">
-                            <input type="checkbox" checked={slot !== undefined}
-                                   disabled={slot === undefined && full} onChange={() => toggle(keyOf(each))} />
-                            <i className="line-key" style={{ background: slot === undefined ? "transparent" : hue(slot) }} />
-                            {each.name}
-                          </label>
-                        </td>
-                        <td className="num">{each.total.toLocaleString()}</td>
-                        <td className="num busiest">{Math.max(...each.counts).toLocaleString()}</td>
-                        <td className="num">{sum ? `${Math.round((each.total / sum) * 100)}%` : "—"}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-              {countries.length > ROWS_SHOWN ? (
-                <button type="button" className="linklike more" onClick={() => setAll(!all)}>
-                  {all ? "Show fewer countries" : `Show ${countries.length - ROWS_SHOWN} more countries`}
-                </button>
-              ) : null}
 
               <details className="trend-numbers">
                 <summary>The numbers, {unit} by {unit}</summary>
@@ -233,15 +267,16 @@ export function JobsByCountry() {
 }
 
 /** One or more series against time, one axis, with a crosshair and every series' value under the pointer
- * or the arrow keys. `hover` is shared, so both charts mark the same hour. */
-function LineChart({ id, label, series, starts, by, step, height, endLabels = false, hover, onHover }: {
+ * or the arrow keys. `hover` is shared, so both charts mark the same hour. On a log scale (`log`) each
+ * step up the axis is ten times the one below, so a country of tens moves as visibly as one of thousands. */
+function LineChart({ id, label, series, starts, by, step, log = false, endLabels = false, hover, onHover }: {
   id: string;
   label: string;
   series: Series[];
   starts: string[];
   by: By;
   step: number;
-  height: number;
+  log?: boolean;
   endLabels?: boolean;
   hover: Hover;
   onHover: (hover: Hover) => void;
@@ -257,13 +292,21 @@ function LineChart({ id, label, series, starts, by, step, height, endLabels = fa
   }, []);
 
   const n = starts.length;
+  // Taller the wider it is: 300 px on a phone, about 460 on a laptop.
+  const height = Math.round(Math.min(520, Math.max(300, width * 0.42)));
   const [left, right, top, bottom] = [44, endLabels ? 112 : 18, 18, 24];
   const plotWidth = Math.max(width - left - right, 1);
   const plotHeight = height - top - bottom;
-  const ticks = yTicks(Math.max(1, ...series.flatMap((each) => each.values)));
+  const highest = Math.max(1, ...series.flatMap((each) => each.values));
+  const ticks = log ? logTicks(highest) : yTicks(highest);
   const ceiling = ticks[ticks.length - 1]!;
+  // On a log scale zero has no place, so the axis counts one more than each value: 0 sits on the floor.
+  const share = log ? (value: number) => Math.log10(1 + value) / Math.log10(1 + ceiling)
+    : (value: number) => value / ceiling;
   const x = (index: number) => (n <= 1 ? left + plotWidth / 2 : left + (index / (n - 1)) * plotWidth);
-  const y = (value: number) => top + plotHeight - (value / ceiling) * plotHeight;
+  const y = (value: number) => top + plotHeight - share(value) * plotHeight;
+  const tickName = (tick: number) =>
+    ((log ? tick >= 1000 : ceiling >= 10_000) ? `${tick / 1000}K` : tick.toLocaleString());
   const at = hover && hover.at < n ? hover.at : null;
   // The last hour or day is still being counted, so the lines end at the one before it, and it is a faint
   // open dot: drawn on, its drop read as one.
@@ -305,13 +348,14 @@ function LineChart({ id, label, series, starts, by, step, height, endLabels = fa
          aria-label={`${label}, new jobs per ${unitName(by, step)}: arrow keys read each in turn`}
          onPointerMove={(event) => point(event.clientX)} onPointerLeave={() => onHover(null)}
          onFocus={() => onHover({ at: at ?? n - 1, chart: id })} onBlur={() => onHover(null)} onKeyDown={keys}>
-      <svg width={width} height={height} role="img" aria-label={`${label}: new jobs per ${unitName(by, step)}`}>
+      <svg width={width} height={height} role="img"
+           aria-label={`${label}: new jobs per ${unitName(by, step)}${log ? ", on a log scale" : ""}`}>
         {ticks.map((tick) => (
           <g key={tick}>
             <line x1={left} x2={left + plotWidth} y1={y(tick)} y2={y(tick)}
                   stroke={tick === 0 ? "var(--faint)" : "var(--hairline)"} />
             <text x={left - 8} y={y(tick) + 3} textAnchor="end" className="trend-axis">
-              {ceiling >= 10_000 ? `${tick / 1000}K` : tick.toLocaleString()}
+              {tickName(tick)}
             </text>
           </g>
         ))}
@@ -384,6 +428,12 @@ function yTicks(peak: number): number[] {
   return Array.from({ length: Math.ceil(peak / step) + 1 }, (_, index) => index * step);
 }
 
+/** Zero, then every power of ten up to the first at least `peak`: 0, 1, 10, 100, 1K. */
+function logTicks(peak: number): number[] {
+  const top = Math.max(1, Math.ceil(Math.log10(peak)));
+  return [0, ...Array.from({ length: top + 1 }, (_, power) => 10 ** power)];
+}
+
 /** Which buckets get a label along the bottom: round times, or midnights, or every few days, as many as
  * fit. */
 function xTicks(starts: string[], by: By, step: number, plotWidth: number): number[] {
@@ -412,6 +462,11 @@ function tickLabel(at: string, by: By): string {
 /** What one bucket is called: "15 minutes", "hour" or "day". */
 function unitName(by: By, step: number): string {
   return by === "minutes" ? `${step} minutes` : by;
+}
+
+/** A step, as the picker names it: "15 minutes", "1 hour", "1 day". */
+function pointName(minutes: number): string {
+  return minutes < 60 ? `${minutes} minutes` : minutes === 60 ? "1 hour" : "1 day";
 }
 
 /** An hour or a day, in full: "Thu 5 Nov, 20:00" or "Thu 5 Nov". */

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from libs.db.models.ai import AiRequest
-from libs.db.models.ats import AtsEtag, AtsToken
+from libs.db.models.ats import AtsEtag, AtsToken, CompanyLookup
 from libs.db.models.auth import MAIL_PURPOSES, TOKEN_PURPOSES, AuthToken, MailSend, UserSession
 from libs.db.models.built import BuiltDocument
 from libs.db.models.contact import ContactMessage
@@ -35,14 +35,14 @@ MODELS = (User, UserConfig, UserSecret, UserSession, AuthToken, MailSend, Corpus
           UserJobState, SetupConversation, SetupMessage, UserNotification, PushSubscription,
           UserDocument, UserProfileFile, PlatformSetting, AiRequest, AtsToken, AtsEtag,
           BuiltDocument, LanePause, Lock, ContactMessage, Word, SweptPlace,
-          CountryCount)
+          CountryCount, CompanyLookup)
 
 __all__ = [
     "CLAIM_TIMEOUT_MIN", "DEFAULT_TITLE", "DOCUMENT_KINDS", "JOB_STATES", "LANES", "MAIL_PURPOSES",
     "MAX_ATTEMPTS", "MESSAGE_STATUSES", "MODELS", "PROFILE_FILE_KINDS", "SECRET_KINDS",
     "TELEGRAM_STATUSES", "TOKEN_PURPOSES", "USER_STATUSES", "WORKPLACES",
-    "AiRequest", "AtsEtag", "AtsToken", "AuthToken", "BuiltDocument", "ContactMessage", "CorpusJob",
-    "CountryCount",
+    "AiRequest", "AtsEtag", "AtsToken", "AuthToken", "BuiltDocument", "CompanyLookup", "ContactMessage",
+    "CorpusJob", "CountryCount",
     "LanePause", "Lock",
     "MailSend", "PlatformSetting", "PushSubscription", "QueueJob",
     "SetupConversation", "SetupMessage", "SweptPlace", "User", "UserConfig", "UserDocument", "UserJobState",

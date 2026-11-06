@@ -153,3 +153,93 @@ def test_linkedin_postings_with_no_apply_link_do_not_crowd_out_the_ones_that_nam
     _discover_ats_tokens(db, AtsRepository(db))
 
     assert token in AtsRepository(db).live_tokens("workable")
+
+
+# ── the companies postings name, looked for by name (owner, 2026-11-06) ──────────────────────────
+
+def _named(db, company: str, title: str, *, source: str = "linkedin") -> None:
+    insert(db, CorpusJob(url=f"https://www.linkedin.com/jobs/view/{uuid.uuid4().int % 10**12}", title=title,
+                         company=company, source=source, first_seen_at=now()))
+
+
+def _boards(monkeypatch, listed: dict[tuple[str, str], list[str]], refused=None) -> list[tuple[str, str]]:
+    """Every ATS answers from `listed`, `{(ats, board): [titles]}`, an empty board otherwise; a board in
+    `refused`, `{(ats, board): "HTTP 429"}`, answers that once. Returns every board asked, in order."""
+    from services.harvester import cycle
+    from services.harvester.sources.base import JobLink
+
+    asked, refused = [], dict(refused or {})
+
+    def answering(ats: str):
+        def fetch(token: str, _etag=None):
+            asked.append((ats, token))
+            if (ats, token) in refused:
+                raise RuntimeError(refused.pop((ats, token)))
+            return [JobLink(url=f"https://{ats}.example/{token}/{n}", title=title, source=ats)
+                    for n, title in enumerate(listed.get((ats, token), []))], None
+        return fetch
+
+    monkeypatch.setattr(cycle, "FETCHERS", {ats: answering(ats) for ats in cycle.FETCHERS})
+    return asked
+
+
+def _run(db, *boards: str):
+    from services.harvester.cycle import run_cycle
+
+    return run_cycle(db, source_configs={board: {"enabled": True} for board in boards},
+                     run_source=lambda *_: [], describe=False)
+
+
+def test_a_company_a_posting_names_has_its_board_found_and_polled(db, monkeypatch):
+    """Links named one new board in three days, while the companies postings name had hundreds (2026-11-06).
+    A board found by the company's name counts when it lists a job that company's posting here is, and the
+    run polls it from then on; one of the same name listing none is another company's."""
+    _named(db, "Acme  Robotics", "Backend Engineer (m/w/d)")
+    asked = _boards(monkeypatch, {("greenhouse", "acmerobotics"): ["Backend Engineer", "Designer"],
+                                  ("lever", "acme-robotics"): ["Store Manager"]})
+
+    report = _run(db, "greenhouse", "lever", "ashby", "himalayas")
+
+    ats = AtsRepository(db)
+    assert report.ats_boards_by_name == 1
+    assert ats.live_tokens("greenhouse") == ["acmerobotics"], "what the run polls (`gather_ats`)"
+    assert ats.names("greenhouse") == {"acmerobotics": "Acme  Robotics"}, "named as the posting names it"
+    assert not ats.live_tokens("lever"), "a board of that name with none of its jobs is somebody else's"
+    assert {board for board, _ in asked} == {"greenhouse", "lever", "ashby"}, "on the boards this run reads"
+
+
+def test_a_company_is_looked_for_once_and_again_only_when_the_look_up_failed(db, monkeypatch):
+    """A guess a run costs requests, so a company is asked once, found or not. Too many requests is no
+    answer, so asked again; a board refusing the name is one. A company with a board already, or named only
+    by a board's own posting, is not asked at all."""
+    _named(db, "Acme", "Welder")
+    _named(db, "Globex", "Welder")
+    _named(db, "Hooli", "Welder")
+    _named(db, "Initech", "Welder", source="greenhouse")
+    AtsRepository(db).add_tokens([("lever", "umbrella")])
+    _named(db, "Umbrella", "Welder")
+    asked = _boards(monkeypatch, {}, refused={("greenhouse", "globex"): "HTTP 429",
+                                              ("greenhouse", "hooli"): "HTTP 403"})
+
+    _run(db, "greenhouse")
+    assert sorted(asked) == [("greenhouse", "acme"), ("greenhouse", "globex"), ("greenhouse", "hooli")]
+    asked.clear()
+    _run(db, "greenhouse")
+    assert asked == [("greenhouse", "globex")], "too many requests, so asked again; Acme and Hooli answered"
+    asked.clear()
+    _run(db, "greenhouse")
+    assert asked == []
+
+
+def test_a_run_looks_for_as_many_as_its_time_allows_and_the_next_run_goes_on(db, monkeypatch):
+    """Last in the run, in its own share of it (`BOARD_LOOKUP_BUDGET_SECONDS`): the rest waits, the run
+    does not."""
+    _named(db, "Acme", "Welder")
+    asked = _boards(monkeypatch, {("greenhouse", "acme"): ["Welder"]})
+    monkeypatch.setattr("services.harvester.cycle.BOARD_LOOKUP_BUDGET_SECONDS", 0)
+
+    assert _run(db, "greenhouse").ats_boards_by_name == 0
+    assert asked == []
+
+    monkeypatch.setattr("services.harvester.cycle.BOARD_LOOKUP_BUDGET_SECONDS", 60)
+    assert _run(db, "greenhouse").ats_boards_by_name == 1

@@ -3,11 +3,11 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 
-from pymongo import UpdateOne
+from pymongo import ReplaceOne, UpdateOne
 from pymongo.database import Database
 
 from libs.db import now
-from libs.db.models import AtsEtag, AtsToken
+from libs.db.models import AtsEtag, AtsToken, CompanyLookup
 
 
 class AtsRepository:
@@ -16,6 +16,7 @@ class AtsRepository:
     def __init__(self, db: Database):
         self._tokens = db[AtsToken.COLLECTION]
         self._etags = db[AtsEtag.COLLECTION]
+        self._lookups = db[CompanyLookup.COLLECTION]
 
     # ── tokens ───────────────────────────────────────────────────────────────────────────────
 
@@ -42,6 +43,22 @@ class AtsRepository:
                        **({"$set": {"name": name}} if name else {})}, upsert=True)
             for (ats, token), name in sorted(seen.items())], ordered=False)
         return result.upserted_count
+
+    def known_tokens(self) -> set[str]:
+        """Every board name stored, on any ATS, dead or alive: a company with one is not looked for."""
+        return set(self._tokens.distinct("token"))
+
+    def not_looked_up(self, companies: Iterable[str]) -> list[str]:
+        """Of these companies, in their order, the ones never looked for by name (`CompanyLookup`)."""
+        companies = list(dict.fromkeys(companies))
+        asked = set(self._lookups.distinct("_id", {"_id": {"$in": companies}}))
+        return [company for company in companies if company not in asked]
+
+    def looked_up(self, companies: Iterable[str]) -> None:
+        """These companies were looked for, a board found or not: not again."""
+        writes = [ReplaceOne({"_id": company}, {}, upsert=True) for company in dict.fromkeys(companies)]
+        if writes:
+            self._lookups.bulk_write(writes, ordered=False)
 
     def names(self, ats: str) -> dict[str, str]:
         """The companies' own names for this ATS's boards, `{token: name}`, where one is known."""

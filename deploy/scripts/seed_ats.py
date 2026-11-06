@@ -29,9 +29,7 @@ from __future__ import annotations
 
 import argparse
 import logging
-import re
 import sys
-import unicodedata
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -48,10 +46,8 @@ from services.harvester.sources import ats
 logger = logging.getLogger("seed_ats")
 
 COMPANIES = Path(__file__).with_name("ats_companies.txt")
-FETCHERS = {"greenhouse": ats.fetch_greenhouse, "lever": ats.fetch_lever, "ashby": ats.fetch_ashby,
-            "workable": ats.fetch_workable, "recruitee": ats.fetch_recruitee,
-            "personio": ats.fetch_personio, "smartrecruiters": ats.fetch_smartrecruiters,
-            "breezy": ats.fetch_breezy}
+# The harvest's own, so a name is tried here exactly as a run tries the names its postings carry.
+FETCHERS = ats.FETCHERS
 
 
 def name(line: str) -> str:
@@ -64,9 +60,7 @@ def tokens(line: str) -> list[str]:
     name, _, given = line.partition("=")
     if given.strip():
         return [token.strip().lower() for token in given.split(",") if token.strip()]
-    plain = unicodedata.normalize("NFKD", name.casefold()).encode("ascii", "ignore").decode()
-    words = re.findall(r"[a-z0-9]+", plain)
-    return list(dict.fromkeys(["".join(words), "-".join(words)])) if words else []
+    return ats.spellings(name)
 
 
 def probe(board: str, token: str) -> tuple[str, str, int, int, str | None]:

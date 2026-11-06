@@ -374,31 +374,28 @@ def _one_word_short(page) -> None:
 def test_the_admin_charts_the_jobs_found_in_each_country(site, capsys):
     """Where the jobs come from through time, all countries and each, and how many LinkedIn jobs still
     wait for their text (owner, 2026-11-04). Lines on a time axis, a hue a country: the busiest five
-    drawn, any other ticked in, and a country keeps its hue when another is taken away (2026-11-05)."""
+    drawn, any other ticked in, and a country keeps its hue when another is taken away (2026-11-05). The
+    countries fold under one button and open over the chart, not above it (2026-11-06)."""
     from libs.db import database
 
-    base, email, _ = site
     busiest, an_hour_ago = _counted_by_country(database())
-
     with sync_api.sync_playwright() as playwright:
         browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
-        page = browser.new_context(viewport={"width": 1280, "height": 900}).new_page()
-        _sign_up(page, base, email, capsys)
-        _onboard(page)
-        database().users.update_one({"email": email}, {"$set": {"is_admin": True}})
-        page.reload()
-        page.locator("nav .places a", has_text="Admin").click()
-        page.get_by_role("button", name="Corpus").click()
+        page = _admin_corpus(browser, site, capsys)
 
-        expect(page.get_by_role("heading", name="Jobs found by country")).to_be_visible()
         expect(page.get_by_text("LinkedIn jobs waiting for their text: 8.")).to_be_visible()
-        expect(page.get_by_role("img", name="Jobs found: new jobs per hour")).to_be_visible()
-        rows = page.locator(".country-table tbody label")
-        expect(rows).to_have_text(["All countries", *busiest, "Not known"])
+        chart = page.get_by_role("img", name="Jobs found: new jobs per hour")
+        expect(chart).to_be_visible()
         legend = page.get_by_role("list", name="Lines drawn").get_by_role("listitem")
         expect(legend).to_have_text(["All countries", *busiest[:5]])
 
-        france = page.locator(".country-table label", has_text="France").locator(".line-key")
+        table = page.locator(".country-table")
+        expect(table).to_be_hidden()
+        where = chart.bounding_box()["y"]
+        page.get_by_text("Countries · 6 drawn", exact=True).click()
+        expect(table.locator("tbody label")).to_have_text(["All countries", *busiest, "Not known"])
+        assert chart.bounding_box()["y"] == where, "opened over the chart, which stays where it was"
+        france = table.locator("label", has_text="France").locator(".line-key")
         hue = france.evaluate("key => getComputedStyle(key).backgroundColor")
         page.get_by_role("checkbox", name="Germany").uncheck()
         expect(legend).to_have_text(["All countries", *[name for name in busiest[:5] if name != "Germany"]])
@@ -409,6 +406,9 @@ def test_the_admin_charts_the_jobs_found_in_each_country(site, capsys):
         page.get_by_role("checkbox", name="All countries").uncheck()
         expect(legend.first).not_to_have_text("All countries")
         page.get_by_role("checkbox", name="All countries").check()
+        # Shut by a tap anywhere else.
+        page.get_by_role("heading", name="Jobs found by country").click()
+        expect(table).to_be_hidden()
 
         # Read without a pointer: the arrow keys walk the hours, every series' number at each.
         page.get_by_label("Jobs found, new jobs per hour: arrow keys read each in turn").focus()
@@ -418,20 +418,68 @@ def test_the_admin_charts_the_jobs_found_in_each_country(site, capsys):
         page.keyboard.press("ArrowLeft")
         expect(tip).to_contain_text(f"{an_hour_ago:,}All countries")
 
+        # A phone does not scroll sideways, the countries open included. Waited for: the chart is drawn at the
+        # width it measures, measured again once the window changes, and read at once it was still the
+        # desktop's 1,104 px one run in two.
         page.set_viewport_size({"width": 390, "height": 900})
-        expect(page.locator(".country-table")).to_be_visible()
-        # A phone does not scroll sideways. Waited for: the chart is drawn at the width it measures, measured
-        # again once the window changes, and read at once it was still the desktop's 1,104 px one run in two.
+        page.get_by_text("Countries · 6 drawn", exact=True).click()
+        expect(table).to_be_visible()
         page.wait_for_function("document.documentElement.scrollWidth <= 390", timeout=5000)
         page.set_viewport_size({"width": 1280, "height": 900})
         page.locator("h2", has_text="Jobs found by country").locator("..").screenshot(
             path=os.environ.get("E2E_SHOT", "/dev/null") if os.environ.get("E2E_SHOT") else None)
-        page.get_by_role("button", name="30 days").click()
-        expect(page.get_by_role("img", name="Jobs found: new jobs per day")).to_be_visible()
-        # The shortest ranges a run at a time: the last hour, four runs.
-        page.get_by_role("button", name="1 hour", exact=True).click()
-        expect(page.get_by_role("img", name="Jobs found: new jobs per 15 minutes")).to_be_visible()
         browser.close()
+
+
+def test_the_admin_chart_picks_how_far_back_and_what_one_point_is_apart_and_its_scale(site, capsys):
+    """How far back it shows and what one point stands for are picked apart, everything counted included,
+    and a step that would draw too many points over a range is not offered. A log scale shows a small
+    country's changes beside a big one's (owner, 2026-11-06)."""
+    from libs.db import database
+
+    _counted_by_country(database())
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = _admin_corpus(browser, site, capsys)
+        show, point = page.get_by_label("Show", exact=True), page.get_by_label("One point is", exact=True)
+        chart = page.get_by_role("img", name=re.compile("^Jobs found: new jobs per"))
+
+        # The hours' counts are hundreds: an even axis steps by a hundred, a log one by ten times.
+        ten = page.locator("text.trend-axis", has_text=re.compile(r"^10$"))
+        expect(chart).to_have_accessible_name("Jobs found: new jobs per hour")
+        expect(ten).to_have_count(0)
+        page.get_by_role("button", name="Log", exact=True).click()
+        expect(chart).to_have_accessible_name("Jobs found: new jobs per hour, on a log scale")
+        expect(ten).to_have_count(1)
+        page.get_by_role("button", name="Even", exact=True).click()
+
+        point.select_option(label="15 minutes")
+        expect(chart).to_have_accessible_name("Jobs found: new jobs per 15 minutes")
+        expect(show).to_have_value("24")
+        show.select_option(label="30 days")
+        expect(chart).to_have_accessible_name("Jobs found: new jobs per day")
+        expect(point.locator("option")).to_have_text(["1 hour", "1 day"])
+        # Everything counted: thirty hours, so a run a point again.
+        show.select_option(label="All time")
+        expect(chart).to_have_accessible_name("Jobs found: new jobs per 15 minutes")
+        expect(page.get_by_text("Counting began")).to_have_count(0)
+        browser.close()
+
+
+def _admin_corpus(browser, site, capsys):
+    """A new account made an admin, on Admin → Corpus, at a laptop's width."""
+    from libs.db import database
+
+    base, email, _ = site
+    page = browser.new_context(viewport={"width": 1280, "height": 900}).new_page()
+    _sign_up(page, base, email, capsys)
+    _onboard(page)
+    database().users.update_one({"email": email}, {"$set": {"is_admin": True}})
+    page.reload()
+    page.locator("nav .places a", has_text="Admin").click()
+    page.get_by_role("button", name="Corpus").click()
+    expect(page.get_by_role("heading", name="Jobs found by country")).to_be_visible()
+    return page
 
 
 def _counted_by_country(db) -> tuple[list[str], int]:
@@ -753,13 +801,16 @@ def test_a_job_opens_whole_and_skipping_survives_a_lost_connection_and_new_jobs_
         expect(page.get_by_role("heading", name="1 job matches your words")).to_be_visible()
         expect(card(TITLES[1])).to_have_count(0)
 
+        # One arrives as one leaves, past its shelf life: the button says both, so the list a refresh brings
+        # is no longer than it says (owner, 2026-11-06).
         _jobs(database(), "later", ["Backend Engineer Late"])
+        database().corpus.update_one({"_id": ids[TITLES[0]]},
+                                     {"$set": {"first_seen_at": datetime.now(UTC) - timedelta(days=30)}})
         page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
-        expect(page.get_by_role("button", name=re.compile(r"^1 new job"))).to_be_visible()
         expect(cards).to_have_count(1)
-        page.get_by_role("button", name=re.compile(r"^1 new job")).click()
+        page.get_by_role("button", name="1 new job · 1 older one gone · Show it", exact=True).click()
         expect(card("Backend Engineer Late").get_by_text("New", exact=True)).to_be_visible()
-        expect(cards).to_have_count(2)
+        expect(page.get_by_role("heading", name="1 job matches your words")).to_be_visible()
         browser.close()
 
 

@@ -356,9 +356,12 @@ class CountrySeries(BaseModel):
 
 
 class CountryChart(BaseModel):
-    # Per run (`minutes`, `bucket_minutes` long) up to half a day, per hour to two weeks, per day beyond.
+    # What a point stands for: a run (`minutes`, `bucket_minutes` long), an hour or a day; picked, or by the
+    # range, a run up to half a day, an hour to two weeks, a day beyond.
     by: Literal["minutes", "hour", "day"]
     bucket_minutes: int
+    # The steps that can be picked over this range, in minutes (`libs.ops.countries.steps`).
+    steps: list[int]
     # When each bucket starts: the range asked for, from the first count if that is later.
     starts: list[datetime]
     # When the first count began; `None` before anything has been counted.
@@ -371,12 +374,13 @@ class CountryChart(BaseModel):
 
 @router.get("/countries", response_model=CountryChart)
 def countries(db: Database = Depends(get_db), admin: User = Depends(require_admin), *,
-              hours: int = 24) -> dict:
-    """New jobs by the country each is in, over the last `hours` (`libs.ops.countries`)."""
-    hours = max(1, min(hours, max(RANGES_HOURS)))
-    audit(logger, "admin.countries", user=admin.id, hours=hours)
+              hours: int | None = None, minutes: int | None = None) -> dict:
+    """New jobs by the country each is in, over the last `hours` or everything counted, a point `minutes`
+    long where that is offered (`libs.ops.countries`)."""
+    hours = None if hours is None else max(1, min(hours, max(RANGES_HOURS)))
+    audit(logger, "admin.countries", user=admin.id, hours=hours, minutes=minutes)
     waiting = CorpusRepository(db).count_awaiting_description(linkedin=True, windows=platform_windows(db))
-    return {**by_country(db, hours=hours), "waiting": waiting}
+    return {**by_country(db, hours=hours, minutes=minutes), "waiting": waiting}
 
 
 class LimitPatch(BaseModel):

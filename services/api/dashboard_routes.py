@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 import uuid as _uuid
 from collections import Counter
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -147,6 +147,9 @@ class Feed(BaseModel):
     cities: list[FeedPlace]
     # When this list was read: jobs found after it are the new ones (`found_after`).
     as_of: datetime
+    # Of `total`, how many reached the list after `found_after`; `None` when it was not asked. With `total`
+    # beside it, the page tells the jobs that came from the ones that left meanwhile.
+    arrived: int | None = None
     # How long a job stays on the page, in hours: the job shelf life set in Admin, and the longest a board
     # that posts less often keeps its jobs there (`freshness.shelf_life`). Said on the page.
     shelf_hours: int
@@ -250,14 +253,18 @@ def feed(*, db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curren
     first, or the ones that arrived here last first:
     searched, remote only, posted lately, from one board, in one country or one city, with a document
     made or not, having every word picked, or at least so many of their words — or one job, the one
-    an alert's link names, which is either still in their list or not. `found_after` keeps only the
-    jobs that reached the list since it was read, which is how the page learns how many new ones there
-    are without reloading. A job reaches it when its text is read, not when it is found: a LinkedIn job
-    found before the list was read and read after it is new to them.
+    an alert's link names, which is either still in their list or not. `found_after` counts the jobs
+    that reached the list since it was read (`arrived`), which is how the page learns how many new ones
+    there are without reloading. A job reaches it when its text is read, not when it is found: a LinkedIn
+    job found before the list was read and read after it is new to them.
+
+    Counted on the whole list, not instead of it: the jobs that left meanwhile, past their shelf life,
+    are the difference between the two lengths. Asked for the new ones alone, the page said "100 new
+    jobs" and a refresh made the list 15 longer (owner, 2026-11-06).
 
     A job they skipped or applied to is gone from it for good: Applied lists the second."""
     as_of = now()
-    visible = their_jobs(db, get(db, User, user_id), described_since=found_after)
+    visible = their_jobs(db, get(db, User, user_id))
     made_for = (set(db[BuiltDocument.COLLECTION].distinct("job_id", {"user_id": user_id}))
                 if made is not None else set())
     cutoff = now() - timedelta(hours=since_hours) if since_hours else None
@@ -292,7 +299,10 @@ def feed(*, db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curren
     countries = Counter(match.job.country for match in visible if match.job.country)
     cities = Counter(match.job.city for match in visible if match.job.city)
     shortest, longest = shelf_life(platform_windows(db))
-    return Feed(total=len(matches),
+    # A time without a zone is UTC, as the database read one when it did the comparing.
+    since = found_after.replace(tzinfo=found_after.tzinfo or UTC) if found_after else None
+    arrived = sum(1 for match in matches if match.job.described_at >= since) if since else None
+    return Feed(total=len(matches), arrived=arrived,
                 jobs=[feed_row(match, texts.get(match.job.id), documents.get(match.job.id, []))
                       for match in page],
                 sources=[FeedSource(name=name, jobs=count) for name, count in boards.most_common()],

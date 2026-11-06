@@ -127,7 +127,8 @@ export interface paths {
         };
         /**
          * Countries
-         * @description New jobs by the country each is in, over the last `hours` (`libs.ops.countries`).
+         * @description New jobs by the country each is in, over the last `hours` or everything counted, a point `minutes`
+         *     long where that is offered (`libs.ops.countries`).
          */
         get: operations["countries_admin_countries_get"];
         put?: never;
@@ -938,10 +939,14 @@ export interface paths {
          *     first, or the ones that arrived here last first:
          *     searched, remote only, posted lately, from one board, in one country or one city, with a document
          *     made or not, having every word picked, or at least so many of their words — or one job, the one
-         *     an alert's link names, which is either still in their list or not. `found_after` keeps only the
-         *     jobs that reached the list since it was read, which is how the page learns how many new ones there
-         *     are without reloading. A job reaches it when its text is read, not when it is found: a LinkedIn job
-         *     found before the list was read and read after it is new to them.
+         *     an alert's link names, which is either still in their list or not. `found_after` counts the jobs
+         *     that reached the list since it was read (`arrived`), which is how the page learns how many new ones
+         *     there are without reloading. A job reaches it when its text is read, not when it is found: a LinkedIn
+         *     job found before the list was read and read after it is new to them.
+         *
+         *     Counted on the whole list, not instead of it: the jobs that left meanwhile, past their shelf life,
+         *     are the difference between the two lengths. Asked for the new ones alone, the page said "100 new
+         *     jobs" and a refresh made the list 15 longer (owner, 2026-11-06).
          *
          *     A job they skipped or applied to is gone from it for good: Applied lists the second.
          */
@@ -1865,6 +1870,8 @@ export interface components {
             since: string | null;
             /** Starts */
             starts: string[];
+            /** Steps */
+            steps: number[];
             /** Waiting */
             waiting: number;
         };
@@ -2002,6 +2009,8 @@ export interface components {
         };
         /** Feed */
         Feed: {
+            /** Arrived */
+            arrived?: number | null;
             /**
              * As Of
              * Format: date-time
@@ -3061,7 +3070,8 @@ export interface operations {
     countries_admin_countries_get: {
         parameters: {
             query?: {
-                hours?: number;
+                hours?: number | null;
+                minutes?: number | null;
             };
             header?: never;
             path?: never;

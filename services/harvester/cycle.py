@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import logging
+import re
+from collections import Counter
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -16,6 +18,7 @@ from libs.corpus.ats import AtsRepository
 from libs.corpus.ats_urls import tokens_from_urls
 from libs.corpus.freshness import platform_windows
 from libs.corpus.geo import allows, posting_country, wanted_countries
+from libs.corpus.keys import content_key
 from libs.corpus.repository import TYPED, CorpusRepository
 from libs.db import lease
 from libs.db.models import CorpusJob
@@ -23,6 +26,7 @@ from libs.obs import Timings, audit, report_timings, timed
 from libs.settings import (
     ATS_DISCOVERY_LOOKBACK_HOURS,
     ATS_DISCOVERY_MAX_ROWS,
+    BOARD_LOOKUP_BUDGET_SECONDS,
     HARVEST_CYCLE_BUDGET_SECONDS,
     HARVEST_CYCLE_WARN_FRACTION,
 )
@@ -30,8 +34,9 @@ from libs.tenant.repository import TenantRepository
 from services.harvester.describe import SHARED_LIMIT as DESCRIBE_PER_CYCLE_DEFAULT
 from services.harvester.describe import describe_pending
 from services.harvester.fetch import make_shared_client
-from services.harvester.source_config import union_locations
+from services.harvester.source_config import ATS_SOURCES, union_locations
 from services.harvester.sources import OUTER_CONCURRENCY, JobLink, Source, Tier, sources_for
+from services.harvester.sources.ats import FETCHERS, spellings
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +58,8 @@ class CycleReport:
     source_failures: dict[str, str] = field(default_factory=dict)
     # Company boards learned from posting URLs this cycle, not polled for.
     ats_tokens_found: int = 0
+    # And from the companies postings name, looked for by name (`_boards_by_name`).
+    ats_boards_by_name: int = 0
     # Postings written to the archive file and deleted from the corpus.
     archived: int = 0
     skipped_locked: bool = False
@@ -134,6 +141,13 @@ def run_cycle(
         # a second outage (CLAUDE.md §6). Bounded per pass, so it cannot become the slow stage.
         _archive_expired(db, report)
 
+        # 7. Last, in what is left of its share of the run: the rest waits for the next one, and nothing
+        # is behind it to be skipped.
+        with timed("ats_by_name", report.timings):
+            report.ats_boards_by_name = _boards_by_name(
+                db, ats, source_configs,
+                until=min(monotonic() + BOARD_LOOKUP_BUDGET_SECONDS, started + HARVEST_CYCLE_BUDGET_SECONDS))
+
     logger.info(
         "harvest: %d links, %d duplicates, %d in no country anybody picked, %d new, %d described",
         report.links_found, report.duplicates_total, report.elsewhere, report.new_jobs, report.described)
@@ -143,7 +157,8 @@ def run_cycle(
     _warn_if_near_budget(monotonic() - started, report)
     audit(logger, "harvest.cycle", links=report.links_found,
           new=report.new_jobs, elsewhere=report.elsewhere, described=report.described,
-          ats_tokens_found=report.ats_tokens_found, archived=report.archived,
+          ats_tokens_found=report.ats_tokens_found, ats_boards_by_name=report.ats_boards_by_name,
+          archived=report.archived,
           failed_sources=len(report.source_failures),
           empty_sources=sum(1 for n in report.links_by_source.values() if n == 0))
     return report
@@ -307,4 +322,97 @@ def _discover_ats_tokens(db, ats: AtsRepository) -> int:
             by_ats[name] = by_ats.get(name, 0) + 1
         logger.info("harvest: %d new company board(s) from %d posting URLs %s",
                     added, len(urls), by_ats)
+    return added
+
+
+# Companies looked for at once, each trying its ATS in turn: at most this many requests at a time, and on
+# one ATS. Measured 2026-11-06: eight at once, 4 of 1,820 requests failed to connect; seven ATS sixteen at
+# once each, 88 of 280 did, and the look-ups took 101 s of a 60 s budget.
+LOOKUP_CONCURRENCY = 8
+
+
+def _boards_by_name(db, ats: AtsRepository, read: Iterable[str], *, until: float) -> int:
+    """Enrol the boards of the companies recent postings name, each looked for under its own name on every
+    company board this run reads by name (`sources.ats.FETCHERS`). Returns how many are new.
+
+    **Links alone left the list where the seed put it.** A board's own postings link only to that board,
+    and LinkedIn's give no link to apply, so on the laptop links named one new board in three days
+    (2026-11-03 to -06) while about 5,000 new companies a day arrived, nearly all on LinkedIn. Of 150 of
+    them looked for by name, 16 had a board, listing 1,515 jobs, 131 in the harvest's three-day window,
+    beside the 290 boards there were (2026-11-06).
+
+    **A name is not a company,** so a board counts only when it lists a job one of that company's postings
+    here is (`content_key`, the platform's own "same job"): "Unique" found a land-use firm on Personio and
+    "ABF" a pharmacy. Of the 17 boards found by name alone, that kept 11, with 126 of the 131 recent jobs
+    (the same 11 an hour later, by `content_key` itself: 131 of 136).
+
+    A company is looked for once, board or not (`CompanyLookup`); one whose look-up failed is tried
+    again next run. A company with a board stored already is not looked for, and neither is one only a
+    board names: its board is that one. Newest first, until `until`; the rest waits for the next run.
+    Not Workable: 16 requests at once got 490 refusals of 555, then one at a time was refused for hours
+    (2026-11-02), and a guess there would cost the polls of its boards already known.
+    """
+    boards = [board for board in FETCHERS if board in read and board != "workable"]
+    if not boards:
+        return 0
+    since = datetime.now(UTC) - timedelta(hours=ATS_DISCOVERY_LOOKBACK_HOURS)
+    # Each company once, case and spacing aside: its name as the newest posting writes it, and its jobs.
+    companies: dict[str, tuple[str, set[str]]] = {}
+    for row in db[CorpusJob.COLLECTION].aggregate([
+            {"$match": {"first_seen_at": {"$gte": since}, "company": {"$nin": [None, ""]},
+                        "source": {"$nin": [TYPED, *sorted(ATS_SOURCES)]}}},
+            {"$sort": {"first_seen_at": -1}}, {"$limit": ATS_DISCOVERY_MAX_ROWS},
+            {"$group": {"_id": "$company", "titles": {"$addToSet": "$title"},
+                        "newest": {"$max": "$first_seen_at"}}},
+            {"$sort": {"newest": -1, "_id": 1}}]):
+        key = " ".join(row["_id"].split()).casefold()
+        name, jobs = companies.setdefault(key, (row["_id"].strip(), set()))
+        jobs.update(content_key(title, name) for title in row["titles"])
+    known = ats.known_tokens()
+    waiting = ats.not_looked_up(company for company in companies if known.isdisjoint(spellings(company)))
+
+    def look(company: str) -> tuple[dict[tuple[str, str], str], list[str]] | None:
+        """The boards listing one of this company's jobs, and what failed; `None` once time is up, so a
+        company begun is asked again whole: a request goes past `until`, never a company's fourteen."""
+        name, jobs = companies[company]
+        named, failed = {}, []
+        for board in boards:
+            for token in spellings(company):
+                if monotonic() >= until:
+                    return None
+                try:
+                    listed = FETCHERS[board](token)[0] or []
+                except Exception as exc:  # noqa: BLE001 - counted below, and asked again next run
+                    # A board refusing this name ("HTTP 403") has answered: none we can read. A 429, a 5xx or
+                    # no answer has not. Recruitee refused one company a 403 three runs running (2026-11-06).
+                    if isinstance(exc, RuntimeError) and re.fullmatch(r"HTTP 4(?!29)\d\d", str(exc)):
+                        continue
+                    failed.append(f"{board} {exc if isinstance(exc, RuntimeError) else type(exc).__name__}")
+                    continue
+                if jobs & {content_key(job.title, name) for job in listed} - {None}:
+                    named[(board, token)] = name
+        return named, failed
+
+    by_ats: Counter[str] = Counter()
+    failed: Counter[str] = Counter()
+    asked = added = 0
+    with ThreadPoolExecutor(LOOKUP_CONCURRENCY) as pool:
+        for company, answer in zip(waiting, pool.map(look, waiting), strict=True):
+            if answer is None:
+                continue
+            named, errors = answer
+            # Stored as each is answered, so a run stopped short keeps what it found.
+            added += ats.add_tokens(named, names=named)
+            by_ats.update(board for board, _token in named)
+            failed.update(errors)
+            if not errors:
+                ats.looked_up([company])
+            asked += 1
+
+    if failed:
+        logger.warning("harvest: looking for company boards by name failed %d time(s) %s; those companies "
+                       "are asked again next run", sum(failed.values()), dict(failed))
+    logger.info("harvest: %d of %d companies looked for by name on %d ATS, %d new board(s) %s; %d wait "
+                "for the next run", asked, len(waiting), len(boards), added, dict(by_ats),
+                len(waiting) - asked)
     return added

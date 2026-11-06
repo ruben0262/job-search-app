@@ -5,6 +5,7 @@ import html
 import os
 import re
 import threading
+import unicodedata
 import defusedxml.ElementTree as ET   # not stdlib ET: these parse third-party feeds
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
@@ -365,6 +366,23 @@ def fetch_workable(token: str, etag: str | None = None) -> tuple[list[JobLink] |
                            is_remote=(True if (j.get("telecommuting") or "remote" in loc.lower())
                                       else None)))
     return out, new_etag
+
+
+# The ATS whose board is one name, which a company's own name can be tried as: by the seed list
+# (`deploy/scripts/seed_ats.py`) and by the names postings carry (`cycle._boards_by_name`). Workday needs a
+# tenant, a data centre and a site, so it is found from postings' links only.
+FETCHERS: dict[str, Callable[[str], tuple[list[JobLink] | None, str | None]]] = {
+    "greenhouse": fetch_greenhouse, "lever": fetch_lever, "ashby": fetch_ashby, "workable": fetch_workable,
+    "recruitee": fetch_recruitee, "personio": fetch_personio, "smartrecruiters": fetch_smartrecruiters,
+    "breezy": fetch_breezy}
+
+
+def spellings(name: str) -> list[str]:
+    """The board names a company's name is tried as: written together and with hyphens ("grafanalabs",
+    "grafana-labs"), accents dropped."""
+    plain = unicodedata.normalize("NFKD", name.casefold()).encode("ascii", "ignore").decode()
+    words = re.findall(r"[a-z0-9]+", plain)
+    return list(dict.fromkeys(["".join(words), "-".join(words)])) if words else []
 
 
 def gather_greenhouse(cfg: dict[str, Any], logger, repo: AtsRepository) -> list[JobLink]:

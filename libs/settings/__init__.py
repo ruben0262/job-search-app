@@ -146,6 +146,12 @@ HARVEST_CYCLE_BUDGET_SECONDS = 11 * 60
 # minutes; the postings that can still be shown are about a quarter of it (`test_schedules.py`).
 TERMS_BUDGET_SECONDS = 90
 
+# How long one harvest run may spend looking for the company boards of the companies its postings name
+# (`services.harvester.cycle._boards_by_name`), last in the run and inside its budget: the rest waits for the
+# next run. Measured 2026-11-06, a company took about 1.3 s of requests on seven ATS at eight at once, and
+# the laptop's postings named about 5,000 new companies a day, some 50 a run.
+BOARD_LOOKUP_BUDGET_SECONDS = 60
+
 # The share of that budget above which a cycle is reported as close to its ceiling. Derived from the
 # budget rather than being a second time bound, so raising one raises both.
 #
