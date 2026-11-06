@@ -14,6 +14,49 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-06 — LinkedIn's list asked fresh every run, and a check of what it shows against what is stored
+
+The owner: how do we know every LinkedIn job in the picked countries, in the window, is fetched, with no
+new one missed?
+
+**LinkedIn answers a list it was asked for lately from that answer.** Measured from the laptop, direct,
+Ireland, 2026-11-06 (about 150 requests in all):
+
+| Asked | Jobs | Youngest |
+|---|---|---|
+| `f_TPR=r3600` (a window every tool asks) | 21, the same for most of an hour | 54 min |
+| `r3601`, `r3599` | 58 | 5 min |
+| `r1800` | 46 | 27 min |
+| `r1801` | 12 | 1 min |
+| `r1803`, then again four minutes on | the same first page both times | |
+| `r1807`, never asked | a different page | 4 min |
+
+Response headers say `no-cache`, and a parameter the search ignores (`trk`, `refresh`, `pageNum`) changes
+nothing: only the search does. The run asked `int(since the last sweep + 900)`, which with runs 900
+seconds apart is 1,800 give or take a few seconds, nearly always the same number. So a run was often
+answered with the copy of an earlier run's list, without the jobs listed since. Each window reaches back
+only to the run before, so a job missed that way was never read.
+
+- `linkedin.unasked`: every window is rounded up to the minute and given 1–59 seconds more, a different
+  number each minute. It is never a whole number of minutes, and with runs 15 minutes apart no number
+  comes back for 59 runs (14 h 45 min). It reaches back under two minutes further. `sweep_window` reads
+  it, and so does the check below.
+- Asked fresh, the country's one list held what narrower lists show: 54 of the 55 jobs Ireland's four
+  biggest cities' lists showed for the hour, and 42 of the 43 that five word searches did. The one job
+  missing was a minute old, inside the next run's reach. Splitting by way of working (`f_WT`) or by
+  experience (`f_E`) changes nothing on a no-word list: LinkedIn ignores both there.
+- `deploy/scripts/check_linkedin_coverage.py`: a country's hour asked three ways (its list as the run
+  asks it, its cities' lists, word searches as a yardstick only, never harvested), and how many of the
+  jobs each way shows are stored, by the harvest's own duplicate check. Jobs listed in the last two runs
+  are counted apart, and the older ones missing are named. About a request per ten jobs.
+
+Before this, an earlier reading of the same measurement looked like a list running 20–30 minutes behind.
+It was the saved copy: every number then was asked for r3600 or r7200.
+
+Tests: 59 runs 15 minutes apart ask 59 different windows, none a whole number of minutes, each reaching
+back to the run before and one more, under two minutes further (the previous code asked r1800 for 58 of
+them); the check counts each way against what is stored and names a settled miss.
+
 ## 2026-11-06 — LinkedIn's posting time, read where it is most exact
 
 The owner: no made-up times. Read the real posting time, if LinkedIn gives one.

@@ -90,11 +90,25 @@ def sweep_window(swept_at: datetime | None, *, now: datetime, most: int) -> int:
     """How far back, in seconds, a sweep of a place reaches: to its previous sweep and one run before it,
     so a job listed at the edge of one window is inside the next; at most `most` hours, the operator's
     window, which is also how far a place nobody has swept yet reaches. Measured 2026-11-03: a sweep missed
-    8 of 20 jobs listed exactly an hour before, and a wider window held all 8."""
+    8 of 20 jobs listed exactly an hour before, and a wider window held all 8. Then a few seconds more, a
+    number LinkedIn has not been asked lately (`unasked`)."""
     if swept_at is None:
-        return most * 3600
+        return unasked(most * 3600, now)
     since = (now - swept_at.replace(tzinfo=swept_at.tzinfo or UTC)).total_seconds()
-    return int(min(most * 3600, since + PLATFORM_TICK_MIN * 60))
+    return unasked(int(min(most * 3600, since + PLATFORM_TICK_MIN * 60)), now)
+
+
+def unasked(seconds: int, now: datetime) -> int:
+    """`seconds` as a number LinkedIn has not been asked lately: rounded up to the minute, then 1 to 59
+    seconds more, a different number each minute, so never a whole number of minutes, and runs 15 minutes
+    apart meet the same one once in 59 runs (59 is prime), 14 hours 45 minutes.
+
+    LinkedIn answers a list it was asked for lately from that answer (seen 2026-11-06): the same window
+    asked again four minutes on gave the same page, without the job listed between; r3600, which every tool
+    asks, gave the same 21 jobs for most of an hour while r3601 gave 58, the youngest 5 minutes old; r1800,
+    which runs 15 minutes apart nearly always asked (`sweep_window`), gave 46 jobs, the youngest 27 minutes
+    old, while r1801 gave 12. A parameter the search ignores changes nothing; only the search does."""
+    return -(-seconds // 60) * 60 + int(now.timestamp()) // 60 % 59 + 1
 
 
 def sweep_places(places: dict[str, int], *, proxy: str, readers: int) -> list[Sweep]:

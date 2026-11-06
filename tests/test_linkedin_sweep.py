@@ -276,9 +276,27 @@ def test_each_country_is_read_back_to_its_previous_sweep_and_one_run_more(db, si
     _pass(db)
     _pass(db, now=NOW + timedelta(minutes=15))
 
-    windows = [asked["f_TPR"] for asked in linkedin_site.asked]
-    assert windows == [f"r{freshness_hours(db, 'linkedin') * 3600}", f"r{(15 + PLATFORM_TICK_MIN) * 60}"]
+    seconds = [int(asked["f_TPR"][1:]) for asked in linkedin_site.asked]
+    reach = [freshness_hours(db, "linkedin") * 3600, (15 + PLATFORM_TICK_MIN) * 60]
+    assert [0 < got - want < 120 for got, want in zip(seconds, reach, strict=True)] == [True, True], (
+        seconds, "and under two minutes more, a number LinkedIn has not been asked lately")
     assert {asked["sortBy"] for asked in linkedin_site.asked} == {"DD"}, "newest first"
+
+
+def test_no_two_runs_ask_linkedin_for_the_same_window_nor_a_whole_number_of_minutes(db, site):
+    """LinkedIn answers a list it was asked for lately from that answer: the same window asked again four
+    minutes on gave the same page, the job listed between missing, and runs 15 minutes apart all asked
+    r1800, which gave a copy 27 minutes old (2026-11-06). So none repeats for 59 runs, and none is round."""
+    linkedin_site = site({"Germany": ["Nurse"]})
+    _user(db, _config("nurse", "carer", "midwife"))
+
+    for run in range(59):
+        _pass(db, now=NOW + timedelta(minutes=15 * run))
+
+    seconds = [int(asked["f_TPR"][1:]) for asked in linkedin_site.asked]
+    assert len(set(seconds)) == len(seconds) == 59, "fourteen hours of runs, every window new"
+    assert not [each for each in seconds if each % 60 == 0]
+    assert all(0 < each - 1800 < 120 for each in seconds[1:]), "to the last run and one more, and under 2 min"
 
 
 def test_a_country_whose_sweep_ended_on_refusals_is_read_further_back_next_time(db, site):
@@ -296,7 +314,7 @@ def test_a_country_whose_sweep_ended_on_refusals_is_read_further_back_next_time(
     finally:
         linkedin.EMPTY_RETRIES = retries
 
-    assert linkedin_site.asked[0]["f_TPR"] == f"r{(30 + PLATFORM_TICK_MIN) * 60}", (
+    assert 0 < int(linkedin_site.asked[0]["f_TPR"][1:]) - (30 + PLATFORM_TICK_MIN) * 60 < 120, (
         "back to the last sweep read to its end, not the one LinkedIn cut short")
 
 
