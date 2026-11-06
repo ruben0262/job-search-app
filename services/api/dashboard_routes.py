@@ -99,6 +99,9 @@ class FeedJob(BaseModel):
     words: list[str]
     posted_at: datetime | None
     first_seen_at: datetime | None
+    # When its text was read, and so when it reached the list (`candidate_conditions`): what makes it
+    # new. None only for a job somebody wrote in themselves with a short text.
+    described_at: datetime | None
     salary: FeedSalary | None
     # The start of the description, whitespace folded, cut at a word: what the card shows. None until
     # the posting has been described.
@@ -218,12 +221,13 @@ def feed(*, db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curren
     searched, remote only, posted lately, from one board, in one country or one city, with a document
     made or not, having every word picked, or at least so many of their words — or one job, the one
     an alert's link names, which is either still in their list or not. `found_after` keeps only the
-    jobs found since a list was read, which is how the page learns how many new ones there are
-    without reloading.
+    jobs that reached the list since it was read, which is how the page learns how many new ones there
+    are without reloading. A job reaches it when its text is read, not when it is found: a LinkedIn job
+    found before the list was read and read after it is new to them.
 
     A job they skipped or applied to is gone from it for good: Applied lists the second."""
     as_of = now()
-    visible = their_jobs(db, get(db, User, user_id), since=found_after)
+    visible = their_jobs(db, get(db, User, user_id), described_since=found_after)
     made_for = (set(db[BuiltDocument.COLLECTION].distinct("job_id", {"user_id": user_id}))
                 if made is not None else set())
     cutoff = now() - timedelta(hours=since_hours) if since_hours else None
@@ -244,9 +248,9 @@ def feed(*, db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curren
     if sort == "newest":
         matches.sort(key=_when, reverse=True)
     elif sort == "arrived":
-        # When it came in here, whatever date the board puts on it: a job posted a week ago and found
-        # an hour ago is new to them.
-        matches.sort(key=lambda match: (match.job.first_seen_at, match.job.id), reverse=True)
+        # When it reached their list, whatever date the board puts on it: a job posted a week ago and
+        # read an hour ago is new to them.
+        matches.sort(key=lambda match: (match.job.described_at, match.job.id), reverse=True)
     page = matches[offset:offset + limit]
     ids = [match.job.id for match in page]
     # The text of the page's jobs only: matching never brings it back.
@@ -280,7 +284,8 @@ def feed_row(match: Match, text: str | None, documents: list[dict]) -> FeedJob:
     return FeedJob(id=job.id, title=job.title, company=job.company, location=job.location,
                    country=job.country, is_remote=job.is_remote, url=job.url, source=job.source,
                    words=list(match.words), posted_at=job.posted_at,
-                   first_seen_at=job.first_seen_at, salary=salary.extract(text), **_summary(text),
+                   first_seen_at=job.first_seen_at, described_at=job.described_at,
+                   salary=salary.extract(text), **_summary(text),
                    documents=[job_document(row) for row in documents])
 
 

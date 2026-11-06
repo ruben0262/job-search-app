@@ -14,6 +14,37 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-06 — A job reaches the Jobs page once its text is read
+
+The owner: a job that disappears when its full text comes in should never have been shown; show jobs with
+their real text, not on their title alone.
+
+**A candidate is a job whose whole text has been read** (`libs/tenant/filters.py`, `candidate_conditions`:
+`described_at` set, which `set_description` sets at `MIN_DESCRIPTION` characters). Matched on its title,
+a LinkedIn job sat on the page for the minutes or hours until the describer got to it, then left once the
+text showed another language, a way of working not wanted, more applicants than the cap or a salary
+under the minimum. Red words were never part of that: they read the title and company only. Alerts and
+the daily email already waited for the text (`described_since`); the Jobs page, the word suggestions and
+the assistant did not, and now all of them ask the one rule. The old "refused twice" condition goes: a job
+given up on never has `described_at`.
+
+**"New jobs" counts from when the text was read, not from when the job was found.** A job reaches the
+list when its text is read, so a LinkedIn job found before the list was read and read after it was never
+counted as new, and appeared unannounced on the next load. `found_after` now keeps the jobs read since
+(`their_jobs(described_since=…)`, the alerts' own question), "Just arrived first" sorts by it, and the
+card's new mark reads it (`FeedJob.described_at`, in the contract). `matching_jobs(since=…)`, by time
+found, had no other caller and is removed.
+
+Measured on the laptop's corpus (2,078 jobs young enough to show): 503 had no text yet, all stored by
+the boards' last run, which reads 200 texts a run (`describe_per_cycle`), so they wait for the next run.
+The one account's list went from 233 jobs to 187, and listing it took the same time: 267–276 ms
+median over four runs of 15, against 277 ms before.
+
+Tests: a job waiting, one with a teaser and one given up on are nobody's candidate, and the one read is;
+a job is on the page only after its text is read; one found before a list was read and read after it is
+counted as new; "Just arrived first" puts the job read last on top. All four fail on the previous code.
+The Pipeline's "Text read" step says a job is on Jobs pages only from there.
+
 ## 2026-11-05 (night) — The admin's numbers, made true to how the platform now works
 
 The owner: make the admin's numbers right, and tested for accuracy; drop jobs too old to have their text

@@ -982,8 +982,9 @@ export interface paths {
          *     searched, remote only, posted lately, from one board, in one country or one city, with a document
          *     made or not, having every word picked, or at least so many of their words — or one job, the one
          *     an alert's link names, which is either still in their list or not. `found_after` keeps only the
-         *     jobs found since a list was read, which is how the page learns how many new ones there are
-         *     without reloading.
+         *     jobs that reached the list since it was read, which is how the page learns how many new ones there
+         *     are without reloading. A job reaches it when its text is read, not when it is found: a LinkedIn job
+         *     found before the list was read and read after it is new to them.
          *
          *     A job they skipped or applied to is gone from it for good: Applied lists the second.
          */
@@ -2048,6 +2049,8 @@ export interface components {
             company: string | null;
             /** Country */
             country: string | null;
+            /** Described At */
+            described_at: string | null;
             /** Documents */
             documents: components["schemas"]["JobDocument"][];
             /** First Seen At */

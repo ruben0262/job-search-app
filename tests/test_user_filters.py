@@ -167,10 +167,12 @@ def _row(db, **kwargs):
     """A posting, stored. `db` is the conftest fixture: a clean database, skipped without one."""
     import uuid
 
-    from libs.db import insert
+    from libs.db import insert, now
     from libs.db.models import CorpusJob
 
     kwargs.setdefault("source", "test")
+    # Its text read, as a candidate's always is (`candidate_conditions`).
+    kwargs.setdefault("described_at", kwargs.get("first_seen_at") or now())
     return insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", title="Engineer", **kwargs))
 
 

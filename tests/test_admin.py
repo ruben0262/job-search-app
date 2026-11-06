@@ -66,7 +66,8 @@ def test_an_account_page_says_what_they_do_with_the_site_and_nothing_of_the_setu
     _change(db, ordinary, last_active_at=now() - timedelta(hours=2), email_alerts=True)
     jobs = [insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test", title=title,
                                  location="Berlin, Germany", country="DE", description="A ward job. " * 30,
-                                 first_seen_at=now() - timedelta(hours=hours)))
+                                 first_seen_at=now() - timedelta(hours=hours),
+                                 described_at=now() - timedelta(hours=hours)))
             for title, hours in (("Nurse", 5), ("Midwife", 1), ("Carer", 1), ("Nurse Lead", 1))]
     insert(db, UserJobState(user_id=ordinary.id, job_id=jobs[0].id, applied_at=now(), notified_at=now()))
     insert(db, UserJobState(user_id=ordinary.id, job_id=jobs[3].id, dismissed_at=now()))

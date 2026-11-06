@@ -99,11 +99,11 @@ def _hits(field: str, words: list[str]) -> dict:
     return {"$map": {"input": found_there, "in": "$$this.match"}}
 
 
-def matching_jobs(db: Database, user: User, *, since: datetime | None = None,
-                  described_since: datetime | None = None, scan: int = SCAN,
-                  text: bool = False) -> list[Match]:
-    """This person's matches, the most of their words first, then newest first. `since` keeps those
-    found after it; `described_since` those that had their whole text by it, which is what alerts send.
+def matching_jobs(db: Database, user: User, *, described_since: datetime | None = None,
+                  scan: int = SCAN, text: bool = False) -> list[Match]:
+    """This person's matches, the most of their words first, then newest first. A job is one once its
+    whole text is read (`candidate_conditions`), so `described_since` keeps those that became one since:
+    what alerts send, and what the Jobs page counts as new.
 
     Each posting says which of everyone's words it has (`libs.corpus.terms`), so a match is an index
     lookup. A posting not yet searched, and a word nobody's postings have been searched for yet, are
@@ -117,8 +117,6 @@ def matching_jobs(db: Database, user: User, *, since: datetime | None = None,
 
     filters = filters_for(db, user)
     where = candidate_conditions(filters)
-    if since is not None:
-        where.append({"first_seen_at": {"$gt": since}})
     if described_since is not None:
         where.append({"described_at": {"$gte": described_since}})
     indexed = sorted(db[Word.COLLECTION].distinct("_id", {"_id": {"$in": mine}, "indexed_at": {"$ne": None}}))
@@ -151,7 +149,7 @@ def matching_jobs(db: Database, user: User, *, since: datetime | None = None,
     rows = sorted({row["_id"]: row for stages in searches
                    for row in db[CorpusJob.COLLECTION].aggregate(stages)}.values(),
                   key=lambda row: (row["first_seen_at"], row["_id"]), reverse=True)[:scan]
-    if (since or described_since) and len(rows) == scan:
+    if described_since and len(rows) == scan:
         # The caller's watermark will pass every older match this never reached.
         logger.warning("matching: %s has at least %d new matches; only the newest %d were read, so older "
                        "ones will not be alerted (the jobs page still lists them)", user.id, scan, scan)
@@ -180,9 +178,9 @@ def marks(db: Database, user_id) -> tuple[set[int], dict[int, datetime]]:
             {row["job_id"]: row["applied_at"] for row in rows if row["applied_at"]})
 
 
-def their_jobs(db: Database, user: User, *, since: datetime | None = None) -> list[Match]:
+def their_jobs(db: Database, user: User, *, described_since: datetime | None = None) -> list[Match]:
     """What this person's Jobs page lists: their matches, less a job they skipped or applied to, which is
     gone from it for good."""
     skipped, applied = marks(db, user.id)
-    return [match for match in matching_jobs(db, user, since=since)
+    return [match for match in matching_jobs(db, user, described_since=described_since)
             if match.job.id not in skipped and match.job.id not in applied]

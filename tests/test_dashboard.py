@@ -34,7 +34,7 @@ def api(db, monkeypatch):
                            telegram_chat_id="1", onboarding_completed_at=now()))
     insert(db, UserConfig(user_id=user.id, config=CONFIG, schema_version=2))
 
-    jobs = [insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
+    jobs = [insert(db, CorpusJob(described_at=now(), url=f"https://example.com/{uuid.uuid4()}", source="test",
                                  title=title, description="we build things", is_remote=True))
             for title in ("Backend Engineer", "Senior Backend Engineer", "Registered Nurse")]
 
@@ -200,7 +200,8 @@ def test_the_search_box_reaches_titles_and_links(api):
 def test_remote_only_narrows_the_matches_and_unknown_is_not_remote(api):
     http, db, _, jobs = api
     unknown = insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
-                                   title="Backend Engineer II", description="x", is_remote=None))
+                                   title="Backend Engineer II", description="x", is_remote=None,
+                                   described_at=now()))
 
     assert unknown.id in _ids(http.get("/feed").json())
     assert set(_ids(http.get("/feed?remote=true").json())) == {jobs[0].id, jobs[1].id}
@@ -225,7 +226,7 @@ def test_equal_scores_are_newest_first(api):
     moment = now()
     rows = {age: insert(db, CorpusJob(url=f"https://example.test/tie-{age}", source="test",
                                       title="Backend Engineer", description="x", is_remote=True,
-                                      first_seen_at=moment - timedelta(hours=age)))
+                                      first_seen_at=moment - timedelta(hours=age), described_at=now()))
             # The older one first, so its id is the lower: insertion order cannot pass for freshness.
             for age in (5, 1)}
 
@@ -238,11 +239,11 @@ def test_posted_lately_keeps_only_jobs_from_the_last_hours_asked(api):
     window every board already has: this narrows what is shown, it never brings back older jobs."""
     http, db, _, jobs = api
     found_earlier = insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
-                                         title="Backend Engineer", description="x",
+                                         described_at=now(), title="Backend Engineer", description="x",
                                          first_seen_at=now() - timedelta(hours=4)))
     posted_earlier = insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
                                           title="Backend Engineer", description="x", first_seen_at=now(),
-                                          posted_at=now() - timedelta(hours=4)))
+                                          posted_at=now() - timedelta(hours=4), described_at=now()))
     earlier = {found_earlier.id, posted_earlier.id}
 
     assert earlier <= set(_ids(http.get("/feed").json())), "the premise: both are theirs"
@@ -254,7 +255,7 @@ def test_posted_lately_keeps_only_jobs_from_the_last_hours_asked(api):
 def test_one_board_at_a_time_and_every_board_is_offered_with_its_count(api):
     http, db, _, _jobs = api
     other = insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="greenhouse",
-                                 title="Backend Engineer", description="x"))
+                                 described_at=now(), title="Backend Engineer", description="x"))
 
     body = http.get("/feed?source=greenhouse").json()
 
@@ -311,18 +312,30 @@ def test_at_least_so_many_words_keeps_the_jobs_with_that_many(api):
     assert _ids(http.get("/feed").json())[0] == jobs[0].id, "and the most words are first"
 
 
-def test_the_jobs_found_after_a_list_was_read_are_counted_as_new(api):
-    """What the "new jobs" button counts, without reloading the list under the person reading it."""
+def test_a_job_whose_text_was_read_after_a_list_was_read_is_counted_as_new(api):
+    """What the "new jobs" button counts, without reloading the list under the person reading it. A job
+    reaches the list when its text is read: a LinkedIn job found before the list was read and read after
+    it is new to them, and one found after it is not on the list until it is read."""
+    from libs.corpus.repository import CorpusRepository
+
     http, db, _, _ = api
+    corpus = CorpusRepository(db)
+    found_before = corpus.add(url=f"https://example.com/{uuid.uuid4()}", source="linkedin",
+                              title="Backend Engineer")
     as_of = http.get("/feed").json()["as_of"]
     assert http.get("/feed", params={"found_after": as_of}).json()["total"] == 0
 
-    later = now() + timedelta(seconds=1)
-    for title in ("Backend Engineer", "Registered Nurse"):
-        insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test", title=title,
-                             description="x", first_seen_at=later))
+    found_after = corpus.add(url=f"https://example.com/{uuid.uuid4()}", source="linkedin",
+                             title="Senior Backend Engineer")
+    assert http.get("/feed", params={"found_after": as_of}).json()["total"] == 0, "found, not read yet"
 
-    assert http.get("/feed", params={"found_after": as_of, "limit": 1}).json()["total"] == 1
+    corpus.set_description(found_before, "We build backend systems in Go. " * 10)
+    nurse = corpus.add(url=f"https://example.com/{uuid.uuid4()}", source="linkedin", title="Registered Nurse")
+    corpus.set_description(nurse, "A ward in Berlin. " * 20)
+
+    new = http.get("/feed", params={"found_after": as_of})
+    assert _ids(new.json()) == [found_before], "read after the list was, and theirs; the nurse is not"
+    assert found_after not in _ids(http.get("/feed").json())
 
 
 def test_one_country_or_one_city_and_each_offered_with_its_count(api):
@@ -351,25 +364,29 @@ def test_newest_first_puts_the_latest_job_on_top_whatever_its_words(api):
     http, db, _, _jobs = api
     in_text = insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
                                    title="Developer", description="a backend engineer role",
-                                   first_seen_at=now() + timedelta(minutes=5)))
+                                   first_seen_at=now() + timedelta(minutes=5), described_at=now()))
 
     assert _ids(http.get("/feed").json())[-1] == in_text.id, "a text match ranks below the titles"
     assert _ids(http.get("/feed?sort=newest").json())[0] == in_text.id
 
 
-def test_just_arrived_first_puts_the_job_found_last_on_top_whatever_date_the_board_gives_it(api):
-    """A job posted hours ago and found a minute ago is new to them; newest posted first puts it last."""
+def test_just_arrived_first_puts_the_job_read_last_on_top_whatever_date_the_board_gives_it(api):
+    """A job posted hours ago and read a minute ago is new to them; newest posted first puts it last. It
+    arrives when its text is read, so one found earlier and read later is above one found and read
+    between."""
     http, db, _, _jobs = api
-    found_last = insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
-                                      title="Backend Engineer", posted_at=now() - timedelta(hours=3),
-                                      first_seen_at=now() + timedelta(minutes=5)))
+    read_last = insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
+                                     title="Backend Engineer", posted_at=now() - timedelta(hours=3),
+                                     first_seen_at=now() - timedelta(hours=3),
+                                     described_at=now() + timedelta(minutes=5)))
     posted_last = insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
                                        title="Backend Engineer", posted_at=now() + timedelta(minutes=1),
-                                       first_seen_at=now() - timedelta(hours=2)))
+                                       first_seen_at=now() + timedelta(minutes=1),
+                                       described_at=now() + timedelta(minutes=1)))
 
-    assert _ids(http.get("/feed?sort=arrived").json())[0] == found_last.id
+    assert _ids(http.get("/feed?sort=arrived").json())[:2] == [read_last.id, posted_last.id]
     assert _ids(http.get("/feed?sort=newest").json())[0] == posted_last.id
-    assert _ids(http.get("/feed?sort=newest").json())[-1] == found_last.id
+    assert _ids(http.get("/feed?sort=newest").json())[-1] == read_last.id
 
 
 def test_a_card_gets_the_start_of_the_description_and_the_rest_on_request(api):
@@ -409,14 +426,24 @@ def test_a_description_stored_as_one_line_is_shown_in_paragraphs(api):
         "a long heading run into its first sentence stands alone; \"J. J.\" ends no sentence"
 
 
-def test_a_job_not_described_yet_has_no_summary_and_no_more(api):
-    http, db, _, jobs = api
-    db[CorpusJob.COLLECTION].update_one({"_id": jobs[0].id}, {"$set": {"description": None}})
+def test_a_job_is_on_the_page_only_once_its_text_is_read(api):
+    """Listed on its title alone, a job left the page when its text came in and said another language,
+    a way of working not wanted, more applicants than the cap (owner, 2026-11-06). So it waits."""
+    from libs.corpus.repository import CorpusRepository
 
-    row = next(job for job in http.get("/feed").json()["jobs"] if job["id"] == jobs[0].id)
+    http, db, _, _ = api
+    corpus = CorpusRepository(db)
+    job_id = corpus.add(url=f"https://example.com/{uuid.uuid4()}", source="linkedin",
+                        title="Backend Engineer")
+    assert job_id not in _ids(http.get("/feed").json())
+    assert http.get(f"/jobs/{job_id}/description").status_code == 404
 
-    assert (row["summary"], row["more"]) == (None, False)
-    assert http.get(f"/jobs/{jobs[0].id}/description").status_code == 404
+    corpus.set_description(job_id, "a teaser")
+    assert job_id not in _ids(http.get("/feed").json()), "a teaser is not its text"
+
+    corpus.set_description(job_id, "We build backend systems in Go and Postgres. " * 6)
+    row = next(job for job in http.get("/feed").json()["jobs"] if job["id"] == job_id)
+    assert row["summary"].startswith("We build backend systems")
 
 
 # ── one job, hidden, applied ──────────────────────────────────────────────────────────────────

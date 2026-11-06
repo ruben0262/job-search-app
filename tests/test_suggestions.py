@@ -142,7 +142,8 @@ def api(db, monkeypatch):
                                     "Python Developer", "Backend Engineer"]):
         insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test", title=title,
                              description="", is_remote=True, posted_at=moment,
-                             first_seen_at=moment - timedelta(minutes=minute)))
+                             first_seen_at=moment - timedelta(minutes=minute),
+                             described_at=moment - timedelta(minutes=minute)))
 
     with TestClient(app, base_url="https://testserver") as http:
         http.cookies.set("access_token", issue_access_token(user.id, uuid.uuid4()), path="/")

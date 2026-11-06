@@ -41,7 +41,8 @@ def test_the_jobs_page_the_text_queue_and_every_count_of_it_keep_and_drop_the_sa
     """LinkedIn's list dates a job, with no time: stored as midnight. The Jobs page judged such a job by
     when we found it; the text queue read the midnight, so every LinkedIn job still without its text left
     the queue at midnight UTC, one listed at 23:50 included, while the page went on showing it, text-less
-    (2026-11-05). One rule now (`freshness.showable`): kept by all of them, or dropped by all at once."""
+    (2026-11-05). One rule now (`freshness.showable`): kept by all of them, or dropped by all at once. A
+    job is on the page once its text is read, so the page is asked after both are read."""
     from libs.corpus.freshness import platform_windows
     from libs.corpus.repository import CorpusRepository
     from libs.matching import matching_jobs
@@ -55,16 +56,19 @@ def test_the_jobs_page_the_text_queue_and_every_count_of_it_keep_and_drop_the_sa
     yesterday = (moment - timedelta(hours=30)).replace(hour=0, minute=0, second=0, microsecond=0)
     fresh = _job(db, source="linkedin", url_tail="jobs/view/1", posted_at=yesterday,
                  first_seen_at=moment - timedelta(hours=2))
-    _job(db, source="linkedin", url_tail="jobs/view/2", posted_at=yesterday,
-         first_seen_at=moment - timedelta(hours=25))
+    stale = _job(db, source="linkedin", url_tail="jobs/view/2", posted_at=yesterday,
+                 first_seen_at=moment - timedelta(hours=25))
+    corpus = CorpusRepository(db)
 
-    queue = CorpusRepository(db).awaiting_description(limit=50, linkedin=True, windows=platform_windows(db))
-    counted = CorpusRepository(db).count_awaiting_description(linkedin=True, windows=platform_windows(db))
-    shown = [match.job.id for match in matching_jobs(db, user)]
-
-    assert [row.id for row in queue] == shown == [fresh.id]
+    queue = corpus.awaiting_description(limit=50, linkedin=True, windows=platform_windows(db))
+    counted = corpus.count_awaiting_description(linkedin=True, windows=platform_windows(db))
+    assert [row.id for row in queue] == [fresh.id]
     assert counted == {row["key"]: row for row in pipeline(db)["stages"]}["describe"]["waiting"] == 1
     assert stage_detail(db, "found_to_described")["backlog"]["waiting"] == 1
+
+    for job in (fresh, stale):
+        corpus.set_description(job.id, "A nurse for a ward in Berlin. " * 10)
+    assert [match.job.id for match in matching_jobs(db, user)] == [fresh.id]
 
 
 # ── the pipeline page: counters that drove an operator, not a loop ────────────────────────────

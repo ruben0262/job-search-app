@@ -210,7 +210,7 @@ export function JobsPage({ dashboard, focus, onChanged }: {
   const ai = dashboard.ai.payer !== null && dashboard.ai.profile;
   const card = (job: Job, isFocus = false) => (
     <JobCard key={job.id} job={job} ai={ai} focus={isFocus} done={marked.get(job.id)} onMark={onMark}
-             fresh={seenUntil !== null && job.first_seen_at !== null && job.first_seen_at > seenUntil} />
+             fresh={seenUntil !== null && job.described_at !== null && job.described_at > seenUntil} />
   );
   return (
     <>

@@ -25,7 +25,7 @@ def _job(db, source: str, *, minutes_ago: int = 1) -> int:
     return insert(db, CorpusJob(url=f"https://example.test/{uuid.uuid4().hex}", source=source,
                                 title="Backend Engineer", company=f"Acme{uuid.uuid4().hex[:8]}",
                                 description="Go, gRPC, Postgres. " * 20, posted_at=moment,
-                                first_seen_at=moment)).id
+                                first_seen_at=moment, described_at=moment)).id
 
 
 def _feed(db, user, **kwargs) -> list[CorpusJob]:

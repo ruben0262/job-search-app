@@ -9,7 +9,7 @@ from libs.contracts.config import migrate_config
 from libs.corpus import langfilter, workfilter
 from libs.corpus.freshness import PlatformWindows, platform_windows, showable
 from libs.corpus.geo import wanted_countries
-from libs.corpus.repository import DESCRIBE_MAX_FAILURES, TYPED
+from libs.corpus.repository import TYPED
 from libs.db.models.corpus import WORKPLACES
 from libs.limits import limit_default
 
@@ -155,9 +155,11 @@ def candidate_conditions(filters: UserFilters, *, now: datetime | None = None) -
         # Their countries, or a posting that names no readable place (`None` is both a null and no field).
         # Asked as one `$in`, which the words index reads country by country (`open_terms_newest`).
         {} if not filters.countries else {"country": {"$in": [None, *sorted(filters.countries)]}},
-        # A posting whose page refused to answer twice was abandoned, and its stored "description"
-        # is its own title. Matching words against a sentence is worse than not matching.
-        {"describe_failures": {"$lt": DESCRIBE_MAX_FAILURES}},
+        # Its whole text read (`CorpusRepository.set_description`). Shown on its title alone, a job left
+        # the page when its text came in: another language, a way of working not wanted, more applicants
+        # than the cap, a salary under the minimum (owner, 2026-11-06). A page that refused twice was
+        # given up on and never gets here.
+        {"described_at": {"$ne": None}},
         # A job somebody wrote in themselves is theirs alone, reached through their own mark (Add a job).
         {"source": {"$ne": TYPED}},
     ]

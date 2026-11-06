@@ -87,7 +87,7 @@ def pipeline(db: Database, *, hours: int = 24) -> dict:
         Stage("describe", "Text read",
               "The job's own text, read from its page: by the describer for LinkedIn, all the time, and by "
               "each run for the other boards. Newest first; a job too old for anybody's Jobs page leaves "
-              "the queue and is never read.",
+              "the queue and is never read. A job is on Jobs pages only from here.",
               entered=_count(db, {"description_fetched_at": {"$gte": since}}),
               **text, missed=_count(db, missed), **_limits("found_to_described")),
         Stage("words", "Words found",

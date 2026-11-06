@@ -125,19 +125,20 @@ def test_a_successful_read_clears_the_count(db):
     assert get(db, CorpusJob, job_id).describe_failures == 0
 
 
-def test_an_abandoned_posting_is_never_matched_for_anybody(db):
-    """The candidate filter refuses it too: its only "description" is its own title, and matching
-    green words against a title-sized text is worse than not matching."""
-    from libs.corpus.repository import DESCRIBE_MAX_FAILURES
+def test_a_posting_is_anybody_s_candidate_only_once_its_whole_text_is_read(db):
+    """Matched on its title, a job reached Jobs pages and alerts, then left them when its text came in:
+    another language, a way of working not wanted, a salary under the minimum (owner, 2026-11-06). So
+    one still waiting, one with a teaser and one given up on are nobody's; the one read is."""
+    from libs.corpus.repository import DESCRIBE_MAX_FAILURES, MIN_DESCRIPTION
     from libs.tenant.filters import UserFilters, candidate_conditions
 
     corpus = CorpusRepository(db)
-    job_id = corpus.add(url=f"https://www.linkedin.com/jobs/view/{uuid.uuid4()}",
-                        source="linkedin", title="Unreadable Posting")
-    filters = UserFilters.from_config(None, max_age_hours=24)
-    assert job_id in _ids(db, candidate_conditions(filters)), "a fresh posting is a candidate"
-
+    _waiting, teaser, read, given_up = (
+        corpus.add(url=f"https://www.linkedin.com/jobs/view/{uuid.uuid4()}", source="linkedin", title=title)
+        for title in ("Waiting", "Teaser", "Read", "Given up on"))
+    corpus.set_description(teaser, "x" * (MIN_DESCRIPTION - 1))
+    corpus.set_description(read, "x" * MIN_DESCRIPTION)
     for _ in range(DESCRIBE_MAX_FAILURES):
-        corpus.record_describe_failure(job_id)
+        corpus.record_describe_failure(given_up)
 
-    assert job_id not in _ids(db, candidate_conditions(filters))
+    assert _ids(db, candidate_conditions(UserFilters.from_config(None, max_age_hours=24))) == [read]

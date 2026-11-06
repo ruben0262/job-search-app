@@ -1271,6 +1271,18 @@
             ],
             "title": "Country"
           },
+          "described_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Described At"
+          },
           "documents": {
             "items": {
               "$ref": "#/components/schemas/JobDocument"
@@ -1385,6 +1397,7 @@
           "words",
           "posted_at",
           "first_seen_at",
+          "described_at",
           "salary",
           "summary",
           "more",
@@ -5693,7 +5706,7 @@
     },
     "/feed": {
       "get": {
-        "description": "This person's matches, a page at a time: the most of their words first, the newest posted\nfirst, or the ones that arrived here last first:\nsearched, remote only, posted lately, from one board, in one country or one city, with a document\nmade or not, having every word picked, or at least so many of their words \u2014 or one job, the one\nan alert's link names, which is either still in their list or not. `found_after` keeps only the\njobs found since a list was read, which is how the page learns how many new ones there are\nwithout reloading.\n\nA job they skipped or applied to is gone from it for good: Applied lists the second.",
+        "description": "This person's matches, a page at a time: the most of their words first, the newest posted\nfirst, or the ones that arrived here last first:\nsearched, remote only, posted lately, from one board, in one country or one city, with a document\nmade or not, having every word picked, or at least so many of their words \u2014 or one job, the one\nan alert's link names, which is either still in their list or not. `found_after` keeps only the\njobs that reached the list since it was read, which is how the page learns how many new ones there\nare without reloading. A job reaches it when its text is read, not when it is found: a LinkedIn job\nfound before the list was read and read after it is new to them.\n\nA job they skipped or applied to is gone from it for good: Applied lists the second.",
         "operationId": "feed_feed_get",
         "parameters": [
           {

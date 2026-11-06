@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 
 import pytest
 
@@ -66,7 +66,8 @@ def _jobs(db, *rows):
     moment = now()
     return [insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test", title=title,
                                  description=text, is_remote=remote, posted_at=moment,
-                                 first_seen_at=moment - timedelta(minutes=age)))
+                                 first_seen_at=moment - timedelta(minutes=age),
+                                 described_at=moment - timedelta(minutes=age)))
             for title, text, remote, age in rows]
 
 
@@ -86,18 +87,6 @@ def test_green_words_pick_jobs_red_words_veto_them_and_titles_rank_first(account
     assert [(m.job.title, m.in_title) for m in found] == [
         ("Backend Engineer", ("backend engineer",)), ("Platform Engineer", ())]
     assert found[0].words == found[1].words == ("backend engineer",)
-
-
-@needs_db
-def test_since_only_returns_jobs_first_seen_after_it(account):
-    from libs.matching import matching_jobs
-
-    db, user = account
-    _old, new = _jobs(db, ("Backend Engineer", "", True, 60), ("Backend Engineer II", "", True, 1))
-
-    found = matching_jobs(db, user, since=datetime.now(UTC) - timedelta(minutes=30))
-
-    assert [m.job.id for m in found] == [new.id]
 
 
 @needs_db
@@ -204,6 +193,8 @@ def test_a_country_shows_every_job_in_it_and_an_old_city_reads_as_its_country(ac
                                                   title="Backend Engineer", location=place)
                                        for place in ("Berlin, Germany", "München, Bayern, Germany", "Remote",
                                                      "Kielce"))
+    for job_id in (berlin, munich, nowhere, kielce):
+        corpus.set_description(job_id, "We build backend systems. " * 10)
 
     def shown(*places: str) -> set[int]:
         _search(db, user, {"sections": [{"platform": "all", "keywords": ["backend engineer"],

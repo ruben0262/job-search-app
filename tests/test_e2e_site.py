@@ -1048,7 +1048,7 @@ def _jobs(db, run: str, titles) -> dict[str, int]:
     return {title: insert(db, CorpusJob(
                 url=f"https://jobs.example.com/{run}/{n}", source="test", title=title, company="Acme",
                 location="Berlin, Germany", country="DE", city="berlin", is_remote=True, language="en",
-                first_seen_at=now(),
+                first_seen_at=now(), described_at=now(),
                 description=f"{title}. Python, Postgres, on call one week in six.")).id
             for n, title in enumerate(titles)}
 
