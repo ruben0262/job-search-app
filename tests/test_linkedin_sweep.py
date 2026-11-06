@@ -200,6 +200,19 @@ def test_linkedin_is_read_a_page_at_once_from_each_of_the_proxys_addresses(db, s
     assert fake.most == addresses
 
 
+def test_a_job_is_stored_with_the_time_its_card_says_not_only_its_day(db, site):
+    """LinkedIn's list dates a job with no time, and says "5 minutes ago": read as the job is found, that is
+    to the minute. Stored as the day, every LinkedIn job read as posted at midnight until its own page was
+    read, and an hour on, the page says only "1 hour ago"."""
+    site({"Germany": ["Python Developer"]})
+    _user(db, _config("python developer"))
+
+    _pass(db)
+
+    job = db[CorpusJob.COLLECTION].find_one({"source": "linkedin"})
+    assert timedelta(minutes=5) <= job["first_seen_at"] - job["posted_at"] < timedelta(minutes=6)
+
+
 def test_a_pass_costs_the_same_however_many_people_and_words_there_are(db, site):
     few = site({"Germany": GERMANY})
     _user(db, _config("python developer", "golang", "sql"))

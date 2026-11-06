@@ -14,6 +14,35 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-06 — LinkedIn's posting time, read where it is most exact
+
+The owner: no made-up times. Read the real posting time, if LinkedIn gives one.
+
+**LinkedIn gives no exact time anywhere** (looked at 2026-11-06): its list dates a job with no time
+(`datetime="2026-11-06"`) beside "39 minutes ago", and the job's guest page and its public page (233 KB)
+both say only "39 minutes ago", with no JSON-LD and no `datePosted`. That caption rounds the age down:
+minutes under an hour, hours under a day, then days. So each reading is at or after the truth, and the
+earliest is the nearest.
+
+**What was kept was the later reading.** The sweep stored the list's date (midnight), and the job's page,
+read by the describer, replaced it with its own "N ago". Of the laptop's 16,354 LinkedIn jobs with a time,
+59.7% were read under an hour old (to the minute), 40.0% between an hour and a day (to the hour: up to 59
+minutes late) and 0.2% later (to the day). 85 more had their page read and still only a date.
+
+- The sweep reads the card's "N ago" as the job is found (`linkedin._cards`, `postings.posted_from`),
+  falling back to the date only when there is no caption.
+- `set_posting_metadata` keeps the earliest of the stored time, the page's and first-seen
+  (`repository._set_posted_at`). Before, it took the page's every time. A stored date with no time gives
+  way (`freshness.DATE_ONLY`, now the one definition of "a date, not a time", which `showable` reads too).
+
+Tests: a swept card saying "5 minutes ago" is stored five minutes before it was found, not at midnight;
+a list's "39 minutes ago" is kept over the page's "1 hour ago" read 80 minutes on, and a date gives way
+to the page's reading. Both fail on the previous code.
+
+Also: `test_the_admin_charts_the_jobs_found_in_each_country` read the page's width straight after
+resizing to a phone and failed one run in two (1,104 px, the desktop chart, not yet measured again by its
+`ResizeObserver`). It now waits up to 5 s for the page to fit, which still fails if it never does.
+
 ## 2026-11-06 — A job reaches the Jobs page once its text is read
 
 The owner: a job that disappears when its full text comes in should never have been shown; show jobs with

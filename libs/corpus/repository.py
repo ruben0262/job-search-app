@@ -10,7 +10,7 @@ from pymongo.database import Database
 from pymongo.errors import DuplicateKeyError
 
 from libs.corpus import langfilter, workfilter
-from libs.corpus.freshness import PlatformWindows, showable
+from libs.corpus.freshness import DATE_ONLY, PlatformWindows, showable
 from libs.corpus.geo import posting_country, read_city
 from libs.corpus.keys import canonical_url, content_key
 from libs.db import insert, now
@@ -294,10 +294,14 @@ class CorpusRepository:
         return changed
 
     def _set_posted_at(self, job_id: int, posted_at: datetime) -> bool:
-        """Record when a posting went up, never later than the moment we first saw it."""
+        """Record when a posting went up: the earliest of what LinkedIn said and when we first saw it. Its
+        "N ago" is never earlier than the truth (`postings.posted_from`), so the earliest is the nearest:
+        the list's "39 minutes ago" when it was found, not the page's "2 hours ago" read later. A stored
+        date with no time says less than either, and gives way."""
+        stored = {"$cond": [DATE_ONLY, posted_at, "$posted_at"]}
         return self._corpus.update_one(
             {"_id": job_id},
-            [{"$set": {"posted_at": {"$min": [posted_at, "$first_seen_at"]}}}]).modified_count > 0
+            [{"$set": {"posted_at": {"$min": [posted_at, stored, "$first_seen_at"]}}}]).modified_count > 0
 
     # Retention lives in `libs.corpus.archive`. `trim_cold` and `pin` were removed on 2026-08-11:
     # trimming nulled the description and vector in place, which dropped the row out of every future

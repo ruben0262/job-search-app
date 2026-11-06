@@ -193,17 +193,23 @@ _UNIT_DELTA = {"minute": "minutes", "hour": "hours", "day": "days", "week": "wee
                "month": "days"}
 
 
-def parse_posted_at(html_text: str, *, now: dt.datetime | None = None) -> dt.datetime | None:
-    """LinkedIn's relative "2 days ago" as an absolute timestamp."""
-    caption = _POSTED.search(html_text)
-    if not caption:
-        return None
-    match = re.search(r"(\d+)\s*(minute|hour|day|week|month)", caption.group(1).strip().lower())
+def posted_from(caption: str, *, now: dt.datetime | None = None) -> dt.datetime | None:
+    """LinkedIn's "39 minutes ago" as a time, `now` being when it was read. LinkedIn gives no posting time
+    anywhere else: its list dates a job with no time, and neither of a job's pages has one (seen
+    2026-11-06). It rounds the age down, in minutes under an hour, hours under a day, then days, so this is
+    never earlier than the job went up, and the earliest reading of a job is the nearest."""
+    match = re.search(r"(\d+)\s*(minute|hour|day|week|month)", caption.strip().lower())
     if not match:
         return None
     count, unit = int(match.group(1)), match.group(2)
     delta = {_UNIT_DELTA[unit]: count * 30 if unit == "month" else count}
     return (now or dt.datetime.now(dt.UTC)) - dt.timedelta(**delta)
+
+
+def parse_posted_at(html_text: str, *, now: dt.datetime | None = None) -> dt.datetime | None:
+    """A job page's "Posted 2 days ago" as a time (`posted_from`)."""
+    caption = _POSTED.search(html_text)
+    return posted_from(caption.group(1), now=now) if caption else None
 
 
 def parse_reposted(html_text: str) -> bool | None:

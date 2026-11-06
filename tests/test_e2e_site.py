@@ -327,7 +327,9 @@ def test_the_admin_charts_the_jobs_found_in_each_country(site, capsys):
 
         page.set_viewport_size({"width": 390, "height": 900})
         expect(page.locator(".country-table")).to_be_visible()
-        assert page.evaluate("document.documentElement.scrollWidth") <= 390, "a phone scrolls sideways"
+        # A phone does not scroll sideways. Waited for: the chart is drawn at the width it measures, measured
+        # again once the window changes, and read at once it was still the desktop's 1,104 px one run in two.
+        page.wait_for_function("document.documentElement.scrollWidth <= 390", timeout=5000)
         page.set_viewport_size({"width": 1280, "height": 900})
         page.locator("h2", has_text="Jobs found by country").locator("..").screenshot(
             path=os.environ.get("E2E_SHOT", "/dev/null") if os.environ.get("E2E_SHOT") else None)

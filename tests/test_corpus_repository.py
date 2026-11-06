@@ -254,6 +254,23 @@ def test_a_posting_is_never_recorded_as_published_after_we_found_it(repo):
     assert _get(s, job_id).posted_at == older
 
 
+def test_the_earliest_of_linkedins_readings_is_kept_and_a_date_with_no_time_gives_way(repo):
+    """LinkedIn rounds a job's age down, so each "N ago" is at or after the truth and the earliest is the
+    nearest: the list's "39 minutes ago", read as the job was found, over its page's "1 hour ago" read 80
+    minutes on, which is 20 minutes late. A date with no time says less than either."""
+    corpus, s = repo
+    listed = datetime.now(UTC).replace(microsecond=0) - timedelta(minutes=39)
+    exact = corpus.add(url=_u(), source="linkedin", title="Engineer", posted_at=listed)
+    corpus.set_posting_metadata(exact, posted_at=listed + timedelta(minutes=80 + 39) - timedelta(hours=1))
+    assert _get(s, exact).posted_at == listed
+
+    dated = corpus.add(url=_u(), source="linkedin", title="Engineer II",
+                       posted_at=listed.replace(hour=0, minute=0, second=0))
+    page = _get(s, dated).first_seen_at - timedelta(hours=2)
+    corpus.set_posting_metadata(dated, posted_at=page)
+    assert _get(s, dated).posted_at == page
+
+
 # ── the working arrangement, classified when the text arrives (ROADMAP 6aj) ───────────────────
 
 

@@ -7,6 +7,10 @@ from datetime import UTC, datetime, timedelta
 from libs import settings
 from libs.settings import DEFAULT_SOURCE_MIN_AGE_HOURS, SOURCE_MIN_AGE_HOURS
 
+# A posting time at midnight is a date, not a time, and so is none at all: a board that gives only a day.
+DATE_ONLY = {"$or": [{"$eq": [{"$ifNull": ["$posted_at", None]}, None]},
+                     {"$eq": ["$posted_at", {"$dateTrunc": {"date": "$posted_at", "unit": "day"}}]}]}
+
 
 @dataclass(frozen=True)
 class PlatformWindows:
@@ -59,10 +63,8 @@ def showable(windows: PlatformWindows, *, now: datetime | None = None) -> dict:
                       "then": reference - timedelta(hours=max(hours, windows.max_age_hours))}
                      for source, hours in sorted(floors.items())],
         "default": reference - timedelta(hours=max(DEFAULT_SOURCE_MIN_AGE_HOURS, windows.max_age_hours))}}
-    # A midnight timestamp is a date, not a time: judge those, and postings with none, on when we found them.
-    date_only = {"$or": [{"$eq": [{"$ifNull": ["$posted_at", None]}, None]},
-                         {"$eq": ["$posted_at", {"$dateTrunc": {"date": "$posted_at", "unit": "day"}}]}]}
-    clock = {"$cond": [date_only, "$first_seen_at", "$posted_at"]}
+    # Judge a date with no time, and a posting with none, on when we found it.
+    clock = {"$cond": [DATE_ONLY, "$first_seen_at", "$posted_at"]}
     # The rule above is computed per posting, so no index can narrow by it. Said plainly as well, the
     # bound it implies is what the words index reads by (`open_terms_newest`), newest first, and stops.
     # Without it, at 1.5 million postings a match read every one with a person's words, up to 586,000,

@@ -19,7 +19,7 @@ import httpx
 from bs4 import BeautifulSoup
 
 from libs.corpus.geo import COUNTRIES, COUNTRY_LABELS
-from libs.corpus.postings import LI_BACKOFF, LI_RETRIES
+from libs.corpus.postings import LI_BACKOFF, LI_RETRIES, posted_from
 from libs.corpus.repository import CorpusRepository
 from libs.db import lease
 from libs.db.models import SweptPlace
@@ -147,8 +147,10 @@ def _page(client, params: dict, sweep: Sweep) -> httpx.Response | None:
 
 
 def _cards(html: str) -> list[JobLink]:
-    """The jobs on one page of the list: title, company, place and day; the text is read after."""
-    out: list[JobLink] = []
+    """The jobs on one page of the list: title, company, place and when it went up; the text is read after.
+    The card's date has no time, its "39 minutes ago" has: read now, as a job is found, it is to the
+    minute, where the job's page read an hour on says "1 hour ago" (`posted_from`)."""
+    read_at, out = datetime.now(UTC), []
     for card in BeautifulSoup(html, "html.parser").find_all(class_="base-search-card"):
         job_id = str(card.get("data-entity-urn", "")).rsplit(":", 1)[-1]
         title = card.find("h3", class_="base-search-card__title")
@@ -161,8 +163,16 @@ def _cards(html: str) -> list[JobLink]:
                            title=title.get_text(strip=True),
                            company=company.get_text(strip=True) if company else "",
                            location=where.get_text(strip=True) if where else "", source="linkedin",
-                           date_posted=posted.get("datetime") if posted else None, found_via="sweep"))
+                           date_posted=_when(posted, read_at), found_via="sweep"))
     return out
+
+
+def _when(posted, read_at: datetime) -> str | None:
+    """A card's time as the stored posting time: its "N ago", else its date."""
+    if posted is None:
+        return None
+    ago = posted_from(posted.get_text(), now=read_at)
+    return ago.isoformat() if ago else posted.get("datetime")
 
 
 def run_pass(db, *, now: datetime | None = None, sweep=None) -> LinkedInReport:
