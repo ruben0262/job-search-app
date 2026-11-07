@@ -2513,8 +2513,8 @@ export interface components {
             company_boards: number;
             /** Every Minutes */
             every_minutes: number;
-            /** Found */
-            found: number[];
+            /** Jobs Week */
+            jobs_week: number;
             /** Sources */
             sources: number;
         };

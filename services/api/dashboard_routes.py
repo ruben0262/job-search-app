@@ -18,7 +18,7 @@ from libs.corpus.freshness import platform_windows, shelf_life
 from libs.corpus.geo import CITIES, COUNTRY_LABELS
 from libs.corpus.postings import paragraphs
 from libs.db import get, now
-from libs.db.models import AtsToken, BuiltDocument, CorpusJob, User, UserJobState
+from libs.db.models import AtsToken, BuiltDocument, CorpusJob, CountryCount, User, UserJobState
 from libs.db.models.tenant import record_state
 from libs.documents.saved import for_jobs
 from libs.llm import PLATFORM, ai_requests_today, resolve
@@ -26,7 +26,6 @@ from libs.matching import Match, marks, norm, scan_for, their_jobs
 from libs.notify import reachable
 from libs.obs import audit
 from libs.onboarding import onboarding_state
-from libs.ops.countries import by_country
 from libs.profiles.repository import ProfileFiles
 from libs.settings import HARVEST_SOURCES, PLATFORM_TICK_MIN
 from libs.tenant import applications
@@ -241,19 +240,20 @@ class Reach(BaseModel):
     # Company boards still answering: a dead one is kept so it is not found again, and not counted.
     company_boards: int
     every_minutes: int
-    # New jobs in each run of the last six hours, oldest first: the landing page's chart, counted as the
-    # admin's is (`libs.ops.countries`), so it draws what was found rather than a made-up shape.
-    found: list[int]
+    # New jobs found in the last seven days, counted as the admin's chart counts them (`CountryCount`, one
+    # row a run a country): what was found, never a typed number.
+    jobs_week: int
 
 
 @router.get("/stats", response_model=Reach)
 def stats(db: Database = Depends(get_db)) -> Reach:
     """Public: the landing page asks before anybody has an account."""
-    chart = by_country(db, hours=6)
+    week = db[CountryCount.COLLECTION].aggregate([
+        {"$match": {"hour": {"$gte": now() - timedelta(days=7)}}},
+        {"$group": {"_id": None, "jobs": {"$sum": "$jobs"}}}])
     return Reach(sources=len(HARVEST_SOURCES), every_minutes=PLATFORM_TICK_MIN,
                  company_boards=db[AtsToken.COLLECTION].count_documents({"dead_at": None}),
-                 found=[sum(country["counts"][run] for country in chart["countries"])
-                        for run in range(len(chart["starts"]))])
+                 jobs_week=next(week, {}).get("jobs", 0))
 
 
 def _ai(db: Database, user: User) -> AiWriting:

@@ -14,6 +14,108 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-07 — The landing page, for somebody scrolling past: what they get, in big titles and moving pictures
+
+The owner asked for:
+- **Big titles, no small labels:** the pills ("The job-search radar · live", "01 · What it is", …) give
+  way to big titles that say what each section is.
+- **No "Honest by design" paragraph.**
+- **"How it works" told from the person's side:** what they get, in order after signing up, in keywords
+  somebody skimming understands. Worked out from who they are and what hurts.
+- **"Get started" seen when scrolled past:** its two steps were too compact.
+- **"What it is" told by design and animation.**
+
+**Who it is for, and what it gives them.** People looking for work, in any field ("nurse" as much as
+"python"), in Europe and the UK, many never having used a job tool, most of them skimming. What hurts,
+and what the page now says they get:
+
+| What hurts | What they get |
+|---|---|
+| Hours a day checking job sites one by one | Every job site in one list, read every few minutes |
+| Results that do not fit: wrong country, language, level, or the same job twice | Only what fits: their words, countries and languages, never twice |
+| Rewriting a CV for every application | A CV and a cover letter for each job, in one tap, from their own CV |
+| Finding jobs late, then losing track | New jobs on their phone; apply on the job's site in minutes, then follow it to the offer |
+
+**Each section, a big title saying what it is.**
+- **What it is:** "Every job site. One list for you." A picture in three parts, jobs travelling from one
+  part to the next (`Flow`): the job sites, blinking in turn; what is left out (the same job twice, a
+  country you can't work in, your red words), struck through in turn; and your list, jobs landing in it,
+  each saying why. Under each part, its keyword, big: "Every job site", "Only what fits", "One list for
+  you". It replaces four tiles of small type.
+- **How it works:** "From sign-up to applied." Four steps, in the order they come after signing up, each
+  a big number, a title and two lines, and a picture of that part of the app moving:
+  1. upload your CV, and the words suggested from it;
+  2. get every job that fits, new ones arriving;
+  3. make your CV in one tap, the CV written as the ring fills;
+  4. apply and keep track, applied, interview and offer lit in turn.
+
+  It replaces six steps of what the server does (Collect, Clean, Match, Tell, Build, Refine), which is not
+  the reader's to know.
+- **See it working:** the phone with the working job card, under one line, and "New jobs on your phone"
+  as a title of its own beside the alert.
+- **Start in a few minutes:** two big cards, each a number, when ("A few minutes, once", "Then every
+  day"), what ("You set it up", "It runs itself") and three things in body-sized type. They were small
+  tiles of small type that went by unseen.
+
+**The rest.**
+- **The hero** is the name, the line, two things in bold ("Every job that fits you", "A CV for each"), the
+  buttons and the numbers.
+- **The numbers** (owner: better ones, "25+ sources", "rapid" checks for "15 min", one more counted):
+  - **Job sources:** 19, the real count of the one source list. "25+" was the count before Hiring Cafe,
+    Jooble and JobSpy were removed (2026-11-06), so the page keeps the server's.
+  - **Company career pages and new jobs this week:** each said as the round number it is at least
+    ("40+", "70,000+"), so a big one reads at a glance and stays true. New jobs this week is
+    `Reach.jobs_week`, counted as the admin's chart counts them (`CountryCount`).
+  - **"24/7 · Rapid checks"** replaces "15 min · Between checks". The sections below still say every 15
+    minutes.
+  - **"100% Yours alone",** which said nothing, is gone.
+  - **A number that counts nothing is left out.** On a phone a lone last one takes its row.
+- **The foot** says the hero's line, not "The job-search radar".
+- **The phone picture** says "Jobs stay here for 7 days.", as the app does.
+- **Step 1's example** hides "unpaid" and "commission only". It hid "senior" beside a "Senior Backend
+  Engineer" demo job.
+
+**Removed, nothing left using them:**
+- the pills;
+- "Honest by design";
+- the "Try it" line, which said what the line under its title says, in small type;
+- the four tiles, with the live bar chart and the word toggles, and with them `Reach.found`, the
+  six-hour series only that chart read;
+- the styles for all of these (`.pill`, `.bento`, `.tile-k`, `.tile-demo`, `.found`, `.bars`,
+  `.word-demo`, `.honest`, `.try`).
+
+**Measured:**
+- **The hero's first button against the fold,** before and after (8 sizes):
+
+  | Size | Before | After |
+  |---|---|---|
+  | 320×640 | 646 px, below the fold | 510 px |
+  | 390×844 | 619 px | 511 px |
+
+  A phone held sideways still needs a scroll, as before.
+- **Nothing past the screen's edge** at 11 widths from 320px to 1920px, every section revealed.
+- **Reduced motion:** every picture rests in its last state, which is what a still screen shows: the
+  strikes drawn, the list landed, the ring full, the CV written, every step lit. The lines that strike
+  are elements, not `::after`, because the site's reduced-motion rule reaches elements only.
+- **Bundle:** 109.3 kB of gzipped script and 16.5 kB of style, 0.4 kB less and 0.9 kB more than before:
+  the pictures' motion.
+
+Tests, each failing on the previous commit:
+- **The titles:** the landing page's four sections have their titles. The previous commit shows the four
+  old ones.
+- **The numbers:** the page shows "19", "40+", "72,000+" and "24/7" for 43 company boards and 72,345 new
+  jobs.
+- **The week's count:** `/stats` counts the week's new jobs and not the week before.
+
+Gates, all local:
+- `lint-imports`: 2 contracts kept.
+- `ruff check`: clean.
+- The schema pruned onto an empty local database.
+- The contract is unchanged.
+- `npm run build`: as above.
+- `pytest`: 1,330 passed and 3 skipped (the Postgres copy, the reference instance, an empty parameter
+  set). The browser tests ran.
+
 ## 2026-11-07 — A week on the shelf, the last day first, every person's filters kept, and a list that reaches back
 
 The owner asked for five things:

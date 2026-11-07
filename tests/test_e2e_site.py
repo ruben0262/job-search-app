@@ -188,25 +188,39 @@ def test_the_theme_button_is_a_circle_on_every_page_and_switches_the_theme(site,
 def test_the_landing_page_counts_from_the_server_and_a_phone_shows_each_place_in_a_picture_and_a_word(
         site, capsys):
     """The landing page's numbers are the server's (`/stats`): typed into it, they said 25 sources long
-    after that was true. Sign in and sign up follow the address, going back included. And on a phone
-    each tab is a picture over a word (owner, 2026-11-07; pictures alone, 2026-11-06, were not enough),
-    each opening its page. Its card says where people apply: on the job's own site, never here (owner,
-    2026-11-06)."""
+    after that was true. A big one is said as the round number it is at least, so it reads at a glance
+    and stays true (owner, 2026-11-07). Sign in and sign up follow the address, going back included. And
+    on a phone each tab is a picture over a word (owner, 2026-11-07; pictures alone, 2026-11-06, were not
+    enough), each opening its page. Its card says where people apply: on the job's own site, never here
+    (owner, 2026-11-06)."""
+    from libs.db import database, insert
+    from libs.db.models import AtsToken, CountryCount
     from libs.settings import HARVEST_SOURCES
 
     base, email, _ = site
+    # 43 company boards answering, and 72,345 new jobs found an hour ago.
+    for n in range(43):
+        insert(database(), AtsToken(ats="greenhouse", token=f"company-{n}"))
+    hour = datetime.now(UTC) - timedelta(hours=1)
+    insert(database(), CountryCount(id=f"{hour:%Y-%m-%dT%H:%M}|DE", hour=hour, country="DE", jobs=72_345))
     with sync_api.sync_playwright() as playwright:
         browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
         page = browser.new_context(viewport={"width": 390, "height": 844}).new_page()
         page.goto(f"{base}/#/")
-        sources = page.locator(".reach div", has_text="Job sources").locator("dt")
-        expect(sources).to_have_text(str(len(HARVEST_SOURCES)))
+        reach = page.locator(".reach div")
+        expect(reach).to_have_text([f"{len(HARVEST_SOURCES)}Job sources", "40+Company career pages",
+                                    "72,000+New jobs this week", "24/7Rapid checks"])
         demo = page.locator(".demo-card")
         demo.get_by_role("button", name="Apply on LinkedIn").click()
         expect(demo).to_contain_text("opens it on LinkedIn, and you apply there")
         # The sections at the foot of a phone: a picture over each one's word (owner, 2026-11-07).
         expect(page.locator(".dock a").filter(has=page.locator(".short"))).to_have_text(
             ["What", "How", "Jobs", "Start"], use_inner_text=True)
+        # Each section says what it is in a big title of its own, where a small label stood (owner,
+        # 2026-11-07).
+        expect(page.locator("main section h2")).to_have_text([
+            "Every job site. One list for you.", "From sign\u2011up to applied.", "See it working.",
+            "Start in a few minutes."])
 
         page.goto(f"{base}/#/signin")
         expect(page.get_by_role("heading", name="Sign in")).to_be_visible()

@@ -635,9 +635,10 @@ def test_the_landing_pages_numbers_are_counted_and_answer_anybody(db, monkeypatc
     for token in ("acme", "northwind"):
         insert(db, AtsToken(ats="greenhouse", token=token))
     insert(db, AtsToken(ats="lever", token="gone", dead_at=now()))
-    # Two runs apart, in two countries: one run found 5, the latest found 3.
+    # Two runs apart, in two countries: one run found 5, the latest found 3. And one more than a week ago.
     run = floor(now(), PLATFORM_TICK_MIN)
-    for at, country, jobs in ((run - timedelta(minutes=2 * PLATFORM_TICK_MIN), "DE", 5), (run, "FR", 3)):
+    for at, country, jobs in ((run - timedelta(minutes=2 * PLATFORM_TICK_MIN), "DE", 5), (run, "FR", 3),
+                              (run - timedelta(days=8), "DE", 100)):
         insert(db, CountryCount(id=f"{at:%Y-%m-%dT%H:%M}|{country}", hour=at, country=country, jobs=jobs))
 
     # No cookie: nobody who reads the landing page is signed in.
@@ -647,5 +648,4 @@ def test_the_landing_pages_numbers_are_counted_and_answer_anybody(db, monkeypatc
     body = answer.json()
     assert {key: body[key] for key in ("sources", "company_boards", "every_minutes")} == {
         "sources": len(HARVEST_SOURCES), "company_boards": 2, "every_minutes": PLATFORM_TICK_MIN}
-    # A run a bar, from the first counted: the 5, a run with nothing, the 3.
-    assert body["found"][0] == 5 and sum(body["found"]) == 8, body["found"]
+    assert body["jobs_week"] == 8, "the week's new jobs, as the runs counted them, and not the week before"

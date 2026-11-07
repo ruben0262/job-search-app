@@ -2577,12 +2577,9 @@
             "title": "Every Minutes",
             "type": "integer"
           },
-          "found": {
-            "items": {
-              "type": "integer"
-            },
-            "title": "Found",
-            "type": "array"
+          "jobs_week": {
+            "title": "Jobs Week",
+            "type": "integer"
           },
           "sources": {
             "title": "Sources",
@@ -2593,7 +2590,7 @@
           "sources",
           "company_boards",
           "every_minutes",
-          "found"
+          "jobs_week"
         ],
         "title": "Reach",
         "type": "object"

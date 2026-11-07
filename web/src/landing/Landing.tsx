@@ -1,9 +1,12 @@
-/** The landing page, for anybody signed out: what Mahoraga is, in four sections, under the wheel. It lies
- * flat in its halo as the page opens and turns to face you as you scroll (owner, 2026-11-06: concept C,
- * in one purple). The motion is CSS; this file says where the page is and what it has counted. */
+/** The landing page, for anybody signed out: what Mahoraga gives them, in four sections, under the wheel. It
+ * lies flat in its halo as the page opens and turns to face you as you scroll (owner, 2026-11-06: concept C,
+ * in one purple). Written for somebody scrolling past rather than reading (owner, 2026-11-07): each section
+ * a big title saying what it is, keywords first, and a picture of it moving. The motion is CSS; this file
+ * says where the page is and what it has counted. */
 import { Fragment, useEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 
 import { api, type Schema } from "../api";
+import { PICTURES } from "../pages/JobsPage";
 import { PLACES } from "../places";
 import { ThemeToggle } from "../theme";
 import { Mark, Wheel } from "../wheel";
@@ -28,19 +31,25 @@ const SECTIONS: [id: string, name: string, short: string, icon: ReactNode][] = [
   ["start", "Get started", "Start", <path key="i" d="M12 3c2.8 1.9 4.2 5 4.2 8.8L14.6 15H9.4l-1.6-3.2C7.8 8 9.2 4.9 12 3zM12 7.6a1.6 1.6 0 110 3.2 1.6 1.6 0 010-3.2zM7.8 11.8l-2.3 2.4v3.3l3.9-2.5M16.2 11.8l2.3 2.4v3.3l-3.9-2.5M10.5 17.6c.3 1.4.8 2.4 1.5 3.1.7-.7 1.2-1.7 1.5-3.1" />],
 ];
 
-/** The six steps, `often` being how often new jobs are collected ("every 15 minutes"). */
-const steps = (often: string): [string, ReactNode][] => [
-  ["Collect", <>{often.charAt(0).toUpperCase() + often.slice(1)}, new jobs from job boards, company career pages and LinkedIn.</>],
-  ["Clean", <>Duplicates are removed, so you never see the same job twice. Each job is read in full before it is
-    shown, and jobs in languages you do not work in, or in places you cannot work, are left out.</>],
-  ["Match", <>Your green words find jobs and your red words hide them. The more of your green words a job has,
-    the higher it sits, and every job shows which of your words found it.</>],
-  ["Tell", <>Matches wait on your Jobs page. If you want them on your phone too, connect your own Telegram bot
-    in three steps, turn on browser notifications, or get one email each morning.</>],
-  ["Build", <>Tap <code>Make my CV</code> or <code>Make my cover letter</code>. It is built from your own CV with
-    what fits the job first, and ready to download in seconds.</>],
-  ["Refine", <>Change your words any time. Save a new CV and we suggest new words to find jobs with, and new words
-    to hide.</>],
+/** What a person gets, in the order they get it after signing up, `often` being how often new jobs are
+ * looked for ("every 15 minutes"). How the server does it is not theirs to read (owner, 2026-11-07). */
+const steps = (often: string): [string, ReactNode, ReactNode][] => [
+  ["Upload your CV", <>We read it and suggest the words to search with. You check them, pick your countries,
+    and that is it: <strong>a few minutes, once.</strong></>, <CvArt />],
+  ["Get every job that fits", <>New ones {often}, in one list, the best matches first. Each says why it is
+    there. <strong>On your phone too,</strong> if you like.</>, <MatchArt />],
+  ["Make your CV in one tap", <>A CV and a cover letter <strong>made for that job,</strong> from your own CV. Ready
+    in seconds. Nothing made up.</>, <TapArt />],
+  ["Apply, and keep track", <>Apply on the job's own site, <strong>in minutes, not hours.</strong> Then follow each
+    one: the interview, the offer, the job.</>, <ApplyArt />],
+];
+
+/** Get started: what they do once, and what then happens every day without them. */
+const PATHS: [when: string, title: string, items: string[]][] = [
+  ["A few minutes, once", "You set it up", ["Upload your CV", "Check the words we suggest",
+                                           "Pick your countries and languages"]],
+  ["Then every day", "It runs itself", ["New jobs that fit, all day", "A CV for any of them in one tap",
+                                        "Alerts on your phone, if you like"]],
 ];
 
 export function Landing() {
@@ -218,15 +227,13 @@ export function Landing() {
             </div>
           </div>
           <div className="hero-copy">
-            <p className="pill"><i />The job-search radar · <b>live</b></p>
             <h1 className="hero-title"><Words>Mahoraga</Words></h1>
             <p className="hero-tag" style={{ "--base": "0.3s" } as CSSProperties}>
               <Words>The job search that</Words> <span className="glow"><Words from={4}>runs itself.</Words></span>
             </p>
             <p className="hero-sub" data-reveal style={after(0.6)}>
-              Choose the words you want and the words you don't. It reads job boards, company career pages and
-              LinkedIn {often}, and makes your CV and cover letter in one tap. You apply on the job's own site,
-              in minutes, not hours.
+              <strong>Every job that fits you</strong>, from LinkedIn, job boards and company career pages, in one
+              list. <strong>A CV for each</strong> in one tap. You apply on the job's own site, in minutes.
             </p>
             <div className="hero-ctas" data-reveal style={after(0.7)}>
               <a className="btn btn-primary" href="#/signup">Create account <Arrow /></a>
@@ -237,79 +244,42 @@ export function Landing() {
           {reach ? (
             <dl className="reach">
               <div><dt><Count to={reach.sources} /></dt><dd>Job sources</dd></div>
-              <div><dt><Count to={reach.every_minutes} /> min</dt><dd>Between checks</dd></div>
-              <div><dt><Count to={reach.company_boards} /></dt><dd>Company boards</dd></div>
-              <div><dt><Count to={100} />%</dt><dd>Yours alone</dd></div>
+              {/* Each left out while it counts nothing: a harvest that has stopped is not a quiet week. */}
+              {reach.company_boards ? (
+                <div><dt><AtLeast n={reach.company_boards} /></dt><dd>Company career pages</dd></div>
+              ) : null}
+              {reach.jobs_week ? <div><dt><AtLeast n={reach.jobs_week} /></dt><dd>New jobs this week</dd></div> : null}
+              {/* Every `every_minutes`, all day and night: said in the sections below to the minute. */}
+              <div><dt>24/7</dt><dd>Rapid checks</dd></div>
             </dl>
           ) : null}
         </section>
 
         <section id="what" className="section">
           <div className="head center" data-reveal>
-            <p className="pill"><i />01 · What it is</p>
-            <h2>You apply. <span className="glow">It does the rest.</span></h2>
+            <h2>Every job site. <span className="glow">One list for you.</span></h2>
+            <p className="lp-lede">
+              It reads them all for you and keeps only the jobs that fit. No more checking sites one by one.
+            </p>
           </div>
-          <div className="bento">
-            <article className="tile" data-reveal data-spot>
-              <p className="tile-k">All day, every day</p>
-              <h3>{reach ? `New jobs every ${reach.every_minutes} minutes` : "New jobs all day"}</h3>
-              <p>From job boards, from company career pages, and from LinkedIn, each read in full before it is shown.</p>
-              {reach ? <Found runs={reach.found} minutes={reach.every_minutes} /> : null}
-            </article>
-            <article className="tile" data-reveal data-spot style={after(0.06)}>
-              <p className="tile-k">You decide what you see</p>
-              <h3>Green words find jobs. Red words hide them.</h3>
-              <WordDemo />
-            </article>
-            <article className="tile" data-reveal data-spot style={after(0.1)}>
-              <p className="tile-k">Nothing is hidden</p>
-              <h3>Every job says which of your words it matched</h3>
-              <div className="tile-demo">
-                <div className="match" aria-hidden="true">
-                  <b>Senior <mark>Backend Engineer</mark></b>
-                  <small>Acme Robotics · Berlin · Why: backend engineer</small>
-                </div>
-              </div>
-            </article>
-            <article className="tile" data-reveal data-spot style={after(0.14)}>
-              <p className="tile-k">One tap</p>
-              <h3>A CV and a cover letter, made for the job</h3>
-              <p>Built from your own CV, with the parts that fit that job first. Nothing is made up.</p>
-              <div className="tile-demo">
-                <div className="one-tap" aria-hidden="true">
-                  <svg className="ring" viewBox="0 0 40 40">
-                    <circle className="track" cx="20" cy="20" r="17" />
-                    <circle className="fill" cx="20" cy="20" r="17" pathLength={1} />
-                  </svg>
-                  <span>Make my CV</span>
-                </div>
-              </div>
-            </article>
-          </div>
+          <Flow often={often} />
         </section>
 
         <section id="how" className="section">
           <div className="head center" data-reveal>
-            <p className="pill"><i />02 · How it works</p>
-            <h2>Six steps, <span className="glow">always on.</span></h2>
-            <p className="lp-lede">
-              It <strong>collects</strong> jobs {often}, <strong>matches</strong> them to your words, and{" "}
-              <strong>makes</strong> your documents when you ask.
-            </p>
+            <h2>From sign‑up <span className="glow">to applied.</span></h2>
+            <p className="lp-lede">What you get, in the order you get it.</p>
           </div>
           <div className="stack">
-            {steps(often).map(([name, text], i) => (
+            {steps(often).map(([name, text, art], i) => (
               <article key={name} className="stack-card" style={{ "--i": i } as CSSProperties}>
                 <div className="stack-shade" aria-hidden="true" />
                 <div>
-                  <span className="stack-num">0{i + 1} / 06</span>
+                  <span className="stack-num" aria-hidden="true">{i + 1}</span>
                   <h3>{name}</h3>
                   <p>{text}</p>
                 </div>
-                {/* Its own spoke lit and turned to the top: the wheel a notch further on each card. */}
-                <div className="stack-art" style={{ rotate: `${-i * 60}deg` }}>
-                  <Wheel ticks={24} spokes={6} lit={i} />
-                </div>
+                <div className="stack-art" aria-hidden="true">{art}</div>
               </article>
             ))}
           </div>
@@ -317,20 +287,17 @@ export function Landing() {
 
         <section id="live" className="section">
           <div className="head" data-reveal>
-            <p className="pill"><i />03 · Your jobs</p>
-            <h2>Every match says <span className="glow">why it is there.</span></h2>
+            <h2>See it <span className="glow">working.</span></h2>
             <p className="lp-lede">
-              Your Jobs page lists every match, the jobs with the most of your words first, and says which words
-              found each one. One tap makes the CV or the cover letter. You apply on the job's own site, then
-              mark it as applied.
+              This is your Jobs page. Tap <strong>Make my CV</strong> and watch one written for this job.
             </p>
           </div>
           <div className="live-grid">
             <Phone />
             <div data-reveal style={after(0.12)}>
+              <h3 className="side-title">New jobs on your phone</h3>
               <p className="lp-lede">
-                <strong>On your phone, if you like.</strong> Connect your own Telegram bot, or turn on browser
-                notifications, and new matches arrive as they are found, each with a link straight to its CV.
+                By Telegram, in your browser, or one email each morning. Each with a link straight to its CV.
               </p>
               <div className="alert-card" role="img" aria-label="A new job, as an alert on a phone">
                 <div className="alert-app"><i><Telegram /></i>Jordan's job bot<span>now</span></div>
@@ -338,54 +305,34 @@ export function Landing() {
                 <div className="alert-meta">Northwind · LinkedIn · 2h<br />📍 London · 🏠 Hybrid<br />Matches: python, data platform</div>
                 <div className="alert-buttons"><span>Apply on LinkedIn</span><span>Make my CV</span></div>
               </div>
-              <p className="try">Try it: press Make my CV on the card</p>
             </div>
           </div>
         </section>
 
         <section id="start" className="section">
           <div className="head center" data-reveal>
-            <p className="pill"><i />04 · Get started</p>
-            <h2>A few minutes to set up. <span className="glow">Then it searches while you sleep.</span></h2>
+            <h2>Start in <span className="glow">a few minutes.</span></h2>
+            <p className="lp-lede">Two steps. You do the first one, once.</p>
           </div>
           <div className="paths">
-            <article className="tile path" data-reveal data-spot>
-              <p className="tile-k">Step 1 · a few minutes</p>
-              <h3>Set it up once</h3>
-              <p>
-                Create an account and upload your CV. We read it and suggest the words to search with; you check
-                them and tap Looks good. That is all.
-              </p>
-              <ul>
-                <li>Your CV (a cover letter and an "about you" note are optional)</li>
-                <li>Three or more words to find jobs with, and any words to hide</li>
-                <li>The countries you can work in, how you work, and your languages</li>
-              </ul>
-            </article>
-            <article className="tile path" data-reveal data-spot style={after(0.08)}>
-              <p className="tile-k">Step 2 · it runs itself</p>
-              <h3>Then it works for you</h3>
-              <p>
-                New jobs are matched to your words as soon as their text is read. Each one is a tap away from a CV
-                and a cover letter made for it.
-              </p>
-              <ul>
-                <li>Every match says why it is there</li>
-                <li>One tap makes a CV or a cover letter</li>
-                <li>Alerts on your phone, if you want them</li>
-              </ul>
-            </article>
+            {PATHS.map(([when, title, items], i) => (
+              <article key={title} className="tile path" data-reveal data-spot style={after(i * 0.08)}>
+                <div className="path-head">
+                  <span className="path-num" aria-hidden="true">{i + 1}</span>
+                  <div>
+                    <p className="path-when">{when}</p>
+                    <h3>{title}</h3>
+                  </div>
+                </div>
+                <ul>{items.map((item) => <li key={item}>{item}</li>)}</ul>
+              </article>
+            ))}
           </div>
           <div className="cta" data-reveal>
             <Wheel ticks={0} />
-            <p>No waiting: your first matches are there as soon as you finish, from jobs already collected.</p>
+            <p>Your first jobs are there the moment you finish.</p>
             <a className="btn btn-primary btn-lg" href="#/signup">Create your account <Arrow /></a>
           </div>
-          <p className="honest" data-reveal>
-            Honest by design: there is no hidden score, and it never applies for you. Every job is shown because
-            of words you chose, and every line of your CV comes from what you wrote. Alerts come by Telegram, by
-            your browser's notifications, or in one email each morning.
-          </p>
         </section>
       </main>
 
@@ -393,7 +340,7 @@ export function Landing() {
         <div className="foot-halo" aria-hidden="true"><div><Wheel /></div></div>
         <p className="foot-name" aria-hidden="true">Mahoraga</p>
         <div className="foot-row">
-          <span>The job-search radar · the wheel keeps turning</span>
+          <span>The job search that runs itself</span>
           <a href="#/signin">Sign in</a>
           <a href="#/privacy">Privacy</a>
           <a href="https://rubenlekli.com" target="_blank" rel="noreferrer">rubenlekli.com</a>
@@ -462,41 +409,114 @@ function Count({ to }: { to: number }) {
   return <>{shown.toLocaleString("en")}</>;
 }
 
-/** The new jobs of each run in the last six hours, a bar a run: what was found, not a made-up shape. Not
- * drawn while nothing has been, which is a harvest that has stopped and not a quiet morning. */
-function Found({ runs, minutes }: { runs: number[]; minutes: number }) {
-  const total = runs.reduce((sum, run) => sum + run, 0);
-  if (!total) return null;
-  const most = Math.max(...runs);
+/** A count as a round number it is at least, so a big one reads at a glance and stays true: 43 is "40+",
+ * 341 "340+", 72,345 "72,000+". Under ten, itself. */
+function AtLeast({ n }: { n: number }) {
+  const step = n < 10 ? 1 : n < 100 ? 5 : 10 ** (Math.floor(Math.log10(n)) - 1);
+  return <><Count to={Math.floor(n / step) * step} />{n < 10 ? "" : "+"}</>;
+}
+
+/** What it is, drawn: the job sites, what is left out, and the list that is yours, jobs travelling from one
+ * to the next on a loop. Said in words under each part, for anybody not looking at the picture. */
+function Flow({ often }: { often: string }) {
   return (
-    <figure className="found">
-      <div className="bars" role="img"
-           aria-label={`New jobs found in each ${minutes}-minute run of the last six hours: ${total.toLocaleString("en")} in all`}>
-        {runs.map((run, i) => (
-          <i key={i} style={{ "--h": Math.max(0.04, run / most), "--i": i } as CSSProperties} />
-        ))}
+    <div className="flow" data-reveal>
+      <div className="flow-step">
+        <div className="flow-art flow-sources" aria-hidden="true">
+          {["LinkedIn", "Job boards", "Company career pages"].map((name, i) => (
+            <span key={name} style={{ "--i": i } as CSSProperties}><i />{name}</span>
+          ))}
+        </div>
+        <h3>Every job site</h3>
+        <p>LinkedIn, job boards and company career pages, read {often}.</p>
       </div>
-      <figcaption>
-        <span>{total.toLocaleString("en")} new jobs in the last six hours</span>
-        <span>Now</span>
-      </figcaption>
-    </figure>
+      <FlowOn />
+      <div className="flow-step">
+        <div className="flow-art flow-filter" aria-hidden="true">
+          <Mark />
+          <div className="left-out">
+            {["The same job twice", "A country you can't work in", "Your red words"].map((why, i) => (
+              <s key={why} style={{ "--i": i } as CSSProperties}>{why}<i /></s>
+            ))}
+          </div>
+        </div>
+        <h3>Only what fits</h3>
+        <p>Your words, your countries, your languages. Never the same job twice.</p>
+      </div>
+      <FlowOn />
+      <div className="flow-step">
+        <div className="flow-art flow-list" aria-hidden="true">
+          {[["Backend Engineer", "backend engineer"], ["Data Engineer", "python · sql"],
+            ["Python Developer", "python"]].map(([title, why], i) => (
+            <span key={title} style={{ "--i": i } as CSSProperties}><b>{title}</b><small>Why: {why}</small></span>
+          ))}
+        </div>
+        <h3>One list for you</h3>
+        <p>The best matches first, each saying which of your words found it.</p>
+      </div>
+    </div>
   );
 }
 
-/** Four words to tap, each turning from a word that finds jobs into one that hides them and back. */
-function WordDemo() {
-  const [finds, setFinds] = useState([true, true, false, false]);
+/** Between two parts of the picture: jobs travelling on to the next. */
+function FlowOn() {
+  return <div className="flow-on" aria-hidden="true"><i /><i /><i /></div>;
+}
+
+/** Step 1: their CV, and the words read from it, green to find jobs with and red to hide them. */
+function CvArt() {
   return (
-    <div className="tile-demo">
-      <div className="word-demo">
-        {["nurse", "backend engineer", "senior", "unpaid"].map((word, i) => (
-          <button key={word} type="button" className={finds[i] ? "finds" : "hides"} aria-pressed={finds[i]}
-                  onClick={() => setFinds(finds.map((each, k) => (k === i ? !each : each)))}>
-            {word}
-          </button>
-        ))}
+    <div className="cv-art">
+      <span className="cv-file">
+        <svg viewBox="0 0 24 24"><path d="M7 3.5h6.5L18 8v12.5H7zM13.5 3.5V8H18M9.8 12.5h5M9.8 16h5" /></svg>
+        my-cv.pdf
+      </span>
+      <span className="cv-said">We suggest</span>
+      <div className="cv-words">
+        {[["backend engineer", "finds"], ["python", "finds"], ["unpaid", "hides"], ["commission only", "hides"]].map(
+          ([word, kind], i) => <span key={word} className={kind} style={{ "--i": i } as CSSProperties}>{word}</span>)}
       </div>
+    </div>
+  );
+}
+
+/** Step 2: new jobs arriving, the words that found each marked. */
+function MatchArt() {
+  return (
+    <div className="match-art">
+      <span className="match-new">3 new jobs</span>
+      <div className="match"><b><mark>Backend Engineer</mark></b><small>Acme Robotics · Berlin · Why: backend engineer</small></div>
+      <div className="match"><b><mark>Python</mark> Developer</b><small>Northwind · Remote · Why: python</small></div>
+    </div>
+  );
+}
+
+/** Step 3: one tap, and the CV written. */
+function TapArt() {
+  return (
+    <div className="tap-art">
+      <div className="one-tap">
+        <svg className="ring" viewBox="0 0 40 40">
+          <circle className="track" cx="20" cy="20" r="17" />
+          <circle className="fill" cx="20" cy="20" r="17" pathLength={1} />
+        </svg>
+        <span>Make my CV</span>
+      </div>
+      <div className="tap-paper"><b>Jordan Ellery</b><i /><i /><i /><i /></div>
+    </div>
+  );
+}
+
+/** Step 4: out to the job's own site, and the application followed to the offer. */
+function ApplyArt() {
+  return (
+    <div className="apply-art">
+      <span className="apply-on">Apply on LinkedIn{PICTURES.apply}</span>
+      <ol className="apply-steps">
+        {["Applied", "Interview", "Offer"].map((step, i) => (
+          <li key={step} style={{ "--i": i } as CSSProperties}><i />{step}</li>
+        ))}
+      </ol>
     </div>
   );
 }
@@ -517,7 +537,7 @@ function Phone() {
         <div className="phone-body">
           <div className="tabs" aria-hidden="true"><span className="tab on">Your jobs</span><span className="tab">Add a job</span></div>
           <p className="phone-title">12 jobs match your words</p>
-          <p className="small muted">From the last 24 hours · slower boards: the last 7 days</p>
+          <p className="small muted">Jobs stay here for 7 days.</p>
           <Demo />
         </div>
         <div className="phone-tabs" aria-hidden="true">
