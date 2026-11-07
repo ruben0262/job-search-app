@@ -57,7 +57,6 @@ export function DocumentsPage() {
 
   return (
     <>
-      <p className="kicker">My documents</p>
       <h1>Your CV and the rest</h1>
       <p className="lede">We read them to find your words and to make your CVs and cover letters.</p>
 

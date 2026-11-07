@@ -1228,6 +1228,10 @@
             "title": "Countries",
             "type": "array"
           },
+          "cut": {
+            "title": "Cut",
+            "type": "boolean"
+          },
           "jobs": {
             "items": {
               "$ref": "#/components/schemas/FeedJob"
@@ -1271,7 +1275,8 @@
           "cities",
           "as_of",
           "shelf_hours",
-          "shelf_longest_hours"
+          "shelf_longest_hours",
+          "cut"
         ],
         "title": "Feed",
         "type": "object"
@@ -1813,6 +1818,92 @@
           "created_at"
         ],
         "title": "JobDocument",
+        "type": "object"
+      },
+      "JobFilters": {
+        "description": "The Jobs page's filters, named as `/feed` takes them, kept for each person so the page opens as they\nleft it, on any device (owner, 2026-11-07). A field left out is its default, which is what a new\naccount sees.",
+        "properties": {
+          "city": {
+            "default": "",
+            "maxLength": 40,
+            "title": "City",
+            "type": "string"
+          },
+          "country": {
+            "default": "",
+            "maxLength": 2,
+            "title": "Country",
+            "type": "string"
+          },
+          "made": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Made"
+          },
+          "min_words": {
+            "default": 1,
+            "maximum": 50.0,
+            "minimum": 1.0,
+            "title": "Min Words",
+            "type": "integer"
+          },
+          "q": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Q",
+            "type": "string"
+          },
+          "remote": {
+            "default": false,
+            "title": "Remote",
+            "type": "boolean"
+          },
+          "since_hours": {
+            "anyOf": [
+              {
+                "maximum": 1440.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": 24,
+            "title": "Since Hours"
+          },
+          "sort": {
+            "default": "best",
+            "enum": [
+              "best",
+              "newest",
+              "arrived"
+            ],
+            "title": "Sort",
+            "type": "string"
+          },
+          "source": {
+            "default": "",
+            "maxLength": 60,
+            "title": "Source",
+            "type": "string"
+          },
+          "word": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Word",
+            "type": "array"
+          }
+        },
+        "title": "JobFilters",
         "type": "object"
       },
       "JobMarks": {
@@ -2528,6 +2619,9 @@
             "title": "Is Admin",
             "type": "boolean"
           },
+          "job_filters": {
+            "$ref": "#/components/schemas/JobFilters"
+          },
           "stage": {
             "const": "ready",
             "title": "Stage",
@@ -2539,7 +2633,8 @@
           "is_admin",
           "applied",
           "banners",
-          "ai"
+          "ai",
+          "job_filters"
         ],
         "title": "ReadyDashboard",
         "type": "object"
@@ -5876,6 +5971,48 @@
           }
         },
         "summary": "Feed",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
+    "/feed/filters": {
+      "put": {
+        "description": "The Jobs page's filters as they are now, to open with next time. Sent as they change, so a closed\ntab loses nothing.",
+        "operationId": "save_job_filters_feed_filters_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JobFilters"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobFilters"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save Job Filters",
         "tags": [
           "dashboard"
         ]

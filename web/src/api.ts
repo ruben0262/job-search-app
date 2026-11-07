@@ -33,13 +33,16 @@ type Options = {
   form?: FormData;
   /** Internal: stops a refreshed request from refreshing again and looping forever. */
   retry?: boolean;
+  /** Sent through even if the page closes meanwhile: what a page saves as it is left. */
+  keepalive?: boolean;
 };
 
 export async function request<T>(path: string, options: Options = {}): Promise<T> {
-  const { method = "GET", body, form, retry = false } = options;
+  const { method = "GET", body, form, retry = false, keepalive } = options;
 
   const response = await fetch(path, {
     method,
+    keepalive,
     credentials: "same-origin",
     headers: body === undefined ? undefined : { "Content-Type": "application/json" },
     body: form ?? (body === undefined ? undefined : JSON.stringify(body)),

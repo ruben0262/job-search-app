@@ -55,7 +55,6 @@ export function AppliedPage() {
 
   return (
     <>
-      <p className="kicker">Applied</p>
       <h1>
         {jobs === null ? "Your applications…"
           : `You applied to ${jobs.length} ${jobs.length === 1 ? "job" : "jobs"}`}

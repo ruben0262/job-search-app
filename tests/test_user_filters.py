@@ -343,7 +343,9 @@ def test_the_delivery_floor_is_the_operator_s_to_change(db):
                            active=True))
     TenantRepository(db).save_config(user.id, config())
 
-    # Measured default for greenhouse is 72 hours, so a 100-hour-old posting is out.
+    # With a day's job shelf life (a week is the default since 2026-11-07), greenhouse's own floor decides:
+    # 72 hours measured, so a 100-hour-old posting is out.
+    settings.put(db, "job_max_age_hours", 24)
     assert old.id not in _survivors(db, filters_for(db, user))
 
     settings.put(db, "source_min_age_hours", {"greenhouse": 168})

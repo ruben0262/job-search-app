@@ -959,6 +959,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/feed/filters": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save Job Filters
+         * @description The Jobs page's filters as they are now, to open with next time. Sent as they change, so a closed
+         *     tab loses nothing.
+         */
+        put: operations["save_job_filters_feed_filters_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -2020,6 +2041,8 @@ export interface components {
             cities: components["schemas"]["FeedPlace"][];
             /** Countries */
             countries: components["schemas"]["FeedPlace"][];
+            /** Cut */
+            cut: boolean;
             /** Jobs */
             jobs: components["schemas"]["FeedJob"][];
             /** Shelf Hours */
@@ -2208,6 +2231,59 @@ export interface components {
             mode: "instant" | "ai";
             /** Saved */
             saved: boolean;
+        };
+        /**
+         * JobFilters
+         * @description The Jobs page's filters, named as `/feed` takes them, kept for each person so the page opens as they
+         *     left it, on any device (owner, 2026-11-07). A field left out is its default, which is what a new
+         *     account sees.
+         */
+        JobFilters: {
+            /**
+             * City
+             * @default
+             */
+            city: string;
+            /**
+             * Country
+             * @default
+             */
+            country: string;
+            /** Made */
+            made?: boolean | null;
+            /**
+             * Min Words
+             * @default 1
+             */
+            min_words: number;
+            /**
+             * Q
+             * @default
+             */
+            q: string;
+            /**
+             * Remote
+             * @default false
+             */
+            remote: boolean;
+            /**
+             * Since Hours
+             * @default 24
+             */
+            since_hours: number | null;
+            /**
+             * Sort
+             * @default best
+             * @enum {string}
+             */
+            sort: "best" | "newest" | "arrived";
+            /**
+             * Source
+             * @default
+             */
+            source: string;
+            /** Word */
+            word?: string[];
         };
         /** JobMarks */
         JobMarks: {
@@ -2456,6 +2532,7 @@ export interface components {
             banners: components["schemas"]["DashboardBanner"][];
             /** Is Admin */
             is_admin: boolean;
+            job_filters: components["schemas"]["JobFilters"];
             /**
              * Stage
              * @constant
@@ -4397,6 +4474,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Feed"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_job_filters_feed_filters_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JobFilters"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobFilters"];
                 };
             };
             /** @description Validation Error */

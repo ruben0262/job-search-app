@@ -64,7 +64,6 @@ export function AddJobPage({ dashboard, onChanged }: {
   return (
     <>
       <JobsTabs on="add" />
-      <p className="kicker">Add a job</p>
       <h1>Found a job somewhere else?</h1>
       <p className="lede">Paste its link here. We show it if we have it, or read it from its page and add it. Then you can make your CV for it.</p>
 

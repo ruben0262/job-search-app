@@ -46,8 +46,6 @@ export function Onboarding({ state, onChanged }: {
         </header>
 
         <div className="step page-in" key={current}>
-          {/* Said on every screen: this is setting up their profile, and their jobs come after it. */}
-          <p className="kicker">Set up your profile</p>
           <ol className="setup-steps" aria-label="Set up your profile">
             {STEPS.map(([key, label], index) => (
               <li key={key} className={index < at ? "done" : index === at ? "now" : ""}

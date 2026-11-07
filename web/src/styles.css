@@ -317,6 +317,10 @@ body {
   color: var(--accent-text);
 }
 
+.place-short {
+  display: none;
+}
+
 @media (min-width: 1100px) {
   .places svg {
     display: block;
@@ -402,28 +406,6 @@ a:hover {
 
 .small {
   font-size: 0.875rem;
-}
-
-/* What a page is, above its title: small, in the purple, after a point of its light. */
-.kicker {
-  display: flex;
-  align-items: center;
-  gap: 0.55rem;
-  margin: 0 0 0.65rem;
-  color: var(--accent-text);
-  font-size: 0.8125rem;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-}
-
-.kicker::before {
-  content: "";
-  flex: none;
-  width: 0.4rem;
-  height: 0.4rem;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.2), 0 0 10px rgba(var(--accent-rgb), 0.9);
 }
 
 /* ── surfaces ────────────────────────────────────────────────────────────────────────────── */
@@ -1332,6 +1314,14 @@ button.main {
   display: grid;
   gap: 0.9rem;
   margin-top: 1rem;
+  transition: opacity 0.2s var(--out);
+}
+
+/* A read that takes a while, a week of jobs: the list fades until the answer comes. After a pause, so a
+   quick one does not flicker. */
+.jobs[aria-busy="true"] {
+  opacity: 0.5;
+  transition-delay: 0.3s;
 }
 
 /* Solid, not frosted: a blur under each of twenty-five cards is what makes a phone stutter on scroll. */
@@ -1887,11 +1877,15 @@ button.making::after {
 /* ── small screens ───────────────────────────────────────────────────────────────────────── */
 
 @media (max-width: 720px) {
-  .app,
   .wizard,
   .auth,
   .centered {
     padding: 1rem 1rem 4rem;
+  }
+
+  /* Nothing above the bar here either: given the others' 1rem, it sat that far down a phone's screen. */
+  .app {
+    padding: 0 1rem 4rem;
   }
 
   .app > nav {
@@ -1924,7 +1918,7 @@ button.making::after {
 /* ── the tab bar: phones and tablets ─────────────────────────────────────────────────────────── */
 
 /* The places become a tab bar along the bottom: where every phone app keeps them, in reach of the thumb.
-   **Pictures alone** (owner, 2026-11-06), each still named for a screen reader, the one you are on lit
+   A picture and a word each (owner, 2026-11-07; pictures alone were not enough), the one you are on lit
    in the purple; frosted, and clear of the edges, as the landing page's dock is. Up to a tablet held
    upright too: five or six words and three buttons do not fit a bar narrower than about 900px, and they
    overran it there. Never wider than a phone's, so a tablet's is not a strip of far-apart pictures. */
@@ -1932,11 +1926,6 @@ button.making::after {
   /* Clear of the tab bar, whatever the phone puts under it. */
   .app {
     padding-bottom: calc(6.5rem + env(safe-area-inset-bottom));
-  }
-
-  /* Admin is a laptop tool; on a phone its tab would push Settings off the bar. */
-  .places a[href="#/admin"] {
-    display: none;
   }
 
   .places {
@@ -1950,8 +1939,8 @@ button.making::after {
     display: grid;
     grid-auto-flow: column;
     grid-auto-columns: 1fr;
-    gap: 0.25rem;
-    padding: 0.35rem;
+    gap: 2px;
+    padding: 0.25rem;
     border: 1px solid var(--glass-line);
     border-radius: 22px;
     background: var(--glass);
@@ -1960,33 +1949,42 @@ button.making::after {
     box-shadow: 0 16px 30px -16px rgb(0 0 0 / 60%);
   }
 
+  /* An admin's six fit a 320px phone: its widest word, "Settings", is 40px at 10px, and a tab is 46px.
+     The words grow to 12px by a 390px one. */
   .places a {
     position: relative;
+    flex-direction: column;
     justify-content: center;
+    gap: 0.15rem;
     min-height: 3rem;
-    padding: 0;
+    padding: 0.3rem 0;
     border-radius: 16px;
     color: var(--dim);
+    font-size: clamp(0.625rem, 3.1vw, 0.75rem);
+    line-height: 1.2;
   }
 
   .places a.on {
     color: var(--ink);
   }
 
-  /* Read out, not shown. */
+  /* The short name: "My documents" is twice a tab's width on a small phone. Cut short rather than spill
+     into the next tab, should a font ever be wider than this one. */
   .place-name {
-    position: absolute;
-    width: 1px;
-    height: 1px;
+    display: none;
+  }
+
+  .place-short {
+    display: block;
+    max-width: 100%;
     overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
+    text-overflow: ellipsis;
   }
 
   .places svg {
     display: block;
-    width: 24px;
-    height: 24px;
+    width: 22px;
+    height: 22px;
   }
 
   .toast {

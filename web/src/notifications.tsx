@@ -82,9 +82,7 @@ export function NotificationBell() {
       {open ? (
         <div className="bell-panel page-in" role="dialog" aria-label="Notifications">
           <div className="bell-head">
-            <span className="kicker" style={{ margin: 0 }}>
-              Notifications
-            </span>
+            <strong>Notifications</strong>
             {/* Icons rather than words: two actions side by side as "Mark all read" and "Delete all". */}
             <div className="bell-actions">
               {feed.unread > 0 ? (

@@ -43,6 +43,7 @@ def test_the_jobs_page_the_text_queue_and_every_count_of_it_keep_and_drop_the_sa
     the queue at midnight UTC, one listed at 23:50 included, while the page went on showing it, text-less
     (2026-11-05). One rule now (`freshness.showable`): kept by all of them, or dropped by all at once. A
     job is on the page once its text is read, so the page is asked after both are read."""
+    from libs import settings
     from libs.corpus.freshness import platform_windows
     from libs.corpus.repository import CorpusRepository
     from libs.matching import matching_jobs
@@ -52,6 +53,8 @@ def test_the_jobs_page_the_text_queue_and_every_count_of_it_keep_and_drop_the_sa
 
     TenantRepository(db).save_config(user.id, {"sections": [{"platform": "all", "keywords": ["nurse"]}]},
                                       schema_version=2)
+    # A day's shelf life, so a job found 25 hours ago is past it: a week is the default (2026-11-07).
+    settings.put(db, "job_max_age_hours", 24)
     moment = datetime.now(UTC)
     yesterday = (moment - timedelta(hours=30)).replace(hour=0, minute=0, second=0, microsecond=0)
     fresh = _job(db, source="linkedin", url_tail="jobs/view/1", posted_at=yesterday,

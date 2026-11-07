@@ -64,7 +64,6 @@ export function AdminUserPage({ userId }: { userId: string }) {
 
   return (
     <div>
-      <p className="kicker">Operator</p>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
         <h1 style={{ marginBottom: 0 }}>{user.email}</h1>
         <a href="#/admin">← All accounts</a>

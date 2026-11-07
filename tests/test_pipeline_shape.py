@@ -101,10 +101,13 @@ def test_a_posting_too_old_to_deliver_is_not_reported_as_waiting(db):
     fifteen minutes, 156 of them already past the delivery window, the oldest first seen 167 hours
     earlier — the same ids, on a user's own metered proxy, for a week.
     """
+    from libs import settings
     from libs.corpus.freshness import platform_windows
     from libs.corpus.repository import CorpusRepository
     from libs.ops.pipeline import pipeline
 
+    # These ages are read against a day's job shelf life; a week is the default (2026-11-07).
+    settings.put(db, "job_max_age_hours", 24)
     stale = _job(db, description=None, first_seen_at=datetime.now(UTC) - timedelta(days=3))
 
     assert stage(pipeline(db), "describe")["waiting"] == 0
@@ -166,8 +169,11 @@ def test_each_step_counts_exactly_what_went_through_it_in_the_window(db):
 def test_a_job_too_old_to_be_shown_leaves_the_text_queue_and_is_counted_once_as_missed(db):
     """The owner: a job past the window is dropped from describing, not left to pile up (2026-11-05). The
     page says how many were dropped untaken in the window, so a describer falling behind is seen."""
+    from libs import settings
     from libs.ops.pipeline import pipeline
 
+    # These ages are read against a day's job shelf life; a week is the default (2026-11-07).
+    settings.put(db, "job_max_age_hours", 24)
     moment = datetime.now(UTC)
     for hours_ago in (1, 25, 50):  # waiting; aged out today; aged out the day before
         _job(db, source="linkedin", first_seen_at=moment - timedelta(hours=hours_ago))
@@ -180,9 +186,12 @@ def test_a_job_too_old_to_be_shown_leaves_the_text_queue_and_is_counted_once_as_
 
 def test_every_source_is_listed_with_what_it_found_and_a_silent_one_as_zero(db):
     """A board that stops answering raises nothing: this is where it shows."""
+    from libs import settings
     from libs.ops.pipeline import sources
     from libs.settings import HARVEST_SOURCES
 
+    # These ages are read against a day's job shelf life; a week is the default (2026-11-07).
+    settings.put(db, "job_max_age_hours", 24)
     moment = datetime.now(UTC)
     _job(db, source="himalayas", first_seen_at=moment - timedelta(hours=1), description="We build. " * 40)
     _job(db, source="himalayas", first_seen_at=moment - timedelta(hours=2))

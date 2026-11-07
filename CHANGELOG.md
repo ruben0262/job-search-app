@@ -14,6 +14,193 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-07 — A week on the shelf, the last day first, every person's filters kept, and a list that reaches back
+
+The owner asked for five things:
+- the landing page's sections at the foot of a phone get their words too;
+- the job shelf life is 7 days;
+- every Jobs page opens on "Last 24 hours";
+- each person's filters are saved, so they come back as they were left;
+- and: "i also set the job shelf life from 24 hours to 7 days but the jobs page still didn't change".
+
+**Why the shelf life changed nothing.** The setting was read on every request, and the line under the
+title changed with it. What did not change was the list.
+- **The cause:** the feed read only the 2,000 newest postings with the person's words (`matching.SCAN`),
+  then filtered them in memory.
+- **The cost of it, measured on the dev copy with the owner's own words** (python, rest, api, software
+  engineer, developer; Europe and the UK), at a week's shelf life: 898 jobs reached the list, the newest
+  day and a half, of 3,210 the week held. 55% of the 2,000 read were then dropped by red words, languages
+  and places.
+- **On the server,** with several times the postings a day, it is likely hours.
+
+**The fix: the read reaches as far as the time asked.**
+- **The time chosen under "Posted" goes to the database**, so the budget is spent inside it. The read
+  starts a day earlier, for a board whose clock runs ahead of ours.
+- **The budget is 2,000 for each day asked** (`scan_for`): "Last 24 hours" reads what the page read
+  before, and "Any time" up to 14,000.
+
+Measured on the dev copy:
+
+| Posted | Budget | Jobs | Median |
+|---|---|---|---|
+| Last 24 hours | 2,000 | 64 | 334 ms |
+| Last 3 days | 6,000 | 2,573 | 767 ms |
+| Any time (the week) | 14,000 | 3,209 | 912 ms |
+
+Before, "Any time" was 898 jobs in 334 ms. On the server the default costs what it did; a longer time
+costs more, not measured there. The list fades while a read takes that long (`aria-busy`, after 0.3 s, so
+a quick one does not flicker).
+
+**A list cut short says so.**
+- **When the budget runs out inside the time asked,** the heading says "898+ jobs" and the line under it
+  says these are the newest (`Feed.cut`).
+- **Spent only in the day before the time asked, it has read all of it, and is not called cut.** Found
+  measuring: both shorter times were flagged while read whole.
+
+**What the filters offer is counted inside the time asked.** "golang 5" beside a list of 2 from the last
+day disagreed. The other filters still do not narrow the counts, so another can be picked.
+
+**A week by default.** `DEFAULT_JOB_MAX_AGE_HOURS` is 168, where it was 24.
+- **Nothing to bring back:** postings stay in the corpus 15 days before the archive.
+- **The line under the title** says "Jobs stay here for 7 days." It said "From the last 24 hours · slower
+  boards: the last 7 days", which would read against a list of the last day.
+- **"Posted" offers only the times shorter than jobs stay.** "Last week" is "Any time" now.
+- **Alerts:** a LinkedIn job whose text is read days after it was found can now be alerted then, up to
+  the week.
+
+**"Last 24 hours" first, and the filters kept.**
+- **Where they live:** `JobFilters`, named as `/feed` takes them, is kept on the person
+  (`User.job_filters`), saved by `PUT /feed/filters`, and handed to the page with the dashboard. A new
+  account's is "Last 24 hours" and nothing else.
+- **On the page,** one object holds them, where there were ten pieces of state. It is saved 0.4 s after a
+  change and at once on leaving, by closing the tab too (`keepalive`, new in `api.ts`). This tab keeps its
+  copy, and each answer is kept under the question that got it, so Jobs comes back drawn as it was left.
+- **"Clear filters" clears what narrows the list,** and keeps the time and the order. The time is how the
+  list is shown: "N jobs match your words", not "your search".
+- **Saved filters that no longer read** (after a filter changes shape) are the defaults, with a warning
+  in the log.
+
+**The landing page's sections on a phone:** a picture over each short name ("What", "How", "Jobs",
+"Start"), as the app's bar has. The light behind the one you are in grows with them.
+
+**Tests that read ages against a day's shelf life now set it.** Five tests used a 25-hour or 3-day-old
+job as "too old" and now set the day themselves:
+- `test_pipeline_shape` (three tests);
+- `test_user_filters`;
+- `test_counters_match_workers`.
+
+The test that the page shows what the shelf life says now starts from the week, then sets a day and two.
+
+Tests, each failing on the previous commit:
+- **The week by default:** the shelf-life test, which starts from the week.
+- **The reach:** a longer time reaches a job that a day's budget does not, and says when it was cut.
+- **Saved filters:** a new account opens on "Last 24 hours", what it saves comes back, and broken ones
+  fall back to the defaults, said in the log.
+- **The browser:** the filters stay through a reload made the moment the last one changed, "Clear
+  filters" keeps the time, the page says "Jobs stay here for 7 days.", and the landing dock shows its
+  words.
+
+Two more, for faults found while measuring, each failing on the rule it replaced: a budget spent in the
+day before the time asked is not called cut, and the counts stay inside the time asked.
+
+Gates, all local:
+- `lint-imports`: 2 contracts kept.
+- `ruff check`: clean.
+- The schema pruned onto an empty local database.
+- The contract gained `JobFilters`, `ReadyDashboard.job_filters` and `Feed.cut`, and regenerated it is the
+  same.
+- `npm run build`: 109.7 kB of gzipped script and 15.6 kB of style.
+- `pytest`: 1,330 passed and 3 skipped (the Postgres copy, the reference instance, an empty parameter
+  set). The browser tests ran.
+
+## 2026-11-07 — The phone's menu in words, with Admin; one title on My search; no purple labels; no gap above a phone's bar
+
+The owner asked for four things:
+- My search's "What we look for / Green words show you jobs. Red words hide them." becomes "The jobs you
+  want / Green words find jobs. Red words hide them.";
+- the small purple heading above every page's title goes;
+- the phone's menu gets its words, fitting every screen;
+- Admin appears there for an admin.
+
+Then, looking at a phone, a fifth: the bar at the very top of the screen, with no space above it.
+
+**My search had two titles.** The page's title and the first part of its form said the same thing
+("What we look for", then "The jobs you want").
+- The title is now "The jobs you want", with "Green words find jobs. Red words hide them." under it, and
+  that part of the form drops its heading on this page.
+- Onboarding's second screen is titled "What we found", so the same part keeps its heading there.
+- Both read the words from one constant (`WANTED`).
+
+**No purple labels.** The label above each title (`.kicker`: "Your jobs", "Settings", "Operator",
+"Welcome back", …) is gone from every page that had one:
+- the app's pages;
+- the signed-out pages;
+- onboarding;
+- Privacy;
+- the landing's picture of the Jobs page.
+
+Four more places used the same style, and lost it too:
+- **Privacy's label held its version,** which is what people agree to. It is now a plain grey line under
+  the title.
+- **Admin's own parts:** "Queue" and "Accounts" are headings now, "Hour by hour" a subheading, and
+  "Window" a plain word.
+- **The notifications panel's title** is plain bold.
+- **`AuthShell`,** the shared frame of the signed-out pages, lost its `kicker` argument.
+
+With nothing left using it, the style is deleted.
+
+**The phone's menu: a picture over a word** (it was pictures alone from 2026-11-06).
+- **Shorter names on a phone.** At 11px, "My search" is 56px wide and "My documents" 79px. A tab is 46px
+  when an admin's six share a 320px phone. So the phone says "Search" and "Docs", and the laptop's row
+  keeps the long names. `PLACES` carries both.
+- **The words' size** is 10px on a 320px phone and grows to 12px by 390px, the size a phone's own tab
+  bar uses. The widest word, "Settings", has 3px to spare on each side at 320px. A word that ever runs
+  wider is cut with "…" rather than spilling into the next tab.
+- **The bar is no taller** (58px). Its tabs are 2px apart instead of 4.
+
+**Admin on a phone.** It was hidden there on purpose (`.places a[href="#/admin"] { display: none }`: "a
+laptop tool; its tab would push Settings off the bar"). It now shows for an admin, as the sixth tab.
+
+**Admin's tables on a phone.** Admin had only been swept from 1024px up. Swept on phones too, its Queue
+table pushed the page sideways at 320px: the sweep's one finding.
+- **The cause:** three of its tables (Queue, Accounts, and Pipeline's "Who it is running for") were as
+  wide as their columns.
+- **The fix:** they scroll inside their own box (`.table-scroll`), as Admin's other tables already did.
+- **Checked:** all eight of Admin's tabs, at 320px and 390px, are no wider than the screen.
+
+**The top of a phone's screen.**
+- **The cause:** at 720px and below, one rule gave the app the signed-out pages' padding, 1rem, top
+  included. That undid the rule that keeps the bar at the very top, so a phone's page began 16px down.
+- **The fix:** the app's top padding is 0 there too.
+
+Measured on the build, with an admin's six tabs, at 15 sizes from 320×640 to 1100×800 (phones held
+sideways included):
+- every word whole;
+- the bar inside the screen and 58px tall up to 900px;
+- the laptop's row unchanged from 901px;
+- the top bar at 0 everywhere.
+
+Tests:
+- On a phone, each tab shows its word ("Jobs", "Applied", "Search", "Docs", "Settings").
+- On a 320px phone, an admin's six tabs fit, every word whole, Admin visible, and the bar at the very top.
+- My search's title is "The jobs you want".
+
+Against the previous commit all three fail: the phone shows the long names, and My search's title is
+"What we look for". Every tab now holds both names, so the tests that compared the menu's text read what
+is shown (`innerText`).
+
+The sweep of every page at every size (28 sizes), Admin now included at every width, found nothing
+once those tables scrolled. Its sign-in was checked first: it reaches the Jobs page.
+
+Gates, all local:
+- `lint-imports`: 2 contracts kept.
+- `ruff check`: clean.
+- The schema pruned onto an empty local database.
+- The contract is unchanged, and regenerated it is the same.
+- `npm run build`: 109.3 kB of gzipped script and 15.6 kB of style, 0.1 kB and 0.03 kB less than before.
+- `pytest`: 1,327 passed and 3 skipped (the Postgres copy, the reference instance, an empty parameter
+  set). The browser tests ran.
+
 ## 2026-11-06 — Nobody applies here, and the site and its alerts say so: "Apply on …", "Mark as applied", Skip apart
 
 The owner asked for the site to make one thing plain: nobody applies to a job on it or through it. It

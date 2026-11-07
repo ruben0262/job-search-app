@@ -62,7 +62,6 @@ export function SettingsPage({ dashboard, onChanged, onSignedOut }: {
 
   return (
     <>
-      <p className="kicker">Settings</p>
       <h1>Settings</h1>
 
       <Card title="Alerts">

@@ -1,6 +1,7 @@
 """The front page and the jobs page, both on `libs.matching`: what a person sees, and why."""
 from __future__ import annotations
 
+import logging
 import os
 import uuid
 from datetime import timedelta
@@ -369,8 +370,9 @@ def test_the_new_jobs_count_is_what_a_refresh_adds_less_the_jobs_that_left_meanw
 
 def test_the_page_says_how_long_a_job_stays_and_shows_exactly_that(api):
     """A job leaving the list is no surprise when the page says how long jobs stay (owner, 2026-11-06). The
-    numbers are Admin's job shelf life and the longest a slower board keeps its jobs, and the jobs shown
-    are the ones they describe: LinkedIn's for the shelf life, Workday's for a week."""
+    numbers are Admin's job shelf life, a week unless Admin says otherwise (owner, 2026-11-07), and the
+    longest a slower board keeps its jobs, and the jobs shown are the ones they describe: LinkedIn's for
+    the shelf life, Workday's for a week."""
     from libs import settings
 
     http, db, _, _ = api
@@ -385,9 +387,72 @@ def test_the_page_says_how_long_a_job_stays_and_shows_exactly_that(api):
         return (body["shelf_hours"], body["shelf_longest_hours"]), {
             key for key, job_id in found.items() if job_id in _ids(body)}
 
+    assert shown() == ((168, 168), {("linkedin", 23), ("linkedin", 25), ("linkedin", 47), ("workday", 160)})
+    settings.put(db, "job_max_age_hours", 24)
     assert shown() == ((24, 168), {("linkedin", 23), ("workday", 160)})
     settings.put(db, "job_max_age_hours", 48)
     assert shown() == ((48, 168), {("linkedin", 23), ("linkedin", 25), ("linkedin", 47), ("workday", 160)})
+
+
+def test_a_longer_time_reads_further_back_and_a_list_cut_short_says_so(api, monkeypatch):
+    """A read stops at a budget, `SCAN` for each day of the time asked (`scan_for`). At one day's budget
+    whatever the time, the Jobs page showed the same newest jobs however long the shelf life was (owner,
+    2026-11-07). Small here, so four jobs are more than a day's."""
+    from libs import matching
+
+    http, db, _, _ = api
+    monkeypatch.setattr(matching, "SCAN", 2)
+    ago = now() - timedelta(days=3)
+    older = insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
+                                 title="Golang Developer", description="x", first_seen_at=ago, posted_at=ago,
+                                 described_at=ago))
+    for _ in range(2):
+        insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
+                             title="Golang Developer", description="x", described_at=now()))
+
+    day = http.get("/feed?since_hours=24").json()
+    assert day["cut"], "four of the last day's jobs, read two at a time: the page says they are the newest"
+    assert older.id not in _ids(day)
+    week = http.get("/feed").json()
+    assert older.id in _ids(week) and not week["cut"], "any time reads the whole week"
+
+
+def test_a_read_that_reached_past_the_time_asked_is_not_called_cut(api, monkeypatch):
+    """A read reaches a day before the time asked, for a board whose clock runs ahead of ours. A budget
+    spent there has read the whole time asked, and the page must not say more match (2026-11-07)."""
+    from libs import matching
+
+    http, db, _, _ = api
+    monkeypatch.setattr(matching, "SCAN", 3)
+    ago = now() - timedelta(hours=30)
+    for _ in range(2):
+        insert(db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
+                             title="Golang Developer", description="x", first_seen_at=ago, posted_at=ago,
+                             described_at=ago))
+
+    day = http.get("/feed?since_hours=24").json()
+    assert len(day["jobs"]) == 2, "the two of the last day, not the two of the day before"
+    assert not day["cut"]
+    # And what the filters offer is counted in it: no "golang" for the jobs of the day before.
+    assert {each["name"]: each["jobs"] for each in day["words"]} == {"backend engineer": 2}
+    assert {each["name"]: each["jobs"] for each in day["sources"]} == {"test": 2}
+
+
+def test_the_jobs_page_opens_on_the_last_day_and_as_they_left_it(api, caplog):
+    """A new account's Jobs page opens on "Last 24 hours" (owner, 2026-11-07), and what they change is kept
+    for the next time, on any device. Saved filters that no longer read are the defaults, said in the log."""
+    http, db, user, _ = api
+    opened = http.get("/dashboard").json()["job_filters"]
+    assert (opened["since_hours"], opened["q"], opened["sort"], opened["word"]) == (24, "", "best", [])
+
+    left = {**opened, "since_hours": None, "source": "greenhouse", "word": ["golang"], "made": False}
+    assert http.put("/feed/filters", json=left).json() == left
+    assert http.get("/dashboard").json()["job_filters"] == left
+
+    _change(db, user, job_filters={"since_hours": "a fortnight"})
+    with caplog.at_level(logging.WARNING):
+        assert http.get("/dashboard").json()["job_filters"] == opened
+    assert "saved filters no longer read" in caplog.text
 
 
 def test_one_country_or_one_city_and_each_offered_with_its_count(api):

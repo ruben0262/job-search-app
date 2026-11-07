@@ -32,14 +32,14 @@ export function Verify({ onDone }: { onDone: () => void | Promise<void> }) {
 
   if (failed === null) {
     return (
-      <AuthShell kicker="Almost there" title="Confirming…">
+      <AuthShell title="Confirming…">
         <p className="muted">Checking your link.</p>
       </AuthShell>
     );
   }
 
   return (
-    <AuthShell kicker="Verification" title="That link did not work">
+    <AuthShell title="That link did not work">
       <p className="muted" style={{ marginBottom: "1.75rem" }}>
         {failed}
       </p>

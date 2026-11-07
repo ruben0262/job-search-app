@@ -36,7 +36,7 @@ export function SignIn({
 
   if (sent) {
     return (
-      <AuthShell kicker="One more step" title="Check your email">
+      <AuthShell title="Check your email">
         <p className="muted">
           If <strong>{email}</strong> can be registered, a confirmation link is on its way. Open it
           on this device and you land back here, signed up and ready.
@@ -48,10 +48,7 @@ export function SignIn({
   }
 
   return (
-    <AuthShell
-      kicker={mode === "in" ? "Welcome back" : "Get started"}
-      title={mode === "in" ? "Sign in" : "Create your account"}
-    >
+    <AuthShell title={mode === "in" ? "Sign in" : "Create your account"}>
 
       <form
         onSubmit={(event) => {
@@ -148,11 +145,9 @@ export function ResendLink({ email }: { email: string }) {
 /** The frame every signed-out page shares (sign in, sign up, the emailed links): the wordmark home, the
  * wheel lying in its halo of light, and one question under it. */
 export function AuthShell({
-  kicker,
   title,
   children,
 }: {
-  kicker: string;
   title: string;
   children: React.ReactNode;
 }) {
@@ -168,7 +163,6 @@ export function AuthShell({
           <div className="auth-art" aria-hidden="true">
             <Wheel />
           </div>
-          <p className="kicker">{kicker}</p>
           <h1>{title}</h1>
           {children}
         </div>

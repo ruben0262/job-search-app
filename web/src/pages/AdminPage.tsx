@@ -411,7 +411,6 @@ export function AdminPage() {
 
   return (
     <>
-      <p className="kicker">Operator</p>
       <div className="spread">
         <h1>Platform</h1>
         <span className="small muted">
@@ -476,8 +475,8 @@ export function AdminPage() {
         />
       </dl>
 
-          <p className="kicker" style={{ marginTop: "2.5rem" }}>Queue</p>
-      <table>
+      <h2 style={{ marginTop: "2.5rem" }}>Queue</h2>
+      <div className="table-scroll"><table>
         <thead>
           <tr>
             <th>Lane</th>
@@ -503,7 +502,7 @@ export function AdminPage() {
             </tr>
           ))}
         </tbody>
-      </table>
+      </table></div>
         </>
       ) : null}
 
@@ -794,10 +793,8 @@ export function AdminPage() {
       {tab === "outcomes" ? <OutcomesTab /> : null}
       {tab === "messages" ? <MessagesTab /> : null}
 
-      {tab === "accounts" ? <>      <p className="kicker" style={{ marginTop: "2.5rem" }}>
-        Accounts
-      </p>
-      <table>
+      {tab === "accounts" ? <>      <h2 style={{ marginTop: "2.5rem" }}>Accounts</h2>
+      <div className="table-scroll"><table>
         <thead>
           <tr>
             <th>Email</th>
@@ -850,7 +847,7 @@ export function AdminPage() {
             </tr>
           ))}
         </tbody>
-      </table>
+      </table></div>
       </> : null}
 
       {/* The address has to be typed, and the server checks it too. */}
@@ -1263,7 +1260,7 @@ function PipelineTab() {
           No account has work in a lane right now. Nothing queued, nothing running, nothing dead.
         </p>
       ) : (
-        <table>
+        <div className="table-scroll"><table>
           <thead>
             <tr>
               <th>Lane</th>
@@ -1290,7 +1287,7 @@ function PipelineTab() {
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
       )}
     </>
   );
@@ -1346,7 +1343,7 @@ function LatencyTab() {
       </p>
 
       <div className="row" style={{ margin: "1rem 0", alignItems: "center" }}>
-        <span className="kicker" style={{ margin: 0 }}>Window</span>
+        <span className="small muted">Window</span>
         {([[6, "6 hours"], [24, "24 hours"], [168, "7 days"]] as [number, string][]).map(
           ([value, label]) => (
             <button
@@ -1494,7 +1491,7 @@ function StageDrill({ stage, detail }: { stage: StageRow; detail: StageDetail | 
         />
       </div>
 
-      <p className="kicker" style={{ marginTop: "1.4rem" }}>Hour by hour</p>
+      <h3 style={{ marginTop: "1.4rem" }}>Hour by hour</h3>
       <StageSeries series={detail.series} amber={stage.amber_after_min}
                    red={stage.red_after_min} />
 

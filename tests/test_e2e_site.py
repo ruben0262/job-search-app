@@ -97,8 +97,8 @@ def test_a_new_person_goes_from_sign_up_to_a_downloaded_cv(site, capsys, tmp_pat
 
         # Their jobs: the two that match, each saying why, and not the one that does not.
         expect(page.get_by_role("heading", name="2 jobs match your words")).to_be_visible()
-        # And how long a job stays, as Admin sets it.
-        expect(page.get_by_text("From the last 24 hours · slower boards: the last 7 days")).to_be_visible()
+        # And how long a job stays, as Admin sets it: a week, unless Admin says otherwise.
+        expect(page.get_by_text("Jobs stay here for 7 days.")).to_be_visible()
         cards = page.locator("article.job-card")
         expect(cards).to_have_count(2)
         for title in TITLES[:2]:
@@ -185,11 +185,13 @@ def test_the_theme_button_is_a_circle_on_every_page_and_switches_the_theme(site,
         browser.close()
 
 
-def test_the_landing_page_counts_from_the_server_and_a_phone_shows_the_places_as_pictures(site, capsys):
+def test_the_landing_page_counts_from_the_server_and_a_phone_shows_each_place_in_a_picture_and_a_word(
+        site, capsys):
     """The landing page's numbers are the server's (`/stats`): typed into it, they said 25 sources long
     after that was true. Sign in and sign up follow the address, going back included. And on a phone
-    the tab bar is pictures alone (owner, 2026-11-06), each still named and each opening its page. Its
-    card says where people apply: on the job's own site, never here (owner, 2026-11-06)."""
+    each tab is a picture over a word (owner, 2026-11-07; pictures alone, 2026-11-06, were not enough),
+    each opening its page. Its card says where people apply: on the job's own site, never here (owner,
+    2026-11-06)."""
     from libs.settings import HARVEST_SOURCES
 
     base, email, _ = site
@@ -202,6 +204,9 @@ def test_the_landing_page_counts_from_the_server_and_a_phone_shows_the_places_as
         demo = page.locator(".demo-card")
         demo.get_by_role("button", name="Apply on LinkedIn").click()
         expect(demo).to_contain_text("opens it on LinkedIn, and you apply there")
+        # The sections at the foot of a phone: a picture over each one's word (owner, 2026-11-07).
+        expect(page.locator(".dock a").filter(has=page.locator(".short"))).to_have_text(
+            ["What", "How", "Jobs", "Start"], use_inner_text=True)
 
         page.goto(f"{base}/#/signin")
         expect(page.get_by_role("heading", name="Sign in")).to_be_visible()
@@ -213,13 +218,12 @@ def test_the_landing_page_counts_from_the_server_and_a_phone_shows_the_places_as
         _sign_up(page, base, email, capsys)
         _onboard(page)
         places = page.locator("nav .places a")
-        expect(places).to_have_count(5)
+        expect(places).to_have_text(["Jobs", "Applied", "Search", "Docs", "Settings"], use_inner_text=True)
         for place in places.all():
             expect(place.locator("svg")).to_be_visible()
-            assert place.locator(".place-name").bounding_box()["width"] <= 1, "a word on the phone's tab bar"
-        page.get_by_role("link", name="My search").click()
-        expect(page.get_by_role("heading", name="What we look for")).to_be_visible()
-        expect(page.get_by_role("link", name="My search")).to_have_attribute("aria-current", "page")
+        page.get_by_role("link", name="Search", exact=True).click()
+        expect(page.get_by_role("heading", name="The jobs you want", level=1)).to_be_visible()
+        expect(page.get_by_role("link", name="Search", exact=True)).to_have_attribute("aria-current", "page")
         browser.close()
 
 
@@ -530,7 +534,7 @@ def test_a_job_found_somewhere_else_is_brought_in_by_its_link(site, capsys):
         # A tab of Jobs, not a place of its own: Jobs stays the place lit in the bar.
         page.get_by_role("navigation", name="Jobs").get_by_role("link", name="Add a job").click()
         expect(page.get_by_role("heading", name="Found a job somewhere else?")).to_be_visible()
-        expect(page.locator("nav .places a[aria-current=page]")).to_have_text("Jobs")
+        expect(page.locator("nav .places a[aria-current=page]")).to_have_text("Jobs", use_inner_text=True)
 
         page.get_by_label("The job's link").fill(nurse)
         page.get_by_role("button", name="Find this job").click()
@@ -574,7 +578,7 @@ def test_every_tab_is_drawn_whole_the_moment_it_is_opened(site, capsys):
                            ("Jobs", "2 jobs match your words"), ("Add a job", "Found a job somewhere else?")):
             seen = page.evaluate("""(tab) => new Promise((done) => {
                 const links = [...document.querySelectorAll("nav a")];
-                links.find((link) => link.textContent.trim() === tab).click();
+                links.find((link) => link.innerText.trim() === tab).click();
                 const look = () => {
                     const main = document.querySelector("main");
                     done({text: main.innerText, opacity: getComputedStyle(main).opacity});
@@ -625,7 +629,8 @@ def test_the_tabs_in_order_and_what_each_one_is_for(site, capsys):
         _sign_up(page, base, email, capsys)
         _onboard(page)
         tabs = page.locator("nav .places a")
-        expect(tabs).to_have_text(["Jobs", "Applied", "My search", "My documents", "Settings"])
+        expect(tabs).to_have_text(["Jobs", "Applied", "My search", "My documents", "Settings"],
+                                  use_inner_text=True)
 
         card = page.locator("article.job-card").filter(
             has=page.get_by_role("button", name=TITLES[0], exact=True))
@@ -650,7 +655,8 @@ def test_the_tabs_in_order_and_what_each_one_is_for(site, capsys):
 
         database().users.update_one({"email": email}, {"$set": {"is_admin": True}})
         page.reload()
-        expect(tabs).to_have_text(["Jobs", "Applied", "My search", "My documents", "Admin", "Settings"])
+        expect(tabs).to_have_text(["Jobs", "Applied", "My search", "My documents", "Admin", "Settings"],
+                                  use_inner_text=True)
         tabs.filter(has_text="Admin").click()
         page.get_by_role("button", name="Messages").click()
         expect(page.get_by_text("My CV shows the wrong city")).to_be_visible()
@@ -663,6 +669,21 @@ def test_the_tabs_in_order_and_what_each_one_is_for(site, capsys):
         expect(page.get_by_role("heading", name="Setup")).to_have_count(0)
         if shot := os.environ.get("E2E_SHOT"):
             page.screenshot(path=shot, full_page=True)
+
+        # The smallest phone: an admin's six tabs still fit, each a picture over a whole word, and the bar is
+        # at the very top of the screen (owner, 2026-11-07). Admin was hidden there, and a phone's page began
+        # 16px down.
+        page.set_viewport_size({"width": 320, "height": 640})
+        page.goto(f"{base}/#/")
+        expect(tabs).to_have_text(["Jobs", "Applied", "Search", "Docs", "Admin", "Settings"],
+                                  use_inner_text=True)
+        expect(tabs.filter(has_text="Admin")).to_be_visible()
+        assert page.evaluate("""() => [...document.querySelectorAll("nav .places a")].every((tab) => {
+            const word = tab.querySelector(".place-short");
+            return word.scrollWidth <= word.clientWidth && tab.getBoundingClientRect().right <= innerWidth;
+        })"""), "a word cut short, or a tab past the screen's edge"
+        page.evaluate("scrollTo(0, 0)")
+        assert page.locator(".app > nav").bounding_box()["y"] == 0, "space above the bar"
         browser.close()
 
 
@@ -727,7 +748,10 @@ def test_a_made_cv_is_still_there_after_a_refresh_in_applied_and_in_my_documents
         browser.close()
 
 
-def test_the_jobs_filters_narrow_the_list_and_clear_back(site, capsys):
+def test_the_jobs_filters_narrow_the_list_stay_as_they_were_left_and_clear_back(site, capsys):
+    """The page opens on "Last 24 hours", and the filters stay as they were left, a reload or another
+    device later (owner, 2026-11-07): reloaded the moment the last one changed, before its save would
+    otherwise go. Clearing them keeps the time chosen."""
     base, email, _ = site
     with sync_api.sync_playwright() as playwright:
         browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
@@ -735,17 +759,24 @@ def test_the_jobs_filters_narrow_the_list_and_clear_back(site, capsys):
         _sign_up(page, base, email, capsys)
         _onboard(page)
         expect(page.get_by_role("heading", name="2 jobs match your words")).to_be_visible()
+        posted = page.get_by_label("Posted")
+        expect(posted).to_have_value("24")
 
         page.get_by_label("Job board").select_option(label="Test (2)")
         expect(page.get_by_role("heading", name="2 jobs match your search")).to_be_visible()
-        page.get_by_label("Posted").select_option(label="Last 24 hours")
+        posted.select_option(label="Last 3 days")
         expect(page.get_by_role("heading", name="2 jobs match your search")).to_be_visible()
         page.get_by_role("button", name="Remote only").click()
+        page.reload()
         expect(page.get_by_role("heading", name="2 jobs match your search")).to_be_visible()
+        expect(posted).to_have_value("72")
+        expect(page.get_by_label("Job board")).to_have_value("test")
+        expect(page.get_by_role("button", name="Remote only")).to_have_attribute("aria-pressed", "true")
 
         page.get_by_role("button", name="Clear filters").click()
         expect(page.get_by_role("heading", name="2 jobs match your words")).to_be_visible()
         expect(page.get_by_role("button", name="Clear filters")).to_have_count(0)
+        expect(posted).to_have_value("72")
         browser.close()
 
 
@@ -842,7 +873,7 @@ def test_my_search_asks_before_leaving_unsaved_and_applied_opens_the_whole_job(s
         prompt = page.get_by_role("dialog", name="Save your changes?")
         expect(prompt).to_be_visible()
         prompt.get_by_role("button", name="Stay here").click()
-        expect(page.get_by_role("heading", name="What we look for")).to_be_visible()
+        expect(page.get_by_role("heading", name="The jobs you want", level=1)).to_be_visible()
 
         tabs.filter(has_text="Applied").click()
         prompt.get_by_role("button", name="Save and go").click()

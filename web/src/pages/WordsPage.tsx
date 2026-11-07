@@ -12,13 +12,15 @@ import { Error, Field, Prompt, Words, useAction } from "../ui";
 type Review = Schema<"ReviewPage">;
 type Section = Config["sections"][number];
 
+/** What the words are for: My search's title, and in onboarding the heading of their part of the form. */
+const WANTED = { title: "The jobs you want", lede: "Green words find jobs. Red words hide them." };
+
 export function WordsPage() {
   const [saved, setSaved] = useState(false);
   return (
     <>
-      <p className="kicker">My search</p>
-      <h1>What we look for</h1>
-      <p className="lede">Green words show you jobs. Red words hide them.</p>
+      <h1>{WANTED.title}</h1>
+      <p className="lede">{WANTED.lede}</p>
       <WordsForm action="Save" askBeforeLeaving onSaved={() => setSaved(true)} onEdited={() => setSaved(false)} />
       {saved ? <p className="saved-flash" role="status">Saved. Your jobs are updated.</p> : null}
     </>
@@ -138,8 +140,13 @@ export function WordsForm({ withIdentity = false, askBeforeLeaving: guarded = fa
       ) : null}
 
       <section className="form-section">
-        <h2>The jobs you want</h2>
-        <p className="section-lede">Green words find jobs. Red words hide them.</p>
+        {/* Onboarding's screen is "What we found", so the part says what it is; My search's title says it. */}
+        {withIdentity ? (
+          <>
+            <h2>{WANTED.title}</h2>
+            <p className="section-lede">{WANTED.lede}</p>
+          </>
+        ) : null}
         <Words tone="green" label="Show me jobs with these words" warnLong
                hint={`At least ${choices.min_words}, more is better. Like “nurse” or “python”.`}
                placeholder="Add a job title or skill"

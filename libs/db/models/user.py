@@ -58,6 +58,9 @@ class User(Document):
     hard_data_changed_at: datetime | None = None
     # Green and red words suggested from their documents, with a reason each (`libs.suggestions`).
     suggestions: dict | None = None
+    # The Jobs page's filters as they left them, so it opens the same (owner, 2026-11-07); `JobFilters` in
+    # the API. None until they change one: the defaults.
+    job_filters: dict | None = None
     # This account's data key, wrapped by the platform key (`libs.secrets`).
     wrapped_dek: bytes | None = None
     created_at: datetime = field(default_factory=now)

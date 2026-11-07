@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, ValidationError
 from pymongo.database import Database
 
 from libs import limits
@@ -22,7 +22,7 @@ from libs.db.models import AtsToken, BuiltDocument, CorpusJob, User, UserJobStat
 from libs.db.models.tenant import record_state
 from libs.documents.saved import for_jobs
 from libs.llm import PLATFORM, ai_requests_today, resolve
-from libs.matching import Match, marks, norm, their_jobs
+from libs.matching import Match, marks, norm, scan_for, their_jobs
 from libs.notify import reachable
 from libs.obs import audit
 from libs.onboarding import onboarding_state
@@ -69,6 +69,25 @@ class AiWriting(BaseModel):
     profile: bool
 
 
+class JobFilters(BaseModel):
+    """The Jobs page's filters, named as `/feed` takes them, kept for each person so the page opens as they
+    left it, on any device (owner, 2026-11-07). A field left out is its default, which is what a new
+    account sees."""
+    q: str = Field("", max_length=200)
+    remote: bool = False
+    # "Last 24 hours" for everybody until they choose another (owner, 2026-11-07). None: "Any time", the
+    # whole job shelf life.
+    since_hours: int | None = Field(24, ge=1, le=24 * 60)
+    source: str = Field("", max_length=60)
+    country: str = Field("", max_length=2)
+    city: str = Field("", max_length=40)
+    sort: Literal["best", "newest", "arrived"] = "best"
+    # False: only the jobs with no CV made yet. None: every job.
+    made: bool | None = None
+    word: list[str] = Field(default_factory=list, max_length=50)
+    min_words: int = Field(1, ge=1, le=50)
+
+
 class ReadyDashboard(BaseModel):
     """What every signed-in page needs before it draws. No count of matches: the jobs page is the
     front page and counts its own list, and asking here as well was a second full match run on every
@@ -79,6 +98,8 @@ class ReadyDashboard(BaseModel):
     applied: int
     banners: list[DashboardBanner]
     ai: AiWriting
+    # What the Jobs page opens with: theirs as they left it, or the defaults.
+    job_filters: JobFilters
 
 
 class FeedSalary(BaseModel):
@@ -159,6 +180,9 @@ class Feed(BaseModel):
     # that posts less often keeps its jobs there (`freshness.shelf_life`). Said on the page.
     shelf_hours: int
     shelf_longest_hours: int
+    # More of their jobs matched than one read takes in (`libs.matching.scan_for`): the list is the newest
+    # of them, and the page says so rather than call it all of them.
+    cut: bool
 
 
 def _is_admin(user: User) -> bool:
@@ -187,7 +211,26 @@ def dashboard(db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curr
 
     _, applied = marks(db, user_id)
     return ReadyDashboard(stage="ready", is_admin=_is_admin(user), applied=len(applied),
-                          banners=_banners(db, user), ai=_ai(db, user))
+                          banners=_banners(db, user), ai=_ai(db, user), job_filters=_job_filters(user))
+
+
+def _job_filters(user: User) -> JobFilters:
+    """The filters they left the Jobs page with, or the defaults. Saved ones that no longer read, after a
+    filter changed shape, are the defaults, and the log says so."""
+    try:
+        return JobFilters.model_validate(user.job_filters or {})
+    except ValidationError:
+        logger.warning("jobs page: %s's saved filters no longer read, so the defaults instead", user.id)
+        return JobFilters()
+
+
+@router.put("/feed/filters")
+def save_job_filters(filters: JobFilters, db: Database = Depends(get_db),
+                     user_id: _uuid.UUID = Depends(current_user)) -> JobFilters:
+    """The Jobs page's filters as they are now, to open with next time. Sent as they change, so a closed
+    tab loses nothing."""
+    db[User.COLLECTION].update_one({"_id": user_id}, {"$set": {"job_filters": filters.model_dump()}})
+    return filters
 
 
 class Reach(BaseModel):
@@ -269,10 +312,15 @@ def feed(*, db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curren
 
     A job they skipped or applied to is gone from it for good: Applied lists the second."""
     as_of = now()
-    visible = their_jobs(db, get(db, User, user_id))
+    shortest, longest = shelf_life(platform_windows(db))
+    cutoff = as_of - timedelta(hours=since_hours) if since_hours else None
+    # The read reaches as far back as asked, "Any time" being the longest shelf life (`scan_for`).
+    read = their_jobs(db, get(db, User, user_id), since=cutoff, scan=scan_for(since_hours or longest))
+    # The time asked is how the list is shown, so what the filters offer is counted inside it too: "golang 5"
+    # beside a list of 2 from the last day disagreed (2026-11-07).
+    visible = [match for match in read if cutoff is None or _when(match) >= cutoff]
     made_for = (set(db[BuiltDocument.COLLECTION].distinct("job_id", {"user_id": user_id}))
                 if made is not None else set())
-    cutoff = now() - timedelta(hours=since_hours) if since_hours else None
     needle = (q or "").lower()
     picked = {norm(each) for each in word if each.strip()}
     # `None` is a filter that is off, so `x in (None, value)` reads "off, or equal".
@@ -280,7 +328,6 @@ def feed(*, db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curren
                if needle in f"{match.job.title} {match.job.company or ''} {match.job.url}".lower()
                and remote in (None, bool(match.job.is_remote))
                and job in (None, match.job.id)
-               and (cutoff is None or _when(match) >= cutoff)
                and source in (None, match.job.source)
                and country in (None, match.job.country)
                and city in (None, match.job.city)
@@ -303,7 +350,6 @@ def feed(*, db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curren
     words = Counter(each for match in visible for each in match.words)
     countries = Counter(match.job.country for match in visible if match.job.country)
     cities = Counter(match.job.city for match in visible if match.job.city)
-    shortest, longest = shelf_life(platform_windows(db))
     # A time without a zone is UTC, as the database read one when it did the comparing.
     since = found_after.replace(tzinfo=found_after.tzinfo or UTC) if found_after else None
     arrived = sum(1 for match in matches if match.job.described_at >= since) if since else None
@@ -317,7 +363,7 @@ def feed(*, db: Database = Depends(get_db), user_id: _uuid.UUID = Depends(curren
                            for code, count in countries.most_common()],
                 cities=[FeedPlace(value=slug, label=CITIES[slug].label if slug in CITIES else slug,
                                   jobs=count) for slug, count in cities.most_common()],
-                as_of=as_of, shelf_hours=shortest, shelf_longest_hours=longest)
+                as_of=as_of, shelf_hours=shortest, shelf_longest_hours=longest, cut=read.cut)
 
 
 def _when(match: Match) -> datetime:

@@ -165,8 +165,9 @@ HARVEST_CYCLE_WARN_FRACTION = 0.75
 # How old a posting may be and still be worth scoring and sending. A different question from the
 # freshness windows above, which say how far back to *ask* a source: this one is how long a posting
 # already in the corpus stays a candidate, and it is the only age check between the corpus and a
-# user's feed.
-DEFAULT_JOB_MAX_AGE_HOURS = 24
+# user's feed. A week (owner, 2026-11-07; a day before): the Jobs page opens on the last 24 hours, and
+# "Posted" reaches back the rest.
+DEFAULT_JOB_MAX_AGE_HOURS = 168
 
 # The floor a source's delivery window may not go below, because below it that source stops
 # existing rather than getting stricter.

@@ -16,7 +16,7 @@ export function ForgotPassword() {
 
   if (sent) {
     return (
-      <AuthShell kicker="One more step" title="Check your email">
+      <AuthShell title="Check your email">
         <p className="muted">
           If <strong>{email}</strong> has an account, a reset link is on its way. It works once and
           expires in an hour, the newest one is the one that counts.
@@ -26,7 +26,7 @@ export function ForgotPassword() {
   }
 
   return (
-    <AuthShell kicker="It happens" title="Reset your password">
+    <AuthShell title="Reset your password">
       <p className="muted" style={{ marginBottom: "1.75rem" }}>
         Tell us the address you signed up with and we send a reset link.
       </p>
@@ -73,7 +73,7 @@ export function ResetPassword({ onDone }: { onDone: () => void }) {
 
   if (done) {
     return (
-      <AuthShell kicker="Done" title="Password reset">
+      <AuthShell title="Password reset">
         <p className="muted" style={{ marginBottom: "1.75rem" }}>
           Every device is signed out. Sign in with the new password.
         </p>
@@ -85,7 +85,7 @@ export function ResetPassword({ onDone }: { onDone: () => void }) {
   }
 
   return (
-    <AuthShell kicker="Almost there" title="Choose a new password">
+    <AuthShell title="Choose a new password">
       <form
         onSubmit={(event) => {
           event.preventDefault();

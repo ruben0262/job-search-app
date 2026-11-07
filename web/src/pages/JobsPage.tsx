@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { MouseEvent, ReactNode } from "react";
 
-import { api, type Ready, type Schema } from "../api";
+import { api, request, type Ready, type Schema } from "../api";
 import { useBuild } from "../documents";
 import { JobView } from "../jobview";
 import { keep, peek } from "../kept";
@@ -15,6 +15,7 @@ import { ago, useNow } from "../time";
 import { Banner, Error, Prompt, useAction } from "../ui";
 
 type Feed = Schema<"Feed">;
+type Filters = Schema<"JobFilters">;
 type Job = Schema<"FeedJob">;
 type Made = Schema<"JobDocument">;
 type Build = ReturnType<typeof useBuild>;
@@ -53,7 +54,26 @@ type Order = (typeof ORDERS)[number][0];
 const REGIONS = new Intl.DisplayNames(["en"], { type: "region" });
 
 /** The list as it first opens, kept (`kept.ts`): coming back to Jobs shows it at once. */
-export const FEED = "/feed?offset=0";
+/** The filters as this tab last had them (`kept.ts`), over the saved ones the dashboard brought. */
+const FILTERS = "/feed/filters";
+
+/** The feed's question for these filters: each one that is on, by the name `/feed` takes it. Its answer is
+ * kept under it, so the page comes back drawn at once, whatever they had chosen. */
+function asked(filters: Filters, offset = 0): URLSearchParams {
+  const { q, remote, since_hours, source, country, city, sort, made, word = [], min_words } = filters;
+  const params = new URLSearchParams({ offset: `${offset}` });
+  if (q.trim()) params.set("q", q.trim());
+  if (remote) params.set("remote", "true");
+  if (since_hours) params.set("since_hours", `${since_hours}`);
+  if (source) params.set("source", source);
+  if (country) params.set("country", country);
+  if (city) params.set("city", city);
+  if (sort !== "best") params.set("sort", sort);
+  if (made === false) params.set("made", "false");
+  for (const each of word) params.append("word", each);
+  if (min_words > 1) params.set("min_words", `${min_words}`);
+  return params;
+}
 
 /** Jobs has two tabs: the jobs that match your words, and one brought in by its link. */
 export function JobsTabs({ on }: { on: "list" | "add" }) {
@@ -76,17 +96,13 @@ export function JobsPage({ dashboard, focus, onChanged }: {
   /** "Mark as applied" changed the count the dashboard keeps. */
   onChanged: () => void;
 }) {
-  const [query, setQuery] = useState("");
-  const [remote, setRemote] = useState(false);
-  const [since, setSince] = useState<number | null>(null);
-  const [source, setSource] = useState("");
-  const [country, setCountry] = useState("");
-  const [city, setCity] = useState("");
-  const [order, setOrder] = useState<Order>("best");
-  const [noCv, setNoCv] = useState(false);
-  const [picked, setPicked] = useState<string[]>([]);
-  const [atLeast, setAtLeast] = useState(1);
-  const cached = peek<Feed>(FEED);
+  // As they left them, here or on another device (owner, 2026-11-07).
+  const [filters, setFilters] = useState<Filters>(() => peek<Filters>(FILTERS) ?? dashboard.job_filters);
+  const set = (change: Partial<Filters>) => setFilters((now) => ({ ...now, ...change }));
+  const { q: query, remote, since_hours: since, source, country, city, sort: order, min_words: atLeast } = filters;
+  const picked = filters.word ?? [];
+  const noCv = filters.made === false;
+  const cached = peek<Feed>(`/feed?${asked(filters)}`);
   // The boards and words their jobs have, kept from the first answer: a filtered one still offers them all.
   const [boards, setBoards] = useState<Feed["sources"]>(cached?.sources ?? []);
   const [words, setWords] = useState<Feed["words"]>(cached?.words ?? []);
@@ -94,6 +110,8 @@ export function JobsPage({ dashboard, focus, onChanged }: {
   const [cities, setCities] = useState<Feed["cities"]>(cached?.cities ?? []);
   const [feed, setFeed] = useState<Feed | null>(cached);
   const [failed, setFailed] = useState(false);
+  // A read under way: a week of jobs takes longer than a day's, so the list says it is coming.
+  const [busy, setBusy] = useState(false);
   // Skipped or applied here, by what: still counted in `feed.total`, so the heading subtracts them.
   // A skip, asked about first, is gone at once; "Mark as applied" keeps an Undo for a moment.
   const [marked, setMarked] = useState<Map<number, Mark>>(new Map());
@@ -103,44 +121,54 @@ export function JobsPage({ dashboard, focus, onChanged }: {
   const [news, setNews] = useState({ arrived: 0, total: 0 });
   const [seenUntil, setSeenUntil] = useState<string | null>(null);
   const shown = (id: number) => !gone.has(id);
-  const filtered = query.trim() !== "" || remote || since !== null || source !== "" || country !== ""
-    || city !== "" || noCv || picked.length > 0 || atLeast > 1;
-  const clear = () => {
-    setQuery("");
-    setRemote(false);
-    setSince(null);
-    setSource("");
-    setCountry("");
-    setCity("");
-    setNoCv(false);
-    setPicked([]);
-    setAtLeast(1);
-  };
+  // Narrowed past their words. The time chosen under "Posted" and the order are how the list is shown, not
+  // what is in it, so they stay when the rest is cleared.
+  const filtered = query.trim() !== "" || remote || source !== "" || country !== "" || city !== "" || noCv
+    || picked.length > 0 || atLeast > 1;
+  const clear = () => set({ q: "", remote: false, source: "", country: "", city: "", made: null, word: [],
+                            min_words: 1 });
+
+  // Saved as they change, for the next time Jobs opens: a moment after the last change, and at once on
+  // leaving, for another page or by closing the tab (`keepalive`). One that fails is sent again with the
+  // next change; this tab keeps them meanwhile.
+  const opened = useRef(filters);
+  const unsaved = useRef<Filters | null>(null);
+  const save = useCallback(() => {
+    if (unsaved.current) {
+      void request(FILTERS, { method: "PUT", body: unsaved.current, keepalive: true }).catch(() => undefined);
+    }
+    unsaved.current = null;
+  }, []);
+  useEffect(() => {
+    keep(FILTERS, filters);
+    if (filters === opened.current) return;
+    unsaved.current = filters;
+    const timer = window.setTimeout(save, 400);
+    return () => window.clearTimeout(timer);
+  }, [filters, save]);
+  useEffect(() => {
+    addEventListener("pagehide", save);
+    return () => {
+      removeEventListener("pagehide", save);
+      save();
+    };
+  }, [save]);
 
   // A page is as long as the server's own page (`FEED_PAGE`): the next one starts where this one ends.
   const read = useCallback(async (offset: number, foundAfter?: string): Promise<Feed> => {
-    const params = new URLSearchParams({ offset: `${offset}` });
-    if (query.trim()) params.set("q", query.trim());
-    if (remote) params.set("remote", "true");
-    if (since) params.set("since_hours", `${since}`);
-    if (source) params.set("source", source);
-    if (country) params.set("country", country);
-    if (city) params.set("city", city);
-    if (order !== "best") params.set("sort", order);
-    if (noCv) params.set("made", "false");
-    for (const word of picked) params.append("word", word);
-    if (atLeast > 1) params.set("min_words", `${atLeast}`);
+    const params = asked(filters, offset);
     if (foundAfter) {
       params.set("found_after", foundAfter);
       params.set("limit", "1");
     }
     return api.get<Feed>(`/feed?${params}`);
-  }, [query, remote, since, source, country, city, order, noCv, picked, atLeast]);
+  }, [filters]);
 
   const reload = useCallback(() => {
+    setBusy(true);
     // Marks this browser still holds go first, so the answer already leaves them out.
     void send().finally(() => read(0).then((body) => {
-      if (!filtered && order === "best") keep(FEED, body);
+      keep(`/feed?${asked(filters)}`, body);
       setBoards(body.sources);
       setWords(body.words);
       setCountries(body.countries);
@@ -150,8 +178,8 @@ export function JobsPage({ dashboard, focus, onChanged }: {
       setGone(unsent());
       setNews({ arrived: 0, total: 0 });
       setFailed(false);
-    }).catch(() => setFailed(true)));
-  }, [read, filtered, order]);
+    }).catch(() => setFailed(true)).finally(() => setBusy(false)));
+  }, [read, filters]);
 
   // Typing does not fire a request per key.
   useEffect(() => {
@@ -212,6 +240,11 @@ export function JobsPage({ dashboard, focus, onChanged }: {
   };
 
   const total = feed ? feed.total - marked.size : 0;
+  // How long the longest-kept jobs stay, once an answer says: "Any time" under "Posted" is all of it.
+  const longest = feed?.shelf_longest_hours ?? Infinity;
+  // What "Posted" is set to, in a sentence: "the last 24 hours".
+  const posted = since && since < longest
+    ? (POSTED.find(([, hours]) => hours === since)?.[0] ?? `Last ${span(since)}`).toLowerCase() : null;
   // The new ones, and the older ones that left meanwhile, past their shelf life: the list a refresh brings
   // is this one, plus the first, less the second.
   const fresh = news.arrived;
@@ -242,18 +275,20 @@ export function JobsPage({ dashboard, focus, onChanged }: {
         </button>
       ) : null}
 
-      <p className="kicker">Your jobs</p>
+      {/* "+" when more matched than one read takes in: these are the newest of them. */}
       <h1>
         {feed === null
           ? "Finding your jobs…"
-          : `${total} ${total === 1 ? "job matches" : "jobs match"} your ${filtered ? "search" : "words"}`}
+          : `${total}${feed.cut ? "+" : ""} ${total === 1 && !feed.cut ? "job matches" : "jobs match"} your ${
+            filtered ? "search" : "words"}`}
       </h1>
       {/* How long a job stays here, as Admin sets it: a job leaving is then no surprise (owner, 2026-11-06). */}
       {feed ? (
         <p className="small muted">
-          From the last {span(feed.shelf_hours)}
+          Jobs stay here for {span(feed.shelf_hours)}
           {feed.shelf_longest_hours > feed.shelf_hours
-            ? ` · slower boards: the last ${span(feed.shelf_longest_hours)}` : ""}
+            ? `, or ${span(feed.shelf_longest_hours)} from slower boards` : ""}.
+          {feed.cut ? " More match your words than the page reads at once, so these are the newest." : ""}
         </p>
       ) : null}
       {dashboard.applied ? (
@@ -265,21 +300,24 @@ export function JobsPage({ dashboard, focus, onChanged }: {
 
       <div className="toolbar">
         <input type="search" placeholder="Search your jobs" aria-label="Search your jobs" value={query}
-               onChange={(event) => setQuery(event.target.value)} />
+               onChange={(event) => set({ q: event.target.value })} />
       </div>
       <div className="filters">
-        <select aria-label="Posted" value={since ?? ""}
-                onChange={(event) => setSince(event.target.value ? Number(event.target.value) : null)}>
-          {POSTED.map(([label, hours]) => <option key={label} value={hours ?? ""}>{label}</option>)}
+        {/* Only the times shorter than jobs stay: "Any time" is all of them. */}
+        <select aria-label="Posted" value={since && since < longest ? since : ""}
+                onChange={(event) => set({ since_hours: event.target.value ? Number(event.target.value) : null })}>
+          {POSTED.filter(([, hours]) => hours === null || hours < longest).map(([label, hours]) => (
+            <option key={label} value={hours ?? ""}>{label}</option>
+          ))}
         </select>
-        <select aria-label="Job board" value={source} onChange={(event) => setSource(event.target.value)}>
+        <select aria-label="Job board" value={source} onChange={(event) => set({ source: event.target.value })}>
           <option value="">All boards</option>
           {boards.map((each) => (
             <option key={each.name} value={each.name}>{each.label} ({each.jobs})</option>
           ))}
         </select>
         {countries.length > 1 || country ? (
-          <select aria-label="Country" value={country} onChange={(event) => setCountry(event.target.value)}>
+          <select aria-label="Country" value={country} onChange={(event) => set({ country: event.target.value })}>
             <option value="">All countries</option>
             {countries.map((each) => (
               <option key={each.value} value={each.value}>{each.label} ({each.jobs})</option>
@@ -287,26 +325,27 @@ export function JobsPage({ dashboard, focus, onChanged }: {
           </select>
         ) : null}
         {cities.length > 1 || city ? (
-          <select aria-label="City" value={city} onChange={(event) => setCity(event.target.value)}>
+          <select aria-label="City" value={city} onChange={(event) => set({ city: event.target.value })}>
             <option value="">All cities</option>
             {cities.map((each) => <option key={each.value} value={each.value}>{each.label} ({each.jobs})</option>)}
           </select>
         ) : null}
-        <select aria-label="Order" value={order} onChange={(event) => setOrder(event.target.value as Order)}>
+        <select aria-label="Order" value={order} onChange={(event) => set({ sort: event.target.value as Order })}>
           {ORDERS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
         {words.length > 1 ? (
           <select aria-label="How many of your words" value={atLeast}
-                  onChange={(event) => setAtLeast(Number(event.target.value))}>
+                  onChange={(event) => set({ min_words: Number(event.target.value) })}>
             <option value={1}>Any word</option>
             {[2, 3, 4].filter((count) => count <= words.length).map((count) => (
               <option key={count} value={count}>{count}+ words</option>
             ))}
           </select>
         ) : null}
-        {([["Remote only", remote, setRemote], ["No CV yet", noCv, setNoCv]] as const).map(([label, on, set]) => (
+        {([["Remote only", remote, { remote: !remote }], ["No CV yet", noCv, { made: noCv ? null : false }]] as const)
+          .map(([label, on, change]) => (
           <button key={label} type="button" className={on ? "chip on" : "chip"} aria-pressed={on}
-                  onClick={() => set(!on)}>
+                  onClick={() => set(change)}>
             {label}
           </button>
         ))}
@@ -319,7 +358,7 @@ export function JobsPage({ dashboard, focus, onChanged }: {
             const on = picked.includes(word.name);
             return (
               <button key={word.name} type="button" className={on ? "chip on" : "chip"} aria-pressed={on}
-                      onClick={() => setPicked(on ? picked.filter((each) => each !== word.name) : [...picked, word.name])}>
+                      onClick={() => set({ word: on ? picked.filter((each) => each !== word.name) : [...picked, word.name] })}>
                 {word.name} <span className="count">{word.jobs}</span>
               </button>
             );
@@ -334,7 +373,12 @@ export function JobsPage({ dashboard, focus, onChanged }: {
       {failed ? <p className="error">Your jobs did not load. Refresh the page to try again.</p> : null}
       {feed && feed.jobs.length === 0 ? (
         <p className="muted">
-          {filtered ? "Nothing matches these filters." : (
+          {filtered ? "Nothing matches these filters." : posted ? (
+            <>
+              Nothing from the {posted} matches your words yet. Choose a longer time under “Posted”, or{" "}
+              <a href="#/words">add more words</a>.
+            </>
+          ) : (
             <>
               No jobs match your words yet. New jobs come in all day, or{" "}
               <a href="#/words">add more words</a>.
@@ -342,7 +386,7 @@ export function JobsPage({ dashboard, focus, onChanged }: {
           )}
         </p>
       ) : null}
-      <div className="jobs">
+      <div className="jobs" aria-busy={busy || undefined}>
         {feed?.jobs.filter((job) => job.id !== focus && shown(job.id)).map((job) => card(job))}
       </div>
       {feed && feed.jobs.length < feed.total ? (

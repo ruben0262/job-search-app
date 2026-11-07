@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from pymongo.database import Database
 
@@ -22,7 +22,7 @@ from libs.tenant.repository import TenantRepository
 
 logger = logging.getLogger(__name__)
 
-# How many of the newest candidates one call examines.
+# How many of the newest candidates one call examines, for a day of postings asked for (`scan_for`).
 SCAN = 2_000
 # What `UserFilters.unwanted` reads off a row. Not the description: the working arrangement it would
 # read there was read once already, when the text was stored (`CorpusRepository.set_description`).
@@ -95,8 +95,23 @@ def _hits(field: str, words: list[str]) -> dict:
     return {"$map": {"input": found_there, "in": "$$this.match"}}
 
 
+class Matches(list):
+    """A person's matches, and whether the read stopped at its budget (`scan`) with more left unread: then
+    they are the newest of their matches, not all of them, and a page says so."""
+
+    cut = False
+
+
+def scan_for(hours: int) -> int:
+    """The budget for a read reaching `hours` back: `SCAN` a day. A week of a broad search is seven days'
+    postings, and at one day's budget the Jobs page showed the same day and a half whatever the job shelf
+    life was: 898 of the 3,210 a week held for the dev copy's words, 334 ms against 807 for all of them
+    (2026-11-07)."""
+    return SCAN * max(1, -(-hours // 24))
+
+
 def matching_jobs(db: Database, user: User, *, described_since: datetime | None = None,
-                  scan: int = SCAN, text: bool = False) -> list[Match]:
+                  since: datetime | None = None, scan: int = SCAN, text: bool = False) -> Matches:
     """This person's matches, the most of their words first, then newest first. A job is one once its
     whole text is read (`candidate_conditions`), so `described_since` keeps those that became one since:
     what alerts send, and what the Jobs page counts as new.
@@ -105,6 +120,9 @@ def matching_jobs(db: Database, user: User, *, described_since: datetime | None 
     lookup. A posting not yet searched, and a word nobody's postings have been searched for yet, are
     read with a regex over the whole text, so nothing waits on the index. Only the words come back,
     unless `text` asks for the description too, for a caller that shows it (an alert's salary line).
+
+    `since` is the oldest the caller will show, so the budget is spent inside it: a posting found a day
+    before it can still have been posted inside it, by a board whose clock runs ahead of ours.
     """
     config = TenantRepository(db).get_config(user.id)
     mine = green_words(config)
@@ -115,6 +133,8 @@ def matching_jobs(db: Database, user: User, *, described_since: datetime | None 
     where = candidate_conditions(filters)
     if described_since is not None:
         where.append({"described_at": {"$gte": described_since}})
+    if since is not None:
+        where.append({"first_seen_at": {"$gte": since - timedelta(days=1)}})
     indexed = sorted(db[Word.COLLECTION].distinct("_id", {"_id": {"$in": mine}, "indexed_at": {"$ne": None}}))
     pending = [word for word in mine if word not in indexed]
     unsearched = {"$eq": [{"$ifNull": ["$terms_at", None]}, None]}
@@ -142,15 +162,17 @@ def matching_jobs(db: Database, user: User, *, described_since: datetime | None 
         # person's list from ~1,500 jobs to 458 until the run that searched for it (2026-11-04).
         searches.append([{"$match": {"$and": where}}, *newest, *found, {"$match": {"$or": [
             {"_in_title.0": {"$exists": True}}, {"_in_text.0": {"$exists": True}}]}}])
-    rows = sorted({row["_id"]: row for stages in searches
-                   for row in db[CorpusJob.COLLECTION].aggregate(stages)}.values(),
-                  key=lambda row: (row["first_seen_at"], row["_id"]), reverse=True)[:scan]
+    read = {row["_id"]: row for stages in searches for row in db[CorpusJob.COLLECTION].aggregate(stages)}
+    rows = sorted(read.values(), key=lambda row: (row["first_seen_at"], row["_id"]), reverse=True)[:scan]
     if described_since and len(rows) == scan:
         # The caller's watermark will pass every older match this never reached.
         logger.warning("matching: %s has at least %d new matches; only the newest %d were read, so older "
                        "ones will not be alerted (the jobs page still lists them)", user.id, scan, scan)
 
-    mine_set, matches = set(mine), []
+    mine_set, matches = set(mine), Matches()
+    # Cut short only if the budget ran out inside the time asked: spent in the day before it, it has read
+    # all of it.
+    matches.cut = len(read) >= scan and (since is None or rows[-1]["first_seen_at"] >= since)
     for row in rows:
         searched = row.get("terms_at") is not None
         in_title = {norm(hit) for hit in row.pop("_in_title")} | (
@@ -162,7 +184,8 @@ def matching_jobs(db: Database, user: User, *, described_since: datetime | None 
                 and not underpaid(config, job.description)):
             matches.append(Match(job, tuple(sorted(words)), tuple(sorted(in_title))))
     # A stable sort, so equal ranks keep the query's newest-first order.
-    return sorted(matches, key=lambda match: match.rank, reverse=True)
+    matches.sort(key=lambda match: match.rank, reverse=True)
+    return matches
 
 
 def marks(db: Database, user_id) -> tuple[set[int], dict[int, datetime]]:
@@ -174,9 +197,12 @@ def marks(db: Database, user_id) -> tuple[set[int], dict[int, datetime]]:
             {row["job_id"]: row["applied_at"] for row in rows if row["applied_at"]})
 
 
-def their_jobs(db: Database, user: User, *, described_since: datetime | None = None) -> list[Match]:
+def their_jobs(db: Database, user: User, *, described_since: datetime | None = None,
+               since: datetime | None = None, scan: int = SCAN) -> Matches:
     """What this person's Jobs page lists: their matches, less a job they skipped or applied to, which is
     gone from it for good."""
     skipped, applied = marks(db, user.id)
-    return [match for match in matching_jobs(db, user, described_since=described_since)
-            if match.job.id not in skipped and match.job.id not in applied]
+    found = matching_jobs(db, user, described_since=described_since, since=since, scan=scan)
+    mine = Matches(match for match in found if match.job.id not in skipped and match.job.id not in applied)
+    mine.cut = found.cut
+    return mine

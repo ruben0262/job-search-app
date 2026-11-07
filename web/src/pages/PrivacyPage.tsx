@@ -35,10 +35,9 @@ export function PrivacyPage() {
           <Brand href="#/" />
           <ThemeToggle />
         </header>
-        <p className="kicker" style={{ marginTop: "2.5rem" }}>
-          Privacy · version {disclosure.version}
-        </p>
-        <h1>Who sees your data</h1>
+        <h1 style={{ marginTop: "2.5rem" }}>Who sees your data</h1>
+        {/* What they agree to is this version of it. */}
+        <p className="small muted">Version {disclosure.version}</p>
 
         <Card title={disclosure.headline}>
           {disclosure.body.split("\n\n").map((paragraph, index) => (

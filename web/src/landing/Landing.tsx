@@ -501,8 +501,8 @@ function WordDemo() {
   );
 }
 
-/** The Jobs page on a phone, as the app draws it: its bar, its two tabs, a job that works, and the tab bar
- * in pictures. */
+/** The Jobs page on a phone, as the app draws it: its bar, its two tabs, a job that works, and the tab bar,
+ * a picture over each word. */
 function Phone() {
   return (
     <figure className="phone" data-reveal aria-label="The Jobs page, on a phone">
@@ -516,14 +516,15 @@ function Phone() {
         </div>
         <div className="phone-body">
           <div className="tabs" aria-hidden="true"><span className="tab on">Your jobs</span><span className="tab">Add a job</span></div>
-          <p className="kicker">Your jobs</p>
           <p className="phone-title">12 jobs match your words</p>
           <p className="small muted">From the last 24 hours · slower boards: the last 7 days</p>
           <Demo />
         </div>
         <div className="phone-tabs" aria-hidden="true">
-          {PLACES.filter(([key]) => key !== "admin").map(([key, , icon], i) => (
-            <span key={key} className={i === 0 ? "on" : undefined}><svg viewBox="0 0 24 24">{icon}</svg></span>
+          {PLACES.filter(([key]) => key !== "admin").map(([key, , icon, short], i) => (
+            <span key={key} className={i === 0 ? "on" : undefined}>
+              <svg viewBox="0 0 24 24">{icon}</svg>{short}
+            </span>
           ))}
         </div>
       </div>
