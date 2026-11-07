@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<!--
+  LEDGER: a CV template (libs/templates/README.md). Only the <head> is used; the CV is written into the
+  body when it is made. Finance, law and consulting: the one-page "banking" CV of the business-school
+  career offices. Serif, black only, the name centred in small capitals, ruled small-capital headings,
+  each entry's title bold with its dates in italics on the right.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Ledger</title>
+<style>
+@page { size: A4; margin: 16mm 18mm 15mm 18mm; }
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: 'Liberation Serif', 'Times New Roman', Times, serif;
+  font-size: 10.5pt;
+  color: #111;
+  line-height: 1.28;
+}
+
+a { color: inherit; text-decoration: none; }
+
+.cv-header { text-align: center; }
+.cv-name { font-size: 20pt; font-weight: 700; text-transform: uppercase; letter-spacing: 1pt; line-height: 1.05; }
+.cv-contact { font-size: 9.5pt; margin-top: 3pt; display: flex; flex-wrap: wrap; justify-content: center; }
+.cv-contact span { overflow-wrap: anywhere; }
+.cv-contact span + span::before { content: "|"; margin: 0 6pt; color: #666; }
+.header-rule { border: none; border-top: 0.75pt solid #111; margin: 6pt 0 6pt; }
+
+.profile { text-align: justify; margin-bottom: 2pt; }
+
+.section { margin-top: 8pt; }
+.section-title {
+  font-size: 10.5pt;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6pt;
+  border-bottom: 0.75pt solid #111;
+  padding-bottom: 1pt;
+  margin-bottom: 4pt;
+}
+
+.entry { break-inside: avoid; page-break-inside: avoid; margin-bottom: 5pt; }
+.entry-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8pt; }
+.entry-title { font-weight: 700; flex: 1; line-height: 1.2; }
+.entry-date { font-style: italic; white-space: nowrap; flex-shrink: 0; }
+.entry-desc { margin-top: 1pt; }
+
+.entry ul, .section > ul, .plain-list { padding-left: 14pt; margin-top: 2pt; }
+li { margin-bottom: 1.5pt; }
+</style>
+</head>
+<body></body>
+</html>

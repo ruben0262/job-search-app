@@ -40,6 +40,7 @@ if str(REPO) not in sys.path:
 from libs.llm import client_for  # noqa: E402
 from libs.profiles import GENERATION_FILES, PLATFORM_FILES, platform_file  # noqa: E402
 from libs.settings import CV_MODEL  # noqa: E402
+from libs.templates import split_style  # noqa: E402
 from scripts.cvlab import cvchecks  # noqa: E402
 from services.docgen import build  # noqa: E402
 
@@ -174,7 +175,8 @@ def write_one(client, candidate: Candidate, posting: Posting, *, template: str,
     """One CV, through the production call. Returns the HTML and the seconds it took."""
     context = build.job_context(posting, description=posting.description)
     started = time.monotonic()
-    html = build.tailor(client, candidate.base_cv, context,
+    # The candidate's own look: the bench compares wordings, so the layout stays the one it always had.
+    html = build.tailor(client, candidate.base_cv, context, style=split_style(candidate.base_cv)[1],
                         facts_md=candidate.grounding(), template=candidate.fill(template),
                         role_angles=candidate.role_angles, model=model)
     return html, time.monotonic() - started

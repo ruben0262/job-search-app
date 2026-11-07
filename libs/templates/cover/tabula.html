@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<!--
+  TABULA: a cover letter template (libs/templates/README.md). Only the <head> is used; the letter is
+  written into the body when it is made. The continental business letter (DIN 5008 in Germany, the
+  French "lettre de motivation" much the same): the sender at the top, the company in a block on the
+  left, the date on the right below it, a bold subject line with no "Subject:" in front, then the letter.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Cover letter</title>
+<style>
+@page { size: A4; margin: 18mm 20mm 18mm 25mm; }
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: Carlito, Calibri, 'Liberation Sans', Arial, sans-serif;
+  font-size: 11pt;
+  color: #1f2933;
+  line-height: 1.42;
+}
+
+a { color: #1f4e79; text-decoration: none; }
+
+.cv-name { font-size: 20pt; font-weight: 700; color: #1f4e79; line-height: 1.05; }
+.cv-contact { margin-top: 3pt; font-size: 9.5pt; color: #3e4c59; display: flex; flex-wrap: wrap; column-gap: 12pt; }
+.cv-contact span { overflow-wrap: anywhere; }
+.header-rule { border: none; border-top: 2pt solid #1f4e79; margin: 6pt 0 18mm; }
+
+/* The company's block where a window envelope would show it, and the date on the right beneath. */
+.letter-meta { display: flex; flex-direction: column; gap: 10mm; margin-bottom: 9mm; }
+.letter-meta p { margin: 0; }
+.letter-to { min-height: 18mm; }
+.letter-date, .date-line { align-self: flex-end; text-align: right; }
+.letter-subject { font-weight: 700; margin-bottom: 9mm; }
+
+p, ul { margin: 0 0 9pt; }
+ul { padding-left: 14pt; }
+li { margin-bottom: 3pt; }
+.closing { margin-top: 12pt; margin-bottom: 2pt; }
+.signature { font-weight: 700; }
+</style>
+</head>
+<body></body>
+</html>

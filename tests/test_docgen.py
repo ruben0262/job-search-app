@@ -8,6 +8,7 @@ import uuid
 
 import pytest
 
+from libs import templates
 from libs.templates import SCAFFOLD_CV, load
 from services.docgen import build, pdf, run
 
@@ -20,6 +21,11 @@ def base_document() -> str:
     """
     return load(SCAFFOLD_CV)
 
+
+# The look a CV is laid out in when nobody picked one: the scaffold's own.
+MERIDIAN = templates.find("cv", "meridian").style
+# And a cover letter's: what `<HEAD_BLOCK>` is filled with.
+COVER = templates.find("cover", "meridian")
 
 # The invisible character these tests are about, named and escaped.
 ZERO_WIDTH = "\u200b"
@@ -104,7 +110,7 @@ def test_the_call_is_grounded_on_the_user_s_own_facts():
     client = FakeClient()
     build.tailor(client, base_document(),
                  build.job_context(FakeJob()), facts_md="# Facts about Alice Example",
-                 template=TAILOR_PROMPT, model=MODEL)
+                 template=TAILOR_PROMPT, model=MODEL, style=MERIDIAN)
 
     assert client.calls[0]["system"].startswith("# Facts about Alice Example")
 
@@ -112,7 +118,8 @@ def test_the_call_is_grounded_on_the_user_s_own_facts():
 def test_a_profile_with_no_facts_block_still_gets_a_grounding_instruction():
     """Nobody should reach this — a confirmed profile always renders one."""
     client = FakeClient()
-    build.tailor(client, base_document(), build.job_context(FakeJob()), template=TAILOR_PROMPT, model=MODEL)
+    build.tailor(client, base_document(), build.job_context(FakeJob()), template=TAILOR_PROMPT,
+                 model=MODEL, style=MERIDIAN)
 
     assert "Never invent" in client.calls[0]["system"]
 
@@ -130,7 +137,8 @@ def test_the_prompt_carries_the_candidate_the_posting_and_the_base_document():
 def test_the_model_never_sees_the_stylesheet():
     """It is told CSS is managed externally."""
     client = FakeClient()
-    build.tailor(client, base_document(), build.job_context(FakeJob()), template=TAILOR_PROMPT, model=MODEL)
+    build.tailor(client, base_document(), build.job_context(FakeJob()), template=TAILOR_PROMPT,
+                 model=MODEL, style=MERIDIAN)
 
     assert "@page" not in client.calls[0]["messages"][0]["content"]
 
@@ -153,7 +161,7 @@ def test_the_layout_is_restored_from_the_template_whatever_came_back():
     """The one guarantee that makes 'the model only changes text' true rather than requested."""
     client = FakeClient(TAILORED.replace("<head>", "<head><style>body{font-size:4pt}</style>"))
     html = build.tailor(client, base_document(),
-                        build.job_context(FakeJob()), template=TAILOR_PROMPT, model=MODEL)
+                        build.job_context(FakeJob()), template=TAILOR_PROMPT, model=MODEL, style=MERIDIAN)
 
     assert "@page" in html and "size: A4" in html
     assert "font-size:4pt" not in html
@@ -162,7 +170,7 @@ def test_the_layout_is_restored_from_the_template_whatever_came_back():
 def test_commentary_around_the_document_is_discarded():
     client = FakeClient(f"Here is the tailored CV:\n\n{TAILORED}\n\nLet me know if…")
     html = build.tailor(client, base_document(),
-                        build.job_context(FakeJob()), template=TAILOR_PROMPT, model=MODEL)
+                        build.job_context(FakeJob()), template=TAILOR_PROMPT, model=MODEL, style=MERIDIAN)
 
     assert html.lstrip().startswith("<!DOCTYPE html")
     assert "Let me know" not in html
@@ -173,7 +181,7 @@ def test_a_reply_with_no_document_is_a_build_failure():
 
     with pytest.raises(build.BuildFailed):
         build.tailor(client, base_document(), build.job_context(FakeJob()), template=TAILOR_PROMPT,
-                     model=MODEL)
+                     model=MODEL, style=MERIDIAN)
 
 
 def test_em_dashes_are_stripped_from_prose_and_kept_in_entry_titles():
@@ -217,7 +225,7 @@ def test_a_base_cv_that_kept_the_scaffold_comment_reaches_the_model_whole_and_co
     """
     client = FakeClient()
     html = build.tailor(client, base_document(), build.job_context(FakeJob()),
-                        template=TAILOR_PROMPT, model=MODEL)
+                        template=TAILOR_PROMPT, model=MODEL, style=MERIDIAN)
 
     assert "<body" in client.calls[0]["messages"][0]["content"], "the model never saw the body"
     assert "[YOUR NAME]" not in html
@@ -259,7 +267,7 @@ def test_a_browser_that_cannot_start_is_a_compile_failure_not_a_silent_empty_fil
 def test_a_real_chrome_turns_the_rendered_cv_into_a_readable_pdf():
     """The one test that exercises the actual browser, over the pipe a worker keeps it on."""
     html = build.tailor(FakeClient(), base_document(), build.job_context(FakeJob()),
-                        template=TAILOR_PROMPT, model=MODEL)
+                        template=TAILOR_PROMPT, model=MODEL, style=MERIDIAN)
 
     report = pdf.inspect_pdf(pdf.render(html))
 
@@ -348,11 +356,12 @@ BSc Computer Science, TU Berlin    2017
 
 
 def _session(monkeypatch, *, description="Backend role. Python.",
-             profile_files=DEFAULT_FILES, documents=None):
+             profile_files=DEFAULT_FILES, documents=None, cv_template=None, cover_template=None):
     """The build's two reads — the account and the posting — and its config read, with no database."""
     # `full_name` is where the document's filename comes from — the name the user typed at signup.
     # The profile schema was a second copy of the same fact; nothing reads it, and it is retired.
     user = type("U", (), {"id": uuid.uuid4(), "full_name": "Alice Example", "links": [],
+                          "cv_template": cv_template, "cover_template": cover_template,
                           "facts_md": "# Facts about Alice Example"})()
     job = FakeJob(description=description)
     state = type("S", (), {"applied_at": None})()
@@ -626,14 +635,14 @@ def test_the_date_reaches_the_cover_prompt_itself():
     from datetime import UTC, datetime
 
     client = FakeClient(TAILORED)
-    build.tailor_cover(client, base_document(), build.job_context(FakeJob()),
+    build.tailor_cover(client, build.job_context(FakeJob()), head=COVER.head, style=COVER.style,
                        template=COVER_PROMPT, model=MODEL)
 
     sent = client.calls[0]["messages"][0]["content"]
     assert datetime.now(UTC).strftime("%d %B %Y") in sent
 
 
-def test_the_cover_prompt_is_not_handed_a_text_dump_of_the_cv():
+def test_the_cover_prompt_is_not_handed_a_text_dump_of_the_cv(monkeypatch, fake_chrome):
     """The CV reaches the cover call as grounding, never as a plain-text extract in the prompt.
 
     It used to be both. The system prompt is the account's whole profile — tens of thousands of
@@ -642,37 +651,61 @@ def test_the_cover_prompt_is_not_handed_a_text_dump_of_the_cv():
     not to copy it wholesale. Measured over 8 postings on 2026-08-09, the model copied out of it in
     five letters of eight; with the extract gone, one of eight (t=-2.38).
 
-    The `<head>` is still read from the same document, because that is what carries the fonts and
-    the page rules, so this asserts the *prose* is absent rather than that the CV is unused.
+    Since 2026-11-07 not even the CV's `<head>` is read for a letter: the page rules come from the
+    letter's own look. Asserted through a whole build, so no path can carry the CV's prose back in.
     """
-    # A CV with a short head, so its body sits inside the 1,500 characters the extract used to
-    # take. The shipped template's head is longer than that on its own, which is worth recording:
-    # against a real CV the extract carried nothing the `<head>` substitution did not already
-    # carry, and was pure token cost.
-    cv = ("<html><head><style>p{margin:0}</style></head><body>"
-          "<div class='cv-name'>Alice Example</div>"
-          "<p>Rebuilt the settlement ledger so month-end close ran in nine minutes.</p>"
-          "<p>Led the migration off the vendor billing platform without a customer-visible gap.</p>"
-          "</body></html>")
     sentinel = "Rebuilt the settlement ledger so month-end close ran in nine minutes."
-
+    cv = TAILORED.replace("Senior backend engineer &mdash; payments and APIs.", sentinel)
+    session, user, _job, _state = _session(monkeypatch, profile_files={**DEFAULT_FILES, "base_cv.html": cv})
     client = FakeClient(TAILORED)
-    build.tailor_cover(client, cv, build.job_context(FakeJob()),
-                       facts_md="the candidate's grounding block", template=COVER_PROMPT, model=MODEL)
+
+    _ai(session, user, client, kind="cover")
 
     sent = client.calls[0]["messages"][0]["content"]
     assert sentinel not in sent, "a text extract of the CV reached the cover prompt"
     assert "<CV_HTML>" not in sent, "the marker was left unfilled in the prompt"
 
 
-def test_the_cover_prompt_still_carries_the_page_rules():
-    """The other half: dropping the extract must not drop the styling the letter is laid out with."""
-    client = FakeClient(TAILORED)
-    cv = base_document()
-    build.tailor_cover(client, cv, build.job_context(FakeJob()), template=COVER_PROMPT, model=MODEL)
+# ── the look they picked ──────────────────────────────────────────────────────────────────────
 
-    sent = client.calls[0]["messages"][0]["content"]
-    assert build.head_block(cv) in sent
+def test_an_instant_document_is_made_in_the_look_they_picked(monkeypatch, fake_chrome):
+    session, user, _job, _state = _session(monkeypatch, documents={"cv": CV_TEXT},
+                                           cv_template="ledger", cover_template="tabula")
+
+    run.run_instant(session, user.id, 7, kind="cv")
+    assert templates.find("cv", "ledger").style in fake_chrome["html"]
+    assert MERIDIAN not in fake_chrome["html"]
+
+    run.run_instant(session, user.id, 7, kind="cover")
+    assert templates.find("cover", "tabula").style in fake_chrome["html"]
+
+
+def test_an_ai_cv_is_laid_out_in_the_look_they_picked_whatever_its_base_cv_or_the_model_said(
+        monkeypatch, fake_chrome):
+    """The model writes the words; the look decides how they sit on the page."""
+    own = "<style>.cv-name{color:hotpink}</style>"
+    base_cv = TAILORED.replace("<head>", f"<head>{own}")
+    session, user, _job, _state = _session(
+        monkeypatch, profile_files={**DEFAULT_FILES, "base_cv.html": base_cv}, cv_template="kestrel")
+    client = FakeClient(TAILORED.replace("<head>", "<head><style>body{font-size:4pt}</style>"))
+
+    _ai(session, user, client)
+
+    assert templates.find("cv", "kestrel").style in fake_chrome["html"]
+    assert "hotpink" not in fake_chrome["html"] and "font-size:4pt" not in fake_chrome["html"]
+    assert "@page" not in client.calls[0]["messages"][0]["content"], "the model saw a stylesheet"
+
+
+def test_an_ai_cover_is_handed_its_looks_head_and_comes_back_in_it(monkeypatch, fake_chrome):
+    """`<HEAD_BLOCK>` is the letter's look, and a letter that came back in another style is put back."""
+    tabula = templates.find("cover", "tabula")
+    session, user, _job, _state = _session(monkeypatch, cover_template="tabula")
+    client = FakeClient(TAILORED.replace("<head>", "<head><style>body{font-size:4pt}</style>"))
+
+    _ai(session, user, client, kind="cover")
+
+    assert tabula.head in client.calls[0]["messages"][0]["content"]
+    assert tabula.style in fake_chrome["html"] and "font-size:4pt" not in fake_chrome["html"]
 
 
 # ── what must never reach a person ────────────────────────────────────────────────────────────

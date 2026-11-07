@@ -159,6 +159,19 @@ def test_an_instant_cv_is_asked_for_built_and_downloaded(api):
     assert "Built the billing service in Python and Postgres" in api.rendered[0]
 
 
+def test_the_look_picked_in_my_documents_is_the_look_the_next_document_is_made_in(api):
+    """The pick's producer and its consumer, end to end: saved by the API, read by the docgen worker."""
+    from libs import templates
+
+    assert api.http.put("/templates/cv", json={"id": "quill"}).status_code == 200
+    assert api.http.put("/templates/cover", json={"id": "prism"}).status_code == 200
+
+    for kind, look in (("cv", "quill"), ("cover", "prism")):
+        assert _ask(api, kind).status_code == 202
+        assert _work(api)
+        assert templates.find(kind, look).style in api.rendered[-1], f"the {kind} was not made in {look}"
+
+
 def test_making_a_document_is_not_applying(api):
     """Instant documents are free previews; only "Mark as applied" on the jobs page records an application."""
     from libs.db import find_one

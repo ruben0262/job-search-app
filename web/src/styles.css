@@ -571,9 +571,11 @@ button.danger {
 /* What is not the purple's own does not glow: a quiet button, a link that is a button, a word, a ×.
    **A new kind of plain button goes on this list**, or it borrows the purple's light at rest. */
 :is(.secondary, .danger, .danger-btn, .linklike, .title, .back, .chip, .tab, .toggle, .dismiss, .close, .add,
-    .bell, .bell-act, .bell-x, .bell-item, .alert-dismiss, .theme-toggle, .icon-btn, .word, .word button),
+    .bell, .bell-act, .bell-x, .bell-item, .alert-dismiss, .theme-toggle, .icon-btn, .word, .word button,
+    .look-card),
 :is(.secondary, .danger, .danger-btn, .linklike, .title, .back, .chip, .tab, .toggle, .dismiss, .close, .add,
-    .bell, .bell-act, .bell-x, .bell-item, .alert-dismiss, .theme-toggle, .icon-btn, .word, .word button):hover:not([disabled]) {
+    .bell, .bell-act, .bell-x, .bell-item, .alert-dismiss, .theme-toggle, .icon-btn, .word, .word button,
+    .look-card):hover:not([disabled]) {
   box-shadow: none;
 }
 
@@ -3583,4 +3585,105 @@ button.toggle[aria-pressed="true"]::before {
 
 .progress-note.no {
   color: var(--danger);
+}
+
+/* How a CV and a cover letter look (`templates.tsx`). A picture is the look's own page, 794 × 1123 px (A4
+   at 96 px to the inch), drawn at `--scale` of its size in a box of the page's shape at that scale. */
+.thumb {
+  --scale: 0.189;
+  display: block;
+  flex: none;
+  width: calc(794px * var(--scale));
+  height: calc(1123px * var(--scale));
+  overflow: hidden;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: #fff;
+  transition: border-color var(--fade) var(--ease);
+}
+
+.thumb iframe {
+  width: 794px;
+  height: 1123px;
+  border: 0;
+  transform: scale(var(--scale));
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+
+.looks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 1rem;
+  margin-top: 0.85rem;
+}
+
+.look {
+  display: flex;
+  gap: 0.9rem;
+  align-items: flex-start;
+}
+
+.look .thumb {
+  --scale: 0.121;
+}
+
+.look-about {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.look-name {
+  font-weight: 650;
+}
+
+.look-on {
+  color: var(--accent-text);
+}
+
+.look-group {
+  margin-top: 1.1rem;
+}
+
+.look-group h3 {
+  margin: 0 0 0.6rem;
+  font-size: 1rem;
+}
+
+/* One sector's looks in a row: side by side on a laptop, and on a phone the rest a swipe away. */
+.look-row {
+  display: flex;
+  gap: 0.9rem;
+  overflow-x: auto;
+  padding: 4px 4px 0.6rem;
+  scroll-snap-type: x proximity;
+}
+
+.look-card {
+  flex: none;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 0.3rem;
+  /* As wide as its picture: the words under it wrap to it. */
+  width: min-content;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-weight: 400;
+  text-align: left;
+  scroll-snap-align: start;
+}
+
+.look-card:hover:not([disabled]) .thumb {
+  border-color: var(--accent);
+}
+
+.look-card[aria-pressed="true"] .thumb {
+  outline: 3px solid var(--accent);
+  outline-offset: 1px;
 }

@@ -14,6 +14,109 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-07 — How a CV and a cover letter look: eight looks, picked in My documents, used by every build
+
+The owner asked for:
+- **CV and cover letter layouts that succeed, researched by job sector**, each an HTML template with a
+  name of its own.
+- **A picker in a modal**, with a small picture of each look. The most popular come first, then each
+  sector with its looks inside; one look can be in several sectors.
+- **One pick for CVs and one for cover letters.** Each account's documents are made in its picks and only
+  in them.
+
+The owner's answers when asked:
+- The picker lives in **My documents**, not My search, which keeps its one job and its one Save.
+- **"Most popular" is fixed from research**, not counted from picks.
+- **Single column only.**
+- The letter's date, company and subject are **filled when the letter is made**, never written into a
+  template.
+
+**A template is a stylesheet over one markup** (`libs/templates`). Every CV the platform makes carries
+the scaffold's fourteen class names: the instant one, and the AI one tailored from a person's
+`base_cv.html`. So a look is one HTML file whose `<head>` holds its style, and the writer fills the body.
+No prompt file was edited (§3a).
+- An instant document is written with the look's `<style>`.
+- An AI CV has its base CV's style taken off, as before, and the look's put back instead of the base
+  CV's.
+- An AI letter gets the look's `<head>` as `<HEAD_BLOCK>`, and the look's style is put back over whatever
+  the model returned.
+
+Meridian, the default, *is* the scaffold's style, read from the scaffold. An instant document made by
+somebody who never picks is byte-for-byte what it was.
+
+**The looks:**
+- **CV:** Meridian, Kestrel (compact, tech), Ledger (serif, finance and law), Prism (one colour band,
+  marketing), Tabula (dates in a left column, the German tabular CV), Halcyon (larger type, care and
+  teaching), Foundry (bold, one page, trades and hospitality) and Quill (academic, headings in the
+  margin).
+- **Letters:** Meridian, Kestrel, Ledger, Tabula (DIN 5008: company left, date right, bold subject),
+  Halcyon and Prism.
+
+The research, with its sources, is in `libs/templates/README.md`. In short:
+- Ladders' eye-tracking study: simple layouts with clear headings and bold titles over bullets; multi-column
+  among the weakest.
+- Kickresume's 2.1M CVs of 2025: single column, restrained colour.
+- ATS parsing reads columns row by row.
+- The sector norms: serif for finance and law, tabular dates for Germany, registration first for
+  nursing, one accent for creative work, one page for trades.
+
+**What the ATS check caught.** Every look was rendered through the real Chrome and held to docgen's own
+ATS check. Four failed on first drawing, each looking right on the page:
+- **Kestrel:** 1.4pt tracking on 9pt headings came out as "E X P E R I E N C E".
+- **Ledger:** synthesised small capitals came out as "A LEX M ORGAN": the candidate's own name, misread.
+- **Quill:** Chrome paints floats before the text around them, so the floated margin headings reached
+  the PDF's text all together, ahead of the name. Now a grid.
+- **Tabula:** the date sits left of the title it follows, so the text ran "Northwind LogisticsMar 2021".
+  Each title now ends in a kept space.
+
+`tests/test_templates.py` renders every look, the CVs also at two pages, and asserts four things. Each
+passes the ATS check, starts with the name, keeps each heading before its section, and is set in the face
+it asked for. The four rules are in the README for the next look.
+
+**The fonts.** The docgen image had Lato only, and Chrome falls back without a word. It now installs and
+`fc-list`-checks Liberation (Ledger, Foundry), Carlito (Kestrel, Tabula) and Caladea (Quill). A test
+fails on a face a look asks for that the image does not check. *Not built here:* this machine cannot run
+Docker. The packages and versions are Debian's, and were checked against the local apt.
+
+**The picker.** My documents has a card, "How your CVs and cover letters look": the two looks in use, each
+with Change. Change opens a sheet with "Most popular", then the 14 sectors, each look shown by its name
+only. The owner asked for the one-line descriptions to go; they went from the catalogue and the API too,
+since nothing read them any more.
+
+Each picture is the look in abstract shapes, not a document (owner: "no words or writing, just abstract
+design"). `templates.picture` lays one small fixed sketch out with the look's own stylesheet: a name, a
+contact strip, headings, a few entries and lines, in the class names every document carries. So the
+look's colours, bands, rules, type sizes and date column show. Every part is a rounded block in its own
+colour, with no character anywhere. A first version drew each word of a made-up sample as a bar; it read
+as redacted writing, and went. The sample now lives only in the tests that render every look. Each picture
+sits in a sandboxed frame and loads as it scrolls into view.
+
+A tap picks the look (`PUT /templates/{kind}`); the sheet closes and says what changed. `/templates` is
+read ahead after sign-in with the other tabs, so the card draws at once.
+
+**What the first pictures showed.** In three of them the contact line ran past the right margin. Rendered
+with a long email and three links, every new look's PDF lost the third link off the page (13 of 13); only
+the scaffold's Meridian wrapped. Each part had been kept whole, with nothing to break between them. The
+contact line now wraps between its parts, and inside a part wider than the line. A test renders every look
+with four links, one ~150 characters long, and finds each one in the PDF.
+
+**Removed:** `instant._LETTER_STYLE` (the cover looks replace it), and `build.head_block` (a letter's head
+is its look's, `Template.head`). `libs/templates/README.md` described the marker renderer deleted on
+2026-08-14; it now describes this.
+
+**Measured:**
+- Every look's sample is one page; the long sample is two or three.
+- All 14 pass the ATS check, with the face asked for embedded.
+- Eleven deliberate mutations (each defect above put back, a face left unchecked, a pick ignored by
+  instant, AI CV or AI letter, a pick not saved, the letter undated, the read-ahead dropped): eleven
+  caught. Then two more: the contact line kept whole, and a part unbreakable. Both caught.
+
+Gates: lint-imports 2 kept, 0 broken; ruff clean; schema on an empty db (27 collections); contract
+current (79 paths); build; pytest 1,400 passed, 3 skipped (no Postgres copy source, no reference checkout,
+an empty parameter set).
+
+---
+
 ## 2026-11-07 — The landing page, for somebody scrolling past: what they get, in big titles and moving pictures
 
 The owner asked for:

@@ -3453,6 +3453,103 @@
         "title": "TelegramState",
         "type": "object"
       },
+      "TemplateCard": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "TemplateCard",
+        "type": "object"
+      },
+      "TemplateChoice": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "TemplateChoice",
+        "type": "object"
+      },
+      "TemplateGroup": {
+        "properties": {
+          "templates": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Templates",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "templates"
+        ],
+        "title": "TemplateGroup",
+        "type": "object"
+      },
+      "TemplateShelf": {
+        "properties": {
+          "chosen": {
+            "title": "Chosen",
+            "type": "string"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/TemplateGroup"
+            },
+            "title": "Groups",
+            "type": "array"
+          },
+          "templates": {
+            "items": {
+              "$ref": "#/components/schemas/TemplateCard"
+            },
+            "title": "Templates",
+            "type": "array"
+          }
+        },
+        "required": [
+          "chosen",
+          "templates",
+          "groups"
+        ],
+        "title": "TemplateShelf",
+        "type": "object"
+      },
+      "Templates": {
+        "properties": {
+          "cover": {
+            "$ref": "#/components/schemas/TemplateShelf"
+          },
+          "cv": {
+            "$ref": "#/components/schemas/TemplateShelf"
+          }
+        },
+        "required": [
+          "cv",
+          "cover"
+        ],
+        "title": "Templates",
+        "type": "object"
+      },
       "TypedJob": {
         "description": "A job as the person wrote it in, where its page would not say all of it.",
         "properties": {
@@ -7311,6 +7408,141 @@
         "summary": "Test",
         "tags": [
           "telegram"
+        ]
+      }
+    },
+    "/templates": {
+      "get": {
+        "description": "Every look, the most popular first and then by sector, and the one of each kind they use.",
+        "operationId": "list_templates_templates_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Templates"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Templates",
+        "tags": [
+          "templates"
+        ]
+      }
+    },
+    "/templates/{kind}": {
+      "put": {
+        "description": "Every document of this kind made from now on is made in this look.",
+        "operationId": "choose_template_templates__kind__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "enum": [
+                "cv",
+                "cover"
+              ],
+              "title": "Kind",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TemplateChoice"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Templates"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Choose Template",
+        "tags": [
+          "templates"
+        ]
+      }
+    },
+    "/templates/{kind}/{template_id}/preview": {
+      "get": {
+        "description": "The picture in the picker: this look drawn in abstract shapes, with nothing written in it.\n\nOpen to anyone, as it holds nobody's data, and cached for an hour since it changes only on a deploy.",
+        "operationId": "preview_template_templates__kind___template_id__preview_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "enum": [
+                "cv",
+                "cover"
+              ],
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The look, drawn."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Template",
+        "tags": [
+          "templates"
         ]
       }
     }

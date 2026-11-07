@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<!--
+  HALCYON: a CV template (libs/templates/README.md). Only the <head> is used; the CV is written into the
+  body when it is made. Healthcare, care, teaching and public service: larger type and more air, so a
+  panel reading forty of them can find a registration or a qualification at a glance. One teal, a bar
+  beside the name and each heading.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Halcyon</title>
+<style>
+@page { size: A4; margin: 18mm 20mm 17mm 20mm; }
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: Lato, 'Liberation Sans', Arial, sans-serif;
+  font-size: 10.5pt;
+  color: #1f2933;
+  line-height: 1.42;
+}
+
+a { color: #0f766e; text-decoration: none; }
+
+.cv-header { border-left: 5pt solid #0f766e; padding-left: 10pt; }
+.cv-name { font-size: 24pt; font-weight: 700; color: #134e4a; line-height: 1.1; }
+.cv-contact { margin-top: 4pt; font-size: 9.5pt; color: #3e4c59; display: flex; flex-wrap: wrap; column-gap: 12pt; }
+.cv-contact span { overflow-wrap: anywhere; }
+.header-rule { border: none; margin: 10pt 0 0; }
+
+.profile { margin-bottom: 2pt; }
+
+.section { margin-top: 11pt; }
+.section-title {
+  font-size: 11.5pt;
+  font-weight: 700;
+  color: #134e4a;
+  background: #f0fdfa;
+  border-left: 3pt solid #0f766e;
+  padding: 2pt 7pt;
+  margin-bottom: 6pt;
+}
+
+.entry { break-inside: avoid; page-break-inside: avoid; margin-bottom: 7pt; }
+.entry-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8pt; }
+.entry-title { font-weight: 700; flex: 1; line-height: 1.25; }
+.entry-date { font-size: 9.5pt; color: #52606d; white-space: nowrap; flex-shrink: 0; }
+.entry-desc { margin-top: 1pt; }
+
+.entry ul, .section > ul, .plain-list { padding-left: 14pt; margin-top: 2pt; }
+li { margin-bottom: 2pt; }
+</style>
+</head>
+<body></body>
+</html>

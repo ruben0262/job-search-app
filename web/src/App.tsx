@@ -22,6 +22,7 @@ import { Verify } from "./pages/Verify";
 import { REVIEW, WordsPage } from "./pages/WordsPage";
 import { NotificationBell } from "./notifications";
 import { PLACES } from "./places";
+import { TEMPLATES } from "./templates";
 import { ThemeToggle } from "./theme";
 import { Brand } from "./wheel";
 
@@ -90,7 +91,7 @@ export function App() {
   const ready = session.state === "in" && session.dashboard.stage === "ready";
   const admin = ready && session.dashboard.is_admin;
   useEffect(() => {
-    if (ready) readAhead([ADDED, APPLIED, REVIEW, DOCUMENTS, SAVED, HISTORY, IDENTITY, ACCOUNT, CREDENTIALS]);
+    if (ready) readAhead([ADDED, APPLIED, REVIEW, DOCUMENTS, SAVED, HISTORY, IDENTITY, TEMPLATES, ACCOUNT, CREDENTIALS]);
   }, [ready]);
   // And Admin's, for whoever sees it: its first open draws at once too.
   useEffect(() => {

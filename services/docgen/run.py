@@ -12,6 +12,7 @@ import re
 import uuid as _uuid
 from dataclasses import dataclass
 
+from libs import templates
 from libs.db import get
 from libs.db.models import CorpusJob, User
 from libs.documents import instant
@@ -53,7 +54,7 @@ def run_instant(db, user_id: _uuid.UUID, job_id: int, *, kind: str) -> Built:
     documents = documents_of(db, user_id)
     if not (documents.get("cv") or documents.get("linkedin")):
         raise NotBuildable("upload your CV first — the instant version is built from it")
-    html = instant.render(kind, documents=documents, job=job,
+    html = instant.render(kind, documents=documents, job=job, template=templates.chosen(user, kind),
                           identity={"full_name": user.full_name, "links": user.links or []})
     # Their own text, so invisible characters a PDF export left in it are dropped, not refused.
     document, report = _render(build.strip_hidden(html), kind=kind)
@@ -91,13 +92,15 @@ def run_ai(db, user_id: _uuid.UUID, job_id: int, *, client, model: str, kind: st
     # No score and no fit notes since the model was switched off: what the build was given then too.
     context = build.job_context(job, score=None, fit_notes=None,
                                 salary_bands=_salary_bands(db, user_id))
+    # The look they picked: the model writes the words, the template lays them out.
+    look = templates.chosen(user, kind)
     if kind == "cover":
         document, report, calls = _cover(
-            client, context, model=model, base_cv=base_cv, grounding=grounding,
+            client, context, model=model, look=look, grounding=grounding,
             template=files.read("tailor_cover.md"))
     else:
         document, report, calls = _tailor_until_it_fits(
-            client, context, model=model, base_cv=base_cv, facts_md=grounding,
+            client, context, model=model, base_cv=base_cv, style=look.style, facts_md=grounding,
             template=files.read("tailor_cv.md"), role_angles=files.read("08-role-angles.md"))
     return _done(db, user, job, kind=kind, mode="ai", document=document, report=report,
                  calls=calls)
@@ -117,15 +120,15 @@ def _done(db, user: User, job: CorpusJob, *, kind: str, mode: str, document: byt
                  revised=calls > 1, ats_ok=report.ats_ok)
 
 
-def _cover(client, context: str, *, model: str, base_cv: str, grounding: str | None,
+def _cover(client, context: str, *, model: str, look: templates.Template, grounding: str | None,
            template: str | None = None) -> tuple[bytes, pdf.PdfReport, int]:
     """One call, no revision loop."""
-    letter = build.tailor_cover(client, base_cv, context, model=model, facts_md=grounding,
-                                template=template)
+    letter = build.tailor_cover(client, context, model=model, head=look.head, style=look.style,
+                                facts_md=grounding, template=template)
     return (*_render(letter, kind="cover"), 1)
 
 
-def _tailor_until_it_fits(client, context: str, *, model: str, base_cv: str,
+def _tailor_until_it_fits(client, context: str, *, model: str, base_cv: str, style: str,
                           facts_md: str | None, template: str | None = None,
                           role_angles: str | None = None) -> tuple[bytes, pdf.PdfReport, int]:
     """Tailor, render once, and if the PDF is too long, say so once and tailor again.
@@ -133,7 +136,7 @@ def _tailor_until_it_fits(client, context: str, *, model: str, base_cv: str,
     The document that gets delivered is the one that was measured — there is no separate probe
     render. A CV that fits is one render; only a CV that came back too long is two.
     """
-    html = build.tailor(client, base_cv, context, model=model, facts_md=facts_md,
+    html = build.tailor(client, base_cv, context, model=model, style=style, facts_md=facts_md,
                         template=template, role_angles=role_angles)
     document, report = _render(html, kind="cv")
 
@@ -142,7 +145,7 @@ def _tailor_until_it_fits(client, context: str, *, model: str, base_cv: str,
         return document, report, 1
 
     logger.info("docgen: %s pages, asking for one revision", report.pages)
-    retried = build.tailor(client, base_cv, context, model=model, facts_md=facts_md,
+    retried = build.tailor(client, base_cv, context, model=model, style=style, facts_md=facts_md,
                            template=template, role_angles=role_angles, feedback=feedback)
     second, second_report = _render(retried, kind="cv")
 

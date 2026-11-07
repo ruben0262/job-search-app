@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<!--
+  FOUNDRY: a CV template (libs/templates/README.md). Only the <head> is used; the CV is written into the
+  body when it is made. Trades, construction, logistics, hospitality and retail: a one-page CV read in a
+  hurry, often on a phone. Plain heavy type, every heading a dark bar, licences and tickets easy to find.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Foundry</title>
+<style>
+@page { size: A4; margin: 15mm 16mm 15mm 16mm; }
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: 'Liberation Sans', Arial, Helvetica, sans-serif;
+  font-size: 10.5pt;
+  color: #111827;
+  line-height: 1.35;
+}
+
+a { color: inherit; text-decoration: none; }
+
+.cv-name { font-size: 24pt; font-weight: 700; text-transform: uppercase; letter-spacing: 1pt; line-height: 1.05; }
+.cv-contact { margin-top: 4pt; font-size: 10pt; font-weight: 700; color: #374151; display: flex; flex-wrap: wrap; column-gap: 12pt; }
+.cv-contact span { overflow-wrap: anywhere; }
+.header-rule { border: none; border-top: 3pt solid #111827; margin: 6pt 0 8pt; }
+
+.profile { margin-bottom: 2pt; }
+
+.section { margin-top: 10pt; }
+.section-title {
+  background: #1f2937;
+  color: #fff;
+  font-size: 10.5pt;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1pt;
+  padding: 2.5pt 6pt;
+  margin-bottom: 5pt;
+}
+
+.entry { break-inside: avoid; page-break-inside: avoid; margin-bottom: 6pt; }
+.entry-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8pt; }
+.entry-title { font-weight: 700; font-size: 11pt; flex: 1; line-height: 1.2; }
+.entry-date { font-weight: 700; color: #374151; white-space: nowrap; flex-shrink: 0; }
+.entry-desc { margin-top: 1pt; }
+
+.entry ul, .section > ul, .plain-list { padding-left: 13pt; margin-top: 2pt; list-style-type: square; }
+li { margin-bottom: 2pt; }
+</style>
+</head>
+<body></body>
+</html>

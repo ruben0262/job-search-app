@@ -11,15 +11,22 @@ WORKDIR /app
 # key to trust and no repository that can disappear. `--print-to-pdf` is the only feature used here
 # and the two browsers implement it identically.
 #
-# fonts-lato is NOT optional — `libs/templates/base_cv.html` asks for Lato by name and Chrome falls
-# back to Arial in silence when it is missing, which produces a CV that is correct in every respect
-# except the one anybody would notice. The `fc-list` check is what turns that silent fallback into a
-# build failure here, where somebody is watching.
+# Every face a template asks for first is NOT optional (`libs/templates`): Lato (Meridian, Halcyon,
+# Prism), Liberation Serif and Sans (Ledger, Foundry), Carlito (Kestrel, Tabula), Caladea (Quill).
+# Chrome falls back to another face in silence when one is missing, which produces a CV that is correct
+# in every respect except the one anybody would notice. The `fc-list` checks are what turn that silent
+# fallback into a build failure here, where somebody is watching; `tests/test_templates.py` fails when
+# a template names a face that is not checked here.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends chromium fonts-lato fontconfig \
+    && apt-get install -y --no-install-recommends chromium fontconfig fonts-lato fonts-liberation \
+       fonts-crosextra-carlito fonts-crosextra-caladea \
     && rm -rf /var/lib/apt/lists/* \
     && fc-cache -f \
-    && fc-list | grep -qi lato
+    && fc-list | grep -qi "lato" \
+    && fc-list | grep -qi "liberation serif" \
+    && fc-list | grep -qi "liberation sans" \
+    && fc-list | grep -qi "carlito" \
+    && fc-list | grep -qi "caladea"
 
 ENV CHROME_BIN=/usr/bin/chromium
 

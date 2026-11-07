@@ -3223,6 +3223,33 @@ work, or opening and closing sessions faster, would help):
 42. **Shorter sweep overlap** (item 33). Asked fresh, LinkedIn's list held a job within ~1–8 minutes of its
     posting; each sweep re-reads 15 minutes. Measure before shortening: it is proxy capacity for texts.
 
+**How a CV and a cover letter look (owner, 2026-11-07; CHANGELOG has the research and the numbers)**
+
+43. **Done: eight looks, picked in My documents** (`libs/templates`). One for CVs and one for letters per
+    account. Most popular first, then 14 sectors; single column only. Every build uses the pick: instant,
+    AI CV and AI letter.
+
+**Open, from 2026-11-07**
+
+44. **An AI letter is not told the letter frame's class names.** `tailor_cover.md` gets the look's `<head>`
+    as `<HEAD_BLOCK>`, and the look's style is put back over the reply. But the prompt never names
+    `letter-to`, `letter-date` or `letter-subject`, so a letter the model writes may place its date and
+    subject its own way. Recommendation: in the CV and letter prompt work the owner has scheduled next,
+    hand the model the frame's skeleton. That is a prompt change: approval, an A/B and a CHANGELOG line
+    (§3a).
+45. **AI documents in the new looks are unmeasured.** An AI CV's text is unchanged by a look, but its
+    length on the page is not. Ledger and Tabula fit fewer lines than Meridian, so the two-page revision
+    may run more often. Recommendation: before the prompt work, count `revised` per look in `docgen.built`
+    on the server.
+46. **A person's own `base_cv.html` no longer decides how their AI CV looks**: the pick does, by the
+    owner's rule that generation uses only the picked look. The file still decides what the CV says. The
+    accounts measured in 2026-08 carried the scaffold's style, which is Meridian, the default. An account
+    whose setup wrote it a style of its own now gets Meridian until it picks. Recommendation: none, unless
+    such an account turns up.
+47. **The docgen image's new fonts were not built here** (no Docker on the laptop). The `fc-list` checks
+    fail the build if a face is missing. Check: `deploy/deploy.sh docgen` succeeds, then one CV in Ledger
+    and one in Kestrel come out in a serif and in Carlito.
+
 ## Phase 9 — MongoDB instead of Postgres (added 2026-10-30)
 
 **Why.** The owner's decision: users, their logins and everything stored about them live in MongoDB

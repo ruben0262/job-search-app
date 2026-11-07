@@ -31,6 +31,7 @@ from services.api.saved_routes import router as saved_router
 from services.api.suggestion_routes import router as suggestion_router
 from services.api.support_routes import router as support_router
 from services.api.telegram_routes import router as telegram_router
+from services.api.template_routes import router as template_router
 
 configure("api")
 # Before any route can hold a plaintext credential.
@@ -62,6 +63,7 @@ app.include_router(notification_router)
 app.include_router(suggestion_router)
 app.include_router(support_router)
 app.include_router(telegram_router)
+app.include_router(template_router)
 
 
 @app.get("/health")

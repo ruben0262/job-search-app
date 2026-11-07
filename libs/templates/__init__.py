@@ -1,36 +1,43 @@
-"""The CV layout, and the loader that reads it.
+"""The looks a CV and a cover letter can have, and the one each person picked.
 
-**There is no template here any more.** `base_cv.html` in this package was the marker-filled layout
-`cv.py` rendered from `ProfileSchema` — `<!--NAME-->`, `<!--EXPERIENCE-->` and the rest. That path is
-gone: a CV is now built from the person's own `base_cv.html` profile file, seeded from
-`libs/scaffolds/base_cv.html` and written for them by the setup agent (`services/docgen/run.py`).
+**A template is a stylesheet over one markup.** Every CV the platform makes, the instant one written by
+`libs.documents.instant` and the AI one tailored from a person's `base_cv.html`, carries the same class
+names (`cv-header`, `section-title`, `entry`, `entry-date`…), and every instant letter the same frame
+(`letter-to`, `letter-date`, `letter-subject`, `letter`). So a template is one HTML file in `cv/` or
+`cover/` whose `<head>` holds its look and nothing else: the writer fills the body when the document is
+made, and the template lays it out. Each person has one of each, `User.cv_template` and
+`User.cover_template` (owner, 2026-11-07); none picked is `DEFAULT`.
 
-Deleted 2026-08-14, with the evidence, because it was the second copy of the same thing and the
-copy nobody used. Measured on the live platform first: both accounts' base CVs carry the scaffold's
-fourteen class names, its `@page` rule and its typography, and neither carries this file's — which
-had seven of those classes and no `.entry`, `.profile` or `.competencies` at all. Its only caller
-was `services.docgen.build.template_base()`, whose only caller was a test.
-
-`load()` stays. It is the newline-normalising reader for anything else this package comes to hold,
-and it is what `tests/test_cv_template.py` uses to read the scaffold the same way docgen does.
+Meridian, the CV everyone had before templates, is the scaffold itself (`SCAFFOLD_CV`): read here, never
+written (CLAUDE.md §3a). Why every template is a single column, and what each sector expects, with the
+sources: README.md.
 """
 from __future__ import annotations
 
+import logging
 import re
+from dataclasses import dataclass
 from functools import lru_cache
+from html import escape
 from pathlib import Path
 
+logger = logging.getLogger(__name__)
+
+_HERE = Path(__file__).resolve().parent
+
 # The one base CV a new account is seeded with, and the one every user's own copy descends from.
-SCAFFOLD_CV = Path(__file__).resolve().parents[1] / "scaffolds" / "base_cv.html"
+SCAFFOLD_CV = _HERE.parents[0] / "scaffolds" / "base_cv.html"
 
 
-@lru_cache(maxsize=4)
+@lru_cache(maxsize=64)
 def load(path: Path | str) -> str:
     """Read a template file, with newlines normalised."""
     return Path(path).read_text(encoding="utf-8").replace("\r\n", "\n")
 
 
 STYLE = re.compile(r"(?is)<style\b.*?</style>")
+_HEAD = re.compile(r"(?is)<head\b.*?</head>")
+_PAGE_MARGIN = re.compile(r"(?is)@page\s*{[^}]*?\bmargin\s*:\s*([^;}]+)")
 
 
 def split_style(html: str) -> tuple[str, str]:
@@ -44,3 +51,202 @@ def split_style(html: str) -> tuple[str, str]:
     html = re.sub(r"(?s)<!--.*?-->", "", html)
     match = STYLE.search(html)
     return (html[:match.start()] + html[match.end():], match.group(0)) if match else (html, "")
+
+
+KINDS = ("cv", "cover")
+# Where each kind's pick is kept on the account.
+FIELD = {"cv": "cv_template", "cover": "cover_template"}
+
+# The sectors the picker groups templates under, in the order it shows them.
+SECTORS = (
+    "IT and software", "Engineering", "Finance and accounting", "Business and management",
+    "Sales and customer service", "Marketing, media and design", "Healthcare and care",
+    "Teaching and education", "Science and research", "Law", "Government and charities",
+    "Hospitality and retail", "Building, trades and logistics", "Office and admin",
+)
+POPULAR_TITLE = "Most popular"
+
+
+@dataclass(frozen=True)
+class Template:
+    kind: str
+    id: str
+    name: str
+    sectors: tuple[str, ...]
+    path: Path
+
+    @property
+    def style(self) -> str:
+        """Its `<style>` block: what an AI CV is given back after the model wrote its text."""
+        return split_style(load(self.path))[1]
+
+    @property
+    def head(self) -> str:
+        """Its `<head>`: what an AI cover letter is handed as `<HEAD_BLOCK>`."""
+        match = _HEAD.search(re.sub(r"(?s)<!--.*?-->", "", load(self.path)))
+        return match.group(0) if match else f"<head>\n{self.style}\n</head>"
+
+    @property
+    def page_margin(self) -> str:
+        """The margin its `@page` rule gives the printed page. A screen has no page, so a preview pads
+        the body by this instead: without it, the text runs to the very edge of the picture."""
+        match = _PAGE_MARGIN.search(self.style)
+        if match is None:
+            logger.warning("template %s/%s has no @page margin; its preview is drawn with 18mm",
+                           self.kind, self.id)
+        return match.group(1).strip() if match else "18mm"
+
+
+def _cv(id_: str, name: str, *sectors: str) -> Template:
+    path = SCAFFOLD_CV if id_ == "meridian" else _HERE / "cv" / f"{id_}.html"
+    return Template("cv", id_, name, sectors, path)
+
+
+def _cover(id_: str, name: str, *sectors: str) -> Template:
+    return Template("cover", id_, name, sectors, _HERE / "cover" / f"{id_}.html")
+
+
+# Every look, in the order research ranks them (README.md); each sector lists its own in this order.
+CATALOGUE: tuple[Template, ...] = (
+    _cv("meridian", "Meridian",
+        "IT and software", "Engineering", "Business and management", "Sales and customer service",
+        "Science and research", "Office and admin"),
+    _cv("kestrel", "Kestrel",
+        "IT and software", "Engineering", "Business and management", "Marketing, media and design",
+        "Science and research"),
+    _cv("ledger", "Ledger",
+        "Finance and accounting", "Business and management", "Law", "Government and charities"),
+    _cv("prism", "Prism",
+        "Marketing, media and design", "Sales and customer service", "Hospitality and retail"),
+    _cv("tabula", "Tabula",
+        "Engineering", "Finance and accounting", "Government and charities",
+        "Building, trades and logistics", "Office and admin"),
+    _cv("halcyon", "Halcyon",
+        "Sales and customer service", "Healthcare and care", "Teaching and education",
+        "Government and charities", "Hospitality and retail"),
+    _cv("foundry", "Foundry",
+        "Hospitality and retail", "Building, trades and logistics"),
+    _cv("quill", "Quill",
+        "Teaching and education", "Science and research", "Law"),
+
+    _cover("meridian", "Meridian",
+           "IT and software", "Engineering", "Business and management", "Sales and customer service",
+           "Teaching and education", "Science and research", "Office and admin"),
+    _cover("kestrel", "Kestrel",
+           "IT and software", "Engineering", "Business and management", "Marketing, media and design",
+           "Science and research"),
+    _cover("ledger", "Ledger",
+           "Finance and accounting", "Business and management", "Law", "Government and charities"),
+    _cover("tabula", "Tabula",
+           "Engineering", "Finance and accounting", "Healthcare and care", "Government and charities",
+           "Building, trades and logistics", "Office and admin"),
+    _cover("halcyon", "Halcyon",
+           "Sales and customer service", "Healthcare and care", "Teaching and education",
+           "Government and charities", "Hospitality and retail"),
+    _cover("prism", "Prism",
+           "Marketing, media and design", "Sales and customer service", "Hospitality and retail"),
+)
+
+# What research shows is used most (owner, 2026-11-07: fixed, not counted from picks). README.md has why.
+POPULAR = {"cv": ("meridian", "kestrel", "ledger", "prism"),
+           "cover": ("meridian", "kestrel", "ledger", "tabula")}
+# Somebody who never picked has what everyone had before templates.
+DEFAULT = "meridian"
+
+
+def find(kind: str, template_id: str | None) -> Template | None:
+    return next((each for each in CATALOGUE if each.kind == kind and each.id == template_id), None)
+
+
+def of_kind(kind: str) -> list[Template]:
+    return [each for each in CATALOGUE if each.kind == kind]
+
+
+def chosen(user, kind: str) -> Template:
+    """The look this person's documents of `kind` are made in."""
+    picked = getattr(user, FIELD[kind])
+    template = find(kind, picked or DEFAULT)
+    if template is None:
+        # A template taken out of the catalogue after somebody picked it.
+        logger.warning("templates: %s picked %s template %r, which is gone; making it in %s",
+                       getattr(user, "id", "?"), kind, picked, DEFAULT)
+        template = find(kind, DEFAULT)
+    return template
+
+
+def groups(kind: str) -> list[tuple[str, list[str]]]:
+    """What the picker shows, in order: the most popular, then each sector with its templates."""
+    shelf = [(POPULAR_TITLE, list(POPULAR[kind]))]
+    for sector in SECTORS:
+        ids = [each.id for each in of_kind(kind) if sector in each.sectors]
+        if ids:
+            shelf.append((sector, ids))
+    return shelf
+
+
+# ── the picture of a look ─────────────────────────────────────────────────────────────────────
+
+# Every shape in a picture: a rounded block in its element's own colour, sized by its own type. Lines of
+# writing are faint; names, headings, titles and dates are solid. A contact line's separators are drawn as
+# gaps, never as characters.
+_PICTURE_STYLE = ("<style>@media screen { html { background: #fff; } body { padding: %s; } "
+                  "i { display: inline-block; vertical-align: middle; height: 0.75em; "
+                  "border-radius: 0.375em; background: currentColor; } i.t { opacity: 0.22; } "
+                  '.cv-contact span::before { content: "" !important; } }</style>')
+
+
+def _shape(width: str, line: bool = False) -> str:
+    return f'<i{' class="t"' if line else ""} style="width: {width}"></i>'
+
+
+def _lines(*widths: str) -> str:
+    return "<br>".join(_shape(width, line=True) for width in widths)
+
+
+def _items(*widths: str) -> str:
+    return "".join(f"<li>{_shape(width, line=True)}</li>" for width in widths)
+
+
+def _entry(title: str, date: str, *bullets: str) -> str:
+    items = f"<ul>{_items(*bullets)}</ul>" if bullets else ""
+    return (f'<div class="entry"><div class="entry-head"><span class="entry-title">{_shape(title)}</span>'
+            f'<span class="entry-date">{_shape(date)}</span></div>{items}</div>')
+
+
+def _section(width: str, *body: str) -> str:
+    return f'<div class="section"><div class="section-title">{_shape(width)}</div>{"".join(body)}</div>'
+
+
+_HEADER = ('<div class="cv-header"><div class="cv-name">' + _shape("58mm") + '</div><div class="cv-contact">'
+           + "".join(f"<span>{_shape(width)}</span>" for width in ("16mm", "20mm", "28mm", "24mm"))
+           + '</div></div><hr class="header-rule">')
+
+# The same few parts for every look, in the markup every document carries. Each look's own stylesheet
+# lays them out, so a picture shows its colours, type sizes, rules and spacing, and nothing else.
+_SKETCH = {
+    "cv": _HEADER + f'<p class="profile">{_lines("94%", "86%", "48%")}</p>'
+          + _section("30mm", _entry("62%", "22mm", "92%", "84%", "88%"),
+                     _entry("54%", "22mm", "86%", "74%", "90%"), _entry("46%", "22mm", "80%", "68%"),
+                     _entry("52%", "22mm", "88%", "72%"))
+          + _section("24mm", _entry("64%", "16mm"), _entry("56%", "16mm"))
+          + _section("18mm", f'<p class="entry-desc">{_lines("96%", "62%")}</p>')
+          + _section("22mm", f'<ul class="plain-list"><li>{_shape("54%", line=True)}</li></ul>'),
+    "cover": _HEADER + '<div class="letter-meta"><p class="letter-to">' + _lines("34mm", "26mm") + "</p>"
+             + f'<p class="letter-date">{_shape("22mm", line=True)}</p></div>'
+             + f'<p class="letter-subject">{_shape("46%")}</p><div class="letter">'
+             + f'<p>{_shape("24%", line=True)}</p><p>{_lines("96%", "90%", "58%")}</p>'
+             + f'<p>{_lines("94%", "40%")}</p>'
+             + f'<ul>{_items("84%", "76%", "88%")}</ul>'
+             + f'<p>{_lines("92%", "66%")}</p><p class="closing">{_shape("18%", line=True)}</p>'
+             + f'<p class="signature">{_shape("26%")}</p></div>',
+}
+
+
+def picture(template: Template) -> str:
+    """The look drawn, as the picker shows it (owner, 2026-11-07): abstract shapes in the look's own
+    colours and sizes, with no word, letter or character in it. A screen has no page, so the page's
+    margins pad the body."""
+    return ('<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="UTF-8">\n'
+            f"<title>{escape(template.name)}</title>\n{template.style}\n"
+            f"{_PICTURE_STYLE % template.page_margin}\n</head>\n<body>\n{_SKETCH[template.kind]}\n"
+            "</body>\n</html>\n")

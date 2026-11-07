@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<!--
+  TABULA: a CV template (libs/templates/README.md). Only the <head> is used; the CV is written into the
+  body when it is made. The tabular CV German, Austrian, Swiss and much of continental Europe read:
+  each entry's dates in a column on the left, what was done on the right, newest first.
+
+  It is a grid, not a table, and still one column of reading: the dates are in the markup after the
+  title they belong to, so text read off the PDF keeps each title with its own dates.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Tabula</title>
+<style>
+@page { size: A4; margin: 18mm 18mm 16mm 18mm; }
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: Carlito, Calibri, 'Liberation Sans', Arial, sans-serif;
+  font-size: 10.5pt;
+  color: #1f2933;
+  line-height: 1.35;
+}
+
+a { color: #1f4e79; text-decoration: none; }
+
+.cv-name { font-size: 24pt; font-weight: 700; color: #1f4e79; line-height: 1.05; }
+.cv-contact { margin-top: 4pt; font-size: 9.5pt; color: #3e4c59; display: flex; flex-wrap: wrap; column-gap: 12pt; }
+.cv-contact span { overflow-wrap: anywhere; }
+.header-rule { border: none; border-top: 2pt solid #1f4e79; margin: 6pt 0 8pt; }
+
+/* Everything that is not a heading starts where an entry's text starts: past the dates' column. */
+.profile, .section > ul, .section > .entry-desc, .section > p { margin-left: 34mm; }
+.profile { margin-bottom: 3pt; }
+
+.section { margin-top: 10pt; }
+.section-title {
+  font-size: 12pt;
+  font-weight: 700;
+  color: #1f4e79;
+  border-bottom: 0.5pt solid #9aa5b1;
+  padding-bottom: 2pt;
+  margin-bottom: 5pt;
+}
+
+.entry {
+  display: grid;
+  grid-template-columns: 30mm 1fr;
+  column-gap: 4mm;
+  break-inside: avoid;
+  page-break-inside: avoid;
+  margin-bottom: 6pt;
+}
+.entry-head { display: contents; }
+.entry-date { grid-column: 1; grid-row: 1; font-size: 9.5pt; color: #3e4c59; padding-top: 0.5pt; }
+.entry-title { grid-column: 2; grid-row: 1; font-weight: 700; line-height: 1.25; }
+.entry-title::after { content: " "; white-space: pre; }
+.entry > :not(.entry-head) { grid-column: 2; }
+.entry-desc { margin-top: 1pt; }
+
+.entry ul, .section > ul { padding-left: 12pt; margin-top: 2pt; }
+li { margin-bottom: 1.5pt; }
+</style>
+</head>
+<body></body>
+</html>

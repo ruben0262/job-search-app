@@ -1,44 +1,50 @@
 """The free CV and cover letter, built by code from the person's own documents. No AI.
 
 Every sentence about the person is a line of their own documents, picked and ordered by how much it
-shares with the posting. The only words of ours are the frame: section headings, a greeting, a close.
-The look is the scaffold CV's, whose `<style>` block is read at runtime so the two cannot drift; the
-scaffold itself is a prompt file and is never written to (CLAUDE.md §3a).
+shares with the posting. The only words of ours are the frame: section headings, a greeting, a close,
+and on a letter the date, the company and the subject, each from the job as it is made. The look is
+the template they picked (`libs.templates`), whose `<style>` block is read at runtime; Meridian's is
+the scaffold's, a prompt file never written to (CLAUDE.md §3a).
 """
 from __future__ import annotations
 
 import re
 from dataclasses import replace
+from datetime import UTC, datetime
 from html import escape
 
+from libs import templates
 from libs.documents.read import Entry, Facts, fold, read, texts, words
-from libs.templates import SCAFFOLD_CV, load, split_style
+from libs.templates import Template
 
 # How much the CV keeps: the most relevant jobs, the most relevant bullets of each.
 ENTRIES_SHOWN, BULLETS_SHOWN = 5, 4
 # How many of their achievements the cover letter quotes.
 ACHIEVEMENTS = 3
 
-_LETTER_STYLE = ("<style>body { font-size: 10.5pt; line-height: 1.45; } "
-                 ".letter p, .letter ul { margin: 0 0 9pt 0; } .letter ul { padding-left: 14pt; }</style>")
 
-
-def render(kind: str, *, documents: dict[str, list[str]], identity: dict, job) -> str:
-    """A complete HTML document for one job: `kind` is "cv" or "cover".
+def render(kind: str, *, documents: dict[str, list[str]], identity: dict, job,
+           template: Template | None = None) -> str:
+    """A complete HTML document for one job: `kind` is "cv" or "cover", laid out by `template`, the
+    default look when none is given.
 
     `documents` maps a document kind to its texts, every CV switched on among them; `identity`
     carries `full_name` and `links`, and `job` has `title`, `company`, `description`, `location` and `url`.
     """
+    template = template or templates.find(kind, templates.DEFAULT)
+    if template is None or template.kind != kind:
+        raise ValueError(f"unknown document kind {kind!r}, or a look of another kind: expected 'cv' or "
+                         "'cover', and a template of that kind")
     facts = read(documents)
     asked = words(f"{getattr(job, 'title', '') or ''} {getattr(job, 'description', '') or ''}")
     if kind == "cv":
-        return _cv(facts, identity, job, asked, mine=words("\n".join(texts(documents, *documents))))
-    if kind == "cover":
-        return _cover(facts, identity, job, asked)
-    raise ValueError(f"unknown document kind {kind!r}: expected 'cv' or 'cover'")
+        return _cv(facts, identity, job, asked, template,
+                   mine=words("\n".join(texts(documents, *documents))))
+    return _cover(facts, identity, job, asked, template)
 
 
-def _cv(facts: Facts, identity: dict, job, asked: set[str], *, mine: set[str]) -> str:
+def _cv(facts: Facts, identity: dict, job, asked: set[str], template: Template, *,
+        mine: set[str]) -> str:
     name, header = _header(facts, identity)
     title = _bare(getattr(job, "title", "") or "")
     # Their title mirrors the posting's only when every word of it is already in their documents.
@@ -72,10 +78,10 @@ def _cv(facts: Facts, identity: dict, job, asked: set[str], *, mine: set[str]) -
         others.setdefault(fold(section.heading), (section.heading, []))[1].extend(section.lines)
     parts += [_section(heading.title() if heading.isupper() else heading,
                        [_list(list(dict.fromkeys(lines))[:6])]) for heading, lines in others.values()]
-    return _page(f"{name}, CV", "\n".join(part for part in parts if part))
+    return _page(f"{name}, CV", "\n".join(part for part in parts if part), template)
 
 
-def _cover(facts: Facts, identity: dict, job, asked: set[str]) -> str:
+def _cover(facts: Facts, identity: dict, job, asked: set[str], template: Template) -> str:
     name, header = _header(facts, identity)
     role = _bare(getattr(job, "title", "") or "")
     company = (getattr(job, "company", "") or "").strip()
@@ -92,8 +98,15 @@ def _cover(facts: Facts, identity: dict, job, asked: set[str]) -> str:
     contact = " · ".join(escape(each) for each in (facts.email, facts.phone) if each)
     lines += ["<p>I would welcome the chance to talk about it.</p>",
               f"<p>Kind regards,<br>{escape(name)}{f'<br>{contact}' if contact else ''}</p>"]
+    # Who it is to, when, and what about: from the job, on the day it is made. Each template places them.
+    today = datetime.now(UTC)
+    to = "<br>".join(escape(each) for each in (company, (getattr(job, "location", "") or "").strip()) if each)
+    meta = ('<div class="letter-meta">\n' + (f'<p class="letter-to">{to}</p>\n' if to else "")
+            + f'<p class="letter-date">{today.day} {today:%B %Y}</p>\n</div>\n'
+            + f'<p class="letter-subject">{escape(f"Application for {role}" if role else "Job application")}'
+              '</p>')
     return _page(f"{name}, cover letter",
-                 header + '\n<div class="letter">\n' + "\n".join(lines) + "\n</div>", _LETTER_STYLE)
+                 f'{header}\n{meta}\n<div class="letter">\n' + "\n".join(lines) + "\n</div>", template)
 
 
 def _header(facts: Facts, identity: dict) -> tuple[str, str]:
@@ -111,9 +124,9 @@ def _header(facts: Facts, identity: dict) -> tuple[str, str]:
                   f'<div class="cv-contact">{spans}</div>\n</div>\n<hr class="header-rule">')
 
 
-def _page(title: str, body: str, style: str = "") -> str:
+def _page(title: str, body: str, template: Template) -> str:
     return ('<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="UTF-8">\n'
-            f"<title>{escape(title)}</title>\n{split_style(load(SCAFFOLD_CV))[1]}\n{style}\n"
+            f"<title>{escape(title)}</title>\n{template.style}\n"
             f"</head>\n<body>\n{body}\n</body>\n</html>\n")
 
 

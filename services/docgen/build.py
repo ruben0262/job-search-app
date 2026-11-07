@@ -153,11 +153,16 @@ def build_prompt(base_html: str, context: str, *,
     return prompt
 
 
-def tailor(client, base_html: str, context: str, *, model: str,
+def tailor(client, base_html: str, context: str, *, model: str, style: str,
            facts_md: str | None = None, feedback: str | None = None, template: str | None = None,
            role_angles: str | None = None) -> str:
-    """One call, on the model of whichever provider pays for it (`libs.settings.document_model`)."""
-    stripped, style = split_style(base_html)
+    """One call, on the model of whichever provider pays for it (`libs.settings.document_model`).
+
+    `style` is the look the CV is laid out in: the person's chosen template (`libs.templates`), put
+    back after the call. The base CV's own `<style>` is taken off before it, and stays off: the model
+    never sees CSS, and since 2026-11-07 the template, not the base CV, decides how a CV looks.
+    """
+    stripped, _ = split_style(base_html)
     prompt = build_prompt(stripped, context, template=template, role_angles=role_angles,
                           feedback=feedback)
 
@@ -188,18 +193,19 @@ _MINIMAL_SYSTEM = ("Write only what the base template below already states about
 # ── the cover letter ──────────────────────────────────────────────────────────────────────────
 
 
-def tailor_cover(client, cv_html: str, context: str, *, model: str,
+def tailor_cover(client, context: str, *, model: str, head: str, style: str,
                  facts_md: str | None = None, template: str | None = None) -> str:
-    """The cover letter for one job.
+    """The cover letter for one job, laid out in the person's chosen cover template.
 
-    `cv_html` is here for its `<head>`, which carries the fonts and page rules the letter is laid
-    out with. It is deliberately *not* sent as text: the account's whole profile is already the
-    system prompt (`libs.profiles.grounding` — context.md and the candidate profile, tens of
-    thousands of characters, verbatim). A plain-text extract of the CV alongside it repeated a
-    subset of that, truncated at 1,500 characters, which cut mid-sentence before a single
-    experience entry and left a mangled skills list under a heading claiming to be the CV.
+    `head` is that template's `<head>`, the fonts and page rules the prompt's `<HEAD_BLOCK>` asks the
+    letter to use, and `style` its `<style>`, put back over whatever came back so the letter is in the
+    template whatever the model did with it. The CV is deliberately *not* sent as text: the account's
+    whole profile is already the system prompt (`libs.profiles.grounding` — context.md and the
+    candidate profile, tens of thousands of characters, verbatim). A plain-text extract of the CV
+    alongside it repeated a subset of that, truncated at 1,500 characters, which cut mid-sentence
+    before a single experience entry and left a mangled skills list under a heading claiming to be
+    the CV.
     """
-    head = head_block(cv_html)
     prompt = (_require_personalised(template, "tailor_cover.md")
               .replace("<HEAD_BLOCK>", head)
               .replace("<JOB_CONTEXT>", context))
@@ -217,13 +223,7 @@ def tailor_cover(client, cv_html: str, context: str, *, model: str,
         raise BuildFailed("the model did not return an HTML document")
 
     # Em-dashes come out of the whole letter, not just its bullets.
-    return strip_hidden(_strip_cover_emdashes(letter))
-
-
-def head_block(document: str) -> str:
-    """The `<head>` of the CV template, which is what carries the fonts and the page rules."""
-    match = re.search(r"(?is)<head\b.*?</head>", document) or _STYLE.search(document)
-    return match.group(0) if match else ""
+    return strip_hidden(_strip_cover_emdashes(restore_style(letter, style)))
 
 
 def _strip_cover_emdashes(letter: str) -> str:

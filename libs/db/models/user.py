@@ -61,6 +61,10 @@ class User(Document):
     # The Jobs page's filters as they left them, so it opens the same (owner, 2026-11-07); `JobFilters` in
     # the API. None until they change one: the defaults.
     job_filters: dict | None = None
+    # The look of every CV and of every cover letter made for them: an id in `libs.templates.CATALOGUE`,
+    # picked in My documents (owner, 2026-11-07). None until they pick one: `libs.templates.DEFAULT`.
+    cv_template: str | None = None
+    cover_template: str | None = None
     # This account's data key, wrapped by the platform key (`libs.secrets`).
     wrapped_dek: bytes | None = None
     created_at: datetime = field(default_factory=now)

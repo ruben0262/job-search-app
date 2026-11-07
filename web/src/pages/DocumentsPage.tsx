@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 
 import { api, type Schema } from "../api";
 import { useKept } from "../kept";
+import { TemplatePicks } from "../templates";
 import { ago, useNow } from "../time";
 import { Card, Error, Field, Prompt, UploadButton, useAction } from "../ui";
 import { IdentityFields } from "./WordsPage";
@@ -62,6 +63,9 @@ export function DocumentsPage() {
 
       <Card title="Your CV">
         <Files kind="cv" list={list} onChanged={saved} />
+      </Card>
+      <Card title="How your CVs and cover letters look">
+        <TemplatePicks />
       </Card>
       <Card title="CVs and cover letters we made for you">
         <Made />

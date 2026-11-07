@@ -585,7 +585,7 @@ def test_every_tab_is_drawn_whole_the_moment_it_is_opened(site, capsys):
             time.sleep(0.4)
             route.continue_()
 
-        page.route(re.compile(r"/(applied|jobs/added|onboarding/\w+|documents|saved|account|credentials|feed)"),
+        page.route(re.compile(r"/(applied|jobs/added|onboarding/\w+|documents|saved|templates|account|credentials|feed)"),
                    slow)
         for tab, drawn in (("Applied", "You applied to 0 jobs"), ("My search", "The jobs you want"),
                            ("My documents", "Each one you make is kept here"), ("Settings", email),
@@ -759,6 +759,72 @@ def test_a_made_cv_is_still_there_after_a_refresh_in_applied_and_in_my_documents
         page.get_by_role("button", name="Delete this one").click()
         page.get_by_role("dialog", name="Delete this one?").get_by_role("button", name="Delete").click()
         expect(page.get_by_text("None yet.")).to_be_visible()
+        browser.close()
+
+
+def test_a_person_picks_how_their_cvs_and_letters_look_and_the_next_cv_is_made_in_it(site, capsys, tmp_path):
+    """My documents shows the look of each kind in use; Change opens the shelf, the most popular first and
+    then every sector, each look a picture of itself; a tap picks one, it stays picked, and the next CV is
+    made in it (owner, 2026-11-07). On a phone, and nothing runs off its screen."""
+    from io import BytesIO
+
+    from pypdf import PdfReader
+
+    from libs import templates
+
+    base, email, _ = site
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = browser.new_context(viewport={"width": 390, "height": 844}, accept_downloads=True).new_page()
+        _sign_up(page, base, email, capsys)
+        _onboard(page)
+
+        page.goto(f"{base}/#/documents")
+        looks = page.locator("section.card").filter(
+            has=page.get_by_role("heading", name="How your CVs and cover letters look"))
+        expect(looks.locator(".look-name")).to_have_text(["Meridian", "Meridian"])
+        looks.get_by_role("button", name="Change how your CVs look").click()
+
+        sheet = page.get_by_role("dialog", name="Pick how your CVs look")
+        expect(sheet.locator(".look-group h3")).to_have_text(["Most popular", *templates.SECTORS])
+        popular = sheet.get_by_role("region", name="Most popular").locator(".look-card")
+        expect(popular).to_have_count(len(templates.POPULAR["cv"]))
+        expect(popular.first).to_have_attribute("aria-pressed", "true")
+        # The picture is the look in abstract shapes, the name a block in the look's blue, nothing written.
+        picture = popular.first.locator("iframe").content_frame
+        expect(picture.locator(".cv-name i")).to_be_visible()
+        assert picture.locator(".cv-name i").evaluate("shape => getComputedStyle(shape).backgroundColor") \
+            == "rgb(0, 51, 153)", "Meridian's name is its blue"
+        assert picture.locator("body").inner_text().strip() == "", "a picture has nothing written in it"
+        expect(popular.first).to_have_text("Meridian · In use")
+        for width in (320, 390):
+            page.set_viewport_size({"width": width, "height": 844})
+            assert page.evaluate(FAULTS) == {"off": [], "over": []}, f"the shelf at {width}px"
+
+        sheet.get_by_role("region", name="Finance and accounting").get_by_role(
+            "button", name="Ledger", exact=True).click()
+        said = page.get_by_role("status").filter(has_text="Your CVs will now look like Ledger.")
+        expect(said).to_be_visible()
+        expect(sheet).to_have_count(0)
+        expect(looks.locator(".look-name")).to_have_text(["Ledger", "Meridian"])
+        page.reload()
+        expect(looks.locator(".look-name")).to_have_text(["Ledger", "Meridian"])
+        assert page.evaluate(FAULTS) == {"off": [], "over": []}, "My documents at 390px"
+
+        # The next CV is made in Ledger: a serif, where Meridian is Lato.
+        page.goto(f"{base}/#/")
+        card = page.locator("article.job-card").first
+        card.get_by_role("button", name="Make my CV").click()
+        ready = card.get_by_role("link", name="Download your CV")
+        expect(ready).to_be_visible(timeout=60_000)
+        with page.expect_download() as download:
+            ready.click()
+        saved = tmp_path / download.value.suggested_filename
+        download.value.save_as(saved)
+        pages = PdfReader(BytesIO(saved.read_bytes())).pages
+        fonts = {str(font.get_object().get("/BaseFont"))
+                 for each in pages for font in (each.get("/Resources", {}).get("/Font", {}) or {}).values()}
+        assert any("LiberationSerif" in font for font in fonts), f"not made in Ledger: {fonts}"
         browser.close()
 
 

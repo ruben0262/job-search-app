@@ -17,6 +17,9 @@ WRITTEN_ELSEWHERE = {
     "sent_at": "default_factory=now, on the mail_sends insert",
     "paused_at": "default_factory=now, on a lane pause",
     "uploaded_at": "default_factory=now, on a document upload",
+    "cv_template": "PUT /templates/cv, keyed through `libs.templates.FIELD`; test_templates.py reads it back",
+    "cover_template": "PUT /templates/cover, keyed through `libs.templates.FIELD`; test_document_builds.py "
+                      "builds in it",
 }
 
 # Fields this test found on its first run, each a real answer to "what is silently absent".

@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<!--
+  QUILL: a CV template (libs/templates/README.md). Only the <head> is used; the CV is written into the
+  body when it is made. Research, universities and teaching: an academic CV, longer than most, with each
+  heading in the left margin beside its section and a book face for the text.
+
+  Each section is a grid, never a float: Chrome paints floats before the text around them, so floated
+  headings reached the PDF's text all together ahead of the name (2026-11-07). A grid paints in reading
+  order, and a section that runs onto the next page still breaks between its entries.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Quill</title>
+<style>
+@page { size: A4; margin: 19mm 20mm 18mm 20mm; }
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: Caladea, Cambria, Georgia, serif;
+  font-size: 10.5pt;
+  color: #1a1a1a;
+  line-height: 1.36;
+}
+
+a { color: #7c2d12; text-decoration: none; }
+
+.cv-name { font-size: 22pt; font-weight: 700; letter-spacing: 0.4pt; line-height: 1.05; }
+.cv-contact { margin-top: 3pt; font-size: 9.5pt; color: #444; display: flex; flex-wrap: wrap; }
+.cv-contact span { overflow-wrap: anywhere; }
+.cv-contact span + span::before { content: "·"; margin: 0 5pt; color: #999; }
+.header-rule { border: none; border-top: 0.5pt solid #999; margin: 7pt 0 8pt; }
+
+.profile { margin-left: 34mm; margin-bottom: 2pt; }
+
+.section { display: grid; grid-template-columns: 30mm 1fr; column-gap: 4mm; margin-top: 9pt; }
+.section > * { grid-column: 2; }
+.section > .section-title {
+  grid-column: 1;
+  grid-row: 1;
+  font-size: 9pt;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.9pt;
+  color: #7c2d12;
+  padding-top: 1.5pt;
+}
+
+.entry { break-inside: avoid; page-break-inside: avoid; margin-bottom: 5pt; }
+.entry-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8pt; }
+.entry-title { font-weight: 700; flex: 1; line-height: 1.22; }
+.entry-date { font-style: italic; color: #444; white-space: nowrap; flex-shrink: 0; }
+.entry-desc { margin-top: 1pt; }
+
+.entry ul, .section > ul { padding-left: 13pt; margin-top: 2pt; }
+li { margin-bottom: 1.5pt; }
+</style>
+</head>
+<body></body>
+</html>

@@ -5,6 +5,7 @@ from __future__ import annotations
 import pathlib
 import re
 import shutil
+from datetime import UTC, datetime
 from html.parser import HTMLParser
 from pathlib import Path
 from types import SimpleNamespace
@@ -100,11 +101,14 @@ def test_when_jobs_must_be_cut_the_one_the_posting_is_about_stays(monkeypatch):
 
 
 def test_every_word_about_them_is_from_their_own_documents():
-    """The frame is ours; everything inside it traces to a line they wrote or typed."""
+    """The frame is ours, or the job's: the letter's company, place, date and subject. Everything inside
+    it traces to a line they wrote or typed."""
+    today = datetime.now(UTC)
     frame = {"Experience", "Education", "Skills", "Languages", "Certifications",
              "Dear Hiring Manager,", "I am applying for the Python Developer role at Payfast.",
              "Some of what I have done that fits it:", "I would welcome the chance to talk about it.",
-             "Kind regards,", "Python Developer"}
+             "Kind regards,", "Python Developer", "Payfast", "Budapest", f"{today.day} {today:%B %Y}",
+             "Application for Python Developer"}
     theirs = CV + " ".join([IDENTITY["full_name"], "github.com/janedoe"])
     for kind in ("cv", "cover"):
         for node in _text(render(kind, documents=DOCUMENTS, identity=IDENTITY, job=JOB)):
@@ -144,6 +148,22 @@ def test_the_cover_letter_quotes_their_most_relevant_achievements_and_signs_off_
                       "Cut p99 latency from 900 ms to 120 ms by moving reconciliation into PostgreSQL",
                       "Migrated the monolith to Kubernetes on AWS"]
     assert nodes[-3:] == ["Kind regards,", "Jane Doe", "jane.doe@example.com · +36 30 123 4567"]
+
+
+def test_the_letter_is_addressed_dated_and_titled_from_the_job_on_the_day_it_is_made():
+    """Each cover look places these three; they come from the job and the day, never from a template."""
+    html = render("cover", documents=DOCUMENTS, identity=IDENTITY, job=JOB)
+    today = datetime.now(UTC)
+
+    assert '<p class="letter-to">Payfast<br>Budapest</p>' in html
+    assert f'<p class="letter-date">{today.day} {today:%B %Y}</p>' in html
+    assert '<p class="letter-subject">Application for Python Developer</p>' in html
+
+    # A job that names no company and no role still gets a dated letter that says what it is.
+    bare = render("cover", documents=DOCUMENTS, identity=IDENTITY, job=SimpleNamespace(
+        title=None, company=None, description=None, location=None, url="https://example.com/3"))
+    assert "letter-to" not in bare
+    assert '<p class="letter-subject">Job application</p>' in bare and "letter-date" in bare
 
 
 @pytest.mark.parametrize("kind", ["cv", "cover"])
