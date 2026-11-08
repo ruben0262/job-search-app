@@ -11,7 +11,9 @@ import io
 import os
 import pathlib
 import re
+import unicodedata
 import uuid
+from html import unescape
 from types import SimpleNamespace
 
 import pytest
@@ -59,7 +61,8 @@ def test_someone_who_never_picked_gets_the_look_everyone_had():
     from libs.templates import SCAFFOLD_CV, load, split_style
 
     nobody = type("U", (), {"id": uuid.uuid4(), "cv_template": None, "cover_template": None})()
-    assert templates.chosen(nobody, "cv").style == split_style(load(SCAFFOLD_CV))[1]
+    scaffold = split_style(load(SCAFFOLD_CV))[1].rpartition("</style>")[0]
+    assert templates.chosen(nobody, "cv").style == f"{scaffold}{templates.EVERY_LOOK}</style>"
     assert templates.chosen(nobody, "cover").id == templates.DEFAULT
 
 
@@ -119,14 +122,7 @@ SAMPLE_JOB = SimpleNamespace(
                 "manage suppliers, report to stakeholders and train coordinators.")
 
 
-_PREVIEW_TEXT = re.compile(r">([^<]+)<")
-_PREVIEW_WORD = re.compile(r"\S+")
-# Each word a bar in its own colour, a little under half the line's height. Its letters are there only to
-# give it its width, and are not drawn.
-_BAR = (".bar { -webkit-text-fill-color: transparent; border-radius: 0.3em; "
-        "background: linear-gradient(currentColor, currentColor) 0 62% / 100% 0.5em no-repeat; }")
-
-# A longer CV than the previews' sample, to run every look onto a second page.
+# A longer CV than the sample, to run every look onto a second page.
 LONG = SAMPLE_CV.replace("EDUCATION\n", """Logistics Analyst, Tailspin Toys\tJan 2014 – Aug 2015
 • Mapped the routes of 120 vans and cut fuel use by 9%
 • Wrote the weekly stock forecast for 18 shops
@@ -134,6 +130,8 @@ LONG = SAMPLE_CV.replace("EDUCATION\n", """Logistics Analyst, Tailspin Toys\tJan
 Warehouse Supervisor, Wingtip Goods\tMar 2012 – Dec 2013
 • Ran a shift of 14 pickers and loaders with no lost-time accident in two years
 • Set up the returns desk that handled 900 parcels a week
+Volunteer Coordinator, Lisbon Food Bank
+• Organised 30 volunteer drivers every weekend
 EDUCATION
 """) + """PROJECTS
 Route planner for a food bank's 30 volunteer drivers
@@ -148,6 +146,20 @@ def _render(template, cv: str = SAMPLE_CV) -> str:
                           job=SAMPLE_JOB, template=template)
 
 
+def _read(document: bytes) -> dict[str, str]:
+    """A PDF's text as two kinds of ATS reader take it: pypdf in the order Chrome wrote it, and pdfminer
+    by where each word sits on the page, which is how a reader finds columns."""
+    from pdfminer.high_level import extract_text
+    from pypdf import PdfReader
+
+    return {"pypdf": "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(document)).pages),
+            "pdfminer": extract_text(io.BytesIO(document))}
+
+
+def _words(text: str) -> set[str]:
+    return set(re.findall(r"\w+", unicodedata.normalize("NFC", text).casefold()))
+
+
 @pytest.mark.skipif(not os.path.exists(CHROME), reason="needs CHROME_BIN: a real Chrome renders the PDF")
 @pytest.mark.parametrize("template", templates.CATALOGUE, ids=lambda each: f"{each.kind}-{each.id}")
 def test_every_look_makes_a_pdf_an_ats_reads_in_order_in_the_face_it_asked_for(template):
@@ -156,23 +168,42 @@ def test_every_look_makes_a_pdf_an_ats_reads_in_order_in_the_face_it_asked_for(t
     Four looks failed this when they were first drawn (2026-11-07), each looking right on the page: wide
     letter-spacing gave "E X P E R I E N C E", small capitals "A LEX M ORGAN", floated margin headings
     reached the text all together before the name, and a date drawn left of its title ran into it
-    ("Northwind LogisticsMar 2021").
+    ("Northwind LogisticsMar 2021"). Then, read by pdfminer too (2026-11-08): every Lato and Carlito look
+    gave "oﬃce" for "office" as ligatures, one character each, and Quill's headings in a margin column
+    were read apart from their sections as "E DUC AT I O N".
     """
     from pypdf import PdfReader
 
     from services.docgen import pdf
 
     for cv in ((SAMPLE_CV, LONG) if template.kind == "cv" else (SAMPLE_CV,)):
-        document = pdf.render(_render(template, cv))
+        html = _render(template, cv)
+        document = pdf.render(html)
         report = pdf.inspect_pdf(document, kind=template.kind)
         assert report.ats_ok, f"{template.id}: {report.issues}"
         assert report.pages == 1 if template.kind == "cover" else report.pages in (1, 2, 3)
 
+        # Every word it says, whole and nothing else, and its sections in order, by both kinds of reader.
+        written = _words(unescape(re.sub(r"<[^>]+>", " ", html.split("<body>", 1)[1])))
+        headings = [unescape(each).casefold() for each in re.findall(r'class="section-title">([^<]*)<', html)]
+        for name, text in _read(document).items():
+            assert not re.search("[\ufb00-\ufb06]", text), f"{template.id}: {name} read a ligature"
+            read = _words(text)
+            assert read == written, (f"{template.id}: {name} read {sorted(read - written)[:8]} "
+                                     f"and lost {sorted(written - read)[:8]}")
+            flat = " ".join(text.casefold().split())
+            assert flat.startswith("alex morgan"), f"{template.id}: {name} does not start with the name"
+            at = [flat.find(heading) for heading in headings]
+            assert -1 not in at and at == sorted(at), f"{template.id}: {name} read the headings {at}"
+
         reader = PdfReader(io.BytesIO(document))
+        # Their links can be followed from the PDF, on a CV and a letter alike.
+        uris = {annotation.get_object().get("/A", {}).get("/URI") for page in reader.pages
+                for annotation in page.get("/Annots") or []}
+        assert {"https://linkedin.com/in/alexmorgan", "mailto:alex.morgan@example.com"} <= uris, (
+            f"{template.id}: the links are not links: {uris}")
         lines = [line.strip().casefold() for page in reader.pages
                  for line in (page.extract_text() or "").split("\n") if line.strip()]
-        assert lines[0] == "alex morgan", f"{template.id} does not start with the name: {lines[:3]}"
-        assert not any("logisticsmar" in line for line in lines), f"{template.id} ran a title into its dates"
         if template.kind == "cv":
             heading = next(index for index, line in enumerate(lines) if line.startswith("experience"))
             assert "senior project manager" in " ".join(lines[heading:heading + 2]), (
@@ -196,7 +227,9 @@ def test_every_look_makes_a_pdf_an_ats_reads_in_order_in_the_face_it_asked_for(t
 def test_a_long_contact_line_stays_on_the_page(template):
     """Each part of the contact line was kept whole, with nothing to break between them, so a person with
     a long email and three links had the last one cut off the page: missing from every new look's PDF
-    (2026-11-07). The line now wraps between its parts, and inside a part wider than the line."""
+    (2026-11-07). The line now wraps between its parts, and inside a part wider than the line. And no part
+    narrower than the line is broken over two: Meridian's broke anywhere, and a phone came out as "91234-"
+    over "5678", which every reader read wrongly (2026-11-08)."""
     from pypdf import PdfReader
 
     from services.docgen import pdf
@@ -205,25 +238,63 @@ def test_a_long_contact_line_stays_on_the_page(template):
              "https://github.com/alexandra-morgan-portfolio", "https://alexandramorgan-portfolio.example.com",
              # Wider than any look's line at its contact size: ~150 characters.
              "https://example.com/portfolio/" + "a-very-long-address-with-no-break-in-it-" * 3 + "end"]
-    html = instant.render(template.kind, documents={"cv": [SAMPLE_CV]}, job=SAMPLE_JOB,
-                          identity={"full_name": "Alexandra Morgan", "links": links}, template=template)
-    text = "".join(PdfReader(io.BytesIO(pdf.render(html))).pages[0].extract_text().split())
+    phone = "+351 91234-5678"
+    html = instant.render(template.kind, documents={"cv": [SAMPLE_CV.replace("+351 912 345 678", phone)]},
+                          job=SAMPLE_JOB, identity={"full_name": "Alexandra Morgan", "links": links},
+                          template=template)
+    lines = PdfReader(io.BytesIO(pdf.render(html))).pages[0].extract_text().split("\n")
     pdf._discard()
-    for link in links:
-        assert link.split("://")[1].removeprefix("www.") in text, f"{template.id} cut {link} off the page"
+    text = "".join("".join(lines).split())
+    parts = [link.split("://")[1].removeprefix("www.") for link in links]
+    for part in parts:
+        assert part in text, f"{template.id} cut {part} off the page"
+    for part in ("Lisbon, Portugal", phone, "alex.morgan@example.com", *parts[:-1]):
+        assert any(part in line for line in lines), f"{template.id} broke {part!r} over two lines"
 
+
+@pytest.mark.skipif(not os.path.exists(CHROME), reason="needs CHROME_BIN: a real Chrome lays the page out")
+def test_every_cv_look_puts_a_jobs_dates_at_the_right_and_shows_none_where_there_are_none():
+    """A job's dates at the right end of its line in every look, and a job with none has no date and its
+    title where the others are (owner, 2026-11-08: "dates ... should go on the right", and where there
+    are none, "leave it out"). Tabula had them in a column on the left, and an undated title slid into it.
+    Laid out as Chrome prints it."""
+    sync_api = pytest.importorskip("playwright.sync_api")
+    measure = """() => [...document.querySelectorAll(".entry-head")].map((head) => {
+        const box = (part) => part && part.getBoundingClientRect();
+        const title = box(head.querySelector(".entry-title")), date = box(head.querySelector(".entry-date"));
+        return {title: head.querySelector(".entry-title").innerText, left: title.left, right: title.right,
+                end: box(head.closest(".section")).right, date: date && [date.left, date.right]};
+    })"""
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = browser.new_page(viewport={"width": 794, "height": 1123})
+        page.emulate_media(media="print")
+        for template in templates.of_kind("cv"):
+            page.set_content(_render(template, LONG))
+            heads = page.evaluate(measure)
+            dated = [head for head in heads if head["date"]]
+            undated = [head for head in heads if not head["date"]]
+            assert len(dated) >= 5 and [head["title"] for head in undated] == [
+                "Volunteer Coordinator — Lisbon Food Bank"], f"{template.id}: {heads}"
+            for head in dated:
+                left, right = head["date"]
+                assert left >= head["right"] and abs(right - head["end"]) <= 1, (
+                    f"{template.id}: {head['title']!r}'s dates are not at the right of its line: {head}")
+            assert abs(undated[0]["left"] - dated[0]["left"]) <= 1, f"{template.id}: an undated title moved"
+        browser.close()
 
 @pytest.mark.parametrize("template", templates.CATALOGUE, ids=lambda each: f"{each.kind}-{each.id}")
 def test_a_picture_is_the_look_in_abstract_shapes_with_nothing_written(template):
     """The picker shows the look, not a document (owner, 2026-11-07): its own style laying out shapes in the
-    markup every document carries, and no word, letter or character anywhere in it."""
+    markup every document carries, and no word, letter or character anywhere in it. Not even a title: in
+    the page, a picture's title was the look's name a second time on its card."""
     html = templates.picture(template)
     head, body = html.split("<body>", 1)
     assert template.style in head and f"body {{ padding: {template.page_margin}; }}" in head
-    assert f"<title>{template.name}</title>" in head
-    assert "".join(re.findall(r">([^<]*)<", body)).strip() == "", f"{template.id}'s picture has writing"
+    written = re.sub(r"(?s)<style>.*?</style>", "", html)
+    assert "".join(re.findall(r">([^<]*)<", written)).strip() == "", f"{template.id}'s picture has writing"
     parts = ("cv-name", "cv-contact", "header-rule") + (
-        ("letter-to", "letter-date", "letter-subject", "letter") if template.kind == "cover"
+        ("letter-to", "letter-subject", "letter") if template.kind == "cover"
         else ("profile", "section-title", "entry-title", "entry-date"))
     assert all(f'class="{part}"' in body for part in parts)
 
@@ -253,9 +324,13 @@ def test_the_picker_shows_the_most_popular_then_each_sector_and_the_look_in_use(
         assert shelf["groups"][0] == {"title": "Most popular", "templates": list(templates.POPULAR[kind])}
         assert len(shelf["groups"]) == 1 + len(templates.SECTORS)
         named = {card["id"]: card for card in shelf["templates"]}
-        # A name for each, and nothing else: the descriptions went (owner, 2026-11-07).
-        assert all(set(named[id_]) == {"id", "name"} and named[id_]["name"] for group in shelf["groups"]
-                   for id_ in group["templates"])
+        # A name and a picture for each, and nothing else: the descriptions went (owner, 2026-11-07). The
+        # pictures come with the shelf, so the sheet draws them without asking for each (2026-11-08).
+        assert all(set(named[id_]) == {"id", "name", "picture"} and named[id_]["name"]
+                   and named[id_]["picture"] == templates.picture(templates.find(kind, id_))
+                   for group in shelf["groups"] for id_ in group["templates"])
+    http.cookies.clear()
+    assert http.get("/templates").status_code == 401
 
 
 def test_a_pick_is_kept_for_its_own_kind_only(http, db, user):
@@ -274,12 +349,3 @@ def test_a_look_that_does_not_exist_is_refused_and_nothing_changes(http):
     assert http.put("/templates/cv", json={"id": "nope"}).status_code == 404
     assert http.put("/templates/letter", json={"id": "meridian"}).status_code == 422
     assert http.get("/templates").json()["cover"]["chosen"] == "meridian"
-
-
-def test_a_preview_needs_no_sign_in_and_holds_no_words(http):
-    http.cookies.clear()
-    answer = http.get("/templates/cv/quill/preview")
-    assert answer.status_code == 200 and answer.headers["content-type"].startswith("text/html")
-    assert answer.text == templates.picture(templates.find("cv", "quill"))
-    assert http.get("/templates/cv/nope/preview").status_code == 404
-    assert http.get("/templates").status_code == 401

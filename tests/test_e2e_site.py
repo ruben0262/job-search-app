@@ -783,7 +783,8 @@ def test_a_person_picks_how_their_cvs_and_letters_look_and_the_next_cv_is_made_i
         looks = page.locator("section.card").filter(
             has=page.get_by_role("heading", name="How your CVs and cover letters look"))
         expect(looks.locator(".look-name")).to_have_text(["Meridian", "Meridian"])
-        looks.get_by_role("button", name="Change how your CVs look").click()
+        _documents_in_order(page)
+        _the_sheet_opens_drawn(page, templates)
 
         sheet = page.get_by_role("dialog", name="Pick how your CVs look")
         expect(sheet.locator(".look-group h3")).to_have_text(["Most popular", *templates.SECTORS])
@@ -791,7 +792,7 @@ def test_a_person_picks_how_their_cvs_and_letters_look_and_the_next_cv_is_made_i
         expect(popular).to_have_count(len(templates.POPULAR["cv"]))
         expect(popular.first).to_have_attribute("aria-pressed", "true")
         # The picture is the look in abstract shapes, the name a block in the look's blue, nothing written.
-        picture = popular.first.locator("iframe").content_frame
+        picture = popular.first.locator(".picture")
         expect(picture.locator(".cv-name i")).to_be_visible()
         assert picture.locator(".cv-name i").evaluate("shape => getComputedStyle(shape).backgroundColor") \
             == "rgb(0, 51, 153)", "Meridian's name is its blue"
@@ -826,6 +827,33 @@ def test_a_person_picks_how_their_cvs_and_letters_look_and_the_next_cv_is_made_i
                  for each in pages for font in (each.get("/Resources", {}).get("/Font", {}) or {}).values()}
         assert any("LiberationSerif" in font for font in fonts), f"not made in Ledger: {fonts}"
         browser.close()
+
+
+def _documents_in_order(page) -> None:
+    """Who you are first, then how your documents look, what was made, and the files (owner, 2026-11-08)."""
+    firsts = page.locator("main section.card").evaluate_all("""cards => cards.map((card) =>
+        (card.querySelector(':scope > h2') ?? card.querySelector('label')).innerText.split('\\n')[0])""")
+    firsts = [first.strip() for first in firsts]
+    assert firsts == ["Your name and links", "About you", "How your CVs and cover letters look",
+                      "CVs and cover letters we made for you", "Your CV", "Cover letters and other files"]
+
+
+def _the_sheet_opens_drawn(page, templates) -> None:
+    """The sheet opens with every picture in it already drawn, and asks the server for nothing: as frames,
+    one request and one document each, ~40 of them took 5-10 s (owner, 2026-11-08)."""
+    asked: list[str] = []
+    page.on("request", lambda request: asked.append(request.url) if "/templates" in request.url else None)
+    drawn = page.evaluate("""() => new Promise((done) => {
+        document.querySelector('[aria-label="Change how your CVs look"]').click();
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+            const hosts = [...document.querySelectorAll("dialog .picture")];
+            done([hosts.length, hosts.filter((host) =>
+                host.shadowRoot?.querySelector(".cv-name i")?.getBoundingClientRect().width > 0).length]);
+        }));
+    })""")
+    cards = sum(len(ids) for _, ids in templates.groups("cv"))
+    assert drawn == [cards, cards], f"of {cards} pictures, [there, drawn] two frames after the tap: {drawn}"
+    assert asked == [], f"opening the sheet asked the server for {asked}"
 
 
 def test_the_jobs_filters_narrow_the_list_stay_as_they_were_left_and_clear_back(site, capsys):

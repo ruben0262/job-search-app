@@ -1652,28 +1652,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/templates/{kind}/{template_id}/preview": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Preview Template
-         * @description The picture in the picker: this look drawn in abstract shapes, with nothing written in it.
-         *
-         *     Open to anyone, as it holds nobody's data, and cached for an hour since it changes only on a deploy.
-         */
-        get: operations["preview_template_templates__kind___template_id__preview_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2877,6 +2855,8 @@ export interface components {
             id: string;
             /** Name */
             name: string;
+            /** Picture */
+            picture: string;
         };
         /** TemplateChoice */
         TemplateChoice: {
@@ -5666,38 +5646,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Templates"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    preview_template_templates__kind___template_id__preview_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                kind: "cv" | "cover";
-                template_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The look, drawn. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/html": string;
                 };
             };
             /** @description Validation Error */

@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import re
 from datetime import UTC, datetime
+from html import unescape
 
 from libs.profiles import PLACEHOLDER_MARKERS
 from libs.templates import STYLE as _STYLE
@@ -38,10 +39,10 @@ class BuildFailed(RuntimeError):
 def job_context(job, *, score: float | None = None, description: str | None = None,
                 fit_notes: str | None = None, salary_bands: dict | None = None) -> str:
     """What the model is told about the posting — the reference instance's context, ported whole."""
-    # **The date the document is written.** Nothing supplied it, so the model wrote one from its
-    # own sense of time: a cover letter generated in August 2026 went out dated 22 June 2026. It is
-    # the first line an employer reads and a wrong one reads as carelessness, on a document nobody
-    # on this platform proofreads before it is sent.
+    # **Today's date**, which "Present" and "for four years" are counted to. It was added when a letter
+    # generated in August 2026 went out dated 22 June 2026, from the model's own sense of time. A letter
+    # carries no date of its own any more (owner, 2026-11-08): `_undated` takes out the one a model
+    # still writes.
     lines = [f"Today's date: {datetime.now(UTC).strftime('%d %B %Y')}",
              f"Title: {job.title or ''}",
              f"Company: {job.company or ''}",
@@ -223,7 +224,41 @@ def tailor_cover(client, context: str, *, model: str, head: str, style: str,
         raise BuildFailed("the model did not return an HTML document")
 
     # Em-dashes come out of the whole letter, not just its bullets.
-    return strip_hidden(_strip_cover_emdashes(restore_style(letter, style)))
+    return strip_hidden(_strip_cover_emdashes(_undated(restore_style(letter, style))))
+
+
+# A line that is a date and nothing else, the way a letter is dated: "8 November 2026", "November 8,
+# 2026", "8. November 2026", "8 de novembro de 2026", "08/11/2026", "2026-11-08", after a place or a
+# weekday ("Lisbon, 8 November 2026"). A date inside a sentence is never a line of its own.
+_MONTH = r"[^\W\d_]{3,12}\.?"
+_DATE_LINE = re.compile(
+    r"(?:[^\W\d_]+(?:[ '-][^\W\d_]+)*,\s*|[^\W\d_]{3,12}\s+)?"
+    rf"(?:\d{{1,2}}(?:st|nd|rd|th|\.)?\s+(?:de\s+)?{_MONTH}\s+(?:de\s+)?\d{{4}}"
+    rf"|{_MONTH}\s+\d{{1,2}}(?:st|nd|rd|th)?,?\s+\d{{4}}"
+    r"|\d{1,2}[./-]\d{1,2}[./-]\d{2,4}|\d{4}-\d{2}-\d{2})")
+# A paragraph or a box with no other paragraph or box inside it.
+_INNERMOST = re.compile(r"(?is)<(p|div)\b[^>]*>((?:(?!<(?:p|div)\b).)*?)</\1>")
+_BR_TAG = re.compile(r"(?i)<br\s*/?>")
+
+
+def _undated(letter: str) -> str:
+    """The letter without the day it was made (owner, 2026-11-08): each line that is only a date goes, and
+    a paragraph left with nothing in it goes with it. The rest of a paragraph stays, so the company's
+    address above a date keeps every line of its own."""
+    def line_text(part: str) -> str:
+        return " ".join(unescape(re.sub(r"<[^>]+>", " ", part)).split())
+
+    def without(match: re.Match) -> str:
+        lines = _BR_TAG.split(match.group(2))
+        kept = [part for part in lines if not _DATE_LINE.fullmatch(line_text(part))]
+        if len(kept) == len(lines):
+            return match.group(0)
+        if not any(line_text(part) for part in kept):
+            return ""
+        opening = match.group(0)[:match.start(2) - match.start(0)]
+        return f"{opening}{'<br>'.join(kept)}</{match.group(1)}>"
+
+    return _INNERMOST.sub(without, letter)
 
 
 def _strip_cover_emdashes(letter: str) -> str:

@@ -2,7 +2,8 @@
 
 Every sentence about the person is a line of their own documents, picked and ordered by how much it
 shares with the posting. The only words of ours are the frame: section headings, a greeting, a close,
-and on a letter the date, the company and the subject, each from the job as it is made. The look is
+and on a letter the company and the subject, from the job. Never the day it was made: a document
+carries the dates of what the person did, where they have them, and no other (owner, 2026-11-08). The look is
 the template they picked (`libs.templates`), whose `<style>` block is read at runtime; Meridian's is
 the scaffold's, a prompt file never written to (CLAUDE.md §3a).
 """
@@ -10,7 +11,6 @@ from __future__ import annotations
 
 import re
 from dataclasses import replace
-from datetime import UTC, datetime
 from html import escape
 
 from libs import templates
@@ -98,11 +98,10 @@ def _cover(facts: Facts, identity: dict, job, asked: set[str], template: Templat
     contact = " · ".join(escape(each) for each in (facts.email, facts.phone) if each)
     lines += ["<p>I would welcome the chance to talk about it.</p>",
               f"<p>Kind regards,<br>{escape(name)}{f'<br>{contact}' if contact else ''}</p>"]
-    # Who it is to, when, and what about: from the job, on the day it is made. Each template places them.
-    today = datetime.now(UTC)
+    # Who it is to and what about, from the job. Each template places them; a job with neither a company
+    # nor a place has no block for them at all.
     to = "<br>".join(escape(each) for each in (company, (getattr(job, "location", "") or "").strip()) if each)
-    meta = ('<div class="letter-meta">\n' + (f'<p class="letter-to">{to}</p>\n' if to else "")
-            + f'<p class="letter-date">{today.day} {today:%B %Y}</p>\n</div>\n'
+    meta = ((f'<div class="letter-meta">\n<p class="letter-to">{to}</p>\n</div>\n' if to else "")
             + f'<p class="letter-subject">{escape(f"Application for {role}" if role else "Job application")}'
               '</p>')
     return _page(f"{name}, cover letter",

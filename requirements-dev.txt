@@ -39,6 +39,11 @@ PyJWT>=2.9
 # .docx and .pdf bytes rather than mocking a parser - a parser mock proves nothing about
 # whether a real CV reads.
 pypdf>=5.1
+# tests/test_templates.py reads every look's PDF as a second kind of ATS does: by where each word sits on
+# the page, which is how a reader finds columns. Only it (and poppler) read Quill's margin headings as a
+# column of their own (2026-11-08); pypdf did not. Pinned: a reader that lays text out differently would
+# change what the gate says about an unchanged look.
+pdfminer.six==20260107
 python-docx>=1.1
 python-multipart>=0.0.20
 

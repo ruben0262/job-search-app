@@ -101,14 +101,12 @@ def test_when_jobs_must_be_cut_the_one_the_posting_is_about_stays(monkeypatch):
 
 
 def test_every_word_about_them_is_from_their_own_documents():
-    """The frame is ours, or the job's: the letter's company, place, date and subject. Everything inside
-    it traces to a line they wrote or typed."""
-    today = datetime.now(UTC)
+    """The frame is ours, or the job's: the letter's company, place and subject. Everything inside it
+    traces to a line they wrote or typed."""
     frame = {"Experience", "Education", "Skills", "Languages", "Certifications",
              "Dear Hiring Manager,", "I am applying for the Python Developer role at Payfast.",
              "Some of what I have done that fits it:", "I would welcome the chance to talk about it.",
-             "Kind regards,", "Python Developer", "Payfast", "Budapest", f"{today.day} {today:%B %Y}",
-             "Application for Python Developer"}
+             "Kind regards,", "Python Developer", "Payfast", "Budapest", "Application for Python Developer"}
     theirs = CV + " ".join([IDENTITY["full_name"], "github.com/janedoe"])
     for kind in ("cv", "cover"):
         for node in _text(render(kind, documents=DOCUMENTS, identity=IDENTITY, job=JOB)):
@@ -150,20 +148,22 @@ def test_the_cover_letter_quotes_their_most_relevant_achievements_and_signs_off_
     assert nodes[-3:] == ["Kind regards,", "Jane Doe", "jane.doe@example.com · +36 30 123 4567"]
 
 
-def test_the_letter_is_addressed_dated_and_titled_from_the_job_on_the_day_it_is_made():
-    """Each cover look places these three; they come from the job and the day, never from a template."""
-    html = render("cover", documents=DOCUMENTS, identity=IDENTITY, job=JOB)
+def test_the_letter_is_addressed_and_titled_from_the_job_and_never_dated():
+    """Each cover look places who it is to and what about, from the job, never from a template. No date:
+    a document carries the dates of what the person did and no other (owner, 2026-11-08)."""
     today = datetime.now(UTC)
+    html = render("cover", documents=DOCUMENTS, identity=IDENTITY, job=JOB)
 
-    assert '<p class="letter-to">Payfast<br>Budapest</p>' in html
-    assert f'<p class="letter-date">{today.day} {today:%B %Y}</p>' in html
+    assert '<div class="letter-meta">\n<p class="letter-to">Payfast<br>Budapest</p>\n</div>' in html
     assert '<p class="letter-subject">Application for Python Developer</p>' in html
+    assert "letter-date" not in html and str(today.year) not in html.split("<body>", 1)[1], "it is dated"
 
-    # A job that names no company and no role still gets a dated letter that says what it is.
+    # A job that names no company, no place and no role: no empty block, and a letter that says what it is.
     bare = render("cover", documents=DOCUMENTS, identity=IDENTITY, job=SimpleNamespace(
-        title=None, company=None, description=None, location=None, url="https://example.com/3"))
-    assert "letter-to" not in bare
-    assert '<p class="letter-subject">Job application</p>' in bare and "letter-date" in bare
+        title=None, company=None, description=None, location=None, url="https://example.com/3")
+                  ).split("<body>", 1)[1]
+    assert "letter-meta" not in bare and "letter-to" not in bare
+    assert '<p class="letter-subject">Job application</p>' in bare and str(today.year) not in bare
 
 
 @pytest.mark.parametrize("kind", ["cv", "cover"])
@@ -184,10 +184,13 @@ def test_no_placeholder_or_empty_value_is_left_in_either_document(kind, document
 
 
 def test_it_wears_the_scaffold_cvs_style_read_from_the_scaffold_itself():
-    """The real block, on lines of its own, and not the comment above it that mentions one."""
+    """The real block, on lines of its own, and not the comment above it that mentions one; ending in what
+    every look keeps for an ATS (`templates.EVERY_LOOK`), in the one block."""
+    from libs.templates import EVERY_LOOK
+
     style = re.search(r"(?ms)^<style>$.*?^</style>$", load(SCAFFOLD_CV)).group(0)
     html = render("cv", documents=DOCUMENTS, identity=IDENTITY, job=JOB)
-    assert style in html
+    assert style.removesuffix("</style>") + EVERY_LOOK + "</style>" in html
     assert html.count("<style") == 1
 
 

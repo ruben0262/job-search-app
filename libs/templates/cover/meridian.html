@@ -1,8 +1,9 @@
 <!DOCTYPE html>
 <!--
   MERIDIAN: a cover letter template (libs/templates/README.md). Only the <head> is used; the letter is
-  written into the body when it is made. The Meridian CV's header over a British block letter: the date,
-  then the company, a bold subject line, the letter, the sign-off.
+  written into the body when it is made. The Meridian CV's header over a British block letter: the
+  company, a bold subject line, the letter, the sign-off. No date: a letter carries none of its own
+  (owner, 2026-11-08).
 -->
 <html lang="en">
 <head>
@@ -23,13 +24,11 @@ body {
 a { color: #003399; text-decoration: none; }
 
 .cv-name { font-size: 26pt; font-weight: 900; color: #003399; line-height: 1; letter-spacing: 0.3pt; }
-.cv-contact { font-size: 9pt; color: #555; margin-top: 4pt; display: flex; flex-wrap: wrap; column-gap: 10pt; }
-.cv-contact span { overflow-wrap: anywhere; }
+.cv-contact { font-size: 9pt; color: #555; margin-top: 4pt; display: flex; column-gap: 10pt; }
 .header-rule { border: none; border-top: 1.5pt solid #003399; margin: 6pt 0 14pt; }
 
 .letter-meta { display: flex; flex-direction: column; gap: 8pt; margin-bottom: 12pt; }
 .letter-meta p { margin: 0; }
-.letter-date, .date-line { order: -1; color: #555; margin-bottom: 10pt; }
 .letter-subject { font-weight: 700; margin-bottom: 12pt; }
 
 p, ul { margin: 0 0 9pt; }

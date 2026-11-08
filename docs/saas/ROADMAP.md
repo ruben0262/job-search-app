@@ -3231,12 +3231,13 @@ work, or opening and closing sessions faster, would help):
 
 **Open, from 2026-11-07**
 
-44. **An AI letter is not told the letter frame's class names.** `tailor_cover.md` gets the look's `<head>`
-    as `<HEAD_BLOCK>`, and the look's style is put back over the reply. But the prompt never names
-    `letter-to`, `letter-date` or `letter-subject`, so a letter the model writes may place its date and
-    subject its own way. Recommendation: in the CV and letter prompt work the owner has scheduled next,
-    hand the model the frame's skeleton. That is a prompt change: approval, an A/B and a CHANGELOG line
-    (§3a).
+44. **An AI letter is not told the letter frame's class names, or its header.** `tailor_cover.md` gets the
+    look's `<head>` as `<HEAD_BLOCK>`, and the look's style is put back over the reply. But the prompt never
+    names `cv-header`, `letter-to` or `letter-subject`, so the model lays out its own header, address and
+    subject, which the look then styles only by element. Its date line is taken out in code
+    (`build._undated`, 2026-11-08). Recommendation: in the CV and letter prompt work the owner has
+    scheduled next, hand the model the frame's skeleton, its header with the person's links filled in,
+    and say the letter is not dated. That is a prompt change: approval, an A/B and a CHANGELOG line (§3a).
 45. **AI documents in the new looks are unmeasured.** An AI CV's text is unchanged by a look, but its
     length on the page is not. Ledger and Tabula fit fewer lines than Meridian, so the two-page revision
     may run more often. Recommendation: before the prompt work, count `revised` per look in `docgen.built`
@@ -3246,9 +3247,22 @@ work, or opening and closing sessions faster, would help):
     accounts measured in 2026-08 carried the scaffold's style, which is Meridian, the default. An account
     whose setup wrote it a style of its own now gets Meridian until it picks. Recommendation: none, unless
     such an account turns up.
-47. **The docgen image's new fonts were not built here** (no Docker on the laptop). The `fc-list` checks
-    fail the build if a face is missing. Check: `deploy/deploy.sh docgen` succeeds, then one CV in Ledger
-    and one in Kestrel come out in a serif and in Carlito.
+47. **Done in all but the build: the docgen image's fonts give every look its own face** (2026-11-08). The
+    image is Debian 13 (`python:3.12-slim`'s own history says trixie). Its five font packages and DejaVu,
+    from Debian's archive, pass the Dockerfile's `fc-list` checks, and with only them every look's CV and
+    letter, a stress one in accented letters, "Ł" and "€" too, embeds the same faces as on the laptop: 28 of 28,
+    none in a fallback. Chrome honours the font list: given only DejaVu, all 28 came out in it. Left: the
+    image itself, never built here. Docker is installed, but this account is not in the `docker` group
+    (`sudo usermod -aG docker $USER`, then a new login). Then `docker build -f
+    deploy/docker/Dockerfile.docgen .` must pass its own `fc-list` checks.
+48. **A job's date at the right of its title line is read apart from it by two of five PDF readers**
+    (2026-11-08, `libs/templates/README.md`, "What is measured"). Seven CV looks do this, Meridian among
+    them, as most CVs do. poppler reads the date after the job's bullets, still within the job; pdfminer
+    gathers up to 5 of 15 at the end of a section. pypdf, MuPDF and `pdftotext -layout` keep every one by
+    its title. Measured on Kestrel, Ledger and Meridian: the date straight after the title, or on a line
+    of its own under it, kept all of them by their titles for all five (38 apart before, 0 after).
+    **Decided (owner, 2026-11-08): dates at the right**, in every look, Tabula's moved there too; where a
+    job has none, none is shown. Closed.
 
 ## Phase 9 — MongoDB instead of Postgres (added 2026-10-30)
 

@@ -14,6 +14,115 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-08 — No document dated; dates only where there are some, at the right; links that work; bigger pictures
+
+The owner, on the dates question left open above: dates of the sections, where the person has them, at
+the right; where they are missing, "don't make a fuss, leave it out"; no CV or letter dated with the day
+it was made; links on the CV, and on the letter where they fit; the right look always, never wrong; and
+the pictures larger, to be seen on every screen.
+
+- **No letter is dated.** The instant letter wrote the day it was made under the company's address; it
+  writes none now, and `letter-meta` is left out when a job names neither company nor place. The six
+  letter looks lose their date rules, and the picture its date block. An AI letter's model is still told
+  today's date (`job_context`), which "Present" and "for four years" are counted to, and it often heads
+  the letter with it: `build._undated` takes out each line that is only a date ("8 November 2026",
+  "Lisbon, 8 November 2026", "November 8, 2026", "8. November 2026", "8 de novembro de 2026", "08/11/2026",
+  "2026-11-08"), keeps the company's address above one, and keeps a date inside a sentence. No prompt
+  changed.
+- **Dates at the right in every look.** Tabula had them in a column on the left, and an entry without
+  dates had its title slide into it; it now has them at the right, with its headings in a pale band to
+  stay itself. A new test measures every CV look as Chrome prints it: each date at the right end of its
+  line, and an undated title where the others are. It failed on the old Tabula.
+- **A job written without dates is a job.** The reader anchored entries on dated lines only, so
+  "Volunteer Coordinator, Lisbon Food Bank" over two bullets was read as a bullet of the job above, with
+  its bullets. It is now an entry of its own, with no dates and none shown: a capitalised line with a job
+  title in it, belonging to no dated entry, with a bulleted line under it. The reader's tests, the four
+  golden CVs among them, pass unchanged; the new one fails on the old reader.
+- **Links.** The CV's and the letter's header already carried the links typed in "Your name and links"
+  (else the CV's own). The test now requires them to be followable in the PDF, in all 14 looks: a
+  `/URI` annotation for the LinkedIn link and the `mailto:`.
+- **Bigger pictures.** The sheet's from 0.189 to 0.25 of a page (150 to 199 pixels wide), the two in
+  My documents from 0.121 to 0.18, 0.22 from 900 pixels up. At 320, 390, 768 and 1280 pixels nothing runs
+  off the screen or over anything else.
+
+Left for the owner: an AI letter still lays out its own header, address and subject, since the prompt
+does not name the frame (ROADMAP item 44). That, and telling it the letter is not dated, is a prompt
+change.
+
+Gates: lint-imports 2 kept; ruff clean; schema on an empty db; contract current (78 paths); build;
+pytest 1402 passed, 3 skipped (the same three).
+
+---
+
+## 2026-11-08 — The looks' pictures drawn at once; My documents in a new order; every look read by five ATS readers
+
+The owner asked for:
+- **The pictures in the look picker to be instant**, not 5–10 seconds.
+- **My documents in this order:** Your name and links, About you, How your CVs and cover letters look, CVs
+  and cover letters we made for you, Your CV, Cover letters and other files.
+- **Every look checked against an ATS**, and the server's fonts tested in every look.
+
+**The pictures.** Each was a frame with a request and a document of its own, ~40 in a sheet. Measured on a
+laptop, with the server answering in 2 ms, 39 frames took 1.1–1.8 s to load; it is the documents, not the
+server. Each picture is now sent with the shelf (`GET /templates`, 57.7 KB, 4.8 KB compressed, read ahead
+as before) and drawn in the page, in a shadow root holding an `<html>` of its own. The look's stylesheet
+applies there exactly as in a page of its own: all 14 pictures were the same pixels as before, on a page
+whose own styles would have leaked in. `.picture` resets what a shadow root inherits; without that, up to
+59,184 of a picture's pixels moved. The sheet's 37 pictures are drawn 0.10–0.26 s after the tap (0.39–0.47 s
+on a CPU slowed fourfold), with no request. `GET /templates/{kind}/{id}/preview` is removed, and the
+picture has no title any more, which in the page was the look's name a second time on its card.
+
+**The ATS check.** Every look's sample CV, a two-page CV, and a stress CV and letter written as the AI
+writes them ("C++", "C#", ".NET", "José Müller-Łukasiewicz", "€"), read by pypdf, pdfminer, MuPDF and
+poppler's `pdftotext` (plain and `-layout`). Three defects, now fixed:
+
+- **Ligatures.** Lato and Carlito draw "fi", "fl" and "ffi" as one glyph, and pypdf and pdfminer read it as
+  one character: "certiﬁed", "workﬂow", "oﬃce", which a search for the word does not find. That was every
+  Meridian, Kestrel, Prism, Tabula and Halcyon CV and letter.
+- **Quill's headings**, in a 30 mm margin column beside their sections, were read by poppler and pdfminer
+  as a column of their own: every heading after the first came apart from its section, and its 0.9pt of
+  tracking on 9pt gave "E DUC AT I O N". Each heading is now on its own line at the margin, over its
+  indented section, at 0.5pt.
+- **Meridian's contact line** broke anywhere: a phone came out as "91234-" over "5678", read wrongly by all
+  five, and by poppler as "912345678".
+
+The first and third are fixed in one place, `templates.EVERY_LOOK`, added to the end of every look's
+stylesheet: no ligatures, and each contact part kept whole unless it is wider than the line. Meridian is
+the scaffold's own stylesheet and is not edited (CLAUDE.md §3a): it gets the rules this way. The model's
+input is unchanged; an AI letter's `<HEAD_BLOCK>` is still read from the look's file. The contact rules each
+new look carried (`flex-wrap`, `overflow-wrap`) are removed from the thirteen files: `EVERY_LOOK` is the one
+copy, and a new look cannot leave it out.
+
+After: every word whole, the name first, contact details exact, sections in order and every font embedded,
+for all 14 looks with all five readers. Not every date: a job's date at the right of its title line, in
+seven CV looks, Meridian among them, is read apart from its title by poppler (after the job's bullets) and
+pdfminer (up to 5 of 15 gathered at a section's end). The date after the title, or under it, kept all of
+them in place (38 apart before, 0 after, on Kestrel, Ledger and Meridian). That would change seven looks,
+so it waits for the owner (ROADMAP Phase 8 item 48).
+
+`tests/test_templates.py` now reads every look with pdfminer as well as pypdf, and requires every word whole
+and nothing else, the name first, the headings in order, no ligature, and every short contact part on one
+line. Against the looks before this change it failed 12 cases: the 11 ligature and Quill ones, and
+Meridian's contact line. `pdfminer.six==20260107` is pinned in `requirements-dev.txt`.
+
+**The server's fonts** (ROADMAP item 47). The image is Debian 13 (trixie, from `python:3.12-slim`'s own
+history). Its five font packages plus DejaVu were fetched from Debian's archive. With only those, the
+Dockerfile's `fc-list` checks pass, and every look's CV and letter (sample and stress, 28 PDFs) embeds the
+same faces as on the laptop, with none in a fallback. Given only DejaVu, all 28 came out in DejaVu, so
+Chrome does read the restricted list. The image itself is not built here: Docker is installed, but this
+account is not in the `docker` group.
+
+**My documents** is in the owner's order; an end-to-end test reads the cards' titles in it.
+
+Also removed: `_PREVIEW_TEXT`, `_PREVIEW_WORD` and `_BAR` in `tests/test_templates.py`, left from the
+rejected bar pictures with nothing reading them.
+
+Gates: lint-imports 2 kept; ruff clean; schema on an empty db; contract current (78 paths: the preview
+route gone); build; pytest 1399 passed, 3 skipped (the same three: no Postgres copy source, no reference
+instance, an empty parameter set).
+
+---
+
 ## 2026-11-07 — How a CV and a cover letter look: eight looks, picked in My documents, used by every build
 
 The owner asked for:

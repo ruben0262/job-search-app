@@ -325,6 +325,10 @@ def _entries(body: list[tuple[str, bool]], *, single: bool) -> tuple[Entry, ...]
     Each dated line is one entry. Its title is on that line, or on the one or two capitalised lines
     just above it, or just below — the three ways CVs are laid out. Everything else until the next
     entry is its bullets, glyph or not, because python-docx returns Word's bullets as plain lines.
+
+    A job written with no dates is one too, when nothing else can be meant: a capitalised line with a
+    job title in it, no dated entry's, with a bulleted line under it. It was read as a bullet of the
+    job above, and its own bullets with it (2026-11-08). It has no dates, and none are shown.
     """
     dated = {index: found for index, (line, bullet) in enumerate(body)
              if not bullet and (found := _dates(line, single=single))}
@@ -343,14 +347,18 @@ def _entries(body: list[tuple[str, bool]], *, single: bool) -> tuple[Entry, ...]
             owner[below] = anchor
             below += 1
 
+    undated = [index for index, (line, bullet) in enumerate(body)
+               if index not in owner and _header_like(line, bullet) and _has_title_word(line)
+               and index + 1 < len(body) and body[index + 1][1]]
+    owner.update((index, index) for index in undated)
     starts = sorted((min(index for index, who in owner.items() if who == anchor), anchor)
-                    for anchor in dated)
+                    for anchor in (*dated, *undated))
     entries = []
     for position, (start, anchor) in enumerate(starts):
         stop = starts[position + 1][0] if position + 1 < len(starts) else len(body)
         heads = [_without_dates(body[index][0]) for index in range(start, stop) if owner.get(index) == anchor]
         bullets = tuple(body[index][0] for index in range(start, stop) if index not in owner)
-        written, first, last = dated[anchor]
+        written, first, last = dated.get(anchor, ("", None, None))
         entries.append(_entry(heads, written, first, last, bullets))
     return tuple(entries)
 

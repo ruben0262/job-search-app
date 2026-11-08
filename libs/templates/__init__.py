@@ -3,10 +3,10 @@
 **A template is a stylesheet over one markup.** Every CV the platform makes, the instant one written by
 `libs.documents.instant` and the AI one tailored from a person's `base_cv.html`, carries the same class
 names (`cv-header`, `section-title`, `entry`, `entry-date`…), and every instant letter the same frame
-(`letter-to`, `letter-date`, `letter-subject`, `letter`). So a template is one HTML file in `cv/` or
-`cover/` whose `<head>` holds its look and nothing else: the writer fills the body when the document is
-made, and the template lays it out. Each person has one of each, `User.cv_template` and
-`User.cover_template` (owner, 2026-11-07); none picked is `DEFAULT`.
+(`letter-meta` holding `letter-to`, then `letter-subject` and `letter`; never a date of its own). So a
+template is one HTML file in `cv/` or `cover/` whose `<head>` holds its look and nothing else: the writer
+fills the body when the document is made, and the template lays it out. Each person has one of each,
+`User.cv_template` and `User.cover_template` (owner, 2026-11-07); none picked is `DEFAULT`.
 
 Meridian, the CV everyone had before templates, is the scaffold itself (`SCAFFOLD_CV`): read here, never
 written (CLAUDE.md §3a). Why every template is a single column, and what each sector expects, with the
@@ -18,7 +18,6 @@ import logging
 import re
 from dataclasses import dataclass
 from functools import lru_cache
-from html import escape
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -53,6 +52,20 @@ def split_style(html: str) -> tuple[str, str]:
     return (html[:match.start()] + html[match.end():], match.group(0)) if match else (html, "")
 
 
+# What every look keeps, so an applicant tracking system reads each word whole (README, "Adding a look").
+# Here once rather than in each look, so that a new look cannot leave it out, and Meridian, which is the
+# scaffold's own stylesheet and never edited (CLAUDE.md §3a), has it too. Measured 2026-11-08, five PDF
+# readers over every look:
+# - No ligatures. Lato and Carlito draw "fi", "fl" and "ffi" as one glyph, which pypdf and pdfminer read
+#   as one character: "certiﬁed", "workﬂow" and "oﬃce", which no search for the word finds.
+# - Each part of the contact line moves to the next line whole, and breaks inside only when it is wider
+#   than the line (a very long link). Meridian's broke anywhere: a phone came out "91234-" over "5678",
+#   which all five read wrongly and poppler as "912345678".
+EVERY_LOOK = ("\n/* Every look (libs/templates EVERY_LOOK): what an ATS needs to read each word whole. */\n"
+              "body { font-variant-ligatures: none; }\n"
+              ".cv-contact { flex-wrap: wrap; }\n"
+              ".cv-contact span { display: inline-block; overflow-wrap: anywhere; }\n")
+
 KINDS = ("cv", "cover")
 # Where each kind's pick is kept on the account.
 FIELD = {"cv": "cv_template", "cover": "cover_template"}
@@ -77,8 +90,11 @@ class Template:
 
     @property
     def style(self) -> str:
-        """Its `<style>` block: what an AI CV is given back after the model wrote its text."""
-        return split_style(load(self.path))[1]
+        """Its `<style>` block, ending in what every look keeps for an ATS (`EVERY_LOOK`): what an AI CV
+        is given back after the model wrote its text. One block, as every step after expects one."""
+        block = split_style(load(self.path))[1]
+        css, end, _ = block.rpartition("</style>")
+        return f"{css}{EVERY_LOOK}{end}" if end else block
 
     @property
     def head(self) -> str:
@@ -88,11 +104,11 @@ class Template:
 
     @property
     def page_margin(self) -> str:
-        """The margin its `@page` rule gives the printed page. A screen has no page, so a preview pads
-        the body by this instead: without it, the text runs to the very edge of the picture."""
+        """The margin its `@page` rule gives the printed page. A screen has no page, so a picture pads
+        the body by this instead: without it, the shapes run to the very edge of the picture."""
         match = _PAGE_MARGIN.search(self.style)
         if match is None:
-            logger.warning("template %s/%s has no @page margin; its preview is drawn with 18mm",
+            logger.warning("template %s/%s has no @page margin; its picture is drawn with 18mm",
                            self.kind, self.id)
         return match.group(1).strip() if match else "18mm"
 
@@ -231,8 +247,7 @@ _SKETCH = {
           + _section("24mm", _entry("64%", "16mm"), _entry("56%", "16mm"))
           + _section("18mm", f'<p class="entry-desc">{_lines("96%", "62%")}</p>')
           + _section("22mm", f'<ul class="plain-list"><li>{_shape("54%", line=True)}</li></ul>'),
-    "cover": _HEADER + '<div class="letter-meta"><p class="letter-to">' + _lines("34mm", "26mm") + "</p>"
-             + f'<p class="letter-date">{_shape("22mm", line=True)}</p></div>'
+    "cover": _HEADER + f'<div class="letter-meta"><p class="letter-to">{_lines("34mm", "26mm")}</p></div>'
              + f'<p class="letter-subject">{_shape("46%")}</p><div class="letter">'
              + f'<p>{_shape("24%", line=True)}</p><p>{_lines("96%", "90%", "58%")}</p>'
              + f'<p>{_lines("94%", "40%")}</p>'
@@ -244,9 +259,11 @@ _SKETCH = {
 
 def picture(template: Template) -> str:
     """The look drawn, as the picker shows it (owner, 2026-11-07): abstract shapes in the look's own
-    colours and sizes, with no word, letter or character in it. A screen has no page, so the page's
-    margins pad the body."""
-    return ('<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="UTF-8">\n'
-            f"<title>{escape(template.name)}</title>\n{template.style}\n"
-            f"{_PICTURE_STYLE % template.page_margin}\n</head>\n<body>\n{_SKETCH[template.kind]}\n"
-            "</body>\n</html>\n")
+    colours and sizes, with no word, letter or character in it, not even a title. A screen has no page,
+    so the page's margins pad the body.
+
+    A page's `<head>` and `<body>`, which the site parses into an `<html>` of its own in a shadow root
+    (`web/src/templates.tsx`): the look's stylesheet applies there exactly as in a page of its own, and
+    the site's cannot reach it."""
+    return (f"<head>{template.style}{_PICTURE_STYLE % template.page_margin}</head>"
+            f"<body>{_SKETCH[template.kind]}</body>")

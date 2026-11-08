@@ -1,5 +1,5 @@
 """How a person's CVs and cover letters look: the templates, grouped as the picker shows them, the one
-of each kind they picked, and a preview of each (`libs.templates`)."""
+of each kind they picked, and a picture of each (`libs.templates`)."""
 from __future__ import annotations
 
 import logging
@@ -7,7 +7,6 @@ import uuid as _uuid
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from pymongo.database import Database
 
@@ -26,6 +25,9 @@ Kind = Literal["cv", "cover"]
 class TemplateCard(BaseModel):
     id: str
     name: str
+    # The look in abstract shapes (`templates.picture`), drawn in the page from this answer: one request
+    # for every picture, kept with the rest, so the sheet opens with them already there.
+    picture: str
 
 
 class TemplateGroup(BaseModel):
@@ -55,7 +57,8 @@ def _templates(user: User) -> Templates:
     def shelf(kind: str) -> TemplateShelf:
         return TemplateShelf(
             chosen=templates.chosen(user, kind).id,
-            templates=[TemplateCard(id=each.id, name=each.name) for each in templates.of_kind(kind)],
+            templates=[TemplateCard(id=each.id, name=each.name, picture=templates.picture(each))
+                       for each in templates.of_kind(kind)],
             groups=[TemplateGroup(title=title, templates=ids) for title, ids in templates.groups(kind)])
 
     return Templates(cv=shelf("cv"), cover=shelf("cover"))
@@ -79,16 +82,3 @@ def choose_template(kind: Kind, body: TemplateChoice, db: Database = Depends(get
     audit(logger, "templates.chosen", user=user_id, kind=kind, template=body.id)
     return _templates(get(db, User, user_id))
 
-
-@router.get("/{kind}/{template_id}/preview", response_class=HTMLResponse,
-            responses={200: {"content": {"text/html": {}}, "description": "The look, drawn."}})
-def preview_template(kind: Kind, template_id: str) -> HTMLResponse:
-    """The picture in the picker: this look drawn in abstract shapes, with nothing written in it.
-
-    Open to anyone, as it holds nobody's data, and cached for an hour since it changes only on a deploy.
-    """
-    template = templates.find(kind, template_id)
-    if template is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND,
-                            detail=f"there is no {kind} look called {template_id!r}")
-    return HTMLResponse(templates.picture(template), headers={"Cache-Control": "public, max-age=3600"})

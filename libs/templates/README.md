@@ -18,9 +18,20 @@ The writer never sees a template. It writes the body in the one markup every doc
   `section-title`, `competencies`, `entry`, `entry-head`, `entry-title`, `entry-date`, `entry-desc`,
   `plain-list`. These are the scaffold's fourteen class names, measured on every account's `base_cv.html`
   in 2026-08, and the ones `libs.documents.instant` writes.
-- **Letter:** the CV's header, then `letter-meta` holding `letter-to` (company, place) and `letter-date`,
-  then `letter-subject` ("Application for …"), then `letter`. All three are filled from the job on the
-  day the letter is made, never written into a template.
+- **Letter:** the CV's header, then `letter-meta` holding `letter-to` (company, place), then
+  `letter-subject` ("Application for …"), then `letter`. Both are filled from the job when the letter is
+  made, never written into a template, and `letter-meta` is left out when the job names neither.
+
+**What every document carries, whoever writes it** (owner, 2026-11-08):
+
+- **No date of its own.** Not the day a CV or a letter was made. An AI letter's model is told today's
+  date (for counting "Present") and often heads the letter with it: `build._undated` takes each line
+  that is only a date out of it, and keeps a date inside a sentence.
+- **Dates only where the person has them, at the right of the line.** A job with no dates has none, and
+  nothing is made of it: no placeholder, no gap, its title where the others are. The reader takes a job
+  written without dates as a job of its own (`read._entries`), not as a bullet of the one above.
+- **Their links, as links,** in the header of a CV and of a letter: the ones they typed in "Your name
+  and links", else the ones their CV has. Each can be followed from the PDF.
 
 Then:
 
@@ -32,12 +43,17 @@ Then:
   prompt already asks it to use, and the template's `<style>` is put back over whatever came back. The
   prompt does not yet describe the letter frame's class names, so a letter the model writes may place
   its date or subject its own way. Telling it is a prompt change, which waits for the owner (§3a).
-- **The picker's pictures** (`GET /templates/{kind}/{id}/preview`) are `templates.picture`. Each is the
+- **The picker's pictures** are `templates.picture`, sent with the shelf (`GET /templates`). Each is the
   look in abstract shapes, not a document (owner, 2026-11-07). One small fixed sketch in the markup every
   document carries (a name, a contact strip, headings, a few entries and lines) is laid out by the look's
   own stylesheet, so its colours, bands, rules, type sizes and date column show. Every part is a rounded
   block in its own colour, with no word, letter or character anywhere. The picker shows each look's name
   and nothing else.
+- **The site draws each picture in the page**, in a shadow root holding an `<html>` of its own, where the
+  look's stylesheet applies exactly as in a page of its own and the site's cannot reach in. Each was a
+  frame until 2026-11-08, with a request and a document each: ~40 in a sheet took 1–2 s on a laptop and
+  5–10 s as the owner saw them. Drawn in the page, the sheet's 37 are there 0.1–0.26 s after the tap
+  (0.4–0.5 s on a CPU slowed fourfold), with no request at all, and pixel for pixel the same as before.
 
 ## The catalogue, and why
 
@@ -47,10 +63,10 @@ Then:
 | **Kestrel** | ✓ | ✓ | IT, engineering, business, marketing, science | compact; name and contact on one row; spaced-capital headings |
 | **Ledger** | ✓ | ✓ | finance, business, law, government | serif, black only, centred name, ruled headings: the "banking" CV |
 | **Prism** | ✓ | ✓ | marketing and design, sales, hospitality | the name in one band of colour; one accent, nothing else |
-| **Tabula** | ✓ | ✓ | engineering, finance, government, trades, office (+ healthcare letters) | dates in a left column; the letter is DIN 5008's |
+| **Tabula** | ✓ | ✓ | engineering, finance, government, trades, office (+ healthcare letters) | Carlito, each heading in a pale band; the letter is DIN 5008's, without its date |
 | **Halcyon** | ✓ | ✓ | care, teaching, government, sales, hospitality | larger type, more air, a teal bar |
 | **Foundry** | ✓ | | trades and logistics, hospitality and retail | heavy plain type, dark heading bars, one page |
-| **Quill** | ✓ | | science and research, teaching, law | academic: headings in the margin, a book face |
+| **Quill** | ✓ | | science and research, teaching, law | academic: headings out at the margin over indented sections, a book face |
 
 "Most popular" is fixed from the research (owner: not counted from picks): Meridian, Kestrel, Ledger and
 Prism for CVs, and Meridian, Kestrel, Ledger and Tabula for letters. The only split by style found is one
@@ -79,7 +95,8 @@ the one most of continental Europe expects.
   colour, no graphics ([Wall Street Careers](https://www.wallstreetcareers.com/blog/best-resume-resources-finance-jobs-2026),
   [All About Law](https://www.allaboutlaw.co.uk/law-careers/legal-cv/magic-circle-cv)).
 - **Germany and much of Europe** read a tabular CV with the dates in a left column, newest first
-  ([how-to-germany](https://www.how-to-germany.com/work/cv/)). The letter has the sender at the top, the
+  ([how-to-germany](https://www.how-to-germany.com/work/cv/)). Tabula had it, until the owner put every
+  look's dates at the right (2026-11-08). The letter has the sender at the top, the
   company in a block on the left, the date on the right and a bold subject with no "Betreff"
   ([karrierebibel, DIN 5008](https://karrierebibel.de/bewerbung-din-5008/)). The French
   lettre de motivation is the same shape, with "Objet" naming the role
@@ -104,24 +121,50 @@ decides, not the look. It belongs to the CV prompts the owner has scheduled next
 
 ## Adding a look
 
-`tests/test_templates.py` renders every look through the real Chrome and holds it to these rules. Every
-new look broke at least one of them when first drawn, each looking right on the page:
+`tests/test_templates.py` renders every look through the real Chrome, reads it as two kinds of ATS do
+(pypdf, in the order Chrome wrote it, and pdfminer, by where each word sits on the page, which is how a
+reader finds columns), and holds it to these rules. Every new look broke at least one of them when first
+drawn, each looking right on the page:
 
-1. **What an ATS reads is the PDF's text, in the order Chrome wrote it.** It starts with the name, and
-   every heading is followed by its own section.
+1. **What an ATS reads is the PDF's text.** It starts with the name, every word comes out whole and
+   nothing else does, and every heading is followed by its own section, by both readers.
 2. **No floats.** Chrome paints floats before the text around them. Quill's floated margin headings
-   reached the text all together, ahead of the name. Use a grid, which paints in document order.
+   reached the text all together, ahead of the name. A grid paints in document order, but see rule 7.
 3. **No small capitals, no wide letter-spacing on anything an ATS must read.** `font-variant: small-caps`
-   gave "A LEX M ORGAN". 1.4pt of tracking on 9pt gave "E X P E R I E N C E". Keep tracking at or under
-   ~0.1 of the font size, as every look here does.
-4. **Something drawn left of what precedes it in the markup needs a space kept between them.** Tabula's
-   date sits left of its title, and the text ran "Northwind LogisticsMar 2021" until each title ended in
-   a kept space.
+   gave "A LEX M ORGAN". 1.4pt of tracking on 9pt gave "E X P E R I E N C E", and so, for poppler and
+   pdfminer, did Quill's 0.9pt on 9pt: exactly 0.1 of the size. Keep it under that: the most here is
+   Foundry's 0.095, read whole by all five readers measured.
+4. **Dates at the right of their line, and nothing drawn left of what precedes it in the markup.**
+   Every look puts a job's dates at the right end of its line (owner, 2026-11-08), and the test measures
+   it as Chrome prints. Tabula's dates sat left of their titles, the text ran "Northwind LogisticsMar
+   2021" until each title ended in a kept space, and an undated title slid into the dates' column.
 5. **Every face a look asks for first is installed and checked in `deploy/docker/Dockerfile.docgen`.**
    Chrome falls back without a word, and the test fails on a face the image does not check.
 6. **An `@page` rule with `size: A4` and the margins.** Not body padding: that would not repeat on page
    two. The picker pads its pictures by this margin.
-7. **The contact line wraps** between its parts (`display: flex; flex-wrap: wrap`), and inside a part
-   wider than the line (`overflow-wrap: anywhere`). Each part kept whole, with nothing to break between
-   them, put the third link of a long contact line off the page: missing from the PDF in all thirteen new
-   looks. A first version of the pictures, which drew each word of a sample, showed it.
+7. **Nothing side by side.** A heading or a column of text beside another is read as a column by the
+   readers that lay text out by position. Quill's headings sat in a 30 mm margin column and poppler and
+   pdfminer read each one apart from its section; on its own line over the section, it reads in place.
+8. **What every look keeps is `EVERY_LOOK`** (`libs/templates/__init__.py`), added to the end of each
+   look's stylesheet, so a new look cannot leave it out. Don't repeat it in a look:
+   - *No ligatures.* Lato and Carlito draw "fi", "fl" and "ffi" as one glyph, which pypdf and pdfminer
+     read as one character ("certiﬁed", "oﬃce"): a search for the word does not find it.
+   - *The contact line keeps each part whole*, moving it to the next line, and breaks inside one only when
+     it is wider than the line (a very long link). Kept whole with nothing to break between them, a long
+     contact line's third link went off the page in all thirteen new looks (2026-11-07). Breaking
+     anywhere, Meridian put a phone over two lines as "91234-" and "5678", which all five readers read
+     wrongly (2026-11-08).
+
+### What is measured, and what is not
+
+Measured on 2026-11-08 with five readers (pypdf, pdfminer, MuPDF, and poppler's `pdftotext` both plain
+and `-layout`), over each look's sample, a two-page CV, and a stress CV and letter written as the AI writes
+them, with "C++", "C#", ".NET", accents, "Ł" and "€": every word whole, the name first, contact details
+exact, sections in order, every font embedded, in all 14 looks and all five readers.
+
+Not every date: a job's date at the right of its title line, as every look has it and most CVs anywhere
+do, is read apart from its title by the two readers that lay text out by position. poppler moves it
+after the job's bullets, still in the job; pdfminer gathers some of a section's dates at its end, up to
+5 of 15 in a look. pypdf, MuPDF and `pdftotext -layout` keep every one by its title. The date straight
+after the title, or under it, kept all of them in place for all five readers. The owner kept the dates
+at the right (2026-11-08): the layout recruiters expect, and the one the big parsers read.

@@ -617,11 +617,9 @@ def test_a_document_that_fails_its_checks_never_reaches_chrome(monkeypatch, fake
 
 
 def test_the_prompt_is_told_what_day_it_is():
-    """A cover letter carries a date, and nothing was supplying one.
-
-    The model wrote one from its own sense of time: a letter generated in August 2026 went out
-    dated 22 June 2026. It is the first line an employer reads, on a document nobody proofreads
-    before it is sent.
+    """What "Present" and "for four years" are counted to. Nothing supplied it, and the model wrote a
+    date from its own sense of time: a letter generated in August 2026 went out dated 22 June 2026. A
+    letter carries no date of its own now (owner, 2026-11-08): see the test of an AI cover's date below.
     """
     from datetime import UTC, datetime
 
@@ -707,6 +705,21 @@ def test_an_ai_cover_is_handed_its_looks_head_and_comes_back_in_it(monkeypatch, 
     assert tabula.head in client.calls[0]["messages"][0]["content"]
     assert tabula.style in fake_chrome["html"] and "font-size:4pt" not in fake_chrome["html"]
 
+
+def test_an_ai_cover_comes_back_without_the_day_it_was_made(monkeypatch, fake_chrome):
+    """No document carries the day it was made (owner, 2026-11-08). The model is told today's date and
+    heads a letter with it: each line that is only a date goes, the company's address above one keeps
+    its own lines, and a date inside a sentence stays."""
+    session, user, _job, _state = _session(monkeypatch)
+    dated = TAILORED.replace("<body>", "<body><p class=\"date-line\">8 November 2026</p>"
+                             "<p>Payfast<br>Budapest<br>Lisbon, 8 November 2026</p>"
+                             "<p>Since 8 November 2021 I have run the desk.</p>")
+
+    _ai(session, user, FakeClient(dated), kind="cover")
+
+    body = fake_chrome["html"].split("<body>", 1)[1]
+    assert "<p>Payfast<br>Budapest</p>" in body and "Since 8 November 2021 I have run the desk." in body
+    assert "2026" not in body and "date-line" not in body
 
 # ── what must never reach a person ────────────────────────────────────────────────────────────
 

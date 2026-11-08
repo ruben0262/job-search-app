@@ -3590,7 +3590,8 @@ button.toggle[aria-pressed="true"]::before {
 /* How a CV and a cover letter look (`templates.tsx`). A picture is the look's own page, 794 × 1123 px (A4
    at 96 px to the inch), drawn at `--scale` of its size in a box of the page's shape at that scale. */
 .thumb {
-  --scale: 0.189;
+  /* A quarter of an A4 page, 199 by 281 pixels: big enough to see the look on a phone (owner, 2026-11-08). */
+  --scale: 0.25;
   display: block;
   flex: none;
   width: calc(794px * var(--scale));
@@ -3602,10 +3603,13 @@ button.toggle[aria-pressed="true"]::before {
   transition: border-color var(--fade) var(--ease);
 }
 
-.thumb iframe {
+/* A page's size, scaled down. `all: initial` first: a shadow root still inherits the site's colour, type
+   and alignment, which moved up to 59,184 of a picture's pixels when measured. */
+.thumb .picture {
+  all: initial;
+  display: block;
   width: 794px;
   height: 1123px;
-  border: 0;
   transform: scale(var(--scale));
   transform-origin: 0 0;
   pointer-events: none;
@@ -3625,7 +3629,13 @@ button.toggle[aria-pressed="true"]::before {
 }
 
 .look .thumb {
-  --scale: 0.121;
+  --scale: 0.18;
+}
+
+@media (min-width: 900px) {
+  .look .thumb {
+    --scale: 0.22;
+  }
 }
 
 .look-about {

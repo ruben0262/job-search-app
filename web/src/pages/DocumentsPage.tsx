@@ -61,8 +61,14 @@ export function DocumentsPage() {
       <h1>Your CV and the rest</h1>
       <p className="lede">We read them to find your words and to make your CVs and cover letters.</p>
 
-      <Card title="Your CV">
-        <Files kind="cv" list={list} onChanged={saved} />
+      {/* In the owner's order (2026-11-08): who you are, how your documents look, what was made, then
+          the files they are made from. */}
+      <Card title="Your name and links">
+        <Identity />
+      </Card>
+      {/* Untitled: the box's own label says "About you". */}
+      <Card>
+        <AboutYou onSaved={saved} />
       </Card>
       <Card title="How your CVs and cover letters look">
         <TemplatePicks />
@@ -70,15 +76,11 @@ export function DocumentsPage() {
       <Card title="CVs and cover letters we made for you">
         <Made />
       </Card>
+      <Card title="Your CV">
+        <Files kind="cv" list={list} onChanged={saved} />
+      </Card>
       <Card title="Cover letters and other files">
         <Files kind="cover_letter" list={list} onChanged={saved} />
-      </Card>
-      {/* Untitled: the box's own label says "About you". */}
-      <Card>
-        <AboutYou onSaved={saved} />
-      </Card>
-      <Card title="Your name and links">
-        <Identity />
       </Card>
 
       {found !== null ? (

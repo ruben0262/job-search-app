@@ -3462,11 +3462,16 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "picture": {
+            "title": "Picture",
+            "type": "string"
           }
         },
         "required": [
           "id",
-          "name"
+          "name",
+          "picture"
         ],
         "title": "TemplateCard",
         "type": "object"
@@ -7485,62 +7490,6 @@
           }
         },
         "summary": "Choose Template",
-        "tags": [
-          "templates"
-        ]
-      }
-    },
-    "/templates/{kind}/{template_id}/preview": {
-      "get": {
-        "description": "The picture in the picker: this look drawn in abstract shapes, with nothing written in it.\n\nOpen to anyone, as it holds nobody's data, and cached for an hour since it changes only on a deploy.",
-        "operationId": "preview_template_templates__kind___template_id__preview_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "kind",
-            "required": true,
-            "schema": {
-              "enum": [
-                "cv",
-                "cover"
-              ],
-              "title": "Kind",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "template_id",
-            "required": true,
-            "schema": {
-              "title": "Template Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "text/html": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "The look, drawn."
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Preview Template",
         "tags": [
           "templates"
         ]

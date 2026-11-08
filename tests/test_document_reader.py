@@ -130,6 +130,27 @@ def test_a_pdf_with_the_dates_at_the_end_of_the_title_line():
     assert facts.years == 9
 
 
+def test_a_job_written_without_dates_is_a_job_of_its_own_with_no_dates():
+    """It was read as a bullet of the job above, its own bullets with it (2026-11-08). A job with no dates
+    has none shown, and nothing is made of it (owner: "don't make a fuss, leave it out")."""
+    text = """Alex Morgan
+alex.morgan@example.com
+EXPERIENCE
+Operations Assistant, Fabrikam\tSep 2015 – May 2017
+• Scheduled deliveries for 300 customers a week
+Volunteer Coordinator, Lisbon Food Bank
+• Organised 30 volunteer drivers every weekend
+• Ran the Saturday collection rota for two years
+EDUCATION
+BSc Economics, University of Porto\t2010 – 2013
+"""
+    facts = read({"cv": text}, today=TODAY)
+
+    assert [(job.title, job.organisation, job.dates, len(job.bullets)) for job in facts.jobs] == [
+        ("Operations Assistant", "Fabrikam", "Sep 2015 – May 2017", 1),
+        ("Volunteer Coordinator", "Lisbon Food Bank", "", 2)]
+    assert facts.years == 1, "a job with no dates adds no years"
+
 def test_a_linkedin_export_with_the_company_above_the_title():
     facts = read({"linkedin": _golden("accountant_linkedin_export")}, today=TODAY)
 

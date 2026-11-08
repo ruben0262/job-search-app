@@ -1,11 +1,10 @@
 /** How your CVs and cover letters look: the one of each you use, and a sheet to pick another (owner,
  * 2026-11-07). The most popular first, then each job sector with its looks; one look can be in several.
  *
- * Each picture is the look drawn in abstract shapes, not a document: `/templates/{kind}/{id}/preview` at a
- * fifth of its size, laid out by the look's own stylesheet, with nothing written in it. Each look is named,
- * and nothing more.
+ * Each picture is the look drawn in abstract shapes, not a document, at a quarter of its size: laid out by
+ * the look's own stylesheet, with nothing written in it. Each look is named, and nothing more.
  */
-import { useState } from "react";
+import { useCallback, useState } from "react";
 
 import { api, type Schema } from "./api";
 import { useKept } from "./kept";
@@ -38,7 +37,7 @@ export function TemplatePicks() {
           const chosen = shelf.templates.find((each) => each.id === shelf.chosen);
           return (
             <div key={kind} className="look">
-              <Picture kind={kind} id={shelf.chosen} />
+              {chosen ? <Picture html={chosen.picture} /> : null}
               <div className="look-about">
                 <span className="small muted">{SAY[kind].what}</span>
                 <strong className="look-name">{chosen?.name}</strong>
@@ -91,7 +90,7 @@ function Picker({ kind, shelf, onClose, onPicked }: {
               return look ? (
                 <button key={id} type="button" className="look-card" aria-pressed={inUse} disabled={pick.busy}
                         onClick={() => void pick.run(id)}>
-                  <Picture kind={kind} id={id} />
+                  <Picture html={look.picture} />
                   <span className="look-name">{look.name}{inUse ? <span className="look-on"> · In use</span> : null}</span>
                 </button>
               ) : null;
@@ -103,12 +102,21 @@ function Picker({ kind, shelf, onClose, onPicked }: {
   );
 }
 
-/** The look, drawn by itself. Nothing in it runs, and nothing in it can be tapped: the card around it is
- * the button. Loaded only as it comes into view, as a sheet holds dozens. */
-function Picture({ kind, id }: { kind: Kind; id: string }) {
+/** The look, drawn from the shelf already read: the server's own picture of it, never anybody's data,
+ * parsed into an `<html>` of its own inside a shadow root. There the look's stylesheet applies exactly as
+ * in a page of its own, and the site's cannot reach it (`.picture` stops what it would inherit). Each
+ * picture was a frame of its own until 2026-11-08: a document and a request each, ~40 in a sheet, 1-2 s
+ * measured on a laptop and 5-10 s as the owner saw it; drawn here, all 39 take ~75 ms. The card around it is the button. */
+function Picture({ html }: { html: string }) {
+  const draw = useCallback((host: HTMLSpanElement | null) => {
+    if (!host) return;
+    const page = document.createElement("html");
+    page.innerHTML = html;
+    (host.shadowRoot ?? host.attachShadow({ mode: "open" })).replaceChildren(page);
+  }, [html]);
   return (
     <span className="thumb" aria-hidden="true">
-      <iframe src={`/templates/${kind}/${id}/preview`} title="" loading="lazy" tabIndex={-1} sandbox="" />
+      <span className="picture" ref={draw} />
     </span>
   );
 }
