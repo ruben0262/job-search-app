@@ -1,7 +1,7 @@
 """Who pays for an AI request, and the client that makes the call on their key.
 
 The owner's rule (ROADMAP Phase 8): the person's own key first — Claude, Gemini or OpenAI — else the
-platform's key while their daily allowance lasts, else nobody, and the instant document still works.
+platform's key while their daily allowance lasts, else nobody, and the person is told so.
 No free tier, and nothing that multiplies a provider's quota.
 
 **`resolve` is the one place that is decided.** The API asks it when a build is requested and

@@ -205,8 +205,8 @@ def delete_document(document_id: int, db: Database = Depends(get_db),
 class BuildRequest(BaseModel):
     job_id: int
     kind: Literal["cv", "cover"]
-    # "instant" is built by code, free for everyone; "ai" is written by a model on a key that pays.
-    mode: Literal["instant", "ai"]
+    # Written by a model on a key that pays. "instant", built by code, was removed on 2026-11-08.
+    mode: Literal["ai"]
 
 
 class BuildStatus(BaseModel):
@@ -279,7 +279,7 @@ def build_file(build_id: int, db: Database = Depends(get_db),
 
 
 def _documents_today(db: Database, user_id: _uuid.UUID) -> int:
-    """Every document asked for since their midnight, instant or AI, whatever became of it."""
+    """Every document asked for since their midnight, whatever became of it."""
     return db[QueueJob.COLLECTION].count_documents(
         {"lane": "docgen", "user_id": user_id, "created_at": {"$gte": limits.their_midnight(db, user_id)}})
 
@@ -305,12 +305,12 @@ def _ai_payer(db: Database, user: User) -> str:
     if ProfileFiles(db, user.id).build_blocker() is not None:
         raise HTTPException(status.HTTP_409_CONFLICT,
                             detail="AI-written documents need a writing profile this account does "
-                                   "not have yet — the instant version is ready now")
+                                   "not have yet")
     payer = resolve(db, user)
     if payer is None:
         raise HTTPException(status.HTTP_409_CONFLICT,
                             detail="AI writing needs your own Claude, Gemini or OpenAI key — add "
-                                   "one in settings, or use the instant version, which is free")
+                                   "one in settings")
     return payer.kind
 
 

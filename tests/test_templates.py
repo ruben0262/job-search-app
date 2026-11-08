@@ -14,12 +14,10 @@ import re
 import unicodedata
 import uuid
 from html import unescape
-from types import SimpleNamespace
 
 import pytest
 
 from libs import templates
-from libs.documents import instant
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 DOCKERFILE = ROOT / "deploy" / "docker" / "Dockerfile.docgen"
@@ -86,64 +84,90 @@ def test_every_face_a_look_asks_for_first_is_installed_and_checked_in_the_docgen
 
 # ── what each look makes ──────────────────────────────────────────────────────────────────────
 
-# A made-up person, from nowhere real, written like an uploaded CV.
-SAMPLE_CV = """ALEX MORGAN
-Lisbon, Portugal | alex.morgan@example.com | +351 912 345 678
-PROFILE
-Project manager who plans carefully, keeps people informed and delivers on time.
-EXPERIENCE
-Senior Project Manager, Northwind Logistics\tMar 2021 – Present
-• Led a team of 12 across three countries to deliver a new warehouse system two weeks early
-• Cut delivery errors by 38% by redesigning the picking process with the floor teams
-• Managed a €2.4M budget and reported to the board every month
-• Brought in weekly planning reviews that every regional office now uses
-Project Coordinator, Contoso Retail\tJun 2017 – Feb 2021
-• Planned 40 store openings in Portugal and Spain, each on its date
-• Built the weekly report six regional managers use to plan their stock
-• Trained 25 new coordinators in planning and supplier contracts
-Operations Assistant, Fabrikam\tSep 2015 – May 2017
-• Scheduled deliveries for 300 customers a week
-• Kept stock records accurate to 99.5% across two depots
-EDUCATION
-MSc Management, Nova School of Business and Economics\t2013 – 2015
-BSc Economics, University of Porto\t2010 – 2013
-SKILLS
-Project planning, Budgeting, Stakeholder management, Supplier contracts, Excel, Power BI, Jira, Lean
-LANGUAGES
-Portuguese (native), English (C2), Spanish (B2)
-CERTIFICATIONS
-PRINCE2 Practitioner, 2020
-"""
-SAMPLE_IDENTITY = {"full_name": "Alex Morgan", "links": ["linkedin.com/in/alexmorgan"]}
-SAMPLE_JOB = SimpleNamespace(
-    title="Project Manager", company="Lumen Energy", location="Amsterdam, Netherlands",
-    url="https://example.com/jobs/project-manager",
-    description="Lead project planning and budgeting for our warehouse and delivery teams. You will "
-                "manage suppliers, report to stakeholders and train coordinators.")
+# A made-up person, from nowhere real, in the markup every CV and letter carries: what the writer fills a
+# look's body with. Written here, not made by the platform: no code writes a document since the instant
+# one was removed (2026-11-08), and the AI pipeline's own renderer is still to come.
+CONTACT = ["Lisbon, Portugal", "+351 912 345 678",
+           ("alex.morgan@example.com", "mailto:alex.morgan@example.com"),
+           ("linkedin.com/in/alexmorgan", "https://linkedin.com/in/alexmorgan")]
+JOBS = [
+    ("Senior Project Manager — Northwind Logistics", "Mar 2021 – Present", [
+        "Led a team of 12 across three countries to deliver a new warehouse system two weeks early",
+        "Cut delivery errors by 38% by redesigning the picking process with the floor teams",
+        "Managed a €2.4M budget and reported to the board every month",
+        "Brought in weekly planning reviews that every regional office now uses"]),
+    ("Project Coordinator — Contoso Retail", "Jun 2017 – Feb 2021", [
+        "Planned 40 store openings in Portugal and Spain, each on its date",
+        "Built the weekly report six regional managers use to plan their stock",
+        "Trained 25 new coordinators in planning and supplier contracts"]),
+    ("Operations Assistant — Fabrikam", "Sep 2015 – May 2017", [
+        "Scheduled deliveries for 300 customers a week",
+        "Kept stock records accurate to 99.5% across two depots"]),
+]
+# A longer CV, to run every look onto a second page, with a job written without dates.
+MORE_JOBS = [
+    ("Logistics Analyst — Tailspin Toys", "Jan 2014 – Aug 2015", [
+        "Mapped the routes of 120 vans and cut fuel use by 9%",
+        "Wrote the weekly stock forecast for 18 shops",
+        "Ran the yearly stocktake across three warehouses"]),
+    ("Warehouse Supervisor — Wingtip Goods", "Mar 2012 – Dec 2013", [
+        "Ran a shift of 14 pickers and loaders with no lost-time accident in two years",
+        "Set up the returns desk that handled 900 parcels a week"]),
+    ("Volunteer Coordinator — Lisbon Food Bank", "", ["Organised 30 volunteer drivers every weekend"]),
+]
+MORE_SECTIONS = [
+    ("Projects", ["Route planner for a food bank's 30 volunteer drivers",
+                  "Stock dashboard for a community shop, used every week since 2019"]),
+    ("Publications", ["Morgan, A. (2019). Planning the last mile. Logistics Quarterly, 12(3), 44–51."]),
+]
 
 
-# A longer CV than the sample, to run every look onto a second page.
-LONG = SAMPLE_CV.replace("EDUCATION\n", """Logistics Analyst, Tailspin Toys\tJan 2014 – Aug 2015
-• Mapped the routes of 120 vans and cut fuel use by 9%
-• Wrote the weekly stock forecast for 18 shops
-• Ran the yearly stocktake across three warehouses
-Warehouse Supervisor, Wingtip Goods\tMar 2012 – Dec 2013
-• Ran a shift of 14 pickers and loaders with no lost-time accident in two years
-• Set up the returns desk that handled 900 parcels a week
-Volunteer Coordinator, Lisbon Food Bank
-• Organised 30 volunteer drivers every weekend
-EDUCATION
-""") + """PROJECTS
-Route planner for a food bank's 30 volunteer drivers
-Stock dashboard for a community shop, used every week since 2019
-PUBLICATIONS
-Morgan, A. (2019). Planning the last mile. Logistics Quarterly, 12(3), 44–51.
-"""
+def _entry(title: str, dates: str, bullets) -> str:
+    date = f'<span class="entry-date">{dates}</span>' if dates else ""
+    items = "".join(f"<li>{bullet}</li>" for bullet in bullets)
+    return (f'<div class="entry"><div class="entry-head"><span class="entry-title">{title}</span>{date}</div>'
+            f'{f"<ul>{items}</ul>" if items else ""}</div>')
 
 
-def _render(template, cv: str = SAMPLE_CV) -> str:
-    return instant.render(template.kind, documents={"cv": [cv]}, identity=SAMPLE_IDENTITY,
-                          job=SAMPLE_JOB, template=template)
+def _section(title: str, body: str) -> str:
+    return f'<div class="section"><div class="section-title">{title}</div>{body}</div>'
+
+
+def _plain(lines) -> str:
+    return '<ul class="plain-list">' + "".join(f"<li>{line}</li>" for line in lines) + "</ul>"
+
+
+def _render(template, *, long: bool = False, name: str = "Alex Morgan", contact=CONTACT) -> str:
+    """A whole document in this look, as the docgen worker hands Chrome one."""
+    parts = "".join(f'<span><a href="{part[1]}">{part[0]}</a></span>' if isinstance(part, tuple)
+                    else f"<span>{part}</span>" for part in contact)
+    header = (f'<div class="cv-header"><div class="cv-name">{name}</div><div class="cv-contact">{parts}</div>'
+              '</div><hr class="header-rule">')
+    if template.kind == "cv":
+        jobs = JOBS + (MORE_JOBS if long else [])
+        body = (header + '<p class="profile"><strong>Project Manager</strong></p>'
+                '<p class="profile">Project manager who plans carefully, keeps people informed and delivers '
+                "on time.</p>"
+                + _section("Experience", "".join(_entry(*job) for job in jobs))
+                + _section("Education", _entry("MSc Management — Nova School of Business and Economics",
+                                               "2013 – 2015", ())
+                           + _entry("BSc Economics — University of Porto", "2010 – 2013", ()))
+                + _section("Skills", '<p class="entry-desc">Project planning · Budgeting · Stakeholder '
+                           "management · Supplier contracts · Excel · Power BI · Jira · Lean</p>")
+                + _section("Languages", _plain(["Portuguese (native), English (C2), Spanish (B2)"]))
+                + _section("Certifications", _plain(["PRINCE2 Practitioner, 2020"]))
+                + "".join(_section(title, _plain(lines)) for title, lines in (MORE_SECTIONS if long else [])))
+    else:
+        body = (header + '<div class="letter-meta"><p class="letter-to">Lumen Energy<br>Amsterdam, '
+                'Netherlands</p></div><p class="letter-subject">Application for Project Manager</p>'
+                '<div class="letter"><p>Dear Hiring Manager,</p>'
+                "<p>I am applying for the Project Manager role at Lumen Energy.</p>"
+                "<p>Some of what I have done that fits it:</p>"
+                + _plain([bullet for _title, _dates, bullets in JOBS for bullet in bullets[:1]])
+                + "<p>I would welcome the chance to talk about it.</p>"
+                '<p class="closing">Kind regards,</p><p class="signature">' + name + "</p></div>")
+    return ('<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="UTF-8">\n'
+            f"<title>{name}</title>\n{template.style}\n</head>\n<body>\n{body}\n</body>\n</html>\n")
 
 
 def _read(document: bytes) -> dict[str, str]:
@@ -176,8 +200,8 @@ def test_every_look_makes_a_pdf_an_ats_reads_in_order_in_the_face_it_asked_for(t
 
     from services.docgen import pdf
 
-    for cv in ((SAMPLE_CV, LONG) if template.kind == "cv" else (SAMPLE_CV,)):
-        html = _render(template, cv)
+    for long in ((False, True) if template.kind == "cv" else (False,)):
+        html = _render(template, long=long)
         document = pdf.render(html)
         report = pdf.inspect_pdf(document, kind=template.kind)
         assert report.ats_ok, f"{template.id}: {report.issues}"
@@ -239,9 +263,10 @@ def test_a_long_contact_line_stays_on_the_page(template):
              # Wider than any look's line at its contact size: ~150 characters.
              "https://example.com/portfolio/" + "a-very-long-address-with-no-break-in-it-" * 3 + "end"]
     phone = "+351 91234-5678"
-    html = instant.render(template.kind, documents={"cv": [SAMPLE_CV.replace("+351 912 345 678", phone)]},
-                          job=SAMPLE_JOB, identity={"full_name": "Alexandra Morgan", "links": links},
-                          template=template)
+    shown = [link.split("://")[1].removeprefix("www.") for link in links]
+    html = _render(template, name="Alexandra Morgan", contact=[
+        "Lisbon, Portugal", phone, ("alex.morgan@example.com", "mailto:alex.morgan@example.com"),
+        *zip(shown, links, strict=True)])
     lines = PdfReader(io.BytesIO(pdf.render(html))).pages[0].extract_text().split("\n")
     pdf._discard()
     text = "".join("".join(lines).split())
@@ -270,7 +295,7 @@ def test_every_cv_look_puts_a_jobs_dates_at_the_right_and_shows_none_where_there
         page = browser.new_page(viewport={"width": 794, "height": 1123})
         page.emulate_media(media="print")
         for template in templates.of_kind("cv"):
-            page.set_content(_render(template, LONG))
+            page.set_content(_render(template, long=True))
             heads = page.evaluate(measure)
             dated = [head for head in heads if head["date"]]
             undated = [head for head in heads if not head["date"]]

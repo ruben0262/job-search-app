@@ -64,7 +64,7 @@ class AiWriting(BaseModel):
     # The platform's daily allowance, and what is left of it today.
     per_day: int
     left: int
-    # The writing profile an AI document is written from. Without it, only instant ones.
+    # The writing profile an AI document is written from. Without it, none.
     profile: bool
 
 

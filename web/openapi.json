@@ -476,10 +476,7 @@
             "type": "string"
           },
           "mode": {
-            "enum": [
-              "instant",
-              "ai"
-            ],
+            "const": "ai",
             "title": "Mode",
             "type": "string"
           }

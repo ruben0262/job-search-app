@@ -5,7 +5,7 @@ its shape, so a wrong answer can be traced to the line that caused it. Written a
 `extract.py` leaves it: python-docx drops Word's bullet glyphs, pypdf flattens a two-column layout and
 puts the sidebar first, a long bullet wraps onto a second line.
 
-The one reader. The suggestions, the onboarding review and the instant CV all start from `read`.
+The one reader. The suggestions and the onboarding review start from `read`.
 """
 from __future__ import annotations
 

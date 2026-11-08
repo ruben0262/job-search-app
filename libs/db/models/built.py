@@ -20,6 +20,7 @@ class BuiltDocument(Document):
     COLLECTION = "built_documents"
     # Made again in seconds from what the backup does keep, so the backup leaves the PDFs out.
     BACKED_UP = False
+    # "instant": made by code until 2026-11-08, and still kept for whoever made one.
     CHOICES = {"kind": ("cv", "cover"), "mode": ("instant", "ai")}  # noqa: RUF012
     INDEXES = (IndexModel([("user_id", 1), ("job_id", 1)], name="by_job"),
                IndexModel([("saved", 1), ("created_at", 1)], name="purge"))

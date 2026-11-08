@@ -1,6 +1,10 @@
 """A CV or cover letter for a job: asked for on the site, built by the docgen worker, downloaded,
 deleted. The real app and the real worker step share one test database; only Chrome and the AI
-providers are stand-ins, and the providers are reached through their real adapters."""
+providers are stand-ins, and the providers are reached through their real adapters.
+
+Every document is written by AI since the instant one, built by code, was removed (2026-11-08). The
+`ready` fixture is an account that can have one: a writing profile, consent, and the platform's key.
+"""
 from __future__ import annotations
 
 import hashlib
@@ -79,7 +83,7 @@ def api(db, monkeypatch):
                               store=SecretStore(db, KeyRing.from_env({"SECRETS_KEK": kek})))
 
 
-def _ask(api, kind="cv", mode="instant"):
+def _ask(api, kind="cv", mode="ai"):
     return api.http.post("/documents/build", json={"job_id": api.job.id, "kind": kind, "mode": mode})
 
 
@@ -140,9 +144,21 @@ def _providers(monkeypatch) -> list[httpx.Request]:
     return seen
 
 
-# ── the free one ──────────────────────────────────────────────────────────────────────────────
+@pytest.fixture()
+def ready(api, monkeypatch):
+    """An account that can have an AI document: a writing profile, consent, the platform's key, and
+    the providers answering with `WRITTEN`. What every request reached them with is `ready.sent`."""
+    _platform(monkeypatch)
+    _personalise(api)
+    _consent(api)
+    api.sent = _providers(monkeypatch)
+    return api
 
-def test_an_instant_cv_is_asked_for_built_and_downloaded(api):
+
+# ── asked for, made, downloaded ───────────────────────────────────────────────────────────────
+
+def test_a_cv_is_asked_for_built_and_downloaded(ready):
+    api = ready
     asked = _ask(api)
     assert asked.status_code == 202
     assert asked.json()["state"] == "queued"
@@ -156,13 +172,14 @@ def test_an_instant_cv_is_asked_for_built_and_downloaded(api):
     assert download.headers["content-type"] == "application/pdf"
     assert download.content.startswith(b"%PDF")
     assert 'filename="Alice_Example_CV.pdf"' in download.headers["content-disposition"]
-    assert "Built the billing service in Python and Postgres" in api.rendered[0]
+    assert "Built billing" in api.rendered[0], "what the model wrote is what was rendered"
 
 
-def test_the_look_picked_in_my_documents_is_the_look_the_next_document_is_made_in(api):
+def test_the_look_picked_in_my_documents_is_the_look_the_next_document_is_made_in(ready):
     """The pick's producer and its consumer, end to end: saved by the API, read by the docgen worker."""
     from libs import templates
 
+    api = ready
     assert api.http.put("/templates/cv", json={"id": "quill"}).status_code == 200
     assert api.http.put("/templates/cover", json={"id": "prism"}).status_code == 200
 
@@ -172,36 +189,39 @@ def test_the_look_picked_in_my_documents_is_the_look_the_next_document_is_made_i
         assert templates.find(kind, look).style in api.rendered[-1], f"the {kind} was not made in {look}"
 
 
-def test_making_a_document_is_not_applying(api):
-    """Instant documents are free previews; only "Mark as applied" on the jobs page records an application."""
+def test_making_a_document_is_not_applying(ready):
+    """Only "Mark as applied" on the jobs page records an application."""
     from libs.db import find_one
     from libs.db.models import UserJobState
 
+    api = ready
     _ask(api)
     assert _work(api)
     state = find_one(api.db, UserJobState, {"user_id": api.user.id, "job_id": api.job.id})
     assert state is None or state.applied_at is None
 
 
-def test_the_document_built_is_the_kind_asked_for(api):
-    """A cover letter asked for must not come back as a CV."""
+def test_the_document_built_is_the_kind_asked_for(ready):
+    """A cover letter asked for must not come back as a CV: it is written from the letter's prompt."""
+    api = ready
     build_id = _ask(api, kind="cover").json()["id"]
     _work(api)
 
     download = api.http.get(f"/documents/build/{build_id}/file")
     assert 'filename="Alice_Example_Cover.pdf"' in download.headers["content-disposition"]
-    assert "Dear Hiring Manager" in api.rendered[0]
+    assert "Write Alice Example a letter." in api.sent[0].content.decode()
 
 
-def test_asking_twice_while_it_waits_is_the_same_build(api):
-    assert _ask(api).json()["id"] == _ask(api).json()["id"]
+def test_asking_twice_while_it_waits_is_the_same_build(ready):
+    assert _ask(ready).json()["id"] == _ask(ready).json()["id"]
 
 
-def test_a_build_is_its_owners_alone(api):
+def test_a_build_is_its_owners_alone(ready):
     from libs.auth.access import issue_access_token
     from libs.db import insert
     from libs.db.models import User
 
+    api = ready
     build_id = _ask(api).json()["id"]
     _work(api)
     assert api.http.get(f"/documents/build/{build_id}/file").status_code == 200, "the premise"
@@ -212,18 +232,19 @@ def test_a_build_is_its_owners_alone(api):
     assert api.http.get(f"/documents/build/{build_id}/file").status_code == 404
 
 
-def test_a_refusal_says_what_to_do_and_is_not_a_dead_letter(api):
-    """A dead letter pages the operator; a person with no CV uploaded is not an incident."""
+def test_a_refusal_says_what_to_do_and_is_not_a_dead_letter(ready):
+    """A dead letter pages the operator; a person whose account has no base CV is not an incident."""
     from libs.db import get
-    from libs.db.models import QueueJob, UserDocument
+    from libs.db.models import QueueJob, UserProfileFile
 
-    api.db[UserDocument.COLLECTION].delete_many({"user_id": api.user.id})
+    api = ready
+    api.db[UserProfileFile.COLLECTION].delete_many({"user_id": api.user.id, "name": "base_cv.html"})
     build_id = _ask(api).json()["id"]
     _work(api)
 
     status = _status(api, build_id)
     assert status["state"] == "failed"
-    assert "upload your CV" in status["detail"]
+    assert "no base CV" in status["detail"]
     assert get(api.db, QueueJob, build_id).state == "done"
 
 
@@ -248,12 +269,14 @@ def _big_pdfs(api, monkeypatch, kilobytes: int = 700) -> None:
 
 
 def _make(api, kind="cv") -> dict:
+    """One document, asked for and made: on an account `ready` for it."""
     build_id = _ask(api, kind=kind).json()["id"]
     _work(api)
     return _status(api, build_id)
 
 
-def test_a_made_document_is_kept_to_download_again_and_shows_on_the_jobs_it_was_for(api):
+def test_a_made_document_is_kept_to_download_again_and_shows_on_the_jobs_it_was_for(ready):
+    api = ready
     """After a refresh, from the Applied list, or from My documents: the same PDF, not a new one."""
     made = _make(api)
     assert (made["state"], made["saved"]) == ("ready", True)
@@ -270,7 +293,8 @@ def test_a_made_document_is_kept_to_download_again_and_shows_on_the_jobs_it_was_
     assert kept["allowance_bytes"] == 5 * 1024 * 1024, "the catalogue default"
 
 
-def test_a_cover_letter_built_keeps_its_posting_and_every_document_its_ats_verdict(api):
+def test_a_cover_letter_built_keeps_its_posting_and_every_document_its_ats_verdict(ready):
+    api = ready
     """Retention keeps a posting somebody wrote a cover letter for (`ACTED_ON`), but nothing said they
     had until 2026-11-03. And each document keeps whether it passed the ATS check, so outcomes can say
     whether passing it helps people hear back."""
@@ -289,14 +313,16 @@ def test_a_cover_letter_built_keeps_its_posting_and_every_document_its_ats_verdi
     assert {document["ats_ok"] for document in documents} == {True}
 
 
-def test_a_new_one_for_the_same_job_and_kind_replaces_the_old(api):
+def test_a_new_one_for_the_same_job_and_kind_replaces_the_old(ready):
+    api = ready
     first, second = _make(api), _make(api)
     assert first["id"] != second["id"]
     assert [each["id"] for each in api.http.get("/saved").json()["documents"]] == [second["id"]]
     assert api.http.get(first["download_url"]).status_code == 404
 
 
-def test_a_full_storage_keeps_nothing_new_but_it_still_downloads_and_the_person_is_told(api, monkeypatch):
+def test_a_full_storage_keeps_nothing_new_but_it_still_downloads_and_the_person_is_told(ready, monkeypatch):
+    api = ready
     """Their own allowance (`document_storage_mb`): what does not fit waits only for its download, as
     every document used to (D9), and deleting one makes room again."""
     from libs.db import now
@@ -322,7 +348,8 @@ def test_a_full_storage_keeps_nothing_new_but_it_still_downloads_and_the_person_
     assert _make(api, kind="cover")["saved"] is True, "deleting one made room"
 
 
-def test_clearing_all_empties_the_storage(api, monkeypatch):
+def test_clearing_all_empties_the_storage(ready, monkeypatch):
+    api = ready
     _big_pdfs(api, monkeypatch, kilobytes=300)
     made = [_make(api)["id"], _make(api, kind="cover")["id"]]
 
@@ -332,7 +359,8 @@ def test_clearing_all_empties_the_storage(api, monkeypatch):
     assert (cleared["documents"], cleared["used_bytes"]) == ([], 0)
 
 
-def test_the_ones_picked_out_are_deleted_and_the_rest_kept(api):
+def test_the_ones_picked_out_are_deleted_and_the_rest_kept(ready):
+    api = ready
     """My documents deletes what it shows: the older ones, or the ones a search found."""
     cv, cover = _make(api), _make(api, kind="cover")
 
@@ -342,7 +370,8 @@ def test_the_ones_picked_out_are_deleted_and_the_rest_kept(api):
     assert api.http.get(cv["download_url"]).status_code == 404
 
 
-def test_a_kept_document_is_its_owners_alone(api):
+def test_a_kept_document_is_its_owners_alone(ready):
+    api = ready
     from libs.auth.access import issue_access_token
     from libs.db import insert
     from libs.db.models import User
@@ -378,7 +407,8 @@ def test_the_nightly_backup_does_not_keep_built_documents():
     assert User.COLLECTION in kept, "the list is the backup's, not an empty one"
 
 
-def test_a_written_backup_holds_no_built_document(api, tmp_path):
+def test_a_written_backup_holds_no_built_document(ready, tmp_path):
+    api = ready
     """The same rule, on the file the backup actually writes, with a built CV in the database."""
     from libs.db.models import BuiltDocument, User
 
@@ -462,8 +492,9 @@ def test_their_own_key_pays_and_is_never_counted_against_the_allowance(api, monk
     assert ai_requests_today(api.db, api.user.id) == 0
 
 
-def test_without_any_key_ai_says_so_and_the_instant_version_still_works(api):
-    """No key of their own and no platform key configured: AI is unavailable, nothing else is."""
+def test_without_any_key_ai_says_so_and_nothing_is_made(api):
+    """No key of their own and no platform key configured: they are told so, and nothing is queued
+    (owner, 2026-11-08: no document by other means)."""
     _personalise(api)
     _consent(api)
 
@@ -471,7 +502,8 @@ def test_without_any_key_ai_says_so_and_the_instant_version_still_works(api):
 
     assert refused.status_code == 409
     assert "own Claude, Gemini or OpenAI key" in refused.json()["detail"]
-    assert _ask(api, mode="instant").status_code == 202
+    assert "instant" not in refused.json()["detail"]
+    assert _ask(api, mode="instant").status_code == 422, "there is no other way to make one"
 
 
 def test_the_allowance_is_one_count_that_the_chat_spends_too(api, monkeypatch):
@@ -494,24 +526,28 @@ def test_the_allowance_is_one_count_that_the_chat_spends_too(api, monkeypatch):
 
 
 def test_the_daily_ceiling_counts_every_document_where_they_are_asked_for(api):
-    """`cv_builds_per_day` is the one ceiling on documents, instant or AI, at the one place they
-    are asked for — a generous one, since an instant document is a render."""
+    """`cv_builds_per_day` is the one ceiling on documents, at the one place they are asked for, and
+    their own key does not lift it."""
+    from libs.db import insert
+    from libs.db.models import CorpusJob
     from libs.limits import BY_KEY, set_limit
 
     _personalise(api)
     _consent(api)
     api.store.put(api.user.id, "gemini_api", "AIzaOwn-" + "g" * 30, validated=True)
     set_limit(api.db, api.user.id, "cv_builds_per_day", 2)
+    other = insert(api.db, CorpusJob(url=f"https://example.com/{uuid.uuid4()}", source="test",
+                                     title="Data Engineer", company="Contoso", description="Python."))
 
-    assert _ask(api, kind="cv", mode="instant").status_code == 202
-    assert _ask(api, kind="cv", mode="ai").status_code == 202
-    refused = _ask(api, kind="cover", mode="instant")
+    assert _ask(api, kind="cv").status_code == 202
+    assert _ask(api, kind="cover").status_code == 202
+    refused = api.http.post("/documents/build", json={"job_id": other.id, "kind": "cv", "mode": "ai"})
     assert refused.status_code == 429
     assert "2 documents" in refused.json()["detail"]
     assert BY_KEY["cv_builds_per_day"].default == 50
 
 
-def test_an_account_without_a_writing_profile_is_offered_the_instant_version(api, monkeypatch):
+def test_an_account_without_a_writing_profile_is_told_so(api, monkeypatch):
     """AI documents for everyone else wait for the shared prompts (ROADMAP Phase 8, step 7)."""
     _platform(monkeypatch)
     _consent(api)
@@ -519,4 +555,4 @@ def test_an_account_without_a_writing_profile_is_offered_the_instant_version(api
     refused = _ask(api, mode="ai")
 
     assert refused.status_code == 409
-    assert "instant version" in refused.json()["detail"]
+    assert "writing profile" in refused.json()["detail"]

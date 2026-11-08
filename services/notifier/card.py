@@ -73,9 +73,10 @@ def render(job: CorpusJob, words: tuple[str, ...]) -> str:
 
 
 def keyboard(job: CorpusJob) -> dict:
-    """Two links and no callbacks: the posting, where they apply, and the job on our site to make a CV for
-    it. Nobody applies through this site (owner, 2026-11-06), so the first says where they do."""
-    buttons = [{"text": "Make my CV", "url": job_page(job)}]
+    """Two links and no callbacks: the posting, where they apply, and the job on our site. Nobody applies
+    through this site (owner, 2026-11-06), so the first says where they do. The second said "Make my CV"
+    until making documents was paused (owner, 2026-11-08)."""
+    buttons = [{"text": "See it on the site", "url": job_page(job)}]
     if job.url:
         buttons.insert(0, {"text": f"Apply on {apply_on(job.source or '')}", "url": job.url})
     return {"inline_keyboard": [buttons]}

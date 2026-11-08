@@ -1,9 +1,10 @@
 """One `docgen` build, end to end: write the document, check it, render it once, record it.
 
-Two ways to write it. **Instant** is code: free for everyone, from the person's own uploads
-(`libs.documents.instant`). **AI** is the tailoring prompts, unchanged, on whichever key
-`libs.llm.resolve` chose, for an account with the personalised setup files those prompts need. Either
-way the PDF comes back as bytes for the worker to keep until it is downloaded (D9).
+**AI** writes it: the tailoring prompts, unchanged, on whichever key `libs.llm.resolve` chose, for an
+account with the personalised setup files those prompts need. The PDF comes back as bytes for the
+worker to keep until it is downloaded (D9). The instant document, written by code from the person's
+uploads, was removed on 2026-11-08 (owner: every document is written by AI, and where AI cannot be
+used the person is told so).
 """
 from __future__ import annotations
 
@@ -15,11 +16,9 @@ from dataclasses import dataclass
 from libs import templates
 from libs.db import get
 from libs.db.models import CorpusJob, User
-from libs.documents import instant
 from libs.obs import audit
 from libs.profiles import PLACEHOLDER_MARKERS, ProfileIncomplete
 from libs.profiles.repository import ProfileFiles
-from libs.suggestions import documents_of
 from libs.tenant.repository import TenantRepository
 from services.docgen import build, pdf
 from services.docgen.refresh import PostingClosed, refresh_before_build
@@ -39,27 +38,13 @@ class Built:
     filename: str
     pdf: bytes
     pages: int | None
-    # Model calls: none for an instant document, two when a CV came back too long.
+    # Model calls: one, or two when a CV came back too long.
     calls: int
     # Counted because every revision is a second model call and a second render: if this is
     # common, the fix belongs in the prompt rather than in the loop that cleans up after it.
     revised: bool = False
     # Whether the PDF passed the ATS check; kept with the document (`BuiltDocument.ats_ok`).
     ats_ok: bool | None = None
-
-
-def run_instant(db, user_id: _uuid.UUID, job_id: int, *, kind: str) -> Built:
-    """The free document: their own lines, picked and ordered by the posting. No model, no key."""
-    user, job = _load(db, user_id, job_id)
-    documents = documents_of(db, user_id)
-    if not (documents.get("cv") or documents.get("linkedin")):
-        raise NotBuildable("upload your CV first — the instant version is built from it")
-    html = instant.render(kind, documents=documents, job=job, template=templates.chosen(user, kind),
-                          identity={"full_name": user.full_name, "links": user.links or []})
-    # Their own text, so invisible characters a PDF export left in it are dropped, not refused.
-    document, report = _render(build.strip_hidden(html), kind=kind)
-    return _done(db, user, job, kind=kind, mode="instant", document=document,
-                 report=report, calls=0)
 
 
 def run_ai(db, user_id: _uuid.UUID, job_id: int, *, client, model: str, kind: str,

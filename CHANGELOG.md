@@ -14,6 +14,40 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-08 — Making CVs and cover letters paused; the instant documents, built by code, removed
+
+The owner: every CV and cover letter will be written by AI, from the CVs a person uploaded and switched
+on (their base) and "About you" when they wrote it, on the platform's free allowance or their own key;
+where AI cannot be used they are told so and nothing is made. Until that is built, nobody is offered a
+document, and the instant ones are gone for good.
+
+- **Removed:** `libs/documents/instant.py` (the CV and letter written by code from the uploads),
+  `run.run_instant`, the `"instant"` mode of `POST /documents/build` (now 422), and its tests
+  (`tests/test_instant_documents.py`, three in `test_docgen.py`). A build still queued as instant is
+  refused with the paused sentence. The instant reader fixes proposed the same day are dropped with it.
+- **Paused on the site:** no Make buttons on a job card, an open job, a job from an alert or an added
+  job. The Jobs page says once: "Making CVs and cover letters is paused while we rebuild it." (one
+  constant, `web/src/documents.ts`, also used by My documents' empty list and Help). The client's build
+  hook went with the buttons. Documents made before are still downloadable on their jobs, in Applied and
+  in My documents. The Telegram alert's second button says "See it on the site" instead of "Make my CV".
+- **Kept for the rebuild:** the AI build path (`run_ai`, the queue, storage, downloads) and its API. Its
+  tests now run on the AI path with a stand-in model instead of on instant documents; refusals no longer
+  offer "the instant version". `BuiltDocument.mode` still allows "instant" for the documents already made.
+- **Tests:** the looks' PDF tests write their sample person straight into the markup, since no code
+  writes a document any more; the switched-off CV test checks what documents are made from
+  (`documents_of`); the end-to-end walk checks that no Make button is offered and the page says why, and
+  a kept CV is written into the database to check it is still offered after a refresh.
+
+Not changed, for the owner: the help chat's prompt (`libs/prompts/support.md`) still says every job has
+"Make my CV" and that the instant version is free. It is a prompt (CLAUDE.md §3a), so it waits for the
+owner's wording. The landing page still shows a CV being made, as the product will again.
+
+Gates: lint-imports 2 kept; ruff clean; schema on an empty db; contract current (78 paths, the build
+request's mode now "ai" only); build; pytest 1380 passed, 3 skipped (the same three; the instant
+builder's own tests went with it).
+
+---
+
 ## 2026-11-08 — No document dated; dates only where there are some, at the right; links that work; bigger pictures
 
 The owner, on the dates question left open above: dates of the sections, where the person has them, at

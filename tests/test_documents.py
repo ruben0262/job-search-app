@@ -253,11 +253,9 @@ def test_uploading_requires_signing_in(api):
 
 @needs_db
 def test_a_cv_switched_off_is_kept_but_nothing_is_made_from_it_until_it_is_switched_on(api):
-    """Two CVs for two kinds of role are both used; one switched off stays listed and leaves the CVs
-    made for jobs, and switched on again it is back in them."""
-    from types import SimpleNamespace
-
-    from libs.documents.instant import render
+    """Two CVs for two kinds of role are both used; one switched off stays listed and leaves what
+    documents are made from, and switched on again it is back. The CVs a person switched on are the
+    base their CVs and cover letters are written from (owner, 2026-11-08)."""
     from libs.suggestions import documents_of
 
     http, db, users = api
@@ -267,22 +265,20 @@ def test_a_cv_switched_off_is_kept_but_nothing_is_made_from_it_until_it_is_switc
     design = _upload(http, name="design.txt",
                      body=b"Alice Example\nEXPERIENCE\nDesign Engineer, Globex\t2015 - 2019\n"
                           b"- Drew CAD models of gearboxes in SolidWorks").json()["id"]
-    job = SimpleNamespace(title="Mechanical Design Engineer", company="Initech", location="", url="",
-                          description="CAD, SolidWorks, thermal testing")
 
-    def made() -> str:
-        return render("cv", documents=documents_of(db, users[0].id), identity={}, job=job)
+    def made_from() -> str:
+        return "\n".join(documents_of(db, users[0].id).get("cv", []))
 
-    assert "pump housings" in made() and "gearboxes" in made(), "both CVs are used"
+    assert "pump housings" in made_from() and "gearboxes" in made_from(), "both CVs are used"
 
     switched = http.patch(f"/documents/{design}", json={"in_use": False})
     assert switched.status_code == 200 and switched.json()["in_use"] is False
     listed = {row["filename"]: row["in_use"] for row in http.get("/documents").json()["documents"]}
     assert listed == {"mechanical.txt": True, "design.txt": False}, "kept and listed, said to be off"
-    assert "pump housings" in made() and "gearboxes" not in made()
+    assert "pump housings" in made_from() and "gearboxes" not in made_from()
 
     http.patch(f"/documents/{design}", json={"in_use": True})
-    assert "gearboxes" in made()
+    assert "gearboxes" in made_from()
 
 
 @needs_db

@@ -37,10 +37,11 @@ def handle(db, job: QueueJob) -> None:
     try:
         if kind not in ("cv", "cover"):
             raise NotBuildable(f"unknown document kind {kind!r}")
-        if mode == "instant":
-            built = run.run_instant(db, job.user_id, job_id, kind=kind)
-        elif mode == "ai":
+        if mode == "ai":
             built = _with_ai(db, job, job_id=job_id, kind=kind, payer=payload.get("payer"))
+        elif mode == "instant":
+            # Asked for before the instant document was removed (2026-11-08), and still queued.
+            raise NotBuildable("making CVs and cover letters is paused while we rebuild it")
         else:
             # A Telegram tap from before documents moved onto the site: no way to hand it over.
             raise NotBuildable("documents are built on the site now — open the job there")
@@ -68,8 +69,8 @@ def _with_ai(db, job: QueueJob, *, job_id: int, kind: str, payer: str | None):
     with paying_client(store, job.user_id, payer or "") as paid, \
             _http_for() as http:
         if paid is None:
-            raise NotBuildable("the key that was to pay for this has been removed — add one, or "
-                               "use the instant version")
+            raise NotBuildable("the key that was to pay for this has been removed — add one in "
+                               "settings")
         client, provider = paid
         try:
             return run.run_ai(db, job.user_id, job_id, client=client, kind=kind, http=http,

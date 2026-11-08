@@ -356,7 +356,7 @@ BSc Computer Science, TU Berlin    2017
 
 
 def _session(monkeypatch, *, description="Backend role. Python.",
-             profile_files=DEFAULT_FILES, documents=None, cv_template=None, cover_template=None):
+             profile_files=DEFAULT_FILES, cv_template=None, cover_template=None):
     """The build's two reads — the account and the posting — and its config read, with no database."""
     # `full_name` is where the document's filename comes from — the name the user typed at signup.
     # The profile schema was a second copy of the same fact; nothing reads it, and it is retired.
@@ -382,8 +382,6 @@ def _session(monkeypatch, *, description="Backend role. Python.",
             return (profile_files or {}).get(name)
 
     monkeypatch.setattr(run, "ProfileFiles", Files)
-    # Their uploads by kind, as `libs.suggestions.documents_of` reads them.
-    monkeypatch.setattr(run, "documents_of", lambda _session, _user_id: documents or {})
     return object(), user, job, state
 
 
@@ -475,41 +473,6 @@ def test_a_posting_with_no_description_is_refused(monkeypatch, fake_chrome):
 
     with pytest.raises(run.NotBuildable):
         _ai(session, user)
-
-
-# ── the instant document ──────────────────────────────────────────────────────────────────────
-
-def test_an_instant_cv_is_their_own_lines_and_spends_no_model_call(monkeypatch, fake_chrome):
-    """Free for everyone: built by `libs.documents.instant` from the CV they uploaded."""
-    session, user, _job, state = _session(monkeypatch, documents={"cv": CV_TEXT})
-
-    result = run.run_instant(session, user.id, 7, kind="cv")
-
-    assert "Built the billing service in Python and Postgres" in fake_chrome["html"]
-    assert result.pdf.startswith(b"%PDF") and result.filename == "Alice_Example_CV.pdf"
-    assert result.calls == 0
-    # A free preview, not an application: only "Mark as applied" on the jobs page records one.
-    assert state.applied_at is None
-
-
-def test_an_instant_cover_letter_is_a_letter(monkeypatch, fake_chrome):
-    """The kind asked for is the kind built."""
-    session, user, _job, _state = _session(monkeypatch, documents={"cv": CV_TEXT})
-
-    result = run.run_instant(session, user.id, 7, kind="cover")
-
-    assert "Dear Hiring Manager" in fake_chrome["html"]
-    assert result.filename == "Alice_Example_Cover.pdf"
-
-
-def test_an_instant_document_without_their_cv_says_what_to_do(monkeypatch, fake_chrome):
-    """A CV built from nothing is a page with a name on it, delivered as if it were a CV."""
-    session, user, _job, _state = _session(monkeypatch, documents={"diploma": "BSc, 2017"})
-
-    with pytest.raises(run.NotBuildable, match="upload your CV"):
-        run.run_instant(session, user.id, 7, kind="cv")
-
-    assert fake_chrome["calls"] == 0
 
 
 # ── what the model is told about the posting ──────────────────────────────────────────────────
@@ -665,18 +628,6 @@ def test_the_cover_prompt_is_not_handed_a_text_dump_of_the_cv(monkeypatch, fake_
 
 
 # ── the look they picked ──────────────────────────────────────────────────────────────────────
-
-def test_an_instant_document_is_made_in_the_look_they_picked(monkeypatch, fake_chrome):
-    session, user, _job, _state = _session(monkeypatch, documents={"cv": CV_TEXT},
-                                           cv_template="ledger", cover_template="tabula")
-
-    run.run_instant(session, user.id, 7, kind="cv")
-    assert templates.find("cv", "ledger").style in fake_chrome["html"]
-    assert MERIDIAN not in fake_chrome["html"]
-
-    run.run_instant(session, user.id, 7, kind="cover")
-    assert templates.find("cover", "tabula").style in fake_chrome["html"]
-
 
 def test_an_ai_cv_is_laid_out_in_the_look_they_picked_whatever_its_base_cv_or_the_model_said(
         monkeypatch, fake_chrome):

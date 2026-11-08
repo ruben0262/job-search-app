@@ -1817,9 +1817,9 @@ export interface components {
             kind: "cv" | "cover";
             /**
              * Mode
-             * @enum {string}
+             * @constant
              */
-            mode: "instant" | "ai";
+            mode: "ai";
         };
         /** BuildStatus */
         BuildStatus: {

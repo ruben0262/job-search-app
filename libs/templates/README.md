@@ -17,7 +17,7 @@ The writer never sees a template. It writes the body in the one markup every doc
 - **CV:** `cv-header`, `cv-name`, `cv-contact` (one `span` a part), `header-rule`, `profile`, `section`,
   `section-title`, `competencies`, `entry`, `entry-head`, `entry-title`, `entry-date`, `entry-desc`,
   `plain-list`. These are the scaffold's fourteen class names, measured on every account's `base_cv.html`
-  in 2026-08, and the ones `libs.documents.instant` writes.
+  in 2026-08.
 - **Letter:** the CV's header, then `letter-meta` holding `letter-to` (company, place), then
   `letter-subject` ("Application for …"), then `letter`. Both are filled from the job when the letter is
   made, never written into a template, and `letter-meta` is left out when the job names neither.
@@ -35,7 +35,6 @@ The writer never sees a template. It writes the body in the one markup every doc
 
 Then:
 
-- **Instant documents** (`libs.documents.instant`) are written with the template's `<style>` in their head.
 - **An AI CV** (`services.docgen.build.tailor`) has its base CV's `<style>` taken off before the call, as
   always, and the *template's* put back after it. A person's `base_cv.html` still decides what the CV
   says. It no longer decides how it looks.

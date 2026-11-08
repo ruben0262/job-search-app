@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 
 import { api, type Schema } from "../api";
 import { useKept } from "../kept";
+import { PAUSED } from "../documents";
 import { TemplatePicks } from "../templates";
 import { ago, useNow } from "../time";
 import { Card, Error, Field, Prompt, UploadButton, useAction } from "../ui";
@@ -148,7 +149,7 @@ function Made() {
         </div>
       ) : null}
       {kept.documents.length === 0 ? (
-        <p className="muted">None yet. Tap “Make my CV” under a job, and it is kept here.</p>
+        <p className="muted">None yet. {PAUSED}</p>
       ) : (
         <details className="fold-plain made">
           <summary>

@@ -46,6 +46,8 @@ Software Engineer, Contoso    2018 - 2021
 LANGUAGES
 English (native), German (B2)
 """
+# What the site says where it offered to make a CV or a cover letter (owner, 2026-11-08).
+PAUSED = "Making CVs and cover letters is paused while we rebuild it."
 IPHONE = ("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 "
           "(KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1")
 
@@ -86,12 +88,12 @@ def site(monkeypatch, built, db):
         app.dependency_overrides.clear()
 
 
-def test_a_new_person_goes_from_sign_up_to_a_downloaded_cv(site, capsys, tmp_path):
+def test_a_new_person_goes_from_sign_up_to_their_jobs(site, capsys):
     base, email, ids = site
     with sync_api.sync_playwright() as playwright:
         browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
         # A phone first: the site is built for one.
-        page = browser.new_context(viewport={"width": 390, "height": 844}, accept_downloads=True).new_page()
+        page = browser.new_context(viewport={"width": 390, "height": 844}).new_page()
         _sign_up(page, base, email, capsys)
         _onboard(page)
 
@@ -106,17 +108,9 @@ def test_a_new_person_goes_from_sign_up_to_a_downloaded_cv(site, capsys, tmp_pat
             expect(card.locator(".why")).to_have_text("Why: backend engineer")
         expect(page.get_by_text(TITLES[2])).to_have_count(0)
 
-        # Make my CV: it says it is working, then hands over a PDF.
-        cards.first.get_by_role("button", name="Make my CV").click()
-        expect(cards.first.get_by_role("button", name="Making your CV…")).to_be_visible()
-        ready = cards.first.get_by_role("link", name="Download your CV")
-        expect(ready).to_be_visible(timeout=60_000)
-        with page.expect_download() as download:
-            ready.click()
-        saved = tmp_path / download.value.suggested_filename
-        download.value.save_as(saved)
-        assert saved.name.endswith(".pdf")
-        assert saved.read_bytes().startswith(b"%PDF"), "a real PDF, rendered by Chrome"
+        # Making a CV or a cover letter is paused: no job offers one, and the page says so, once.
+        expect(page.get_by_role("button", name=re.compile("^Make my"))).to_have_count(0)
+        expect(page.get_by_text(PAUSED)).to_have_count(1)
 
         _marks(page)
         _alert_links(page, base, ids)
@@ -555,7 +549,7 @@ def test_a_job_found_somewhere_else_is_brought_in_by_its_link(site, capsys):
         expect(page.get_by_text("We already have this job. Here it is.")).to_be_visible()
         card = page.locator("article.job-card").filter(
             has=page.get_by_role("button", name=TITLES[2], exact=True))
-        expect(card.get_by_role("button", name="Make my CV")).to_be_visible()
+        expect(card).to_be_visible()
         expect(card.locator(".why")).to_have_count(0)
 
         page.get_by_label("The job's link").fill("http://127.0.0.1:9/jobs/1")
@@ -725,8 +719,12 @@ def test_job_cards_show_the_start_of_the_description_and_sit_two_to_a_row_on_a_l
 
 def test_a_made_cv_is_still_there_after_a_refresh_in_applied_and_in_my_documents(site, capsys):
     """Made once, downloadable again: the card keeps its download and says a CV was made, Applied
-    offers it, and My documents lists it with the room it takes until it is cleared."""
-    base, email, _ = site
+    offers it, and My documents lists it with the room it takes until it is cleared. Making new ones is
+    paused (owner, 2026-11-08), so this one was made before: written straight into the database."""
+    from libs.db import database, insert, now
+    from libs.db.models import BuiltDocument
+
+    base, email, ids = site
     with sync_api.sync_playwright() as playwright:
         browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
         page = browser.new_context(viewport={"width": 1280, "height": 860}).new_page()
@@ -738,14 +736,15 @@ def test_a_made_cv_is_still_there_after_a_refresh_in_applied_and_in_my_documents
                 has=page.get_by_role("button", name=TITLES[0], exact=True))
 
         expect(card().get_by_text("CV made")).to_have_count(0)
-        card().get_by_role("button", name="Make my CV").click()
-        expect(card().get_by_role("link", name="Download your CV")).to_be_visible(timeout=60_000)
-        expect(card().get_by_text("CV made")).to_be_visible()
+        user = database().users.find_one({"email": email})
+        insert(database(), BuiltDocument(id=900_101, user_id=user["_id"], job_id=ids[TITLES[0]], kind="cv",
+                                         mode="ai", filename="cv.pdf", content=b"%PDF-1.4 kept", size=13,
+                                         saved=True, created_at=now()))
 
         page.reload()
         expect(card().get_by_role("link", name="Download your CV")).to_be_visible()
         expect(card().get_by_text("CV made")).to_be_visible()
-        expect(card().get_by_role("button", name="Make my cover letter")).to_be_visible()
+        expect(card().get_by_role("link", name="Download your cover letter")).to_have_count(0)
 
         card().get_by_role("button", name="Mark as applied").click()
         expect(page.get_by_text(f"Applied: {TITLES[0]}")).to_be_visible()
@@ -762,14 +761,11 @@ def test_a_made_cv_is_still_there_after_a_refresh_in_applied_and_in_my_documents
         browser.close()
 
 
-def test_a_person_picks_how_their_cvs_and_letters_look_and_the_next_cv_is_made_in_it(site, capsys, tmp_path):
+def test_a_person_picks_how_their_cvs_and_letters_look_and_it_stays_picked(site, capsys):
     """My documents shows the look of each kind in use; Change opens the shelf, the most popular first and
-    then every sector, each look a picture of itself; a tap picks one, it stays picked, and the next CV is
-    made in it (owner, 2026-11-07). On a phone, and nothing runs off its screen."""
-    from io import BytesIO
-
-    from pypdf import PdfReader
-
+    then every sector, each look a picture of itself; a tap picks one, and it stays picked (owner,
+    2026-11-07). On a phone, and nothing runs off its screen. That the next document is made in the pick
+    is `test_document_builds`: making documents on the site is paused (2026-11-08)."""
     from libs import templates
 
     base, email, _ = site
@@ -811,21 +807,6 @@ def test_a_person_picks_how_their_cvs_and_letters_look_and_the_next_cv_is_made_i
         page.reload()
         expect(looks.locator(".look-name")).to_have_text(["Ledger", "Meridian"])
         assert page.evaluate(FAULTS) == {"off": [], "over": []}, "My documents at 390px"
-
-        # The next CV is made in Ledger: a serif, where Meridian is Lato.
-        page.goto(f"{base}/#/")
-        card = page.locator("article.job-card").first
-        card.get_by_role("button", name="Make my CV").click()
-        ready = card.get_by_role("link", name="Download your CV")
-        expect(ready).to_be_visible(timeout=60_000)
-        with page.expect_download() as download:
-            ready.click()
-        saved = tmp_path / download.value.suggested_filename
-        download.value.save_as(saved)
-        pages = PdfReader(BytesIO(saved.read_bytes())).pages
-        fonts = {str(font.get_object().get("/BaseFont"))
-                 for each in pages for font in (each.get("/Resources", {}).get("/Font", {}) or {}).values()}
-        assert any("LiberationSerif" in font for font in fonts), f"not made in Ledger: {fonts}"
         browser.close()
 
 
@@ -921,11 +902,10 @@ def test_a_job_opens_whole_and_skipping_survives_a_lost_connection_and_new_jobs_
         expect(view).to_have_count(0)
 
         card(TITLES[0]).get_by_role("button", name=TITLES[0]).click()
-        view.get_by_role("button", name="Make my CV").click()
-        expect(view.get_by_role("link", name="Download your CV")).to_be_visible(timeout=60_000)
+        # Making documents is paused (owner, 2026-11-08): the open job offers none.
+        expect(view).to_be_visible()
+        expect(view.get_by_role("button", name=re.compile("^Make my"))).to_have_count(0)
         view.get_by_role("button", name="Close").click()
-        expect(card(TITLES[0]).get_by_role("link", name="Download your CV")).to_be_visible()
-        expect(card(TITLES[0]).get_by_text("CV made")).to_be_visible()
         _closes_for_good(page, card(TITLES[0]), view)
 
         page.context.set_offline(True)
@@ -1287,7 +1267,7 @@ def _alert_links(page, base: str, ids: dict[str, int]) -> None:
     expect(cards.first).to_have_class(re.compile(r"\bfocus\b"))
     page.goto(f"{base}/#/feed?job={ids[TITLES[2]]}")
     expect(page.get_by_text("This job is not in your list any more")).to_be_visible()
-    expect(cards.first.get_by_role("button", name="Make my CV")).to_be_visible()
+    expect(page.get_by_role("button", name=re.compile("^Make my"))).to_have_count(0)
 
     for event in vars(notify).values():
         if isinstance(event, notify.Event) and event.url:

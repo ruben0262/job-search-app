@@ -3264,6 +3264,16 @@ work, or opening and closing sessions faster, would help):
     **Decided (owner, 2026-11-08): dates at the right**, in every look, Tabula's moved there too; where a
     job has none, none is shown. Closed.
 
+49. **Every document written by AI, for everyone** (owner, 2026-11-08). Making documents is paused on the
+    site and the instant ones are removed until this lands. The base is the CVs a person uploaded and
+    switched on, with "About you" weighted heavily when they wrote it; one prompt organises them, and
+    `tailor_cv` and `tailor_cover` write each document from it, the letter with some research on the
+    company. One prompt for every model. Each account has its own free allowance on the platform's
+    key and can add its own Claude, Gemini or OpenAI key beyond it; with neither, it is told so.
+    Agreement to sending their documents to an AI is a required tickbox at sign-up. First: which
+    service gives a good, fast model free for ~100 accounts at 20-30 documents a day each, on one key
+    or a key per account; then the old prompts measured on it and on Claude, Gemini and GPT.
+
 ## Phase 9 — MongoDB instead of Postgres (added 2026-10-30)
 
 **Why.** The owner's decision: users, their logins and everything stored about them live in MongoDB

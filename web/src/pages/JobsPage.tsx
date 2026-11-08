@@ -1,11 +1,11 @@
-/** Jobs, the home page: the jobs that match your words, each one a tap from a CV and a cover letter
- * made for it, and a tap on it shows all of it. New ones are announced, never pushed in under the
+/** Jobs, the home page: the jobs that match your words, the CV and cover letter made for each to
+ * download again, and a tap on one shows all of it. New ones are announced, never pushed in under the
  * reader. Every alert lands here, on `#/feed?job=<id>`. */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { MouseEvent, ReactNode } from "react";
 
 import { api, request, type Ready, type Schema } from "../api";
-import { useBuild } from "../documents";
+import { PAUSED } from "../documents";
 import { JobView } from "../jobview";
 import { keep, peek } from "../kept";
 import { type Mark, mark as record, send, unsent } from "../marks";
@@ -18,7 +18,6 @@ type Feed = Schema<"Feed">;
 type Filters = Schema<"JobFilters">;
 type Job = Schema<"FeedJob">;
 type Made = Schema<"JobDocument">;
-type Build = ReturnType<typeof useBuild>;
 
 /** The newest of each kind, which is the one a card offers. */
 export function latest(documents: Made[]): Partial<Record<Made["kind"], Made>> {
@@ -249,10 +248,8 @@ export function JobsPage({ dashboard, focus, onChanged }: {
   // is this one, plus the first, less the second.
   const fresh = news.arrived;
   const left = Math.max(0, total + fresh - news.total);
-  // The AI versions only when a build would be allowed: someone can pay, and there is a profile.
-  const ai = dashboard.ai.payer !== null && dashboard.ai.profile;
   const card = (job: Job, isFocus = false) => (
-    <JobCard key={job.id} job={job} ai={ai} focus={isFocus} done={marked.get(job.id)} onMark={onMark}
+    <JobCard key={job.id} job={job} focus={isFocus} done={marked.get(job.id)} onMark={onMark}
              fresh={seenUntil !== null && job.described_at !== null && job.described_at > seenUntil} />
   );
   return (
@@ -291,6 +288,7 @@ export function JobsPage({ dashboard, focus, onChanged }: {
           {feed.cut ? " More match your words than the page reads at once, so these are the newest." : ""}
         </p>
       ) : null}
+      <p className="small muted">{PAUSED}</p>
       {dashboard.applied ? (
         <p className="small muted">
           You have applied to {dashboard.applied} {dashboard.applied === 1 ? "job" : "jobs"}.{" "}
@@ -367,7 +365,7 @@ export function JobsPage({ dashboard, focus, onChanged }: {
       ) : null}
 
       {focus !== null && shown(focus) ? (
-        <Focused id={focus} ai={ai} card={(job) => card(job, true)} />
+        <Focused id={focus} card={(job) => card(job, true)} />
       ) : null}
 
       {failed ? <p className="error">Your jobs did not load. Refresh the page to try again.</p> : null}
@@ -399,12 +397,9 @@ export function JobsPage({ dashboard, focus, onChanged }: {
   );
 }
 
-/** The job an alert pointed at, first and marked. Gone from their list, it says so and still offers
- * the documents: the alert was for a real job, and it may be the one they want to apply to. */
-function Focused({ id, ai, card }: { id: number; ai: boolean; card: (job: Job) => ReactNode }) {
+/** The job an alert pointed at, first and marked. Gone from their list, it says so. */
+function Focused({ id, card }: { id: number; card: (job: Job) => ReactNode }) {
   const [job, setJob] = useState<Job | null | undefined>(undefined);
-  const cv = useBuild(id, "cv");
-  const cover = useBuild(id, "cover");
   useEffect(() => {
     setJob(undefined);
     api.get<Feed>(`/feed?job=${id}`).then((body) => setJob(body.jobs[0] ?? null)).catch(() => setJob(null));
@@ -415,11 +410,6 @@ function Focused({ id, ai, card }: { id: number; ai: boolean; card: (job: Job) =
   return (
     <article className="job-card focus">
       <p>This job is not in your list any more. You may have skipped it or applied, or it is too old.</p>
-      <p className="small muted">You can still make your documents for it.</p>
-      <div className="job-actions">
-        <MakeDocument doc={cv} kind="cv" ai={ai} />
-        <MakeDocument doc={cover} kind="cover" ai={ai} />
-      </div>
     </article>
   );
 }
@@ -449,9 +439,8 @@ function Where({ job }: { job: Job }) {
   );
 }
 
-export function JobCard({ job, ai, focus, done, fresh, onMark }: {
+export function JobCard({ job, focus, done, fresh, onMark }: {
   job: Job;
-  ai: boolean;
   focus: boolean;
   /** Marked applied here, and still showing its Undo. */
   done?: Mark;
@@ -459,16 +448,11 @@ export function JobCard({ job, ai, focus, done, fresh, onMark }: {
   fresh: boolean;
   onMark: (job: Job, kind: Mark, on: boolean) => void;
 }) {
-  // Held here, so the card and its open view are one build each: made in one, ready in both.
-  const cv = useBuild(job.id, "cv");
-  const cover = useBuild(job.id, "cover");
   const [open, setOpen] = useState(false);
   // A Skip asks first: a job skipped is never shown again (owner, 2026-11-02).
   const [skipping, setSkipping] = useState(false);
-  // Made before (kept, so a refresh still shows it) or made now: what colours the card.
+  // Made before and kept, so a refresh still shows it: what colours the card.
   const made = new Set(job.documents.map((each) => each.kind));
-  if (cv.build?.state === "ready") made.add("cv");
-  if (cover.build?.state === "ready") made.add("cover");
 
   if (done) {
     return (
@@ -479,13 +463,16 @@ export function JobCard({ job, ai, focus, done, fresh, onMark }: {
     );
   }
 
+  // The CV and cover letter made for it before, to download again; none are made while it is paused.
   const existing = latest(job.documents);
-  const documents = (
+  const documents = existing.cv || existing.cover ? (
     <div className="job-actions">
-      <MakeDocument doc={cv} kind="cv" ai={ai} existing={existing.cv} />
-      <MakeDocument doc={cover} kind="cover" ai={ai} existing={existing.cover} />
+      {existing.cv ? <a className="button" href={existing.cv.download_url} download>Download your CV</a> : null}
+      {existing.cover ? (
+        <a className="button secondary" href={existing.cover.download_url} download>Download your cover letter</a>
+      ) : null}
     </div>
-  );
+  ) : null;
   // Nobody applies here: the job opens where it was posted, and they apply there, then say so here
   // (owner, 2026-11-06). In that order, and Skip, the way out, apart from both.
   const marks = (
@@ -565,46 +552,6 @@ export function JobCard({ job, ai, focus, done, fresh, onMark }: {
         </Prompt>
       ) : null}
     </article>
-  );
-}
-
-/** One document for one job: a button, then the words while it is made, then the download — and
- * the download straight away for one made before and kept. */
-function MakeDocument({ doc, kind, ai, existing }: { doc: Build; kind: "cv" | "cover"; ai: boolean; existing?: Made }) {
-  const { build, making, start, error, needsConsent } = doc;
-  const name = kind === "cv" ? "CV" : "cover letter";
-  const ready = build?.state === "ready" && build.download_url ? build.download_url : null;
-  if (ready || (!build && existing)) {
-    return (
-      <span className="make">
-        <a className="button" href={ready ?? existing!.download_url} download>
-          Download your {name}
-        </a>
-        {build?.saved === false ? (
-          <span className="small muted">
-            Not kept: your storage is full. <a href="#/documents">Make room</a>
-          </span>
-        ) : (
-          <button type="button" className="linklike small" onClick={() => void start()}>Make it again</button>
-        )}
-      </span>
-    );
-  }
-  return (
-    <span className="make">
-      {/* The CV is the one most people need, so the cover letter is the quieter of the two. */}
-      <button type="button" disabled={making} onClick={() => void start()}
-              className={[making && "making", kind === "cover" && "secondary"].filter(Boolean).join(" ")}>
-        {making ? `Making your ${name}…` : `Make my ${name}`}
-      </button>
-      {ai && !making ? (
-        <button type="button" className="linklike small" onClick={() => void start("ai")}>
-          or have AI write it
-        </button>
-      ) : null}
-      <Error>{error}</Error>
-      {needsConsent ? <a className="small" href="#/privacy">Read what is sent, and agree</a> : null}
-    </span>
   );
 }
 

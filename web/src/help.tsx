@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { api, type Schema } from "./api";
+import { PAUSED } from "./documents";
 import { Error, Field, Sheet, useAction } from "./ui";
 
 type Receipt = Schema<"ContactReceipt">;
@@ -12,12 +13,11 @@ const ANSWERS: [string, string][] = [
    "A job shows up when one of your green words is in it, and none of your red words is in its " +
    "title or company. It also has to be in a place, language and way of working you picked. You " +
    "can change all of them in My search."],
-  ["How do I make a CV or a cover letter?",
-   "Tap “Make my CV” or “Make my cover letter” under any job. It is made from the CV in My documents " +
-   "in a few seconds, and downloads as a PDF."],
+  ["How do I make a CV or a cover letter?", `${PAUSED} The ones you made before are still under their ` +
+   "jobs and in My documents, to download again."],
   // Nobody applies through the site (owner, 2026-11-06): it says so where people look first.
   ["Can I apply to jobs here?",
-   "No, you apply on the job's own site, and we make that quick. Make your CV here, then tap “Apply on …” " +
+   "No, you apply on the job's own site, and we make that quick. Tap “Apply on …” " +
    "under the job: it opens on the site it was posted on, and you apply there. Then tap “Mark as applied”."],
   ["How do I get new jobs on my phone?",
    "In Settings, turn on notifications in this browser, or connect Telegram. Both are optional, and " +

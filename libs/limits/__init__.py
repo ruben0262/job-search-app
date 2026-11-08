@@ -51,7 +51,7 @@ LIMITS: tuple[Limit, ...] = (
           "Telegram allows 20 messages a minute to a channel and answers 429 above it. Four "
           "seconds is 15 a minute.", allow_unlimited=False,
           choices=(3, 4, 5, 8, 12, 20)),
-    # About a hundred documents: an instant CV is 25–70 KB (measured 2026-11-01). Every account's
+    # About a hundred documents: a CV is 25–70 KB (measured 2026-11-01). Every account's
     # takes room on the database's disk (Admin → Health), which is why it is not larger.
     Limit("document_storage_mb", "Saved CVs and cover letters", 5, "MB",
           "How much of the CVs and cover letters this account makes are kept for it to download again. "
@@ -69,12 +69,12 @@ LIMITS: tuple[Limit, ...] = (
     Limit("documents", "Uploaded documents", 25, "files",
           "The CVs and cover letters they upload, which their suggestions and documents are read from.",
           choices=(10, 25, 50, 100)),
-    # Every CV and cover letter asked for, instant or AI, counted at the one place they are asked
-    # for (`POST /documents/build`). Generous, because an instant one is a render: fifty is
-    # twenty-five applications a day, and still a ceiling on a script or a loop. Never unlimited.
+    # Every CV and cover letter asked for, counted at the one place they are asked for
+    # (`POST /documents/build`): fifty is twenty-five applications a day, and still a ceiling on a
+    # script or a loop. Never unlimited.
     Limit("cv_builds_per_day", "CV and cover letters per day", 50, "documents",
-          "Instant ones cost a render. AI ones are a model call on this account's own key, or on "
-          "the platform's within the allowance below.", allow_unlimited=False,
+          "Each is a model call on this account's own key, or on the platform's within the allowance "
+          "below.", allow_unlimited=False,
           choices=(10, 20, 50, 100, 200)),
     # Never unlimited: every one is the platform's money. A small allowance for everybody (owner,
     # 2026-10-28), spent only when a platform key is configured (`libs.llm.providers`).
@@ -82,7 +82,7 @@ LIMITS: tuple[Limit, ...] = (
           "requests",
           "AI-written documents and support-chat replies for an account with no key of its own, "
           "on the platform's paid key. An account with its own Claude, Gemini or OpenAI key is "
-          "not counted. 0 turns it off; instant documents are free either way.",
+          "not counted. 0 turns it off.",
           allow_unlimited=False, minimum=0, choices=(0, 5, 10, 20, 50)),
 )
 

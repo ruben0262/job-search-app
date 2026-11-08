@@ -5,7 +5,7 @@
 import { useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 
-import { api, type Ready, type Schema } from "../api";
+import { api, type Schema } from "../api";
 import { keep, useKept } from "../kept";
 import { type Mark, mark as record } from "../marks";
 import { Banner, Error, Field, useAction } from "../ui";
@@ -18,8 +18,7 @@ type Job = Schema<"FeedJob">;
 type Answer = Schema<"LinkAnswer">;
 type Draft = Schema<"Draft">;
 
-export function AddJobPage({ dashboard, onChanged }: {
-  dashboard: Ready;
+export function AddJobPage({ onChanged }: {
   /** "Mark as applied" changed the count the dashboard keeps. */
   onChanged: () => void;
 }) {
@@ -54,9 +53,8 @@ export function AddJobPage({ dashboard, onChanged }: {
     });
   };
 
-  const ai = dashboard.ai.payer !== null && dashboard.ai.profile;
   const card = (job: Job) => marked.get(job.id) === "hidden" ? null : (
-    <JobCard key={job.id} job={job} ai={ai} focus={false} fresh={false} onMark={onMark}
+    <JobCard key={job.id} job={job} focus={false} fresh={false} onMark={onMark}
              done={marked.get(job.id) === "applied" ? "applied" : undefined} />
   );
   const shown = answer?.job ?? null;
@@ -65,7 +63,7 @@ export function AddJobPage({ dashboard, onChanged }: {
     <>
       <JobsTabs on="add" />
       <h1>Found a job somewhere else?</h1>
-      <p className="lede">Paste its link here. We show it if we have it, or read it from its page and add it. Then you can make your CV for it.</p>
+      <p className="lede">Paste its link here. We show it if we have it, or read it from its page and add it.</p>
 
       <form className="toolbar" onSubmit={(event) => void find.run(event)}>
         <input type="url" required placeholder="https://…" aria-label="The job's link"

@@ -1,10 +1,9 @@
 """The looks a CV and a cover letter can have, and the one each person picked.
 
-**A template is a stylesheet over one markup.** Every CV the platform makes, the instant one written by
-`libs.documents.instant` and the AI one tailored from a person's `base_cv.html`, carries the same class
-names (`cv-header`, `section-title`, `entry`, `entry-date`…), and every instant letter the same frame
-(`letter-meta` holding `letter-to`, then `letter-subject` and `letter`; never a date of its own). So a
-template is one HTML file in `cv/` or `cover/` whose `<head>` holds its look and nothing else: the writer
+**A template is a stylesheet over one markup.** Every CV the platform makes carries the same class names
+(`cv-header`, `section-title`, `entry`, `entry-date`…), and every letter the same frame (`letter-meta`
+holding `letter-to`, then `letter-subject` and `letter`; never a date of its own). So a template is one
+HTML file in `cv/` or `cover/` whose `<head>` holds its look and nothing else: the writer
 fills the body when the document is made, and the template lays it out. Each person has one of each,
 `User.cv_template` and `User.cover_template` (owner, 2026-11-07); none picked is `DEFAULT`.
 
@@ -44,8 +43,8 @@ def split_style(html: str) -> tuple[str, str]:
 
     Comments go first. The scaffold's own says "Keep the <style> block intact", and a search starting
     there took the comment's end, `<head>` and the placeholder `<title>` along with the CSS — the model
-    never saw `<body>`, and every AI CV came back carrying `[YOUR NAME]`. One definition for the instant
-    documents and docgen, which had each found the block their own way.
+    never saw `<body>`, and every AI CV came back carrying `[YOUR NAME]`. One definition, where two parts
+    of the platform had each found the block their own way.
     """
     html = re.sub(r"(?s)<!--.*?-->", "", html)
     match = STYLE.search(html)

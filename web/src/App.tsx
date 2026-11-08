@@ -168,7 +168,7 @@ export function App() {
         <main className={section === "admin" ? "admin" : undefined}>
           {path?.startsWith("/add") ? (
             // The second tab of Jobs, not a place of its own.
-            <AddJobPage dashboard={dashboard} onChanged={reload} />
+            <AddJobPage onChanged={reload} />
           ) : section === "applied" ? (
             <AppliedPage />
           ) : section === "words" ? (
