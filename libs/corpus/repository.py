@@ -189,13 +189,15 @@ class CorpusRepository:
             job_id = insert(self._db, job).id
         except DuplicateKeyError:
             return None
-        # One more in its run and country, for the admin's chart (`libs.ops.countries`): jobs arrive a run
-        # at a time, every `PLATFORM_TICK_MIN`. Per hour before 2026-11-05, under ids without the minutes.
+        # One more in its run, country and source, for the admin's chart (`libs.ops.countries`): jobs arrive
+        # a run at a time, every `PLATFORM_TICK_MIN`. Per hour before 2026-11-05, under ids without the
+        # minutes, and without the source before 2026-11-10 (`libs.ops.countries.split_by_source`).
         found = job.first_seen_at.replace(second=0, microsecond=0)
         run = found.replace(minute=found.minute - found.minute % PLATFORM_TICK_MIN)
         self._db[CountryCount.COLLECTION].update_one(
-            {"_id": f"{run:%Y-%m-%dT%H:%M}|{job.country or ''}"},
-            {"$inc": {"jobs": 1}, "$setOnInsert": {"hour": run, "country": job.country}}, upsert=True)
+            {"_id": f"{run:%Y-%m-%dT%H:%M}|{job.country or ''}|{job.source}"},
+            {"$inc": {"jobs": 1},
+             "$setOnInsert": {"hour": run, "country": job.country, "source": job.source}}, upsert=True)
         return job_id
 
     def add_typed(self, *, url: str, title: str, company: str, location: str, description: str) -> int:

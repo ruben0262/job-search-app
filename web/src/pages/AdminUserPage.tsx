@@ -1,5 +1,5 @@
 /** One account, for an operator. */
-import { useState } from "react";
+import { Fragment, useState } from "react";
 
 import { api } from "../api";
 import { useKept } from "../kept";
@@ -18,20 +18,42 @@ type LimitSpec = {
 
 type UserDetail = components["schemas"]["AdminAccountDetail"];
 
-/** A date and the time of day, and how long ago: "Tue 4 Nov 2026, 14:32 (2 hours ago)". */
-function when(iso: string | null | undefined): string {
+/** How long ago: "just now", "12 min ago", "4 hours ago", "7 days ago", or "never". */
+function ago(iso: string | null | undefined): string {
   if (!iso) return "never";
-  const at = new Date(iso);
-  const minutes = Math.round((Date.now() - at.getTime()) / 60_000);
-  const ago = minutes < 1 ? "just now" : minutes < 60 ? `${minutes} min ago`
+  const minutes = Math.round((Date.now() - new Date(iso).getTime()) / 60_000);
+  return minutes < 1 ? "just now" : minutes < 60 ? `${minutes} min ago`
     : minutes < 48 * 60 ? `${Math.round(minutes / 60)} hours ago` : `${Math.round(minutes / 1440)} days ago`;
-  return `${at.toLocaleString([], { weekday: "short", day: "numeric", month: "short", year: "numeric",
-                                    hour: "2-digit", minute: "2-digit" })} (${ago})`;
 }
 
-function list(values: string[]): string {
-  return values.length ? values.join(", ") : "none";
+/** A date and the time of day: "Tue 4 Nov 2026, 14:32". */
+function when(iso: string): string {
+  return new Date(iso).toLocaleString([], { weekday: "short", day: "numeric", month: "short", year: "numeric",
+                                            hour: "2-digit", minute: "2-digit" });
 }
+
+/** "1 CV", "2 CVs". */
+function plural(count: number, one: string, many = `${one}s`): string {
+  return `${count.toLocaleString()} ${count === 1 ? one : many}`;
+}
+
+/** Plain chips, a word each, or "none". */
+function chips(values: string[], className: string) {
+  return values.length ? values.map((value) => <span key={value} className={className}>{value}</span>)
+    : <span className="muted">none</span>;
+}
+
+/** Where an account stands, in a word and a colour (`.verdict`). */
+const STATUS: Record<string, [string, string]> = {
+  active: ["Active", "ok"],
+  pending_verification: ["Email not confirmed", "warn"],
+  suspended: ["Suspended", "down"],
+  deleted: ["Deleted", "down"],
+};
+const TELEGRAM: Record<string, string> = {
+  connected: "Connected", waiting: "Waiting for them to press Start", broken: "Broken: their bot stopped answering",
+  unconfigured: "Not set up",
+};
 
 export function AdminUserPage({ userId }: { userId: string }) {
   // Drawn from what was read last time (or read ahead from the list) at once, and kept current.
@@ -61,91 +83,214 @@ export function AdminUserPage({ userId }: { userId: string }) {
   if (!detail) return <p className="muted">Loading…</p>;
 
   const { user, usage } = detail;
+  const reached = usage.applications;
+  const [status, tone] = STATUS[user.status] ?? [user.status, "unknown"];
+  const most = Math.max(1, ...usage.sources.map((each) => each.jobs));
+  // What they did, newest first: only what has happened.
+  const story = ([
+    ["On the site", user.last_active_at], ["Sent an alert", usage.last_alert_at],
+    ["Made a CV or cover letter", usage.last_made_at], ["Applied to a job", usage.last_applied_at],
+    ["Finished setting up", user.onboarding_completed_at], ["Confirmed their email", user.email_verified_at],
+    ["Signed up", user.created_at],
+  ] as const).flatMap(([what, at]) => (at ? [{ what, at }] : [])).sort((a, b) => b.at.localeCompare(a.at));
 
   return (
-    <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-        <h1 style={{ marginBottom: 0 }}>{user.email}</h1>
-        <a href="#/admin">← All accounts</a>
+    <div className="account">
+      <a className="back" href="#/admin/accounts">← All accounts</a>
+      <header className="account-head">
+        <span className="account-mark" aria-hidden="true">{(user.full_name || user.email).charAt(0)}</span>
+        <div className="account-who">
+          <h1>{user.full_name || user.email}</h1>
+          {user.full_name ? <p className="muted">{user.email}</p> : null}
+          <ul className="account-badges" aria-label="Where the account stands">
+            <li className={`verdict ${tone}`}>{status}</li>
+            {user.onboarded ? null : <li className="verdict warn">Still setting up</li>}
+            {user.active ? null : <li className="verdict warn">Alerts paused</li>}
+            {user.is_admin ? <li className="verdict unknown">Admin</li> : null}
+          </ul>
+        </div>
+        <p className="account-seen">
+          Last here <strong>{ago(user.last_active_at)}</strong>
+          <span>Joined {ago(user.created_at)}</span>
+        </p>
+      </header>
+
+      <dl className="account-tiles">
+        <div>
+          <dt>On their list</dt>
+          <dd><strong>{usage.jobs.toLocaleString()}</strong>{usage.new_jobs.toLocaleString()} new since their last visit</dd>
+        </div>
+        <div>
+          <dt>Sent by alerts</dt>
+          <dd><strong>{usage.delivered.toLocaleString()}</strong>last {ago(usage.last_alert_at)}</dd>
+        </div>
+        <div>
+          <dt>Made here</dt>
+          <dd>
+            <strong>{(usage.cvs_made + usage.covers_made).toLocaleString()}</strong>
+            {plural(usage.cvs_made, "CV")} · {plural(usage.covers_made, "cover letter")}
+          </dd>
+        </div>
+        <div>
+          <dt>Skipped</dt>
+          <dd><strong>{usage.skipped.toLocaleString()}</strong>gone from their list for good</dd>
+        </div>
+      </dl>
+
+      <section className="card">
+        <h2>Their applications</h2>
+        {/* Each stage counts every application that reached it or went past it, so they read left to right. */}
+        <ol className="funnel">
+          {([["Applied", reached.applied], ["Interview", reached.interview], ["Offer", reached.offer],
+             ["Hired", reached.hired]] as const).map(([stage, count]) => (
+            <li key={stage}>
+              <strong>{count.toLocaleString()}</strong>
+              <span>{stage}</span>
+              <i style={{ inlineSize: `${reached.applied ? (count / reached.applied) * 100 : 0}%` }} />
+            </li>
+          ))}
+        </ol>
+        <p className="muted small">
+          {reached.applied ? `${plural(reached.rejected, "rejection")} so far.` : "Nothing marked as applied yet."}
+        </p>
+      </section>
+
+      <section className="card">
+        <h2>What they look for</h2>
+        <dl className="account-search">
+          <dt>Green words</dt>
+          <dd>
+            {usage.green_words.length ? usage.green_words.map((word) => (
+              <span key={word.name} className={word.jobs ? "word green" : "word green none"}
+                    title={`${plural(word.jobs, "job")} on their list`}>
+                {word.name}<b>{word.jobs.toLocaleString()}</b>
+              </span>
+            )) : <span className="muted">none</span>}
+          </dd>
+          <dt>Red words</dt>
+          <dd>{chips(usage.red_words, "word red")}</dd>
+          <dt>Countries</dt>
+          <dd>
+            {usage.countries.length ? usage.countries.map((place) => (
+              <span key={place.name} className={place.jobs ? "word" : "word none"}
+                    title={`${plural(place.jobs, "job")} on their list`}>
+                {place.name}<b>{place.jobs.toLocaleString()}</b>
+              </span>
+            )) : <span className="muted">none</span>}
+          </dd>
+          <dt>How they work</dt>
+          <dd>{chips(usage.workplaces, "word")}</dd>
+          <dt>Languages</dt>
+          <dd>{chips(usage.languages, "word")}</dd>
+        </dl>
+        <p className="muted small">The numbers are the jobs on their list each one accounts for.</p>
+      </section>
+
+      <section className="card">
+        <h2>Where their jobs come from</h2>
+        {usage.sources.length ? (
+          <ul className="account-bars">
+            {usage.sources.map((source) => (
+              <li key={source.name}>
+                <span>{source.name}</span>
+                <i aria-hidden="true"><i style={{ inlineSize: `${(source.jobs / most) * 100}%` }} /></i>
+                <strong>{source.jobs.toLocaleString()}</strong>
+              </li>
+            ))}
+          </ul>
+        ) : <p className="muted">Nothing on their list.</p>}
+      </section>
+
+      <div className="account-pair">
+        <section className="card">
+          <h2>Documents</h2>
+          <dl className="facts-list">
+            <dt>Their CV</dt>
+            <dd>{plural(usage.cvs, "uploaded", "uploaded")}, {usage.cvs_in_use} in use</dd>
+            <dt>Cover letters</dt>
+            <dd>{plural(usage.cover_letters, "uploaded", "uploaded")}</dd>
+            <dt>Looks</dt>
+            <dd>{usage.cv_look} CV · {usage.cover_look} letter</dd>
+            <dt>AI account</dt>
+            <dd>
+              {usage.ai_accounts.map((name) => (
+                <div key={name}>{name} {name === usage.ai_in_use ? <span className="verdict ok">in use</span> : null}</div>
+              ))}
+              {usage.ai_in_use ? null : (
+                <span className="verdict warn">{usage.ai_accounts.length ? "None in use" : "None linked"}</span>
+              )}
+            </dd>
+          </dl>
+        </section>
+        <section className="card">
+          <h2>Alerts</h2>
+          <dl className="facts-list">
+            {(["email", "browser"] as const).map((way) => (
+              <Fragment key={way}>
+                <dt>{way === "email" ? "Email" : "Browser"}</dt>
+                <dd>{usage.alerts.includes(way) ? <span className="verdict ok">On</span>
+                  : <span className="verdict unknown">Off</span>}</dd>
+              </Fragment>
+            ))}
+            <dt>Telegram</dt>
+            <dd>
+              <span className={`verdict ${user.telegram === "connected" ? "ok" : user.telegram === "broken" ? "down"
+                : "unknown"}`}>{TELEGRAM[user.telegram] ?? user.telegram}</span>
+            </dd>
+          </dl>
+        </section>
       </div>
-      <p className="facts">
-        {user.status}
-        {user.active ? "" : " · delivery paused"} · last online {when(user.last_active_at)}
-      </p>
 
-      <dl className="stats">
-        {([[usage.jobs, "jobs waiting"], [usage.new_jobs, "new since last here"], [usage.applied, "applied"],
-           [usage.skipped, "skipped"], [usage.made, "CVs and letters made"],
-           [usage.delivered, "sent by alerts"]] as const).map(([value, label]) => (
-          <div key={label} className="stat">
-            <dt>{value.toLocaleString()}</dt>
-            <dd>{label}</dd>
-          </div>
-        ))}
-      </dl>
-
-      {/* What they told us and how they use the site, for working out what to improve. */}
-      <h2>Their account</h2>
-      <dl className="facts-list">
-        <dt>Signed up</dt>
-        <dd>{when(user.created_at)}</dd>
-        <dt>Finished setting up</dt>
-        <dd>{user.onboarding_completed_at ? when(user.onboarding_completed_at) : "not yet"}</dd>
-        <dt>Green words</dt>
-        <dd>{list(usage.green_words)}</dd>
-        <dt>Red words</dt>
-        <dd>{list(usage.red_words)}</dd>
-        <dt>Countries</dt>
-        <dd>{list(usage.countries)}</dd>
-        <dt>How they work</dt>
-        <dd>{list(usage.workplaces)}</dd>
-        <dt>Languages</dt>
-        <dd>{list(usage.languages)}</dd>
-        <dt>Uploaded</dt>
-        <dd>
-          {usage.cvs} CV{usage.cvs === 1 ? "" : "s"} ({usage.cvs_in_use} in use), {usage.cover_letters} cover
-          letter{usage.cover_letters === 1 ? "" : "s"}
-        </dd>
-        <dt>Alerts</dt>
-        <dd>{usage.alerts.length ? usage.alerts.join(", ") : "none"} · Telegram {user.telegram}</dd>
-      </dl>
+      <section className="card">
+        <h2>What they did</h2>
+        <ol className="timeline">
+          {story.map(({ what, at }) => (
+            <li key={what}>
+              <strong>{what}</strong>
+              <span>{when(at)} · {ago(at)}</span>
+            </li>
+          ))}
+        </ol>
+      </section>
 
       {/* Set here, and nowhere the user can reach. */}
-      <h2>Limits</h2>
-      <p className="facts">
-        Blank means the platform default. Sending is paced at the gap below, so an unlimited daily
-        ceiling drains a backlog slowly rather than getting the bot restricted.
-      </p>
-      <div className="limits">
-        {specs.map((spec) => {
-          const current = detail.limits[spec.key];
-          return (
-            <label key={spec.key} className="limit-row">
-              <span className="limit-label">
-                {spec.label}
-                <span className="hint">{spec.detail}</span>
-              </span>
-              <select
-                value={current === null ? "unlimited" : String(current)}
-                disabled={saving === spec.key}
-                onChange={(event) => void save(spec.key, event.target.value)}
-              >
-                {/* From the catalogue, never a list kept here. A ceiling whose options lived in
-                    this file rendered an empty dropdown when it was added to `libs.limits` and
-                    nobody remembered this map — a control that exists, is wired end to end, and
-                    cannot be operated. */}
-                {spec.choices.map((choice) => (
-                  <option key={choice} value={choice}>
-                    {choice} {spec.unit}
-                  </option>
-                ))}
-                {/* Only where the ceiling allows it. */}
-                {spec.allow_unlimited ? <option value="unlimited">Unlimited</option> : null}
-              </select>
-            </label>
-          );
-        })}
-      </div>
+      <section className="card">
+        <h2>Limits</h2>
+        <p className="facts">
+          Blank means the platform default. Sending is paced at the gap below, so an unlimited daily
+          ceiling drains a backlog slowly rather than getting the bot restricted.
+        </p>
+        <div className="limits">
+          {specs.map((spec) => {
+            const current = detail.limits[spec.key];
+            return (
+              <label key={spec.key} className="limit-row">
+                <span className="limit-label">
+                  {spec.label}
+                  <span className="hint">{spec.detail}</span>
+                </span>
+                <select
+                  value={current === null ? "unlimited" : String(current)}
+                  disabled={saving === spec.key}
+                  onChange={(event) => void save(spec.key, event.target.value)}
+                >
+                  {/* From the catalogue, never a list kept here. A ceiling whose options lived in
+                      this file rendered an empty dropdown when it was added to `libs.limits` and
+                      nobody remembered this map — a control that exists, is wired end to end, and
+                      cannot be operated. */}
+                  {spec.choices.map((choice) => (
+                    <option key={choice} value={choice}>
+                      {choice} {spec.unit}
+                    </option>
+                  ))}
+                  {/* Only where the ceiling allows it. */}
+                  {spec.allow_unlimited ? <option value="unlimited">Unlimited</option> : null}
+                </select>
+              </label>
+            );
+          })}
+        </div>
+      </section>
     </div>
   );
 }

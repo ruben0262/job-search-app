@@ -259,7 +259,9 @@ function lastActive(iso: string | null): string {
 export const ADMIN_READS = ["/admin/health", "/admin/users", "/admin/settings", "/admin/sources",
                             "/admin/outcomes", "/admin/contact"];
 
-export function AdminPage() {
+/** `tab` is the part of the address after `#/admin/`: each tab has its own address, so an account's page
+ * goes back to Accounts and a reload stays where it was. */
+export function AdminPage({ tab: asked }: { tab: string }) {
   // Each part draws from what was read last time at once, and each as soon as its own read is back:
   // the page waited for all four, the slowest 2.7 s (2026-11-03).
   const kept = {
@@ -283,7 +285,7 @@ export function AdminPage() {
   // The account being deleted, held until the typed address matches. `null` closes the dialog.
   const [doomed, setDoomed] = useState<AdminUser | null>(null);
   const [typed, setTyped] = useState("");
-  const [tab, setTab] = useState<Tab>("health");
+  const tab = TABS.find(([key]) => key === asked)?.[0] ?? "health";
   const failed = (kept.health.failed && !health) || (kept.users.failed && !users);
 
   // One source, one number.
@@ -413,7 +415,8 @@ export function AdminPage() {
             key={key}
             type="button"
             className={tab === key ? "tab on" : "tab"}
-            onClick={() => setTab(key)}
+            // In place of this address, not after it: going back leaves Admin, not the last tab.
+            onClick={() => window.location.replace(`#/admin/${key}`)}
           >
             {label}
             {key === "health" && health.alerts.length > 0 ? (

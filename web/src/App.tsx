@@ -184,7 +184,7 @@ export function App() {
             hash.startsWith("/admin/users/") ? (
               <AdminUserPage userId={hash.slice("/admin/users/".length)} />
             ) : (
-              <AdminPage />
+              <AdminPage tab={path!.slice("/admin/".length)} />
             )
           ) : (
             <JobsPage dashboard={dashboard} focus={focus} onChanged={reload} />

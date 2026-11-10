@@ -50,9 +50,11 @@ def test_an_operator_sees_the_platform_and_its_alerts(api):
 
 
 def test_an_account_page_says_what_they_do_with_the_site_and_nothing_of_the_setup_files(api):
-    """For working out what to improve (owner, 2026-11-04): the jobs waiting for them and how many came
-    in since they were last here, what they did with them, their search, their files and their alerts.
-    The setup agents' files went with the agents, and an incomplete list of them read as an error."""
+    """For working out what to improve (owner, 2026-11-04, -10): the jobs waiting for them and how many came
+    in since they were last here, how far their applications got, their search with the jobs each word and
+    country finds, where their jobs come from, their files, their AI account, their alerts, and when they
+    last did each. The setup agents' files went with the agents, and an incomplete list of them read as an
+    error."""
     from datetime import timedelta
 
     from libs.db.models import CorpusJob, UserConfig, UserDocument, UserJobState
@@ -69,7 +71,8 @@ def test_an_account_page_says_what_they_do_with_the_site_and_nothing_of_the_setu
                                  first_seen_at=now() - timedelta(hours=hours),
                                  described_at=now() - timedelta(hours=hours)))
             for title, hours in (("Nurse", 5), ("Midwife", 1), ("Carer", 1), ("Nurse Lead", 1))]
-    insert(db, UserJobState(user_id=ordinary.id, job_id=jobs[0].id, applied_at=now(), notified_at=now()))
+    insert(db, UserJobState(user_id=ordinary.id, job_id=jobs[0].id, applied_at=now(), notified_at=now(),
+                            progress=[{"stage": "interview", "at": now()}]))
     insert(db, UserJobState(user_id=ordinary.id, job_id=jobs[3].id, dismissed_at=now()))
     insert(db, UserDocument(user_id=ordinary.id, kind="cv", filename="cv.pdf", text="x", text_sha256="1",
                             chars=1))
@@ -79,11 +82,21 @@ def test_an_account_page_says_what_they_do_with_the_site_and_nothing_of_the_setu
     assert body["user"]["email"] == ordinary.email and "setup" not in body
     usage = body["usage"]
     assert (usage["jobs"], usage["new_jobs"]) == (2, 2), "skipped and applied are gone from their list"
-    assert (usage["applied"], usage["skipped"], usage["delivered"]) == (1, 1, 1)
-    assert (usage["green_words"], usage["red_words"]) == (["carer", "midwife", "nurse"], ["night"])
+    reached = usage["applications"]
+    assert (reached["applied"], reached["interview"], reached["offer"]) == (1, 1, 0)
+    assert (usage["skipped"], usage["delivered"]) == (1, 1)
+    # Each word with the jobs on their list that have it: "nurse" finds only the two that left it.
+    assert usage["green_words"] == [{"name": "carer", "jobs": 1}, {"name": "midwife", "jobs": 1},
+                                    {"name": "nurse", "jobs": 0}]
+    assert usage["red_words"] == ["night"]
     assert (usage["countries"], usage["workplaces"], usage["languages"]) == (
-        ["Germany"], ["On-site"], ["English", "German"])
+        [{"name": "Germany", "jobs": 2}], ["On-site"], ["English", "German"])
+    assert usage["sources"] == [{"name": "Test", "jobs": 2}]
     assert (usage["cvs"], usage["cvs_in_use"], usage["alerts"]) == (1, 1, ["email"])
+    assert (usage["cvs_made"], usage["covers_made"]) == (0, 0)
+    assert (usage["ai_accounts"], usage["ai_in_use"]) == ([], None)
+    assert usage["cv_look"] and usage["cover_look"]
+    assert usage["last_applied_at"] and usage["last_alert_at"] and usage["last_made_at"] is None
     assert db[UserConfig.COLLECTION].count_documents({"user_id": ordinary.id}) == 1
 
 
@@ -614,8 +627,8 @@ def test_the_jobs_found_in_each_country_are_charted_per_run_per_hour_and_per_day
     charts = {hours: http.get("/admin/countries", params={"hours": hours}).json()
               for hours in (2, 24, 168, 720)}
 
-    assert {hours: (chart["by"], chart["bucket_minutes"]) for hours, chart in charts.items()} == {
-        2: ("minutes", 15), 24: ("hour", 60), 168: ("hour", 60), 720: ("day", 1440)}
+    assert {hours: chart["bucket_minutes"] for hours, chart in charts.items()} == {
+        2: 15, 24: 60, 168: 60, 720: 1440}
     assert len(charts[2]["starts"]) == 8 and len(charts[24]["starts"]) == 24
     assert len(charts[168]["starts"]) == 31, "from the first count, not a week of zeros"
     assert len(charts[720]["starts"]) == (hour.date() - began.date()).days + 1
@@ -640,14 +653,14 @@ def test_a_job_is_counted_in_the_run_it_was_found_in(db):
     found = db[CorpusJob.COLLECTION].find_one({"_id": job_id})["first_seen_at"].replace(tzinfo=UTC)
 
     (row,) = db[CountryCount.COLLECTION].find({})
-    assert (row["country"], row["jobs"]) == ("DE", 1)
+    assert (row["country"], row["source"], row["jobs"]) == ("DE", "linkedin", 1)
     run = row["hour"].replace(tzinfo=UTC)
     assert run == floor(found, PLATFORM_TICK_MIN)
     assert run.minute % PLATFORM_TICK_MIN == 0 and run <= found < run + timedelta(minutes=PLATFORM_TICK_MIN)
 
 
 def test_each_range_adds_the_runs_up_into_its_own_buckets(db):
-    """The same counts, per run over an hour, per hour over a day, per day over a month."""
+    """The same counts, per run over an hour, per hour over a day, per four hours, per day over a month."""
     from libs.db.models import CountryCount
     from libs.ops.countries import by_country
 
@@ -658,16 +671,20 @@ def test_each_range_adds_the_runs_up_into_its_own_buckets(db):
         insert(db, CountryCount(id=f"{at:%Y-%m-%dT%H:%M}|DE", hour=at, country="DE", jobs=jobs))
 
     hour, day, month = (by_country(db, hours=hours, now=now) for hours in (1, 24, 720))
+    four = by_country(db, hours=24, minutes=240, now=now)
 
     assert [start.strftime("%H:%M") for start in hour["starts"]] == ["12:15", "12:30", "12:45", "13:00"]
     assert hour["countries"][0]["counts"] == [0, 0, 2, 3]
     assert day["countries"][0]["counts"][-2:] == [2, 3] and day["countries"][0]["total"] == 5
     assert month["countries"][0]["counts"] == [4, 5], "from the first count's day, a sum a day"
+    assert [start.strftime("%d %H:%M") for start in four["starts"][-2:]] == ["05 08:00", "05 12:00"]
+    assert four["countries"][0]["counts"][-2:] == [0, 5] and four["countries"][0]["total"] == 5
 
 
 def test_what_the_chart_shows_and_what_one_point_stands_for_are_picked_apart(api):
-    """Everything counted, from the first count on; and a point a run, an hour or a day over any range, as
-    long as its points fit across the chart (owner, 2026-11-06)."""
+    """Everything counted, from the first count on; and a point a run, half an hour, an hour, two, four,
+    eight or twelve hours, or a day over any range, as long as its points fit across the chart (owner,
+    2026-11-06, -10)."""
     from libs.db.models import CountryCount
     from libs.ops.countries import by_country
 
@@ -679,23 +696,85 @@ def test_what_the_chart_shows_and_what_one_point_stands_for_are_picked_apart(api
                      (datetime(2026, 11, 5, 13, 0, tzinfo=UTC), 3)):
         insert(db, CountryCount(id=f"{at:%Y-%m-%dT%H:%M}|DE", hour=at, country="DE", jobs=jobs))
 
+    assert by_country(db, hours=24, now=now)["steps"] == [15, 30, 60, 120, 240, 480, 720, 1440]
     everything = by_country(db, hours=None, now=now)
-    assert (everything["by"], everything["steps"]) == ("day", [60, 1440]), "a run a point: 1,552 of them"
+    assert everything["bucket_minutes"] == 1440
+    assert everything["steps"] == [30, 60, 120, 240, 480, 720, 1440], "a run a point: 1,552 of them"
     assert everything["starts"][0] == datetime(2026, 10, 20, tzinfo=UTC) and len(everything["starts"]) == 17
     hourly = by_country(db, hours=None, minutes=60, now=now)
     assert (len(hourly["starts"]), hourly["countries"][0]["total"]) == (389, 9), "16 days and 4 hours, all 9"
 
     a_day_by_run = by_country(db, hours=24, minutes=15, now=now)
-    assert (a_day_by_run["by"], len(a_day_by_run["starts"])) == ("minutes", 96)
+    assert (a_day_by_run["bucket_minutes"], len(a_day_by_run["starts"])) == (15, 96)
     assert a_day_by_run["countries"][0]["counts"][-2:] == [2, 3]
     a_week_by_day = by_country(db, hours=168, minutes=1440, now=now)
-    assert (a_week_by_day["by"], a_week_by_day["countries"][0]["counts"]) == ("day", [0] * 6 + [5])
+    assert (a_week_by_day["bucket_minutes"], a_week_by_day["countries"][0]["counts"]) == (1440, [0] * 6 + [5])
     a_month_by_run = by_country(db, hours=720, minutes=15, now=now)
-    assert (a_month_by_run["by"], a_month_by_run["steps"]) == ("day", [60, 1440]), "not offered: 2,880 points"
+    assert a_month_by_run["bucket_minutes"] == 1440
+    assert a_month_by_run["steps"] == [60, 120, 240, 480, 720, 1440], "not offered: 2,880 points"
 
     asked = http.get("/admin/countries", params={"minutes": 1440}).json()
-    assert (asked["by"], asked["starts"][0][:10], asked["countries"][0]["total"]) == ("day", "2026-10-20", 9)
-    assert http.get("/admin/countries", params={"hours": 24, "minutes": 15}).json()["by"] == "minutes"
+    assert (asked["bucket_minutes"], asked["starts"][0][:10], asked["countries"][0]["total"]) == (
+        1440, "2026-10-20", 9)
+    assert http.get("/admin/countries", params={"hours": 24, "minutes": 15}).json()["bucket_minutes"] == 15
+
+
+def test_the_chart_counts_the_sources_picked_and_lists_every_source(api):
+    """Every job board counted at first; one left out takes its jobs out of every country, and is still
+    listed with its own, as is a board that found nothing. Counts kept before sources were are a source of
+    their own, "Not recorded", that can be left out too (owner, 2026-11-10)."""
+    from libs.db.models import CountryCount
+    from libs.settings import HARVEST_SOURCES
+
+    http, db, operator, _, sign_in = api
+    sign_in(http, operator)
+    run = datetime.now(UTC).replace(minute=0, second=0, microsecond=0)
+    for country, source, jobs in (("DE", "linkedin", 5), ("DE", "greenhouse", 2), ("FR", "greenhouse", 1)):
+        insert(db, CountryCount(id=f"{run:%Y-%m-%dT%H:%M}|{country}|{source}", hour=run, country=country,
+                                source=source, jobs=jobs))
+    db[CountryCount.COLLECTION].insert_one({"_id": f"{run:%Y-%m-%dT%H:%M}|DE", "hour": run, "country": "DE",
+                                            "jobs": 3})
+
+    def chart(*without: str) -> tuple[list, dict]:
+        body = http.get("/admin/countries", params={"hours": 24, "without": list(without)}).json()
+        return ([(each["name"], each["total"]) for each in body["countries"]],
+                {each["source"]: each["total"] for each in body["sources"]})
+
+    everything, sources = chart()
+    assert everything == [("Germany", 10), ("France", 1)]
+    assert sources == {**dict.fromkeys(HARVEST_SOURCES, 0), "linkedin": 5, "greenhouse": 3, None: 3}
+    assert chart("greenhouse") == ([("Germany", 8)], sources), "gone from every country, still listed"
+    assert chart("greenhouse", "")[0] == [("Germany", 5)], "the counts before sources, left out too"
+    assert chart(*HARVEST_SOURCES, "")[0] == []
+
+
+def test_counts_kept_before_sources_are_split_by_the_jobs_the_corpus_still_holds(db):
+    """Once, at the deploy's schema step: a count without a source is split by the sources of the jobs it
+    counted, a run's or an hour's (before 2026-11-05) alike. What the corpus no longer holds stays under
+    none, every count keeps its total, and a second time does nothing."""
+    from libs.corpus.repository import CorpusRepository
+    from libs.db.models import CorpusJob, CountryCount
+    from libs.ops.countries import split_by_source
+
+    corpus = CorpusRepository(db)
+    for n, source in enumerate(("linkedin", "linkedin", "greenhouse")):
+        corpus.add(url=f"https://example.com/de{n}", source=source, title="Nurse", location="Berlin, Germany")
+    hour_ago = datetime.now(UTC).replace(minute=0, second=0, microsecond=0) - timedelta(hours=30)
+    paris = corpus.add(url="https://example.com/fr", source="lever", title="Nurse", location="Paris, France")
+    db[CorpusJob.COLLECTION].update_one({"_id": paris},
+                                        {"$set": {"first_seen_at": hour_ago + timedelta(minutes=40)}})
+    # As they were kept before sources were: a run's count of four, one of them archived since, and an hour's.
+    (run,) = {row["hour"] for row in db[CountryCount.COLLECTION].find({"country": "DE"})}
+    db[CountryCount.COLLECTION].delete_many({})
+    db[CountryCount.COLLECTION].insert_many([
+        {"_id": f"{run:%Y-%m-%dT%H:%M}|DE", "hour": run, "country": "DE", "jobs": 4},
+        {"_id": f"{hour_ago:%Y-%m-%dT%H}|FR", "hour": hour_ago, "country": "FR", "jobs": 1}])
+
+    assert split_by_source(db) == 2
+
+    rows = {(row["country"], row["source"]): row["jobs"] for row in db[CountryCount.COLLECTION].find()}
+    assert rows == {("DE", "linkedin"): 2, ("DE", "greenhouse"): 1, ("DE", None): 1, ("FR", "lever"): 1}
+    assert split_by_source(db) == 0
 
 
 def test_the_chart_says_how_many_linkedin_jobs_still_wait_for_their_text(api):

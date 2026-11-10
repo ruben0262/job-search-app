@@ -14,6 +14,110 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-10, evening — Admin's chart counts by source; an account's page you can read at a glance; back goes to Accounts
+
+The owner asked for:
+- **Sources on the corpus chart**, every job board ticked at first.
+- **The chart's dropdowns the size of the others.**
+- **Points of 30 minutes, 2, 4, 8 and 12 hours.**
+- **Back from an account lands on Accounts.**
+- **More about each account, laid out to be read at a glance**: it was "too simple and hard to read".
+
+**Sources, as what the chart counts.** A second dropdown, Sources, beside Countries. Every board is
+ticked when the page opens. Unticking one takes its jobs out of every line and every country, and its
+table still lists it with its jobs, busiest point and share. A board that found nothing in the range is
+listed at 0, which is worth seeing. "All sources" ticks or unticks them all, so one board alone is two
+taps. Sources are what is counted, not more lines: nineteen lines a hue each cannot be told apart, and the
+chart already caps them at six.
+- **The counter gained the source.** `CountryCount` is now one row a run, country and source
+  (`CorpusRepository.add`). The chart reads one counter, as before, and adds it up both ways.
+- **The counts kept before this are split once**, at the deploy's schema step (`python -m libs.db`, beside
+  `settle`): each is split by the sources of the jobs the corpus still holds for that run and country.
+  Every count keeps its total, and what the corpus no longer holds stays as "Not recorded", a source that
+  can be left out too. A second run does nothing.
+  - Measured on the dev copy: all 417 counts split in 0.49 s, every total kept, 5,338 of 5,338 jobs given
+    their source and none left "Not recorded".
+  - On the server the corpus holds 15 days and counting began on 11-04, so all of it should be split. It
+    reads every posting since the first count, about seven days' worth, once.
+  - Once the deploy has run it, `split_by_source` has nothing left to do and can go.
+- **`/admin/countries` takes `without`**, repeated, the sources left out ("" for "Not recorded"), and
+  answers `sources` beside `countries`. `by` is gone: it said what `bucket_minutes` says. The page tells
+  the date-only points from the rest by the step itself.
+
+**Every box in the row one size.** The Countries and Sources dropdowns have their names above them, as
+Show, One point is and Scale do. All six boxes are now 41 px tall with 14 px type. The dropdown's text had
+been 16 px beside the selects' 13 px, and taller.
+
+**What one point is: 15 and 30 minutes, 1, 2, 4, 8 and 12 hours, a day.** The rule is unchanged: a step
+is offered while it draws a range in 1,000 points or fewer. Each new step holds whole runs and divides a
+day. A point of two hours or more starts at UTC's round hours, which aren't round in Budapest, so those
+are labelled every few points, counted back from the last, as days were. "Busiest hour" and "The numbers,
+hour by hour" say "4 hours" where that is the step.
+
+**Back goes to Accounts.** Each Admin tab has its own address (`#/admin/accounts`), so "← All accounts"
+and the browser's back button land there, and a reload stays on the tab it was on. A tab is changed in
+place, not added to the history: going back leaves Admin, not the last tab.
+
+**An account's page.**
+- **The header:** name (or address), the address, and badges for where it stands (Active, Email not
+  confirmed, Still setting up, Alerts paused, Admin), with when they were last here and when they joined.
+- **Four numbers in tiles**, each with the line saying what it means:
+  - on their list, and how many are new since their last visit;
+  - sent by alerts, and when the last one was;
+  - made here, as CVs and cover letters;
+  - skipped.
+- **Their applications** as a funnel: applied, interview, offer, hired, each with a bar of its share,
+  then the rejections. It is counted by the rule the Outcomes tab uses (`applications.outcomes`, now
+  for one person too).
+- **What they look for** as chips:
+  - green words in green and red words in red;
+  - countries, how they work and languages;
+  - each green word and country with the jobs on their list it accounts for. A word that finds nothing
+    is faded and dashed, so a search with a dead word shows it at once.
+- **Where their jobs come from:** a bar for each source on their list.
+- **Documents:** CV and cover letters uploaded, the looks picked, and the AI accounts linked, with the
+  one in use marked. "None in use" when there's none.
+- **Alerts:** email, browser and Telegram, each on, off or where it stands.
+- **What they did,** newest first, as a timeline: on the site, alert sent, document made, applied,
+  finished setting up, confirmed their email, signed up.
+- **Limits**, as before, in a card.
+- **On a phone**, the tiles go two to a row, and each card's facts and each limit stack. Checked at 320,
+  390 and 1,280 px in both themes, with nothing past the screen's edge.
+
+**"New since their last visit" counts when a job's text was read** (`described_at`), as the Jobs page
+does since 11-06. It counted when the job was found, a second definition of "new".
+
+**The list counted is their list at "Any time",** read as far back as the Jobs page reads it
+(`scan_for`). It read the first 2,000 matches, so a long list was cut short without saying so. Measured on
+the dev copy (1,939 jobs on that list): the page's read is a median of 237 ms over 5 runs. The chart's
+read is about 5 ms whatever the range.
+
+Tests, each failing on the previous commit:
+- **The chart:**
+  - only the sources picked are counted, and every source is listed (the API);
+  - the old counts are split by source, totals kept, and a second run does nothing;
+  - a job is counted under its source;
+  - a 4-hour point adds up its runs;
+  - the steps offered at 24 hours, 30 days and everything counted.
+- **The account page:** the counts for each word and country, sources, the funnel and the last times.
+- **The browser:**
+  - Sources opens with all 20 ticked and changes the total;
+  - the six boxes in the row are one height;
+  - "← All accounts" and the browser's back land on Accounts, and a reload stays there.
+
+The country chart's browser test now finds its table among two. The tabs test reads the account page's
+new header ("Last here just now") and its "What they look for".
+
+Gates, all local:
+- `lint-imports`: 2 contracts kept.
+- `ruff check`: clean.
+- The schema pruned onto an empty local database: 28 collections.
+- The contract gained `SourceSeries`, `Tally`, the account's new fields and `without`, and lost `by`.
+  Regenerated, it is the same.
+- `npm run build`: 115.7 kB of gzipped script and 18.1 kB of style.
+- `pytest`: 1,416 passed and 3 skipped (the Postgres copy, the reference instance, an empty parameter
+  set). The browser tests ran.
+
 ## 2026-11-10, later — the broker's image starts; Haiku 5.5 writes Claude's documents; sign-ins logged
 
 - **The sign-in broker crashed at start on the server** (`ModuleNotFoundError: httpx`). `libs.signin`

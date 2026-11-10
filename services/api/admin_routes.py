@@ -7,16 +7,19 @@ import logging
 import os
 import re
 import uuid as _uuid
+from collections import Counter
 from datetime import UTC, datetime, timedelta
-from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 from pymongo.database import Database
 
+from libs import templates
 from libs.contracts.config import WORKPLACE_NAMES, location_search_name, migrate_config
-from libs.corpus.freshness import platform_windows
+from libs.corpus.boards import board_name
+from libs.corpus.freshness import platform_windows, shelf_life
+from libs.corpus.geo import COUNTRIES
 from libs.corpus.repository import CorpusRepository
 from libs.db import delete_account, find, get
 from libs.db.models import (
@@ -31,7 +34,8 @@ from libs.db.models import (
 )
 from libs.documents.read import LANGUAGE_NAMES
 from libs.limits import all_for, describe, set_limit
-from libs.matching import green_words, their_jobs
+from libs.llm.accounts import listing as ai_listing
+from libs.matching import green_words, norm, scan_for, their_jobs
 from libs.obs import audit
 from libs.ops import evaluate, platform_health, render
 from libs.ops.countries import RANGES_HOURS, by_country
@@ -149,37 +153,62 @@ def users(db: Database = Depends(get_db), admin: User = Depends(require_admin)) 
 class AdminAccount(BaseModel):
     id: str
     email: str
+    full_name: str | None
     status: str
     active: bool
+    is_admin: bool
     telegram: str
     onboarded: bool
     created_at: datetime | None
+    email_verified_at: datetime | None
     onboarding_completed_at: datetime | None
     # When they last opened the site, to the minute (`/dashboard`).
     last_active_at: datetime | None
 
 
+class Tally(BaseModel):
+    """A name, and how many jobs on their list it accounts for."""
+    name: str
+    jobs: int
+
+
 class AdminUsage(BaseModel):
     """What an account does with the site, for working out what to improve."""
-    # What their Jobs page lists now, and how many of those came in since they were last on the site.
+    # What their Jobs page lists at "Any time", and how many of those reached it since they were last here.
     jobs: int
     new_jobs: int
-    applied: int
+    # How far their applications got (`libs.tenant.applications.outcomes`).
+    applications: OutcomeRow
     skipped: int
     # Sent to them by an alert.
     delivered: int
-    # CVs and cover letters made for a job.
-    made: int
+    # CVs and cover letters made for a job, and the looks they are made in.
+    cvs_made: int
+    covers_made: int
+    cv_look: str
+    cover_look: str
+    # Uploaded.
     cvs: int
     cvs_in_use: int
     cover_letters: int
-    green_words: list[str]
+    # Each green word and each country picked, with the jobs on their list it accounts for: one that finds
+    # nothing says 0.
+    green_words: list[Tally]
     red_words: list[str]
-    countries: list[str]
+    countries: list[Tally]
     workplaces: list[str]
     languages: list[str]
+    # Where the jobs on their list come from, most first.
+    sources: list[Tally]
     # How they hear of new jobs.
     alerts: list[str]
+    # The AI accounts linked (`libs.llm.accounts`), and the one their documents are written with.
+    ai_accounts: list[str]
+    ai_in_use: str | None
+    # The last time they did each.
+    last_applied_at: datetime | None
+    last_made_at: datetime | None
+    last_alert_at: datetime | None
 
 
 class AdminAccountDetail(BaseModel):
@@ -200,16 +229,18 @@ def user_detail(user_id: _uuid.UUID, db: Database = Depends(get_db),
     audit(logger, "admin.user_detail", user=admin.id, subject=user_id)
     return AdminAccountDetail(
         user=AdminAccount(
-            id=str(user.id), email=user.email, status=user.status, active=user.active,
-            telegram=user.telegram_status, onboarded=user.onboarding_completed_at is not None,
-            created_at=user.created_at, onboarding_completed_at=user.onboarding_completed_at,
+            id=str(user.id), email=user.email, full_name=user.full_name, status=user.status,
+            active=user.active, is_admin=user.is_admin, telegram=user.telegram_status,
+            onboarded=user.onboarding_completed_at is not None, created_at=user.created_at,
+            email_verified_at=user.email_verified_at, onboarding_completed_at=user.onboarding_completed_at,
             last_active_at=user.last_active_at),
         usage=_usage(db, user),
         limits=all_for(user))
 
 
 def _usage(db: Database, user: User) -> AdminUsage:
-    jobs = their_jobs(db, user)
+    # Their list at "Any time", read as far back as the Jobs page reads it (`scan_for`).
+    jobs = their_jobs(db, user, scan=scan_for(shelf_life(platform_windows(db))[1]))
     since = user.last_active_at
     config = migrate_config(TenantRepository(db).get_config(user.id) or {})
     sections = config.get("sections") or []
@@ -220,24 +251,51 @@ def _usage(db: Database, user: User) -> AdminUsage:
     def count(collection: str, **where) -> int:
         return db[collection].count_documents({"user_id": user.id, **where})
 
+    def last(collection: str, field: str) -> datetime | None:
+        row = db[collection].find_one({"user_id": user.id, field: {"$ne": None}}, {field: 1},
+                                      sort=[(field, -1)])
+        return row[field] if row else None
+
+    def within(slug: str) -> int:
+        """The jobs on their list in a place they picked: a country, or the countries it covers."""
+        return sum(places[code] for code in COUNTRIES[slug].countries) if slug in COUNTRIES else 0
+
     documents = list(db[UserDocument.COLLECTION].find({"user_id": user.id}, {"kind": 1, "in_use": 1}))
     cvs = [row for row in documents if row["kind"] == "cv"]
+    made = Counter(row["kind"] for row in db[BuiltDocument.COLLECTION].find({"user_id": user.id},
+                                                                             {"kind": 1}))
     alerts = [name for name, on in (("email", user.email_alerts),
                                     ("Telegram", user.telegram_status == "connected"),
                                     ("browser", count(PushSubscription.COLLECTION) > 0)) if on]
+    words = Counter(word for match in jobs for word in match.words)
+    places = Counter(match.job.country for match in jobs)
+    nothing = dict.fromkeys(("applied", *applications.STAGES, applications.REJECTED), 0)
+    reached = next((row for row in applications.outcomes(db, user.id) if row["group"] == applications.ALL),
+                   {"group": applications.ALL, **nothing})
+    accounts = ai_listing(db, user.id)
     return AdminUsage(
-        jobs=len(jobs), new_jobs=sum(1 for match in jobs if since and match.job.first_seen_at > since),
-        applied=count(UserJobState.COLLECTION, applied_at={"$ne": None}),
+        jobs=len(jobs),
+        new_jobs=sum(1 for match in jobs if since and (match.job.described_at or since) > since),
+        applications=OutcomeRow(**reached),
         skipped=count(UserJobState.COLLECTION, dismissed_at={"$ne": None}),
         delivered=count(UserJobState.COLLECTION, notified_at={"$ne": None}),
-        made=count(BuiltDocument.COLLECTION),
+        cvs_made=made["cv"], covers_made=made["cover"],
+        cv_look=templates.chosen(user, "cv").name, cover_look=templates.chosen(user, "cover").name,
         cvs=len(cvs), cvs_in_use=sum(1 for row in cvs if row.get("in_use", True)),
         cover_letters=sum(1 for row in documents if row["kind"] == "cover_letter"),
-        green_words=green_words(config), red_words=each("exclude_keywords"),
-        countries=[location_search_name(slug) for slug in each("locations")],
+        green_words=[Tally(name=word, jobs=words[norm(word)]) for word in green_words(config)],
+        red_words=each("exclude_keywords"),
+        countries=[Tally(name=location_search_name(slug), jobs=within(slug)) for slug in each("locations")],
         workplaces=[WORKPLACE_NAMES.get(way, (way,))[0] for way in each("workplaces")],
         languages=[LANGUAGE_NAMES.get(code, (code,))[0] for code in config.get("languages") or []],
-        alerts=alerts)
+        sources=[Tally(name=board_name(source), jobs=jobs_from)
+                 for source, jobs_from in Counter(match.job.source for match in jobs).most_common()],
+        alerts=alerts,
+        ai_accounts=[each.label for each in accounts],
+        ai_in_use=next((each.label for each in accounts if each.in_use), None),
+        last_applied_at=last(UserJobState.COLLECTION, "applied_at"),
+        last_made_at=last(BuiltDocument.COLLECTION, "created_at"),
+        last_alert_at=last(UserJobState.COLLECTION, "notified_at"))
 
 
 class SettingPatch(BaseModel):
@@ -355,10 +413,18 @@ class CountrySeries(BaseModel):
     counts: list[int]
 
 
+class SourceSeries(BaseModel):
+    # The source's own name ("linkedin"), or None for counts kept before sources were.
+    source: str | None
+    name: str
+    total: int
+    # One per bucket of `CountryChart.starts`.
+    counts: list[int]
+
+
 class CountryChart(BaseModel):
-    # What a point stands for: a run (`minutes`, `bucket_minutes` long), an hour or a day; picked, or by the
-    # range, a run up to half a day, an hour to two weeks, a day beyond.
-    by: Literal["minutes", "hour", "day"]
+    # What a point stands for, in minutes: picked, or by the range, a run up to half a day, an hour to two
+    # weeks, a day beyond.
     bucket_minutes: int
     # The steps that can be picked over this range, in minutes (`libs.ops.countries.steps`).
     steps: list[int]
@@ -366,21 +432,26 @@ class CountryChart(BaseModel):
     starts: list[datetime]
     # When the first count began; `None` before anything has been counted.
     since: datetime | None
-    # Most jobs first.
+    # Most jobs first, from the sources picked.
     countries: list[CountrySeries]
+    # Every source, picked or not, most jobs first.
+    sources: list[SourceSeries]
     # LinkedIn jobs still waiting for their text and young enough to reach somebody (the describer's queue).
     waiting: int
 
 
 @router.get("/countries", response_model=CountryChart)
 def countries(db: Database = Depends(get_db), admin: User = Depends(require_admin), *,
-              hours: int | None = None, minutes: int | None = None) -> dict:
+              hours: int | None = None, minutes: int | None = None,
+              without: list[str] = Query([], max_length=100)) -> dict:
     """New jobs by the country each is in, over the last `hours` or everything counted, a point `minutes`
-    long where that is offered (`libs.ops.countries`)."""
+    long where that is offered, from every source but those `without` (an empty one is the counts kept
+    before sources were) (`libs.ops.countries`)."""
     hours = None if hours is None else max(1, min(hours, max(RANGES_HOURS)))
-    audit(logger, "admin.countries", user=admin.id, hours=hours, minutes=minutes)
+    audit(logger, "admin.countries", user=admin.id, hours=hours, minutes=minutes, without=without)
     waiting = CorpusRepository(db).count_awaiting_description(linkedin=True, windows=platform_windows(db))
-    return {**by_country(db, hours=hours, minutes=minutes), "waiting": waiting}
+    return {**by_country(db, hours=hours, minutes=minutes, without={each or None for each in without}),
+            "waiting": waiting}
 
 
 class LimitPatch(BaseModel):

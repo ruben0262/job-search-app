@@ -18,6 +18,8 @@ from libs.db.models import BuiltDocument, UserJobState
 
 STAGES = ("interview", "offer", "hired")
 REJECTED = "rejected"
+# The group of `outcomes` that counts every application.
+ALL = "All applications"
 
 
 class StepRefused(ValueError):
@@ -60,17 +62,19 @@ def step_back(db: Database, user_id: uuid.UUID, job_id: int) -> list[dict]:
     return row.progress if row else []
 
 
-def outcomes(db: Database) -> list[dict]:
-    """How far everyone's applications got, all together and by the CV sent (none made here, instant or
-    AI, passed or flagged by the ATS check): `{"group", "applied", "interview", "offer", "hired",
-    "rejected"}`, where a stage counts every application that reached it or went past it.
+def outcomes(db: Database, user_id: uuid.UUID | None = None) -> list[dict]:
+    """How far everyone's applications got, or one person's, all together and by the CV sent (none made
+    here, instant or AI, passed or flagged by the ATS check): `{"group", "applied", "interview", "offer",
+    "hired", "rejected"}`, where a stage counts every application that reached it or went past it.
 
     The CV is the newest one still kept for the job, so one somebody deleted reads as none made here.
     """
+    whose = {} if user_id is None else {"user_id": user_id}
     cvs = {(row["user_id"], row["job_id"]): row for row in db[BuiltDocument.COLLECTION].find(
-        {"kind": "cv"}, {"user_id": 1, "job_id": 1, "mode": 1, "ats_ok": 1}, sort=[("created_at", 1)])}
+        {"kind": "cv", **whose}, {"user_id": 1, "job_id": 1, "mode": 1, "ats_ok": 1},
+        sort=[("created_at", 1)])}
     groups: dict[str, Counter] = {}
-    for row in db[UserJobState.COLLECTION].find({"applied_at": {"$ne": None}},
+    for row in db[UserJobState.COLLECTION].find({"applied_at": {"$ne": None}, **whose},
                                                 {"user_id": 1, "job_id": 1, "progress": 1}):
         reached = {step["stage"] for step in row.get("progress") or []}
         furthest = max((STAGES.index(stage) for stage in reached if stage in STAGES), default=-1)
@@ -78,7 +82,7 @@ def outcomes(db: Database) -> list[dict]:
                          **{stage: int(furthest >= index) for index, stage in enumerate(STAGES)})
         cv = cvs.get((row["user_id"], row["job_id"]))
         made = "No CV made here" if cv is None else ("AI-written CV" if cv["mode"] == "ai" else "Instant CV")
-        names = ["All applications", made]
+        names = [ALL, made]
         if cv is not None and cv.get("ats_ok") is not None:
             names.append("CV passed the ATS check" if cv["ats_ok"] else "CV flagged by the ATS check")
         for name in names:

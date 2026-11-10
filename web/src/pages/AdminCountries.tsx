@@ -1,21 +1,22 @@
 /**
- * Admin → Corpus: new jobs through time, all countries together and each one (owner, 2026-11-04, -05, -06).
+ * Admin → Corpus: new jobs through time, all countries together and each one (owner, 2026-11-04, -05, -06),
+ * from the sources ticked, every one at first (owner, 2026-11-10).
  *
  * One line chart: every country together, and the countries ticked under "Countries", a hue each
  * (styles.css, `--series-*`); any of them, the total too, ticked off. A country keeps its hue while it is
  * drawn, whatever else is added or taken away. How far back it shows and what one point stands for are
  * picked apart, and its scale is even or a log one, which shows a small country's changes beside a big
- * one's. The countries' table and the numbers under the chart say everything the lines do, without a
- * pointer.
+ * one's. The countries' and sources' tables and the numbers under the chart say everything the lines do,
+ * without a pointer.
  */
-import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
 import { api, type Schema } from "../api";
 import { keep, peek } from "../kept";
 
 type CountryChart = Schema<"CountryChart">;
 type Country = CountryChart["countries"][number];
-type By = CountryChart["by"];
+type Source = CountryChart["sources"][number];
 type Series = { key: string; name: string; color: string; values: number[]; area?: boolean };
 type Hover = { at: number; chart: string } | null;
 
@@ -29,15 +30,20 @@ const SLOTS = 6;
 const FIRST_DRAWN = 5;
 
 const keyOf = (country: Country) => country.country ?? "none";
+/** A source as `without` names it: the counts kept before sources were are the empty name. */
+const sourceKey = (source: Source) => source.source ?? "";
 
 export function JobsByCountry() {
   const [hours, setHours] = useState<number | null>(24);
   // What one point stands for, once picked: the range's own until then, and over a range too long for it.
   const [minutes, setMinutes] = useState<number | null>(null);
   const [log, setLog] = useState(false);
+  // The sources left out: none at first, so every job board is counted.
+  const [without, setWithout] = useState<string[]>([]);
   const query = new URLSearchParams();
   if (hours !== null) query.set("hours", `${hours}`);
   if (minutes !== null) query.set("minutes", `${minutes}`);
+  for (const each of without) query.append("without", each);
   const path = `/admin/countries?${query}`;
   const [chart, setChart] = useState<CountryChart | null>(() => peek<CountryChart>(path));
   const [busy, setBusy] = useState(false);
@@ -47,15 +53,6 @@ export function JobsByCountry() {
   // Every country together, as its own line.
   const [together, setTogether] = useState(true);
   const [hover, setHover] = useState<Hover>(null);
-  // The countries, folded: open over the chart, shut by a tap anywhere else or Escape.
-  const pick = useRef<HTMLDetailsElement>(null);
-  useEffect(() => {
-    const shut = (event: PointerEvent) => {
-      if (pick.current?.open && !pick.current.contains(event.target as Node)) pick.current.open = false;
-    };
-    document.addEventListener("pointerdown", shut);
-    return () => document.removeEventListener("pointerdown", shut);
-  }, []);
 
   useEffect(() => {
     let live = true;
@@ -97,10 +94,12 @@ export function JobsByCountry() {
 
   const picked = slots ?? {};
   const countries = chart?.countries ?? [];
+  const sources = chart?.sources ?? [];
+  const counted = sources.filter((each) => !without.includes(sourceKey(each)));
+  const everySource = sources.reduce((sum, each) => sum + each.total, 0);
   const starts = chart?.starts ?? [];
-  const by: By = chart?.by ?? "hour";
   const step = chart?.bucket_minutes ?? 60;
-  const unit = unitName(by, step);
+  const unit = unitName(step);
   const total = starts.map((_, index) => countries.reduce((sum, each) => sum + (each.counts[index] ?? 0), 0));
   const sum = total.reduce((a, b) => a + b, 0);
   const drawn: Series[] = countries
@@ -120,63 +119,106 @@ export function JobsByCountry() {
       <h2 style={{ marginTop: 0 }}>Jobs found by country</h2>
       <p className="hint">
         New jobs as they are stored, by the country each is in. &ldquo;Not known&rdquo; is remote or
-        worldwide. Pick the lines drawn under Countries, all countries together included.
+        worldwide. Pick the lines drawn under Countries, all countries together included, and the job
+        boards counted under Sources.
       </p>
       <div className="chart-controls">
         {countries.length ? (
-          <details className="lines-pick control" ref={pick}
-                   onKeyDown={(event) => {
-                     if (event.key === "Escape" && pick.current?.open) {
-                       pick.current.open = false;
-                       pick.current.querySelector("summary")?.focus();
-                     }
-                   }}>
-            <summary>Countries · {lines.length} drawn</summary>
-            <div className="lines-panel">
-              <table className="country-table">
-                <thead>
-                  <tr>
-                    <th scope="col">Country</th>
-                    <th scope="col" className="num">Jobs</th>
-                    <th scope="col" className="num busiest">Busiest {unit}</th>
-                    <th scope="col" className="num">Share</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td>
-                      <label className="pick">
-                        <input type="checkbox" checked={together} onChange={() => setTogether(!together)} />
-                        <i className="line-key" style={{ background: together ? "var(--ink)" : "transparent" }} />
-                        All countries
-                      </label>
-                    </td>
-                    <td className="num">{sum.toLocaleString()}</td>
-                    <td className="num busiest">{Math.max(0, ...total).toLocaleString()}</td>
-                    <td className="num">{sum ? "100%" : "—"}</td>
-                  </tr>
-                  {countries.map((each) => {
-                    const slot = picked[keyOf(each)];
-                    return (
-                      <tr key={keyOf(each)}>
-                        <td>
-                          <label className="pick">
-                            <input type="checkbox" checked={slot !== undefined}
-                                   disabled={slot === undefined && full} onChange={() => toggle(keyOf(each))} />
-                            <i className="line-key" style={{ background: slot === undefined ? "transparent" : hue(slot) }} />
-                            {each.name}
-                          </label>
-                        </td>
-                        <td className="num">{each.total.toLocaleString()}</td>
-                        <td className="num busiest">{Math.max(...each.counts).toLocaleString()}</td>
-                        <td className="num">{sum ? `${Math.round((each.total / sum) * 100)}%` : "—"}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </details>
+          <Dropdown label="Countries" value={`${lines.length} drawn`}>
+            <table className="country-table">
+              <thead>
+                <tr>
+                  <th scope="col">Country</th>
+                  <th scope="col" className="num">Jobs</th>
+                  <th scope="col" className="num busiest">Busiest {unit}</th>
+                  <th scope="col" className="num">Share</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>
+                    <label className="pick">
+                      <input type="checkbox" checked={together} onChange={() => setTogether(!together)} />
+                      <i className="line-key" style={{ background: together ? "var(--ink)" : "transparent" }} />
+                      All countries
+                    </label>
+                  </td>
+                  <td className="num">{sum.toLocaleString()}</td>
+                  <td className="num busiest">{Math.max(0, ...total).toLocaleString()}</td>
+                  <td className="num">{sum ? "100%" : "—"}</td>
+                </tr>
+                {countries.map((each) => {
+                  const slot = picked[keyOf(each)];
+                  return (
+                    <tr key={keyOf(each)}>
+                      <td>
+                        <label className="pick">
+                          <input type="checkbox" checked={slot !== undefined}
+                                 disabled={slot === undefined && full} onChange={() => toggle(keyOf(each))} />
+                          <i className="line-key" style={{ background: slot === undefined ? "transparent" : hue(slot) }} />
+                          {each.name}
+                        </label>
+                      </td>
+                      <td className="num">{each.total.toLocaleString()}</td>
+                      <td className="num busiest">{Math.max(...each.counts).toLocaleString()}</td>
+                      <td className="num">{sum ? share(each.total, sum) : "—"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </Dropdown>
+        ) : null}
+        {sources.length ? (
+          <Dropdown label="Sources"
+                    value={without.length ? `${counted.length} of ${sources.length}` : `All ${sources.length}`}>
+            <table className="country-table">
+              <thead>
+                <tr>
+                  <th scope="col">Source</th>
+                  <th scope="col" className="num">Jobs</th>
+                  <th scope="col" className="num busiest">Busiest {unit}</th>
+                  <th scope="col" className="num">Share</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>
+                    <label className="pick">
+                      <input type="checkbox" checked={!without.length}
+                             ref={(box) => { if (box) box.indeterminate = without.length > 0 && counted.length > 0; }}
+                             onChange={() => setWithout(without.length ? [] : sources.map(sourceKey))} />
+                      All sources
+                    </label>
+                  </td>
+                  <td className="num">{everySource.toLocaleString()}</td>
+                  <td className="num busiest">
+                    {Math.max(0, ...starts.map((_, index) =>
+                      sources.reduce((sum, each) => sum + (each.counts[index] ?? 0), 0))).toLocaleString()}
+                  </td>
+                  <td className="num">{everySource ? "100%" : "—"}</td>
+                </tr>
+                {sources.map((each) => {
+                  const key = sourceKey(each);
+                  const on = !without.includes(key);
+                  return (
+                    <tr key={key} className={each.total ? undefined : "muted"}>
+                      <td>
+                        <label className="pick">
+                          <input type="checkbox" checked={on}
+                                 onChange={() => setWithout(on ? [...without, key] : without.filter((k) => k !== key))} />
+                          {each.name}
+                        </label>
+                      </td>
+                      <td className="num">{each.total.toLocaleString()}</td>
+                      <td className="num busiest">{Math.max(0, ...each.counts).toLocaleString()}</td>
+                      <td className="num">{everySource ? share(each.total, everySource) : "—"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </Dropdown>
         ) : null}
         <div className="control">
           <label htmlFor="chart-range">Show</label>
@@ -208,17 +250,17 @@ export function JobsByCountry() {
             each day means LinkedIn is read too slowly for the countries picked.
           </p>
           {trimmed ? (
-            <p className="facts">Counting began {when(chart.since!, "minutes")}: nothing before it was counted.</p>
+            <p className="facts">Counting began {when(chart.since!, 1)}: nothing before it was counted.</p>
           ) : null}
           {countries.length === 0 ? (
-            <p className="muted">Nothing counted in this time yet.</p>
+            <p className="muted">{counted.length || !without.length ? "Nothing counted in this time yet." : "No source is ticked."}</p>
           ) : (
             <>
               <div className="trend-head">
                 <span className="label">All countries</span>
                 <strong>{sum.toLocaleString()}</strong>
                 <span className="muted small">
-                  busiest {unit}: {total[busiest]!.toLocaleString()}, {when(starts[busiest]!, by)}
+                  busiest {unit}: {total[busiest]!.toLocaleString()}, {when(starts[busiest]!, step)}
                 </span>
               </div>
               {lines.length ? (
@@ -228,7 +270,7 @@ export function JobsByCountry() {
                       <li key={each.key}><i className="line-key" style={{ background: each.color }} />{each.name}</li>
                     ))}
                   </ul>
-                  <LineChart id="countries" label="Jobs found" endLabels log={log} by={by} step={step}
+                  <LineChart id="countries" label="Jobs found" endLabels log={log} step={step}
                              starts={starts} series={lines} hover={hover} onHover={setHover} />
                 </>
               ) : <p className="muted small">No line is ticked.</p>}
@@ -247,7 +289,7 @@ export function JobsByCountry() {
                     <tbody>
                       {starts.map((_, index) => starts.length - 1 - index).map((index) => (
                         <tr key={starts[index]}>
-                          <td>{when(starts[index]!, by)}</td>
+                          <td>{when(starts[index]!, step)}</td>
                           <td className="num">{total[index]!.toLocaleString()}</td>
                           {drawn.map((each) => (
                             <td key={each.key} className="num">{(each.values[index] ?? 0).toLocaleString()}</td>
@@ -266,15 +308,42 @@ export function JobsByCountry() {
   );
 }
 
+/** A dropdown drawn as the selects beside it, its name above it as theirs are, opened over the chart rather
+ * than pushing it down the page, and shut by a tap anywhere else or Escape. */
+function Dropdown({ label, value, children }: { label: string; value: string; children: ReactNode }) {
+  const pick = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    const shut = (event: PointerEvent) => {
+      if (pick.current?.open && !pick.current.contains(event.target as Node)) pick.current.open = false;
+    };
+    document.addEventListener("pointerdown", shut);
+    return () => document.removeEventListener("pointerdown", shut);
+  }, []);
+  return (
+    <div className="control">
+      <span aria-hidden="true">{label}</span>
+      <details className="lines-pick" ref={pick}
+               onKeyDown={(event) => {
+                 if (event.key === "Escape" && pick.current?.open) {
+                   pick.current.open = false;
+                   pick.current.querySelector("summary")?.focus();
+                 }
+               }}>
+        <summary aria-label={`${label}: ${value}`}>{value}</summary>
+        <div className="lines-panel">{children}</div>
+      </details>
+    </div>
+  );
+}
+
 /** One or more series against time, one axis, with a crosshair and every series' value under the pointer
  * or the arrow keys. `hover` is shared, so both charts mark the same hour. On a log scale (`log`) each
  * step up the axis is ten times the one below, so a country of tens moves as visibly as one of thousands. */
-function LineChart({ id, label, series, starts, by, step, log = false, endLabels = false, hover, onHover }: {
+function LineChart({ id, label, series, starts, step, log = false, endLabels = false, hover, onHover }: {
   id: string;
   label: string;
   series: Series[];
   starts: string[];
-  by: By;
   step: number;
   log?: boolean;
   endLabels?: boolean;
@@ -345,11 +414,11 @@ function LineChart({ id, label, series, starts, by, step, log = false, endLabels
 
   return (
     <div ref={box} className="trend-chart" tabIndex={0}
-         aria-label={`${label}, new jobs per ${unitName(by, step)}: arrow keys read each in turn`}
+         aria-label={`${label}, new jobs per ${unitName(step)}: arrow keys read each in turn`}
          onPointerMove={(event) => point(event.clientX)} onPointerLeave={() => onHover(null)}
          onFocus={() => onHover({ at: at ?? n - 1, chart: id })} onBlur={() => onHover(null)} onKeyDown={keys}>
       <svg width={width} height={height} role="img"
-           aria-label={`${label}: new jobs per ${unitName(by, step)}${log ? ", on a log scale" : ""}`}>
+           aria-label={`${label}: new jobs per ${unitName(step)}${log ? ", on a log scale" : ""}`}>
         {ticks.map((tick) => (
           <g key={tick}>
             <line x1={left} x2={left + plotWidth} y1={y(tick)} y2={y(tick)}
@@ -359,9 +428,9 @@ function LineChart({ id, label, series, starts, by, step, log = false, endLabels
             </text>
           </g>
         ))}
-        {xTicks(starts, by, step, plotWidth).map((index) => (
+        {xTicks(starts, step, plotWidth).map((index) => (
           <text key={index} x={clamp(x(index))} y={height - 6} textAnchor="middle" className="trend-axis">
-            {tickLabel(starts[index]!, by)}
+            {tickLabel(starts[index]!, step)}
           </text>
         ))}
         {series.map((each) => (
@@ -401,7 +470,7 @@ function LineChart({ id, label, series, starts, by, step, log = false, endLabels
       {at !== null && hover?.chart === id ? (
         <div className="trend-tip" role="status"
              style={x(at) > width - 210 ? { right: width - x(at) + 14 } : { left: x(at) + 14 }}>
-          <div className="when">{when(starts[at]!, by)}{at === n - 1 ? ", so far" : ""}</div>
+          <div className="when">{when(starts[at]!, step)}{at === n - 1 ? ", so far" : ""}</div>
           {[...series].sort((a, b) => (b.values[at] ?? 0) - (a.values[at] ?? 0)).map((each) => (
             <div key={each.key} className="row">
               <i className="line-key" style={{ background: each.color }} />
@@ -434,11 +503,12 @@ function logTicks(peak: number): number[] {
   return [0, ...Array.from({ length: top + 1 }, (_, power) => 10 ** power)];
 }
 
-/** Which buckets get a label along the bottom: round times, or midnights, or every few days, as many as
- * fit. */
-function xTicks(starts: string[], by: By, step: number, plotWidth: number): number[] {
+/** Which buckets get a label along the bottom, as many as fit: round times for points of an hour or less,
+ * otherwise every so many points, counted back from the last. Points of two hours and more start at UTC's
+ * round times, which are not round here east or west of it. */
+function xTicks(starts: string[], step: number, plotWidth: number): number[] {
   const room = Math.max(2, Math.floor(plotWidth / 84));
-  if (by !== "day") {
+  if (step <= 60) {
     const minute = (at: string) => new Date(at).getHours() * 60 + new Date(at).getMinutes();
     for (const every of [15, 30, 60, 120, 180, 360, 720, 1440].filter((each) => each >= step)) {
       const fit = starts.flatMap((at, index) => (minute(at) % every === 0 ? [index] : []));
@@ -447,31 +517,39 @@ function xTicks(starts: string[], by: By, step: number, plotWidth: number): numb
     const midnights = starts.flatMap((at, index) => (new Date(at).getHours() === 0 ? [index] : []));
     return midnights.filter((_, index) => index % Math.ceil(midnights.length / room) === 0);
   }
-  const every = [1, 2, 7, 14, 30].find((step) => Math.ceil(starts.length / step) <= room) ?? 30;
+  const every = [1, 2, 3, 4, 6, 7, 12, 14, 30].find((each) => Math.ceil(starts.length / each) <= room) ?? 30;
   return starts.flatMap((_, index) => ((starts.length - 1 - index) % every === 0 ? [index] : []));
 }
 
-function tickLabel(at: string, by: By): string {
+function tickLabel(at: string, step: number): string {
   const date = new Date(at);
-  if (by === "day" || (date.getHours() === 0 && date.getMinutes() === 0)) {
+  if (step >= 1440 || (date.getHours() === 0 && date.getMinutes() === 0)) {
     return date.toLocaleDateString([], { day: "numeric", month: "short" });
   }
   return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-/** What one bucket is called: "15 minutes", "hour" or "day". */
-function unitName(by: By, step: number): string {
-  return by === "minutes" ? `${step} minutes` : by;
+/** What one point is called: "15 minutes", "hour", "4 hours" or "day". */
+function unitName(step: number): string {
+  return step === 60 ? "hour" : step === 1440 ? "day" : pointName(step);
 }
 
-/** A step, as the picker names it: "15 minutes", "1 hour", "1 day". */
+/** A step, as the picker names it: "15 minutes", "1 hour", "4 hours", "1 day". */
 function pointName(minutes: number): string {
-  return minutes < 60 ? `${minutes} minutes` : minutes === 60 ? "1 hour" : "1 day";
+  if (minutes < 60) return `${minutes} minutes`;
+  if (minutes >= 1440) return "1 day";
+  return minutes === 60 ? "1 hour" : `${minutes / 60} hours`;
 }
 
-/** An hour or a day, in full: "Thu 5 Nov, 20:00" or "Thu 5 Nov". */
-function when(at: string, by: By): string {
+/** A share of a whole, as a whole percent, and "<1%" for one too small to round to one. */
+function share(part: number, whole: number): string {
+  const percent = Math.round((part / whole) * 100);
+  return part && !percent ? "<1%" : `${percent}%`;
+}
+
+/** A point's start in full: "Thu 5 Nov, 20:00", or "Thu 5 Nov" for a day. */
+function when(at: string, step: number): string {
   const date = new Date(at);
   const day = date.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" });
-  return by === "day" ? day : `${day}, ${date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+  return step >= 1440 ? day : `${day}, ${date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
 }

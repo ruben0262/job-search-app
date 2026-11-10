@@ -2619,7 +2619,7 @@ button.ai-provider {
 .limits {
   display: grid;
   gap: 0.2rem;
-  margin: 1rem 0 2rem;
+  margin: 1rem 0 0;
 }
 
 .limit-row {
@@ -2838,6 +2838,280 @@ button.ai-provider {
   overflow-wrap: anywhere;
 }
 
+/* The admin's page for one account (`AdminUserPage.tsx`): who, where it stands, then a card a question. */
+.account .card h2 {
+  margin: 0 0 1rem;
+}
+.account .card .facts-list {
+  margin: 0;
+}
+.account-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem 1.25rem;
+  margin-bottom: 1.5rem;
+}
+.account-mark {
+  display: grid;
+  place-items: center;
+  flex: none;
+  inline-size: 3.5rem;
+  block-size: 3.5rem;
+  border-radius: 50%;
+  background: rgba(var(--accent-rgb), 0.18);
+  border: 1px solid rgba(var(--accent-rgb), 0.5);
+  color: var(--accent-text);
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.account-who {
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+.account-who h1 {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.account-who p {
+  margin: 0.15rem 0 0;
+}
+.account-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.55rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.account-badges .verdict {
+  font-size: 0.8rem;
+  padding: 0.2rem 0.65rem;
+}
+.account-seen {
+  display: grid;
+  gap: 0.15rem;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.875rem;
+  text-align: end;
+}
+.account-seen strong {
+  color: var(--ink);
+}
+.account-seen span {
+  color: var(--dim);
+}
+@media (max-width: 40rem) {
+  .account-seen {
+    text-align: start;
+  }
+}
+/* Four numbers, each with the line that says what it means. */
+.account-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(9.5rem, 100%), 1fr));
+  gap: 0.75rem;
+  margin: 0 0 1.25rem;
+}
+.account-tiles > div {
+  padding: 1rem 1.15rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  min-width: 0;
+}
+.account-tiles dt {
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+.account-tiles dd {
+  margin: 0;
+  color: var(--dim);
+  font-size: 0.8125rem;
+}
+.account-tiles strong {
+  display: block;
+  margin: 0.2rem 0 0.1rem;
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 2rem;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+/* Applied, interview, offer, hired: a step each, its bar the share of applications that got there. */
+.funnel {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 0 0 0.75rem;
+  padding: 0;
+  list-style: none;
+}
+@media (max-width: 30rem) {
+  .funnel {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.funnel li {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius);
+  background: rgba(var(--ink-rgb), 0.03);
+  border: 1px solid var(--hairline);
+}
+.funnel strong {
+  font-family: var(--font-display);
+  font-size: 1.6rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.funnel span {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+.funnel i {
+  display: block;
+  block-size: 4px;
+  margin-top: 0.35rem;
+  border-radius: 2px;
+  background: var(--accent);
+}
+/* Their search: a row a kind, its words as chips, each with the jobs it accounts for. */
+.account-search {
+  display: grid;
+  grid-template-columns: minmax(7rem, 9rem) minmax(0, 1fr);
+  gap: 0.85rem 1.25rem;
+  margin: 0 0 1rem;
+}
+.account-search dt {
+  padding-top: 0.3rem;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+.account-search dd {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0;
+}
+@media (max-width: 30rem) {
+  .account-search {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.35rem;
+  }
+  .account-search dd {
+    margin-bottom: 0.6rem;
+  }
+}
+.word b {
+  margin-inline-start: 0.35rem;
+  color: var(--muted);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+/* A word or a country that finds nothing: there, but faded and dashed, so it is seen at once. */
+.word.none {
+  border-style: dashed;
+  opacity: 0.6;
+}
+/* Where their jobs come from: a bar a source, against the biggest. */
+.account-bars {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.account-bars li {
+  display: grid;
+  grid-template-columns: minmax(6.5rem, 10rem) minmax(0, 1fr) 3.5rem;
+  align-items: center;
+  gap: 0.85rem;
+  font-size: 0.9rem;
+}
+.account-bars li > i {
+  display: block;
+  block-size: 0.6rem;
+  border-radius: 999px;
+  background: rgba(var(--ink-rgb), 0.06);
+  overflow: hidden;
+}
+.account-bars li > i > i {
+  display: block;
+  block-size: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+.account-bars strong {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+/* On a phone each card's facts, and each limit, stack: side by side, the answers were a letter wide. */
+@media (max-width: 30rem) {
+  .account .card {
+    padding: 1.1rem;
+  }
+  .account .facts-list {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.1rem;
+  }
+  .account .facts-list dd {
+    margin-bottom: 0.6rem;
+  }
+  .account .limit-row {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+}
+.account-pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(20rem, 100%), 1fr));
+  gap: 0 1.25rem;
+}
+/* What they did, newest first, a dot on a line each. */
+.timeline {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.timeline li {
+  position: relative;
+  display: grid;
+  gap: 0.1rem;
+  padding: 0 0 1rem 1.6rem;
+}
+.timeline li::before {
+  content: "";
+  position: absolute;
+  left: 0.2rem;
+  top: 0.4rem;
+  inline-size: 0.6rem;
+  block-size: 0.6rem;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.timeline li:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  left: calc(0.5rem - 0.5px);
+  top: 1.15rem;
+  bottom: 0.1rem;
+  inline-size: 1px;
+  background: var(--faint);
+}
+.timeline li:last-child {
+  padding-bottom: 0;
+}
+.timeline span {
+  color: var(--dim);
+  font-size: 0.85rem;
+}
+
 /* Jobs by country, through time (`AdminCountries.tsx`): a hue a country, in this order, kept while it is
    drawn. The reference data-viz palette, checked 2026-11-05 against this site's two backgrounds (#060606,
    #f7f7f5): every neighbouring pair apart, for colour-blind readers too. In light, four are under 3:1
@@ -2959,6 +3233,9 @@ button.ai-provider {
 .country-table td.num {
   text-align: right;
 }
+.country-table td {
+  vertical-align: middle;
+}
 /* On a phone the busiest hour gives way: it is in the numbers under the table. */
 @media (max-width: 40rem) {
   .country-table .busiest {
@@ -2999,20 +3276,27 @@ button.ai-provider {
 .chart-controls select {
   width: auto;
 }
-.chart-controls button.toggle {
-  padding: 0.65rem 1rem;
+/* Every box in the row one size: the selects, the countries' and sources' dropdowns, the scale's buttons. */
+.chart-controls :is(select, .lines-pick > summary, button.toggle) {
+  font-size: 0.875rem;
+  line-height: 1.4;
+  padding-top: 0.6rem;
+  padding-bottom: 0.6rem;
 }
-/* The countries, folded under a button drawn as the selects beside it, first in the row, and opened over the
+.chart-controls button.toggle {
+  padding-inline: 1rem;
+}
+/* The countries and the sources, each folded under a box drawn as the selects beside it, and opened over the
    chart rather than pushing it down the page. */
 .lines-pick > summary {
   list-style: none;
-  padding: 0.65rem 2.6rem 0.65rem 0.95rem;
+  padding-inline: 0.95rem 2.6rem;
   border: 1px solid var(--faint);
   border-radius: var(--radius);
   background: var(--bg-raised) no-repeat right 1rem center / 0.7rem auto;
   background-image: var(--arrow);
   color: var(--ink);
-  font-size: 1rem;
+  white-space: nowrap;
   cursor: pointer;
 }
 .lines-pick > summary::-webkit-details-marker {

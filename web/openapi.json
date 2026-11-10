@@ -91,9 +91,36 @@
             "title": "Email",
             "type": "string"
           },
+          "email_verified_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Verified At"
+          },
+          "full_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Name"
+          },
           "id": {
             "title": "Id",
             "type": "string"
+          },
+          "is_admin": {
+            "title": "Is Admin",
+            "type": "boolean"
           },
           "last_active_at": {
             "anyOf": [
@@ -135,11 +162,14 @@
         "required": [
           "id",
           "email",
+          "full_name",
           "status",
           "active",
+          "is_admin",
           "telegram",
           "onboarded",
           "created_at",
+          "email_verified_at",
           "onboarding_completed_at",
           "last_active_at"
         ],
@@ -193,6 +223,24 @@
       "AdminUsage": {
         "description": "What an account does with the site, for working out what to improve.",
         "properties": {
+          "ai_accounts": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Ai Accounts",
+            "type": "array"
+          },
+          "ai_in_use": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ai In Use"
+          },
           "alerts": {
             "items": {
               "type": "string"
@@ -200,13 +248,12 @@
             "title": "Alerts",
             "type": "array"
           },
-          "applied": {
-            "title": "Applied",
-            "type": "integer"
+          "applications": {
+            "$ref": "#/components/schemas/OutcomeRow"
           },
           "countries": {
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/Tally"
             },
             "title": "Countries",
             "type": "array"
@@ -214,6 +261,18 @@
           "cover_letters": {
             "title": "Cover Letters",
             "type": "integer"
+          },
+          "cover_look": {
+            "title": "Cover Look",
+            "type": "string"
+          },
+          "covers_made": {
+            "title": "Covers Made",
+            "type": "integer"
+          },
+          "cv_look": {
+            "title": "Cv Look",
+            "type": "string"
           },
           "cvs": {
             "title": "Cvs",
@@ -223,13 +282,17 @@
             "title": "Cvs In Use",
             "type": "integer"
           },
+          "cvs_made": {
+            "title": "Cvs Made",
+            "type": "integer"
+          },
           "delivered": {
             "title": "Delivered",
             "type": "integer"
           },
           "green_words": {
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/Tally"
             },
             "title": "Green Words",
             "type": "array"
@@ -245,9 +308,41 @@
             "title": "Languages",
             "type": "array"
           },
-          "made": {
-            "title": "Made",
-            "type": "integer"
+          "last_alert_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Alert At"
+          },
+          "last_applied_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Applied At"
+          },
+          "last_made_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Made At"
           },
           "new_jobs": {
             "title": "New Jobs",
@@ -264,6 +359,13 @@
             "title": "Skipped",
             "type": "integer"
           },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/Tally"
+            },
+            "title": "Sources",
+            "type": "array"
+          },
           "workplaces": {
             "items": {
               "type": "string"
@@ -275,10 +377,13 @@
         "required": [
           "jobs",
           "new_jobs",
-          "applied",
+          "applications",
           "skipped",
           "delivered",
-          "made",
+          "cvs_made",
+          "covers_made",
+          "cv_look",
+          "cover_look",
           "cvs",
           "cvs_in_use",
           "cover_letters",
@@ -287,7 +392,13 @@
           "countries",
           "workplaces",
           "languages",
-          "alerts"
+          "sources",
+          "alerts",
+          "ai_accounts",
+          "ai_in_use",
+          "last_applied_at",
+          "last_made_at",
+          "last_alert_at"
         ],
         "title": "AdminUsage",
         "type": "object"
@@ -809,15 +920,6 @@
             "title": "Bucket Minutes",
             "type": "integer"
           },
-          "by": {
-            "enum": [
-              "minutes",
-              "hour",
-              "day"
-            ],
-            "title": "By",
-            "type": "string"
-          },
           "countries": {
             "items": {
               "$ref": "#/components/schemas/CountrySeries"
@@ -836,6 +938,13 @@
               }
             ],
             "title": "Since"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/SourceSeries"
+            },
+            "title": "Sources",
+            "type": "array"
           },
           "starts": {
             "items": {
@@ -858,12 +967,12 @@
           }
         },
         "required": [
-          "by",
           "bucket_minutes",
           "steps",
           "starts",
           "since",
           "countries",
+          "sources",
           "waiting"
         ],
         "title": "CountryChart",
@@ -3040,6 +3149,44 @@
         "title": "SignupRequest",
         "type": "object"
       },
+      "SourceSeries": {
+        "properties": {
+          "counts": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Counts",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "source",
+          "name",
+          "total",
+          "counts"
+        ],
+        "title": "SourceSeries",
+        "type": "object"
+      },
       "Step": {
         "description": "One thing that happened after \"Mark as applied\", in the person's own words.",
         "properties": {
@@ -3404,6 +3551,25 @@
           "label"
         ],
         "title": "SupportStep",
+        "type": "object"
+      },
+      "Tally": {
+        "description": "A name, and how many jobs on their list it accounts for.",
+        "properties": {
+          "jobs": {
+            "title": "Jobs",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "jobs"
+        ],
+        "title": "Tally",
         "type": "object"
       },
       "TelegramState": {
@@ -4097,7 +4263,7 @@
     },
     "/admin/countries": {
       "get": {
-        "description": "New jobs by the country each is in, over the last `hours` or everything counted, a point `minutes`\nlong where that is offered (`libs.ops.countries`).",
+        "description": "New jobs by the country each is in, over the last `hours` or everything counted, a point `minutes`\nlong where that is offered, from every source but those `without` (an empty one is the counts kept\nbefore sources were) (`libs.ops.countries`).",
         "operationId": "countries_admin_countries_get",
         "parameters": [
           {
@@ -4130,6 +4296,20 @@
                 }
               ],
               "title": "Minutes"
+            }
+          },
+          {
+            "in": "query",
+            "name": "without",
+            "required": false,
+            "schema": {
+              "default": [],
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 100,
+              "title": "Without",
+              "type": "array"
             }
           }
         ],

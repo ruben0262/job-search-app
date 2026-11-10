@@ -408,10 +408,10 @@ def test_the_admin_charts_the_jobs_found_in_each_country(site, capsys):
         legend = page.get_by_role("list", name="Lines drawn").get_by_role("listitem")
         expect(legend).to_have_text(["All countries", *busiest[:5]])
 
-        table = page.locator(".country-table")
+        table = page.locator(".country-table").first  # the countries; the sources are the second
         expect(table).to_be_hidden()
         where = chart.bounding_box()["y"]
-        page.get_by_text("Countries · 6 drawn", exact=True).click()
+        page.locator("summary", has_text="6 drawn").click()
         expect(table.locator("tbody label")).to_have_text(["All countries", *busiest, "Not known"])
         assert chart.bounding_box()["y"] == where, "opened over the chart, which stays where it was"
         france = table.locator("label", has_text="France").locator(".line-key")
@@ -441,7 +441,7 @@ def test_the_admin_charts_the_jobs_found_in_each_country(site, capsys):
         # width it measures, measured again once the window changes, and read at once it was still the
         # desktop's 1,104 px one run in two.
         page.set_viewport_size({"width": 390, "height": 900})
-        page.get_by_text("Countries · 6 drawn", exact=True).click()
+        page.locator("summary", has_text="6 drawn").click()
         expect(table).to_be_visible()
         page.wait_for_function("document.documentElement.scrollWidth <= 390", timeout=5000)
         page.set_viewport_size({"width": 1280, "height": 900})
@@ -477,11 +477,76 @@ def test_the_admin_chart_picks_how_far_back_and_what_one_point_is_apart_and_its_
         expect(show).to_have_value("24")
         show.select_option(label="30 days")
         expect(chart).to_have_accessible_name("Jobs found: new jobs per day")
-        expect(point.locator("option")).to_have_text(["1 hour", "1 day"])
+        expect(point.locator("option")).to_have_text(
+            ["1 hour", "2 hours", "4 hours", "8 hours", "12 hours", "1 day"])
         # Everything counted: thirty hours, so a run a point again.
         show.select_option(label="All time")
         expect(chart).to_have_accessible_name("Jobs found: new jobs per 15 minutes")
         expect(page.get_by_text("Counting began")).to_have_count(0)
+        browser.close()
+
+
+def test_the_admin_chart_counts_every_job_board_at_first_and_only_those_ticked(site, capsys):
+    """Every source counted when the page opens, each listed with its own jobs, the counts kept before
+    sources were among them; one left out takes its jobs out of the lines. Its dropdown and the countries'
+    are the size of the selects and buttons beside them (owner, 2026-11-10)."""
+    from libs.db import database
+
+    _counted_by_country(database())
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = _admin_corpus(browser, site, capsys)
+        heights = page.evaluate("""() => [...document.querySelectorAll(
+            '.chart-controls :is(select, summary, button.toggle)')].map((box) => box.offsetHeight)""")
+        assert len(heights) == 6 and len(set(heights)) == 1, f"one size for every box in the row: {heights}"
+
+        total = page.locator(".trend-head strong")
+        everything = int(total.text_content().replace(",", ""))
+        page.locator("summary", has_text="All 20").click()
+        sources = page.locator(".country-table").filter(has_text="Source")
+        expect(sources.get_by_role("checkbox")).to_have_count(21)
+        for box in sources.get_by_role("checkbox").all():
+            expect(box).to_be_checked()
+        expect(sources.locator("tr", has_text="LinkedIn")).to_contain_text("8")
+        sources.get_by_role("checkbox", name="Not recorded").uncheck()
+        expect(total).to_have_text("8")
+        expect(page.locator("summary", has_text="19 of 20")).to_be_visible()
+        sources.get_by_role("checkbox", name="All sources").check()
+        expect(total).to_have_text(f"{everything:,}")
+        sources.get_by_role("checkbox", name="All sources").uncheck()
+        expect(page.get_by_text("No source is ticked.")).to_be_visible()
+        browser.close()
+
+
+def test_an_account_page_goes_back_to_all_accounts(site, capsys):
+    """Its back link, and the browser's, land on Admin's Accounts, not on its first tab: each tab has its
+    own address (owner, 2026-11-10)."""
+    from libs.db import database
+
+    base, email, _ = site
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        page = browser.new_context(viewport={"width": 1280, "height": 900}).new_page()
+        _sign_up(page, base, email, capsys)
+        _onboard(page)
+        database().users.update_one({"email": email}, {"$set": {"is_admin": True}})
+        page.reload()
+        page.locator("nav .places a", has_text="Admin").click()
+        page.get_by_role("button", name="Accounts").click()
+        accounts = page.get_by_role("heading", name="Accounts")
+        page.locator("tr.row-link", has_text=email).click()
+        expect(page.get_by_role("link", name="← All accounts")).to_be_visible()
+
+        page.get_by_role("link", name="← All accounts").click()
+        expect(accounts).to_be_visible()
+        expect(page.locator(".tab.on")).to_have_text("Accounts")
+        page.locator("tr.row-link", has_text=email).click()
+        expect(page.get_by_role("link", name="← All accounts")).to_be_visible()
+        page.go_back()
+        expect(accounts).to_be_visible()
+        # A reload stays on the tab it was on.
+        page.reload()
+        expect(page.locator(".tab.on")).to_have_text("Accounts")
         browser.close()
 
 
@@ -675,8 +740,8 @@ def test_the_tabs_in_order_and_what_each_one_is_for(site, capsys):
         # Their own account, as an operator sees it: online now, and what they do with the site.
         page.get_by_role("button", name="Accounts").click()
         page.get_by_role("cell", name=email, exact=True).click()
-        expect(page.get_by_text(re.compile(r"last online .*\(just now\)"))).to_be_visible()
-        expect(page.get_by_role("heading", name="Their account")).to_be_visible()
+        expect(page.locator(".account-seen")).to_contain_text("Last here just now")
+        expect(page.get_by_role("heading", name="What they look for")).to_be_visible()
         expect(page.get_by_role("heading", name="Setup")).to_have_count(0)
         if shot := os.environ.get("E2E_SHOT"):
             page.screenshot(path=shot, full_page=True)

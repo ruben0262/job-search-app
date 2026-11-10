@@ -128,7 +128,8 @@ export interface paths {
         /**
          * Countries
          * @description New jobs by the country each is in, over the last `hours` or everything counted, a point `minutes`
-         *     long where that is offered (`libs.ops.countries`).
+         *     long where that is offered, from every source but those `without` (an empty one is the counts kept
+         *     before sources were) (`libs.ops.countries`).
          */
         get: operations["countries_admin_countries_get"];
         put?: never;
@@ -1727,8 +1728,14 @@ export interface components {
             created_at: string | null;
             /** Email */
             email: string;
+            /** Email Verified At */
+            email_verified_at: string | null;
+            /** Full Name */
+            full_name: string | null;
             /** Id */
             id: string;
+            /** Is Admin */
+            is_admin: boolean;
             /** Last Active At */
             last_active_at: string | null;
             /** Onboarded */
@@ -1759,34 +1766,51 @@ export interface components {
          * @description What an account does with the site, for working out what to improve.
          */
         AdminUsage: {
+            /** Ai Accounts */
+            ai_accounts: string[];
+            /** Ai In Use */
+            ai_in_use: string | null;
             /** Alerts */
             alerts: string[];
-            /** Applied */
-            applied: number;
+            applications: components["schemas"]["OutcomeRow"];
             /** Countries */
-            countries: string[];
+            countries: components["schemas"]["Tally"][];
             /** Cover Letters */
             cover_letters: number;
+            /** Cover Look */
+            cover_look: string;
+            /** Covers Made */
+            covers_made: number;
+            /** Cv Look */
+            cv_look: string;
             /** Cvs */
             cvs: number;
             /** Cvs In Use */
             cvs_in_use: number;
+            /** Cvs Made */
+            cvs_made: number;
             /** Delivered */
             delivered: number;
             /** Green Words */
-            green_words: string[];
+            green_words: components["schemas"]["Tally"][];
             /** Jobs */
             jobs: number;
             /** Languages */
             languages: string[];
-            /** Made */
-            made: number;
+            /** Last Alert At */
+            last_alert_at: string | null;
+            /** Last Applied At */
+            last_applied_at: string | null;
+            /** Last Made At */
+            last_made_at: string | null;
             /** New Jobs */
             new_jobs: number;
             /** Red Words */
             red_words: string[];
             /** Skipped */
             skipped: number;
+            /** Sources */
+            sources: components["schemas"]["Tally"][];
             /** Workplaces */
             workplaces: string[];
         };
@@ -1974,15 +1998,12 @@ export interface components {
         CountryChart: {
             /** Bucket Minutes */
             bucket_minutes: number;
-            /**
-             * By
-             * @enum {string}
-             */
-            by: "minutes" | "hour" | "day";
             /** Countries */
             countries: components["schemas"]["CountrySeries"][];
             /** Since */
             since: string | null;
+            /** Sources */
+            sources: components["schemas"]["SourceSeries"][];
             /** Starts */
             starts: string[];
             /** Steps */
@@ -2768,6 +2789,17 @@ export interface components {
             /** Password */
             password: string;
         };
+        /** SourceSeries */
+        SourceSeries: {
+            /** Counts */
+            counts: number[];
+            /** Name */
+            name: string;
+            /** Source */
+            source: string | null;
+            /** Total */
+            total: number;
+        };
         /**
          * Step
          * @description One thing that happened after "Mark as applied", in the person's own words.
@@ -2880,6 +2912,16 @@ export interface components {
             output?: string | null;
             /** State */
             state?: ("proposed" | "done" | "failed") | null;
+        };
+        /**
+         * Tally
+         * @description A name, and how many jobs on their list it accounts for.
+         */
+        Tally: {
+            /** Jobs */
+            jobs: number;
+            /** Name */
+            name: string;
         };
         /** TelegramState */
         TelegramState: {
@@ -3272,6 +3314,7 @@ export interface operations {
             query?: {
                 hours?: number | null;
                 minutes?: number | null;
+                without?: string[];
             };
             header?: never;
             path?: never;

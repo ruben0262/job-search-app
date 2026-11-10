@@ -91,17 +91,20 @@ class CorpusJob(Document):
 @dataclass(kw_only=True)
 class CountryCount(Document):
     """How many new postings arrived in one run (`PLATFORM_TICK_MIN`; an hour before 2026-11-05) in one
-    country (`country`; None when it cannot be told): the admin's chart of what is found where
-    (`CorpusRepository.add`, `libs.ops.countries`). Kept when the postings themselves are archived, so the
-    chart reaches back further than the corpus does. `hour` is when the run's count began."""
+    country (`country`; None when it cannot be told) from one source: the admin's chart of what is found
+    where (`CorpusRepository.add`, `libs.ops.countries`). Kept when the postings themselves are archived, so
+    the chart reaches back further than the corpus does. `hour` is when the run's count began."""
 
     COLLECTION = "country_counts"
     OWNER = None
     INDEXES = (IndexModel("hour", name="hour"),)
 
-    id: str  # the hour and the country
+    id: str  # the run, the country and the source
     hour: datetime
     country: str | None = None
+    # None for a count kept before sources were (2026-11-10) that the corpus could not split
+    # (`libs.ops.countries.split_by_source`).
+    source: str | None = None
     jobs: int = 0
 
 
