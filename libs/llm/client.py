@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Protocol
 
 from libs.db.models.queue import CLAIM_TIMEOUT_MIN
@@ -53,7 +54,7 @@ class AnthropicClient:
                 system=system,
                 messages=messages,
                 max_tokens=max_tokens,
-                **_thinking(thinking_tokens),
+                **_thinking(model, thinking_tokens),
                 output_config={"format": {"type": "json_schema", "schema": schema}}) as stream:
             message = stream.get_final_message()
 
@@ -74,7 +75,7 @@ class AnthropicClient:
                 system=system,
                 messages=messages,
                 max_tokens=max_tokens,
-                **_thinking(thinking_tokens)) as stream:
+                **_thinking(model, thinking_tokens)) as stream:
             message = stream.get_final_message()
         warn_if_truncated(getattr(message, "stop_reason", None) == "max_tokens", model, max_tokens)
         return _text_of(message)
@@ -114,9 +115,21 @@ class AnthropicClient:
                 "stop_reason": message.stop_reason}
 
 
-def _thinking(budget: int | None) -> dict:
-    """The thinking block for a call, or nothing at all."""
-    return {"thinking": {"type": "enabled", "budget_tokens": budget}} if budget else {}
+# A Claude model's version in its name: "claude-haiku-5-5", "claude-haiku-4-5-20251001",
+# "claude-sonnet-4-20250514".
+_VERSION = re.compile(r"^claude-(?:opus|sonnet|haiku)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?$")
+
+
+def _thinking(model: str, budget: int | None) -> dict:
+    """The thinking block for a call, or nothing at all. Claude 4.5 and before think within a token
+    budget; from 4.6 the depth is the model's own, and Haiku 5.5 answers a budget with a 400 (Anthropic's
+    Haiku 5.5 migration guide, 2026-11-10). A name that says no version is taken as a newer model."""
+    if not budget:
+        return {}
+    version = _VERSION.match(model)
+    if version and (int(version.group(1)), int(version.group(2) or 0)) <= (4, 5):
+        return {"thinking": {"type": "enabled", "budget_tokens": budget}}
+    return {"thinking": {"type": "adaptive"}}
 
 
 def warn_if_truncated(cut: bool, model: str, max_tokens: int) -> None:

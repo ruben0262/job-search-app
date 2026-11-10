@@ -242,14 +242,16 @@ def source_min_ages(db: Database | Snapshot) -> dict[str, int]:
 
 # The model each provider writes a CV or cover letter with, until the operator says otherwise.
 #
-# **Haiku, deliberately, and not changed here**: the tailoring prompts were measured on it, and a
-# model change is a measured change (CLAUDE.md §3a, §4). The Gemini and OpenAI entries run the same
+# **Haiku, deliberately**: the fast tier, for a CV done in under 20 s. Haiku 5.5 since 2026-11-10 (owner),
+# chosen before the new CV and cover-letter prompts are written and tuned on it, Claude's first; a model
+# change is a measured change (CLAUDE.md §3a, §4). It thinks adaptively only, and answers a token budget
+# with a 400 (`libs.llm.client._thinking`). The Gemini and OpenAI entries run the same
 # prompts unmeasured — they exist because the owner chose own-key providers, and they are settings
 # so a better or cheaper model is a panel change rather than a deploy. Both were each provider's
 # documented recommendation on 2026-10-28: "For any new projects, use our latest models: 3.5
 # Flash-Lite or 3.8 Flash" (ai.google.dev), and GPT-6 Luna "for cost-sensitive, high-volume
 # workloads" (developers.openai.com), whose `gpt-5-mini` is deprecated.
-CV_MODEL = "claude-haiku-4-5"
+CV_MODEL = "claude-haiku-5-5"
 DEFAULT_DOCUMENT_MODELS: dict[str, str] = {
     "anthropic": CV_MODEL,
     "gemini": "gemini-3.8-flash",

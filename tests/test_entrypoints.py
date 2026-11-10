@@ -1,22 +1,123 @@
-"""Every deployable entrypoint imports."""
+"""Every deployable entrypoint imports, here and in the image that runs it."""
 from __future__ import annotations
 
+import ast
 import importlib
+import re
+import sys
+from importlib.metadata import PackageNotFoundError, packages_distributions, requires
+from pathlib import Path
 
 import pytest
 
-# Every module named by a deploy artifact — a systemd unit, a compose service, or the uvicorn target.
-ENTRYPOINTS = [
-    "services.api.app",
-    "services.docgen.__main__",
-    "services.harvester.__main__",
-    "services.notifier.__main__",
-]
+ROOT = Path(__file__).resolve().parents[1]
+
+# Every module named by a deploy artifact (a compose service, or the uvicorn target), and the
+# requirements its image installs (`deploy/docker/Dockerfile.*`; seed-ats installs the harvester's).
+IMAGES = {
+    "services.api.app": ["services/api/requirements.txt"],
+    "services.docgen.__main__": ["services/docgen/requirements.txt"],
+    "services.harvester.__main__": ["services/harvester/requirements.txt"],
+    "services.notifier.__main__": ["services/notifier/requirements.txt"],
+    "services.oauthbroker.__main__": ["services/oauthbroker/requirements.txt"],
+}
 
 
-@pytest.mark.parametrize("module", ENTRYPOINTS)
+@pytest.mark.parametrize("module", IMAGES)
 def test_the_entrypoint_imports(module):
     importlib.import_module(module)
+
+
+@pytest.mark.parametrize("module", IMAGES)
+def test_everything_an_entrypoint_imports_at_start_is_installed_in_its_image(module):
+    """The test above passes here, where every service's packages are installed at once: the sign-in
+    broker crashed on the server at start for want of httpx (2026-11-10), which `libs.llm`, newly reached
+    through `libs.signin`, imports. So the imports are followed from the entrypoint through `libs` and
+    `services`, as Python runs them at start (inside functions is not at start), and each package found
+    must be one the image's requirements install, or a package one of them needs."""
+    needed = _imported_at_start(module)
+    installed = _installed_by(IMAGES[module])
+    by_module = packages_distributions()
+    missing = {top: where for top, where in needed.items()
+               if not {_name(each) for each in by_module.get(top, [top])} & installed}
+    assert not missing, f"imported at start but not in {IMAGES[module]}: {missing}"
+
+
+def _name(distribution: str) -> str:
+    return re.sub(r"[-_.]+", "-", distribution).lower()
+
+
+def _installed_by(files: list[str]) -> set[str]:
+    """The packages the requirements name, and everything those need in turn."""
+    wanted = [re.split(r"[\[<>=!~; ]", line.split("#")[0].strip())[0]
+              for file in files for line in (ROOT / file).read_text().splitlines()
+              if line.split("#")[0].strip() and not line.startswith("-")]
+    installed: set[str] = set()
+    while wanted:
+        name = _name(wanted.pop())
+        if name in installed:
+            continue
+        installed.add(name)
+        try:
+            needs = requires(name) or []
+        except PackageNotFoundError:
+            continue
+        wanted += [re.split(r"[\[<>=!~; (]", need)[0] for need in needs if "extra ==" not in need]
+    return installed
+
+
+def _source(module: str) -> Path | None:
+    base = ROOT.joinpath(*module.split("."))
+    return next((path for path in (base.with_suffix(".py"), base / "__init__.py") if path.is_file()), None)
+
+
+def _imported_at_start(entry: str) -> dict[str, str]:
+    """Each package outside the standard library imported at start, and one of our modules importing it.
+    An import a `try` guards against ImportError is optional, and one under TYPE_CHECKING never runs."""
+    found: dict[str, str] = {}
+    seen: set[str] = set()
+    stack = [entry]
+
+    def visit(body: list[ast.stmt], module: str, guarded: bool) -> None:
+        for node in body:
+            names: list[str] = []
+            if isinstance(node, ast.Import):
+                names = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom):
+                base = node.module or ""
+                if node.level:
+                    package = module.split(".")
+                    if _source(module) and _source(module).name != "__init__.py":
+                        package = package[:-1]
+                    parent = package[:len(package) - node.level + 1]
+                    base = ".".join([*parent, base] if base else parent)
+                names = [base, *(f"{base}.{alias.name}" for alias in node.names)]
+            elif isinstance(node, ast.If) and "TYPE_CHECKING" not in ast.unparse(node.test):
+                visit(node.body, module, guarded)
+                visit(node.orelse, module, guarded)
+            elif isinstance(node, ast.Try):
+                caught = {ast.unparse(handler.type) for handler in node.handlers if handler.type}
+                visit(node.body, module, guarded or bool(caught & {"ImportError", "ModuleNotFoundError"}))
+                for block in (*[handler.body for handler in node.handlers], node.orelse, node.finalbody):
+                    visit(block, module, guarded)
+            elif isinstance(node, (ast.With, ast.ClassDef)):
+                visit(node.body, module, guarded)
+            for name in names:
+                top = name.split(".")[0]
+                if top in ("libs", "services"):
+                    stack.append(name)
+                elif top not in sys.stdlib_module_names and top != "__future__" and not guarded:
+                    found.setdefault(top, module)
+
+    while stack:
+        parts = stack.pop().split(".")
+        # Importing a module runs every package above it first.
+        for depth in range(1, len(parts) + 1):
+            module = ".".join(parts[:depth])
+            if module not in seen and _source(module):
+                seen.add(module)
+                visit(ast.parse(_source(module).read_text()).body, module, False)
+    return found
 
 
 def test_the_api_registers_its_routers():

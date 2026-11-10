@@ -26,6 +26,7 @@ import time
 import uuid as _uuid
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 import pyte
 
@@ -174,6 +175,9 @@ def start(user_id: _uuid.UUID, kind: str) -> Started:
         raise
     session_id = secrets.token_urlsafe(24)
     _SESSIONS[session_id] = session
+    query = parse_qs(urlparse(url).query)
+    logger.info("signin: %s started for %s; link to %s, back to %s", kind, user_id, urlparse(url).netloc,
+                (query.get("redirect_uri") or ["-"])[0])
     return Started(session_id, url, code)
 
 
@@ -187,7 +191,11 @@ def finish(session_id: str, user_id: _uuid.UUID, code: str | None) -> SignedIn |
     pasted = session.kind in _PASTED
     if pasted:
         if not code or not re.fullmatch(r"[\w#.~/+=-]{4,512}", code.strip()):
+            logger.warning("signin: %s code refused here, not code-shaped (%s)", session.kind, _shape(code))
             raise SignInError(f"That code does not look right. Copy it again from {name}'s page.")
+        # Its shape only: a code signs a person in until it is used, so it is never written down.
+        logger.info("signin: %s code typed in (%s); the tool is %s", session.kind, _shape(code),
+                    "running" if session.reading else "gone")
         try:
             os.write(session.fd, code.strip().encode())
             time.sleep(PASTE_SETTLE_SEC)
@@ -204,8 +212,12 @@ def finish(session_id: str, user_id: _uuid.UUID, code: str | None) -> SignedIn |
             time.sleep(SETTLE_SEC)
             secret = cli.snapshot(session.kind, session.home) or secret
             _drop(session_id)
+            logger.info("signin: %s signed in for %s", session.kind, session.user_id)
             return SignedIn(secret, cli.label(session.kind, secret))
         if pasted and _REJECTED.search(session.text(screen=True)):
+            # What the tool said is the one account of why: the provider's refusal, in its words.
+            logger.warning("signin: %s refused the code (%s); it said: %r", session.kind, _shape(code),
+                           _said(session, code))
             # Claude Code ends once it has turned a code down, so the link is spent: a new one is needed.
             _drop(session_id)
             raise SignInError(f"{name} did not accept that code. Start again for a new link, and paste "
@@ -215,8 +227,7 @@ def finish(session_id: str, user_id: _uuid.UUID, code: str | None) -> SignedIn |
         time.sleep(0.2)
     if not pasted and session.reading:
         return None  # Codex: not entered on OpenAI's page yet
-    tail = session.text(screen=True)[-1200:]
-    logger.warning("signin: %s produced no login; screen tail=%r", session.kind, tail)
+    logger.warning("signin: %s produced no login; it said: %r", session.kind, _said(session, code))
     _drop(session_id)
     raise SignInError(f"the {name} sign-in did not finish, please start again")
 
@@ -242,6 +253,34 @@ def live() -> int:
 def alive(session_id: str) -> bool:
     """Whether a sign-in can still take a code: one refused, finished or expired has ended."""
     return session_id in _SESSIONS
+
+
+def _shape(code: str | None) -> str:
+    """What a pasted code looked like, without the code: its length, and its two halves around the "#"
+    Claude's page joins them with, which a code copied short or doubled shows at once."""
+    if not code:
+        return "empty"
+    text = code.strip()
+    spaces = " with spaces" if " " in text else ""
+    if "#" not in text:
+        return f"{len(text)} chars, no '#'{spaces}"
+    halves = " + ".join(str(len(part)) for part in text.split("#"))
+    return f"{len(text)} chars, {halves} around '#'{spaces}"
+
+
+def _said(session: _Session, code: str | None) -> str:
+    """The last lines the tool's screen shows, blank ones left out, and the code typed in taken out: a
+    terminal shows what is typed into it, so the screen holds the code (caught by its test, 2026-11-10)."""
+    # A link is its site: the whole of one is a line of its own that says nothing about why. First, as a
+    # link carries the sign-in's state, which is the half of a code after its "#".
+    text = re.sub(r"https://[^\s\x07\x1b]+", lambda link: f"<{urlparse(link.group(0)).netloc} link>",
+                  session.text(screen=True))
+    typed = (code or "").strip()
+    for part in sorted({typed, *typed.split("#")}, key=len, reverse=True):
+        if len(part) >= 6:
+            text = text.replace(part, "[the code]")
+    lines = [line for line in text.splitlines() if line.strip()]
+    return " | ".join(lines[-8:])[-1200:]
 
 
 def _complete(secret: str) -> bool:

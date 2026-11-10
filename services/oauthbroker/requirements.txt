@@ -12,3 +12,7 @@ cryptography>=44.0
 # not a sign that this service talks to the database.
 pymongo>=4.19,<5
 pyte>=0.8
+# libs/signin reads each tool's place and environment from libs.llm.cli, and importing it runs
+# libs/llm/__init__, whose providers module imports httpx at start: without it the broker crashed on
+# start (2026-11-10). tests/test_entrypoints.py checks every image's start-up imports against this file.
+httpx>=0.28

@@ -874,7 +874,7 @@ def test_an_ai_account_linked_in_settings_is_what_the_make_buttons_were_missing(
         _add_key(accounts, "Claude API key", key)
         expect(rows).to_have_text([re.compile("^Claude API key")])
         expect(rows.first.locator(".ai-mark svg path")).to_have_count(1)
-        expect(rows.first).to_contain_text("Writes with claude-haiku-4-5")  # the model Admin picked for it
+        expect(rows.first).to_contain_text("Writes with claude-haiku-5-5")  # the model Admin picked for it
         expect(accounts.get_by_role("switch", name="Use Claude API key")).to_be_checked()
         assert key not in page.content() and key[-4:] not in accounts.inner_text(), "never shown back"
         assert page.evaluate(FAULTS) == {"off": [], "over": []}, "Settings at 390px"

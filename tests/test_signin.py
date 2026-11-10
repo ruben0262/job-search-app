@@ -145,6 +145,24 @@ def test_a_refused_code_ends_the_sign_in_and_says_to_start_again(tools):
 
 
 @posix
+def test_a_refused_code_is_logged_with_what_the_tool_said_and_never_the_code(tools, caplog):
+    """The broker's log is the only view of a sign-in on the server (CLAUDE.md §8): why the provider
+    turned a code down, in its own words, and what the code looked like; a code signs a person in until it
+    is used, so it is never written down."""
+    caplog.set_level("INFO", logger="libs.signin")
+    started = signin.start(USER, "claude_login")
+
+    with pytest.raises(signin.SignInError):
+        signin.finish(started.session_id, USER, "wrongcodewrong#statestate")
+
+    logged = caplog.text
+    assert "signin: claude_login started" in logged and "back to -" in logged
+    assert "code typed in (25 chars, 14 + 10 around '#')" in logged
+    assert "That code wasn't accepted" in logged, "the tool's own words"
+    assert "wrongcodewrong" not in logged and "statestate" not in logged
+
+
+@posix
 def test_a_code_that_does_not_look_like_one_keeps_the_sign_in(tools):
     started = signin.start(USER, "claude_login")
 

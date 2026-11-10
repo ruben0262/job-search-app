@@ -1767,7 +1767,9 @@ button.making::after {
   cursor: pointer;
 }
 
-/* Download and remove, as pictures: a thumb's width each, and the bin red when it is pointed at. */
+/* Download and remove, as pictures: a thumb's width each, and the bin red when it is pointed at. As tall
+   as every button on a page is at least (2.75rem, for a thumb), or the bin, a button, was an oval beside
+   the round download, a link. */
 .file-acts {
   display: flex;
   flex: none;
@@ -1776,8 +1778,8 @@ button.making::after {
 }
 
 .icon-btn.file-act {
-  width: 2.5rem;
-  height: 2.5rem;
+  width: 2.75rem;
+  height: 2.75rem;
 }
 
 .icon-btn.file-act svg {

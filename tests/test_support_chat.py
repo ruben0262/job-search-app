@@ -191,7 +191,7 @@ def test_a_platform_paid_answer_uses_one_request_and_an_own_key_none(api, monkey
     assert ai_requests_today(api.db, api.user.id) == 1
     assert api.http.get("/support").json()["ai"] == {"payer": "platform", "provider": "Gemini",
                                                     "left": 19, "per_day": 20}
-    assert model.seen[0]["model"] == "claude-haiku-4-5", "the operator's model for that provider"
+    assert model.seen[0]["model"] == "claude-haiku-5-5", "the operator's model for that provider"
 
     from libs.llm import accounts
 

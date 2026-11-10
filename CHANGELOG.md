@@ -14,6 +14,36 @@ Conventions (carried from the reference instance, `docs/saas/CODE_STRUCTURE.md` 
 
 ---
 
+## 2026-11-10, later — the broker's image starts; Haiku 5.5 writes Claude's documents; sign-ins logged
+
+- **The sign-in broker crashed at start on the server** (`ModuleNotFoundError: httpx`). `libs.signin`
+  now reaches `libs.llm`, whose providers import httpx at start, and the broker's image did not install
+  it. `test_the_entrypoint_imports` could not see this: it runs where every service's packages are
+  installed at once, and it did not list the broker. A new test follows each entrypoint's imports through
+  `libs` and `services` as Python runs them at start, and fails when a package is not installed by that
+  image's requirements, or needed by one that is. It failed on the broker alone (`httpx`, from
+  `libs.llm.rest`); `httpx` is in its requirements now.
+- **Claude Haiku 5.5** writes with every Claude account (owner), `CV_MODEL`, before the new prompts are
+  written and tuned on it. Haiku 5.5 thinks adaptively only and answers a token budget with a 400
+  (Anthropic's migration guide), so `libs.llm.client._thinking` sends a budget to Claude 4.5 and before,
+  and `{"type": "adaptive"}` from 4.6 on. An Admin panel that saved its document models before keeps the
+  model it saved, until it is changed there.
+- **Sign-ins are logged** (owner: "add logs to debug it"): each start (where the link goes and comes back
+  to), each code typed in (its length and its halves around the "#", never the code), and a refusal with
+  what the tool said, in its words. A terminal shows what is typed into it, so the screen holds the code:
+  the log takes it out, and its test caught that.
+- **Why Claude still refused the owner's code after the fix:** the refusal they quoted ("Copy the newest
+  one from the page you signed in on") was replaced at 11:22 with the fix itself, and the broker that
+  answered had started at 11:01, under the old `python -m` command, which never reloads. `scripts/dev.sh`
+  restarted it at 20:56 (the broker under `uvicorn --reload` now). Checked against the real `claude` 2.1.319:
+  the link handed out was the whole one it printed, 8 starts of 8 (state and challenge 43 characters, back
+  to `platform.claude.com/oauth/code/callback`); a made-up code reached it and was refused in its words.
+- **The bin beside an upload is round.** Every button on a page is at least 2.75rem tall, for a thumb, so
+  the bin, a button 2.5rem wide, was an oval beside the round download, a link. Both are 2.75rem circles.
+
+Gates, 2026-11-10: import contracts 2 kept; ruff clean; schema on an empty local mongod; contract current
+(80 paths); site built; pytest 1,412 passed, 3 skipped (the same three).
+
 ## 2026-11-10 — Claude's sign-in takes the code; the AI accounts card says what it is; uploaded files download again; the Make buttons for everyone
 
 The owner: ChatGPT's and Google's sign-ins worked, Claude's turned down every code, "even the latest";

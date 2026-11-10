@@ -284,3 +284,39 @@ def test_a_signed_in_account_opens_its_own_tool_and_a_renewed_login_is_sealed_ag
         client._on_refresh(renewed)  # what a call does when the tool renewed the login
 
     assert store.reveal_account(user.id, ObjectId(claude)).reveal() == renewed
+
+
+@pytest.mark.parametrize(("model", "thinking"), [
+    ("claude-haiku-5-5", {"type": "adaptive"}),
+    ("claude-sonnet-4-6", {"type": "adaptive"}),
+    ("claude-haiku-4-5", {"type": "enabled", "budget_tokens": 4096}),
+    ("claude-haiku-4-5-20251001", {"type": "enabled", "budget_tokens": 4096}),
+    ("claude-sonnet-4-20250514", {"type": "enabled", "budget_tokens": 4096})])
+def test_each_claude_model_is_asked_to_think_the_way_it_can(model, thinking):
+    """Haiku 5.5, the CV model since 2026-11-10, answers a token budget with a 400: from 4.6 on, Claude
+    thinks adaptively. The request as the SDK is handed it; the SDK itself is the docgen image's."""
+    from types import SimpleNamespace
+
+    from libs.llm.client import AnthropicClient
+
+    sent: list[dict] = []
+
+    class Stream:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            return False
+
+        def get_final_message(self):
+            return SimpleNamespace(content=[SimpleNamespace(type="text", text="<html></html>")],
+                                   stop_reason="end_turn")
+
+    client = AnthropicClient.__new__(AnthropicClient)
+    client._client = SimpleNamespace(
+        messages=SimpleNamespace(stream=lambda **asked: sent.append(asked) or Stream()))
+
+    client.complete_text(model=model, system="s", messages=[{"role": "user", "content": "p"}],
+                         max_tokens=32_000, thinking_tokens=4096)
+
+    assert sent[0]["thinking"] == thinking
